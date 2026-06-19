@@ -378,6 +378,26 @@ catch {
     Add-Check -Name "anchor patient messages" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
+    $advanceDirective = $documents.documents | Where-Object { $_.name -eq "Advance directive acknowledgement" -and $_.categoryName -eq "Advance Directive" } | Select-Object -First 1
+    $documentsPassed = $documents.patientId -eq "MOD-PAT-0001" `
+        -and $documents.count -eq 2 `
+        -and $null -ne $intakePacket `
+        -and $null -ne $advanceDirective `
+        -and $intakePacket.contentPreview.Contains("Gold synthetic document DOC-MOD-PAT-0001-1")
+    Add-Check -Name "anchor patient documents" -Result $(if ($documentsPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $documents.patientId
+        documentCount = $documents.count
+        intakePacket = $intakePacket
+        advanceDirective = $advanceDirective
+    }
+}
+catch {
+    Add-Check -Name "anchor patient documents" -Result "failed" -Details $_.Exception.Message
+}
+
 $patientMessageMutationId = $null
 try {
     $messageTitle = "Smoke Patient Message Mutation"
@@ -896,6 +916,7 @@ try {
         -and $reports.counts.currentYearEncounters -eq 1100 `
         -and $reports.counts.billingLines -eq 3000 `
         -and $reports.counts.billingTotal -eq 446000 `
+        -and $reports.counts.patientDocuments -eq 1200 `
         -and $null -ne $topProvider `
         -and $topProvider.encounters -eq 176 `
         -and $null -ne $northFacility `
@@ -922,6 +943,7 @@ try {
         -and $contentType -like "text/csv*" `
         -and $exportText.Contains("Section,Name,Metric,Value") `
         -and $exportText.Contains("Counts,Patients,Total,1000") `
+        -and $exportText.Contains("Counts,Patient Documents,Total,1200") `
         -and $exportText.Contains("Provider Activity,gold-provider-02,Encounters,176") `
         -and $exportText.Contains("Facility Activity,NORTH,Billing Total,148904.00") `
         -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")

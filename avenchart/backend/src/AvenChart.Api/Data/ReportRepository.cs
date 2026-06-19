@@ -44,6 +44,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         AppendCsvRow(builder, "Counts", "Billing Lines", "Total", report.Counts.BillingLines);
         AppendCsvRow(builder, "Counts", "Billing Total", "USD", report.Counts.BillingTotal);
         AppendCsvRow(builder, "Counts", "Lab Reports", "Total", report.Counts.LabReports);
+        AppendCsvRow(builder, "Counts", "Patient Documents", "Total", report.Counts.PatientDocuments);
         AppendCsvRow(builder, "Counts", "Messages", "Total", report.Counts.Messages);
         AppendCsvRow(builder, "Counts", "New Messages", "Total", report.Counts.NewMessages);
         AppendCsvRow(builder, "Counts", "Done Messages", "Total", report.Counts.DoneMessages);
@@ -120,6 +121,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
               (select count(*) from billing) as billing_lines,
               (select coalesce(sum(fee), 0) from billing) as billing_total,
               (select count(*) from lab_reports) as lab_reports,
+              (select count(*) from patient_documents where deleted = 0) as patient_documents,
               (select count(*) from messages) as messages,
               (select count(*) from messages where status = 'New') as new_messages,
               (select count(*) from messages where status = 'Done') as done_messages,
@@ -133,7 +135,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            return new OperationalReportCounts(0, 0, 0, 0, 0, 0, 0, 0, 0m, 0, 0, 0, 0, 0, 0);
+            return new OperationalReportCounts(0, 0, 0, 0, 0, 0, 0, 0, 0m, 0, 0, 0, 0, 0, 0, 0);
         }
 
         return new OperationalReportCounts(
@@ -147,6 +149,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             BillingLines: ReadCount(reader, "billing_lines"),
             BillingTotal: reader.GetDecimal(reader.GetOrdinal("billing_total")),
             LabReports: ReadCount(reader, "lab_reports"),
+            PatientDocuments: ReadCount(reader, "patient_documents"),
             Messages: ReadCount(reader, "messages"),
             NewMessages: ReadCount(reader, "new_messages"),
             DoneMessages: ReadCount(reader, "done_messages"),

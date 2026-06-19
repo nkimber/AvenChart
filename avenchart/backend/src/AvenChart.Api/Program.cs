@@ -16,6 +16,7 @@ builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
+builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
@@ -378,6 +379,18 @@ messages.MapDelete("/{messageId}", async (
         return deleted ? Results.NoContent() : Results.NotFound();
     })
     .WithName("DeletePatientMessage");
+
+var documents = app.MapGroup("/api/documents").WithTags("Documents");
+
+documents.MapGet("/{patientId}", async (
+        DocumentRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var patientDocuments = await repository.GetForPatientAsync(patientId, cancellationToken);
+        return patientDocuments is null ? Results.NotFound() : Results.Ok(patientDocuments);
+    })
+    .WithName("GetPatientDocuments");
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 

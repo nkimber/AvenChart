@@ -362,6 +362,7 @@
 .encounter-detail-grid,
 .clinical-list-grid,
 .message-detail-grid,
+.documents-detail-grid,
 .billing-detail-grid,
 .procedure-detail-grid,
 .reports-detail-grid {
@@ -392,6 +393,10 @@
 
 .message-detail-grid {
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+}
+
+.documents-detail-grid {
+  grid-template-columns: minmax(220px, 280px) minmax(260px, 340px) minmax(0, 1fr);
 }
 
 .billing-detail-grid {
@@ -696,6 +701,13 @@
   min-width: 0;
 }
 
+.document-category-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .message-list-body {
   display: flex;
   flex-direction: column;
@@ -743,6 +755,72 @@
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 2px;
+}
+
+.documents-panel {
+  min-width: 0;
+}
+
+.document-list-body {
+  display: grid;
+  gap: 10px;
+  max-height: 620px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.document-card {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.document-card strong {
+  color: #1d2a35;
+  font-size: 14px;
+}
+
+.document-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.document-meta-grid span {
+  border-radius: 5px;
+  background: #eef5f7;
+  color: #526879;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 7px;
+}
+
+.document-preview {
+  margin: 0;
+  border-left: 3px solid #9dc5ca;
+  color: #344657;
+  font-size: 13px;
+  line-height: 1.45;
+  padding-left: 9px;
+  white-space: pre-line;
+}
+
+.document-footnote {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
+  gap: 8px;
+  color: #607280;
+  font-size: 11px;
+}
+
+.document-footnote span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .procedure-orders-panel,
@@ -1043,6 +1121,7 @@
   .encounter-detail-grid,
   .clinical-list-grid,
   .message-detail-grid,
+  .documents-detail-grid,
   .billing-detail-grid,
   .procedure-detail-grid,
   .reports-detail-grid,
@@ -1092,6 +1171,7 @@
   .encounter-detail-grid,
   .clinical-list-grid,
   .message-detail-grid,
+  .documents-detail-grid,
   .billing-detail-grid,
   .billing-line-list,
   .procedure-detail-grid,
@@ -1120,5 +1200,10 @@
   .procedure-result-card > div,
   .condition-report-card {
     flex-direction: column;
+  }
+
+  .document-meta-grid,
+  .document-footnote {
+    grid-template-columns: 1fr;
   }
 }

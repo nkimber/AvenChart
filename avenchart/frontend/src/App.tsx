@@ -11,6 +11,7 @@ import {
   Download,
   FileText,
   FlaskConical,
+  FolderOpen,
   HeartPulse,
   Mail,
   MapPin,
@@ -31,6 +32,7 @@ import {
   getEncounterDetail,
   getPatientChart,
   getPatientBilling,
+  getPatientDocuments,
   getPatientMessages,
   getProcedureResults,
   getOperationalReports,
@@ -108,6 +110,8 @@ import {
   type PatientListItem,
   type PatientBillingResponse,
   type PatientContactUpdate,
+  type PatientDocumentItem,
+  type PatientDocumentsResponse,
   type PatientMessageCreateInput,
   type PatientMessageItem,
   type PatientMessagesResponse,
@@ -136,6 +140,7 @@ type ModuleId =
   | 'fees'
   | 'procedures'
   | 'messages'
+  | 'documents'
   | 'reports'
   | 'admin'
 
@@ -147,6 +152,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'fees', label: 'Fees', icon: WalletCards, implemented: 'fees' },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
+  { id: 'documents', label: 'Documents', icon: FolderOpen, implemented: 'documents' },
   { id: 'reports', label: 'Reports', icon: FileText, implemented: 'reports' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
@@ -193,6 +199,11 @@ function App() {
   const [messageStatus, setMessageStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [messageError, setMessageError] = useState<string | null>(null)
   const [messageRefreshKey, setMessageRefreshKey] = useState(0)
+
+  const [documentPatientId, setDocumentPatientId] = useState('MOD-PAT-0001')
+  const [patientDocuments, setPatientDocuments] = useState<PatientDocumentsResponse | null>(null)
+  const [documentStatus, setDocumentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [documentError, setDocumentError] = useState<string | null>(null)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -457,6 +468,34 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, messagePatientId, messageRefreshKey])
+
+  useEffect(() => {
+    if (activeModule !== 'documents') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setDocumentStatus('loading')
+      setDocumentError(null)
+
+      try {
+        const result = await getPatientDocuments(documentPatientId, controller.signal)
+        setPatientDocuments(result)
+        setDocumentStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setDocumentStatus('error')
+          setDocumentError(loadError instanceof Error ? loadError.message : 'Patient documents failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, documentPatientId])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -1471,6 +1510,15 @@ function App() {
             onDeleteMessage={handlePatientMessageDelete}
           />
         )}
+        {activeModule === 'documents' && (
+          <DocumentsWorkspace
+            patientId={documentPatientId}
+            patientDocuments={patientDocuments}
+            status={documentStatus}
+            error={documentError}
+            onPatientIdChange={setDocumentPatientId}
+          />
+        )}
         {activeModule === 'reports' && (
           <ReportsWorkspace
             reports={operationalReports}
@@ -1519,6 +1567,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'messages') {
     return 'Patient Communications'
   }
+  if (moduleId === 'documents') {
+    return 'Patient Files'
+  }
   if (moduleId === 'reports') {
     return 'Reports And Exports'
   }
@@ -1546,6 +1597,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'messages') {
     return 'Messages'
+  }
+  if (moduleId === 'documents') {
+    return 'Documents'
   }
   if (moduleId === 'reports') {
     return 'Reports'
@@ -3631,6 +3685,134 @@ function MessagesWorkspace({
   )
 }
 
+function DocumentsWorkspace({
+  patientId,
+  patientDocuments,
+  status,
+  error,
+  onPatientIdChange,
+}: {
+  patientId: string
+  patientDocuments: PatientDocumentsResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+}) {
+  const documents = patientDocuments?.documents ?? []
+  const categories = useMemo(
+    () => Array.from(new Set(documents.map((document) => document.categoryName))).sort(),
+    [documents],
+  )
+  const linkedEncounterCount = documents.filter((document) => document.encounter).length
+  const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
+  const latestDocument = documents[0]
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Documents search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Documents patient ID"
+              placeholder="MOD-PAT-0001"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Patient documents'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {patientDocuments ? (
+          <>
+            <div className="list-counts">
+              <MetricRow label="Documents" value={patientDocuments.count} />
+              <MetricRow label="Categories" value={categories.length} />
+              <MetricRow label="Linked encounters" value={linkedEncounterCount} />
+              <MetricRow label="Pages" value={totalPages} />
+            </div>
+
+            <div className="access-scope-panel">
+              <div className="panel-heading">
+                <FolderOpen size={17} />
+                <h3>Document Scope</h3>
+              </div>
+              <Field label="Patient" value={patientDocuments.patientDisplayName} />
+              <Field label="Latest document" value={latestDocument?.docDate} />
+              <Field label="Storage" value="Synthetic database payloads" />
+              <div className="document-category-stack">
+                {categories.map((category) => (
+                  <span className="status-tag" key={category}>
+                    {category}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="empty-state">No patient documents loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Documents detail">
+        {patientDocuments ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Patient Documents</p>
+                <h2>{patientDocuments.patientDisplayName}</h2>
+                <p className="patient-line">
+                  {patientDocuments.pubpid} / PID {patientDocuments.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">{patientDocuments.count} documents</div>
+            </div>
+
+            <div className="documents-detail-grid">
+              <InfoPanel title="Document Summary" icon={FolderOpen}>
+                <MetricRow label="Documents" value={patientDocuments.count} />
+                <MetricRow label="Categories" value={categories.length} />
+                <MetricRow label="Linked encounters" value={linkedEncounterCount} />
+                <MetricRow label="Pages" value={totalPages} />
+              </InfoPanel>
+
+              <InfoPanel title="Latest Filing" icon={FileText}>
+                <Field label="Name" value={latestDocument?.name} />
+                <Field label="Category" value={latestDocument?.categoryName} />
+                <Field label="Document date" value={latestDocument?.docDate} />
+                <Field label="Uploaded" value={latestDocument?.uploadedAt} />
+              </InfoPanel>
+
+              <section className="info-panel documents-panel">
+                <div className="panel-heading">
+                  <FolderOpen size={17} />
+                  <h3>Filed Documents</h3>
+                </div>
+                <div className="document-list-body">
+                  {documents.map((document) => (
+                    <DocumentItem key={document.id} document={document} />
+                  ))}
+                  {documents.length === 0 && <div className="timeline-placeholder">No documents recorded</div>}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading patient documents</div>
+        ) : (
+          <div className="empty-chart">Enter a patient ID to load documents</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function ReportsWorkspace({
   reports,
   status,
@@ -3707,6 +3889,7 @@ function ReportsWorkspace({
                 <MetricRow label="New messages" value={reports.counts.newMessages} />
                 <MetricRow label="Done messages" value={reports.counts.doneMessages} />
                 <MetricRow label="Lab reports" value={reports.counts.labReports} />
+                <MetricRow label="Documents" value={reports.counts.patientDocuments} />
               </InfoPanel>
 
               <section className="info-panel report-list-panel">
@@ -4358,6 +4541,32 @@ function ConditionReportCard({ condition }: { condition: ClinicalConditionReport
         <span>{condition.diagnosis}</span>
       </div>
       <div className="portal-pill">{condition.patients} patients</div>
+    </article>
+  )
+}
+
+function DocumentItem({ document }: { document: PatientDocumentItem }) {
+  return (
+    <article className="document-card">
+      <div className="message-item-header">
+        <strong>{document.name}</strong>
+        <span className="status-tag">{document.categoryName}</span>
+      </div>
+      <div className="document-meta-grid">
+        <span>{document.docDate}</span>
+        <span>{document.mimetype || 'No mimetype'}</span>
+        <span>{formatBytes(document.sizeBytes)}</span>
+        <span>{document.pages ? `${document.pages} pages` : 'No page count'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{document.encounter ? `Encounter ${document.encounter}` : 'No linked encounter'}</span>
+        <span>{document.storageMethod || 'Storage not recorded'}</span>
+      </div>
+      <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
+      <div className="document-footnote">
+        <span>{document.documentKey}</span>
+        <span>{document.hash || document.url || 'No document reference'}</span>
+      </div>
     </article>
   )
 }
@@ -5300,6 +5509,18 @@ function numberOrNull(value: string) {
 
 function formatCurrency(value?: number | null) {
   return `$${(value ?? 0).toFixed(2)}`
+}
+
+function formatBytes(value?: number | null) {
+  if (!value) {
+    return 'No size'
+  }
+
+  if (value < 1024) {
+    return `${value} bytes`
+  }
+
+  return `${(value / 1024).toFixed(1)} KB`
 }
 
 export default App

@@ -21,6 +21,7 @@ public sealed record OperationalReportCounts(
     int BillingLines,
     decimal BillingTotal,
     int LabReports,
+    int PatientDocuments,
     int Messages,
     int NewMessages,
     int DoneMessages,

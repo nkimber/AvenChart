@@ -347,6 +347,41 @@ export type PatientMessagesResponse = {
   messages: PatientMessageItem[]
 }
 
+export type PatientDocumentItem = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  sizeBytes?: number | null
+  pages?: number | null
+  encounter?: number | null
+  storageMethod?: string | null
+  url?: string | null
+  hash?: string | null
+  documentationOf?: string | null
+  notes?: string | null
+  contentPreview?: string | null
+}
+
+export type PatientDocumentsResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  count: number
+  documents: PatientDocumentItem[]
+}
+
 export type PatientMessageCreateInput = {
   patientId: string
   title: string
@@ -690,6 +725,7 @@ export type OperationalReportCounts = {
   billingLines: number
   billingTotal: number
   labReports: number
+  patientDocuments: number
   messages: number
   newMessages: number
   doneMessages: number
@@ -1074,6 +1110,15 @@ export async function getPatientMessages(patientId: string, signal?: AbortSignal
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient messages load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientDocuments(patientId: string, signal?: AbortSignal): Promise<PatientDocumentsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(patientId.trim())}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Patient documents load failed with ${response.status}`)
   }
 
   return response.json()
