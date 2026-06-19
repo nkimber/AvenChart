@@ -72,6 +72,17 @@ patients.MapGet("/{canonicalId}", async (
     })
     .WithName("GetPatientChartSummary");
 
+patients.MapPut("/{patientId}/contact", async (
+        PatientRepository repository,
+        string patientId,
+        PatientContactUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateContactAsync(patientId, request, cancellationToken);
+        return patient is null ? Results.NotFound() : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientContact");
+
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 
 appointments.MapGet("/", async (

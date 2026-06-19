@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity,
   Building2,
   CalendarDays,
+  Check,
   ClipboardList,
   Clock,
   FileText,
@@ -10,11 +11,13 @@ import {
   HeartPulse,
   Mail,
   MapPin,
+  Pencil,
   Search,
   ShieldCheck,
   Stethoscope,
   UserRound,
   WalletCards,
+  X,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -30,6 +33,7 @@ import {
   searchAppointments,
   searchEncounters,
   searchPatients,
+  updatePatientContact,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationUserItem,
@@ -47,6 +51,7 @@ import {
   type PatientChartSummary,
   type PatientListItem,
   type PatientBillingResponse,
+  type PatientContactUpdate,
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
@@ -502,6 +507,43 @@ function App() {
   )
 
   const activePatient = chart ?? selectedFromList
+
+  async function handlePatientContactSave(patientId: string, contact: PatientContactUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const updated = await updatePatientContact(patientId, contact)
+      setChart(updated)
+      setChartStatus('ready')
+      setSearchResult((current) => {
+        if (!current) {
+          return current
+        }
+
+        return {
+          ...current,
+          patients: current.patients.map((patient) =>
+            patient.canonicalId === updated.canonicalId
+              ? {
+                  ...patient,
+                  phone: updated.phone,
+                  phoneHome: updated.phoneHome,
+                  phoneCell: updated.phoneCell,
+                  email: updated.email,
+                }
+              : patient,
+          ),
+        }
+      })
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient contact save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -578,6 +620,7 @@ function App() {
             error={patientError}
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
+            onSaveContact={handlePatientContactSave}
           />
         )}
         {activeModule === 'calendar' && (
@@ -732,6 +775,7 @@ function PatientWorkspace({
   error,
   onQueryChange,
   onSelectPatient,
+  onSaveContact,
 }: {
   query: string
   searchResult: PatientSearchResponse | null
@@ -743,7 +787,38 @@ function PatientWorkspace({
   error: string | null
   onQueryChange: (value: string) => void
   onSelectPatient: (canonicalId: string) => void
+  onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
 }) {
+  const [isEditingContact, setIsEditingContact] = useState(false)
+  const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
+  const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setContactDraft(buildContactDraft(chart ?? activePatient))
+    setIsEditingContact(false)
+    setContactSaveStatus('idle')
+  }, [activePatient, chart])
+
+  function updateDraft(field: keyof PatientContactUpdate, value: string) {
+    setContactDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setContactSaveStatus('saving')
+    try {
+      await onSaveContact(chart.canonicalId, contactDraft)
+      setIsEditingContact(false)
+      setContactSaveStatus('saved')
+    } catch {
+      setContactSaveStatus('error')
+    }
+  }
+
   return (
     <section className="split-layout">
       <section className="finder-panel" aria-label="Patient search">
@@ -804,10 +879,97 @@ function PatientWorkspace({
               </InfoPanel>
 
               <InfoPanel title="Contact" icon={Mail}>
-                <Field label="Phone" value={activePatient.phone} />
-                <Field label="Email" value={activePatient.email} />
-                <Field label="Address" value={formatAddress(chart)} />
-                <Field label="Facility" value={activePatient.facilityName} />
+                {isEditingContact && chart ? (
+                  <form className="contact-form" onSubmit={handleContactSubmit}>
+                    <label className="contact-field">
+                      <span>Home phone</span>
+                      <input
+                        value={contactDraft.phoneHome}
+                        onChange={(event) => updateDraft('phoneHome', event.target.value)}
+                        aria-label="Home phone"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Cell phone</span>
+                      <input
+                        value={contactDraft.phoneCell}
+                        onChange={(event) => updateDraft('phoneCell', event.target.value)}
+                        aria-label="Cell phone"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Email</span>
+                      <input
+                        value={contactDraft.email}
+                        onChange={(event) => updateDraft('email', event.target.value)}
+                        aria-label="Email"
+                      />
+                    </label>
+                    <div className="contact-toggle-row">
+                      <label className="contact-toggle">
+                        <input
+                          type="checkbox"
+                          checked={contactDraft.hipaaAllowSms === 'YES'}
+                          onChange={(event) => updateDraft('hipaaAllowSms', event.target.checked ? 'YES' : 'NO')}
+                        />
+                        <span>SMS allowed</span>
+                      </label>
+                      <label className="contact-toggle">
+                        <input
+                          type="checkbox"
+                          checked={contactDraft.hipaaAllowEmail === 'YES'}
+                          onChange={(event) => updateDraft('hipaaAllowEmail', event.target.checked ? 'YES' : 'NO')}
+                        />
+                        <span>Email allowed</span>
+                      </label>
+                    </div>
+                    <div className="contact-actions">
+                      <button className="icon-text-button primary" type="submit" disabled={contactSaveStatus === 'saving'}>
+                        <Check size={15} />
+                        <span>{contactSaveStatus === 'saving' ? 'Saving' : 'Save'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setContactDraft(buildContactDraft(chart))
+                          setIsEditingContact(false)
+                          setContactSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Home phone" value={chart?.phoneHome ?? activePatient.phone} />
+                    <Field label="Cell phone" value={chart?.phoneCell ?? activePatient.phoneCell} />
+                    <Field label="Email" value={activePatient.email} />
+                    <Field label="Address" value={formatAddress(chart)} />
+                    <Field label="Facility" value={activePatient.facilityName} />
+                    <Field label="SMS permission" value={chart?.hipaaAllowSms} />
+                    <Field label="Email permission" value={chart?.hipaaAllowEmail} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setContactDraft(buildContactDraft(chart ?? activePatient))
+                          setIsEditingContact(true)
+                          setContactSaveStatus('idle')
+                        }}
+                        disabled={!chart}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit contact</span>
+                      </button>
+                      {contactSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {contactSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
               </InfoPanel>
 
               <InfoPanel title="Clinical Activity" icon={HeartPulse}>
@@ -2264,6 +2426,31 @@ function TimelinePanel({
       )}
     </InfoPanel>
   )
+}
+
+function buildContactDraft(patient: PatientListItem | PatientChartSummary | null): PatientContactUpdate {
+  return {
+    phoneHome: patient?.phoneHome ?? patient?.phone ?? '',
+    phoneCell: patient?.phoneCell ?? patient?.phone ?? '',
+    email: patient?.email ?? '',
+    hipaaAllowSms: readContactPermission(patient, 'hipaaAllowSms'),
+    hipaaAllowEmail: readContactPermission(patient, 'hipaaAllowEmail'),
+  }
+}
+
+function readContactPermission(
+  patient: PatientListItem | PatientChartSummary | null,
+  field: 'hipaaAllowSms' | 'hipaaAllowEmail',
+) {
+  if (!hasContactPermissions(patient)) {
+    return 'YES'
+  }
+
+  return patient[field] || 'YES'
+}
+
+function hasContactPermissions(patient: PatientListItem | PatientChartSummary | null): patient is PatientChartSummary {
+  return Boolean(patient && 'hipaaAllowSms' in patient && 'hipaaAllowEmail' in patient)
 }
 
 function formatAddress(chart: PatientChartSummary | null) {

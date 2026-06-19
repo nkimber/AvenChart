@@ -24,6 +24,8 @@ public sealed record PatientListItem(
     string? Cohort,
     string? Purpose,
     string? Phone,
+    string? PhoneHome,
+    string? PhoneCell,
     string? Email,
     string? FacilityName,
     string? PrimaryProviderName,
@@ -48,6 +50,10 @@ public sealed record PatientChartSummary(
     string? PostalCode,
     string? Email,
     string? Phone,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? HipaaAllowSms,
+    string? HipaaAllowEmail,
     string? MaritalStatus,
     string? Occupation,
     bool PortalEnabled,
@@ -77,3 +83,10 @@ public sealed record PatientTimelineItem(
     string? Status,
     string? ProviderName,
     string? FacilityName);
+
+public sealed record PatientContactUpdateRequest(
+    string? PhoneHome,
+    string? PhoneCell,
+    string? Email,
+    string? HipaaAllowSms,
+    string? HipaaAllowEmail);

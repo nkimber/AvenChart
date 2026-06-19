@@ -32,6 +32,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.cohort,
                 p.purpose,
                 p.phone,
+                p.phone_home,
+                p.phone_cell,
                 p.email,
                 f.name as facility_name,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
@@ -73,6 +75,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 Cohort: ReadNullableString(reader, "cohort"),
                 Purpose: ReadNullableString(reader, "purpose"),
                 Phone: ReadNullableString(reader, "phone"),
+                PhoneHome: ReadNullableString(reader, "phone_home"),
+                PhoneCell: ReadNullableString(reader, "phone_cell"),
                 Email: ReadNullableString(reader, "email"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
@@ -112,6 +116,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.postal_code,
                 p.email,
                 p.phone,
+                p.phone_home,
+                p.phone_cell,
+                p.hipaa_allow_sms,
+                p.hipaa_allow_email,
                 p.marital_status,
                 p.occupation,
                 p.portal_enabled,
@@ -208,6 +216,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             PostalCode: ReadNullableString(reader, "postal_code"),
             Email: ReadNullableString(reader, "email"),
             Phone: ReadNullableString(reader, "phone"),
+            PhoneHome: ReadNullableString(reader, "phone_home"),
+            PhoneCell: ReadNullableString(reader, "phone_cell"),
+            HipaaAllowSms: ReadNullableString(reader, "hipaa_allow_sms"),
+            HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
             MaritalStatus: ReadNullableString(reader, "marital_status"),
             Occupation: ReadNullableString(reader, "occupation"),
             PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
@@ -217,6 +229,38 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Counts: ReadCounts(reader),
             NextAppointment: ReadAppointment(reader),
             LatestEncounter: ReadEncounter(reader));
+    }
+
+    public async Task<PatientChartSummary?> UpdateContactAsync(
+        string patientId,
+        PatientContactUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set
+                phone = @phoneHome,
+                phone_home = @phoneHome,
+                phone_cell = @phoneCell,
+                email = @email,
+                hipaa_allow_sms = @hipaaAllowSms,
+                hipaa_allow_email = @hipaaAllowEmail
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = NormalizeNullable(request.PhoneHome);
+        command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = NormalizeNullable(request.PhoneCell);
+        command.Parameters.Add("email", NpgsqlDbType.Text).Value = NormalizeNullable(request.Email);
+        command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = NormalizePermission(request.HipaaAllowSms);
+        command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = NormalizePermission(request.HipaaAllowEmail);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -259,6 +303,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
          or lower(p.last_name) like @search
          or lower(concat(p.first_name, ' ', p.last_name)) like @search
          or lower(coalesce(p.phone, '')) like @search
+         or lower(coalesce(p.phone_home, '')) like @search
+         or lower(coalesce(p.phone_cell, '')) like @search
          or lower(coalesce(p.email, '')) like @search)
         """;
 
@@ -284,6 +330,18 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = search?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed.ToLowerInvariant();
+    }
+
+    private static object NormalizeNullable(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed;
+    }
+
+    private static object NormalizePermission(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed.ToUpperInvariant();
     }
 
     private static PatientActivityCounts ReadCounts(DbDataReader reader) => new(

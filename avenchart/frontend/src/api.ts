@@ -24,6 +24,8 @@ export type PatientListItem = {
   cohort?: string | null
   purpose?: string | null
   phone?: string | null
+  phoneHome?: string | null
+  phoneCell?: string | null
   email?: string | null
   facilityName?: string | null
   primaryProviderName?: string | null
@@ -45,6 +47,8 @@ export type PatientChartSummary = PatientListItem & {
   city?: string | null
   state?: string | null
   postalCode?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
   maritalStatus?: string | null
   occupation?: string | null
   portalEnabled: boolean
@@ -60,6 +64,14 @@ export type PatientSearchResponse = {
   limit: number
   totalMatches: number
   patients: PatientListItem[]
+}
+
+export type PatientContactUpdate = {
+  phoneHome: string
+  phoneCell: string
+  email: string
+  hipaaAllowSms: string
+  hipaaAllowEmail: string
 }
 
 export type AppointmentListItem = {
@@ -425,6 +437,24 @@ export async function getPatientChart(canonicalId: string, signal?: AbortSignal)
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(canonicalId)}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient chart load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientContact(
+  patientId: string,
+  contact: PatientContactUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/contact`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(contact),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient contact update failed with ${response.status}`)
   }
 
   return response.json()
