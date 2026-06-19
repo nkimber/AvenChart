@@ -2661,10 +2661,18 @@ function EncounterWorkspace({
   const [createProviderId, setCreateProviderId] = useState('')
   const [createFacilityId, setCreateFacilityId] = useState('10')
   const [createBillingFacilityId, setCreateBillingFacilityId] = useState('10')
+  const [createSensitivity, setCreateSensitivity] = useState('normal')
+  const [createReferralSource, setCreateReferralSource] = useState('self')
+  const [createExternalId, setCreateExternalId] = useState('')
+  const [createPosCode, setCreatePosCode] = useState('11')
   const [createBillingNote, setCreateBillingNote] = useState('Created from modernized encounter workspace.')
   const [createStatus, setCreateStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [summaryReason, setSummaryReason] = useState('')
+  const [summarySensitivity, setSummarySensitivity] = useState('')
+  const [summaryReferralSource, setSummaryReferralSource] = useState('')
+  const [summaryExternalId, setSummaryExternalId] = useState('')
+  const [summaryPosCode, setSummaryPosCode] = useState('')
   const [summaryBillingNote, setSummaryBillingNote] = useState('')
   const [summaryStatus, setSummaryStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -2692,11 +2700,19 @@ function EncounterWorkspace({
   useEffect(() => {
     if (!encounterDetail) {
       setSummaryReason('')
+      setSummarySensitivity('')
+      setSummaryReferralSource('')
+      setSummaryExternalId('')
+      setSummaryPosCode('')
       setSummaryBillingNote('')
       return
     }
 
     setSummaryReason(encounterDetail.reason ?? '')
+    setSummarySensitivity(encounterDetail.sensitivity ?? '')
+    setSummaryReferralSource(encounterDetail.referralSource ?? '')
+    setSummaryExternalId(encounterDetail.externalId ?? '')
+    setSummaryPosCode(encounterDetail.posCode?.toString() ?? '')
     setSummaryBillingNote(encounterDetail.billingNote ?? '')
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
@@ -2714,6 +2730,10 @@ function EncounterWorkspace({
         reason: createReason,
         facilityId: numberOrNull(createFacilityId),
         billingFacilityId: numberOrNull(createBillingFacilityId),
+        sensitivity: createSensitivity,
+        referralSource: createReferralSource,
+        externalId: createExternalId,
+        posCode: numberOrNull(createPosCode),
         billingNote: createBillingNote,
       })
       setCreateStatus('saved')
@@ -2732,6 +2752,10 @@ function EncounterWorkspace({
     try {
       await onUpdateEncounter(encounterDetail, {
         reason: summaryReason,
+        sensitivity: summarySensitivity,
+        referralSource: summaryReferralSource,
+        externalId: summaryExternalId,
+        posCode: numberOrNull(summaryPosCode),
         billingNote: summaryBillingNote,
       })
       setSummaryStatus('saved')
@@ -2905,6 +2929,47 @@ function EncounterWorkspace({
                 inputMode="numeric"
               />
             </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Sensitivity</span>
+                <select
+                  value={createSensitivity}
+                  onChange={(event) => setCreateSensitivity(event.target.value)}
+                  aria-label="New encounter sensitivity"
+                >
+                  <option value="">None</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Referral Source</span>
+                <input
+                  value={createReferralSource}
+                  onChange={(event) => setCreateReferralSource(event.target.value)}
+                  aria-label="New encounter referral source"
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>External ID</span>
+                <input
+                  value={createExternalId}
+                  onChange={(event) => setCreateExternalId(event.target.value)}
+                  aria-label="New encounter external ID"
+                />
+              </label>
+              <label className="filter-field">
+                <span>POS Code</span>
+                <input
+                  value={createPosCode}
+                  onChange={(event) => setCreatePosCode(event.target.value)}
+                  aria-label="New encounter place of service"
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
             <label className="filter-field">
               <span>Billing Note</span>
               <input
@@ -2945,6 +3010,10 @@ function EncounterWorkspace({
                 <Field label="Encounter" value={encounterDetail.encounter} />
                 <Field label="Provider" value={encounterDetail.providerName} />
                 <Field label="Facility" value={encounterDetail.facilityName} />
+                <Field label="Sensitivity" value={formatEncounterSensitivity(encounterDetail.sensitivity)} />
+                <Field label="Referral source" value={encounterDetail.referralSource} />
+                <Field label="External ID" value={encounterDetail.externalId} />
+                <Field label="POS code" value={encounterDetail.posCode} />
                 <Field label="Billing note" value={encounterDetail.billingNote} />
               </InfoPanel>
 
@@ -2999,6 +3068,47 @@ function EncounterWorkspace({
                     aria-label="Encounter billing note"
                   />
                 </label>
+                <div className="mutation-grid two-column">
+                  <label className="filter-field">
+                    <span>Sensitivity</span>
+                    <select
+                      value={summarySensitivity}
+                      onChange={(event) => setSummarySensitivity(event.target.value)}
+                      aria-label="Encounter sensitivity"
+                    >
+                      <option value="">None</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+                  <label className="filter-field">
+                    <span>Referral Source</span>
+                    <input
+                      value={summaryReferralSource}
+                      onChange={(event) => setSummaryReferralSource(event.target.value)}
+                      aria-label="Encounter referral source"
+                    />
+                  </label>
+                </div>
+                <div className="mutation-grid two-column">
+                  <label className="filter-field">
+                    <span>External ID</span>
+                    <input
+                      value={summaryExternalId}
+                      onChange={(event) => setSummaryExternalId(event.target.value)}
+                      aria-label="Encounter external ID"
+                    />
+                  </label>
+                  <label className="filter-field">
+                    <span>POS Code</span>
+                    <input
+                      value={summaryPosCode}
+                      onChange={(event) => setSummaryPosCode(event.target.value)}
+                      aria-label="Encounter place of service"
+                      inputMode="numeric"
+                    />
+                  </label>
+                </div>
               </div>
               <div className="detail-actions">
                 <button className="icon-text-button primary" type="submit" disabled={summaryStatus === 'saving'}>
@@ -6692,6 +6802,23 @@ function Field({ label, value }: { label: string; value?: string | number | null
 
 function formatPercent(value?: number | null) {
   return value === null || value === undefined ? null : `${value}%`
+}
+
+function formatEncounterSensitivity(value?: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.toLowerCase()
+  if (normalized === 'normal') {
+    return 'Normal'
+  }
+
+  if (normalized === 'high') {
+    return 'High'
+  }
+
+  return value
 }
 
 function formatCoverageType(value?: string | null) {

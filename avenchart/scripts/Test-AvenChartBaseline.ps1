@@ -338,6 +338,69 @@ finally {
     }
 }
 
+$encounterMetadataMutationId = $null
+try {
+    $metadataSuffix = Get-Random -Minimum 10000 -Maximum 99999
+    $createMetadataBody = @{
+        patientId = "MOD-PAT-0002"
+        providerId = $null
+        dateTime = "2026-06-18 11:00:00"
+        reason = "Smoke Encounter Metadata $metadataSuffix"
+        facilityId = $null
+        billingFacilityId = $null
+        sensitivity = "normal"
+        referralSource = "self"
+        externalId = "EXT-$metadataSuffix"
+        posCode = 11
+        billingNote = "Created by the smoke encounter metadata check."
+    } | ConvertTo-Json
+    $createdMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createMetadataBody -TimeoutSec 20
+    $encounterMetadataMutationId = $createdMetadataEncounter.encounter
+
+    $updateMetadataBody = @{
+        reason = "Smoke Encounter Metadata $metadataSuffix Updated"
+        sensitivity = "high"
+        referralSource = "physician"
+        externalId = "UPD-$metadataSuffix"
+        posCode = 22
+        billingNote = "Updated by the smoke encounter metadata check."
+    } | ConvertTo-Json
+    $updatedMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Put -ContentType "application/json" -Body $updateMetadataBody -TimeoutSec 20
+    $encounterMetadataPassed = $createdMetadataEncounter.sensitivity -eq "normal" `
+        -and $createdMetadataEncounter.referralSource -eq "self" `
+        -and $createdMetadataEncounter.externalId -eq "EXT-$metadataSuffix" `
+        -and $createdMetadataEncounter.posCode -eq 11 `
+        -and $updatedMetadataEncounter.sensitivity -eq "high" `
+        -and $updatedMetadataEncounter.referralSource -eq "physician" `
+        -and $updatedMetadataEncounter.externalId -eq "UPD-$metadataSuffix" `
+        -and $updatedMetadataEncounter.posCode -eq 22 `
+        -and $updatedMetadataEncounter.billingNote -eq "Updated by the smoke encounter metadata check."
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $encounterMetadataMutationId = $null
+
+    Add-Check -Name "encounter metadata mutation lifecycle" -Result $(if ($encounterMetadataPassed) { "passed" } else { "failed" }) -Details @{
+        createdEncounter = $createdMetadataEncounter.encounter
+        createdSensitivity = $createdMetadataEncounter.sensitivity
+        updatedSensitivity = $updatedMetadataEncounter.sensitivity
+        updatedReferralSource = $updatedMetadataEncounter.referralSource
+        updatedExternalId = $updatedMetadataEncounter.externalId
+        updatedPosCode = $updatedMetadataEncounter.posCode
+    }
+}
+catch {
+    Add-Check -Name "encounter metadata mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $encounterMetadataMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -TimeoutSec 20
     $problem = $clinicalLists.problems | Where-Object { $_.title -like "*diabetes*" } | Select-Object -First 1

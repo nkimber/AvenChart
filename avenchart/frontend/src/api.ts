@@ -160,6 +160,10 @@ export type EncounterListItem = {
   categoryId?: number | null
   providerName?: string | null
   facilityName?: string | null
+  sensitivity?: string | null
+  referralSource?: string | null
+  externalId?: string | null
+  posCode?: number | null
   hasVitals: boolean
   hasSoapNote: boolean
   billingLineCount: number
@@ -203,11 +207,19 @@ export type EncounterCreateInput = {
   reason: string
   facilityId?: number | null
   billingFacilityId?: number | null
+  sensitivity?: string | null
+  referralSource?: string | null
+  externalId?: string | null
+  posCode?: number | null
   billingNote?: string | null
 }
 
 export type EncounterUpdateInput = {
   reason: string
+  sensitivity?: string | null
+  referralSource?: string | null
+  externalId?: string | null
+  posCode?: number | null
   billingNote?: string | null
 }
 

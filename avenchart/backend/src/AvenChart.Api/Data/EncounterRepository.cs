@@ -39,6 +39,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 e.diagnosis_code,
                 e.diagnosis_text,
                 e.category_id,
+                e.sensitivity,
+                e.referral_source,
+                e.external_id,
+                e.pos_code,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
                 exists (select 1 from vitals v where v.pid = e.pid and v.encounter = e.encounter) as has_vitals,
@@ -94,6 +98,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 e.diagnosis_code,
                 e.diagnosis_text,
                 e.category_id,
+                e.sensitivity,
+                e.referral_source,
+                e.external_id,
+                e.pos_code,
                 e.billing_note,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
@@ -158,6 +166,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             CategoryId: ReadNullableInt(reader, "category_id"),
             ProviderName: ReadNullableString(reader, "provider_name"),
             FacilityName: ReadNullableString(reader, "facility_name"),
+            Sensitivity: ReadNullableString(reader, "sensitivity"),
+            ReferralSource: ReadNullableString(reader, "referral_source"),
+            ExternalId: ReadNullableString(reader, "external_id"),
+            PosCode: ReadNullableInt(reader, "pos_code"),
             BillingNote: ReadNullableString(reader, "billing_note"),
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
@@ -202,6 +214,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 diagnosis_code,
                 diagnosis_text,
                 category_id,
+                sensitivity,
+                referral_source,
+                external_id,
+                pos_code,
                 billing_note
             )
             select
@@ -231,6 +247,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 null,
                 null,
                 9,
+                @sensitivity,
+                @referralSource,
+                @externalId,
+                @posCode,
                 @billingNote
             from selected_patient
             cross join next_id
@@ -243,6 +263,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("encounterDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(encounterDateTime);
         command.Parameters.Add("encounterDateTime", NpgsqlDbType.Timestamp).Value = encounterDateTime;
         command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason;
+        AddNullableText(command, "sensitivity", NormalizeText(request.Sensitivity));
+        AddNullableText(command, "referralSource", NormalizeText(request.ReferralSource));
+        AddNullableText(command, "externalId", NormalizeText(request.ExternalId));
+        AddNullableInt(command, "posCode", request.PosCode);
         AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
 
         var encounter = await command.ExecuteScalarAsync(cancellationToken);
@@ -267,12 +291,20 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             update encounters
             set reason = @reason,
+                sensitivity = @sensitivity,
+                referral_source = @referralSource,
+                external_id = @externalId,
+                pos_code = @posCode,
                 billing_note = @billingNote
             where encounter = @encounter
             returning encounter;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
         command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason;
+        AddNullableText(command, "sensitivity", NormalizeText(request.Sensitivity));
+        AddNullableText(command, "referralSource", NormalizeText(request.ReferralSource));
+        AddNullableText(command, "externalId", NormalizeText(request.ExternalId));
+        AddNullableInt(command, "posCode", request.PosCode);
         AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
 
         var updated = await command.ExecuteScalarAsync(cancellationToken);
@@ -551,6 +583,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         CategoryId: ReadNullableInt(reader, "category_id"),
         ProviderName: ReadNullableString(reader, "provider_name"),
         FacilityName: ReadNullableString(reader, "facility_name"),
+        Sensitivity: ReadNullableString(reader, "sensitivity"),
+        ReferralSource: ReadNullableString(reader, "referral_source"),
+        ExternalId: ReadNullableString(reader, "external_id"),
+        PosCode: ReadNullableInt(reader, "pos_code"),
         HasVitals: reader.GetBoolean(reader.GetOrdinal("has_vitals")),
         HasSoapNote: reader.GetBoolean(reader.GetOrdinal("has_soap_note")),
         BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")));

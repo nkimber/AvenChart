@@ -23,6 +23,10 @@ public sealed record EncounterListItem(
     int? CategoryId,
     string? ProviderName,
     string? FacilityName,
+    string? Sensitivity,
+    string? ReferralSource,
+    string? ExternalId,
+    int? PosCode,
     bool HasVitals,
     bool HasSoapNote,
     int BillingLineCount);
@@ -46,6 +50,10 @@ public sealed record EncounterDetail(
     int? CategoryId,
     string? ProviderName,
     string? FacilityName,
+    string? Sensitivity,
+    string? ReferralSource,
+    string? ExternalId,
+    int? PosCode,
     string? BillingNote,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
@@ -76,10 +84,18 @@ public sealed record EncounterCreateRequest(
     string Reason,
     int? FacilityId,
     int? BillingFacilityId,
+    string? Sensitivity,
+    string? ReferralSource,
+    string? ExternalId,
+    int? PosCode,
     string? BillingNote);
 
 public sealed record EncounterUpdateRequest(
     string Reason,
+    string? Sensitivity,
+    string? ReferralSource,
+    string? ExternalId,
+    int? PosCode,
     string? BillingNote);
 
 public sealed record EncounterVitalsCreateRequest(

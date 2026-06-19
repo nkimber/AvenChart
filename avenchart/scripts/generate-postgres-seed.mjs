@@ -374,6 +374,10 @@ create table encounters (
   diagnosis_code text,
   diagnosis_text text,
   category_id integer,
+  sensitivity text,
+  referral_source text,
+  external_id text,
+  pos_code integer,
   billing_note text
 );
 
@@ -770,6 +774,10 @@ copyRows('encounters', [
   'diagnosis_code',
   'diagnosis_text',
   'category_id',
+  'sensitivity',
+  'referral_source',
+  'external_id',
+  'pos_code',
   'billing_note',
 ], dataset.encounters.map((encounter) => [
   encounter.id,
@@ -785,6 +793,10 @@ copyRows('encounters', [
   encounter.diagnosisCode,
   encounter.diagnosisText,
   encounter.categoryId,
+  encounter.sensitivity,
+  encounter.referralSource,
+  encounter.externalId,
+  encounter.posCode,
   encounter.billingNote,
 ]))
 
