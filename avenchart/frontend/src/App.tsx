@@ -125,6 +125,7 @@ import {
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingClaimItem,
+  type BillingLedgerEntry,
   type BillingPaymentItem,
   type BillingLineCreateInput,
   type BillingLineItem,
@@ -4554,6 +4555,8 @@ function FeesWorkspace({
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
   const accountSummary = patientBilling?.accountSummary
   const agingSummary = patientBilling?.agingSummary
+  const ledgerSummary = patientBilling?.ledgerSummary
+  const ledgerEntries = patientBilling?.ledgerEntries ?? []
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -4666,6 +4669,7 @@ function FeesWorkspace({
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
             <MetricRow label="Balance" value={Math.round(accountSummary?.balanceAmount ?? totalFee)} />
             <MetricRow label="Aging total" value={Math.round(agingSummary?.totalBalanceAmount ?? 0)} />
+            <MetricRow label="Ledger entries" value={ledgerEntries.length} />
           </div>
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
@@ -4944,6 +4948,28 @@ function FeesWorkspace({
                 <Field label="Over 90" value={formatCurrency(agingSummary?.over90Amount ?? 0)} />
                 <Field label="Total balance" value={formatCurrency(agingSummary?.totalBalanceAmount ?? 0)} />
               </InfoPanel>
+
+              <section className="info-panel billing-ledger-panel">
+                <div className="panel-heading">
+                  <ClipboardList size={17} />
+                  <h3>Account Ledger</h3>
+                </div>
+                <div className="ledger-summary-grid">
+                  <Field label="Entries" value={ledgerSummary?.entryCount ?? ledgerEntries.length} />
+                  <Field label="First entry" value={ledgerSummary?.firstEntryDate} />
+                  <Field label="Last entry" value={ledgerSummary?.lastEntryDate} />
+                  <Field label="Charges" value={formatCurrency(ledgerSummary?.chargeAmount ?? 0)} />
+                  <Field label="Paid" value={formatCurrency(ledgerSummary?.paymentAmount ?? 0)} />
+                  <Field label="Adjusted" value={formatCurrency(ledgerSummary?.adjustmentAmount ?? 0)} />
+                  <Field label="Ending balance" value={formatCurrency(ledgerSummary?.endingBalanceAmount ?? 0)} />
+                </div>
+                <div className="billing-ledger-list">
+                  {ledgerEntries.map((entry) => (
+                    <BillingLedgerEntryCard key={entry.entryId} entry={entry} />
+                  ))}
+                  {ledgerEntries.length === 0 && <div className="timeline-placeholder">No account ledger entries</div>}
+                </div>
+              </section>
 
               <section className="info-panel billing-lines-panel">
                 <div className="panel-heading">
@@ -7517,6 +7543,32 @@ function BillingPaymentCard({ payment }: { payment: BillingPaymentItem }) {
         <span>{payment.accountCode ? `Account ${payment.accountCode}` : 'No account code'}</span>
         <span>{payment.reasonCode ? `Reason ${payment.reasonCode}` : 'No reason code'}</span>
         <span>{payment.payerClaimNumber ? `Claim ${payment.payerClaimNumber}` : 'No payer claim number'}</span>
+      </div>
+    </article>
+  )
+}
+
+function BillingLedgerEntryCard({ entry }: { entry: BillingLedgerEntry }) {
+  const amountClassName = entry.amount < 0 ? 'ledger-amount credit' : 'ledger-amount charge'
+
+  return (
+    <article className="billing-ledger-entry">
+      <div className="ledger-entry-main">
+        <div>
+          <strong>{entry.description}</strong>
+          <span>
+            {entry.entryDate} / Encounter {entry.encounter}
+          </span>
+        </div>
+        <div className="document-card-tags">
+          <span className="status-tag">{entry.entryType}</span>
+          <span className={amountClassName}>{formatCurrency(entry.amount)}</span>
+        </div>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{entry.code ? `Code ${entry.code}` : 'No code'}</span>
+        <span>{entry.reference ? `Reference ${entry.reference}` : 'No reference'}</span>
+        <span>Running {formatCurrency(entry.runningBalanceAmount)}</span>
       </div>
     </article>
   )

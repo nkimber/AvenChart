@@ -960,11 +960,13 @@
 }
 
 .procedure-orders-panel,
+.billing-ledger-panel,
 .billing-lines-panel,
 .procedure-results-panel {
   min-width: 0;
 }
 
+.billing-ledger-panel,
 .billing-lines-panel {
   grid-column: 1 / -1;
 }
@@ -974,12 +976,74 @@
 }
 
 .billing-encounter-list,
+.billing-ledger-list,
 .procedure-order-list,
 .procedure-result-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px;
+}
+
+.ledger-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #e0e8ec;
+}
+
+.billing-ledger-entry {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #ffffff;
+  min-width: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ledger-entry-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ledger-entry-main > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ledger-entry-main strong {
+  color: #172b3a;
+  overflow-wrap: anywhere;
+}
+
+.ledger-entry-main span {
+  color: #5f7280;
+  font-size: 12px;
+}
+
+.ledger-amount {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ledger-amount.charge {
+  background: #eaf6ef;
+  color: #16633b;
+}
+
+.ledger-amount.credit {
+  background: #eef4fb;
+  color: #1d566b;
 }
 
 .billing-encounter-card,
@@ -1319,6 +1383,7 @@
   .documents-detail-grid,
   .billing-detail-grid,
   .billing-line-list,
+  .ledger-summary-grid,
   .procedure-detail-grid,
   .reports-detail-grid,
   .condition-report-grid,
@@ -1340,6 +1405,7 @@
     flex-direction: column;
   }
 
+  .ledger-entry-main,
   .procedure-order-meta,
   .procedure-report-title,
   .procedure-result-card > div,

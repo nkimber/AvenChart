@@ -65,6 +65,15 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Days61To90Amount: SumBalanceForBucket(encounterSummaries, "61-90"),
             Over90Amount: SumBalanceForBucket(encounterSummaries, "Over 90"),
             TotalBalanceAmount: accountSummary.BalanceAmount);
+        var ledgerEntries = BuildLedgerEntries(encounterSummaries, metadata.BaseDate);
+        var ledgerSummary = new BillingLedgerSummary(
+            EntryCount: ledgerEntries.Count,
+            FirstEntryDate: ledgerEntries.FirstOrDefault()?.EntryDate,
+            LastEntryDate: ledgerEntries.LastOrDefault()?.EntryDate,
+            ChargeAmount: ledgerEntries.Where(entry => entry.EntryType == "Charge").Sum(entry => entry.Amount),
+            PaymentAmount: -ledgerEntries.Where(entry => entry.EntryType == "Payment").Sum(entry => entry.Amount),
+            AdjustmentAmount: -ledgerEntries.Where(entry => entry.EntryType == "Adjustment").Sum(entry => entry.Amount),
+            EndingBalanceAmount: ledgerEntries.LastOrDefault()?.RunningBalanceAmount ?? 0m);
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -77,6 +86,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             LastName: patient.LastName,
             AccountSummary: accountSummary,
             AgingSummary: agingSummary,
+            LedgerSummary: ledgerSummary,
+            LedgerEntries: ledgerEntries,
             Encounters: encounterSummaries);
     }
 
@@ -610,6 +621,100 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             .Sum(encounter => encounter.BalanceAmount);
     }
 
+    private static IReadOnlyList<BillingLedgerEntry> BuildLedgerEntries(
+        IReadOnlyList<BillingEncounterItem> encounters,
+        DateOnly fallbackDate)
+    {
+        var draftEntries = new List<BillingLedgerDraft>();
+
+        foreach (var encounter in encounters)
+        {
+            foreach (var line in encounter.Lines)
+            {
+                var fee = line.Fee ?? 0m;
+                if (fee == 0m)
+                {
+                    continue;
+                }
+
+                var code = NormalizeText(line.Code);
+                var description = NormalizeText(line.CodeText)
+                    ?? NormalizeText($"{line.CodeType} {line.Code}")
+                    ?? "Billing charge";
+                draftEntries.Add(new BillingLedgerDraft(
+                    EntryId: $"charge-{line.Id}",
+                    EntryDate: ReadDateOnly(line.BillingDate, fallbackDate),
+                    Encounter: line.Encounter,
+                    EntryType: "Charge",
+                    Description: description,
+                    Code: code,
+                    Reference: line.Id,
+                    Amount: fee,
+                    SortPriority: 0));
+            }
+
+            foreach (var payment in encounter.Payments)
+            {
+                var paymentDate = ReadDateOnly(payment.PostDate ?? payment.PostTime[..10], fallbackDate);
+                var code = NormalizeText(payment.Code);
+                var reference = NormalizeText(payment.Reference) ?? $"Session {payment.SessionId}";
+
+                if (payment.PayAmount != 0m)
+                {
+                    draftEntries.Add(new BillingLedgerDraft(
+                        EntryId: $"payment-{payment.Encounter}-{payment.SequenceNo}",
+                        EntryDate: paymentDate,
+                        Encounter: payment.Encounter,
+                        EntryType: "Payment",
+                        Description: NormalizeText(payment.Memo) ?? "Payment posting",
+                        Code: code,
+                        Reference: reference,
+                        Amount: -payment.PayAmount,
+                        SortPriority: 1));
+                }
+
+                if (payment.AdjustmentAmount != 0m)
+                {
+                    draftEntries.Add(new BillingLedgerDraft(
+                        EntryId: $"adjustment-{payment.Encounter}-{payment.SequenceNo}",
+                        EntryDate: paymentDate,
+                        Encounter: payment.Encounter,
+                        EntryType: "Adjustment",
+                        Description: NormalizeText(payment.Memo) ?? "Adjustment",
+                        Code: code,
+                        Reference: reference,
+                        Amount: -payment.AdjustmentAmount,
+                        SortPriority: 2));
+                }
+            }
+        }
+
+        var runningBalance = 0m;
+        return draftEntries
+            .OrderBy(entry => entry.EntryDate)
+            .ThenBy(entry => entry.Encounter)
+            .ThenBy(entry => entry.SortPriority)
+            .ThenBy(entry => entry.Code)
+            .ThenBy(entry => entry.Description)
+            .ThenBy(entry => entry.Reference)
+            .ThenBy(entry => entry.EntryId)
+            .Select(entry =>
+            {
+                runningBalance += entry.Amount;
+                return new BillingLedgerEntry(
+                    EntryId: entry.EntryId,
+                    EntryDate: entry.EntryDate.ToString("yyyy-MM-dd"),
+                    Encounter: entry.Encounter,
+                    EntryType: entry.EntryType,
+                    Description: entry.Description,
+                    Code: entry.Code,
+                    Reference: entry.Reference,
+                    Amount: entry.Amount,
+                    RunningBalanceAmount: runningBalance);
+            })
+            .ToList();
+    }
+
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -652,4 +757,15 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private sealed record BillingEncounterMutationContext(
         int Encounter,
         int ProviderId);
+
+    private sealed record BillingLedgerDraft(
+        string EntryId,
+        DateOnly EntryDate,
+        int Encounter,
+        string EntryType,
+        string Description,
+        string? Code,
+        string? Reference,
+        decimal Amount,
+        int SortPriority);
 }

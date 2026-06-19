@@ -1654,6 +1654,45 @@ catch {
     Add-Check -Name "anchor account aging summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $ledgerBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $ledgerSummary = $ledgerBilling.ledgerSummary
+    $ledgerEntries = @($ledgerBilling.ledgerEntries)
+    $firstLedgerEntry = $ledgerEntries | Select-Object -First 1
+    $lastLedgerEntry = $ledgerEntries | Select-Object -Last 1
+    $anchorLedgerPayment = $ledgerEntries | Where-Object { $_.entryType -eq "Payment" -and $_.reference -eq "EOB-NSTAR-1000052" -and [decimal]$_.amount -eq -126 } | Select-Object -First 1
+    $anchorLedgerAdjustment = $ledgerEntries | Where-Object { $_.entryType -eq "Adjustment" -and $_.reference -eq "EOB-NSTAR-1000052" -and [decimal]$_.amount -eq -42 } | Select-Object -First 1
+    $accountLedgerPassed = $ledgerBilling.patientId -eq "MOD-PAT-0005" `
+        -and $null -ne $ledgerSummary `
+        -and $ledgerEntries.Count -eq 10 `
+        -and $ledgerSummary.entryCount -eq 10 `
+        -and $ledgerSummary.firstEntryDate -eq "2025-06-22" `
+        -and $ledgerSummary.lastEntryDate -eq "2026-06-25" `
+        -and [decimal]$ledgerSummary.chargeAmount -eq 635 `
+        -and [decimal]$ledgerSummary.paymentAmount -eq 206 `
+        -and [decimal]$ledgerSummary.adjustmentAmount -eq 64.25 `
+        -and [decimal]$ledgerSummary.endingBalanceAmount -eq 364.75 `
+        -and $null -ne $firstLedgerEntry `
+        -and $firstLedgerEntry.entryDate -eq "2025-06-22" `
+        -and $firstLedgerEntry.entryType -eq "Charge" `
+        -and $null -ne $lastLedgerEntry `
+        -and $lastLedgerEntry.entryDate -eq "2026-06-25" `
+        -and [decimal]$lastLedgerEntry.runningBalanceAmount -eq 364.75 `
+        -and $null -ne $anchorLedgerPayment `
+        -and $null -ne $anchorLedgerAdjustment
+    Add-Check -Name "anchor account ledger summary" -Result $(if ($accountLedgerPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $ledgerBilling.patientId
+        ledgerSummary = $ledgerSummary
+        firstEntry = $firstLedgerEntry
+        lastEntry = $lastLedgerEntry
+        anchorPayment = $anchorLedgerPayment
+        anchorAdjustment = $anchorLedgerAdjustment
+    }
+}
+catch {
+    Add-Check -Name "anchor account ledger summary" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"
