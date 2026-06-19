@@ -94,6 +94,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 e.diagnosis_code,
                 e.diagnosis_text,
                 e.category_id,
+                e.billing_note,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
                 v.bps,
@@ -114,8 +115,20 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             join patients p on p.legacy_pid = e.pid
             left join staff s on s.id = e.provider_id
             left join facilities f on f.id = e.facility_id
-            left join vitals v on v.pid = e.pid and v.encounter = e.encounter
-            left join clinical_notes cn on cn.pid = e.pid and cn.encounter = e.encounter
+            left join lateral (
+                select *
+                from vitals
+                where pid = e.pid and encounter = e.encounter
+                order by vital_datetime desc, id desc
+                limit 1
+            ) v on true
+            left join lateral (
+                select *
+                from clinical_notes
+                where pid = e.pid and encounter = e.encounter
+                order by note_datetime desc, id desc
+                limit 1
+            ) cn on true
             where e.encounter = @encounter;
             """;
         command.Parameters.AddWithValue("encounter", encounter);
@@ -145,9 +158,328 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             CategoryId: ReadNullableInt(reader, "category_id"),
             ProviderName: ReadNullableString(reader, "provider_name"),
             FacilityName: ReadNullableString(reader, "facility_name"),
+            BillingNote: ReadNullableString(reader, "billing_note"),
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")));
+    }
+
+    public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
+    {
+        var patientId = Normalize(request.PatientId);
+        var reason = NormalizeText(request.Reason);
+        if (patientId is null || reason is null || !TryParseDateTime(request.DateTime, out var encounterDateTime))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with selected_patient as (
+                select canonical_id, legacy_pid, provider_id as patient_provider_id, facility_id as patient_facility_id
+                from patients
+                where lower(canonical_id) = @patientId
+                   or lower(pubpid) = @patientId
+                   or legacy_pid::text = @patientId
+                limit 1
+            ),
+            next_id as (
+                select coalesce(max(greatest(id, encounter)), 0) + 1 as id
+                from encounters
+            )
+            insert into encounters (
+                id,
+                encounter,
+                patient_id,
+                pid,
+                provider_id,
+                facility_id,
+                billing_facility_id,
+                encounter_date,
+                encounter_datetime,
+                reason,
+                diagnosis_code,
+                diagnosis_text,
+                category_id,
+                billing_note
+            )
+            select
+                next_id.id,
+                next_id.id,
+                selected_patient.canonical_id,
+                selected_patient.legacy_pid,
+                coalesce(
+                    (select id from staff where id = @providerId),
+                    selected_patient.patient_provider_id,
+                    (select id from staff where role = 'provider' order by id limit 1)
+                ),
+                coalesce(
+                    (select id from facilities where id = @facilityId),
+                    selected_patient.patient_facility_id,
+                    (select id from facilities order by id limit 1)
+                ),
+                coalesce(
+                    (select id from facilities where id = @billingFacilityId),
+                    (select id from facilities where id = @facilityId),
+                    selected_patient.patient_facility_id,
+                    (select id from facilities order by id limit 1)
+                ),
+                @encounterDate,
+                @encounterDateTime,
+                @reason,
+                null,
+                null,
+                9,
+                @billingNote
+            from selected_patient
+            cross join next_id
+            returning encounter;
+            """;
+        command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId;
+        AddNullableInt(command, "providerId", request.ProviderId);
+        AddNullableInt(command, "facilityId", request.FacilityId);
+        AddNullableInt(command, "billingFacilityId", request.BillingFacilityId);
+        command.Parameters.Add("encounterDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(encounterDateTime);
+        command.Parameters.Add("encounterDateTime", NpgsqlDbType.Timestamp).Value = encounterDateTime;
+        command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason;
+        AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
+
+        var encounter = await command.ExecuteScalarAsync(cancellationToken);
+        return encounter is null || encounter is DBNull
+            ? null
+            : await GetByEncounterAsync(Convert.ToInt32(encounter), cancellationToken);
+    }
+
+    public async Task<EncounterDetail?> UpdateSummaryAsync(
+        int encounter,
+        EncounterUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var reason = NormalizeText(request.Reason);
+        if (reason is null)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update encounters
+            set reason = @reason,
+                billing_note = @billingNote
+            where encounter = @encounter
+            returning encounter;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason;
+        AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
+
+        var updated = await command.ExecuteScalarAsync(cancellationToken);
+        return updated is null || updated is DBNull
+            ? null
+            : await GetByEncounterAsync(Convert.ToInt32(updated), cancellationToken);
+    }
+
+    public async Task<EncounterFormMutationResponse?> CreateVitalsAsync(
+        int encounter,
+        EncounterVitalsCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseDateTime(request.DateTime, out var vitalDateTime))
+        {
+            return null;
+        }
+
+        var bmi = ComputeBmi(request.Weight, request.Height);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with selected_encounter as (
+                select patient_id, pid, encounter
+                from encounters
+                where encounter = @encounter
+                limit 1
+            ),
+            next_id as (
+                select coalesce(max(id), 0) + 1 as id
+                from vitals
+            )
+            insert into vitals (
+                id,
+                patient_id,
+                pid,
+                encounter,
+                vital_datetime,
+                bps,
+                bpd,
+                weight,
+                height,
+                temperature,
+                pulse,
+                respiration,
+                bmi,
+                oxygen_saturation,
+                note
+            )
+            select
+                next_id.id,
+                selected_encounter.patient_id,
+                selected_encounter.pid,
+                selected_encounter.encounter,
+                @vitalDateTime,
+                @systolic,
+                @diastolic,
+                @weight,
+                @height,
+                @temperature,
+                @pulse,
+                @respiration,
+                @bmi,
+                @oxygenSaturation,
+                @note
+            from selected_encounter
+            cross join next_id
+            returning id;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.Add("vitalDateTime", NpgsqlDbType.Timestamp).Value = vitalDateTime;
+        AddNullableInt(command, "systolic", request.Systolic);
+        AddNullableInt(command, "diastolic", request.Diastolic);
+        AddNullableDecimal(command, "weight", request.Weight);
+        AddNullableDecimal(command, "height", request.Height);
+        AddNullableDecimal(command, "temperature", request.Temperature);
+        AddNullableInt(command, "pulse", request.Pulse);
+        AddNullableInt(command, "respiration", request.Respiration);
+        AddNullableDecimal(command, "bmi", bmi);
+        AddNullableInt(command, "oxygenSaturation", request.OxygenSaturation);
+        AddNullableText(command, "note", NormalizeText(request.Note));
+
+        var id = await command.ExecuteScalarAsync(cancellationToken);
+        if (id is null || id is DBNull)
+        {
+            return null;
+        }
+
+        var detail = await GetByEncounterAsync(encounter, cancellationToken);
+        return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
+    }
+
+    public async Task<EncounterFormMutationResponse?> CreateSoapNoteAsync(
+        int encounter,
+        EncounterSoapNoteCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseDateTime(request.DateTime, out var noteDateTime))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with selected_encounter as (
+                select patient_id, pid, encounter
+                from encounters
+                where encounter = @encounter
+                limit 1
+            ),
+            next_id as (
+                select coalesce(max(id), 0) + 1 as id
+                from clinical_notes
+            )
+            insert into clinical_notes (
+                id,
+                patient_id,
+                pid,
+                encounter,
+                note_datetime,
+                subjective,
+                objective,
+                assessment,
+                plan
+            )
+            select
+                next_id.id,
+                selected_encounter.patient_id,
+                selected_encounter.pid,
+                selected_encounter.encounter,
+                @noteDateTime,
+                @subjective,
+                @objective,
+                @assessment,
+                @plan
+            from selected_encounter
+            cross join next_id
+            returning id;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.Add("noteDateTime", NpgsqlDbType.Timestamp).Value = noteDateTime;
+        AddNullableText(command, "subjective", NormalizeText(request.Subjective));
+        AddNullableText(command, "objective", NormalizeText(request.Objective));
+        AddNullableText(command, "assessment", NormalizeText(request.Assessment));
+        AddNullableText(command, "plan", NormalizeText(request.Plan));
+
+        var id = await command.ExecuteScalarAsync(cancellationToken);
+        if (id is null || id is DBNull)
+        {
+            return null;
+        }
+
+        var detail = await GetByEncounterAsync(encounter, cancellationToken);
+        return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
+    }
+
+    public async Task<bool> DeleteVitalsAsync(int encounter, int vitalsId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from vitals
+            where encounter = @encounter and id = @vitalsId;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("vitalsId", vitalsId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<bool> DeleteSoapNoteAsync(int encounter, int soapNoteId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from clinical_notes
+            where encounter = @encounter and id = @soapNoteId;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("soapNoteId", soapNoteId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<bool> DeleteAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with deleted_notes as (
+                delete from clinical_notes
+                where encounter = @encounter
+            ),
+            deleted_vitals as (
+                delete from vitals
+                where encounter = @encounter
+            ),
+            deleted_encounter as (
+                delete from encounters
+                where encounter = @encounter
+                returning 1
+            )
+            select count(*) from deleted_encounter;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        var deleted = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(deleted) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -269,6 +601,45 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed.ToLowerInvariant();
+    }
+
+    private static string? NormalizeText(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static bool TryParseDateTime(string? value, out DateTime parsed)
+    {
+        return DateTime.TryParse(value, out parsed);
+    }
+
+    private static decimal? ComputeBmi(decimal? weight, decimal? height)
+    {
+        if (weight is null || height is null || height <= 0)
+        {
+            return null;
+        }
+
+        return Math.Round(weight.Value / (height.Value * height.Value) * 703m, 2);
+    }
+
+    private static void AddNullableInt(NpgsqlCommand command, string name, int? value)
+    {
+        var parameter = command.Parameters.Add(name, NpgsqlDbType.Integer);
+        parameter.Value = value is null ? DBNull.Value : value.Value;
+    }
+
+    private static void AddNullableDecimal(NpgsqlCommand command, string name, decimal? value)
+    {
+        var parameter = command.Parameters.Add(name, NpgsqlDbType.Numeric);
+        parameter.Value = value is null ? DBNull.Value : value.Value;
+    }
+
+    private static void AddNullableText(NpgsqlCommand command, string name, string? value)
+    {
+        var parameter = command.Parameters.Add(name, NpgsqlDbType.Text);
+        parameter.Value = value is null ? DBNull.Value : value;
     }
 
     private static DateOnly ParseDateOrDefault(string? value, DateOnly defaultDate) =>

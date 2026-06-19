@@ -46,6 +46,7 @@ public sealed record EncounterDetail(
     int? CategoryId,
     string? ProviderName,
     string? FacilityName,
+    string? BillingNote,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount);
@@ -67,3 +68,39 @@ public sealed record EncounterSoapNote(
     string? Objective,
     string? Assessment,
     string? Plan);
+
+public sealed record EncounterCreateRequest(
+    string PatientId,
+    int? ProviderId,
+    string DateTime,
+    string Reason,
+    int? FacilityId,
+    int? BillingFacilityId,
+    string? BillingNote);
+
+public sealed record EncounterUpdateRequest(
+    string Reason,
+    string? BillingNote);
+
+public sealed record EncounterVitalsCreateRequest(
+    string DateTime,
+    int? Systolic,
+    int? Diastolic,
+    decimal? Weight,
+    decimal? Height,
+    decimal? Temperature,
+    int? Pulse,
+    int? Respiration,
+    int? OxygenSaturation,
+    string? Note);
+
+public sealed record EncounterSoapNoteCreateRequest(
+    string DateTime,
+    string? Subjective,
+    string? Objective,
+    string? Assessment,
+    string? Plan);
+
+public sealed record EncounterFormMutationResponse(
+    int Id,
+    EncounterDetail Detail);

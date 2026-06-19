@@ -34,11 +34,16 @@ import {
   getProcedureResults,
   getOperationalReports,
   createAppointment,
+  createEncounter,
+  createEncounterSoapNote,
+  createEncounterVitals,
   deleteAppointment,
+  deleteEncounter,
   searchAppointments,
   searchEncounters,
   searchPatients,
   updateAppointmentStatus,
+  updateEncounter,
   updatePatientContact,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -51,9 +56,13 @@ import {
   type BillingEncounterItem,
   type BillingLineItem,
   type ClinicalListsResponse,
+  type EncounterCreateInput,
   type EncounterDetail,
+  type EncounterSoapNoteCreateInput,
   type EncounterListItem,
   type EncounterSearchResponse,
+  type EncounterUpdateInput,
+  type EncounterVitalsCreateInput,
   type MedicationListItem,
   type PatientChartSummary,
   type PatientListItem,
@@ -127,6 +136,7 @@ function App() {
   const [encounterStatus, setEncounterStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterDetailStatus, setEncounterDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterError, setEncounterError] = useState<string | null>(null)
+  const [encounterRefreshKey, setEncounterRefreshKey] = useState(0)
 
   const [clinicalPatientId, setClinicalPatientId] = useState('MOD-PAT-0001')
   const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
@@ -316,7 +326,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, encounterPatientId, encounterFromDate])
+  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'encounters' || selectedEncounter === null) {
@@ -614,6 +624,109 @@ function App() {
     }
   }
 
+  async function handleEncounterCreate(input: EncounterCreateInput) {
+    setEncounterStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const created = await createEncounter(input)
+      setEncounterPatientId(created.patientId)
+      setEncounterFromDate(created.date)
+      setSelectedEncounter(created.encounter)
+      setEncounterDetail(created)
+      setEncounterDetailStatus('ready')
+      setEncounterStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return created
+    } catch (createError) {
+      setEncounterStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Encounter create failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
+  async function handleEncounterUpdate(encounter: EncounterDetail, update: EncounterUpdateInput) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const updated = await updateEncounter(encounter.encounter, update)
+      setEncounterDetail(updated)
+      setSelectedEncounter(updated.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return updated
+    } catch (updateError) {
+      setEncounterDetailStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Encounter update failed'
+      setEncounterError(message)
+      throw updateError
+    }
+  }
+
+  async function handleEncounterDelete(encounter: EncounterDetail) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      await deleteEncounter(encounter.encounter)
+      setSelectedEncounter(null)
+      setEncounterDetail(null)
+      setEncounterDetailStatus('idle')
+      setEncounterRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setEncounterDetailStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Encounter delete failed'
+      setEncounterError(message)
+      throw deleteError
+    }
+  }
+
+  async function handleEncounterVitalsCreate(
+    encounter: EncounterDetail,
+    input: EncounterVitalsCreateInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createEncounterVitals(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (vitalsError) {
+      setEncounterDetailStatus('error')
+      const message = vitalsError instanceof Error ? vitalsError.message : 'Encounter vitals save failed'
+      setEncounterError(message)
+      throw vitalsError
+    }
+  }
+
+  async function handleEncounterSoapCreate(
+    encounter: EncounterDetail,
+    input: EncounterSoapNoteCreateInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createEncounterSoapNote(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (soapError) {
+      setEncounterDetailStatus('error')
+      const message = soapError instanceof Error ? soapError.message : 'Encounter SOAP note save failed'
+      setEncounterError(message)
+      throw soapError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -724,6 +837,11 @@ function App() {
             onPatientIdChange={setEncounterPatientId}
             onFromDateChange={setEncounterFromDate}
             onSelectEncounter={setSelectedEncounter}
+            onCreateEncounter={handleEncounterCreate}
+            onUpdateEncounter={handleEncounterUpdate}
+            onDeleteEncounter={handleEncounterDelete}
+            onCreateVitals={handleEncounterVitalsCreate}
+            onCreateSoapNote={handleEncounterSoapCreate}
           />
         )}
         {activeModule === 'lists' && (
@@ -1361,6 +1479,11 @@ function EncounterWorkspace({
   onPatientIdChange,
   onFromDateChange,
   onSelectEncounter,
+  onCreateEncounter,
+  onUpdateEncounter,
+  onDeleteEncounter,
+  onCreateVitals,
+  onCreateSoapNote,
 }: {
   patientId: string
   fromDate: string
@@ -1373,7 +1496,156 @@ function EncounterWorkspace({
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectEncounter: (encounter: number) => void
+  onCreateEncounter: (input: EncounterCreateInput) => Promise<EncounterDetail>
+  onUpdateEncounter: (encounter: EncounterDetail, update: EncounterUpdateInput) => Promise<EncounterDetail>
+  onDeleteEncounter: (encounter: EncounterDetail) => Promise<void>
+  onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
+  onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
 }) {
+  const [createPatientId, setCreatePatientId] = useState(patientId)
+  const [createDateTime, setCreateDateTime] = useState('2026-06-18T10:00')
+  const [createReason, setCreateReason] = useState('Follow-up encounter')
+  const [createProviderId, setCreateProviderId] = useState('')
+  const [createFacilityId, setCreateFacilityId] = useState('10')
+  const [createBillingFacilityId, setCreateBillingFacilityId] = useState('10')
+  const [createBillingNote, setCreateBillingNote] = useState('Created from modernized encounter workspace.')
+  const [createStatus, setCreateStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const [summaryReason, setSummaryReason] = useState('')
+  const [summaryBillingNote, setSummaryBillingNote] = useState('')
+  const [summaryStatus, setSummaryStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const [vitalsDateTime, setVitalsDateTime] = useState('2026-06-18T10:05')
+  const [vitalsSystolic, setVitalsSystolic] = useState('128')
+  const [vitalsDiastolic, setVitalsDiastolic] = useState('76')
+  const [vitalsWeight, setVitalsWeight] = useState('186')
+  const [vitalsHeight, setVitalsHeight] = useState('70')
+  const [vitalsPulse, setVitalsPulse] = useState('72')
+  const [vitalsOxygen, setVitalsOxygen] = useState('98')
+  const [vitalsNote, setVitalsNote] = useState('Parity vitals detail.')
+  const [vitalsStatus, setVitalsStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const [soapDateTime, setSoapDateTime] = useState('2026-06-18T10:10')
+  const [soapSubjective, setSoapSubjective] = useState('Patient reports symptoms are stable.')
+  const [soapObjective, setSoapObjective] = useState('Vitals reviewed.')
+  const [soapAssessment, setSoapAssessment] = useState('Stable clinical condition.')
+  const [soapPlan, setSoapPlan] = useState('Continue validation plan.')
+  const [soapStatus, setSoapStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setCreatePatientId(patientId)
+  }, [patientId])
+
+  useEffect(() => {
+    if (!encounterDetail) {
+      setSummaryReason('')
+      setSummaryBillingNote('')
+      return
+    }
+
+    setSummaryReason(encounterDetail.reason ?? '')
+    setSummaryBillingNote(encounterDetail.billingNote ?? '')
+    setVitalsDateTime(`${encounterDetail.date}T10:05`)
+    setSoapDateTime(`${encounterDetail.date}T10:10`)
+  }, [encounterDetail])
+
+  async function handleCreateSubmit(event: FormEvent) {
+    event.preventDefault()
+    setCreateStatus('saving')
+
+    try {
+      await onCreateEncounter({
+        patientId: createPatientId,
+        providerId: numberOrNull(createProviderId),
+        dateTime: createDateTime,
+        reason: createReason,
+        facilityId: numberOrNull(createFacilityId),
+        billingFacilityId: numberOrNull(createBillingFacilityId),
+        billingNote: createBillingNote,
+      })
+      setCreateStatus('saved')
+    } catch {
+      setCreateStatus('error')
+    }
+  }
+
+  async function handleSummarySubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setSummaryStatus('saving')
+    try {
+      await onUpdateEncounter(encounterDetail, {
+        reason: summaryReason,
+        billingNote: summaryBillingNote,
+      })
+      setSummaryStatus('saved')
+    } catch {
+      setSummaryStatus('error')
+    }
+  }
+
+  async function handleDeleteClick() {
+    if (!encounterDetail) {
+      return
+    }
+
+    setSummaryStatus('saving')
+    try {
+      await onDeleteEncounter(encounterDetail)
+      setSummaryStatus('saved')
+    } catch {
+      setSummaryStatus('error')
+    }
+  }
+
+  async function handleVitalsSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setVitalsStatus('saving')
+    try {
+      await onCreateVitals(encounterDetail, {
+        dateTime: vitalsDateTime,
+        systolic: numberOrNull(vitalsSystolic),
+        diastolic: numberOrNull(vitalsDiastolic),
+        weight: numberOrNull(vitalsWeight),
+        height: numberOrNull(vitalsHeight),
+        pulse: numberOrNull(vitalsPulse),
+        oxygenSaturation: numberOrNull(vitalsOxygen),
+        note: vitalsNote,
+      })
+      setVitalsStatus('saved')
+    } catch {
+      setVitalsStatus('error')
+    }
+  }
+
+  async function handleSoapSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setSoapStatus('saving')
+    try {
+      await onCreateSoapNote(encounterDetail, {
+        dateTime: soapDateTime,
+        subjective: soapSubjective,
+        objective: soapObjective,
+        assessment: soapAssessment,
+        plan: soapPlan,
+      })
+      setSoapStatus('saved')
+    } catch {
+      setSoapStatus('error')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Encounter search">
@@ -1419,6 +1691,85 @@ function EncounterWorkspace({
             <div className="empty-state">No matching encounters</div>
           )}
         </div>
+
+        <form className="appointment-mutation-panel" onSubmit={handleCreateSubmit} aria-label="Create encounter">
+          <div className="panel-heading compact-heading">
+            <Stethoscope size={16} />
+            <h3>New Encounter</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Patient ID</span>
+              <input
+                value={createPatientId}
+                onChange={(event) => setCreatePatientId(event.target.value)}
+                aria-label="New visit patient ID"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Date Time</span>
+              <input
+                value={createDateTime}
+                onChange={(event) => setCreateDateTime(event.target.value)}
+                aria-label="New encounter date time"
+                type="datetime-local"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Reason</span>
+              <input
+                value={createReason}
+                onChange={(event) => setCreateReason(event.target.value)}
+                aria-label="New encounter reason"
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Provider</span>
+                <input
+                  value={createProviderId}
+                  onChange={(event) => setCreateProviderId(event.target.value)}
+                  aria-label="New encounter provider ID"
+                  inputMode="numeric"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Facility</span>
+                <input
+                  value={createFacilityId}
+                  onChange={(event) => setCreateFacilityId(event.target.value)}
+                  aria-label="New encounter facility ID"
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Billing Facility</span>
+              <input
+                value={createBillingFacilityId}
+                onChange={(event) => setCreateBillingFacilityId(event.target.value)}
+                aria-label="New encounter billing facility ID"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Billing Note</span>
+              <input
+                value={createBillingNote}
+                onChange={(event) => setCreateBillingNote(event.target.value)}
+                aria-label="New encounter billing note"
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={createStatus === 'saving'}>
+              <CalendarPlus size={16} />
+              <span>{createStatus === 'saving' ? 'Saving' : 'Create'}</span>
+            </button>
+            {createStatus === 'saved' && <span className="save-note">Saved</span>}
+            {createStatus === 'error' && <span className="save-note error">Action failed</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Encounter detail">
@@ -1441,6 +1792,7 @@ function EncounterWorkspace({
                 <Field label="Encounter" value={encounterDetail.encounter} />
                 <Field label="Provider" value={encounterDetail.providerName} />
                 <Field label="Facility" value={encounterDetail.facilityName} />
+                <Field label="Billing note" value={encounterDetail.billingNote} />
               </InfoPanel>
 
               <InfoPanel title="Assessment" icon={ClipboardList}>
@@ -1471,6 +1823,204 @@ function EncounterWorkspace({
                 <NoteBlock label="Plan:" value={encounterDetail.soapNote?.plan} />
               </div>
             </section>
+
+            <form className="appointment-mutation-panel" onSubmit={handleSummarySubmit} aria-label="Update encounter">
+              <div className="panel-heading compact-heading">
+                <Pencil size={16} />
+                <h3>Encounter Summary</h3>
+              </div>
+              <div className="mutation-grid">
+                <label className="filter-field">
+                  <span>Reason</span>
+                  <input
+                    value={summaryReason}
+                    onChange={(event) => setSummaryReason(event.target.value)}
+                    aria-label="Encounter reason"
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Billing Note</span>
+                  <input
+                    value={summaryBillingNote}
+                    onChange={(event) => setSummaryBillingNote(event.target.value)}
+                    aria-label="Encounter billing note"
+                  />
+                </label>
+              </div>
+              <div className="detail-actions">
+                <button className="icon-text-button primary" type="submit" disabled={summaryStatus === 'saving'}>
+                  <Check size={16} />
+                  <span>{summaryStatus === 'saving' ? 'Saving' : 'Update'}</span>
+                </button>
+                <button
+                  className="icon-text-button danger"
+                  type="button"
+                  onClick={handleDeleteClick}
+                  disabled={summaryStatus === 'saving'}
+                >
+                  <Trash2 size={16} />
+                  <span>Delete</span>
+                </button>
+                {summaryStatus === 'saved' && <span className="save-note">Saved</span>}
+                {summaryStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </div>
+            </form>
+
+            <form className="appointment-mutation-panel" onSubmit={handleVitalsSubmit} aria-label="Record vitals">
+              <div className="panel-heading compact-heading">
+                <HeartPulse size={16} />
+                <h3>Vitals</h3>
+              </div>
+              <div className="mutation-grid">
+                <label className="filter-field">
+                  <span>Date Time</span>
+                  <input
+                    value={vitalsDateTime}
+                    onChange={(event) => setVitalsDateTime(event.target.value)}
+                    aria-label="Encounter vitals date time"
+                    type="datetime-local"
+                  />
+                </label>
+                <div className="mutation-grid two-column">
+                  <label className="filter-field">
+                    <span>Systolic</span>
+                    <input
+                      value={vitalsSystolic}
+                      onChange={(event) => setVitalsSystolic(event.target.value)}
+                      aria-label="Encounter systolic"
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="filter-field">
+                    <span>Diastolic</span>
+                    <input
+                      value={vitalsDiastolic}
+                      onChange={(event) => setVitalsDiastolic(event.target.value)}
+                      aria-label="Encounter diastolic"
+                      inputMode="numeric"
+                    />
+                  </label>
+                </div>
+                <div className="mutation-grid two-column">
+                  <label className="filter-field">
+                    <span>Weight</span>
+                    <input
+                      value={vitalsWeight}
+                      onChange={(event) => setVitalsWeight(event.target.value)}
+                      aria-label="Encounter weight"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="filter-field">
+                    <span>Height</span>
+                    <input
+                      value={vitalsHeight}
+                      onChange={(event) => setVitalsHeight(event.target.value)}
+                      aria-label="Encounter height"
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
+                <div className="mutation-grid two-column">
+                  <label className="filter-field">
+                    <span>Pulse</span>
+                    <input
+                      value={vitalsPulse}
+                      onChange={(event) => setVitalsPulse(event.target.value)}
+                      aria-label="Encounter pulse"
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="filter-field">
+                    <span>Oxygen</span>
+                    <input
+                      value={vitalsOxygen}
+                      onChange={(event) => setVitalsOxygen(event.target.value)}
+                      aria-label="Encounter oxygen"
+                      inputMode="numeric"
+                    />
+                  </label>
+                </div>
+                <label className="filter-field">
+                  <span>Note</span>
+                  <input
+                    value={vitalsNote}
+                    onChange={(event) => setVitalsNote(event.target.value)}
+                    aria-label="Encounter vitals note"
+                  />
+                </label>
+              </div>
+              <div className="detail-actions">
+                <button className="icon-text-button primary" type="submit" disabled={vitalsStatus === 'saving'}>
+                  <HeartPulse size={16} />
+                  <span>{vitalsStatus === 'saving' ? 'Saving' : 'Record'}</span>
+                </button>
+                {vitalsStatus === 'saved' && <span className="save-note">Saved</span>}
+                {vitalsStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </div>
+            </form>
+
+            <form className="appointment-mutation-panel" onSubmit={handleSoapSubmit} aria-label="Record SOAP note">
+              <div className="panel-heading compact-heading">
+                <FileText size={16} />
+                <h3>SOAP Entry</h3>
+              </div>
+              <div className="mutation-grid">
+                <label className="filter-field">
+                  <span>Date Time</span>
+                  <input
+                    value={soapDateTime}
+                    onChange={(event) => setSoapDateTime(event.target.value)}
+                    aria-label="SOAP date time"
+                    type="datetime-local"
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Subjective</span>
+                  <textarea
+                    value={soapSubjective}
+                    onChange={(event) => setSoapSubjective(event.target.value)}
+                    aria-label="SOAP subjective"
+                    rows={2}
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Objective</span>
+                  <textarea
+                    value={soapObjective}
+                    onChange={(event) => setSoapObjective(event.target.value)}
+                    aria-label="SOAP objective"
+                    rows={2}
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Assessment</span>
+                  <textarea
+                    value={soapAssessment}
+                    onChange={(event) => setSoapAssessment(event.target.value)}
+                    aria-label="SOAP assessment"
+                    rows={2}
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Plan</span>
+                  <textarea
+                    value={soapPlan}
+                    onChange={(event) => setSoapPlan(event.target.value)}
+                    aria-label="SOAP plan"
+                    rows={2}
+                  />
+                </label>
+              </div>
+              <div className="detail-actions">
+                <button className="icon-text-button primary" type="submit" disabled={soapStatus === 'saving'}>
+                  <FileText size={16} />
+                  <span>{soapStatus === 'saving' ? 'Saving' : 'Record'}</span>
+                </button>
+                {soapStatus === 'saved' && <span className="save-note">Saved</span>}
+                {soapStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </div>
+            </form>
           </>
         ) : detailStatus === 'loading' ? (
           <div className="empty-chart">Loading encounter detail</div>
@@ -2681,6 +3231,16 @@ function formatAddress(chart: PatientChartSummary | null) {
 function formatFacilityAddress(facility: AdministrationFacilityItem) {
   const cityLine = [facility.city, facility.state, facility.postalCode].filter(Boolean).join(' ')
   return [facility.street, cityLine].filter(Boolean).join(', ') || 'No address recorded'
+}
+
+function numberOrNull(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function formatCurrency(value?: number | null) {

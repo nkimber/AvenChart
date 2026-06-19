@@ -171,8 +171,50 @@ export type EncounterDetail = EncounterListItem & {
   sex?: string | null
   dateOfBirth: string
   dateTime: string
+  billingNote?: string | null
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
+}
+
+export type EncounterCreateInput = {
+  patientId: string
+  providerId?: number | null
+  dateTime: string
+  reason: string
+  facilityId?: number | null
+  billingFacilityId?: number | null
+  billingNote?: string | null
+}
+
+export type EncounterUpdateInput = {
+  reason: string
+  billingNote?: string | null
+}
+
+export type EncounterVitalsCreateInput = {
+  dateTime: string
+  systolic?: number | null
+  diastolic?: number | null
+  weight?: number | null
+  height?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  oxygenSaturation?: number | null
+  note?: string | null
+}
+
+export type EncounterSoapNoteCreateInput = {
+  dateTime: string
+  subjective?: string | null
+  objective?: string | null
+  assessment?: string | null
+  plan?: string | null
+}
+
+export type EncounterFormMutationResponse = {
+  id: number
+  detail: EncounterDetail
 }
 
 export type EncounterSearchResponse = {
@@ -582,6 +624,87 @@ export async function getEncounterDetail(encounter: number, signal?: AbortSignal
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, { signal })
   if (!response.ok) {
     throw new Error(`Encounter detail load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createEncounter(
+  encounter: EncounterCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(encounter),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateEncounter(
+  encounter: number,
+  update: EncounterUpdateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteEncounter(encounter: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter delete failed with ${response.status}`)
+  }
+}
+
+export async function createEncounterVitals(
+  encounter: number,
+  vitals: EncounterVitalsCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterFormMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/vitals`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(vitals),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter vitals create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createEncounterSoapNote(
+  encounter: number,
+  soapNote: EncounterSoapNoteCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterFormMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/soap-notes`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(soapNote),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter SOAP note create failed with ${response.status}`)
   }
 
   return response.json()

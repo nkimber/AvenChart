@@ -164,6 +164,87 @@ encounters.MapGet("/{encounter:int}", async (
     })
     .WithName("GetEncounterDetail");
 
+encounters.MapPost("/", async (
+        EncounterRepository repository,
+        EncounterCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await repository.CreateAsync(request, cancellationToken);
+        return encounterDetail is null
+            ? Results.BadRequest("Encounter could not be created from the supplied patient and visit details.")
+            : Results.Created($"/api/encounters/{encounterDetail.Encounter}", encounterDetail);
+    })
+    .WithName("CreateEncounter");
+
+encounters.MapPut("/{encounter:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        EncounterUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, cancellationToken);
+        return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
+    })
+    .WithName("UpdateEncounter");
+
+encounters.MapPost("/{encounter:int}/vitals", async (
+        EncounterRepository repository,
+        int encounter,
+        EncounterVitalsCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.CreateVitalsAsync(encounter, request, cancellationToken);
+        return response is null
+            ? Results.BadRequest("Vitals could not be recorded for the supplied encounter.")
+            : Results.Created($"/api/encounters/{encounter}/vitals/{response.Id}", response);
+    })
+    .WithName("CreateEncounterVitals");
+
+encounters.MapPost("/{encounter:int}/soap-notes", async (
+        EncounterRepository repository,
+        int encounter,
+        EncounterSoapNoteCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.CreateSoapNoteAsync(encounter, request, cancellationToken);
+        return response is null
+            ? Results.BadRequest("SOAP note could not be recorded for the supplied encounter.")
+            : Results.Created($"/api/encounters/{encounter}/soap-notes/{response.Id}", response);
+    })
+    .WithName("CreateEncounterSoapNote");
+
+encounters.MapDelete("/{encounter:int}/vitals/{vitalsId:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        int vitalsId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteVitalsAsync(encounter, vitalsId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteEncounterVitals");
+
+encounters.MapDelete("/{encounter:int}/soap-notes/{soapNoteId:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        int soapNoteId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteSoapNoteAsync(encounter, soapNoteId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteEncounterSoapNote");
+
+encounters.MapDelete("/{encounter:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteAsync(encounter, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteEncounter");
+
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
 
 clinicalLists.MapGet("/{patientId}", async (

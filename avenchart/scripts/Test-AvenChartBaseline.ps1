@@ -171,6 +171,79 @@ catch {
     Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
 }
 
+$encounterMutationId = $null
+try {
+    $createEncounterBody = @{
+        patientId = "MOD-PAT-0002"
+        providerId = $null
+        dateTime = "2026-06-18 10:00:00"
+        reason = "Smoke Encounter Mutation"
+        facilityId = $null
+        billingFacilityId = $null
+        billingNote = "Created by the smoke encounter mutation check."
+    } | ConvertTo-Json
+    $createdEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createEncounterBody -TimeoutSec 20
+    $encounterMutationId = $createdEncounter.encounter
+
+    $vitalsBody = @{
+        dateTime = "2026-06-18 10:05:00"
+        systolic = 128
+        diastolic = 76
+        weight = 186
+        height = 70
+        pulse = 72
+        oxygenSaturation = 98
+        note = "Smoke vitals detail."
+    } | ConvertTo-Json
+    $createdVitals = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/vitals" -Method Post -ContentType "application/json" -Body $vitalsBody -TimeoutSec 20
+
+    $soapBody = @{
+        dateTime = "2026-06-18 10:10:00"
+        subjective = "Patient reports smoke workflow symptoms are stable."
+        objective = "Vitals reviewed during smoke workflow."
+        assessment = "Stable smoke workflow condition."
+        plan = "Continue smoke workflow validation."
+    } | ConvertTo-Json
+    $createdSoap = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/soap-notes" -Method Post -ContentType "application/json" -Body $soapBody -TimeoutSec 20
+
+    $updateBody = @{
+        reason = "Smoke Encounter Mutation Updated"
+        billingNote = "Updated by the smoke encounter mutation check."
+    } | ConvertTo-Json
+    $updatedEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $encounterMutationPassed = $createdEncounter.reason -eq "Smoke Encounter Mutation" `
+        -and $createdVitals.id -gt 0 `
+        -and $createdSoap.id -gt 0 `
+        -and $updatedEncounter.reason -eq "Smoke Encounter Mutation Updated" `
+        -and $updatedEncounter.billingNote -eq "Updated by the smoke encounter mutation check." `
+        -and $updatedEncounter.vitals.bloodPressure -eq "128/76" `
+        -and $updatedEncounter.soapNote.assessment -eq "Stable smoke workflow condition."
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $encounterMutationId = $null
+
+    Add-Check -Name "encounter mutation lifecycle" -Result $(if ($encounterMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdEncounter = $createdEncounter.encounter
+        vitalsId = $createdVitals.id
+        soapId = $createdSoap.id
+        updatedReason = $updatedEncounter.reason
+        bloodPressure = $updatedEncounter.vitals.bloodPressure
+        assessment = $updatedEncounter.soapNote.assessment
+    }
+}
+catch {
+    Add-Check -Name "encounter mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $encounterMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -TimeoutSec 20
     $problem = $clinicalLists.problems | Where-Object { $_.title -like "*diabetes*" } | Select-Object -First 1

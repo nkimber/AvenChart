@@ -139,12 +139,14 @@ create table encounters (
   pid integer not null,
   provider_id integer references staff(id),
   facility_id integer references facilities(id),
+  billing_facility_id integer references facilities(id),
   encounter_date date not null,
   encounter_datetime timestamp not null,
   reason text,
   diagnosis_code text,
   diagnosis_text text,
-  category_id integer
+  category_id integer,
+  billing_note text
 );
 
 create table vitals (
@@ -161,7 +163,8 @@ create table vitals (
   pulse integer,
   respiration integer,
   bmi numeric(6,2),
-  oxygen_saturation integer
+  oxygen_saturation integer,
+  note text
 );
 
 create table clinical_notes (
@@ -437,12 +440,14 @@ copyRows('encounters', [
   'pid',
   'provider_id',
   'facility_id',
+  'billing_facility_id',
   'encounter_date',
   'encounter_datetime',
   'reason',
   'diagnosis_code',
   'diagnosis_text',
   'category_id',
+  'billing_note',
 ], dataset.encounters.map((encounter) => [
   encounter.id,
   encounter.encounter,
@@ -450,12 +455,14 @@ copyRows('encounters', [
   encounter.pid,
   encounter.providerId,
   encounter.facilityId,
+  encounter.facilityId,
   encounter.date,
   encounter.datetime,
   encounter.reason,
   encounter.diagnosisCode,
   encounter.diagnosisText,
   encounter.categoryId,
+  encounter.billingNote,
 ]))
 
 copyRows('vitals', [
@@ -473,6 +480,7 @@ copyRows('vitals', [
   'respiration',
   'bmi',
   'oxygen_saturation',
+  'note',
 ], dataset.vitals.map((vital) => [
   vital.id,
   vital.patientId,
@@ -488,6 +496,7 @@ copyRows('vitals', [
   vital.respiration,
   vital.bmi,
   vital.oxygenSaturation,
+  vital.note,
 ]))
 
 copyRows('clinical_notes', [
