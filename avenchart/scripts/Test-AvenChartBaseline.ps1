@@ -618,6 +618,63 @@ catch {
     Add-Check -Name "anchor administration directory" -Result "failed" -Details $_.Exception.Message
 }
 
+$administrationUserMutationId = $null
+try {
+    $userName = "smoke-admin-user"
+    $createUserBody = @{
+        username = $userName
+        firstName = "Smoke"
+        lastName = "Admin"
+        role = "frontdesk"
+        calendar = $false
+        facilityId = 10
+        email = "$userName@example.test"
+        npi = ""
+        active = $true
+    } | ConvertTo-Json
+
+    $createdUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -ContentType "application/json" -Body $createUserBody -TimeoutSec 20
+    $administrationUserMutationId = $createdUser.id
+    $createdUserVisible = $createdUser.detail.users | Where-Object { $_.id -eq $administrationUserMutationId -and $_.username -eq $userName -and $_.active } | Select-Object -First 1
+
+    $updateUserBody = @{
+        username = $userName
+        firstName = "Smoke"
+        lastName = "Admin Inactive"
+        role = "frontdesk"
+        calendar = $false
+        facilityId = 10
+        email = "$userName@example.test"
+        npi = ""
+        active = $false
+    } | ConvertTo-Json
+
+    $updatedUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Put -ContentType "application/json" -Body $updateUserBody -TimeoutSec 20
+    $updatedUserVisible = $updatedUser.detail.users | Where-Object { $_.id -eq $administrationUserMutationId -and $_.lastName -eq "Admin Inactive" -and -not $_.active } | Select-Object -First 1
+    $userMutationPassed = $null -ne $createdUserVisible -and $null -ne $updatedUserVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $administrationUserMutationId = $null
+
+    Add-Check -Name "administration user mutation lifecycle" -Result $(if ($userMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdUser.id
+        createdVisible = $createdUserVisible
+        updatedVisible = $updatedUserVisible
+    }
+}
+catch {
+    Add-Check -Name "administration user mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $administrationUserMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $administrationFacilityMutationId = $null
 try {
     $facilityName = "Smoke Facility Mutation"

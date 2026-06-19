@@ -8,6 +8,7 @@ namespace AvenChart.Api.Data;
 public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 {
     private const string DefaultFacilityColor = "#246b73";
+    private const string DefaultUserEmailDomain = "example.test";
 
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {
@@ -27,6 +28,78 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 Facilities: facilities.Count),
             Users: users,
             Facilities: facilities);
+    }
+
+    public async Task<AdministrationUserMutationResponse> CreateUserAsync(
+        AdministrationUserMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var id = await GetNextStaffIdAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into staff
+              (id, username, first_name, last_name, role, calendar, facility_id, email, npi, active)
+            values
+              (@id, @username, @firstName, @lastName, @role, @calendar, @facilityId, @email, @npi, @active)
+            returning id;
+            """;
+
+        command.Parameters.Add("id", NpgsqlDbType.Integer).Value = id;
+        AddUserParameters(command, request, defaultActive: true);
+
+        var insertedId = (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("User create did not return an ID."));
+
+        return new AdministrationUserMutationResponse(insertedId, await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<AdministrationUserMutationResponse?> UpdateUserAsync(
+        int userId,
+        AdministrationUserMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update staff
+            set username = @username,
+                first_name = @firstName,
+                last_name = @lastName,
+                role = @role,
+                calendar = @calendar,
+                facility_id = @facilityId,
+                email = @email,
+                npi = @npi,
+                active = @active
+            where id = @userId
+            returning id;
+            """;
+
+        command.Parameters.Add("userId", NpgsqlDbType.Integer).Value = userId;
+        AddUserParameters(command, request, defaultActive: true);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new AdministrationUserMutationResponse((int)result, await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<bool> DeleteUserAsync(int userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from staff
+            where id = @userId;
+            """;
+
+        command.Parameters.Add("userId", NpgsqlDbType.Integer).Value = userId;
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task<AdministrationFacilityMutationResponse> CreateFacilityAsync(
@@ -136,9 +209,12 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 s.first_name,
                 s.last_name,
                 s.role,
+                s.active,
                 s.calendar,
                 s.facility_id,
-                f.name as facility_name
+                f.name as facility_name,
+                s.email,
+                s.npi
             from staff s
             left join facilities f on f.id = s.facility_id
             order by s.id;
@@ -163,12 +239,12 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 DisplayName: $"{lastName}, {firstName}",
                 Role: role,
                 Authorized: isProvider,
-                Active: true,
+                Active: reader.GetBoolean(reader.GetOrdinal("active")),
                 Calendar: reader.GetBoolean(reader.GetOrdinal("calendar")),
                 FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
-                Email: $"{username}@example.test",
-                Npi: isProvider ? $"18888{id}" : null));
+                Email: ReadNullableString(reader, "email") ?? $"{username}@{DefaultUserEmailDomain}",
+                Npi: ReadNullableString(reader, "npi") ?? (isProvider ? $"18888{id}" : null)));
         }
 
         return users;
@@ -205,6 +281,15 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return facilities;
     }
 
+    private async Task<int> GetNextStaffIdAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select coalesce(max(id), 0) + 1 from staff;";
+        return (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("User ID allocation failed."));
+    }
+
     private async Task<int> GetNextFacilityIdAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -212,6 +297,24 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         command.CommandText = "select coalesce(max(id), 0) + 1 from facilities;";
         return (int)(await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException("Facility ID allocation failed."));
+    }
+
+    private static void AddUserParameters(
+        NpgsqlCommand command,
+        AdministrationUserMutationRequest request,
+        bool defaultActive)
+    {
+        var username = NormalizeRequired(request.Username, "Username");
+        var role = NormalizeRequired(request.Role, "Role").ToLowerInvariant();
+        command.Parameters.Add("username", NpgsqlDbType.Text).Value = username;
+        command.Parameters.Add("firstName", NpgsqlDbType.Text).Value = NormalizeRequired(request.FirstName, "First name");
+        command.Parameters.Add("lastName", NpgsqlDbType.Text).Value = NormalizeRequired(request.LastName, "Last name");
+        command.Parameters.Add("role", NpgsqlDbType.Text).Value = role;
+        command.Parameters.Add("calendar", NpgsqlDbType.Boolean).Value = request.Calendar ?? string.Equals(role, "provider", StringComparison.OrdinalIgnoreCase);
+        AddNullableInt(command, "facilityId", request.FacilityId);
+        AddNullableText(command, "email", request.Email ?? $"{username}@{DefaultUserEmailDomain}");
+        AddNullableText(command, "npi", request.Npi);
+        command.Parameters.Add("active", NpgsqlDbType.Boolean).Value = request.Active ?? defaultActive;
     }
 
     private static void AddFacilityParameters(
@@ -248,6 +351,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         command.Parameters.Add(name, NpgsqlDbType.Text).Value = NormalizeOptional(value) is { } normalized
             ? normalized
+            : DBNull.Value;
+    }
+
+    private static void AddNullableInt(NpgsqlCommand command, string name, int? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Integer).Value = value is { } integer
+            ? integer
             : DBNull.Value;
     }
 

@@ -555,6 +555,24 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-field select {
+  border: 1px solid #c9d7df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1d2a35;
+  font: inherit;
+  padding: 9px 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #526879;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .detail-actions {
   display: flex;
   align-items: center;

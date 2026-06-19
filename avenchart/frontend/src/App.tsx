@@ -38,6 +38,7 @@ import {
   createClinicalAllergy,
   createClinicalPrescription,
   createAdministrationFacility,
+  createAdministrationUser,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
@@ -47,6 +48,7 @@ import {
   createProcedureResult,
   deleteAppointment,
   deleteAdministrationFacility,
+  deleteAdministrationUser,
   deleteBillingLine,
   deleteClinicalAllergy,
   deleteClinicalPrescription,
@@ -61,6 +63,7 @@ import {
   softDeletePatientMessage,
   updateAppointmentStatus,
   updateAdministrationFacility,
+  updateAdministrationUser,
   updateBillingLineStatus,
   updateEncounter,
   updatePatientMessageStatus,
@@ -70,6 +73,7 @@ import {
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
   type AdministrationUserItem,
+  type AdministrationUserMutationInput,
   type AppointmentDetail,
   type AppointmentCreateInput,
   type AppointmentListItem,
@@ -1021,6 +1025,63 @@ function App() {
     }
   }
 
+  async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await createAdministrationUser(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setAdministrationStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Administration user create failed'
+      setAdministrationError(message)
+      throw createError
+    }
+  }
+
+  async function handleAdministrationUserUpdate(
+    user: AdministrationUserItem,
+    input: AdministrationUserMutationInput,
+  ) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await updateAdministrationUser(user.id, input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setAdministrationStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Administration user update failed'
+      setAdministrationError(message)
+      throw updateError
+    }
+  }
+
+  async function handleAdministrationUserDelete(user: AdministrationUserItem) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      await deleteAdministrationUser(user.id)
+      const refreshed = await getAdministrationDirectory()
+      setAdministrationDirectory(refreshed)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setAdministrationStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Administration user delete failed'
+      setAdministrationError(message)
+      throw deleteError
+    }
+  }
+
   async function handleAdministrationFacilityCreate(input: AdministrationFacilityMutationInput) {
     setAdministrationStatus('loading')
     setAdministrationError(null)
@@ -1339,6 +1400,9 @@ function App() {
             directory={administrationDirectory}
             status={administrationStatus}
             error={administrationError}
+            onCreateUser={handleAdministrationUserCreate}
+            onUpdateUser={handleAdministrationUserUpdate}
+            onDeleteUser={handleAdministrationUserDelete}
             onCreateFacility={handleAdministrationFacilityCreate}
             onUpdateFacility={handleAdministrationFacilityUpdate}
             onDeleteFacility={handleAdministrationFacilityDelete}
@@ -3579,6 +3643,9 @@ function AdministrationWorkspace({
   directory,
   status,
   error,
+  onCreateUser,
+  onUpdateUser,
+  onDeleteUser,
   onCreateFacility,
   onUpdateFacility,
   onDeleteFacility,
@@ -3586,6 +3653,12 @@ function AdministrationWorkspace({
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  onCreateUser: (input: AdministrationUserMutationInput) => Promise<unknown>
+  onUpdateUser: (
+    user: AdministrationUserItem,
+    input: AdministrationUserMutationInput,
+  ) => Promise<unknown>
+  onDeleteUser: (user: AdministrationUserItem) => Promise<void>
   onCreateFacility: (input: AdministrationFacilityMutationInput) => Promise<unknown>
   onUpdateFacility: (
     facility: AdministrationFacilityItem,
@@ -3595,7 +3668,19 @@ function AdministrationWorkspace({
 }) {
   const billingUsers = countUsersByRole(directory?.users, 'billing')
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
+  const visibleUsers = directory?.users.filter((user) => user.active) ?? []
   const visibleFacilities = directory?.facilities.filter((facility) => facility.active) ?? []
+  const [userDraft, setUserDraft] = useState<AdministrationUserMutationInput>({
+    username: 'slice19-user',
+    firstName: 'Morgan',
+    lastName: 'Parity',
+    role: 'frontdesk',
+    calendar: false,
+    facilityId: 10,
+    email: 'slice19-user@example.test',
+    npi: '',
+    active: true,
+  })
   const [facilityDraft, setFacilityDraft] = useState<AdministrationFacilityMutationInput>({
     code: 'WEST',
     name: 'West County Health Center',
@@ -3608,6 +3693,35 @@ function AdministrationWorkspace({
     active: true,
   })
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+
+  async function handleUserCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+    await onCreateUser(userDraft)
+    setMutationMessage(`Created ${userDraft.username}`)
+  }
+
+  async function handleUserDeactivate(user: AdministrationUserItem) {
+    setMutationMessage(null)
+    await onUpdateUser(user, {
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName.endsWith('Inactive') ? user.lastName : `${user.lastName} Inactive`,
+      role: user.role,
+      calendar: user.calendar,
+      facilityId: user.facilityId ?? null,
+      email: user.email,
+      npi: user.npi,
+      active: false,
+    })
+    setMutationMessage(`Updated ${user.username} to inactive`)
+  }
+
+  async function handleUserDelete(user: AdministrationUserItem) {
+    setMutationMessage(null)
+    await onDeleteUser(user)
+    setMutationMessage(`Deleted ${user.username}`)
+  }
 
   async function handleFacilityCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -3643,7 +3757,7 @@ function AdministrationWorkspace({
       <section className="finder-panel" aria-label="Administration summary">
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Administration directory'}</span>
-          <span>Facility lifecycle</span>
+          <span>User and facility lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -3668,8 +3782,82 @@ function AdministrationWorkspace({
           <Field label="Authentication" value="Deferred" />
           <Field label="Authorization" value="Deferred" />
           <Field label="Audit logging" value="Planned" />
-          <Field label="Directory mode" value="Facility mutation" />
+          <Field label="Directory mode" value="User/facility mutation" />
         </div>
+
+        <form className="appointment-mutation-panel" onSubmit={handleUserCreate}>
+          <div className="panel-heading">
+            <UserRound size={17} />
+            <h3>Create User</h3>
+          </div>
+          <label className="form-field">
+            <span>Username</span>
+            <input
+              value={userDraft.username}
+              onChange={(event) => setUserDraft((current) => ({ ...current, username: event.target.value }))}
+            />
+          </label>
+          <div className="mutation-grid two-column">
+            <label className="form-field">
+              <span>First name</span>
+              <input
+                value={userDraft.firstName}
+                onChange={(event) => setUserDraft((current) => ({ ...current, firstName: event.target.value }))}
+              />
+            </label>
+            <label className="form-field">
+              <span>Last name</span>
+              <input
+                value={userDraft.lastName}
+                onChange={(event) => setUserDraft((current) => ({ ...current, lastName: event.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="mutation-grid two-column">
+            <label className="form-field">
+              <span>Role</span>
+              <select
+                value={userDraft.role}
+                onChange={(event) => setUserDraft((current) => ({ ...current, role: event.target.value }))}
+              >
+                <option value="frontdesk">frontdesk</option>
+                <option value="billing">billing</option>
+                <option value="nurse">nurse</option>
+                <option value="provider">provider</option>
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Facility ID</span>
+              <input
+                type="number"
+                value={userDraft.facilityId ?? ''}
+                onChange={(event) => setUserDraft((current) => ({
+                  ...current,
+                  facilityId: event.target.value ? Number(event.target.value) : null,
+                }))}
+              />
+            </label>
+          </div>
+          <label className="form-field">
+            <span>Email</span>
+            <input
+              value={userDraft.email ?? ''}
+              onChange={(event) => setUserDraft((current) => ({ ...current, email: event.target.value }))}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={Boolean(userDraft.calendar)}
+              onChange={(event) => setUserDraft((current) => ({ ...current, calendar: event.target.checked }))}
+            />
+            <span>Calendar enabled</span>
+          </label>
+          <button type="submit" className="icon-text-button primary" disabled={status === 'loading'}>
+            <Check size={16} />
+            Create user
+          </button>
+        </form>
 
         <form className="appointment-mutation-panel" onSubmit={handleFacilityCreate}>
           <div className="panel-heading">
@@ -3769,8 +3957,13 @@ function AdministrationWorkspace({
                   <h3>Users</h3>
                 </div>
                 <div className="admin-directory-list">
-                  {directory.users.map((user) => (
-                    <AdministrationUserCard key={user.id} user={user} />
+                  {visibleUsers.map((user) => (
+                    <AdministrationUserCard
+                      key={user.id}
+                      user={user}
+                      onDeactivate={handleUserDeactivate}
+                      onDelete={handleUserDelete}
+                    />
                   ))}
                 </div>
               </section>
@@ -3881,7 +4074,15 @@ function PatientResult({
   )
 }
 
-function AdministrationUserCard({ user }: { user: AdministrationUserItem }) {
+function AdministrationUserCard({
+  user,
+  onDeactivate,
+  onDelete,
+}: {
+  user: AdministrationUserItem
+  onDeactivate?: (user: AdministrationUserItem) => Promise<void>
+  onDelete?: (user: AdministrationUserItem) => Promise<void>
+}) {
   return (
     <article className="admin-user-card">
       <div className="message-item-header">
@@ -3900,6 +4101,22 @@ function AdministrationUserCard({ user }: { user: AdministrationUserItem }) {
         <span>{user.email || 'No email'}</span>
         <span>{user.authorized ? 'Authorized provider' : 'Operational user'}</span>
       </div>
+      {(onDeactivate || onDelete) && (
+        <div className="detail-actions compact-actions">
+          {onDeactivate && user.active && (
+            <button type="button" className="icon-text-button" onClick={() => onDeactivate(user)}>
+              <Ban size={15} />
+              Deactivate
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" className="icon-text-button danger" onClick={() => onDelete(user)}>
+              <Trash2 size={15} />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </article>
   )
 }

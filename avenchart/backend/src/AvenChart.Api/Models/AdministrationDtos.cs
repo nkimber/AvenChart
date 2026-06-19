@@ -54,3 +54,18 @@ public sealed record AdministrationFacilityMutationRequest(
 public sealed record AdministrationFacilityMutationResponse(
     int Id,
     AdministrationDirectoryResponse Detail);
+
+public sealed record AdministrationUserMutationRequest(
+    string Username,
+    string FirstName,
+    string LastName,
+    string Role,
+    bool? Calendar,
+    int? FacilityId,
+    string? Email,
+    string? Npi,
+    bool? Active);
+
+public sealed record AdministrationUserMutationResponse(
+    int Id,
+    AdministrationDirectoryResponse Detail);

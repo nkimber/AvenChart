@@ -544,6 +544,18 @@ export type AdministrationUserItem = {
   npi?: string | null
 }
 
+export type AdministrationUserMutationInput = {
+  username: string
+  firstName: string
+  lastName: string
+  role: string
+  calendar?: boolean | null
+  facilityId?: number | null
+  email?: string | null
+  npi?: string | null
+  active?: boolean | null
+}
+
 export type AdministrationFacilityItem = {
   id: number
   code: string
@@ -578,6 +590,11 @@ export type AdministrationDirectoryResponse = {
 }
 
 export type AdministrationFacilityMutationResponse = {
+  id: number
+  detail: AdministrationDirectoryResponse
+}
+
+export type AdministrationUserMutationResponse = {
   id: number
   detail: AdministrationDirectoryResponse
 }
@@ -1191,6 +1208,51 @@ export async function getAdministrationDirectory(signal?: AbortSignal): Promise<
   }
 
   return response.json()
+}
+
+export async function createAdministrationUser(
+  input: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/users`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration user create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateAdministrationUser(
+  userId: number,
+  input: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration user update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteAdministrationUser(userId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration user delete failed with ${response.status}`)
+  }
 }
 
 export async function createAdministrationFacility(

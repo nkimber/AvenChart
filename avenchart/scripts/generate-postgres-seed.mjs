@@ -74,7 +74,10 @@ create table staff (
   last_name text not null,
   role text not null,
   calendar boolean not null,
-  facility_id integer references facilities(id)
+  facility_id integer references facilities(id),
+  email text,
+  npi text,
+  active boolean not null default true
 );
 
 create table patients (
@@ -337,7 +340,7 @@ copyRows('facilities', ['id', 'code', 'name', 'phone', 'street', 'city', 'state'
     facility.color,
   ]))
 
-copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calendar', 'facility_id'],
+copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calendar', 'facility_id', 'email', 'npi', 'active'],
   dataset.staff.map((staff) => [
     staff.id,
     staff.username,
@@ -346,6 +349,9 @@ copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calenda
     staff.role,
     staff.calendar,
     staff.facilityId,
+    `${staff.username}@example.test`,
+    staff.role === 'provider' ? `18888${staff.id}` : null,
+    true,
   ]))
 
 copyRows('patients', [

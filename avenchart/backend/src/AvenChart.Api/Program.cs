@@ -501,6 +501,51 @@ administration.MapGet("/directory", async (
     })
     .WithName("GetAdministrationDirectory");
 
+administration.MapPost("/users", async (
+        AdministrationRepository repository,
+        AdministrationUserMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.CreateUserAsync(request, cancellationToken);
+            return Results.Created($"/api/administration/users/{mutation.Id}", mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CreateAdministrationUser");
+
+administration.MapPut("/users/{userId:int}", async (
+        AdministrationRepository repository,
+        int userId,
+        AdministrationUserMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.UpdateUserAsync(userId, request, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("UpdateAdministrationUser");
+
+administration.MapDelete("/users/{userId:int}", async (
+        AdministrationRepository repository,
+        int userId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteUserAsync(userId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteAdministrationUser");
+
 administration.MapPost("/facilities", async (
         AdministrationRepository repository,
         AdministrationFacilityMutationRequest request,
