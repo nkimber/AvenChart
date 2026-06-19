@@ -62,6 +62,41 @@ export type PatientSearchResponse = {
   patients: PatientListItem[]
 }
 
+export type AppointmentListItem = {
+  id: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  title: string
+  status?: string | null
+  room?: string | null
+  categoryId?: number | null
+  providerName?: string | null
+  facilityName?: string | null
+}
+
+export type AppointmentDetail = AppointmentListItem & {
+  firstName: string
+  lastName: string
+  sex?: string | null
+  dateOfBirth: string
+  patientPurpose?: string | null
+}
+
+export type AppointmentSearchResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId?: string | null
+  fromDate?: string | null
+  limit: number
+  totalMatches: number
+  appointments: AppointmentListItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -83,6 +118,40 @@ export async function getPatientChart(canonicalId: string, signal?: AbortSignal)
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(canonicalId)}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient chart load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function searchAppointments(
+  patientId: string,
+  fromDate: string,
+  signal?: AbortSignal,
+): Promise<AppointmentSearchResponse> {
+  const params = new URLSearchParams()
+  if (patientId.trim()) {
+    params.set('patientId', patientId.trim())
+  }
+  if (fromDate.trim()) {
+    params.set('from', fromDate.trim())
+  }
+  params.set('limit', '25')
+
+  const response = await fetch(`${apiBaseUrl}/api/appointments?${params.toString()}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Appointment search failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getAppointmentDetail(
+  appointmentId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Appointment detail load failed with ${response.status}`)
   }
 
   return response.json()

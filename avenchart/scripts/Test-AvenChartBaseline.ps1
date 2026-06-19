@@ -63,6 +63,37 @@ catch {
     Add-Check -Name "anchor chart summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $appointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" -Method Get -TimeoutSec 20
+    $anchorAppointment = $appointments.appointments | Select-Object -First 1
+    $appointmentPassed = $null -ne $anchorAppointment -and ([datetime]$anchorAppointment.date) -gt ([datetime]"2026-06-18")
+    Add-Check -Name "anchor appointment search" -Result $(if ($appointmentPassed) { "passed" } else { "failed" }) -Details @{
+        totalMatches = $appointments.totalMatches
+        firstAppointment = $anchorAppointment
+    }
+}
+catch {
+    Add-Check -Name "anchor appointment search" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    if ($null -eq $anchorAppointment) {
+        throw "Anchor appointment search did not return an appointment."
+    }
+
+    $appointmentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$($anchorAppointment.id)" -Method Get -TimeoutSec 20
+    $appointmentDetailPassed = $appointmentDetail.patientId -eq "MOD-PAT-0003" -and ([datetime]$appointmentDetail.date) -gt ([datetime]"2026-06-18")
+    Add-Check -Name "anchor appointment detail" -Result $(if ($appointmentDetailPassed) { "passed" } else { "failed" }) -Details @{
+        id = $appointmentDetail.id
+        title = $appointmentDetail.title
+        date = $appointmentDetail.date
+        status = $appointmentDetail.status
+    }
+}
+catch {
+    Add-Check -Name "anchor appointment detail" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl
