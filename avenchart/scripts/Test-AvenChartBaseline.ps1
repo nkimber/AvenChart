@@ -1660,6 +1660,67 @@ finally {
     }
 }
 
+$billingModifierMutationId = $null
+try {
+    $modifierBillingText = "Smoke Modifier Billing Mutation"
+    $createModifierBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounter = 1000013
+        billingDate = "2026-06-18"
+        codeType = "CPT4"
+        code = "99213"
+        modifier = ""
+        codeText = "Smoke Modifier Billing Seed"
+        fee = 125.00
+        units = 1
+        justify = "Z00.00"
+    } | ConvertTo-Json
+    $createdModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createModifierBody -TimeoutSec 20
+    $billingModifierMutationId = $createdModifierLine.id
+
+    $modifierBody = @{
+        codeText = $modifierBillingText
+        modifier = "25"
+        fee = 142.25
+        units = 2
+        justify = "E78.5"
+    } | ConvertTo-Json
+    $modifiedBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Put -ContentType "application/json" -Body $modifierBody -TimeoutSec 20
+    $modifiedBillingEncounter = $modifiedBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $modifiedBillingVisible = $modifiedBillingEncounter.lines | Where-Object { $_.id -eq $billingModifierMutationId -and $_.code -eq "99213" -and $_.modifier -eq "25" -and $_.codeText -eq $modifierBillingText -and $_.fee -eq 142.25 -and $_.units -eq 2 -and $_.justify -eq "E78.5" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
+
+    $statusModifierBody = @{
+        billed = 1
+        activity = 0
+    } | ConvertTo-Json
+    $inactiveModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId/status" -Method Put -ContentType "application/json" -Body $statusModifierBody -TimeoutSec 20
+    $inactiveModifierEncounter = $inactiveModifierLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $inactiveModifierVisible = $inactiveModifierEncounter.lines | Where-Object { $_.id -eq $billingModifierMutationId } | Select-Object -First 1
+    $billingModifierPassed = $null -ne $modifiedBillingVisible -and $null -eq $inactiveModifierVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $billingModifierMutationId = $null
+
+    Add-Check -Name "billing modifier mutation lifecycle" -Result $(if ($billingModifierPassed) { "passed" } else { "failed" }) -Details @{
+        modifiedId = $modifiedBillingLine.id
+        modifiedVisible = $modifiedBillingVisible
+        inactiveVisible = $inactiveModifierVisible
+    }
+}
+catch {
+    Add-Check -Name "billing modifier mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $billingModifierMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $diagnosisLineMutationId = $null
 try {
     $diagnosisCodeText = "Smoke Diagnosis Mutation"

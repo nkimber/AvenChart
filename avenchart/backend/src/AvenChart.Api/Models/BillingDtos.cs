@@ -29,6 +29,7 @@ public sealed record BillingLineItem(
     string BillingDate,
     string? CodeType,
     string? Code,
+    string? Modifier,
     string? CodeText,
     decimal? Fee,
     string? Justify,
@@ -43,6 +44,7 @@ public sealed record BillingLineCreateRequest(
     string BillingDate,
     string CodeType,
     string Code,
+    string? Modifier,
     string CodeText,
     decimal Fee,
     int Units,
@@ -50,6 +52,7 @@ public sealed record BillingLineCreateRequest(
 
 public sealed record BillingLineUpdateRequest(
     string CodeText,
+    string? Modifier,
     decimal Fee,
     int Units,
     string Justify);

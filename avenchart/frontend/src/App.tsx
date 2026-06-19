@@ -4532,6 +4532,7 @@ function FeesWorkspace({
   const [billingEncounter, setBillingEncounter] = useState('')
   const [billingDate, setBillingDate] = useState('2026-06-18')
   const [billingCode, setBillingCode] = useState('99213')
+  const [billingModifier, setBillingModifier] = useState('')
   const [billingCodeText, setBillingCodeText] = useState('Established patient office visit')
   const [billingFee, setBillingFee] = useState('125.00')
   const [billingUnits, setBillingUnits] = useState('1')
@@ -4540,6 +4541,7 @@ function FeesWorkspace({
   const [diagnosisText, setDiagnosisText] = useState('Prediabetes')
   const [correctionLineId, setCorrectionLineId] = useState('')
   const [correctionCodeText, setCorrectionCodeText] = useState('Corrected established patient office visit')
+  const [correctionModifier, setCorrectionModifier] = useState('25')
   const [correctionFee, setCorrectionFee] = useState('132.50')
   const [correctionUnits, setCorrectionUnits] = useState('2')
   const [correctionJustify, setCorrectionJustify] = useState('Z00.00')
@@ -4571,6 +4573,7 @@ function FeesWorkspace({
       billingDate,
       codeType: 'CPT4',
       code: billingCode,
+      modifier: billingModifier,
       codeText: billingCodeText,
       fee: Number(billingFee),
       units: Number(billingUnits),
@@ -4602,6 +4605,7 @@ function FeesWorkspace({
   function handleSelectCorrectionLine(line: BillingLineItem) {
     setCorrectionLineId(line.id)
     setCorrectionCodeText(line.codeText || '')
+    setCorrectionModifier(line.modifier || '')
     setCorrectionFee(line.fee?.toFixed(2) ?? '0.00')
     setCorrectionUnits(String(line.units))
     setCorrectionJustify(line.justify || '')
@@ -4614,6 +4618,7 @@ function FeesWorkspace({
 
     await onUpdateLine(correctionLineId, {
       codeText: correctionCodeText,
+      modifier: correctionModifier,
       fee: Number(correctionFee),
       units: Number(correctionUnits),
       justify: correctionJustify,
@@ -4714,6 +4719,15 @@ function FeesWorkspace({
                 />
               </label>
             </div>
+            <label className="filter-field">
+              <span>Modifier</span>
+              <input
+                value={billingModifier}
+                onChange={(event) => setBillingModifier(event.target.value)}
+                aria-label="New billing modifier"
+                placeholder="25"
+              />
+            </label>
             <label className="filter-field">
               <span>Description</span>
               <input
@@ -4824,6 +4838,15 @@ function FeesWorkspace({
                 onChange={(event) => setCorrectionCodeText(event.target.value)}
                 aria-label="Billing correction description"
                 required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Modifier</span>
+              <input
+                value={correctionModifier}
+                onChange={(event) => setCorrectionModifier(event.target.value)}
+                aria-label="Billing correction modifier"
+                placeholder="25"
               />
             </label>
             <div className="mutation-grid two-column">
@@ -7414,12 +7437,13 @@ function BillingLineCard({
   return (
     <article className="billing-line-card">
       <div className="message-item-header">
-        <strong>{line.code || 'Billing code'}</strong>
+        <strong>{line.code ? `${line.code}${line.modifier ? `:${line.modifier}` : ''}` : 'Billing code'}</strong>
         <span className="status-tag">{line.codeType || 'Code type'}</span>
       </div>
       <p>{line.codeText || 'No description recorded'}</p>
       <div className="procedure-order-meta">
         <span>{line.justify ? `Justify ${line.justify}` : 'No justification'}</span>
+        <span>{line.modifier ? `Modifier ${line.modifier}` : 'No modifier'}</span>
         <span>{line.units} unit{line.units === 1 ? '' : 's'}</span>
         <span>{line.billed === 1 ? 'Billed' : 'Unbilled'}</span>
         <span>{formatCurrency(line.fee)}</span>

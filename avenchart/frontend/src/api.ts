@@ -724,6 +724,7 @@ export type BillingLineItem = {
   billingDate: string
   codeType?: string | null
   code?: string | null
+  modifier?: string | null
   codeText?: string | null
   fee?: number | null
   justify?: string | null
@@ -764,6 +765,7 @@ export type BillingLineCreateInput = {
   billingDate: string
   codeType: string
   code: string
+  modifier?: string | null
   codeText: string
   fee: number
   units: number
@@ -772,6 +774,7 @@ export type BillingLineCreateInput = {
 
 export type BillingLineUpdateInput = {
   codeText: string
+  modifier?: string | null
   fee: number
   units: number
   justify: string

@@ -77,10 +77,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             insert into billing
                 (id, pid, provider_id, encounter, billing_date, code_type, code, code_text,
-                 fee, justify, units, billed, activity)
+                 modifier, fee, justify, units, billed, activity)
             values
                 (@id, @pid, @providerId, @encounter, @billingDate, @codeType, @code, @codeText,
-                 @fee, @justify, @units, 0, 1);
+                 @modifier, @fee, @justify, @units, 0, 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("pid", patient.LegacyPid);
@@ -90,6 +90,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("codeType", request.CodeType.Trim());
         command.Parameters.AddWithValue("code", request.Code.Trim());
         command.Parameters.AddWithValue("codeText", request.CodeText.Trim());
+        command.Parameters.AddWithValue("modifier", NormalizeText(request.Modifier) ?? string.Empty);
         command.Parameters.AddWithValue("fee", request.Fee);
         command.Parameters.AddWithValue("justify", request.Justify.Trim());
         command.Parameters.AddWithValue("units", request.Units);
@@ -159,6 +160,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 update billing
                 set code_text = @codeText,
+                    modifier = @modifier,
                     fee = @fee,
                     units = @units,
                     justify = @justify
@@ -167,6 +169,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.AddWithValue("id", billingLineId);
             command.Parameters.AddWithValue("codeText", request.CodeText.Trim());
+            command.Parameters.AddWithValue("modifier", NormalizeText(request.Modifier) ?? string.Empty);
             command.Parameters.AddWithValue("fee", request.Fee);
             command.Parameters.AddWithValue("units", request.Units);
             command.Parameters.AddWithValue("justify", request.Justify.Trim());
@@ -318,7 +321,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, encounter, billing_date, code_type, code, code_text, fee, justify, units, billed, activity
+            select id, encounter, billing_date, code_type, code, modifier, code_text, fee, justify, units, billed, activity
             from billing
             where pid = @pid
               and encounter = any(@encounters)
@@ -338,6 +341,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 BillingDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("billing_date")).ToString("yyyy-MM-dd"),
                 CodeType: ReadNullableString(reader, "code_type"),
                 Code: ReadNullableString(reader, "code"),
+                Modifier: ReadNullableString(reader, "modifier"),
                 CodeText: ReadNullableString(reader, "code_text"),
                 Fee: ReadNullableDecimal(reader, "fee"),
                 Justify: ReadNullableString(reader, "justify"),
@@ -397,6 +401,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         return DateOnly.TryParseExact(value, "yyyy-MM-dd", out date)
             || DateOnly.TryParse(value, out date);
+    }
+
+    private static string? NormalizeText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static bool IsBinaryStatus(int value)
