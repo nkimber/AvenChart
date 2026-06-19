@@ -1601,6 +1601,57 @@ finally {
     }
 }
 
+$diagnosisLineMutationId = $null
+try {
+    $diagnosisCodeText = "Smoke Diagnosis Mutation"
+    $createDiagnosisBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounter = 1000013
+        billingDate = "2026-06-18"
+        codeType = "ICD10"
+        code = "R73.03"
+        codeText = $diagnosisCodeText
+        fee = 0.00
+        units = 1
+        justify = "R73.03"
+    } | ConvertTo-Json
+    $createdDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createDiagnosisBody -TimeoutSec 20
+    $diagnosisLineMutationId = $createdDiagnosisLine.id
+    $createdDiagnosisEncounter = $createdDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $createdDiagnosisVisible = $createdDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId -and $_.codeType -eq "ICD10" -and $_.code -eq "R73.03" -and $_.codeText -eq $diagnosisCodeText -and $_.fee -eq 0 -and $_.justify -eq "R73.03" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
+
+    $statusDiagnosisBody = @{
+        billed = 1
+        activity = 0
+    } | ConvertTo-Json
+    $inactiveDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusDiagnosisBody -TimeoutSec 20
+    $inactiveDiagnosisEncounter = $inactiveDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $inactiveDiagnosisVisible = $inactiveDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId } | Select-Object -First 1
+    $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $diagnosisLineMutationId = $null
+
+    Add-Check -Name "billing diagnosis mutation lifecycle" -Result $(if ($diagnosisLineMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdDiagnosisLine.id
+        createdVisible = $createdDiagnosisVisible
+        inactiveVisible = $inactiveDiagnosisVisible
+    }
+}
+catch {
+    Add-Check -Name "billing diagnosis mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $diagnosisLineMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $administration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/directory" -Method Get -TimeoutSec 20
     $provider = $administration.users | Where-Object { $_.username -eq "gold-provider-02" -and $_.role -eq "provider" } | Select-Object -First 1

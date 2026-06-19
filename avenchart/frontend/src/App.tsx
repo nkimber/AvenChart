@@ -4514,6 +4514,8 @@ function FeesWorkspace({
   const [billingFee, setBillingFee] = useState('125.00')
   const [billingUnits, setBillingUnits] = useState('1')
   const [billingJustify, setBillingJustify] = useState('Z00.00')
+  const [diagnosisCode, setDiagnosisCode] = useState('R73.03')
+  const [diagnosisText, setDiagnosisText] = useState('Prediabetes')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
@@ -4551,6 +4553,25 @@ function FeesWorkspace({
     setMutationMessage('Billing line saved')
   }
 
+  async function handleDiagnosisLineSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateLine({
+      patientId,
+      encounter: Number(billingEncounter),
+      billingDate,
+      codeType: 'ICD10',
+      code: diagnosisCode,
+      codeText: diagnosisText,
+      fee: 0,
+      units: 1,
+      justify: diagnosisCode,
+    })
+
+    setMutationMessage('Diagnosis line saved')
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Fees search">
@@ -4578,6 +4599,7 @@ function FeesWorkspace({
             <MetricRow label="Encounters" value={patientBilling.encounters.length} />
             <MetricRow label="Billing lines" value={lineCount} />
             <MetricRow label="CPT lines" value={countBillingLinesByType(patientBilling.encounters, 'CPT4')} />
+            <MetricRow label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
           </div>
         ) : (
@@ -4673,6 +4695,62 @@ function FeesWorkspace({
             {mutationMessage && <span className="save-note">{mutationMessage}</span>}
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleDiagnosisLineSubmit}>
+          <div className="panel-heading compact-heading">
+            <Stethoscope size={16} />
+            <h3>New Diagnosis Line</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={billingEncounter}
+                onChange={(event) => setBillingEncounter(event.target.value)}
+                aria-label="New diagnosis encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Date</span>
+              <input
+                value={billingDate}
+                onChange={(event) => setBillingDate(event.target.value)}
+                aria-label="New diagnosis date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>ICD10</span>
+              <input
+                value={diagnosisCode}
+                onChange={(event) => setDiagnosisCode(event.target.value)}
+                aria-label="New diagnosis ICD10 code"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Description</span>
+              <input
+                value={diagnosisText}
+                onChange={(event) => setDiagnosisText(event.target.value)}
+                aria-label="New diagnosis description"
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+            >
+              <Check size={15} />
+              Save Diagnosis
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Fees detail">
@@ -4694,6 +4772,7 @@ function FeesWorkspace({
                 <Field label="Patient ID" value={patientBilling.pubpid} />
                 <Field label="Encounters" value={patientBilling.encounters.length} />
                 <Field label="Billing lines" value={lineCount} />
+                <Field label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
                 <Field label="Total fee" value={formatCurrency(totalFee)} />
               </InfoPanel>
 
