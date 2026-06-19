@@ -92,6 +92,30 @@ public sealed record ImmunizationListItem(
     string? Note,
     int? Encounter);
 
+public sealed record ClinicalImmunizationCreateRequest(
+    string PatientId,
+    int? Encounter,
+    int? ImmunizationId,
+    string? CvxCode,
+    string Vaccine,
+    string AdministeredAt,
+    string? Manufacturer,
+    string? LotNumber,
+    int? AdministeredById,
+    string? AdministeredBy,
+    string? EducationDate,
+    string? VisDate,
+    decimal? AmountAdministered,
+    string? AmountAdministeredUnit,
+    string? ExpirationDate,
+    string? Route,
+    string? AdministrationSite,
+    string? CompletionStatus,
+    string? InformationSource,
+    string? Note);
+
+public sealed record ClinicalImmunizationErrorRequest(string Note);
+
 public sealed record ClinicalPrescriptionCreateRequest(
     string PatientId,
     int? ProviderId,

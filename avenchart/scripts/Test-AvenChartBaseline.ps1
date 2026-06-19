@@ -404,6 +404,64 @@ finally {
     }
 }
 
+$clinicalImmunizationMutationId = $null
+try {
+    $immunizationLot = "SMOKE-IMM-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    $createImmunizationBody = @{
+        patientId = "MOD-PAT-0007"
+        encounter = $null
+        immunizationId = 30
+        cvxCode = "141"
+        vaccine = "Influenza, seasonal, injectable"
+        administeredAt = "2026-09-10 10:30:00"
+        manufacturer = "Sanofi Pasteur"
+        lotNumber = $immunizationLot
+        administeredById = $null
+        administeredBy = "admin"
+        educationDate = "2026-09-10"
+        visDate = "2026-08-01"
+        amountAdministered = 0.5
+        amountAdministeredUnit = "mL"
+        expirationDate = "2027-06-30"
+        route = "intramuscular"
+        administrationSite = "left deltoid"
+        completionStatus = "completed"
+        informationSource = "new_immunization_record"
+        note = "Created by the smoke immunization mutation check."
+    } | ConvertTo-Json
+    $createdImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations" -Method Post -ContentType "application/json" -Body $createImmunizationBody -TimeoutSec 20
+    $clinicalImmunizationMutationId = $createdImmunization.id
+    $createdImmunizationVisible = $createdImmunization.detail.immunizations | Where-Object { $_.lotNumber -eq $immunizationLot -and $_.cvxCode -eq "141" } | Select-Object -First 1
+
+    $enteredInErrorBody = @{
+        note = "Marked entered in error by the smoke immunization mutation check."
+    } | ConvertTo-Json
+    $enteredInErrorImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId/entered-in-error" -Method Put -ContentType "application/json" -Body $enteredInErrorBody -TimeoutSec 20
+    $enteredInErrorVisible = $enteredInErrorImmunization.detail.immunizations | Where-Object { $_.lotNumber -eq $immunizationLot } | Select-Object -First 1
+    $clinicalImmunizationMutationPassed = $null -ne $createdImmunizationVisible -and $null -eq $enteredInErrorVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $clinicalImmunizationMutationId = $null
+
+    Add-Check -Name "clinical immunization mutation lifecycle" -Result $(if ($clinicalImmunizationMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdImmunization.id
+        createdVisible = $createdImmunizationVisible
+        enteredInErrorVisible = $enteredInErrorVisible
+    }
+}
+catch {
+    Add-Check -Name "clinical immunization mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $clinicalImmunizationMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1

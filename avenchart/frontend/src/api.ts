@@ -359,6 +359,33 @@ export type ClinicalPrescriptionDeactivateInput = {
   note: string
 }
 
+export type ClinicalImmunizationCreateInput = {
+  patientId: string
+  encounter?: number | null
+  immunizationId?: number | null
+  cvxCode?: string | null
+  vaccine: string
+  administeredAt: string
+  manufacturer?: string | null
+  lotNumber?: string | null
+  administeredById?: number | null
+  administeredBy?: string | null
+  educationDate?: string | null
+  visDate?: string | null
+  amountAdministered?: number | null
+  amountAdministeredUnit?: string | null
+  expirationDate?: string | null
+  route?: string | null
+  administrationSite?: string | null
+  completionStatus?: string | null
+  informationSource?: string | null
+  note?: string | null
+}
+
+export type ClinicalImmunizationErrorInput = {
+  note: string
+}
+
 export type PatientMessageItem = {
   id: string
   date?: string | null
@@ -1176,6 +1203,57 @@ export async function deleteClinicalPrescription(prescriptionId: string, signal?
   })
   if (!response.ok) {
     throw new Error(`Clinical prescription delete failed with ${response.status}`)
+  }
+}
+
+export async function createClinicalImmunization(
+  immunization: ClinicalImmunizationCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/immunizations`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(immunization),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical immunization create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function markClinicalImmunizationEnteredInError(
+  immunizationId: number,
+  update: ClinicalImmunizationErrorInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}/entered-in-error`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(update),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Clinical immunization entered-in-error update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteClinicalImmunization(immunizationId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}`,
+    {
+      method: 'DELETE',
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Clinical immunization delete failed with ${response.status}`)
   }
 }
 

@@ -240,6 +240,124 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<ClinicalListMutationResponse?> CreateImmunizationAsync(
+        ClinicalImmunizationCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Vaccine)
+            || !TryReadDateTime(request.AdministeredAt, out var administeredAt)
+            || !TryReadOptionalDate(request.EducationDate, out var educationDate)
+            || !TryReadOptionalDate(request.VisDate, out var visDate)
+            || !TryReadOptionalDate(request.ExpirationDate, out var expirationDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var key = $"IMM-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with next_immunization as (
+                select coalesce(max(id), 8500000) + 1 as id
+                from immunizations
+            )
+            insert into immunizations
+                (id, key, patient_id, pid, encounter, immunization_id, cvx_code, vaccine, administered_at,
+                 manufacturer, lot_number, administered_by_id, administered_by, education_date, vis_date,
+                 amount_administered, amount_administered_unit, expiration_date, route, administration_site,
+                 completion_status, information_source, note, added_erroneously)
+            select
+                next_immunization.id, @key, @patientId, @pid, @encounter, @immunizationId, @cvxCode, @vaccine,
+                @administeredAt, @manufacturer, @lotNumber, @administeredById, @administeredBy, @educationDate,
+                @visDate, @amountAdministered, @amountAdministeredUnit, @expirationDate, @route, @administrationSite,
+                @completionStatus, @informationSource, @note, 0
+            from next_immunization
+            returning id;
+            """;
+        command.Parameters.AddWithValue("key", key);
+        command.Parameters.AddWithValue("patientId", patient.PatientId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        AddNullableInt(command, "encounter", request.Encounter);
+        AddNullableInt(command, "immunizationId", request.ImmunizationId);
+        command.Parameters.AddWithValue("cvxCode", NullableText(request.CvxCode));
+        command.Parameters.AddWithValue("vaccine", request.Vaccine.Trim());
+        command.Parameters.Add("administeredAt", NpgsqlDbType.Timestamp).Value = administeredAt;
+        command.Parameters.AddWithValue("manufacturer", NullableText(request.Manufacturer));
+        command.Parameters.AddWithValue("lotNumber", NullableText(request.LotNumber));
+        AddNullableInt(command, "administeredById", request.AdministeredById ?? patient.ProviderId);
+        command.Parameters.AddWithValue("administeredBy", NullableText(request.AdministeredBy));
+        AddNullableDate(command, "educationDate", educationDate);
+        AddNullableDate(command, "visDate", visDate);
+        AddNullableDecimal(command, "amountAdministered", request.AmountAdministered);
+        command.Parameters.AddWithValue("amountAdministeredUnit", NullableText(request.AmountAdministeredUnit));
+        AddNullableDate(command, "expirationDate", expirationDate);
+        command.Parameters.AddWithValue("route", NullableText(request.Route));
+        command.Parameters.AddWithValue("administrationSite", NullableText(request.AdministrationSite));
+        command.Parameters.AddWithValue("completionStatus", NullableText(request.CompletionStatus));
+        command.Parameters.AddWithValue("informationSource", NullableText(request.InformationSource));
+        command.Parameters.AddWithValue("note", NullableText(request.Note));
+
+        var id = (int?)await command.ExecuteScalarAsync(cancellationToken);
+        if (id is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(id.Value.ToString(CultureInfo.InvariantCulture), lists);
+    }
+
+    public async Task<ClinicalListMutationResponse?> MarkImmunizationEnteredInErrorAsync(
+        int immunizationId,
+        ClinicalImmunizationErrorRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update immunizations
+                set added_erroneously = 1,
+                    note = @note
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", immunizationId);
+            command.Parameters.AddWithValue("note", NullableText(request.Note));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null
+            ? null
+            : new ClinicalListMutationResponse(immunizationId.ToString(CultureInfo.InvariantCulture), lists);
+    }
+
+    public async Task<bool> DeleteImmunizationAsync(int immunizationId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from immunizations
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", immunizationId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -558,6 +676,48 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         return DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    }
+
+    private static bool TryReadDateTime(string value, out DateTime dateTime)
+    {
+        return DateTime.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces,
+            out dateTime);
+    }
+
+    private static bool TryReadOptionalDate(string? value, out DateOnly? date)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            date = null;
+            return true;
+        }
+
+        if (TryReadDate(value, out var parsedDate))
+        {
+            date = parsedDate;
+            return true;
+        }
+
+        date = null;
+        return false;
+    }
+
+    private static void AddNullableDate(NpgsqlCommand command, string name, DateOnly? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Date).Value = value.HasValue ? value.Value : DBNull.Value;
+    }
+
+    private static void AddNullableDecimal(NpgsqlCommand command, string name, decimal? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Numeric).Value = value.HasValue ? value.Value : DBNull.Value;
+    }
+
+    private static void AddNullableInt(NpgsqlCommand command, string name, int? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Integer).Value = value.HasValue ? value.Value : DBNull.Value;
     }
 
     private static object NullableText(string? value)

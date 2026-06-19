@@ -43,6 +43,7 @@ import {
   createAppointment,
   createBillingLine,
   createClinicalAllergy,
+  createClinicalImmunization,
   createClinicalPrescription,
   createAdministrationFacility,
   createAdministrationUser,
@@ -59,6 +60,7 @@ import {
   deleteAdministrationUser,
   deleteBillingLine,
   deleteClinicalAllergy,
+  deleteClinicalImmunization,
   deleteClinicalPrescription,
   deleteEncounter,
   deletePatientDocument,
@@ -66,6 +68,7 @@ import {
   deleteProcedureOrder,
   deactivateClinicalAllergy,
   deactivateClinicalPrescription,
+  markClinicalImmunizationEnteredInError,
   grantAdministrationAccessPermission,
   grantAdministrationAccessUserMembership,
   revokeAdministrationAccessPermission,
@@ -103,6 +106,7 @@ import {
   type BillingLineItem,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
+  type ClinicalImmunizationCreateInput,
   type ClinicalPrescriptionCreateInput,
   type EncounterCreateInput,
   type EncounterDetail,
@@ -940,6 +944,63 @@ function App() {
     }
   }
 
+  async function handleClinicalImmunizationCreate(input: ClinicalImmunizationCreateInput) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await createClinicalImmunization(input)
+      setClinicalPatientId(response.detail.patientId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setClinicalStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Clinical immunization create failed'
+      setClinicalError(message)
+      throw createError
+    }
+  }
+
+  async function handleClinicalImmunizationEnteredInError(immunization: ImmunizationListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await markClinicalImmunizationEnteredInError(immunization.id, {
+        note: 'Marked entered in error from the modernized Lists workspace.',
+      })
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setClinicalStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Clinical immunization update failed'
+      setClinicalError(message)
+      throw updateError
+    }
+  }
+
+  async function handleClinicalImmunizationDelete(immunization: ImmunizationListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      await deleteClinicalImmunization(immunization.id)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      setClinicalLists(refreshed)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setClinicalStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Clinical immunization delete failed'
+      setClinicalError(message)
+      throw deleteError
+    }
+  }
+
   async function handleBillingLineCreate(input: BillingLineCreateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -1535,6 +1596,9 @@ function App() {
             onCreatePrescription={handleClinicalPrescriptionCreate}
             onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
             onDeletePrescription={handleClinicalPrescriptionDelete}
+            onCreateImmunization={handleClinicalImmunizationCreate}
+            onMarkImmunizationEnteredInError={handleClinicalImmunizationEnteredInError}
+            onDeleteImmunization={handleClinicalImmunizationDelete}
           />
         )}
         {activeModule === 'fees' && (
@@ -2772,6 +2836,9 @@ function ClinicalListsWorkspace({
   onCreatePrescription,
   onDeactivatePrescription,
   onDeletePrescription,
+  onCreateImmunization,
+  onMarkImmunizationEnteredInError,
+  onDeleteImmunization,
 }: {
   patientId: string
   clinicalLists: ClinicalListsResponse | null
@@ -2784,6 +2851,9 @@ function ClinicalListsWorkspace({
   onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
   onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
   onDeletePrescription: (prescription: PrescriptionListItem) => Promise<void>
+  onCreateImmunization: (input: ClinicalImmunizationCreateInput) => Promise<unknown>
+  onMarkImmunizationEnteredInError: (immunization: ImmunizationListItem) => Promise<unknown>
+  onDeleteImmunization: (immunization: ImmunizationListItem) => Promise<void>
 }) {
   const [allergyTitle, setAllergyTitle] = useState('Parity Allergy')
   const [allergyDate, setAllergyDate] = useState('2026-06-18 09:00:00')
@@ -2797,6 +2867,15 @@ function ClinicalListsWorkspace({
   const [prescriptionRefills, setPrescriptionRefills] = useState('1')
   const [prescriptionDiagnosis, setPrescriptionDiagnosis] = useState('Z00.00')
   const [prescriptionNote, setPrescriptionNote] = useState('Created from the modernized Lists workspace.')
+  const [immunizationVaccine, setImmunizationVaccine] = useState('Influenza, seasonal, injectable')
+  const [immunizationAdministeredAt, setImmunizationAdministeredAt] = useState('2026-09-10 10:30:00')
+  const [immunizationCvxCode, setImmunizationCvxCode] = useState('141')
+  const [immunizationLotNumber, setImmunizationLotNumber] = useState('MUT-IMM-DEMO')
+  const [immunizationManufacturer, setImmunizationManufacturer] = useState('Sanofi Pasteur')
+  const [immunizationRoute, setImmunizationRoute] = useState('intramuscular')
+  const [immunizationSite, setImmunizationSite] = useState('left deltoid')
+  const [immunizationVisDate, setImmunizationVisDate] = useState('2026-08-01')
+  const [immunizationNote, setImmunizationNote] = useState('Created from the modernized Lists workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const isLoading = status === 'loading'
 
@@ -2837,6 +2916,34 @@ function ClinicalListsWorkspace({
     setMutationMessage('Prescription saved')
   }
 
+  async function handleImmunizationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateImmunization({
+      patientId,
+      immunizationId: 30,
+      cvxCode: immunizationCvxCode,
+      vaccine: immunizationVaccine,
+      administeredAt: immunizationAdministeredAt,
+      manufacturer: immunizationManufacturer,
+      lotNumber: immunizationLotNumber,
+      administeredBy: 'admin',
+      educationDate: immunizationAdministeredAt.slice(0, 10),
+      visDate: immunizationVisDate,
+      amountAdministered: 0.5,
+      amountAdministeredUnit: 'mL',
+      expirationDate: '2027-06-30',
+      route: immunizationRoute,
+      administrationSite: immunizationSite,
+      completionStatus: 'completed',
+      informationSource: 'new_immunization_record',
+      note: immunizationNote,
+    })
+
+    setMutationMessage('Immunization saved')
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Clinical lists search">
@@ -2854,10 +2961,11 @@ function ClinicalListsWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Chart lists'}</span>
-          <span>Allergy and Rx lifecycles</span>
+          <span>Allergy, Rx, and immunization lifecycles</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
+        {mutationMessage && status !== 'error' && <div className="status-banner success">{mutationMessage}</div>}
 
         {clinicalLists ? (
           <div className="list-counts">
@@ -2928,7 +3036,6 @@ function ClinicalListsWorkspace({
               <Check size={15} />
               Save Allergy
             </button>
-            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
           </div>
         </form>
 
@@ -3013,6 +3120,102 @@ function ClinicalListsWorkspace({
             </button>
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleImmunizationSubmit}>
+          <div className="panel-heading compact-heading">
+            <Syringe size={16} />
+            <h3>New Immunization</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Vaccine</span>
+              <input
+                value={immunizationVaccine}
+                onChange={(event) => setImmunizationVaccine(event.target.value)}
+                aria-label="New immunization vaccine"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Administered</span>
+                <input
+                  value={immunizationAdministeredAt}
+                  onChange={(event) => setImmunizationAdministeredAt(event.target.value)}
+                  aria-label="New immunization administered date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>CVX</span>
+                <input
+                  value={immunizationCvxCode}
+                  onChange={(event) => setImmunizationCvxCode(event.target.value)}
+                  aria-label="New immunization CVX code"
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Manufacturer</span>
+                <input
+                  value={immunizationManufacturer}
+                  onChange={(event) => setImmunizationManufacturer(event.target.value)}
+                  aria-label="New immunization manufacturer"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Lot</span>
+                <input
+                  value={immunizationLotNumber}
+                  onChange={(event) => setImmunizationLotNumber(event.target.value)}
+                  aria-label="New immunization lot number"
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Route</span>
+                <input
+                  value={immunizationRoute}
+                  onChange={(event) => setImmunizationRoute(event.target.value)}
+                  aria-label="New immunization route"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Site</span>
+                <input
+                  value={immunizationSite}
+                  onChange={(event) => setImmunizationSite(event.target.value)}
+                  aria-label="New immunization site"
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>VIS date</span>
+              <input
+                value={immunizationVisDate}
+                onChange={(event) => setImmunizationVisDate(event.target.value)}
+                aria-label="New immunization VIS date"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Note</span>
+              <textarea
+                value={immunizationNote}
+                onChange={(event) => setImmunizationNote(event.target.value)}
+                aria-label="New immunization note"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Immunization
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Clinical lists detail">
@@ -3043,7 +3246,12 @@ function ClinicalListsWorkspace({
                 disabled={isLoading}
               />
               <MedicationPanel items={clinicalLists.medications} />
-              <ImmunizationPanel items={clinicalLists.immunizations} />
+              <ImmunizationPanel
+                items={clinicalLists.immunizations}
+                onMarkEnteredInError={onMarkImmunizationEnteredInError}
+                onDelete={onDeleteImmunization}
+                disabled={isLoading}
+              />
               <PrescriptionPanel
                 items={clinicalLists.prescriptions}
                 onDeactivate={onDeactivatePrescription}
@@ -5523,7 +5731,17 @@ function MedicationPanel({ items }: { items: MedicationListItem[] }) {
   )
 }
 
-function ImmunizationPanel({ items }: { items: ImmunizationListItem[] }) {
+function ImmunizationPanel({
+  items,
+  onMarkEnteredInError,
+  onDelete,
+  disabled,
+}: {
+  items: ImmunizationListItem[]
+  onMarkEnteredInError: (immunization: ImmunizationListItem) => Promise<unknown>
+  onDelete: (immunization: ImmunizationListItem) => Promise<void>
+  disabled: boolean
+}) {
   return (
     <ClinicalSection title="Immunizations" icon={Syringe} emptyText="No immunizations recorded">
       {items.map((item) => (
@@ -5539,6 +5757,21 @@ function ImmunizationPanel({ items }: { items: ImmunizationListItem[] }) {
               .filter(Boolean)
               .join(' / ')}
           </p>
+          <div className="clinical-item-actions">
+            <button
+              className="icon-text-button danger"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onMarkEnteredInError(item)}
+            >
+              <Ban size={14} />
+              Entered in Error
+            </button>
+            <button className="icon-text-button" type="button" disabled={disabled} onClick={() => void onDelete(item)}>
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
         </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No immunizations recorded</div>}
