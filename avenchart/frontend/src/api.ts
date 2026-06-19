@@ -551,6 +551,11 @@ export type PatientDocumentMetadataUpdateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentContentReplaceInput = {
+  fileName: string
+  content: string
+}
+
 export type PatientDocumentContentResponse = {
   id: number
   documentKey: string
@@ -1657,6 +1662,24 @@ export async function updatePatientDocumentMetadata(
   })
   if (!response.ok) {
     throw new Error(`Patient document metadata update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function replacePatientDocumentContent(
+  documentId: number,
+  document: PatientDocumentContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document content replacement failed with ${response.status}`)
   }
 
   return response.json()

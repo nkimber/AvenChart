@@ -1091,6 +1091,84 @@ finally {
     }
 }
 
+$patientDocumentContentReplaceId = $null
+try {
+    $replaceDocumentName = "Smoke Replace Content Patient Document"
+    $replaceDocumentOriginalBody = "Created by the smoke patient-document content replacement check."
+    $replaceDocumentUpdatedBody = "Updated by the smoke patient-document content replacement check."
+    $replaceDocumentFileName = "$replaceDocumentName.txt"
+    $createReplaceDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $replaceDocumentName
+        docDate = "2026-06-19"
+        encounter = 1000013
+        content = $replaceDocumentOriginalBody
+        notes = "Created by the smoke patient-document content replacement check."
+    } | ConvertTo-Json
+    $createdReplaceDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createReplaceDocumentBody -TimeoutSec 20
+    $patientDocumentContentReplaceId = $createdReplaceDocument.id
+    $createdReplaceVisible = $createdReplaceDocument.detail.documents | Where-Object { $_.name -eq $replaceDocumentName -and $_.contentPreview -and $_.contentPreview.Contains($replaceDocumentOriginalBody) } | Select-Object -First 1
+
+    $replaceContentBody = @{
+        fileName = $replaceDocumentFileName
+        content = $replaceDocumentUpdatedBody
+    } | ConvertTo-Json
+    $replacedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/content" -Method Put -ContentType "application/json" -Body $replaceContentBody -TimeoutSec 20
+    $replacedVisible = $replacedDocument.detail.documents | Where-Object { $_.name -eq $replaceDocumentName -and $_.fileName -eq $replaceDocumentFileName -and $_.contentPreview -and $_.contentPreview.Contains($replaceDocumentUpdatedBody) } | Select-Object -First 1
+    $replacedContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/content" -Method Get -TimeoutSec 20
+
+    $replaceDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $replaceDownload = $replaceDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/download").GetAwaiter().GetResult()
+        $replaceDownloadBody = $replaceDownload.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $replaceDownloadContentType = $replaceDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $replaceDownloadClient.Dispose()
+    }
+
+    $archivedReplacedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedReplacedVisible = $archivedReplacedDocument.detail.documents | Where-Object { $_.name -eq $replaceDocumentName } | Select-Object -First 1
+    $patientDocumentContentReplacePassed = $null -ne $createdReplaceVisible `
+        -and $null -ne $replacedVisible `
+        -and $replacedContent.name -eq $replaceDocumentName `
+        -and $replacedContent.fileName -eq $replaceDocumentFileName `
+        -and $replacedContent.mimetype -eq "text/plain" `
+        -and -not $replacedContent.isBinary `
+        -and $replacedContent.content.Contains($replaceDocumentUpdatedBody) `
+        -and -not $replacedContent.content.Contains($replaceDocumentOriginalBody) `
+        -and $replaceDownload.IsSuccessStatusCode `
+        -and $replaceDownloadContentType -eq "text/plain" `
+        -and $replaceDownloadBody.Contains($replaceDocumentUpdatedBody) `
+        -and $null -eq $archivedReplacedVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentContentReplaceId = $null
+
+    Add-Check -Name "patient document content replacement lifecycle" -Result $(if ($patientDocumentContentReplacePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdReplaceDocument.id
+        createdVisible = $createdReplaceVisible
+        replacedVisible = $replacedVisible
+        content = $replacedContent
+        downloadStatus = [int]$replaceDownload.StatusCode
+        downloadContentType = $replaceDownloadContentType
+        archivedVisible = $archivedReplacedVisible
+    }
+}
+catch {
+    Add-Check -Name "patient document content replacement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentContentReplaceId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientDocumentArchiveRestoreId = $null
 try {
     $archiveDocumentName = "Smoke Archive Restore Patient Document"

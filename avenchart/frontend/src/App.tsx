@@ -95,6 +95,7 @@ import {
   softDeletePatientDocument,
   softDeletePatientMessage,
   restorePatientDocument,
+  replacePatientDocumentContent,
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
@@ -148,6 +149,7 @@ import {
   type PatientContactUpdate,
   type PatientDemographicsUpdate,
   type PatientDocumentCreateInput,
+  type PatientDocumentContentReplaceInput,
   type PatientDocumentContentResponse,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
@@ -1762,6 +1764,28 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentContentReplace(
+    document: PatientDocumentItem,
+    input: PatientDocumentContentReplaceInput,
+  ) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await replacePatientDocumentContent(document.id, input)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (replaceError) {
+      setDocumentStatus('error')
+      const message =
+        replaceError instanceof Error ? replaceError.message : 'Patient document content replacement failed'
+      setDocumentError(message)
+      throw replaceError
+    }
+  }
+
   async function handlePatientDocumentArchive(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -2059,6 +2083,7 @@ function App() {
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onUpdateDocumentMetadata={handlePatientDocumentMetadataUpdate}
+            onReplaceDocumentContent={handlePatientDocumentContentReplace}
             onArchiveDocument={handlePatientDocumentArchive}
             onRestoreDocument={handlePatientDocumentRestore}
             onSignDocument={handlePatientDocumentSign}
@@ -5176,6 +5201,7 @@ function DocumentsWorkspace({
   onCreateBinaryDocument,
   onCreateExternalLinkDocument,
   onUpdateDocumentMetadata,
+  onReplaceDocumentContent,
   onArchiveDocument,
   onRestoreDocument,
   onSignDocument,
@@ -5195,6 +5221,10 @@ function DocumentsWorkspace({
   onUpdateDocumentMetadata: (
     document: PatientDocumentItem,
     input: PatientDocumentMetadataUpdateInput,
+  ) => Promise<unknown>
+  onReplaceDocumentContent: (
+    document: PatientDocumentItem,
+    input: PatientDocumentContentReplaceInput,
   ) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onRestoreDocument: (document: PatientDocumentItem) => Promise<unknown>
@@ -5749,6 +5779,7 @@ function DocumentsWorkspace({
                       disabled={isLoading}
                       onView={handleDocumentView}
                       onUpdateMetadata={onUpdateDocumentMetadata}
+                      onReplaceContent={onReplaceDocumentContent}
                       onArchive={onArchiveDocument}
                       onRestore={onRestoreDocument}
                       onSign={onSignDocument}
@@ -6508,6 +6539,7 @@ function DocumentItem({
   disabled,
   onView,
   onUpdateMetadata,
+  onReplaceContent,
   onArchive,
   onRestore,
   onSign,
@@ -6518,6 +6550,7 @@ function DocumentItem({
   disabled: boolean
   onView: (document: PatientDocumentItem) => Promise<void>
   onUpdateMetadata: (document: PatientDocumentItem, input: PatientDocumentMetadataUpdateInput) => Promise<unknown>
+  onReplaceContent: (document: PatientDocumentItem, input: PatientDocumentContentReplaceInput) => Promise<unknown>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
   onRestore: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
@@ -6531,10 +6564,15 @@ function DocumentItem({
   const [editEncounter, setEditEncounter] = useState(document.encounter ? String(document.encounter) : '')
   const [editNotes, setEditNotes] = useState(document.notes ?? document.documentationOf ?? '')
   const [editError, setEditError] = useState<string | null>(null)
+  const [isReplacing, setIsReplacing] = useState(false)
+  const [replacementFileName, setReplacementFileName] = useState(document.fileName || `${document.name}.txt`)
+  const [replacementContent, setReplacementContent] = useState('')
+  const [replaceError, setReplaceError] = useState<string | null>(null)
   const isApproved = document.reviewStatus === 'approved'
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
   const isExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
   const isArchived = document.deleted !== 0
+  const canReplaceContent = !isArchived && !isExternalLink
 
   useEffect(() => {
     setEditName(document.name)
@@ -6543,6 +6581,9 @@ function DocumentItem({
     setEditEncounter(document.encounter ? String(document.encounter) : '')
     setEditNotes(document.notes ?? document.documentationOf ?? '')
     setEditError(null)
+    setReplacementFileName(document.fileName || `${document.name}.txt`)
+    setReplacementContent('')
+    setReplaceError(null)
   }, [document])
 
   async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
@@ -6564,6 +6605,23 @@ function DocumentItem({
       notes: editNotes.trim().length > 0 ? editNotes : null,
     })
     setIsEditing(false)
+  }
+
+  async function handleContentReplacementSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setReplaceError(null)
+
+    if (!replacementFileName.trim() || !replacementContent.trim()) {
+      setReplaceError('Enter a file name and replacement body')
+      return
+    }
+
+    await onReplaceContent(document, {
+      fileName: replacementFileName,
+      content: replacementContent,
+    })
+    setIsReplacing(false)
+    setReplacementContent('')
   }
 
   return (
@@ -6664,6 +6722,42 @@ function DocumentItem({
           </div>
         </form>
       )}
+      {isReplacing && (
+        <form className="document-edit-form" onSubmit={handleContentReplacementSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>File Name</span>
+              <input
+                value={replacementFileName}
+                onChange={(event) => setReplacementFileName(event.target.value)}
+                aria-label="Replacement document file name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Replacement Body</span>
+              <textarea
+                value={replacementContent}
+                onChange={(event) => setReplacementContent(event.target.value)}
+                aria-label="Replacement document body"
+                rows={4}
+                required
+              />
+            </label>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Content
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsReplacing(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {replaceError && <span className="save-note error">{replaceError}</span>}
+          </div>
+        </form>
+      )}
       <div className="document-item-actions">
         <button
           className="icon-text-button secondary"
@@ -6702,6 +6796,15 @@ function DocumentItem({
         >
           <Pencil size={14} />
           Edit
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || !canReplaceContent}
+          onClick={() => setIsReplacing((current) => !current)}
+        >
+          <FileText size={14} />
+          Replace
         </button>
         <button
           className="icon-text-button danger"

@@ -642,6 +642,19 @@ documents.MapPut("/{documentId:int}/metadata", async (
     })
     .WithName("UpdatePatientDocumentMetadata");
 
+documents.MapPut("/{documentId:int}/content", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentContentReplaceRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ReplaceContentAsync(documentId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Patient document content could not be replaced from the supplied text payload.")
+            : Results.Ok(mutation);
+    })
+    .WithName("ReplacePatientDocumentContent");
+
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
         int documentId,

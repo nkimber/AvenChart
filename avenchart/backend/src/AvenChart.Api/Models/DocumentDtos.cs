@@ -74,6 +74,10 @@ public sealed record PatientDocumentMetadataUpdateRequest(
     int? Encounter,
     string? Notes);
 
+public sealed record PatientDocumentContentReplaceRequest(
+    string FileName,
+    string Content);
+
 public sealed record PatientDocumentContentResponse(
     int Id,
     string DocumentKey,

@@ -438,6 +438,63 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
+    public async Task<PatientDocumentMutationResponse?> ReplaceContentAsync(
+        int documentId,
+        PatientDocumentContentReplaceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0
+            || string.IsNullOrWhiteSpace(request.FileName)
+            || string.IsNullOrWhiteSpace(request.Content))
+        {
+            return null;
+        }
+
+        var fileName = SanitizeFileName(request.FileName.Trim());
+        var content = request.Content.Trim();
+        var contentBytes = Encoding.UTF8.GetBytes(content);
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        string? patientId = null;
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set mimetype = 'text/plain',
+                    file_name = @fileName,
+                    size_bytes = @sizeBytes,
+                    pages = 1,
+                    storage_method = 'database',
+                    hash = @hash,
+                    content = @content,
+                    content_bytes = null,
+                    uploaded_at = @uploadedAt,
+                    url = case
+                        when coalesce(url, '') = '' then concat('modern://documents/', document_key)
+                        else url
+                    end
+                where id = @id and deleted = 0 and coalesce(storage_method, 'database') <> 'web_url'
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            command.Parameters.AddWithValue("fileName", fileName);
+            command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+            command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+            command.Parameters.AddWithValue("content", content);
+            command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+    }
+
     public async Task<PatientDocumentMutationResponse?> SignAsync(
         int documentId,
         PatientDocumentSignRequest request,
