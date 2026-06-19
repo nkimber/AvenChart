@@ -418,7 +418,7 @@
 }
 
 .billing-detail-grid {
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 280px) minmax(220px, 280px) minmax(0, 1fr);
 }
 
 .procedure-detail-grid {
@@ -963,6 +963,10 @@
 .billing-lines-panel,
 .procedure-results-panel {
   min-width: 0;
+}
+
+.billing-lines-panel {
+  grid-column: 1 / -1;
 }
 
 .procedure-results-panel {

@@ -10,6 +10,7 @@ public sealed record PatientBillingResponse(
     string FirstName,
     string LastName,
     BillingAccountSummary AccountSummary,
+    BillingAgingSummary AgingSummary,
     IReadOnlyList<BillingEncounterItem> Encounters);
 
 public sealed record BillingAccountSummary(
@@ -17,6 +18,14 @@ public sealed record BillingAccountSummary(
     decimal PaymentAmount,
     decimal AdjustmentAmount,
     decimal BalanceAmount);
+
+public sealed record BillingAgingSummary(
+    string AsOfDate,
+    decimal CurrentAmount,
+    decimal Days31To60Amount,
+    decimal Days61To90Amount,
+    decimal Over90Amount,
+    decimal TotalBalanceAmount);
 
 public sealed record BillingEncounterItem(
     int Id,
@@ -31,6 +40,8 @@ public sealed record BillingEncounterItem(
     decimal PaymentAmount,
     decimal AdjustmentAmount,
     decimal BalanceAmount,
+    int AgeDays,
+    string AgingBucket,
     IReadOnlyList<BillingLineItem> Lines,
     IReadOnlyList<BillingClaimItem> Claims,
     IReadOnlyList<BillingPaymentItem> Payments);

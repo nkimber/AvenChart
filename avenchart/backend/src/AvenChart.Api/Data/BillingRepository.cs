@@ -33,6 +33,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             var chargeAmount = encounterLines.Sum(line => line.Fee ?? 0m);
             var paymentAmount = encounterPayments.Sum(payment => payment.PayAmount);
             var adjustmentAmount = encounterPayments.Sum(payment => payment.AdjustmentAmount);
+            var lastBillingDate = encounterLines
+                .Select(line => ReadDateOnly(line.BillingDate, metadata.BaseDate))
+                .DefaultIfEmpty(ReadDateOnly(encounter.Date, metadata.BaseDate))
+                .Max();
+            var ageDays = Math.Max(0, metadata.BaseDate.DayNumber - lastBillingDate.DayNumber);
+            var agingBucket = AgingBucketLabel(ageDays);
 
             return encounter with
             {
@@ -40,6 +46,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 PaymentAmount = paymentAmount,
                 AdjustmentAmount = adjustmentAmount,
                 BalanceAmount = chargeAmount - paymentAmount - adjustmentAmount,
+                AgeDays = ageDays,
+                AgingBucket = agingBucket,
                 Lines = encounterLines,
                 Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, []),
                 Payments = encounterPayments
@@ -50,6 +58,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             PaymentAmount: encounterSummaries.Sum(encounter => encounter.PaymentAmount),
             AdjustmentAmount: encounterSummaries.Sum(encounter => encounter.AdjustmentAmount),
             BalanceAmount: encounterSummaries.Sum(encounter => encounter.BalanceAmount));
+        var agingSummary = new BillingAgingSummary(
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            CurrentAmount: SumBalanceForBucket(encounterSummaries, "Current"),
+            Days31To60Amount: SumBalanceForBucket(encounterSummaries, "31-60"),
+            Days61To90Amount: SumBalanceForBucket(encounterSummaries, "61-90"),
+            Over90Amount: SumBalanceForBucket(encounterSummaries, "Over 90"),
+            TotalBalanceAmount: accountSummary.BalanceAmount);
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -61,6 +76,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             FirstName: patient.FirstName,
             LastName: patient.LastName,
             AccountSummary: accountSummary,
+            AgingSummary: agingSummary,
             Encounters: encounterSummaries);
     }
 
@@ -327,6 +343,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 PaymentAmount: 0m,
                 AdjustmentAmount: 0m,
                 BalanceAmount: 0m,
+                AgeDays: 0,
+                AgingBucket: "Current",
                 Lines: [],
                 Claims: [],
                 Payments: []));
@@ -558,6 +576,38 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         return DateOnly.TryParseExact(value, "yyyy-MM-dd", out date)
             || DateOnly.TryParse(value, out date);
+    }
+
+    private static DateOnly ReadDateOnly(string value, DateOnly fallback)
+    {
+        return TryReadDate(value, out var date) ? date : fallback;
+    }
+
+    private static string AgingBucketLabel(int ageDays)
+    {
+        if (ageDays <= 30)
+        {
+            return "Current";
+        }
+
+        if (ageDays <= 60)
+        {
+            return "31-60";
+        }
+
+        if (ageDays <= 90)
+        {
+            return "61-90";
+        }
+
+        return "Over 90";
+    }
+
+    private static decimal SumBalanceForBucket(IEnumerable<BillingEncounterItem> encounters, string bucket)
+    {
+        return encounters
+            .Where(encounter => encounter.AgingBucket == bucket)
+            .Sum(encounter => encounter.BalanceAmount);
     }
 
     private static string? NormalizeText(string? value)

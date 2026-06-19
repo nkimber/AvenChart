@@ -1619,6 +1619,41 @@ catch {
     Add-Check -Name "anchor account balance summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $agingBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $agingSummary = $agingBilling.agingSummary
+    $currentEncounter = $agingBilling.encounters | Where-Object { $_.encounter -eq 1000053 } | Select-Object -First 1
+    $days31To60Encounter = $agingBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1
+    $over90Encounter = $agingBilling.encounters | Where-Object { $_.encounter -eq 1000051 } | Select-Object -First 1
+    $accountAgingPassed = $agingBilling.patientId -eq "MOD-PAT-0005" `
+        -and $null -ne $agingSummary `
+        -and $agingSummary.asOfDate -eq "2026-06-18" `
+        -and [decimal]$agingSummary.currentAmount -eq 83.75 `
+        -and [decimal]$agingSummary.days31To60Amount -eq 18 `
+        -and [decimal]$agingSummary.days61To90Amount -eq 0 `
+        -and [decimal]$agingSummary.over90Amount -eq 263 `
+        -and [decimal]$agingSummary.totalBalanceAmount -eq 364.75 `
+        -and $null -ne $currentEncounter `
+        -and $currentEncounter.agingBucket -eq "Current" `
+        -and $currentEncounter.ageDays -eq 6 `
+        -and $null -ne $days31To60Encounter `
+        -and $days31To60Encounter.agingBucket -eq "31-60" `
+        -and $days31To60Encounter.ageDays -eq 56 `
+        -and $null -ne $over90Encounter `
+        -and $over90Encounter.agingBucket -eq "Over 90" `
+        -and $over90Encounter.ageDays -eq 361
+    Add-Check -Name "anchor account aging summary" -Result $(if ($accountAgingPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $agingBilling.patientId
+        agingSummary = $agingSummary
+        currentEncounter = $currentEncounter
+        days31To60Encounter = $days31To60Encounter
+        over90Encounter = $over90Encounter
+    }
+}
+catch {
+    Add-Check -Name "anchor account aging summary" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

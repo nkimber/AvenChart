@@ -4553,6 +4553,7 @@ function FeesWorkspace({
   const paymentCount = countBillingPayments(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
   const accountSummary = patientBilling?.accountSummary
+  const agingSummary = patientBilling?.agingSummary
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -4664,6 +4665,7 @@ function FeesWorkspace({
             <MetricRow label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
             <MetricRow label="Balance" value={Math.round(accountSummary?.balanceAmount ?? totalFee)} />
+            <MetricRow label="Aging total" value={Math.round(agingSummary?.totalBalanceAmount ?? 0)} />
           </div>
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
@@ -4932,6 +4934,15 @@ function FeesWorkspace({
                 <Field label="Paid" value={formatCurrency(accountSummary?.paymentAmount ?? 0)} />
                 <Field label="Adjusted" value={formatCurrency(accountSummary?.adjustmentAmount ?? 0)} />
                 <Field label="Balance" value={formatCurrency(accountSummary?.balanceAmount ?? totalFee)} />
+              </InfoPanel>
+
+              <InfoPanel title="Aging Summary" icon={Clock}>
+                <Field label="As of" value={agingSummary?.asOfDate ?? 'Not calculated'} />
+                <Field label="Current" value={formatCurrency(agingSummary?.currentAmount ?? 0)} />
+                <Field label="31-60" value={formatCurrency(agingSummary?.days31To60Amount ?? 0)} />
+                <Field label="61-90" value={formatCurrency(agingSummary?.days61To90Amount ?? 0)} />
+                <Field label="Over 90" value={formatCurrency(agingSummary?.over90Amount ?? 0)} />
+                <Field label="Total balance" value={formatCurrency(agingSummary?.totalBalanceAmount ?? 0)} />
               </InfoPanel>
 
               <section className="info-panel billing-lines-panel">
@@ -7411,7 +7422,10 @@ function BillingEncounterCard({
             {encounter.date} / Encounter {encounter.encounter}
           </span>
         </div>
-        <span className="status-tag">Balance {formatCurrency(encounter.balanceAmount)}</span>
+        <div className="document-card-tags">
+          <span className="status-tag">{encounter.agingBucket || 'Current'}</span>
+          <span className="status-tag">Balance {formatCurrency(encounter.balanceAmount)}</span>
+        </div>
       </div>
       <div className="procedure-order-meta">
         <span>{encounter.providerName || 'Provider not recorded'}</span>
@@ -7426,6 +7440,7 @@ function BillingEncounterCard({
         <span>Paid {formatCurrency(encounter.paymentAmount)}</span>
         <span>Adjusted {formatCurrency(encounter.adjustmentAmount)}</span>
         <span>Balance {formatCurrency(encounter.balanceAmount)}</span>
+        <span>Age {encounter.ageDays} days</span>
       </div>
       <div className="billing-line-list">
         {encounter.claims.map((claim) => (

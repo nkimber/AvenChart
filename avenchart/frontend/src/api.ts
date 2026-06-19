@@ -780,6 +780,15 @@ export type BillingAccountSummary = {
   balanceAmount: number
 }
 
+export type BillingAgingSummary = {
+  asOfDate: string
+  currentAmount: number
+  days31To60Amount: number
+  days61To90Amount: number
+  over90Amount: number
+  totalBalanceAmount: number
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -793,6 +802,8 @@ export type BillingEncounterItem = {
   paymentAmount: number
   adjustmentAmount: number
   balanceAmount: number
+  ageDays: number
+  agingBucket: string
   lines: BillingLineItem[]
   claims: BillingClaimItem[]
   payments: BillingPaymentItem[]
@@ -808,6 +819,7 @@ export type PatientBillingResponse = {
   firstName: string
   lastName: string
   accountSummary: BillingAccountSummary
+  agingSummary: BillingAgingSummary
   encounters: BillingEncounterItem[]
 }
 
