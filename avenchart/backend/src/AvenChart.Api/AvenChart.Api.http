@@ -1,0 +1,16 @@
+@AvenChart.Api_HostAddress = http://localhost:5001
+
+GET {{AvenChart.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{AvenChart.Api_HostAddress}}/api/patients?search=MOD-PAT-0001&limit=5
+Accept: application/json
+
+###
+
+GET {{AvenChart.Api_HostAddress}}/api/patients/MOD-PAT-0001
+Accept: application/json
+
+###

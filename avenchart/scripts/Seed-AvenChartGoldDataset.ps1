@@ -1,0 +1,67 @@
+param(
+    [int]$PostgresWaitSeconds = 90
+)
+
+$ErrorActionPreference = "Stop"
+
+$SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
+$SqlPath = Join-Path $ArtifactsRoot "postgres\seed-gold.sql"
+$ResultPath = Join-Path $ArtifactsRoot "latest-modernized-seed-result.json"
+
+Push-Location $SolutionRoot
+try {
+    New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
+
+    node .\scripts\generate-postgres-seed.mjs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Gold dataset SQL generation failed with exit code $LASTEXITCODE."
+    }
+
+    docker compose up -d postgres
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start the modernized PostgreSQL service."
+    }
+
+    $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds)
+    $ready = $false
+    while ((Get-Date) -lt $deadline) {
+        docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $ready = $true
+            break
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    if (-not $ready) {
+        throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds."
+    }
+
+    $sql = Get-Content -LiteralPath $SqlPath -Raw
+    $sql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Gold dataset import failed with exit code $LASTEXITCODE."
+    }
+
+    $countsJson = docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -t -A -c "select json_build_object('patients',(select count(*) from patients),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labOrders',(select count(*) from lab_orders),'messages',(select count(*) from messages),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read modernized seed counts."
+    }
+
+    $result = [ordered]@{
+        status = "passed"
+        generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        datasetId = "legacy-ehr-shared-synthetic-v1"
+        database = "legacy-ehr_modernized"
+        sqlPath = $SqlPath
+        counts = $countsJson | ConvertFrom-Json
+    }
+
+    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    Write-Host "Modernized gold dataset seed complete: $ResultPath"
+}
+finally {
+    Pop-Location
+}

@@ -1,0 +1,376 @@
+using System.Data.Common;
+using Npgsql;
+using NpgsqlTypes;
+using AvenChart.Api.Models;
+
+namespace AvenChart.Api.Data;
+
+public sealed class PatientRepository(NpgsqlDataSource dataSource)
+{
+    private const int MaximumSearchLimit = 100;
+
+    public async Task<PatientSearchResponse> SearchAsync(string? search, int limit, CancellationToken cancellationToken)
+    {
+        var safeLimit = Math.Clamp(limit, 1, MaximumSearchLimit);
+        var normalizedSearch = NormalizeSearch(search);
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var totalMatches = await CountMatchesAsync(connection, normalizedSearch, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            select
+                p.canonical_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.sex,
+                p.date_of_birth,
+                p.cohort,
+                p.purpose,
+                p.phone,
+                p.email,
+                f.name as facility_name,
+                trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                counts.appointment_count,
+                counts.encounter_count,
+                counts.prescription_count,
+                counts.billing_count,
+                counts.lab_order_count,
+                counts.message_count,
+                counts.problem_count,
+                counts.allergy_count,
+                counts.medication_count
+            from patients p
+            left join facilities f on f.id = p.facility_id
+            left join staff s on s.id = p.provider_id
+            left join lateral ({CountsSql("p.legacy_pid")}) counts on true
+            where {PatientSearchPredicate}
+            order by p.last_name, p.first_name, p.canonical_id
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("limit", safeLimit);
+        AddSearchParameter(command, normalizedSearch);
+
+        var patients = new List<PatientListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            patients.Add(new PatientListItem(
+                CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                DisplayName: BuildDisplayName(reader),
+                FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+                LastName: reader.GetString(reader.GetOrdinal("last_name")),
+                PreferredName: ReadNullableString(reader, "preferred_name"),
+                Sex: ReadNullableString(reader, "sex"),
+                DateOfBirth: ReadDate(reader, "date_of_birth"),
+                Age: CalculateAge(reader.GetFieldValue<DateOnly>(reader.GetOrdinal("date_of_birth")), metadata.BaseDate),
+                Cohort: ReadNullableString(reader, "cohort"),
+                Purpose: ReadNullableString(reader, "purpose"),
+                Phone: ReadNullableString(reader, "phone"),
+                Email: ReadNullableString(reader, "email"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                PrimaryProviderName: ReadNullableString(reader, "provider_name"),
+                Counts: ReadCounts(reader)));
+        }
+
+        return new PatientSearchResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Search: search,
+            Limit: safeLimit,
+            TotalMatches: totalMatches,
+            Patients: patients);
+    }
+
+    public async Task<PatientChartSummary?> GetChartSummaryAsync(string canonicalId, CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            select
+                p.canonical_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.sex,
+                p.date_of_birth,
+                p.cohort,
+                p.purpose,
+                p.street,
+                p.city,
+                p.state,
+                p.postal_code,
+                p.email,
+                p.phone,
+                p.marital_status,
+                p.occupation,
+                p.portal_enabled,
+                p.registration_date,
+                f.name as facility_name,
+                trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                counts.appointment_count,
+                counts.encounter_count,
+                counts.prescription_count,
+                counts.billing_count,
+                counts.lab_order_count,
+                counts.message_count,
+                counts.problem_count,
+                counts.allergy_count,
+                counts.medication_count,
+                next_appt.appointment_id,
+                next_appt.appointment_date,
+                next_appt.start_time,
+                next_appt.title as appointment_title,
+                next_appt.status as appointment_status,
+                next_appt.provider_name as appointment_provider,
+                next_appt.facility_name as appointment_facility,
+                latest_enc.encounter_id,
+                latest_enc.encounter_date,
+                latest_enc.reason as encounter_reason,
+                latest_enc.diagnosis_text,
+                latest_enc.provider_name as encounter_provider,
+                latest_enc.facility_name as encounter_facility
+            from patients p
+            left join facilities f on f.id = p.facility_id
+            left join staff s on s.id = p.provider_id
+            left join lateral ({CountsSql("p.legacy_pid")}) counts on true
+            left join lateral (
+                select
+                    a.id as appointment_id,
+                    a.appointment_date,
+                    a.start_time,
+                    a.title,
+                    a.status,
+                    trim(concat(ap.first_name, ' ', ap.last_name)) as provider_name,
+                    af.name as facility_name
+                from appointments a
+                left join staff ap on ap.id = a.provider_id
+                left join facilities af on af.id = a.facility_id
+                where a.pid = p.legacy_pid
+                  and a.appointment_date >= @baseDate
+                order by a.appointment_date, a.start_time
+                limit 1
+            ) next_appt on true
+            left join lateral (
+                select
+                    e.encounter as encounter_id,
+                    e.encounter_date,
+                    e.reason,
+                    e.diagnosis_text,
+                    trim(concat(ep.first_name, ' ', ep.last_name)) as provider_name,
+                    ef.name as facility_name
+                from encounters e
+                left join staff ep on ep.id = e.provider_id
+                left join facilities ef on ef.id = e.facility_id
+                where e.pid = p.legacy_pid
+                order by e.encounter_date desc, e.encounter desc
+                limit 1
+            ) latest_enc on true
+            where lower(p.canonical_id) = lower(@canonicalId)
+               or lower(p.pubpid) = lower(@canonicalId);
+            """;
+        command.Parameters.AddWithValue("canonicalId", canonicalId);
+        command.Parameters.AddWithValue("baseDate", metadata.BaseDate);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var dateOfBirth = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("date_of_birth"));
+        return new PatientChartSummary(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            DisplayName: BuildDisplayName(reader),
+            FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+            LastName: reader.GetString(reader.GetOrdinal("last_name")),
+            PreferredName: ReadNullableString(reader, "preferred_name"),
+            Sex: ReadNullableString(reader, "sex"),
+            DateOfBirth: dateOfBirth.ToString("yyyy-MM-dd"),
+            Age: CalculateAge(dateOfBirth, metadata.BaseDate),
+            Cohort: ReadNullableString(reader, "cohort"),
+            Purpose: ReadNullableString(reader, "purpose"),
+            Street: ReadNullableString(reader, "street"),
+            City: ReadNullableString(reader, "city"),
+            State: ReadNullableString(reader, "state"),
+            PostalCode: ReadNullableString(reader, "postal_code"),
+            Email: ReadNullableString(reader, "email"),
+            Phone: ReadNullableString(reader, "phone"),
+            MaritalStatus: ReadNullableString(reader, "marital_status"),
+            Occupation: ReadNullableString(reader, "occupation"),
+            PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
+            RegistrationDate: ReadDate(reader, "registration_date"),
+            FacilityName: ReadNullableString(reader, "facility_name"),
+            PrimaryProviderName: ReadNullableString(reader, "provider_name"),
+            Counts: ReadCounts(reader),
+            NextAppointment: ReadAppointment(reader),
+            LatestEncounter: ReadEncounter(reader));
+    }
+
+    private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select dataset_id, version, base_date
+            from dataset_metadata
+            order by generated_at desc
+            limit 1;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new DatasetMetadata("unseeded", "unknown", DateOnly.FromDateTime(DateTime.UtcNow));
+        }
+
+        return new DatasetMetadata(
+            reader.GetString(reader.GetOrdinal("dataset_id")),
+            reader.GetString(reader.GetOrdinal("version")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
+    }
+
+    private static async Task<int> CountMatchesAsync(NpgsqlConnection connection, string? normalizedSearch, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"select count(*) from patients p where {PatientSearchPredicate};";
+        AddSearchParameter(command, normalizedSearch);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result);
+    }
+
+    private const string PatientSearchPredicate = """
+        (@search is null
+         or lower(p.canonical_id) like @search
+         or lower(p.pubpid) like @search
+         or lower(p.first_name) like @search
+         or lower(p.last_name) like @search
+         or lower(concat(p.first_name, ' ', p.last_name)) like @search
+         or lower(coalesce(p.phone, '')) like @search
+         or lower(coalesce(p.email, '')) like @search)
+        """;
+
+    private static string CountsSql(string pidExpression) => $"""
+        select
+            (select count(*) from appointments a where a.pid = {pidExpression})::int as appointment_count,
+            (select count(*) from encounters e where e.pid = {pidExpression})::int as encounter_count,
+            (select count(*) from prescriptions pr where pr.pid = {pidExpression})::int as prescription_count,
+            (select count(*) from billing b where b.pid = {pidExpression})::int as billing_count,
+            (select count(*) from lab_orders lo where lo.pid = {pidExpression})::int as lab_order_count,
+            (select count(*) from messages m where m.pid = {pidExpression})::int as message_count,
+            (select count(*) from problems prob where prob.pid = {pidExpression})::int as problem_count,
+            (select count(*) from allergies al where al.pid = {pidExpression})::int as allergy_count,
+            (select count(*) from medications med where med.pid = {pidExpression})::int as medication_count
+        """;
+
+    private static void AddSearchParameter(NpgsqlCommand command, string? normalizedSearch)
+    {
+        command.Parameters.Add("search", NpgsqlDbType.Text).Value = normalizedSearch is null ? DBNull.Value : $"%{normalizedSearch}%";
+    }
+
+    private static string? NormalizeSearch(string? search)
+    {
+        var trimmed = search?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed.ToLowerInvariant();
+    }
+
+    private static PatientActivityCounts ReadCounts(DbDataReader reader) => new(
+        Appointments: ReadInt(reader, "appointment_count"),
+        Encounters: ReadInt(reader, "encounter_count"),
+        Prescriptions: ReadInt(reader, "prescription_count"),
+        BillingItems: ReadInt(reader, "billing_count"),
+        LabOrders: ReadInt(reader, "lab_order_count"),
+        Messages: ReadInt(reader, "message_count"),
+        Problems: ReadInt(reader, "problem_count"),
+        Allergies: ReadInt(reader, "allergy_count"),
+        Medications: ReadInt(reader, "medication_count"));
+
+    private static PatientTimelineItem? ReadAppointment(DbDataReader reader)
+    {
+        if (reader.IsDBNull(reader.GetOrdinal("appointment_id")))
+        {
+            return null;
+        }
+
+        var time = reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time"));
+        return new PatientTimelineItem(
+            Id: reader.GetString(reader.GetOrdinal("appointment_id")),
+            Date: ReadDate(reader, "appointment_date"),
+            Time: time.ToString("HH:mm"),
+            Title: ReadNullableString(reader, "appointment_title") ?? "Appointment",
+            Status: ReadNullableString(reader, "appointment_status"),
+            ProviderName: ReadNullableString(reader, "appointment_provider"),
+            FacilityName: ReadNullableString(reader, "appointment_facility"));
+    }
+
+    private static PatientTimelineItem? ReadEncounter(DbDataReader reader)
+    {
+        if (reader.IsDBNull(reader.GetOrdinal("encounter_id")))
+        {
+            return null;
+        }
+
+        var title = ReadNullableString(reader, "encounter_reason")
+            ?? ReadNullableString(reader, "diagnosis_text")
+            ?? "Encounter";
+
+        return new PatientTimelineItem(
+            Id: reader.GetInt32(reader.GetOrdinal("encounter_id")).ToString(),
+            Date: ReadDate(reader, "encounter_date"),
+            Time: null,
+            Title: title,
+            Status: ReadNullableString(reader, "diagnosis_text"),
+            ProviderName: ReadNullableString(reader, "encounter_provider"),
+            FacilityName: ReadNullableString(reader, "encounter_facility"));
+    }
+
+    private static string BuildDisplayName(DbDataReader reader)
+    {
+        var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+        var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+        var preferredName = ReadNullableString(reader, "preferred_name");
+        return string.IsNullOrWhiteSpace(preferredName)
+            ? $"{lastName}, {firstName}"
+            : $"{lastName}, {firstName} ({preferredName})";
+    }
+
+    private static string ReadDate(DbDataReader reader, string columnName) =>
+        reader.GetFieldValue<DateOnly>(reader.GetOrdinal(columnName)).ToString("yyyy-MM-dd");
+
+    private static string? ReadNullableString(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static int ReadInt(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? 0 : reader.GetInt32(ordinal);
+    }
+
+    private static int CalculateAge(DateOnly dateOfBirth, DateOnly asOfDate)
+    {
+        var age = asOfDate.Year - dateOfBirth.Year;
+        if (dateOfBirth > asOfDate.AddYears(-age))
+        {
+            age--;
+        }
+
+        return age;
+    }
+
+    private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+}
