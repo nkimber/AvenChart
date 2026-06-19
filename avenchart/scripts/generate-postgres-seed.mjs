@@ -29,11 +29,16 @@ drop table if exists medications;
 drop table if exists allergies;
 drop table if exists problems;
 drop table if exists messages;
+drop table if exists lab_results;
+drop table if exists lab_reports;
 drop table if exists lab_orders;
 drop table if exists billing;
 drop table if exists prescriptions;
+drop table if exists clinical_notes;
+drop table if exists vitals;
 drop table if exists encounters;
 drop table if exists appointments;
+drop table if exists insurance_records;
 drop table if exists patients;
 drop table if exists staff;
 drop table if exists facilities;
@@ -96,6 +101,18 @@ create table patients (
   registration_date date not null
 );
 
+create table insurance_records (
+  id text primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  type text,
+  provider text,
+  plan_name text,
+  policy_number text,
+  group_number text,
+  relationship text
+);
+
 create table appointments (
   id text primary key,
   patient_id text not null references patients(canonical_id),
@@ -124,6 +141,35 @@ create table encounters (
   diagnosis_code text,
   diagnosis_text text,
   category_id integer
+);
+
+create table vitals (
+  id integer primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  encounter integer,
+  vital_datetime timestamp not null,
+  bps integer,
+  bpd integer,
+  weight numeric(8,2),
+  height numeric(8,2),
+  temperature numeric(5,2),
+  pulse integer,
+  respiration integer,
+  bmi numeric(6,2),
+  oxygen_saturation integer
+);
+
+create table clinical_notes (
+  id integer primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  encounter integer,
+  note_datetime timestamp not null,
+  subjective text,
+  objective text,
+  assessment text,
+  plan text
 );
 
 create table prescriptions (
@@ -163,6 +209,26 @@ create table lab_orders (
   name text,
   diagnosis text,
   order_status text
+);
+
+create table lab_reports (
+  id integer primary key,
+  order_id integer not null references lab_orders(id),
+  report_date timestamp not null,
+  status text
+);
+
+create table lab_results (
+  id integer primary key,
+  report_id integer not null references lab_reports(id),
+  code text,
+  text text,
+  units text,
+  result text,
+  range text,
+  abnormal text,
+  result_date timestamp not null,
+  result_status text
 );
 
 create table messages (
@@ -302,6 +368,28 @@ copyRows('patients', [
   patient.registrationDate,
 ]))
 
+copyRows('insurance_records', [
+  'id',
+  'patient_id',
+  'pid',
+  'type',
+  'provider',
+  'plan_name',
+  'policy_number',
+  'group_number',
+  'relationship',
+], dataset.insuranceRecords.map((insurance) => [
+  insurance.id,
+  insurance.patientId,
+  insurance.pid,
+  insurance.type,
+  insurance.provider,
+  insurance.planName,
+  insurance.policyNumber,
+  insurance.groupNumber,
+  insurance.relationship,
+]))
+
 copyRows('appointments', [
   'id',
   'patient_id',
@@ -356,6 +444,60 @@ copyRows('encounters', [
   encounter.diagnosisCode,
   encounter.diagnosisText,
   encounter.categoryId,
+]))
+
+copyRows('vitals', [
+  'id',
+  'patient_id',
+  'pid',
+  'encounter',
+  'vital_datetime',
+  'bps',
+  'bpd',
+  'weight',
+  'height',
+  'temperature',
+  'pulse',
+  'respiration',
+  'bmi',
+  'oxygen_saturation',
+], dataset.vitals.map((vital) => [
+  vital.id,
+  vital.patientId,
+  vital.pid,
+  vital.encounter,
+  vital.date,
+  vital.bps,
+  vital.bpd,
+  vital.weight,
+  vital.height,
+  vital.temperature,
+  vital.pulse,
+  vital.respiration,
+  vital.bmi,
+  vital.oxygenSaturation,
+]))
+
+copyRows('clinical_notes', [
+  'id',
+  'patient_id',
+  'pid',
+  'encounter',
+  'note_datetime',
+  'subjective',
+  'objective',
+  'assessment',
+  'plan',
+], dataset.clinicalNotes.map((note) => [
+  note.id,
+  note.patientId,
+  note.pid,
+  note.encounter,
+  note.date,
+  note.subjective,
+  note.objective,
+  note.assessment,
+  note.plan,
 ]))
 
 copyRows('prescriptions', [
@@ -430,6 +572,42 @@ copyRows('lab_orders', [
   order.orderStatus,
 ]))
 
+copyRows('lab_reports', [
+  'id',
+  'order_id',
+  'report_date',
+  'status',
+], dataset.labReports.map((report) => [
+  report.id,
+  report.orderId,
+  report.date,
+  report.status,
+]))
+
+copyRows('lab_results', [
+  'id',
+  'report_id',
+  'code',
+  'text',
+  'units',
+  'result',
+  'range',
+  'abnormal',
+  'result_date',
+  'result_status',
+], dataset.labResults.map((result) => [
+  result.id,
+  result.reportId,
+  result.code,
+  result.text,
+  result.units,
+  result.result,
+  result.range,
+  result.abnormal,
+  result.date,
+  result.resultStatus,
+]))
+
 copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body', 'status'],
   dataset.messages.map((message) => [
     message.id,
@@ -481,11 +659,16 @@ copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis'
 lines.push(`
 create index idx_patients_name on patients (last_name, first_name);
 create index idx_patients_legacy_pid on patients (legacy_pid);
+create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);
 create index idx_encounters_pid_date on encounters (pid, encounter_date);
+create index idx_vitals_pid_date on vitals (pid, vital_datetime);
+create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);
 create index idx_billing_pid on billing (pid);
 create index idx_lab_orders_pid on lab_orders (pid);
+create index idx_lab_reports_date on lab_reports (report_date);
+create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);
 create index idx_problems_pid on problems (pid);
 create index idx_allergies_pid on allergies (pid);
@@ -503,11 +686,16 @@ fs.writeFileSync(summaryPath, JSON.stringify({
   outputPath,
   counts: {
     patients: dataset.patients.length,
+    insuranceRecords: dataset.insuranceRecords.length,
     appointments: dataset.appointments.length,
     encounters: dataset.encounters.length,
+    vitals: dataset.vitals.length,
+    clinicalNotes: dataset.clinicalNotes.length,
     prescriptions: dataset.prescriptions.length,
     billing: dataset.billing.length,
     labOrders: dataset.labOrders.length,
+    labReports: dataset.labReports.length,
+    labResults: dataset.labResults.length,
     messages: dataset.messages.length,
     problems: dataset.problems.length,
     allergies: dataset.allergies.length,
