@@ -360,7 +360,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             (select count(*) from billing b where b.pid = {pidExpression})::int as billing_count,
             (select count(*) from lab_orders lo where lo.pid = {pidExpression})::int as lab_order_count,
             (select count(*) from messages m where m.pid = {pidExpression})::int as message_count,
-            (select count(*) from problems prob where prob.pid = {pidExpression})::int as problem_count,
+            (select count(*) from problems prob where prob.pid = {pidExpression} and prob.activity = 1)::int as problem_count,
             (select count(*) from allergies al where al.pid = {pidExpression})::int as allergy_count,
             (select count(*) from medications med where med.pid = {pidExpression})::int as medication_count
         """;

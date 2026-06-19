@@ -20,7 +20,15 @@ public sealed record ProblemListItem(
     string Title,
     string? Diagnosis,
     string? Date,
-    string? Comments);
+    string? Comments,
+    int Activity);
+
+public sealed record ClinicalProblemCreateRequest(
+    string PatientId,
+    string Title,
+    string DateTime,
+    string? Diagnosis,
+    string Comments);
 
 public sealed record AllergyListItem(
     string Id,

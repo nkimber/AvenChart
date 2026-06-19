@@ -354,6 +354,49 @@ finally {
     }
 }
 
+$clinicalProblemMutationId = $null
+try {
+    $problemTitle = "Smoke Problem Mutation"
+    $createProblemBody = @{
+        patientId = "MOD-PAT-0006"
+        title = $problemTitle
+        dateTime = "2026-06-18 09:00:00"
+        diagnosis = "ICD10:Z00.00"
+        comments = "Created by the smoke problem-list mutation check."
+    } | ConvertTo-Json
+    $createdProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems" -Method Post -ContentType "application/json" -Body $createProblemBody -TimeoutSec 20
+    $clinicalProblemMutationId = $createdProblem.id
+    $createdProblemVisible = $createdProblem.detail.problems | Where-Object { $_.title -eq $problemTitle -and $_.diagnosis -eq "ICD10:Z00.00" -and $_.activity -eq 1 } | Select-Object -First 1
+
+    $deactivateProblemBody = @{
+        comments = "Deactivated by the smoke problem-list mutation check."
+    } | ConvertTo-Json
+    $deactivatedProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateProblemBody -TimeoutSec 20
+    $inactiveProblemVisible = $deactivatedProblem.detail.problems | Where-Object { $_.title -eq $problemTitle } | Select-Object -First 1
+    $clinicalProblemMutationPassed = $null -ne $createdProblemVisible -and $null -eq $inactiveProblemVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $clinicalProblemMutationId = $null
+
+    Add-Check -Name "clinical problem mutation lifecycle" -Result $(if ($clinicalProblemMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdProblem.id
+        createdVisible = $createdProblemVisible
+        inactiveVisible = $inactiveProblemVisible
+    }
+}
+catch {
+    Add-Check -Name "clinical problem mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $clinicalProblemMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $clinicalPrescriptionMutationId = $null
 try {
     $prescriptionDrug = "Smoke Prescription Mutation"

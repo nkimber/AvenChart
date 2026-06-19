@@ -271,6 +271,39 @@ clinicalLists.MapPost("/allergies", async (
     })
     .WithName("CreateClinicalAllergy");
 
+clinicalLists.MapPost("/problems", async (
+        ClinicalListRepository repository,
+        ClinicalProblemCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateProblemAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Problem could not be created from the supplied patient, title, and date.")
+            : Results.Created($"/api/clinical-lists/problems/{mutation.Id}", mutation);
+    })
+    .WithName("CreateClinicalProblem");
+
+clinicalLists.MapPut("/problems/{problemId}/deactivate", async (
+        ClinicalListRepository repository,
+        string problemId,
+        ClinicalListDeactivateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.DeactivateProblemAsync(problemId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("DeactivateClinicalProblem");
+
+clinicalLists.MapDelete("/problems/{problemId}", async (
+        ClinicalListRepository repository,
+        string problemId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteProblemAsync(problemId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteClinicalProblem");
+
 clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
         ClinicalListRepository repository,
         string allergyId,

@@ -551,7 +551,9 @@ create table problems (
   title text,
   diagnosis text,
   problem_date date,
-  comments text
+  comments text,
+  activity integer not null default 1,
+  end_date date
 );
 
 create table allergies (
@@ -1084,7 +1086,7 @@ copyRows('patient_documents', [
   0,
 ]))
 
-copyRows('problems', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'problem_date', 'comments'],
+copyRows('problems', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'problem_date', 'comments', 'activity', 'end_date'],
   dataset.problems.map((problem) => [
     problem.id,
     problem.patientId,
@@ -1094,6 +1096,8 @@ copyRows('problems', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', '
     problem.diagnosis,
     problem.date,
     problem.comments,
+    1,
+    null,
   ]))
 
 copyRows('allergies', ['id', 'patient_id', 'pid', 'type', 'title', 'reaction', 'severity', 'allergy_date', 'comments', 'activity', 'end_date', 'list_option_id'],

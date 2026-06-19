@@ -244,6 +244,7 @@ export type ProblemListItem = {
   diagnosis?: string | null
   date?: string | null
   comments?: string | null
+  activity: number
 }
 
 export type AllergyListItem = {
@@ -329,6 +330,14 @@ export type ClinicalAllergyCreateInput = {
   reaction: string
   severity: string
   listOptionId?: string | null
+}
+
+export type ClinicalProblemCreateInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  diagnosis?: string | null
+  comments: string
 }
 
 export type ClinicalListDeactivateInput = {
@@ -1128,6 +1137,51 @@ export async function createClinicalAllergy(
   }
 
   return response.json()
+}
+
+export async function createClinicalProblem(
+  problem: ClinicalProblemCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(problem),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical problem create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deactivateClinicalProblem(
+  problemId: string,
+  update: ClinicalListDeactivateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}/deactivate`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical problem deactivate failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteClinicalProblem(problemId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical problem delete failed with ${response.status}`)
+  }
 }
 
 export async function deactivateClinicalAllergy(
