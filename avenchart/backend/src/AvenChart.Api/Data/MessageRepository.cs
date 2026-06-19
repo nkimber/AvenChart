@@ -32,6 +32,131 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             Messages: messages);
     }
 
+    public async Task<PatientMessageMutationResponse?> CreateAsync(
+        PatientMessageCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Title)
+            || string.IsNullOrWhiteSpace(request.Body))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = $"MSG-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into messages
+                (id, patient_id, pid, message_date, title, body, status, assigned_to, deleted, activity)
+            values
+                (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, 0, 1);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("patientId", patient.PatientId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        command.Parameters.AddWithValue("messageDate", DateOnly.FromDateTime(DateTime.UtcNow));
+        command.Parameters.AddWithValue("title", request.Title.Trim());
+        command.Parameters.AddWithValue("body", request.Body.Trim());
+        command.Parameters.AddWithValue("assignedTo", NullableText(request.AssignedTo));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(id, detail);
+    }
+
+    public async Task<PatientMessageMutationResponse?> UpdateStatusAsync(
+        string messageId,
+        PatientMessageStatusUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)
+            || string.IsNullOrWhiteSpace(request.Status)
+            || string.IsNullOrWhiteSpace(request.Body))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update messages
+                set status = @status,
+                    body = @body
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", messageId);
+            command.Parameters.AddWithValue("status", request.Status.Trim());
+            command.Parameters.AddWithValue("body", request.Body.Trim());
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<PatientMessageMutationResponse?> SoftDeleteAsync(string messageId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update messages
+                set deleted = 1,
+                    activity = 0
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", messageId);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<bool> DeleteAsync(string messageId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from messages
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", messageId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -100,9 +225,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, status
+            select id, message_date, title, body, status, assigned_to, deleted
             from messages
-            where pid = @pid
+            where pid = @pid and deleted = 0
             order by message_date desc, id desc;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
@@ -116,7 +241,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 Date: ReadNullableDate(reader, "message_date"),
                 Title: ReadNullableString(reader, "title"),
                 Body: ReadNullableString(reader, "body"),
-                Status: ReadNullableString(reader, "status")));
+                Status: ReadNullableString(reader, "status"),
+                AssignedTo: ReadNullableString(reader, "assigned_to"),
+                Deleted: reader.GetInt32(reader.GetOrdinal("deleted"))));
         }
 
         return items;
@@ -132,6 +259,11 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static object NullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

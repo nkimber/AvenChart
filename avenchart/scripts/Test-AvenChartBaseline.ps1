@@ -328,6 +328,53 @@ catch {
     Add-Check -Name "anchor patient messages" -Result "failed" -Details $_.Exception.Message
 }
 
+$patientMessageMutationId = $null
+try {
+    $messageTitle = "Smoke Patient Message Mutation"
+    $createMessageBody = @{
+        patientId = "MOD-PAT-0004"
+        title = $messageTitle
+        body = "Created by the smoke patient-message mutation check."
+        assignedTo = "admin"
+    } | ConvertTo-Json
+    $createdMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -ContentType "application/json" -Body $createMessageBody -TimeoutSec 20
+    $patientMessageMutationId = $createdMessage.id
+    $createdVisible = $createdMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
+
+    $closeBody = @{
+        status = "Done"
+        body = "Closed by the smoke patient-message mutation check."
+    } | ConvertTo-Json
+    $closedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/status" -Method Put -ContentType "application/json" -Body $closeBody -TimeoutSec 20
+    $closedVisible = $closedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "Done" -and $_.body -eq "Closed by the smoke patient-message mutation check." } | Select-Object -First 1
+
+    $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle } | Select-Object -First 1
+    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientMessageMutationId = $null
+
+    Add-Check -Name "patient message mutation lifecycle" -Result $(if ($patientMessageMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdMessage.id
+        createdVisible = $createdVisible
+        closedVisible = $closedVisible
+        archivedVisible = $archivedVisible
+    }
+}
+catch {
+    Add-Check -Name "patient message mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientMessageMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $procedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" -Method Get -TimeoutSec 20
     $completedOrder = $procedures.orders | Where-Object { $_.name -eq "Complete blood count" -and $_.orderStatus -eq "complete" } | Select-Object -First 1

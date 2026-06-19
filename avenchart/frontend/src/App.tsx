@@ -38,15 +38,19 @@ import {
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
+  createPatientMessage,
   deleteAppointment,
   deleteClinicalAllergy,
   deleteEncounter,
+  deletePatientMessage,
   deactivateClinicalAllergy,
   searchAppointments,
   searchEncounters,
   searchPatients,
+  softDeletePatientMessage,
   updateAppointmentStatus,
   updateEncounter,
+  updatePatientMessageStatus,
   updatePatientContact,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -72,6 +76,7 @@ import {
   type PatientListItem,
   type PatientBillingResponse,
   type PatientContactUpdate,
+  type PatientMessageCreateInput,
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
@@ -152,6 +157,7 @@ function App() {
   const [patientMessages, setPatientMessages] = useState<PatientMessagesResponse | null>(null)
   const [messageStatus, setMessageStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [messageError, setMessageError] = useState<string | null>(null)
+  const [messageRefreshKey, setMessageRefreshKey] = useState(0)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -413,7 +419,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, messagePatientId])
+  }, [activeModule, messagePatientId, messageRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -789,6 +795,84 @@ function App() {
     }
   }
 
+  async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      const response = await createPatientMessage(input)
+      setMessagePatientId(response.detail.patientId)
+      setPatientMessages(response.detail)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setMessageStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Patient message create failed'
+      setMessageError(message)
+      throw createError
+    }
+  }
+
+  async function handlePatientMessageClose(message: PatientMessageItem) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      const response = await updatePatientMessageStatus(message.id, {
+        status: 'Done',
+        body: message.body?.startsWith('Closed from')
+          ? message.body
+          : 'Closed from the modernized Messages workspace.',
+      })
+      setPatientMessages(response.detail)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+      return response
+    } catch (closeError) {
+      setMessageStatus('error')
+      const messageText = closeError instanceof Error ? closeError.message : 'Patient message close failed'
+      setMessageError(messageText)
+      throw closeError
+    }
+  }
+
+  async function handlePatientMessageArchive(message: PatientMessageItem) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      const response = await softDeletePatientMessage(message.id)
+      setPatientMessages(response.detail)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+      return response
+    } catch (archiveError) {
+      setMessageStatus('error')
+      const messageText = archiveError instanceof Error ? archiveError.message : 'Patient message archive failed'
+      setMessageError(messageText)
+      throw archiveError
+    }
+  }
+
+  async function handlePatientMessageDelete(message: PatientMessageItem) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      await deletePatientMessage(message.id)
+      const refreshed = await getPatientMessages(patientMessages?.patientId ?? messagePatientId)
+      setPatientMessages(refreshed)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setMessageStatus('error')
+      const messageText = deleteError instanceof Error ? deleteError.message : 'Patient message delete failed'
+      setMessageError(messageText)
+      throw deleteError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -943,6 +1027,10 @@ function App() {
             status={messageStatus}
             error={messageError}
             onPatientIdChange={setMessagePatientId}
+            onCreateMessage={handlePatientMessageCreate}
+            onCloseMessage={handlePatientMessageClose}
+            onArchiveMessage={handlePatientMessageArchive}
+            onDeleteMessage={handlePatientMessageDelete}
           />
         )}
         {activeModule === 'reports' && (
@@ -2492,15 +2580,42 @@ function MessagesWorkspace({
   status,
   error,
   onPatientIdChange,
+  onCreateMessage,
+  onCloseMessage,
+  onArchiveMessage,
+  onDeleteMessage,
 }: {
   patientId: string
   patientMessages: PatientMessagesResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onPatientIdChange: (value: string) => void
+  onCreateMessage: (input: PatientMessageCreateInput) => Promise<unknown>
+  onCloseMessage: (message: PatientMessageItem) => Promise<unknown>
+  onArchiveMessage: (message: PatientMessageItem) => Promise<unknown>
+  onDeleteMessage: (message: PatientMessageItem) => Promise<void>
 }) {
+  const [messageTitle, setMessageTitle] = useState('Parity Message')
+  const [messageBody, setMessageBody] = useState('Created from the modernized Messages workspace.')
+  const [assignedTo, setAssignedTo] = useState('admin')
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const newCount = countMessagesByStatus(patientMessages?.messages, 'New')
   const doneCount = countMessagesByStatus(patientMessages?.messages, 'Done')
+  const isLoading = status === 'loading'
+
+  async function handleMessageSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateMessage({
+      patientId,
+      title: messageTitle,
+      body: messageBody,
+      assignedTo,
+    })
+
+    setMutationMessage('Message saved')
+  }
 
   return (
     <section className="scheduler-layout">
@@ -2519,7 +2634,7 @@ function MessagesWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Patient messages'}</span>
-          <span>Read only</span>
+          <span>Message lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -2534,6 +2649,50 @@ function MessagesWorkspace({
         ) : (
           <div className="empty-state">No patient messages loaded</div>
         )}
+
+        <form className="appointment-mutation-panel" onSubmit={handleMessageSubmit}>
+          <div className="panel-heading compact-heading">
+            <Mail size={16} />
+            <h3>New Message</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Title</span>
+              <input
+                value={messageTitle}
+                onChange={(event) => setMessageTitle(event.target.value)}
+                aria-label="New message title"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Assigned To</span>
+              <input
+                value={assignedTo}
+                onChange={(event) => setAssignedTo(event.target.value)}
+                aria-label="New message assigned to"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Body</span>
+              <textarea
+                value={messageBody}
+                onChange={(event) => setMessageBody(event.target.value)}
+                aria-label="New message body"
+                rows={4}
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Message
+            </button>
+            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Messages detail">
@@ -2565,7 +2724,14 @@ function MessagesWorkspace({
                 </div>
                 <div className="message-list-body">
                   {patientMessages.messages.map((message) => (
-                    <MessageItem key={message.id} message={message} />
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      disabled={isLoading}
+                      onClose={onCloseMessage}
+                      onArchive={onArchiveMessage}
+                      onDelete={onDeleteMessage}
+                    />
                   ))}
                   {patientMessages.messages.length === 0 && (
                     <div className="timeline-placeholder">No messages recorded</div>
@@ -2982,7 +3148,19 @@ function EncounterResult({
   )
 }
 
-function MessageItem({ message }: { message: PatientMessageItem }) {
+function MessageItem({
+  message,
+  disabled,
+  onClose,
+  onArchive,
+  onDelete,
+}: {
+  message: PatientMessageItem
+  disabled: boolean
+  onClose: (message: PatientMessageItem) => Promise<unknown>
+  onArchive: (message: PatientMessageItem) => Promise<unknown>
+  onDelete: (message: PatientMessageItem) => Promise<void>
+}) {
   return (
     <article className="message-item">
       <div className="message-item-header">
@@ -2990,7 +3168,36 @@ function MessageItem({ message }: { message: PatientMessageItem }) {
         <span className="status-tag">{message.status || 'Status pending'}</span>
       </div>
       <p>{message.body || 'No message body recorded'}</p>
-      <span>{message.date || 'No date'}</span>
+      <span>{[message.date || 'No date', message.assignedTo ? `Assigned to ${message.assignedTo}` : null].filter(Boolean).join(' / ')}</span>
+      <div className="message-item-actions">
+        <button
+          className="icon-text-button primary"
+          type="button"
+          disabled={disabled || message.status === 'Done'}
+          onClick={() => void onClose(message)}
+        >
+          <Check size={14} />
+          Close
+        </button>
+        <button
+          className="icon-text-button danger"
+          type="button"
+          disabled={disabled}
+          onClick={() => void onArchive(message)}
+        >
+          <Ban size={14} />
+          Archive
+        </button>
+        <button
+          className="icon-text-button"
+          type="button"
+          disabled={disabled}
+          onClick={() => void onDelete(message)}
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
+      </div>
     </article>
   )
 }

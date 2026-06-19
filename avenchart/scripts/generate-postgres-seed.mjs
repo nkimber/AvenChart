@@ -245,7 +245,10 @@ create table messages (
   message_date date not null,
   title text,
   body text,
-  status text
+  status text,
+  assigned_to text,
+  deleted integer not null default 0,
+  activity integer not null default 1
 );
 
 create table problems (
@@ -632,7 +635,7 @@ copyRows('lab_results', [
   result.resultStatus,
 ]))
 
-copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body', 'status'],
+copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body', 'status', 'assigned_to', 'deleted', 'activity'],
   dataset.messages.map((message) => [
     message.id,
     message.patientId,
@@ -641,6 +644,9 @@ copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body'
     message.title,
     message.body,
     message.status,
+    message.assignedTo,
+    0,
+    1,
   ]))
 
 copyRows('problems', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'problem_date', 'comments'],

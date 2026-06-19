@@ -302,6 +302,49 @@ messages.MapGet("/{patientId}", async (
     })
     .WithName("GetPatientMessages");
 
+messages.MapPost("/", async (
+        MessageRepository repository,
+        PatientMessageCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Patient message could not be created from the supplied patient, title, and body.")
+            : Results.Created($"/api/messages/{mutation.Id}", mutation);
+    })
+    .WithName("CreatePatientMessage");
+
+messages.MapPut("/{messageId}/status", async (
+        MessageRepository repository,
+        string messageId,
+        PatientMessageStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateStatusAsync(messageId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdatePatientMessageStatus");
+
+messages.MapPut("/{messageId}/soft-delete", async (
+        MessageRepository repository,
+        string messageId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.SoftDeleteAsync(messageId, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("SoftDeletePatientMessage");
+
+messages.MapDelete("/{messageId}", async (
+        MessageRepository repository,
+        string messageId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteAsync(messageId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeletePatientMessage");
+
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 
 procedures.MapGet("/{patientId}", async (

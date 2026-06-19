@@ -17,4 +17,20 @@ public sealed record PatientMessageItem(
     string? Date,
     string? Title,
     string? Body,
-    string? Status);
+    string? Status,
+    string? AssignedTo,
+    int Deleted);
+
+public sealed record PatientMessageCreateRequest(
+    string PatientId,
+    string Title,
+    string Body,
+    string AssignedTo);
+
+public sealed record PatientMessageStatusUpdateRequest(
+    string Status,
+    string Body);
+
+public sealed record PatientMessageMutationResponse(
+    string Id,
+    PatientMessagesResponse Detail);

@@ -305,6 +305,8 @@ export type PatientMessageItem = {
   title?: string | null
   body?: string | null
   status?: string | null
+  assignedTo?: string | null
+  deleted: number
 }
 
 export type PatientMessagesResponse = {
@@ -318,6 +320,23 @@ export type PatientMessagesResponse = {
   lastName: string
   portalEnabled: boolean
   messages: PatientMessageItem[]
+}
+
+export type PatientMessageCreateInput = {
+  patientId: string
+  title: string
+  body: string
+  assignedTo: string
+}
+
+export type PatientMessageStatusUpdateInput = {
+  status: string
+  body: string
+}
+
+export type PatientMessageMutationResponse = {
+  id: string
+  detail: PatientMessagesResponse
 }
 
 export type ProcedureResultItem = {
@@ -792,6 +811,66 @@ export async function getPatientMessages(patientId: string, signal?: AbortSignal
   }
 
   return response.json()
+}
+
+export async function createPatientMessage(
+  message: PatientMessageCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientMessageMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(message),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient message create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientMessageStatus(
+  messageId: string,
+  update: PatientMessageStatusUpdateInput,
+  signal?: AbortSignal,
+): Promise<PatientMessageMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/status`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient message update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function softDeletePatientMessage(
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientMessageMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/soft-delete`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient message archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deletePatientMessage(messageId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient message delete failed with ${response.status}`)
+  }
 }
 
 export async function getProcedureResults(patientId: string, signal?: AbortSignal): Promise<ProcedureResultsResponse> {

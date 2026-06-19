@@ -701,6 +701,14 @@
   font-size: 12px;
 }
 
+.message-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
 .procedure-orders-panel,
 .billing-lines-panel,
 .procedure-results-panel {
