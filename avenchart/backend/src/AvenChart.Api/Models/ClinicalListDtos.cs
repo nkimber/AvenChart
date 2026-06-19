@@ -27,7 +27,24 @@ public sealed record AllergyListItem(
     string? Reaction,
     string? Severity,
     string? Date,
-    string? Comments);
+    string? Comments,
+    int Activity,
+    string? ListOptionId);
+
+public sealed record ClinicalAllergyCreateRequest(
+    string PatientId,
+    string Title,
+    string DateTime,
+    string Comments,
+    string Reaction,
+    string Severity,
+    string? ListOptionId);
+
+public sealed record ClinicalListDeactivateRequest(string Comments);
+
+public sealed record ClinicalListMutationResponse(
+    string Id,
+    ClinicalListsResponse Detail);
 
 public sealed record MedicationListItem(
     string Id,

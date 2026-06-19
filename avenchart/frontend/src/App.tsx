@@ -34,11 +34,14 @@ import {
   getProcedureResults,
   getOperationalReports,
   createAppointment,
+  createClinicalAllergy,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
   deleteAppointment,
+  deleteClinicalAllergy,
   deleteEncounter,
+  deactivateClinicalAllergy,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -56,6 +59,7 @@ import {
   type BillingEncounterItem,
   type BillingLineItem,
   type ClinicalListsResponse,
+  type ClinicalAllergyCreateInput,
   type EncounterCreateInput,
   type EncounterDetail,
   type EncounterSoapNoteCreateInput,
@@ -142,6 +146,7 @@ function App() {
   const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
   const [clinicalStatus, setClinicalStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [clinicalError, setClinicalError] = useState<string | null>(null)
+  const [clinicalRefreshKey, setClinicalRefreshKey] = useState(0)
 
   const [messagePatientId, setMessagePatientId] = useState('MOD-PAT-0004')
   const [patientMessages, setPatientMessages] = useState<PatientMessagesResponse | null>(null)
@@ -380,7 +385,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, clinicalPatientId])
+  }, [activeModule, clinicalPatientId, clinicalRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'messages') {
@@ -727,6 +732,63 @@ function App() {
     }
   }
 
+  async function handleClinicalAllergyCreate(input: ClinicalAllergyCreateInput) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await createClinicalAllergy(input)
+      setClinicalPatientId(response.detail.patientId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setClinicalStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Clinical allergy create failed'
+      setClinicalError(message)
+      throw createError
+    }
+  }
+
+  async function handleClinicalAllergyDeactivate(allergy: AllergyListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await deactivateClinicalAllergy(allergy.id, {
+        comments: 'Deactivated from the modernized Lists workspace.',
+      })
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (deactivateError) {
+      setClinicalStatus('error')
+      const message = deactivateError instanceof Error ? deactivateError.message : 'Clinical allergy deactivate failed'
+      setClinicalError(message)
+      throw deactivateError
+    }
+  }
+
+  async function handleClinicalAllergyDelete(allergy: AllergyListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      await deleteClinicalAllergy(allergy.id)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      setClinicalLists(refreshed)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setClinicalStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Clinical allergy delete failed'
+      setClinicalError(message)
+      throw deleteError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -851,6 +913,9 @@ function App() {
             status={clinicalStatus}
             error={clinicalError}
             onPatientIdChange={setClinicalPatientId}
+            onCreateAllergy={handleClinicalAllergyCreate}
+            onDeactivateAllergy={handleClinicalAllergyDeactivate}
+            onDeleteAllergy={handleClinicalAllergyDelete}
           />
         )}
         {activeModule === 'fees' && (
@@ -2038,13 +2103,44 @@ function ClinicalListsWorkspace({
   status,
   error,
   onPatientIdChange,
+  onCreateAllergy,
+  onDeactivateAllergy,
+  onDeleteAllergy,
 }: {
   patientId: string
   clinicalLists: ClinicalListsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onPatientIdChange: (value: string) => void
+  onCreateAllergy: (input: ClinicalAllergyCreateInput) => Promise<unknown>
+  onDeactivateAllergy: (allergy: AllergyListItem) => Promise<unknown>
+  onDeleteAllergy: (allergy: AllergyListItem) => Promise<void>
 }) {
+  const [allergyTitle, setAllergyTitle] = useState('Parity Allergy')
+  const [allergyDate, setAllergyDate] = useState('2026-06-18 09:00:00')
+  const [allergyReaction, setAllergyReaction] = useState('Rash')
+  const [allergySeverity, setAllergySeverity] = useState('mild')
+  const [allergyComments, setAllergyComments] = useState('Created from the modernized Lists workspace.')
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const isLoading = status === 'loading'
+
+  async function handleAllergySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateAllergy({
+      patientId,
+      title: allergyTitle,
+      dateTime: allergyDate,
+      comments: allergyComments,
+      reaction: allergyReaction,
+      severity: allergySeverity,
+      listOptionId: 'parity-allergy',
+    })
+
+    setMutationMessage('Allergy saved')
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Clinical lists search">
@@ -2062,7 +2158,7 @@ function ClinicalListsWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Chart lists'}</span>
-          <span>Read only</span>
+          <span>Allergy lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -2077,6 +2173,67 @@ function ClinicalListsWorkspace({
         ) : (
           <div className="empty-state">No clinical lists loaded</div>
         )}
+
+        <form className="appointment-mutation-panel" onSubmit={handleAllergySubmit}>
+          <div className="panel-heading compact-heading">
+            <ShieldCheck size={16} />
+            <h3>New Allergy</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Title</span>
+              <input
+                value={allergyTitle}
+                onChange={(event) => setAllergyTitle(event.target.value)}
+                aria-label="New allergy title"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Date</span>
+              <input
+                value={allergyDate}
+                onChange={(event) => setAllergyDate(event.target.value)}
+                aria-label="New allergy date"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Reaction</span>
+                <input
+                  value={allergyReaction}
+                  onChange={(event) => setAllergyReaction(event.target.value)}
+                  aria-label="New allergy reaction"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Severity</span>
+                <input
+                  value={allergySeverity}
+                  onChange={(event) => setAllergySeverity(event.target.value)}
+                  aria-label="New allergy severity"
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Comments</span>
+              <textarea
+                value={allergyComments}
+                onChange={(event) => setAllergyComments(event.target.value)}
+                aria-label="New allergy comments"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Allergy
+            </button>
+            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Clinical lists detail">
@@ -2097,7 +2254,12 @@ function ClinicalListsWorkspace({
 
             <div className="clinical-list-grid">
               <ProblemPanel items={clinicalLists.problems} />
-              <AllergyPanel items={clinicalLists.allergies} />
+              <AllergyPanel
+                items={clinicalLists.allergies}
+                onDeactivate={onDeactivateAllergy}
+                onDelete={onDeleteAllergy}
+                disabled={isLoading}
+              />
               <MedicationPanel items={clinicalLists.medications} />
               <PrescriptionPanel items={clinicalLists.prescriptions} />
             </div>
@@ -2971,7 +3133,17 @@ function ProblemPanel({ items }: { items: ProblemListItem[] }) {
   )
 }
 
-function AllergyPanel({ items }: { items: AllergyListItem[] }) {
+function AllergyPanel({
+  items,
+  onDeactivate,
+  onDelete,
+  disabled,
+}: {
+  items: AllergyListItem[]
+  onDeactivate: (allergy: AllergyListItem) => Promise<unknown>
+  onDelete: (allergy: AllergyListItem) => Promise<void>
+  disabled: boolean
+}) {
   return (
     <ClinicalSection title="Allergies" icon={ShieldCheck} emptyText="No allergies recorded">
       {items.map((item) => (
@@ -2981,7 +3153,28 @@ function AllergyPanel({ items }: { items: AllergyListItem[] }) {
           meta={[item.reaction, item.severity].filter(Boolean).join(' / ')}
           date={item.date}
           note={item.comments}
-        />
+        >
+          <div className="clinical-item-actions">
+            <button
+              className="icon-text-button danger"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDeactivate(item)}
+            >
+              <Ban size={14} />
+              Deactivate
+            </button>
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDelete(item)}
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No allergies recorded</div>}
     </ClinicalSection>
@@ -3042,11 +3235,13 @@ function ClinicalItem({
   meta,
   date,
   note,
+  children,
 }: {
   title: string
   meta?: string | null
   date?: string | null
   note?: string | null
+  children?: ReactNode
 }) {
   return (
     <article className="clinical-item">
@@ -3058,6 +3253,7 @@ function ClinicalItem({
         <span>{date || 'No date'}</span>
         <span>{note || 'No note'}</span>
       </div>
+      {children}
     </article>
   )
 }

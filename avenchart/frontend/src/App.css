@@ -650,6 +650,12 @@
   text-align: right;
 }
 
+.clinical-item-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
 .messages-panel {
   min-width: 0;
 }

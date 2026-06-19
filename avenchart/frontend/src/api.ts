@@ -242,6 +242,8 @@ export type AllergyListItem = {
   severity?: string | null
   date?: string | null
   comments?: string | null
+  activity: number
+  listOptionId?: string | null
 }
 
 export type MedicationListItem = {
@@ -276,6 +278,25 @@ export type ClinicalListsResponse = {
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
   prescriptions: PrescriptionListItem[]
+}
+
+export type ClinicalAllergyCreateInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  comments: string
+  reaction: string
+  severity: string
+  listOptionId?: string | null
+}
+
+export type ClinicalListDeactivateInput = {
+  comments: string
+}
+
+export type ClinicalListMutationResponse = {
+  id: string
+  detail: ClinicalListsResponse
 }
 
 export type PatientMessageItem = {
@@ -717,6 +738,51 @@ export async function getClinicalLists(patientId: string, signal?: AbortSignal):
   }
 
   return response.json()
+}
+
+export async function createClinicalAllergy(
+  allergy: ClinicalAllergyCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(allergy),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical allergy create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deactivateClinicalAllergy(
+  allergyId: string,
+  update: ClinicalListDeactivateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}/deactivate`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical allergy deactivate failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteClinicalAllergy(allergyId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical allergy delete failed with ${response.status}`)
+  }
 }
 
 export async function getPatientMessages(patientId: string, signal?: AbortSignal): Promise<PatientMessagesResponse> {

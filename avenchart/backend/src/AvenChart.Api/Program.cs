@@ -257,6 +257,39 @@ clinicalLists.MapGet("/{patientId}", async (
     })
     .WithName("GetClinicalListsForPatient");
 
+clinicalLists.MapPost("/allergies", async (
+        ClinicalListRepository repository,
+        ClinicalAllergyCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateAllergyAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Allergy could not be created from the supplied patient, title, and date.")
+            : Results.Created($"/api/clinical-lists/allergies/{mutation.Id}", mutation);
+    })
+    .WithName("CreateClinicalAllergy");
+
+clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
+        ClinicalListRepository repository,
+        string allergyId,
+        ClinicalListDeactivateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.DeactivateAllergyAsync(allergyId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("DeactivateClinicalAllergy");
+
+clinicalLists.MapDelete("/allergies/{allergyId}", async (
+        ClinicalListRepository repository,
+        string allergyId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteAllergyAsync(allergyId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteClinicalAllergy");
+
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 
 messages.MapGet("/{patientId}", async (

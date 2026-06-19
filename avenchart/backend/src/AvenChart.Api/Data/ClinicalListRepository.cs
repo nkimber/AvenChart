@@ -1,5 +1,7 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -35,6 +37,101 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             Allergies: allergies,
             Medications: medications,
             Prescriptions: prescriptions);
+    }
+
+    public async Task<ClinicalListMutationResponse?> CreateAllergyAsync(
+        ClinicalAllergyCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Title)
+            || !TryReadDate(request.DateTime, out var allergyDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = $"ALG-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into allergies
+                (id, patient_id, pid, type, title, reaction, severity, allergy_date, comments, activity, end_date, list_option_id)
+            values
+                (@id, @patientId, @pid, 'allergy', @title, @reaction, @severity, @allergyDate, @comments, 1, null, @listOptionId);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("patientId", patient.PatientId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        command.Parameters.AddWithValue("title", request.Title.Trim());
+        command.Parameters.AddWithValue("reaction", NullableText(request.Reaction));
+        command.Parameters.AddWithValue("severity", NullableText(request.Severity));
+        command.Parameters.Add("allergyDate", NpgsqlDbType.Date).Value = allergyDate;
+        command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+        command.Parameters.AddWithValue("listOptionId", NullableText(request.ListOptionId));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(id, lists);
+    }
+
+    public async Task<ClinicalListMutationResponse?> DeactivateAllergyAsync(
+        string allergyId,
+        ClinicalListDeactivateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(allergyId))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update allergies
+                set activity = 0,
+                    end_date = @endDate,
+                    comments = @comments
+                where id = @id and type = 'allergy'
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", allergyId);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = new DateOnly(2026, 6, 18);
+            command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(allergyId, lists);
+    }
+
+    public async Task<bool> DeleteAllergyAsync(string allergyId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(allergyId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from allergies
+            where id = @id and type = 'allergy';
+            """;
+        command.Parameters.AddWithValue("id", allergyId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -133,9 +230,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, reaction, severity, allergy_date, comments
+            select id, title, reaction, severity, allergy_date, comments, activity, list_option_id
             from allergies
-            where pid = @pid
+            where pid = @pid and activity = 1
             order by allergy_date desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
@@ -150,7 +247,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Reaction: ReadNullableString(reader, "reaction"),
                 Severity: ReadNullableString(reader, "severity"),
                 Date: ReadNullableDate(reader, "allergy_date"),
-                Comments: ReadNullableString(reader, "comments")));
+                Comments: ReadNullableString(reader, "comments"),
+                Activity: reader.GetInt32(reader.GetOrdinal("activity")),
+                ListOptionId: ReadNullableString(reader, "list_option_id")));
         }
 
         return items;
@@ -242,6 +341,26 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static bool TryReadDate(string value, out DateOnly date)
+    {
+        if (DateTime.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var dateTime))
+        {
+            date = DateOnly.FromDateTime(dateTime);
+            return true;
+        }
+
+        return DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    }
+
+    private static object NullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

@@ -266,6 +266,51 @@ catch {
     Add-Check -Name "anchor clinical lists" -Result "failed" -Details $_.Exception.Message
 }
 
+$clinicalAllergyMutationId = $null
+try {
+    $allergyTitle = "Smoke Allergy Mutation"
+    $createAllergyBody = @{
+        patientId = "MOD-PAT-0006"
+        title = $allergyTitle
+        dateTime = "2026-06-18 09:00:00"
+        comments = "Created by the smoke clinical-list mutation check."
+        reaction = "Rash"
+        severity = "mild"
+        listOptionId = "parity-allergy"
+    } | ConvertTo-Json
+    $createdAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies" -Method Post -ContentType "application/json" -Body $createAllergyBody -TimeoutSec 20
+    $clinicalAllergyMutationId = $createdAllergy.id
+    $createdVisible = $createdAllergy.detail.allergies | Where-Object { $_.title -eq $allergyTitle -and $_.reaction -eq "Rash" -and $_.severity -eq "mild" } | Select-Object -First 1
+
+    $deactivateBody = @{
+        comments = "Deactivated by the smoke clinical-list mutation check."
+    } | ConvertTo-Json
+    $deactivatedAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateBody -TimeoutSec 20
+    $inactiveVisible = $deactivatedAllergy.detail.allergies | Where-Object { $_.title -eq $allergyTitle } | Select-Object -First 1
+    $clinicalAllergyMutationPassed = $null -ne $createdVisible -and $null -eq $inactiveVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $clinicalAllergyMutationId = $null
+
+    Add-Check -Name "clinical allergy mutation lifecycle" -Result $(if ($clinicalAllergyMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAllergy.id
+        createdVisible = $createdVisible
+        inactiveVisible = $inactiveVisible
+    }
+}
+catch {
+    Add-Check -Name "clinical allergy mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $clinicalAllergyMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
