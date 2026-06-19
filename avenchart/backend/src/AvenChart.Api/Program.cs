@@ -13,6 +13,7 @@ builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
+builder.Services.AddScoped<ClinicalListRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -113,5 +114,17 @@ encounters.MapGet("/{encounter:int}", async (
         return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
     })
     .WithName("GetEncounterDetail");
+
+var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
+
+clinicalLists.MapGet("/{patientId}", async (
+        ClinicalListRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var lists = await repository.GetForPatientAsync(patientId, cancellationToken);
+        return lists is null ? Results.NotFound() : Results.Ok(lists);
+    })
+    .WithName("GetClinicalListsForPatient");
 
 app.Run();

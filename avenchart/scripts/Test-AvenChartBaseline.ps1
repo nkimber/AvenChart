@@ -125,6 +125,28 @@ catch {
     Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $problem = $clinicalLists.problems | Where-Object { $_.title -like "*diabetes*" } | Select-Object -First 1
+    $allergy = $clinicalLists.allergies | Where-Object { $_.title -eq "Penicillin" } | Select-Object -First 1
+    $medication = $clinicalLists.medications | Where-Object { $_.title -like "Metformin*" } | Select-Object -First 1
+    $prescription = $clinicalLists.prescriptions | Where-Object { $_.drug -eq "Metformin" } | Select-Object -First 1
+    $clinicalListsPassed = $clinicalLists.patientId -eq "MOD-PAT-0001" -and $null -ne $problem -and $null -ne $allergy -and $null -ne $medication -and $null -ne $prescription
+    Add-Check -Name "anchor clinical lists" -Result $(if ($clinicalListsPassed) { "passed" } else { "failed" }) -Details @{
+        problems = $clinicalLists.problems.Count
+        allergies = $clinicalLists.allergies.Count
+        medications = $clinicalLists.medications.Count
+        prescriptions = $clinicalLists.prescriptions.Count
+        problem = $problem
+        allergy = $allergy
+        medication = $medication
+        prescription = $prescription
+    }
+}
+catch {
+    Add-Check -Name "anchor clinical lists" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

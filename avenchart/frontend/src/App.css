@@ -352,7 +352,8 @@
 .chart-grid,
 .timeline-row,
 .appointment-detail-grid,
-.encounter-detail-grid {
+.encounter-detail-grid,
+.clinical-list-grid {
   display: grid;
   gap: 12px;
   margin-top: 12px;
@@ -372,6 +373,10 @@
 
 .encounter-detail-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.clinical-list-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .info-panel {
@@ -441,6 +446,55 @@
   color: #1d2a35;
 }
 
+.list-counts {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid #d8e2e7;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.clinical-section {
+  min-height: 220px;
+}
+
+.clinical-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+}
+
+.clinical-item {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.clinical-item div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.clinical-item strong {
+  color: #1d2a35;
+  font-size: 13px;
+}
+
+.clinical-item span {
+  color: #607280;
+  font-size: 12px;
+  text-align: right;
+}
+
 .soap-panel {
   border: 1px solid #d8e2e7;
   border-radius: 8px;
@@ -503,7 +557,8 @@
   .chart-grid,
   .timeline-row,
   .appointment-detail-grid,
-  .encounter-detail-grid {
+  .encounter-detail-grid,
+  .clinical-list-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -546,7 +601,16 @@
   .timeline-row,
   .appointment-detail-grid,
   .encounter-detail-grid,
+  .clinical-list-grid,
   .soap-grid {
     grid-template-columns: 1fr;
+  }
+
+  .clinical-item div {
+    flex-direction: column;
+  }
+
+  .clinical-item span {
+    text-align: left;
   }
 }

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import {
   getAppointmentDetail,
+  getClinicalLists,
   getEncounterDetail,
   getPatientChart,
   searchAppointments,
@@ -27,22 +28,27 @@ import {
   type AppointmentDetail,
   type AppointmentListItem,
   type AppointmentSearchResponse,
+  type AllergyListItem,
+  type ClinicalListsResponse,
   type EncounterDetail,
   type EncounterListItem,
   type EncounterSearchResponse,
+  type MedicationListItem,
   type PatientChartSummary,
   type PatientListItem,
   type PatientSearchResponse,
+  type PrescriptionListItem,
+  type ProblemListItem,
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters'
+type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
   { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
-  { id: 'lists', label: 'Lists', icon: ClipboardList },
+  { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
   { id: 'fees', label: 'Fees', icon: WalletCards },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical },
   { id: 'messages', label: 'Messages', icon: Mail },
@@ -78,6 +84,11 @@ function App() {
   const [encounterStatus, setEncounterStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterDetailStatus, setEncounterDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterError, setEncounterError] = useState<string | null>(null)
+
+  const [clinicalPatientId, setClinicalPatientId] = useState('MOD-PAT-0001')
+  const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
+  const [clinicalStatus, setClinicalStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [clinicalError, setClinicalError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -267,6 +278,34 @@ function App() {
     return () => controller.abort()
   }, [activeModule, selectedEncounter])
 
+  useEffect(() => {
+    if (activeModule !== 'lists') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setClinicalStatus('loading')
+      setClinicalError(null)
+
+      try {
+        const result = await getClinicalLists(clinicalPatientId, controller.signal)
+        setClinicalLists(result)
+        setClinicalStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setClinicalStatus('error')
+          setClinicalError(loadError instanceof Error ? loadError.message : 'Clinical lists failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, clinicalPatientId])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -278,6 +317,8 @@ function App() {
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
       : activeModule === 'encounters'
         ? encounterResult?.datasetVersion ?? searchResult?.datasetVersion
+        : activeModule === 'lists'
+          ? clinicalLists?.datasetVersion ?? searchResult?.datasetVersion
       : searchResult?.datasetVersion
 
   return (
@@ -369,6 +410,15 @@ function App() {
             onSelectEncounter={setSelectedEncounter}
           />
         )}
+        {activeModule === 'lists' && (
+          <ClinicalListsWorkspace
+            patientId={clinicalPatientId}
+            clinicalLists={clinicalLists}
+            status={clinicalStatus}
+            error={clinicalError}
+            onPatientIdChange={setClinicalPatientId}
+          />
+        )}
       </main>
     </div>
   )
@@ -381,6 +431,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'encounters') {
     return 'Clinical Visits'
   }
+  if (moduleId === 'lists') {
+    return 'Clinical Lists'
+  }
   return 'Patient Finder'
 }
 
@@ -390,6 +443,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'encounters') {
     return 'Encounters'
+  }
+  if (moduleId === 'lists') {
+    return 'Lists'
   }
   return 'Patient/Client'
 }
@@ -778,6 +834,86 @@ function EncounterWorkspace({
   )
 }
 
+function ClinicalListsWorkspace({
+  patientId,
+  clinicalLists,
+  status,
+  error,
+  onPatientIdChange,
+}: {
+  patientId: string
+  clinicalLists: ClinicalListsResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+}) {
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Clinical lists search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Clinical lists patient ID"
+              placeholder="MOD-PAT-0001"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Chart lists'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {clinicalLists ? (
+          <div className="list-counts">
+            <MetricRow label="Problems" value={clinicalLists.problems.length} />
+            <MetricRow label="Allergies" value={clinicalLists.allergies.length} />
+            <MetricRow label="Medications" value={clinicalLists.medications.length} />
+            <MetricRow label="Prescriptions" value={clinicalLists.prescriptions.length} />
+          </div>
+        ) : (
+          <div className="empty-state">No clinical lists loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Clinical lists detail">
+        {clinicalLists ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Clinical Lists</p>
+                <h2>{clinicalLists.patientDisplayName}</h2>
+                <p className="patient-line">
+                  {clinicalLists.pubpid} / PID {clinicalLists.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">
+                {clinicalLists.problems.length + clinicalLists.allergies.length + clinicalLists.medications.length} active
+              </div>
+            </div>
+
+            <div className="clinical-list-grid">
+              <ProblemPanel items={clinicalLists.problems} />
+              <AllergyPanel items={clinicalLists.allergies} />
+              <MedicationPanel items={clinicalLists.medications} />
+              <PrescriptionPanel items={clinicalLists.prescriptions} />
+            </div>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading clinical lists</div>
+        ) : (
+          <div className="empty-chart">Enter a patient ID to load clinical lists</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function PatientResult({
   patient,
   selected,
@@ -861,6 +997,108 @@ function EncounterResult({
         </span>
       </div>
     </button>
+  )
+}
+
+function ProblemPanel({ items }: { items: ProblemListItem[] }) {
+  return (
+    <ClinicalSection title="Problems" icon={ClipboardList} emptyText="No active problems">
+      {items.map((item) => (
+        <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments} />
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No active problems</div>}
+    </ClinicalSection>
+  )
+}
+
+function AllergyPanel({ items }: { items: AllergyListItem[] }) {
+  return (
+    <ClinicalSection title="Allergies" icon={ShieldCheck} emptyText="No allergies recorded">
+      {items.map((item) => (
+        <ClinicalItem
+          key={item.id}
+          title={item.title}
+          meta={[item.reaction, item.severity].filter(Boolean).join(' / ')}
+          date={item.date}
+          note={item.comments}
+        />
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No allergies recorded</div>}
+    </ClinicalSection>
+  )
+}
+
+function MedicationPanel({ items }: { items: MedicationListItem[] }) {
+  return (
+    <ClinicalSection title="Medication List" icon={HeartPulse} emptyText="No active medications">
+      {items.map((item) => (
+        <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments} />
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No active medications</div>}
+    </ClinicalSection>
+  )
+}
+
+function PrescriptionPanel({ items }: { items: PrescriptionListItem[] }) {
+  return (
+    <ClinicalSection title="Prescriptions" icon={FileText} emptyText="No prescriptions">
+      {items.map((item) => (
+        <ClinicalItem
+          key={item.id}
+          title={item.drug}
+          meta={[item.dosage, item.route, item.diagnosis].filter(Boolean).join(' / ')}
+          date={item.startDate}
+          note={item.providerName}
+        />
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No prescriptions</div>}
+    </ClinicalSection>
+  )
+}
+
+function ClinicalSection({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string
+  icon: LucideIcon
+  emptyText: string
+  children: ReactNode
+}) {
+  return (
+    <section className="info-panel clinical-section">
+      <div className="panel-heading">
+        <Icon size={17} />
+        <h3>{title}</h3>
+      </div>
+      <div className="clinical-list-body">{children}</div>
+    </section>
+  )
+}
+
+function ClinicalItem({
+  title,
+  meta,
+  date,
+  note,
+}: {
+  title: string
+  meta?: string | null
+  date?: string | null
+  note?: string | null
+}) {
+  return (
+    <article className="clinical-item">
+      <div>
+        <strong>{title}</strong>
+        <span>{meta || 'No coded detail'}</span>
+      </div>
+      <div>
+        <span>{date || 'No date'}</span>
+        <span>{note || 'No note'}</span>
+      </div>
+    </article>
   )
 }
 

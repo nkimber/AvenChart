@@ -156,6 +156,57 @@ export type EncounterSearchResponse = {
   encounters: EncounterListItem[]
 }
 
+export type ProblemListItem = {
+  id: string
+  title: string
+  diagnosis?: string | null
+  date?: string | null
+  comments?: string | null
+}
+
+export type AllergyListItem = {
+  id: string
+  title: string
+  reaction?: string | null
+  severity?: string | null
+  date?: string | null
+  comments?: string | null
+}
+
+export type MedicationListItem = {
+  id: string
+  title: string
+  diagnosis?: string | null
+  date?: string | null
+  comments?: string | null
+}
+
+export type PrescriptionListItem = {
+  id: string
+  drug: string
+  dosage?: string | null
+  route?: string | null
+  diagnosis?: string | null
+  startDate?: string | null
+  encounter?: number | null
+  providerName?: string | null
+}
+
+export type ClinicalListsResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  problems: ProblemListItem[]
+  allergies: AllergyListItem[]
+  medications: MedicationListItem[]
+  prescriptions: PrescriptionListItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -242,6 +293,15 @@ export async function getEncounterDetail(encounter: number, signal?: AbortSignal
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, { signal })
   if (!response.ok) {
     throw new Error(`Encounter detail load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getClinicalLists(patientId: string, signal?: AbortSignal): Promise<ClinicalListsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/${encodeURIComponent(patientId.trim())}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Clinical lists load failed with ${response.status}`)
   }
 
   return response.json()
