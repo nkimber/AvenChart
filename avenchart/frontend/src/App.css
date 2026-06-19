@@ -461,6 +461,23 @@
   background: #fbfdfd;
 }
 
+.registration-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.registration-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid #d8e2e7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdfd;
+}
+
 .insurance-item {
   display: flex;
   flex-direction: column;

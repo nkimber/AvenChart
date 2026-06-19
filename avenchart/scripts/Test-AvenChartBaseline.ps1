@@ -164,6 +164,77 @@ finally {
     }
 }
 
+$registrationPubpid = $null
+try {
+    $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $registrationPubpid = "TMP-PAT-REG-SMK$suffix"
+    $registrationBody = @{
+        pubpid = $registrationPubpid
+        firstName = "Taylor"
+        lastName = "Register"
+        preferredName = "Slice37"
+        sex = "Female"
+        dateOfBirth = "1991-04-15"
+        street = "37 Registration Way"
+        city = "Hartford"
+        state = "CT"
+        postalCode = "06103"
+        maritalStatus = "single"
+        occupation = "Smoke Registration Analyst"
+        phoneHome = "(860) 555-3710"
+        phoneCell = "(860) 555-3711"
+        email = "tmp-register-$suffix@example.test"
+        hipaaAllowSms = "YES"
+        hipaaAllowEmail = "YES"
+    }
+
+    $createdPatient = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body ($registrationBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $loadedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Get -TimeoutSec 20
+    $searchCreatedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=$registrationPubpid&limit=5" -Method Get -TimeoutSec 20
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -TimeoutSec 20 | Out-Null
+    $registrationPubpid = $null
+
+    $deletedLoadFailed = $false
+    try {
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$($registrationBody.pubpid)" -Method Get -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $deletedLoadFailed = $true
+    }
+
+    $registrationPassed = $createdPatient.pubpid -eq $registrationBody.pubpid `
+        -and $createdPatient.displayName -like "Register, Taylor*" `
+        -and $createdPatient.street -eq $registrationBody.street `
+        -and $createdPatient.email -eq $registrationBody.email `
+        -and $loadedPatient.pubpid -eq $registrationBody.pubpid `
+        -and (@($searchCreatedPatient.patients) | Where-Object { $_.pubpid -eq $registrationBody.pubpid } | Select-Object -First 1) `
+        -and $deletedLoadFailed
+
+    Add-Check -Name "patient registration lifecycle" -Result $(if ($registrationPassed) { "passed" } else { "failed" }) -Details @{
+        pubpid = $registrationBody.pubpid
+        createdDisplayName = $createdPatient.displayName
+        loadedPid = $loadedPatient.legacyPid
+        deletedLoadFailed = $deletedLoadFailed
+    }
+}
+catch {
+    if ($registrationPubpid) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    Add-Check -Name "patient registration lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -TimeoutSec 20
     $coverage = @($coverageChart.insurance)

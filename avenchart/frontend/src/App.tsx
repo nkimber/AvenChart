@@ -23,6 +23,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  UserPlus,
   WalletCards,
   X,
   type LucideIcon,
@@ -60,6 +61,7 @@ import {
   createProcedureOrder,
   createProcedureReport,
   createProcedureResult,
+  createPatient,
   deleteAppointment,
   deleteAdministrationFacility,
   deleteAdministrationUser,
@@ -147,6 +149,7 @@ import {
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
+  type PatientRegistrationInput,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
@@ -723,6 +726,38 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient demographics save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientCreate(input: PatientRegistrationInput) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const created = await createPatient(input)
+      setChart(created)
+      setSelectedPatientId(created.canonicalId)
+      setQuery(created.pubpid)
+      setSearchStatus('ready')
+      setChartStatus('ready')
+      setSearchResult((current) => {
+        if (!current) {
+          return current
+        }
+
+        const withoutCreated = current.patients.filter((patient) => patient.canonicalId !== created.canonicalId)
+        return {
+          ...current,
+          totalMatches: Math.max(current.totalMatches, 1),
+          patients: [created, ...withoutCreated].slice(0, current.limit),
+        }
+      })
+      return created
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient registration failed'
       setPatientError(message)
       throw saveError
     }
@@ -1790,6 +1825,7 @@ function App() {
             error={patientError}
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
+            onCreatePatient={handlePatientCreate}
             onSaveContact={handlePatientContactSave}
             onSaveDemographics={handlePatientDemographicsSave}
             onCreateInsurance={handlePatientInsuranceCreate}
@@ -2013,6 +2049,7 @@ function PatientWorkspace({
   error,
   onQueryChange,
   onSelectPatient,
+  onCreatePatient,
   onSaveContact,
   onSaveDemographics,
   onCreateInsurance,
@@ -2029,6 +2066,7 @@ function PatientWorkspace({
   error: string | null
   onQueryChange: (value: string) => void
   onSelectPatient: (canonicalId: string) => void
+  onCreatePatient: (patient: PatientRegistrationInput) => Promise<PatientChartSummary>
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
@@ -2046,6 +2084,9 @@ function PatientWorkspace({
   const [editingInsuranceId, setEditingInsuranceId] = useState<string | null>(null)
   const [insuranceDraft, setInsuranceDraft] = useState<PatientInsuranceMutationInput>(() => buildInsuranceDraft())
   const [insuranceSaveStatus, setInsuranceSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registrationDraft, setRegistrationDraft] = useState<PatientRegistrationInput>(() => buildRegistrationDraft())
+  const [registrationSaveStatus, setRegistrationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     setDemographicsDraft(buildDemographicsDraft(chart ?? activePatient))
@@ -2069,6 +2110,24 @@ function PatientWorkspace({
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
     setInsuranceDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateRegistrationDraft(field: keyof PatientRegistrationInput, value: string) {
+    setRegistrationDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleRegistrationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    setRegistrationSaveStatus('saving')
+    try {
+      await onCreatePatient(registrationDraft)
+      setRegistrationDraft(buildRegistrationDraft())
+      setIsRegistering(false)
+      setRegistrationSaveStatus('saved')
+    } catch {
+      setRegistrationSaveStatus('error')
+    }
   }
 
   async function handleDemographicsSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2156,6 +2215,151 @@ function PatientWorkspace({
             placeholder="Name, ID, phone, or email"
           />
         </div>
+
+        <div className="registration-panel">
+          <button
+            className="icon-text-button primary"
+            type="button"
+            onClick={() => {
+              setIsRegistering((current) => !current)
+              setRegistrationSaveStatus('idle')
+            }}
+          >
+            <UserPlus size={15} />
+            <span>Register patient</span>
+          </button>
+          {registrationSaveStatus === 'saved' && <span className="save-note">Registered</span>}
+          {registrationSaveStatus === 'error' && <span className="save-note error">Registration failed</span>}
+        </div>
+
+        {isRegistering && (
+          <form className="registration-form" onSubmit={handleRegistrationSubmit} aria-label="Patient registration form">
+            <label className="contact-field">
+              <span>Public ID</span>
+              <input
+                value={registrationDraft.pubpid}
+                onChange={(event) => updateRegistrationDraft('pubpid', event.target.value)}
+                aria-label="New patient public ID"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="contact-field">
+                <span>First name</span>
+                <input
+                  value={registrationDraft.firstName}
+                  onChange={(event) => updateRegistrationDraft('firstName', event.target.value)}
+                  aria-label="New patient first name"
+                  required
+                />
+              </label>
+              <label className="contact-field">
+                <span>Last name</span>
+                <input
+                  value={registrationDraft.lastName}
+                  onChange={(event) => updateRegistrationDraft('lastName', event.target.value)}
+                  aria-label="New patient last name"
+                  required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="contact-field">
+                <span>Date of birth</span>
+                <input
+                  type="date"
+                  value={registrationDraft.dateOfBirth}
+                  onChange={(event) => updateRegistrationDraft('dateOfBirth', event.target.value)}
+                  aria-label="New patient date of birth"
+                  required
+                />
+              </label>
+              <label className="contact-field">
+                <span>Sex</span>
+                <select
+                  value={registrationDraft.sex}
+                  onChange={(event) => updateRegistrationDraft('sex', event.target.value)}
+                  aria-label="New patient sex"
+                >
+                  <option value="">Unspecified</option>
+                  <option value="Female">Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+            </div>
+            <label className="contact-field">
+              <span>Street</span>
+              <input
+                value={registrationDraft.street}
+                onChange={(event) => updateRegistrationDraft('street', event.target.value)}
+                aria-label="New patient street"
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="contact-field">
+                <span>City</span>
+                <input
+                  value={registrationDraft.city}
+                  onChange={(event) => updateRegistrationDraft('city', event.target.value)}
+                  aria-label="New patient city"
+                />
+              </label>
+              <label className="contact-field">
+                <span>Postal code</span>
+                <input
+                  value={registrationDraft.postalCode}
+                  onChange={(event) => updateRegistrationDraft('postalCode', event.target.value)}
+                  aria-label="New patient postal code"
+                />
+              </label>
+            </div>
+            <label className="contact-field">
+              <span>Email</span>
+              <input
+                value={registrationDraft.email}
+                onChange={(event) => updateRegistrationDraft('email', event.target.value)}
+                aria-label="New patient email"
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="contact-field">
+                <span>Home phone</span>
+                <input
+                  value={registrationDraft.phoneHome}
+                  onChange={(event) => updateRegistrationDraft('phoneHome', event.target.value)}
+                  aria-label="New patient home phone"
+                />
+              </label>
+              <label className="contact-field">
+                <span>Cell phone</span>
+                <input
+                  value={registrationDraft.phoneCell}
+                  onChange={(event) => updateRegistrationDraft('phoneCell', event.target.value)}
+                  aria-label="New patient cell phone"
+                />
+              </label>
+            </div>
+            <div className="contact-actions">
+              <button className="icon-text-button primary" type="submit" disabled={registrationSaveStatus === 'saving'}>
+                <Check size={15} />
+                <span>{registrationSaveStatus === 'saving' ? 'Registering' : 'Create chart'}</span>
+              </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={() => {
+                  setRegistrationDraft(buildRegistrationDraft())
+                  setIsRegistering(false)
+                  setRegistrationSaveStatus('idle')
+                }}
+              >
+                <X size={15} />
+                <span>Cancel</span>
+              </button>
+            </div>
+          </form>
+        )}
 
         <div className="result-meta">
           <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} matches`}</span>
@@ -7186,6 +7390,28 @@ function buildDemographicsDraft(patient: PatientListItem | PatientChartSummary |
     postalCode: chart?.postalCode ?? '',
     maritalStatus: chart?.maritalStatus ?? '',
     occupation: chart?.occupation ?? '',
+  }
+}
+
+function buildRegistrationDraft(): PatientRegistrationInput {
+  return {
+    pubpid: '',
+    firstName: '',
+    lastName: '',
+    preferredName: '',
+    sex: '',
+    dateOfBirth: '',
+    street: '',
+    city: '',
+    state: 'CT',
+    postalCode: '',
+    maritalStatus: 'single',
+    occupation: '',
+    phoneHome: '',
+    phoneCell: '',
+    email: '',
+    hipaaAllowSms: 'YES',
+    hipaaAllowEmail: 'YES',
   }
 }
 

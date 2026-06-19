@@ -276,6 +276,79 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return coverage;
     }
 
+    public async Task<PatientChartSummary?> CreatePatientAsync(
+        PatientRegistrationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryNormalizeRegistration(request, out var normalized))
+        {
+            return null;
+        }
+
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into patients
+                (canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name, sex, date_of_birth,
+                 cohort, purpose, street, city, state, postal_code, email, phone, phone_home, phone_cell,
+                 hipaa_allow_sms, hipaa_allow_email, marital_status, occupation, provider_id, facility_id,
+                 portal_enabled, registration_date)
+            values
+                (@canonicalId, (select coalesce(max(legacy_pid), 100000) + 1 from patients), @pubpid,
+                 @firstName, @lastName, @preferredName, @sex, @dateOfBirth,
+                 null, 'registered via modernized patient workspace', @street, @city, @state, @postalCode,
+                 @email, @phoneHome, @phoneHome, @phoneCell, @hipaaAllowSms, @hipaaAllowEmail,
+                 @maritalStatus, @occupation, null, null, false, @registrationDate)
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("canonicalId", normalized.Pubpid);
+        command.Parameters.AddWithValue("pubpid", normalized.Pubpid);
+        command.Parameters.AddWithValue("firstName", normalized.FirstName);
+        command.Parameters.AddWithValue("lastName", normalized.LastName);
+        command.Parameters.Add("preferredName", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PreferredName);
+        command.Parameters.Add("sex", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Sex);
+        command.Parameters.Add("dateOfBirth", NpgsqlDbType.Date).Value = normalized.DateOfBirth;
+        command.Parameters.Add("street", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Street);
+        command.Parameters.Add("city", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.City);
+        command.Parameters.Add("state", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.State);
+        command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
+        command.Parameters.Add("email", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Email);
+        command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PhoneHome);
+        command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PhoneCell);
+        command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = normalized.HipaaAllowSms;
+        command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = normalized.HipaaAllowEmail;
+        command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
+        command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+        command.Parameters.Add("registrationDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
+
+        try
+        {
+            var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteTemporaryPatientAsync(string patientId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from patients
+            where (lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId)
+              and (canonical_id like 'TMP-PAT-REG-%' or pubpid like 'TMP-PAT-REG-%')
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
     public async Task<PatientChartSummary?> UpdateContactAsync(
         string patientId,
         PatientContactUpdateRequest request,
@@ -581,10 +654,79 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return true;
     }
 
+    private static bool TryNormalizeRegistration(
+        PatientRegistrationRequest request,
+        out NormalizedPatientRegistration normalized)
+    {
+        var pubpid = request.Pubpid?.Trim();
+        if (string.IsNullOrWhiteSpace(pubpid)
+            || !TryNormalizeDemographics(
+                new PatientDemographicsUpdateRequest(
+                    request.FirstName,
+                    request.LastName,
+                    request.PreferredName,
+                    request.Sex,
+                    request.DateOfBirth,
+                    request.Street,
+                    request.City,
+                    request.State,
+                    request.PostalCode,
+                    request.MaritalStatus,
+                    request.Occupation),
+                out var demographics))
+        {
+            normalized = new NormalizedPatientRegistration(
+                "",
+                "",
+                "",
+                null,
+                null,
+                default,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "YES",
+                "YES");
+            return false;
+        }
+
+        normalized = new NormalizedPatientRegistration(
+            Pubpid: pubpid,
+            FirstName: demographics.FirstName,
+            LastName: demographics.LastName,
+            PreferredName: demographics.PreferredName,
+            Sex: demographics.Sex,
+            DateOfBirth: demographics.DateOfBirth,
+            Street: demographics.Street,
+            City: demographics.City,
+            State: demographics.State,
+            PostalCode: demographics.PostalCode,
+            MaritalStatus: demographics.MaritalStatus,
+            Occupation: demographics.Occupation,
+            PhoneHome: NormalizeString(request.PhoneHome),
+            PhoneCell: NormalizeString(request.PhoneCell),
+            Email: NormalizeString(request.Email),
+            HipaaAllowSms: NormalizePermissionOrDefault(request.HipaaAllowSms),
+            HipaaAllowEmail: NormalizePermissionOrDefault(request.HipaaAllowEmail));
+        return true;
+    }
+
     private static string? NormalizeString(string? value)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static string NormalizePermissionOrDefault(string? value)
+    {
+        var normalized = NormalizeString(value)?.ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? "YES" : normalized;
     }
 
     private static bool TryNormalizeInsurance(
@@ -733,4 +875,23 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string? PostalCode,
         string? MaritalStatus,
         string? Occupation);
+
+    private sealed record NormalizedPatientRegistration(
+        string Pubpid,
+        string FirstName,
+        string LastName,
+        string? PreferredName,
+        string? Sex,
+        DateOnly DateOfBirth,
+        string? Street,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string? MaritalStatus,
+        string? Occupation,
+        string? PhoneHome,
+        string? PhoneCell,
+        string? Email,
+        string HipaaAllowSms,
+        string HipaaAllowEmail);
 }

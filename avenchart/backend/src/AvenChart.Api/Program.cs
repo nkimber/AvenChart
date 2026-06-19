@@ -64,6 +64,18 @@ patients.MapGet("/", async (
     })
     .WithName("SearchPatients");
 
+patients.MapPost("/", async (
+        PatientRepository repository,
+        PatientRegistrationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.CreatePatientAsync(request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient could not be registered from the supplied identity, demographic, and contact details.")
+            : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
+    })
+    .WithName("RegisterPatient");
+
 patients.MapGet("/{canonicalId}", async (
         PatientRepository repository,
         string canonicalId,
@@ -97,6 +109,16 @@ patients.MapPut("/{patientId}/demographics", async (
             : Results.Ok(patient);
     })
     .WithName("UpdatePatientDemographics");
+
+patients.MapDelete("/{patientId}", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteTemporaryPatientAsync(patientId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteTemporaryPatient");
 
 patients.MapPost("/{patientId}/insurance", async (
         PatientRepository repository,

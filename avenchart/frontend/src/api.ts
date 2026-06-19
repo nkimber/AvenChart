@@ -108,6 +108,15 @@ export type PatientDemographicsUpdate = {
   occupation: string
 }
 
+export type PatientRegistrationInput = PatientDemographicsUpdate & {
+  pubpid: string
+  phoneHome: string
+  phoneCell: string
+  email: string
+  hipaaAllowSms: string
+  hipaaAllowEmail: string
+}
+
 export type AppointmentListItem = {
   id: string
   patientId: string
@@ -961,6 +970,33 @@ export async function getPatientChart(canonicalId: string, signal?: AbortSignal)
   }
 
   return response.json()
+}
+
+export async function createPatient(
+  patient: PatientRegistrationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patient),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient registration failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deletePatient(patientId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Patient delete failed with ${response.status}`)
+  }
 }
 
 export async function updatePatientContact(

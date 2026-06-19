@@ -121,3 +121,22 @@ public sealed record PatientDemographicsUpdateRequest(
     string? PostalCode,
     string? MaritalStatus,
     string? Occupation);
+
+public sealed record PatientRegistrationRequest(
+    string? Pubpid,
+    string? FirstName,
+    string? LastName,
+    string? PreferredName,
+    string? Sex,
+    string? DateOfBirth,
+    string? Street,
+    string? City,
+    string? State,
+    string? PostalCode,
+    string? MaritalStatus,
+    string? Occupation,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? Email,
+    string? HipaaAllowSms,
+    string? HipaaAllowEmail);
