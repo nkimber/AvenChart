@@ -98,6 +98,7 @@ import {
   updateAdministrationUser,
   updateBillingLineStatus,
   updateEncounter,
+  updatePatientDocumentMetadata,
   updatePatientInsurance,
   updatePatientMessageStatus,
   updatePatientContact,
@@ -148,6 +149,7 @@ import {
   type PatientDocumentContentResponse,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
+  type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
   type PatientMessageCreateInput,
   type PatientMessageItem,
@@ -1736,6 +1738,27 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentMetadataUpdate(
+    document: PatientDocumentItem,
+    input: PatientDocumentMetadataUpdateInput,
+  ) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await updatePatientDocumentMetadata(document.id, input)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setDocumentStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Patient document metadata update failed'
+      setDocumentError(message)
+      throw updateError
+    }
+  }
+
   async function handlePatientDocumentArchive(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -2009,6 +2032,7 @@ function App() {
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
+            onUpdateDocumentMetadata={handlePatientDocumentMetadataUpdate}
             onArchiveDocument={handlePatientDocumentArchive}
             onSignDocument={handlePatientDocumentSign}
             onDenyDocument={handlePatientDocumentDeny}
@@ -5122,6 +5146,7 @@ function DocumentsWorkspace({
   onCreateDocument,
   onCreateBinaryDocument,
   onCreateExternalLinkDocument,
+  onUpdateDocumentMetadata,
   onArchiveDocument,
   onSignDocument,
   onDenyDocument,
@@ -5135,6 +5160,10 @@ function DocumentsWorkspace({
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
   onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
+  onUpdateDocumentMetadata: (
+    document: PatientDocumentItem,
+    input: PatientDocumentMetadataUpdateInput,
+  ) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDenyDocument: (document: PatientDocumentItem) => Promise<unknown>
@@ -5609,11 +5638,15 @@ function DocumentsWorkspace({
                   <>
                     <div className="document-viewer-meta">
                       <Field label="Name" value={viewedDocument.name} />
+                      <Field label="Category" value={viewedDocument.categoryName} />
+                      <Field label="Document date" value={viewedDocument.docDate} />
                       <Field label="File" value={viewedDocument.fileName} />
                       <Field label="MIME" value={viewedDocument.mimetype} />
+                      <Field label="Encounter" value={viewedDocument.encounter} />
                       <Field label="Storage" value={viewedDocument.storageMethod} />
                       <Field label="URL" value={viewedDocument.url} />
                       <Field label="Hash" value={viewedDocument.hash} />
+                      <Field label="Notes" value={viewedDocument.notes} />
                       <Field label="Review status" value={viewedDocument.reviewStatus} />
                       <Field label="Reviewed by" value={viewedDocument.reviewedBy} />
                     </div>
@@ -5667,6 +5700,7 @@ function DocumentsWorkspace({
                       document={document}
                       disabled={isLoading}
                       onView={handleDocumentView}
+                      onUpdateMetadata={onUpdateDocumentMetadata}
                       onArchive={onArchiveDocument}
                       onSign={onSignDocument}
                       onDeny={onDenyDocument}
@@ -6424,6 +6458,7 @@ function DocumentItem({
   document,
   disabled,
   onView,
+  onUpdateMetadata,
   onArchive,
   onSign,
   onDeny,
@@ -6432,14 +6467,52 @@ function DocumentItem({
   document: PatientDocumentItem
   disabled: boolean
   onView: (document: PatientDocumentItem) => Promise<void>
+  onUpdateMetadata: (document: PatientDocumentItem, input: PatientDocumentMetadataUpdateInput) => Promise<unknown>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
   onDeny: (document: PatientDocumentItem) => Promise<unknown>
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(document.name)
+  const [editCategoryId, setEditCategoryId] = useState(String(document.categoryId || 3))
+  const [editDocDate, setEditDocDate] = useState(document.docDate)
+  const [editEncounter, setEditEncounter] = useState(document.encounter ? String(document.encounter) : '')
+  const [editNotes, setEditNotes] = useState(document.notes ?? document.documentationOf ?? '')
+  const [editError, setEditError] = useState<string | null>(null)
   const isApproved = document.reviewStatus === 'approved'
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
   const isExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
+
+  useEffect(() => {
+    setEditName(document.name)
+    setEditCategoryId(String(document.categoryId || 3))
+    setEditDocDate(document.docDate)
+    setEditEncounter(document.encounter ? String(document.encounter) : '')
+    setEditNotes(document.notes ?? document.documentationOf ?? '')
+    setEditError(null)
+  }, [document])
+
+  async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setEditError(null)
+
+    const categoryId = Number(editCategoryId)
+    const encounter = editEncounter.trim().length > 0 ? Number(editEncounter) : null
+    if (!Number.isInteger(categoryId) || (encounter !== null && !Number.isInteger(encounter))) {
+      setEditError('Check numeric fields')
+      return
+    }
+
+    await onUpdateMetadata(document, {
+      categoryId,
+      name: editName,
+      docDate: editDocDate,
+      encounter,
+      notes: editNotes.trim().length > 0 ? editNotes : null,
+    })
+    setIsEditing(false)
+  }
 
   return (
     <article className="document-card">
@@ -6462,10 +6535,80 @@ function DocumentItem({
         <span>{document.reviewedBy ? `Reviewed by ${document.reviewedBy}` : 'Not reviewed'}</span>
       </div>
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
+      {document.notes && <p className="document-note">Notes: {document.notes}</p>}
       <div className="document-footnote">
         <span>{document.documentKey}</span>
         <span>{isExternalLink ? document.url : document.fileName || document.hash || 'No document reference'}</span>
       </div>
+      {isEditing && (
+        <form className="document-edit-form" onSubmit={handleMetadataSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                aria-label="Document metadata name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={editCategoryId}
+                  onChange={(event) => setEditCategoryId(event.target.value)}
+                  aria-label="Document metadata category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={editDocDate}
+                  onChange={(event) => setEditDocDate(event.target.value)}
+                  aria-label="Document metadata date"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={editEncounter}
+                onChange={(event) => setEditEncounter(event.target.value)}
+                aria-label="Document metadata encounter"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Notes</span>
+              <textarea
+                value={editNotes}
+                onChange={(event) => setEditNotes(event.target.value)}
+                aria-label="Document metadata notes"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Metadata
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsEditing(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {editError && <span className="save-note error">{editError}</span>}
+          </div>
+        </form>
+      )}
       <div className="document-item-actions">
         <button
           className="icon-text-button secondary"
@@ -6491,6 +6634,15 @@ function DocumentItem({
             Open Link
           </a>
         )}
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsEditing((current) => !current)}
+        >
+          <Pencil size={14} />
+          Edit
+        </button>
         <button
           className="icon-text-button danger"
           type="button"

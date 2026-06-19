@@ -542,6 +542,14 @@ export type PatientDocumentExternalLinkCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentMetadataUpdateInput = {
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  notes?: string | null
+}
+
 export type PatientDocumentContentResponse = {
   id: number
   documentKey: string
@@ -1623,6 +1631,24 @@ export async function createPatientExternalLinkDocument(
   })
   if (!response.ok) {
     throw new Error(`External-link patient document create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientDocumentMetadata(
+  documentId: number,
+  document: PatientDocumentMetadataUpdateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/metadata`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document metadata update failed with ${response.status}`)
   }
 
   return response.json()

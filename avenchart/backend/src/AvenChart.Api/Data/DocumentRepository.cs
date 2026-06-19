@@ -374,6 +374,67 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             IsBinary: isBinary);
     }
 
+    public async Task<PatientDocumentMutationResponse?> UpdateMetadataAsync(
+        int documentId,
+        PatientDocumentMetadataUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0
+            || request.CategoryId <= 0
+            || string.IsNullOrWhiteSpace(request.Name)
+            || !DateOnly.TryParse(request.DocDate, out var documentDate))
+        {
+            return null;
+        }
+
+        var categoryName = CategoryNameFor(request.CategoryId);
+        var name = request.Name.Trim();
+        var notes = NullableText(request.Notes);
+        string? patientId = null;
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set category_id = @categoryId,
+                    category_name = @categoryName,
+                    name = @name,
+                    file_name = case
+                        when content_bytes is null and coalesce(storage_method, '') <> 'web_url' then @fileName
+                        else file_name
+                    end,
+                    doc_date = @docDate,
+                    encounter = @encounter,
+                    documentation_of = @documentationOf,
+                    notes = @notes
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            command.Parameters.AddWithValue("categoryId", request.CategoryId);
+            command.Parameters.AddWithValue("categoryName", categoryName);
+            command.Parameters.AddWithValue("name", name);
+            command.Parameters.AddWithValue("fileName", BuildDownloadFileName(name, "text/plain"));
+            command.Parameters.AddWithValue("docDate", documentDate);
+            var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
+            encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+            var documentationParameter = command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text);
+            documentationParameter.Value = notes;
+            var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
+            notesParameter.Value = notes;
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+    }
+
     public async Task<PatientDocumentMutationResponse?> SignAsync(
         int documentId,
         PatientDocumentSignRequest request,

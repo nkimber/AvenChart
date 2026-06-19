@@ -628,6 +628,19 @@ documents.MapPost("/external-link", async (
     })
     .WithName("CreateExternalLinkPatientDocument");
 
+documents.MapPut("/{documentId:int}/metadata", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentMetadataUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateMetadataAsync(documentId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Patient document metadata could not be updated from the supplied filing details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("UpdatePatientDocumentMetadata");
+
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
         int documentId,

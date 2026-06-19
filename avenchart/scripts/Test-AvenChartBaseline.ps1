@@ -1025,6 +1025,72 @@ finally {
     }
 }
 
+$patientDocumentMetadataMutationId = $null
+try {
+    $metadataDocumentName = "Smoke Metadata Patient Document"
+    $metadataDocumentUpdatedName = "Smoke Refiled Advance Directive"
+    $metadataDocumentBody = "Created by the smoke patient-document metadata check."
+    $metadataDocumentUpdatedNotes = "Updated by the smoke patient-document metadata check."
+    $createMetadataDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $metadataDocumentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        content = $metadataDocumentBody
+        notes = "Created by the smoke patient-document metadata check."
+    } | ConvertTo-Json
+    $createdMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createMetadataDocumentBody -TimeoutSec 20
+    $patientDocumentMetadataMutationId = $createdMetadataDocument.id
+    $createdMetadataVisible = $createdMetadataDocument.detail.documents | Where-Object { $_.name -eq $metadataDocumentName -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
+
+    $updateMetadataDocumentBody = @{
+        categoryId = 6
+        name = $metadataDocumentUpdatedName
+        docDate = "2026-06-19"
+        encounter = 1000014
+        notes = $metadataDocumentUpdatedNotes
+    } | ConvertTo-Json
+    $updatedMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/metadata" -Method Put -ContentType "application/json" -Body $updateMetadataDocumentBody -TimeoutSec 20
+    $updatedMetadataVisible = $updatedMetadataDocument.detail.documents | Where-Object { $_.name -eq $metadataDocumentUpdatedName -and $_.categoryName -eq "Advance Directive" -and $_.docDate -eq "2026-06-19" -and $_.encounter -eq 1000014 -and $_.notes -eq $metadataDocumentUpdatedNotes } | Select-Object -First 1
+    $metadataContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/content" -Method Get -TimeoutSec 20
+
+    $archivedMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedMetadataVisible = $archivedMetadataDocument.detail.documents | Where-Object { $_.name -eq $metadataDocumentUpdatedName } | Select-Object -First 1
+    $patientDocumentMetadataPassed = $null -ne $createdMetadataVisible `
+        -and $null -ne $updatedMetadataVisible `
+        -and $metadataContent.name -eq $metadataDocumentUpdatedName `
+        -and $metadataContent.categoryName -eq "Advance Directive" `
+        -and $metadataContent.docDate -eq "2026-06-19" `
+        -and $metadataContent.encounter -eq 1000014 `
+        -and $metadataContent.notes -eq $metadataDocumentUpdatedNotes `
+        -and $metadataContent.content.Contains($metadataDocumentBody) `
+        -and $null -eq $archivedMetadataVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentMetadataMutationId = $null
+
+    Add-Check -Name "patient document metadata lifecycle" -Result $(if ($patientDocumentMetadataPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdMetadataDocument.id
+        createdVisible = $createdMetadataVisible
+        updatedVisible = $updatedMetadataVisible
+        content = $metadataContent
+        archivedVisible = $archivedMetadataVisible
+    }
+}
+catch {
+    Add-Check -Name "patient document metadata lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentMetadataMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientBinaryDocumentMutationId = $null
 try {
     $binaryDocumentName = "Smoke Binary Patient Document.pdf"

@@ -66,6 +66,13 @@ public sealed record PatientDocumentExternalLinkCreateRequest(
     string Url,
     string? Notes);
 
+public sealed record PatientDocumentMetadataUpdateRequest(
+    int CategoryId,
+    string Name,
+    string DocDate,
+    int? Encounter,
+    string? Notes);
+
 public sealed record PatientDocumentContentResponse(
     int Id,
     string DocumentKey,

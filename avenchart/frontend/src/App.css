@@ -910,6 +910,21 @@
   white-space: pre-line;
 }
 
+.document-note {
+  margin: -2px 0 0;
+  color: #526879;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.document-edit-form {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #e0e8ec;
+  padding-top: 8px;
+}
+
 .document-footnote {
   display: grid;
   grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
