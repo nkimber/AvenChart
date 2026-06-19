@@ -532,6 +532,16 @@ export type PatientDocumentBinaryCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentExternalLinkCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  url: string
+  notes?: string | null
+}
+
 export type PatientDocumentContentResponse = {
   id: number
   documentKey: string
@@ -1596,6 +1606,23 @@ export async function createPatientBinaryDocument(
   })
   if (!response.ok) {
     throw new Error(`Binary patient document create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createPatientExternalLinkDocument(
+  document: PatientDocumentExternalLinkCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/external-link`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`External-link patient document create failed with ${response.status}`)
   }
 
   return response.json()

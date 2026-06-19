@@ -223,6 +223,93 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
     }
 
+    public async Task<PatientDocumentMutationResponse?> CreateExternalLinkAsync(
+        PatientDocumentExternalLinkCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Name)
+            || string.IsNullOrWhiteSpace(request.Url)
+            || !DateOnly.TryParse(request.DocDate, out var documentDate)
+            || !Uri.TryCreate(request.Url.Trim(), UriKind.Absolute, out var linkUri)
+            || (linkUri.Scheme != Uri.UriSchemeHttp && linkUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = 0;
+        var categoryId = request.CategoryId <= 0 ? 3 : request.CategoryId;
+        var categoryName = CategoryNameFor(categoryId);
+        var name = request.Name.Trim();
+        var url = linkUri.AbsoluteUri;
+        var notes = NullableText(request.Notes);
+        var documentKey = $"DOC-WEBLINK-{Guid.NewGuid():N}";
+        var content = $"External document link: {url}";
+        var contentBytes = Encoding.UTF8.GetBytes(content);
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using (var idCommand = connection.CreateCommand())
+            {
+                idCommand.Transaction = transaction;
+                idCommand.CommandText = """
+                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    from patient_documents;
+                    """;
+                id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    insert into patient_documents
+                        (id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
+                         mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of,
+                         notes, content, content_bytes, deleted)
+                    values
+                        (@id, @documentKey, @patientId, @pid, @categoryId, @categoryName, @name, @docDate, @uploadedAt,
+                         'text/uri-list', @fileName, @sizeBytes, 0, @encounter, 'web_url', @url, @hash, @documentationOf,
+                         @notes, @content, null, 0);
+                    """;
+                command.Parameters.AddWithValue("id", id);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patient.PatientId);
+                command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                command.Parameters.AddWithValue("categoryId", categoryId);
+                command.Parameters.AddWithValue("categoryName", categoryName);
+                command.Parameters.AddWithValue("name", name);
+                command.Parameters.AddWithValue("docDate", documentDate);
+                command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+                command.Parameters.AddWithValue("fileName", BuildDownloadFileName(name, "text/plain"));
+                command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+                var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
+                encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+                command.Parameters.AddWithValue("url", url);
+                command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+                var documentationParameter = command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text);
+                documentationParameter.Value = notes;
+                var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
+                notesParameter.Value = notes;
+                command.Parameters.AddWithValue("content", content);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
+    }
+
     public async Task<PatientDocumentContentResponse?> GetContentAsync(int documentId, CancellationToken cancellationToken)
     {
         if (documentId <= 0)

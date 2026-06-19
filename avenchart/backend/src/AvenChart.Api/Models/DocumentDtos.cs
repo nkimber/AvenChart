@@ -57,6 +57,15 @@ public sealed record PatientDocumentBinaryCreateRequest(
     string ContentBase64,
     string? Notes);
 
+public sealed record PatientDocumentExternalLinkCreateRequest(
+    string PatientId,
+    int CategoryId,
+    string Name,
+    string DocDate,
+    int? Encounter,
+    string Url,
+    string? Notes);
+
 public sealed record PatientDocumentContentResponse(
     int Id,
     string DocumentKey,

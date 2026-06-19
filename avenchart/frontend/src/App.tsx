@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Clock,
   Download,
+  ExternalLink,
   FileText,
   FlaskConical,
   FolderOpen,
@@ -54,6 +55,7 @@ import {
   createPatientInsurance,
   createPatientBinaryDocument,
   createPatientDocument,
+  createPatientExternalLinkDocument,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
@@ -144,6 +146,7 @@ import {
   type PatientDemographicsUpdate,
   type PatientDocumentCreateInput,
   type PatientDocumentContentResponse,
+  type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
   type PatientDocumentsResponse,
   type PatientMessageCreateInput,
@@ -1714,6 +1717,25 @@ function App() {
     }
   }
 
+  async function handlePatientExternalLinkDocumentCreate(input: PatientDocumentExternalLinkCreateInput) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await createPatientExternalLinkDocument(input)
+      setDocumentPatientId(response.detail.patientId)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setDocumentStatus('error')
+      const message = createError instanceof Error ? createError.message : 'External-link patient document create failed'
+      setDocumentError(message)
+      throw createError
+    }
+  }
+
   async function handlePatientDocumentArchive(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -1965,6 +1987,7 @@ function App() {
             onPatientIdChange={setDocumentPatientId}
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
+            onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onArchiveDocument={handlePatientDocumentArchive}
             onSignDocument={handlePatientDocumentSign}
             onDeleteDocument={handlePatientDocumentDelete}
@@ -5076,6 +5099,7 @@ function DocumentsWorkspace({
   onPatientIdChange,
   onCreateDocument,
   onCreateBinaryDocument,
+  onCreateExternalLinkDocument,
   onArchiveDocument,
   onSignDocument,
   onDeleteDocument,
@@ -5087,6 +5111,7 @@ function DocumentsWorkspace({
   onPatientIdChange: (value: string) => void
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
+  onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
@@ -5105,6 +5130,12 @@ function DocumentsWorkspace({
   const [binaryMimeType, setBinaryMimeType] = useState('')
   const [binaryContentBase64, setBinaryContentBase64] = useState('')
   const [binaryFileMessage, setBinaryFileMessage] = useState('No file selected')
+  const [linkDocumentName, setLinkDocumentName] = useState('External Referral Link')
+  const [linkDocumentCategoryId, setLinkDocumentCategoryId] = useState('3')
+  const [linkDocumentDate, setLinkDocumentDate] = useState('2026-06-18')
+  const [linkDocumentEncounter, setLinkDocumentEncounter] = useState('1000013')
+  const [linkDocumentUrl, setLinkDocumentUrl] = useState('https://example.test/legacy-ehr/external-record')
+  const [linkDocumentNotes, setLinkDocumentNotes] = useState('Linked from the modernized Documents workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -5200,6 +5231,30 @@ function DocumentsWorkspace({
     })
 
     setMutationMessage('File uploaded')
+  }
+
+  async function handleExternalLinkDocumentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    const categoryId = Number(linkDocumentCategoryId)
+    const encounter = linkDocumentEncounter.trim().length > 0 ? Number(linkDocumentEncounter) : null
+    if (!Number.isInteger(categoryId) || (encounter !== null && !Number.isInteger(encounter))) {
+      setMutationMessage('Check numeric fields')
+      return
+    }
+
+    await onCreateExternalLinkDocument({
+      patientId,
+      categoryId,
+      name: linkDocumentName,
+      docDate: linkDocumentDate,
+      encounter,
+      url: linkDocumentUrl,
+      notes: linkDocumentNotes,
+    })
+
+    setMutationMessage('External link saved')
   }
 
   async function handleDocumentView(document: PatientDocumentItem) {
@@ -5410,6 +5465,83 @@ function DocumentsWorkspace({
             <span className="save-note">{binaryFileMessage}</span>
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleExternalLinkDocumentSubmit}>
+          <div className="panel-heading compact-heading">
+            <ExternalLink size={16} />
+            <h3>External Link</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={linkDocumentName}
+                onChange={(event) => setLinkDocumentName(event.target.value)}
+                aria-label="External link document name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={linkDocumentCategoryId}
+                  onChange={(event) => setLinkDocumentCategoryId(event.target.value)}
+                  aria-label="External link document category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={linkDocumentDate}
+                  onChange={(event) => setLinkDocumentDate(event.target.value)}
+                  aria-label="External link document date"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={linkDocumentEncounter}
+                onChange={(event) => setLinkDocumentEncounter(event.target.value)}
+                aria-label="External link document encounter"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="filter-field">
+              <span>URL</span>
+              <input
+                type="url"
+                value={linkDocumentUrl}
+                onChange={(event) => setLinkDocumentUrl(event.target.value)}
+                aria-label="External link document URL"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Notes</span>
+              <textarea
+                value={linkDocumentNotes}
+                onChange={(event) => setLinkDocumentNotes(event.target.value)}
+                aria-label="External link document notes"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <ExternalLink size={15} />
+              Save Link
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Documents detail">
@@ -5455,11 +5587,18 @@ function DocumentsWorkspace({
                       <Field label="Name" value={viewedDocument.name} />
                       <Field label="File" value={viewedDocument.fileName} />
                       <Field label="MIME" value={viewedDocument.mimetype} />
+                      <Field label="Storage" value={viewedDocument.storageMethod} />
+                      <Field label="URL" value={viewedDocument.url} />
                       <Field label="Hash" value={viewedDocument.hash} />
                       <Field label="Review status" value={viewedDocument.reviewStatus} />
                       <Field label="Reviewed by" value={viewedDocument.reviewedBy} />
                     </div>
-                    {viewedDocument.isBinary ? (
+                    {viewedDocument.storageMethod === 'web_url' && viewedDocument.url ? (
+                      <div className="document-content-block">
+                        <strong>{viewedDocument.url}</strong>
+                        <span>{viewedDocument.content}</span>
+                      </div>
+                    ) : viewedDocument.isBinary ? (
                       <div className="document-content-block">
                         <strong>{viewedDocument.fileName}</strong>
                         <span>{viewedDocument.content}</span>
@@ -5477,6 +5616,12 @@ function DocumentsWorkspace({
                         <Download size={14} />
                         Download
                       </a>
+                      {viewedDocument.storageMethod === 'web_url' && viewedDocument.url && (
+                        <a className="icon-text-button secondary" href={viewedDocument.url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={14} />
+                          Open Link
+                        </a>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -6266,6 +6411,7 @@ function DocumentItem({
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
   const isApproved = document.reviewStatus === 'approved'
+  const isExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
 
   return (
     <article className="document-card">
@@ -6290,7 +6436,7 @@ function DocumentItem({
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
       <div className="document-footnote">
         <span>{document.documentKey}</span>
-        <span>{document.fileName || document.hash || document.url || 'No document reference'}</span>
+        <span>{isExternalLink ? document.url : document.fileName || document.hash || 'No document reference'}</span>
       </div>
       <div className="document-item-actions">
         <button
@@ -6311,6 +6457,12 @@ function DocumentItem({
           <Download size={14} />
           Download
         </a>
+        {isExternalLink && (
+          <a className="icon-text-button secondary" href={document.url ?? '#'} target="_blank" rel="noreferrer">
+            <ExternalLink size={14} />
+            Open Link
+          </a>
+        )}
         <button
           className="icon-text-button danger"
           type="button"

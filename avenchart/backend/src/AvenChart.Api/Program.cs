@@ -616,6 +616,18 @@ documents.MapPost("/binary", async (
     })
     .WithName("CreateBinaryPatientDocument");
 
+documents.MapPost("/external-link", async (
+        DocumentRepository repository,
+        PatientDocumentExternalLinkCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateExternalLinkAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("External-link patient document could not be created from the supplied patient, URL, and document details.")
+            : Results.Created($"/api/documents/{mutation.Id}", mutation);
+    })
+    .WithName("CreateExternalLinkPatientDocument");
+
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
         int documentId,

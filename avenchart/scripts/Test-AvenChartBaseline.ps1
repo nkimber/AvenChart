@@ -1043,6 +1043,57 @@ finally {
     }
 }
 
+$patientExternalLinkDocumentMutationId = $null
+try {
+    $externalLinkDocumentName = "Smoke External Link Patient Document"
+    $externalLinkUrl = "https://example.test/legacy-ehr/smoke-external-record"
+    $createExternalLinkDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $externalLinkDocumentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        url = $externalLinkUrl
+        notes = "Created by the smoke external-link patient-document mutation check."
+    } | ConvertTo-Json
+    $createdExternalLinkDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/external-link" -Method Post -ContentType "application/json" -Body $createExternalLinkDocumentBody -TimeoutSec 20
+    $patientExternalLinkDocumentMutationId = $createdExternalLinkDocument.id
+    $createdExternalLinkVisible = $createdExternalLinkDocument.detail.documents | Where-Object { $_.name -eq $externalLinkDocumentName -and $_.mimetype -eq "text/uri-list" -and $_.storageMethod -eq "web_url" -and $_.url -eq $externalLinkUrl } | Select-Object -First 1
+
+    $externalLinkContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId/content" -Method Get -TimeoutSec 20
+    $archivedExternalLinkDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedExternalLinkVisible = $archivedExternalLinkDocument.detail.documents | Where-Object { $_.name -eq $externalLinkDocumentName } | Select-Object -First 1
+    $patientExternalLinkDocumentMutationPassed = $null -ne $createdExternalLinkVisible `
+        -and $externalLinkContent.name -eq $externalLinkDocumentName `
+        -and $externalLinkContent.storageMethod -eq "web_url" `
+        -and $externalLinkContent.url -eq $externalLinkUrl `
+        -and $externalLinkContent.content.Contains($externalLinkUrl) `
+        -and $null -eq $archivedExternalLinkVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientExternalLinkDocumentMutationId = $null
+
+    Add-Check -Name "patient external-link document mutation lifecycle" -Result $(if ($patientExternalLinkDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdExternalLinkDocument.id
+        createdVisible = $createdExternalLinkVisible
+        contentStorage = $externalLinkContent.storageMethod
+        contentUrl = $externalLinkContent.url
+        archivedVisible = $archivedExternalLinkVisible
+    }
+}
+catch {
+    Add-Check -Name "patient external-link document mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientExternalLinkDocumentMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientExternalLinkDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientMessageMutationId = $null
 try {
     $messageTitle = "Smoke Patient Message Mutation"
