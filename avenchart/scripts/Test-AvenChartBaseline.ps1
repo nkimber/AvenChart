@@ -1550,6 +1550,29 @@ catch {
     Add-Check -Name "anchor fee sheet billing" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $claimBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $claimRows = @($claimBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $queuedClaim = $claimRows | Where-Object { $_.statusLabel -eq "Queued for billing" -and $_.billProcess -eq 1 } | Select-Object -First 1
+    $generatedClaim = $claimRows | Where-Object { $_.statusLabel -eq "Marked as cleared" -and $_.processFile -like "CLAIM-*-837P.txt" } | Select-Object -First 1
+    $clearedClaim = $claimRows | Where-Object { $_.statusLabel -eq "Marked as cleared" -and [string]::IsNullOrWhiteSpace($_.processFile) } | Select-Object -First 1
+    $claimStatusPassed = $claimBilling.patientId -eq "MOD-PAT-0005" `
+        -and $claimRows.Count -ge 3 `
+        -and $null -ne $queuedClaim `
+        -and $null -ne $generatedClaim `
+        -and $null -ne $clearedClaim
+    Add-Check -Name "anchor claim status summary" -Result $(if ($claimStatusPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $claimBilling.patientId
+        claimCount = $claimRows.Count
+        queuedClaim = $queuedClaim
+        generatedClaim = $generatedClaim
+        clearedClaim = $clearedClaim
+    }
+}
+catch {
+    Add-Check -Name "anchor claim status summary" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

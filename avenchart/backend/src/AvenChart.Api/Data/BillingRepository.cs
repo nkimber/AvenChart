@@ -19,8 +19,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         var encounters = await GetBillingEncountersAsync(connection, patient.LegacyPid, cancellationToken);
-        var lines = await GetBillingLinesAsync(connection, patient.LegacyPid, encounters.Select(encounter => encounter.Encounter).ToArray(), cancellationToken);
+        var encounterNumbers = encounters.Select(encounter => encounter.Encounter).ToArray();
+        var lines = await GetBillingLinesAsync(connection, patient.LegacyPid, encounterNumbers, cancellationToken);
+        var claims = await GetClaimsAsync(connection, patient.LegacyPid, encounterNumbers, cancellationToken);
         var linesByEncounter = lines.GroupBy(line => line.Encounter).ToDictionary(group => group.Key, group => group.ToList());
+        var claimsByEncounter = claims.GroupBy(claim => claim.Encounter).ToDictionary(group => group.Key, group => group.ToList());
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -37,7 +40,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 return encounter with
                 {
                     TotalFee = encounterLines.Sum(line => line.Fee ?? 0m),
-                    Lines = encounterLines
+                    Lines = encounterLines,
+                    Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, [])
                 };
             }).ToList());
     }
@@ -302,7 +306,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 ProviderName: ReadNullableString(reader, "provider_name"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 TotalFee: 0m,
-                Lines: []));
+                Lines: [],
+                Claims: []));
         }
 
         return items;
@@ -353,6 +358,54 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return items;
     }
 
+    private static async Task<IReadOnlyList<BillingClaimItem>> GetClaimsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        IReadOnlyList<int> encounters,
+        CancellationToken cancellationToken)
+    {
+        if (encounters.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select encounter, version, payer_id, payer_name, payer_type, status, bill_process,
+                   bill_time, process_time, process_file, target, submitted_claim
+            from claims
+            where pid = @pid
+              and encounter = any(@encounters)
+            order by encounter desc, version;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+        command.Parameters.AddWithValue("encounters", encounters.ToArray());
+
+        var items = new List<BillingClaimItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var status = ReadInt(reader, "status");
+            var billProcess = ReadInt(reader, "bill_process");
+            items.Add(new BillingClaimItem(
+                Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+                Version: reader.GetInt32(reader.GetOrdinal("version")),
+                PayerId: reader.GetInt32(reader.GetOrdinal("payer_id")),
+                PayerName: ReadNullableString(reader, "payer_name"),
+                PayerType: reader.GetInt32(reader.GetOrdinal("payer_type")),
+                Status: status,
+                StatusLabel: ClaimStatusLabel(status, billProcess),
+                BillProcess: billProcess,
+                BillTime: ReadNullableDateTime(reader, "bill_time"),
+                ProcessTime: ReadNullableDateTime(reader, "process_time"),
+                ProcessFile: ReadNullableString(reader, "process_file"),
+                Target: ReadNullableString(reader, "target"),
+                SubmittedClaim: ReadNullableString(reader, "submitted_claim")));
+        }
+
+        return items;
+    }
+
     private static async Task<BillingEncounterMutationContext?> GetEncounterForPatientAsync(
         NpgsqlConnection connection,
         int legacyPid,
@@ -392,6 +445,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
     }
 
+    private static string? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
     private static int ReadInt(DbDataReader reader, string columnName)
     {
         return reader.GetInt32(reader.GetOrdinal(columnName));
@@ -406,6 +465,25 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string ClaimStatusLabel(int status, int billProcess)
+    {
+        if (billProcess != 0)
+        {
+            return "Queued for billing";
+        }
+
+        return status switch
+        {
+            1 => "Re-opened",
+            2 or 3 => "Marked as cleared",
+            4 => "Closed",
+            5 => "Canceled",
+            6 => "Forwarded",
+            7 => "Denied",
+            _ => "Unsubmitted"
+        };
     }
 
     private static bool IsBinaryStatus(int value)

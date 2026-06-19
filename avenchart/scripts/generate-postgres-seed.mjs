@@ -218,6 +218,7 @@ drop table if exists messages;
 drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_orders;
+drop table if exists claims;
 drop table if exists billing;
 drop table if exists immunizations;
 drop table if exists prescriptions;
@@ -472,6 +473,26 @@ create table billing (
   units integer not null default 1,
   billed integer not null default 0,
   activity integer not null default 1
+);
+
+create table claims (
+  id text primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  encounter integer not null,
+  version integer not null,
+  payer_id integer not null,
+  payer_name text,
+  payer_type integer not null default 0,
+  status integer not null default 0,
+  bill_process integer not null default 0,
+  bill_time timestamp,
+  process_time timestamp,
+  process_file text,
+  target text,
+  x12_partner_id integer not null default 0,
+  submitted_claim text,
+  unique (pid, encounter, version)
 );
 
 create table lab_orders (
@@ -980,6 +1001,42 @@ copyRows('billing', [
   item.activity ?? 1,
 ]))
 
+copyRows('claims', [
+  'id',
+  'patient_id',
+  'pid',
+  'encounter',
+  'version',
+  'payer_id',
+  'payer_name',
+  'payer_type',
+  'status',
+  'bill_process',
+  'bill_time',
+  'process_time',
+  'process_file',
+  'target',
+  'x12_partner_id',
+  'submitted_claim',
+], dataset.claims.map((claim) => [
+  claim.id,
+  claim.patientId,
+  claim.pid,
+  claim.encounter,
+  claim.version,
+  claim.payerId,
+  claim.payerName,
+  claim.payerType,
+  claim.status,
+  claim.billProcess,
+  claim.billTime,
+  claim.processTime,
+  claim.processFile,
+  claim.target,
+  claim.x12PartnerId,
+  claim.submittedClaim,
+]))
+
 copyRows('lab_orders', [
   'id',
   'patient_id',
@@ -1207,6 +1264,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     prescriptions: dataset.prescriptions.length,
     immunizations: dataset.immunizations.length,
     billing: dataset.billing.length,
+    claims: dataset.claims.length,
     labOrders: dataset.labOrders.length,
     labReports: dataset.labReports.length,
     labResults: dataset.labResults.length,

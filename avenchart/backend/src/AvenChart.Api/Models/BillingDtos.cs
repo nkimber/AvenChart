@@ -21,7 +21,8 @@ public sealed record BillingEncounterItem(
     string? ProviderName,
     string? FacilityName,
     decimal TotalFee,
-    IReadOnlyList<BillingLineItem> Lines);
+    IReadOnlyList<BillingLineItem> Lines,
+    IReadOnlyList<BillingClaimItem> Claims);
 
 public sealed record BillingLineItem(
     string Id,
@@ -36,6 +37,21 @@ public sealed record BillingLineItem(
     int Units,
     int Billed,
     int Activity);
+
+public sealed record BillingClaimItem(
+    int Encounter,
+    int Version,
+    int PayerId,
+    string? PayerName,
+    int PayerType,
+    int Status,
+    string StatusLabel,
+    int BillProcess,
+    string? BillTime,
+    string? ProcessTime,
+    string? ProcessFile,
+    string? Target,
+    string? SubmittedClaim);
 
 public sealed record BillingLineCreateRequest(
     string PatientId,

@@ -733,6 +733,22 @@ export type BillingLineItem = {
   activity: number
 }
 
+export type BillingClaimItem = {
+  encounter: number
+  version: number
+  payerId: number
+  payerName?: string | null
+  payerType: number
+  status: number
+  statusLabel: string
+  billProcess: number
+  billTime?: string | null
+  processTime?: string | null
+  processFile?: string | null
+  target?: string | null
+  submittedClaim?: string | null
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -744,6 +760,7 @@ export type BillingEncounterItem = {
   facilityName?: string | null
   totalFee: number
   lines: BillingLineItem[]
+  claims: BillingClaimItem[]
 }
 
 export type PatientBillingResponse = {

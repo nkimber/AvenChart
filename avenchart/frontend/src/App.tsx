@@ -124,6 +124,7 @@ import {
   type AppointmentSearchResponse,
   type AllergyListItem,
   type BillingEncounterItem,
+  type BillingClaimItem,
   type BillingLineCreateInput,
   type BillingLineItem,
   type BillingLineUpdateInput,
@@ -4547,6 +4548,7 @@ function FeesWorkspace({
   const [correctionJustify, setCorrectionJustify] = useState('Z00.00')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
+  const claimCount = countBillingClaims(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
   const isLoading = status === 'loading'
 
@@ -4653,6 +4655,7 @@ function FeesWorkspace({
           <div className="list-counts">
             <MetricRow label="Encounters" value={patientBilling.encounters.length} />
             <MetricRow label="Billing lines" value={lineCount} />
+            <MetricRow label="Claims" value={claimCount} />
             <MetricRow label="CPT lines" value={countBillingLinesByType(patientBilling.encounters, 'CPT4')} />
             <MetricRow label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
@@ -4913,6 +4916,7 @@ function FeesWorkspace({
                 <Field label="Patient ID" value={patientBilling.pubpid} />
                 <Field label="Encounters" value={patientBilling.encounters.length} />
                 <Field label="Billing lines" value={lineCount} />
+                <Field label="Claims" value={claimCount} />
                 <Field label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
                 <Field label="Total fee" value={formatCurrency(totalFee)} />
               </InfoPanel>
@@ -7405,6 +7409,12 @@ function BillingEncounterCard({
         <span>{encounter.diagnosisText || 'No diagnosis text'}</span>
       </div>
       <div className="billing-line-list">
+        {encounter.claims.map((claim) => (
+          <BillingClaimCard key={`${claim.encounter}-${claim.version}`} claim={claim} />
+        ))}
+        {encounter.claims.length === 0 && <div className="timeline-placeholder">No claim status recorded</div>}
+      </div>
+      <div className="billing-line-list">
         {encounter.lines.map((line) => (
           <BillingLineCard
             key={line.id}
@@ -7416,6 +7426,27 @@ function BillingEncounterCard({
           />
         ))}
         {encounter.lines.length === 0 && <div className="timeline-placeholder">No fee sheet codes recorded</div>}
+      </div>
+    </article>
+  )
+}
+
+function BillingClaimCard({ claim }: { claim: BillingClaimItem }) {
+  return (
+    <article className="billing-line-card">
+      <div className="message-item-header">
+        <strong>Claim Status</strong>
+        <span className="status-tag">{claim.statusLabel}</span>
+      </div>
+      <p>
+        Version {claim.version} / {formatPayerType(claim.payerType)} {claim.payerName || `Payer ${claim.payerId}`}
+      </p>
+      <div className="procedure-order-meta">
+        <span>{claim.target ? `${claim.target} billing` : 'No billing target'}</span>
+        <span>{claim.billTime ? `Billed ${claim.billTime}` : 'No bill time'}</span>
+        <span>{claim.processTime ? `Processed ${claim.processTime}` : 'Not processed'}</span>
+        <span>{claim.processFile ? `File ${claim.processFile}` : 'No claim file'}</span>
+        <span>{claim.submittedClaim ? 'Reviewed claim data' : 'No submitted claim payload'}</span>
       </div>
     </article>
   )
@@ -8087,6 +8118,10 @@ function countBillingLines(encounters: BillingEncounterItem[] | undefined) {
   return encounters?.reduce((count, encounter) => count + encounter.lines.length, 0) ?? 0
 }
 
+function countBillingClaims(encounters: BillingEncounterItem[] | undefined) {
+  return encounters?.reduce((count, encounter) => count + encounter.claims.length, 0) ?? 0
+}
+
 function countBillingLinesByType(encounters: BillingEncounterItem[] | undefined, codeType: string) {
   return (
     encounters?.reduce(
@@ -8094,6 +8129,13 @@ function countBillingLinesByType(encounters: BillingEncounterItem[] | undefined,
       0,
     ) ?? 0
   )
+}
+
+function formatPayerType(value: number) {
+  if (value === 1) return 'Primary'
+  if (value === 2) return 'Secondary'
+  if (value === 3) return 'Tertiary'
+  return 'Patient'
 }
 
 function countUsersByRole(users: AdministrationUserItem[] | undefined, role: string) {
