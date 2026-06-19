@@ -208,7 +208,10 @@ create table billing (
   code text,
   code_text text,
   fee numeric(10,2),
-  justify text
+  justify text,
+  units integer not null default 1,
+  billed integer not null default 0,
+  activity integer not null default 1
 );
 
 create table lab_orders (
@@ -580,6 +583,9 @@ copyRows('billing', [
   'code_text',
   'fee',
   'justify',
+  'units',
+  'billed',
+  'activity',
 ], dataset.billing.map((item) => [
   item.id,
   item.pid,
@@ -591,6 +597,9 @@ copyRows('billing', [
   item.codeText,
   item.fee,
   item.justify,
+  item.units ?? 1,
+  item.billed ?? 0,
+  item.activity ?? 1,
 ]))
 
 copyRows('lab_orders', [

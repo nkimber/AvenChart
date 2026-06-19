@@ -31,4 +31,27 @@ public sealed record BillingLineItem(
     string? Code,
     string? CodeText,
     decimal? Fee,
-    string? Justify);
+    string? Justify,
+    int Units,
+    int Billed,
+    int Activity);
+
+public sealed record BillingLineCreateRequest(
+    string PatientId,
+    int? ProviderId,
+    int Encounter,
+    string BillingDate,
+    string CodeType,
+    string Code,
+    string CodeText,
+    decimal Fee,
+    int Units,
+    string Justify);
+
+public sealed record BillingLineStatusUpdateRequest(
+    int Billed,
+    int Activity);
+
+public sealed record BillingLineMutationResponse(
+    string Id,
+    PatientBillingResponse Detail);

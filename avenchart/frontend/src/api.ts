@@ -416,6 +416,9 @@ export type BillingLineItem = {
   codeText?: string | null
   fee?: number | null
   justify?: string | null
+  units: number
+  billed: number
+  activity: number
 }
 
 export type BillingEncounterItem = {
@@ -441,6 +444,29 @@ export type PatientBillingResponse = {
   firstName: string
   lastName: string
   encounters: BillingEncounterItem[]
+}
+
+export type BillingLineCreateInput = {
+  patientId: string
+  providerId?: number | null
+  encounter: number
+  billingDate: string
+  codeType: string
+  code: string
+  codeText: string
+  fee: number
+  units: number
+  justify: string
+}
+
+export type BillingLineStatusUpdateInput = {
+  billed: number
+  activity: number
+}
+
+export type BillingLineMutationResponse = {
+  id: string
+  detail: PatientBillingResponse
 }
 
 export type AdministrationDirectoryCounts = {
@@ -962,6 +988,51 @@ export async function getPatientBilling(patientId: string, signal?: AbortSignal)
   }
 
   return response.json()
+}
+
+export async function createBillingLine(
+  input: BillingLineCreateInput,
+  signal?: AbortSignal,
+): Promise<BillingLineMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/lines`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing line create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateBillingLineStatus(
+  billingLineId: string,
+  input: BillingLineStatusUpdateInput,
+  signal?: AbortSignal,
+): Promise<BillingLineMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}/status`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing line status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteBillingLine(billingLineId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing line delete failed with ${response.status}`)
+  }
 }
 
 export async function getAdministrationDirectory(signal?: AbortSignal): Promise<AdministrationDirectoryResponse> {

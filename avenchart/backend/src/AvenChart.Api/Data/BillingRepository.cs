@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -39,6 +40,119 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                     Lines = encounterLines
                 };
             }).ToList());
+    }
+
+    public async Task<BillingLineMutationResponse?> CreateLineAsync(
+        BillingLineCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.CodeType)
+            || string.IsNullOrWhiteSpace(request.Code)
+            || string.IsNullOrWhiteSpace(request.CodeText)
+            || string.IsNullOrWhiteSpace(request.Justify)
+            || request.Encounter <= 0
+            || request.Fee < 0
+            || request.Units <= 0
+            || !TryReadDate(request.BillingDate, out var billingDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var encounter = await GetEncounterForPatientAsync(connection, patient.LegacyPid, request.Encounter, cancellationToken);
+        if (encounter is null)
+        {
+            return null;
+        }
+
+        var id = $"BILL-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into billing
+                (id, pid, provider_id, encounter, billing_date, code_type, code, code_text,
+                 fee, justify, units, billed, activity)
+            values
+                (@id, @pid, @providerId, @encounter, @billingDate, @codeType, @code, @codeText,
+                 @fee, @justify, @units, 0, 1);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        command.Parameters.AddWithValue("providerId", request.ProviderId ?? encounter.ProviderId);
+        command.Parameters.AddWithValue("encounter", encounter.Encounter);
+        command.Parameters.Add("billingDate", NpgsqlDbType.Date).Value = billingDate;
+        command.Parameters.AddWithValue("codeType", request.CodeType.Trim());
+        command.Parameters.AddWithValue("code", request.Code.Trim());
+        command.Parameters.AddWithValue("codeText", request.CodeText.Trim());
+        command.Parameters.AddWithValue("fee", request.Fee);
+        command.Parameters.AddWithValue("justify", request.Justify.Trim());
+        command.Parameters.AddWithValue("units", request.Units);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var billing = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return billing is null ? null : new BillingLineMutationResponse(id, billing);
+    }
+
+    public async Task<BillingLineMutationResponse?> UpdateLineStatusAsync(
+        string billingLineId,
+        BillingLineStatusUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(billingLineId)
+            || !IsBinaryStatus(request.Billed)
+            || !IsBinaryStatus(request.Activity))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update billing
+                set billed = @billed,
+                    activity = @activity
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", billingLineId);
+            command.Parameters.AddWithValue("billed", request.Billed);
+            command.Parameters.AddWithValue("activity", request.Activity);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
+    }
+
+    public async Task<bool> DeleteLineAsync(string billingLineId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(billingLineId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from billing
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", billingLineId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -159,10 +273,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, encounter, billing_date, code_type, code, code_text, fee, justify
+            select id, encounter, billing_date, code_type, code, code_text, fee, justify, units, billed, activity
             from billing
             where pid = @pid
               and encounter = any(@encounters)
+              and activity = 1
             order by encounter desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
@@ -180,10 +295,40 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 Code: ReadNullableString(reader, "code"),
                 CodeText: ReadNullableString(reader, "code_text"),
                 Fee: ReadNullableDecimal(reader, "fee"),
-                Justify: ReadNullableString(reader, "justify")));
+                Justify: ReadNullableString(reader, "justify"),
+                Units: ReadInt(reader, "units"),
+                Billed: ReadInt(reader, "billed"),
+                Activity: ReadInt(reader, "activity")));
         }
 
         return items;
+    }
+
+    private static async Task<BillingEncounterMutationContext?> GetEncounterForPatientAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select encounter, provider_id
+            from encounters
+            where pid = @pid and encounter = @encounter
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new BillingEncounterMutationContext(
+            Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+            ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")));
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)
@@ -198,6 +343,22 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
     }
 
+    private static int ReadInt(DbDataReader reader, string columnName)
+    {
+        return reader.GetInt32(reader.GetOrdinal(columnName));
+    }
+
+    private static bool TryReadDate(string value, out DateOnly date)
+    {
+        return DateOnly.TryParseExact(value, "yyyy-MM-dd", out date)
+            || DateOnly.TryParse(value, out date);
+    }
+
+    private static bool IsBinaryStatus(int value)
+    {
+        return value is 0 or 1;
+    }
+
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record BillingPatient(
@@ -207,4 +368,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         string FirstName,
         string LastName,
         string DisplayName);
+
+    private sealed record BillingEncounterMutationContext(
+        int Encounter,
+        int ProviderId);
 }

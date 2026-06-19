@@ -563,6 +563,10 @@
   padding: 12px 0 0;
 }
 
+.compact-actions {
+  padding-top: 6px;
+}
+
 .field-row,
 .metric-row {
   min-height: 26px;

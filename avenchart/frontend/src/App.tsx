@@ -34,6 +34,7 @@ import {
   getProcedureResults,
   getOperationalReports,
   createAppointment,
+  createBillingLine,
   createClinicalAllergy,
   createClinicalPrescription,
   createEncounter,
@@ -41,6 +42,7 @@ import {
   createEncounterVitals,
   createPatientMessage,
   deleteAppointment,
+  deleteBillingLine,
   deleteClinicalAllergy,
   deleteClinicalPrescription,
   deleteEncounter,
@@ -52,6 +54,7 @@ import {
   searchPatients,
   softDeletePatientMessage,
   updateAppointmentStatus,
+  updateBillingLineStatus,
   updateEncounter,
   updatePatientMessageStatus,
   updatePatientContact,
@@ -64,6 +67,7 @@ import {
   type AppointmentSearchResponse,
   type AllergyListItem,
   type BillingEncounterItem,
+  type BillingLineCreateInput,
   type BillingLineItem,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
@@ -857,6 +861,61 @@ function App() {
     }
   }
 
+  async function handleBillingLineCreate(input: BillingLineCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await createBillingLine(input)
+      setBillingPatientId(response.detail.patientId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing line create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
+  async function handleBillingLineDeactivate(line: BillingLineItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await updateBillingLineStatus(line.id, {
+        billed: 1,
+        activity: 0,
+      })
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (statusError) {
+      setBillingStatus('error')
+      const message = statusError instanceof Error ? statusError.message : 'Billing line status update failed'
+      setBillingError(message)
+      throw statusError
+    }
+  }
+
+  async function handleBillingLineDelete(line: BillingLineItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      await deleteBillingLine(line.id)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      setPatientBilling(refreshed)
+      setBillingStatus('ready')
+    } catch (deleteError) {
+      setBillingStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Billing line delete failed'
+      setBillingError(message)
+      throw deleteError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1074,6 +1133,9 @@ function App() {
             status={billingStatus}
             error={billingError}
             onPatientIdChange={setBillingPatientId}
+            onCreateLine={handleBillingLineCreate}
+            onDeactivateLine={handleBillingLineDeactivate}
+            onDeleteLine={handleBillingLineDelete}
           />
         )}
         {activeModule === 'procedures' && (
@@ -2553,15 +2615,62 @@ function FeesWorkspace({
   status,
   error,
   onPatientIdChange,
+  onCreateLine,
+  onDeactivateLine,
+  onDeleteLine,
 }: {
   patientId: string
   patientBilling: PatientBillingResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onPatientIdChange: (value: string) => void
+  onCreateLine: (input: BillingLineCreateInput) => Promise<unknown>
+  onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
+  onDeleteLine: (line: BillingLineItem) => Promise<void>
 }) {
+  const [billingEncounter, setBillingEncounter] = useState('')
+  const [billingDate, setBillingDate] = useState('2026-06-18')
+  const [billingCode, setBillingCode] = useState('99213')
+  const [billingCodeText, setBillingCodeText] = useState('Established patient office visit')
+  const [billingFee, setBillingFee] = useState('125.00')
+  const [billingUnits, setBillingUnits] = useState('1')
+  const [billingJustify, setBillingJustify] = useState('Z00.00')
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
+  const isLoading = status === 'loading'
+
+  useEffect(() => {
+    if (!patientBilling || patientBilling.encounters.length === 0) {
+      return
+    }
+
+    const currentEncounterExists = patientBilling.encounters.some(
+      (encounter) => String(encounter.encounter) === billingEncounter,
+    )
+    if (!currentEncounterExists) {
+      setBillingEncounter(String(patientBilling.encounters[0].encounter))
+    }
+  }, [billingEncounter, patientBilling])
+
+  async function handleBillingLineSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateLine({
+      patientId,
+      encounter: Number(billingEncounter),
+      billingDate,
+      codeType: 'CPT4',
+      code: billingCode,
+      codeText: billingCodeText,
+      fee: Number(billingFee),
+      units: Number(billingUnits),
+      justify: billingJustify,
+    })
+
+    setMutationMessage('Billing line saved')
+  }
 
   return (
     <section className="scheduler-layout">
@@ -2580,7 +2689,7 @@ function FeesWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Fee sheet lines'}</span>
-          <span>Read only</span>
+          <span>Billing lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -2595,6 +2704,96 @@ function FeesWorkspace({
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
         )}
+
+        <form className="appointment-mutation-panel" onSubmit={handleBillingLineSubmit}>
+          <div className="panel-heading compact-heading">
+            <WalletCards size={16} />
+            <h3>New CPT Line</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={billingEncounter}
+                onChange={(event) => setBillingEncounter(event.target.value)}
+                aria-label="New billing encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Date</span>
+                <input
+                  value={billingDate}
+                  onChange={(event) => setBillingDate(event.target.value)}
+                  aria-label="New billing date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Units</span>
+                <input
+                  value={billingUnits}
+                  onChange={(event) => setBillingUnits(event.target.value)}
+                  aria-label="New billing units"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>CPT</span>
+                <input
+                  value={billingCode}
+                  onChange={(event) => setBillingCode(event.target.value)}
+                  aria-label="New billing CPT code"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Fee</span>
+                <input
+                  value={billingFee}
+                  onChange={(event) => setBillingFee(event.target.value)}
+                  aria-label="New billing fee"
+                  inputMode="decimal"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Description</span>
+              <input
+                value={billingCodeText}
+                onChange={(event) => setBillingCodeText(event.target.value)}
+                aria-label="New billing description"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Justify</span>
+              <input
+                value={billingJustify}
+                onChange={(event) => setBillingJustify(event.target.value)}
+                aria-label="New billing justification"
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+            >
+              <Check size={15} />
+              Save CPT
+            </button>
+            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Fees detail">
@@ -2626,7 +2825,13 @@ function FeesWorkspace({
                 </div>
                 <div className="billing-encounter-list">
                   {patientBilling.encounters.map((encounter) => (
-                    <BillingEncounterCard key={encounter.encounter} encounter={encounter} />
+                    <BillingEncounterCard
+                      key={encounter.encounter}
+                      encounter={encounter}
+                      disabled={isLoading}
+                      onDeactivateLine={onDeactivateLine}
+                      onDeleteLine={onDeleteLine}
+                    />
                   ))}
                   {patientBilling.encounters.length === 0 && (
                     <div className="timeline-placeholder">No billing lines recorded</div>
@@ -3387,7 +3592,17 @@ function MessageItem({
   )
 }
 
-function BillingEncounterCard({ encounter }: { encounter: BillingEncounterItem }) {
+function BillingEncounterCard({
+  encounter,
+  disabled,
+  onDeactivateLine,
+  onDeleteLine,
+}: {
+  encounter: BillingEncounterItem
+  disabled: boolean
+  onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
+  onDeleteLine: (line: BillingLineItem) => Promise<void>
+}) {
   return (
     <article className="billing-encounter-card">
       <div className="procedure-report-title">
@@ -3409,7 +3624,13 @@ function BillingEncounterCard({ encounter }: { encounter: BillingEncounterItem }
       </div>
       <div className="billing-line-list">
         {encounter.lines.map((line) => (
-          <BillingLineCard key={line.id} line={line} />
+          <BillingLineCard
+            key={line.id}
+            line={line}
+            disabled={disabled}
+            onDeactivate={onDeactivateLine}
+            onDelete={onDeleteLine}
+          />
         ))}
         {encounter.lines.length === 0 && <div className="timeline-placeholder">No fee sheet codes recorded</div>}
       </div>
@@ -3417,7 +3638,17 @@ function BillingEncounterCard({ encounter }: { encounter: BillingEncounterItem }
   )
 }
 
-function BillingLineCard({ line }: { line: BillingLineItem }) {
+function BillingLineCard({
+  line,
+  disabled,
+  onDeactivate,
+  onDelete,
+}: {
+  line: BillingLineItem
+  disabled: boolean
+  onDeactivate: (line: BillingLineItem) => Promise<unknown>
+  onDelete: (line: BillingLineItem) => Promise<void>
+}) {
   return (
     <article className="billing-line-card">
       <div className="message-item-header">
@@ -3427,7 +3658,29 @@ function BillingLineCard({ line }: { line: BillingLineItem }) {
       <p>{line.codeText || 'No description recorded'}</p>
       <div className="procedure-order-meta">
         <span>{line.justify ? `Justify ${line.justify}` : 'No justification'}</span>
+        <span>{line.units} unit{line.units === 1 ? '' : 's'}</span>
+        <span>{line.billed === 1 ? 'Billed' : 'Unbilled'}</span>
         <span>{formatCurrency(line.fee)}</span>
+      </div>
+      <div className="detail-actions compact-actions">
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => onDeactivate(line)}
+        >
+          <Ban size={15} />
+          Bill/Deactivate
+        </button>
+        <button
+          className="icon-text-button danger"
+          type="button"
+          disabled={disabled}
+          onClick={() => onDelete(line)}
+        >
+          <Trash2 size={15} />
+          Delete
+        </button>
       </div>
     </article>
   )

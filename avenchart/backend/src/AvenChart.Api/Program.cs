@@ -402,6 +402,37 @@ billing.MapGet("/{patientId}", async (
     })
     .WithName("GetBillingForPatient");
 
+billing.MapPost("/lines", async (
+        BillingRepository repository,
+        BillingLineCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateLineAsync(request, cancellationToken);
+        return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/lines/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBillingLine");
+
+billing.MapPut("/lines/{billingLineId}/status", async (
+        BillingRepository repository,
+        string billingLineId,
+        BillingLineStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateLineStatusAsync(billingLineId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateBillingLineStatus");
+
+billing.MapDelete("/lines/{billingLineId}", async (
+        BillingRepository repository,
+        string billingLineId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteLineAsync(billingLineId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteBillingLine");
+
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 
 administration.MapGet("/directory", async (

@@ -461,6 +461,57 @@ catch {
     Add-Check -Name "anchor fee sheet billing" -Result "failed" -Details $_.Exception.Message
 }
 
+$billingLineMutationId = $null
+try {
+    $billingCodeText = "Smoke Billing Mutation"
+    $createBillingBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounter = 1000013
+        billingDate = "2026-06-18"
+        codeType = "CPT4"
+        code = "99213"
+        codeText = $billingCodeText
+        fee = 125.00
+        units = 1
+        justify = "Z00.00"
+    } | ConvertTo-Json
+    $createdBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createBillingBody -TimeoutSec 20
+    $billingLineMutationId = $createdBillingLine.id
+    $createdBillingEncounter = $createdBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $createdBillingVisible = $createdBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
+
+    $statusBillingBody = @{
+        billed = 1
+        activity = 0
+    } | ConvertTo-Json
+    $inactiveBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusBillingBody -TimeoutSec 20
+    $inactiveBillingEncounter = $inactiveBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
+    $inactiveBillingVisible = $inactiveBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
+    $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $billingLineMutationId = $null
+
+    Add-Check -Name "billing line mutation lifecycle" -Result $(if ($billingLineMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdBillingLine.id
+        createdVisible = $createdBillingVisible
+        inactiveVisible = $inactiveBillingVisible
+    }
+}
+catch {
+    Add-Check -Name "billing line mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $billingLineMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $administration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/directory" -Method Get -TimeoutSec 20
     $provider = $administration.users | Where-Object { $_.username -eq "gold-provider-02" -and $_.role -eq "provider" } | Select-Object -First 1
