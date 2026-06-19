@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -30,6 +32,136 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             LastName: patient.LastName,
             Count: documents.Count,
             Documents: documents);
+    }
+
+    public async Task<PatientDocumentMutationResponse?> CreateAsync(
+        PatientDocumentCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Name)
+            || string.IsNullOrWhiteSpace(request.Content)
+            || !DateOnly.TryParse(request.DocDate, out var documentDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = 0;
+        var categoryId = request.CategoryId <= 0 ? 3 : request.CategoryId;
+        var categoryName = CategoryNameFor(categoryId);
+        var name = request.Name.Trim();
+        var content = request.Content.Trim();
+        var notes = NullableText(request.Notes);
+        var documentKey = $"DOC-MODERN-{Guid.NewGuid():N}";
+        var contentBytes = Encoding.UTF8.GetBytes(content);
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using (var idCommand = connection.CreateCommand())
+            {
+                idCommand.Transaction = transaction;
+                idCommand.CommandText = """
+                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    from patient_documents;
+                    """;
+                id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    insert into patient_documents
+                        (id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
+                         mimetype, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+                         content, deleted)
+                    values
+                        (@id, @documentKey, @patientId, @pid, @categoryId, @categoryName, @name, @docDate, @uploadedAt,
+                         'text/plain', @sizeBytes, 1, @encounter, 'database', @url, @hash, @documentationOf, @notes,
+                         @content, 0);
+                    """;
+                command.Parameters.AddWithValue("id", id);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patient.PatientId);
+                command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                command.Parameters.AddWithValue("categoryId", categoryId);
+                command.Parameters.AddWithValue("categoryName", categoryName);
+                command.Parameters.AddWithValue("name", name);
+                command.Parameters.AddWithValue("docDate", documentDate);
+                command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+                command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+                var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
+                encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+                command.Parameters.AddWithValue("url", $"modern://documents/{documentKey}");
+                command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+                var documentationParameter = command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text);
+                documentationParameter.Value = notes;
+                var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
+                notesParameter.Value = notes;
+                command.Parameters.AddWithValue("content", content);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
+    }
+
+    public async Task<PatientDocumentMutationResponse?> SoftDeleteAsync(int documentId, CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set deleted = 1
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+    }
+
+    public async Task<bool> DeleteAsync(int documentId, CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from patient_documents
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", documentId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -147,6 +279,27 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static string CategoryNameFor(int categoryId)
+    {
+        return categoryId switch
+        {
+            2 => "Lab Report",
+            3 => "Medical Record",
+            4 => "Patient Information",
+            5 => "Patient ID card",
+            6 => "Advance Directive",
+            13 => "CCDA",
+            29 => "Reviewed",
+            31 => "Invoices",
+            _ => "Medical Record"
+        };
+    }
+
+    private static object NullableText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

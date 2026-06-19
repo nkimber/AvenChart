@@ -202,7 +202,8 @@
 }
 
 .filter-field input,
-.filter-field textarea {
+.filter-field textarea,
+.filter-field select {
   min-height: 42px;
   border: 1px solid #c7d4db;
   border-radius: 7px;
@@ -217,6 +218,10 @@
   min-height: 64px;
   padding: 10px 12px;
   resize: vertical;
+}
+
+.filter-field select {
+  padding: 0 12px;
 }
 
 .result-meta {
@@ -821,6 +826,14 @@
 .document-footnote span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.document-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
 }
 
 .procedure-orders-panel,

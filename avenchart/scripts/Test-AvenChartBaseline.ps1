@@ -398,6 +398,49 @@ catch {
     Add-Check -Name "anchor patient documents" -Result "failed" -Details $_.Exception.Message
 }
 
+$patientDocumentMutationId = $null
+try {
+    $documentName = "Smoke Patient Document Mutation"
+    $documentBody = "Created by the smoke patient-document mutation check."
+    $createDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $documentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        content = $documentBody
+        notes = "Created by the smoke patient-document mutation check."
+    } | ConvertTo-Json
+    $createdDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createDocumentBody -TimeoutSec 20
+    $patientDocumentMutationId = $createdDocument.id
+    $createdVisible = $createdDocument.detail.documents | Where-Object { $_.name -eq $documentName -and $_.categoryName -eq "Medical Record" -and $_.contentPreview -and $_.contentPreview.Contains($documentBody) } | Select-Object -First 1
+
+    $archivedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedVisible = $archivedDocument.detail.documents | Where-Object { $_.name -eq $documentName } | Select-Object -First 1
+    $patientDocumentMutationPassed = $null -ne $createdVisible -and $null -eq $archivedVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentMutationId = $null
+
+    Add-Check -Name "patient document mutation lifecycle" -Result $(if ($patientDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdDocument.id
+        createdVisible = $createdVisible
+        archivedVisible = $archivedVisible
+    }
+}
+catch {
+    Add-Check -Name "patient document mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientMessageMutationId = $null
 try {
     $messageTitle = "Smoke Patient Message Mutation"

@@ -382,6 +382,21 @@ export type PatientDocumentsResponse = {
   documents: PatientDocumentItem[]
 }
 
+export type PatientDocumentCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  content: string
+  notes?: string | null
+}
+
+export type PatientDocumentMutationResponse = {
+  id: number
+  detail: PatientDocumentsResponse
+}
+
 export type PatientMessageCreateInput = {
   patientId: string
   title: string
@@ -1122,6 +1137,48 @@ export async function getPatientDocuments(patientId: string, signal?: AbortSigna
   }
 
   return response.json()
+}
+
+export async function createPatientDocument(
+  document: PatientDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function softDeletePatientDocument(
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/soft-delete`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deletePatientDocument(documentId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document delete failed with ${response.status}`)
+  }
 }
 
 export async function createPatientMessage(

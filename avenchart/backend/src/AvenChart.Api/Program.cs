@@ -392,6 +392,38 @@ documents.MapGet("/{patientId}", async (
     })
     .WithName("GetPatientDocuments");
 
+documents.MapPost("/", async (
+        DocumentRepository repository,
+        PatientDocumentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Patient document could not be created from the supplied patient and document details.")
+            : Results.Created($"/api/documents/{mutation.Id}", mutation);
+    })
+    .WithName("CreatePatientDocument");
+
+documents.MapPut("/{documentId:int}/soft-delete", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.SoftDeleteAsync(documentId, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("SoftDeletePatientDocument");
+
+documents.MapDelete("/{documentId:int}", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteAsync(documentId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeletePatientDocument");
+
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 
 procedures.MapGet("/{patientId}", async (

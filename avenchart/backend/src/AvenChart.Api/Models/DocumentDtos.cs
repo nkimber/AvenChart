@@ -32,3 +32,16 @@ public sealed record PatientDocumentItem(
     string? DocumentationOf,
     string? Notes,
     string? ContentPreview);
+
+public sealed record PatientDocumentCreateRequest(
+    string PatientId,
+    int CategoryId,
+    string Name,
+    string DocDate,
+    int? Encounter,
+    string Content,
+    string? Notes);
+
+public sealed record PatientDocumentMutationResponse(
+    int Id,
+    PatientDocumentsResponse Detail);

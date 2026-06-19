@@ -43,6 +43,7 @@ import {
   createClinicalPrescription,
   createAdministrationFacility,
   createAdministrationUser,
+  createPatientDocument,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
@@ -57,6 +58,7 @@ import {
   deleteClinicalAllergy,
   deleteClinicalPrescription,
   deleteEncounter,
+  deletePatientDocument,
   deletePatientMessage,
   deleteProcedureOrder,
   deactivateClinicalAllergy,
@@ -68,6 +70,7 @@ import {
   searchAppointments,
   searchEncounters,
   searchPatients,
+  softDeletePatientDocument,
   softDeletePatientMessage,
   updateAppointmentStatus,
   updateAdministrationFacility,
@@ -110,6 +113,7 @@ import {
   type PatientListItem,
   type PatientBillingResponse,
   type PatientContactUpdate,
+  type PatientDocumentCreateInput,
   type PatientDocumentItem,
   type PatientDocumentsResponse,
   type PatientMessageCreateInput,
@@ -204,6 +208,7 @@ function App() {
   const [patientDocuments, setPatientDocuments] = useState<PatientDocumentsResponse | null>(null)
   const [documentStatus, setDocumentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentError, setDocumentError] = useState<string | null>(null)
+  const [documentRefreshKey, setDocumentRefreshKey] = useState(0)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -495,7 +500,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, documentPatientId])
+  }, [activeModule, documentPatientId, documentRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -1339,6 +1344,61 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentCreate(input: PatientDocumentCreateInput) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await createPatientDocument(input)
+      setDocumentPatientId(response.detail.patientId)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setDocumentStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Patient document create failed'
+      setDocumentError(message)
+      throw createError
+    }
+  }
+
+  async function handlePatientDocumentArchive(document: PatientDocumentItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await softDeletePatientDocument(document.id)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (archiveError) {
+      setDocumentStatus('error')
+      const message = archiveError instanceof Error ? archiveError.message : 'Patient document archive failed'
+      setDocumentError(message)
+      throw archiveError
+    }
+  }
+
+  async function handlePatientDocumentDelete(document: PatientDocumentItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      await deletePatientDocument(document.id)
+      const refreshed = await getPatientDocuments(patientDocuments?.patientId ?? documentPatientId)
+      setPatientDocuments(refreshed)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setDocumentStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Patient document delete failed'
+      setDocumentError(message)
+      throw deleteError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -1517,6 +1577,9 @@ function App() {
             status={documentStatus}
             error={documentError}
             onPatientIdChange={setDocumentPatientId}
+            onCreateDocument={handlePatientDocumentCreate}
+            onArchiveDocument={handlePatientDocumentArchive}
+            onDeleteDocument={handlePatientDocumentDelete}
           />
         )}
         {activeModule === 'reports' && (
@@ -3691,13 +3754,25 @@ function DocumentsWorkspace({
   status,
   error,
   onPatientIdChange,
+  onCreateDocument,
+  onArchiveDocument,
+  onDeleteDocument,
 }: {
   patientId: string
   patientDocuments: PatientDocumentsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onPatientIdChange: (value: string) => void
+  onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
+  onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
+  onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
 }) {
+  const [documentName, setDocumentName] = useState('Parity Document')
+  const [documentCategoryId, setDocumentCategoryId] = useState('3')
+  const [documentDate, setDocumentDate] = useState('2026-06-18')
+  const [documentEncounter, setDocumentEncounter] = useState('1000013')
+  const [documentContent, setDocumentContent] = useState('Created from the modernized Documents workspace.')
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const documents = patientDocuments?.documents ?? []
   const categories = useMemo(
     () => Array.from(new Set(documents.map((document) => document.categoryName))).sort(),
@@ -3706,6 +3781,31 @@ function DocumentsWorkspace({
   const linkedEncounterCount = documents.filter((document) => document.encounter).length
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
   const latestDocument = documents[0]
+  const isLoading = status === 'loading'
+
+  async function handleDocumentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    const categoryId = Number(documentCategoryId)
+    const encounter = documentEncounter.trim().length > 0 ? Number(documentEncounter) : null
+    if (!Number.isInteger(categoryId) || (encounter !== null && !Number.isInteger(encounter))) {
+      setMutationMessage('Check numeric fields')
+      return
+    }
+
+    await onCreateDocument({
+      patientId,
+      categoryId,
+      name: documentName,
+      docDate: documentDate,
+      encounter,
+      content: documentContent,
+      notes: 'Created from the modernized Documents workspace.',
+    })
+
+    setMutationMessage('Document saved')
+  }
 
   return (
     <section className="scheduler-layout">
@@ -3724,7 +3824,7 @@ function DocumentsWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Patient documents'}</span>
-          <span>Read only</span>
+          <span>Document lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -3758,6 +3858,75 @@ function DocumentsWorkspace({
         ) : (
           <div className="empty-state">No patient documents loaded</div>
         )}
+
+        <form className="appointment-mutation-panel" onSubmit={handleDocumentSubmit}>
+          <div className="panel-heading compact-heading">
+            <FolderOpen size={16} />
+            <h3>New Document</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={documentName}
+                onChange={(event) => setDocumentName(event.target.value)}
+                aria-label="New document name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={documentCategoryId}
+                  onChange={(event) => setDocumentCategoryId(event.target.value)}
+                  aria-label="New document category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={documentDate}
+                  onChange={(event) => setDocumentDate(event.target.value)}
+                  aria-label="New document date"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={documentEncounter}
+                onChange={(event) => setDocumentEncounter(event.target.value)}
+                aria-label="New document encounter"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Body</span>
+              <textarea
+                value={documentContent}
+                onChange={(event) => setDocumentContent(event.target.value)}
+                aria-label="New document body"
+                rows={4}
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Document
+            </button>
+            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Documents detail">
@@ -3796,7 +3965,13 @@ function DocumentsWorkspace({
                 </div>
                 <div className="document-list-body">
                   {documents.map((document) => (
-                    <DocumentItem key={document.id} document={document} />
+                    <DocumentItem
+                      key={document.id}
+                      document={document}
+                      disabled={isLoading}
+                      onArchive={onArchiveDocument}
+                      onDelete={onDeleteDocument}
+                    />
                   ))}
                   {documents.length === 0 && <div className="timeline-placeholder">No documents recorded</div>}
                 </div>
@@ -4545,7 +4720,17 @@ function ConditionReportCard({ condition }: { condition: ClinicalConditionReport
   )
 }
 
-function DocumentItem({ document }: { document: PatientDocumentItem }) {
+function DocumentItem({
+  document,
+  disabled,
+  onArchive,
+  onDelete,
+}: {
+  document: PatientDocumentItem
+  disabled: boolean
+  onArchive: (document: PatientDocumentItem) => Promise<unknown>
+  onDelete: (document: PatientDocumentItem) => Promise<void>
+}) {
   return (
     <article className="document-card">
       <div className="message-item-header">
@@ -4566,6 +4751,26 @@ function DocumentItem({ document }: { document: PatientDocumentItem }) {
       <div className="document-footnote">
         <span>{document.documentKey}</span>
         <span>{document.hash || document.url || 'No document reference'}</span>
+      </div>
+      <div className="document-item-actions">
+        <button
+          className="icon-text-button danger"
+          type="button"
+          disabled={disabled}
+          onClick={() => void onArchive(document)}
+        >
+          <Ban size={14} />
+          Archive
+        </button>
+        <button
+          className="icon-text-button"
+          type="button"
+          disabled={disabled}
+          onClick={() => void onDelete(document)}
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
       </div>
     </article>
   )
