@@ -19,6 +19,7 @@ import {
   Search,
   ShieldCheck,
   Stethoscope,
+  Syringe,
   Trash2,
   UserRound,
   WalletCards,
@@ -110,6 +111,7 @@ import {
   type EncounterSearchResponse,
   type EncounterUpdateInput,
   type EncounterVitalsCreateInput,
+  type ImmunizationListItem,
   type MedicationListItem,
   type PatientChartSummary,
   type PatientInsuranceItem,
@@ -2862,6 +2864,7 @@ function ClinicalListsWorkspace({
             <MetricRow label="Problems" value={clinicalLists.problems.length} />
             <MetricRow label="Allergies" value={clinicalLists.allergies.length} />
             <MetricRow label="Medications" value={clinicalLists.medications.length} />
+            <MetricRow label="Immunizations" value={clinicalLists.immunizations.length} />
             <MetricRow label="Prescriptions" value={clinicalLists.prescriptions.length} />
           </div>
         ) : (
@@ -3024,7 +3027,10 @@ function ClinicalListsWorkspace({
                 </p>
               </div>
               <div className="portal-pill">
-                {clinicalLists.problems.length + clinicalLists.allergies.length + clinicalLists.medications.length} active
+                {clinicalLists.problems.length +
+                  clinicalLists.allergies.length +
+                  clinicalLists.medications.length +
+                  clinicalLists.immunizations.length} active
               </div>
             </div>
 
@@ -3037,6 +3043,7 @@ function ClinicalListsWorkspace({
                 disabled={isLoading}
               />
               <MedicationPanel items={clinicalLists.medications} />
+              <ImmunizationPanel items={clinicalLists.immunizations} />
               <PrescriptionPanel
                 items={clinicalLists.prescriptions}
                 onDeactivate={onDeactivatePrescription}
@@ -5512,6 +5519,29 @@ function MedicationPanel({ items }: { items: MedicationListItem[] }) {
         <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments} />
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No active medications</div>}
+    </ClinicalSection>
+  )
+}
+
+function ImmunizationPanel({ items }: { items: ImmunizationListItem[] }) {
+  return (
+    <ClinicalSection title="Immunizations" icon={Syringe} emptyText="No immunizations recorded">
+      {items.map((item) => (
+        <ClinicalItem
+          key={item.key}
+          title={item.vaccine}
+          meta={[item.cvxCode ? `CVX ${item.cvxCode}` : null, item.completionStatus, item.route].filter(Boolean).join(' / ')}
+          date={item.administeredAt}
+          note={[item.manufacturer, item.lotNumber ? `Lot ${item.lotNumber}` : null, item.administrationSite].filter(Boolean).join(' / ')}
+        >
+          <p className="clinical-item-note">
+            {[item.amountAdministered ? `${item.amountAdministered} ${item.amountAdministeredUnit ?? ''}`.trim() : null, item.visDate ? `VIS ${item.visDate}` : null, item.administeredBy ? `By ${item.administeredBy}` : null, item.note]
+              .filter(Boolean)
+              .join(' / ')}
+          </p>
+        </ClinicalItem>
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No immunizations recorded</div>}
     </ClinicalSection>
   )
 }

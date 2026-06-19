@@ -219,6 +219,7 @@ drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_orders;
 drop table if exists billing;
+drop table if exists immunizations;
 drop table if exists prescriptions;
 drop table if exists clinical_notes;
 drop table if exists vitals;
@@ -423,6 +424,33 @@ create table prescriptions (
   diagnosis text,
   note text,
   active integer not null default 1
+);
+
+create table immunizations (
+  id integer primary key,
+  key text not null unique,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  encounter integer,
+  immunization_id integer,
+  cvx_code text,
+  vaccine text,
+  administered_at timestamp,
+  manufacturer text,
+  lot_number text,
+  administered_by_id integer references staff(id),
+  administered_by text,
+  education_date date,
+  vis_date date,
+  amount_administered numeric(6,2),
+  amount_administered_unit text,
+  expiration_date date,
+  route text,
+  administration_site text,
+  completion_status text,
+  information_source text,
+  note text,
+  added_erroneously integer not null default 0
 );
 
 create table billing (
@@ -846,6 +874,58 @@ copyRows('prescriptions', [
   prescription.active ?? 1,
 ]))
 
+copyRows('immunizations', [
+  'id',
+  'key',
+  'patient_id',
+  'pid',
+  'encounter',
+  'immunization_id',
+  'cvx_code',
+  'vaccine',
+  'administered_at',
+  'manufacturer',
+  'lot_number',
+  'administered_by_id',
+  'administered_by',
+  'education_date',
+  'vis_date',
+  'amount_administered',
+  'amount_administered_unit',
+  'expiration_date',
+  'route',
+  'administration_site',
+  'completion_status',
+  'information_source',
+  'note',
+  'added_erroneously',
+], dataset.immunizations.map((immunization) => [
+  immunization.id,
+  immunization.key,
+  immunization.patientId,
+  immunization.pid,
+  immunization.encounter,
+  immunization.immunizationId,
+  immunization.cvxCode,
+  immunization.vaccine,
+  immunization.administeredDate,
+  immunization.manufacturer,
+  immunization.lotNumber,
+  immunization.administeredById,
+  immunization.administeredBy,
+  immunization.educationDate,
+  immunization.visDate,
+  immunization.amountAdministered,
+  immunization.amountAdministeredUnit,
+  immunization.expirationDate,
+  immunization.route,
+  immunization.administrationSite,
+  immunization.completionStatus,
+  immunization.informationSource,
+  immunization.note,
+  0,
+]))
+
 copyRows('billing', [
   'id',
   'pid',
@@ -1053,6 +1133,7 @@ create index idx_encounters_pid_date on encounters (pid, encounter_date);
 create index idx_vitals_pid_date on vitals (pid, vital_datetime);
 create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);
+create index idx_immunizations_pid_date on immunizations (pid, administered_at);
 create index idx_billing_pid on billing (pid);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_reports_date on lab_reports (report_date);
@@ -1086,6 +1167,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     vitals: dataset.vitals.length,
     clinicalNotes: dataset.clinicalNotes.length,
     prescriptions: dataset.prescriptions.length,
+    immunizations: dataset.immunizations.length,
     billing: dataset.billing.length,
     labOrders: dataset.labOrders.length,
     labReports: dataset.labReports.length,

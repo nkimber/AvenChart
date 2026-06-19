@@ -22,6 +22,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var problems = await GetProblemsAsync(connection, patient.LegacyPid, cancellationToken);
         var allergies = await GetAllergiesAsync(connection, patient.LegacyPid, cancellationToken);
         var medications = await GetMedicationsAsync(connection, patient.LegacyPid, cancellationToken);
+        var immunizations = await GetImmunizationsAsync(connection, patient.LegacyPid, cancellationToken);
         var prescriptions = await GetPrescriptionsAsync(connection, patient.LegacyPid, cancellationToken);
 
         return new ClinicalListsResponse(
@@ -36,6 +37,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             Problems: problems,
             Allergies: allergies,
             Medications: medications,
+            Immunizations: immunizations,
             Prescriptions: prescriptions);
     }
 
@@ -442,6 +444,70 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return items;
     }
 
+    private static async Task<IReadOnlyList<ImmunizationListItem>> GetImmunizationsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                id,
+                key,
+                immunization_id,
+                cvx_code,
+                vaccine,
+                administered_at,
+                manufacturer,
+                lot_number,
+                administered_by,
+                education_date,
+                vis_date,
+                amount_administered,
+                amount_administered_unit,
+                expiration_date,
+                route,
+                administration_site,
+                completion_status,
+                information_source,
+                note,
+                encounter
+            from immunizations
+            where pid = @pid and added_erroneously = 0
+            order by administered_at desc, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<ImmunizationListItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new ImmunizationListItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                Key: reader.GetString(reader.GetOrdinal("key")),
+                ImmunizationId: ReadNullableInt(reader, "immunization_id"),
+                CvxCode: ReadNullableString(reader, "cvx_code"),
+                Vaccine: reader.GetString(reader.GetOrdinal("vaccine")),
+                AdministeredAt: ReadNullableDateTime(reader, "administered_at"),
+                Manufacturer: ReadNullableString(reader, "manufacturer"),
+                LotNumber: ReadNullableString(reader, "lot_number"),
+                AdministeredBy: ReadNullableString(reader, "administered_by"),
+                EducationDate: ReadNullableDate(reader, "education_date"),
+                VisDate: ReadNullableDate(reader, "vis_date"),
+                AmountAdministered: ReadNullableDecimal(reader, "amount_administered"),
+                AmountAdministeredUnit: ReadNullableString(reader, "amount_administered_unit"),
+                ExpirationDate: ReadNullableDate(reader, "expiration_date"),
+                Route: ReadNullableString(reader, "route"),
+                AdministrationSite: ReadNullableString(reader, "administration_site"),
+                CompletionStatus: ReadNullableString(reader, "completion_status"),
+                InformationSource: ReadNullableString(reader, "information_source"),
+                Note: ReadNullableString(reader, "note"),
+                Encounter: ReadNullableInt(reader, "encounter")));
+        }
+
+        return items;
+    }
+
     private static string? ReadNullableString(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -454,6 +520,12 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
     }
 
+    private static decimal? ReadNullableDecimal(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
+    }
+
     private static int ReadInt(DbDataReader reader, string columnName)
     {
         return reader.GetInt32(reader.GetOrdinal(columnName));
@@ -463,6 +535,14 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static string? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     private static bool TryReadDate(string value, out DateOnly date)

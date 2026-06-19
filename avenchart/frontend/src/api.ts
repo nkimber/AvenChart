@@ -282,6 +282,29 @@ export type PrescriptionListItem = {
   providerName?: string | null
 }
 
+export type ImmunizationListItem = {
+  id: number
+  key: string
+  immunizationId?: number | null
+  cvxCode?: string | null
+  vaccine: string
+  administeredAt?: string | null
+  manufacturer?: string | null
+  lotNumber?: string | null
+  administeredBy?: string | null
+  educationDate?: string | null
+  visDate?: string | null
+  amountAdministered?: number | null
+  amountAdministeredUnit?: string | null
+  expirationDate?: string | null
+  route?: string | null
+  administrationSite?: string | null
+  completionStatus?: string | null
+  informationSource?: string | null
+  note?: string | null
+  encounter?: number | null
+}
+
 export type ClinicalListsResponse = {
   datasetId: string
   datasetVersion: string
@@ -294,6 +317,7 @@ export type ClinicalListsResponse = {
   problems: ProblemListItem[]
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
+  immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
 }
 

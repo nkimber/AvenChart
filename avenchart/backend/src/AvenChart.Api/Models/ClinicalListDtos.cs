@@ -12,6 +12,7 @@ public sealed record ClinicalListsResponse(
     IReadOnlyList<ProblemListItem> Problems,
     IReadOnlyList<AllergyListItem> Allergies,
     IReadOnlyList<MedicationListItem> Medications,
+    IReadOnlyList<ImmunizationListItem> Immunizations,
     IReadOnlyList<PrescriptionListItem> Prescriptions);
 
 public sealed record ProblemListItem(
@@ -68,6 +69,28 @@ public sealed record PrescriptionListItem(
     string? Note,
     int? Encounter,
     string? ProviderName);
+
+public sealed record ImmunizationListItem(
+    int Id,
+    string Key,
+    int? ImmunizationId,
+    string? CvxCode,
+    string Vaccine,
+    string? AdministeredAt,
+    string? Manufacturer,
+    string? LotNumber,
+    string? AdministeredBy,
+    string? EducationDate,
+    string? VisDate,
+    decimal? AmountAdministered,
+    string? AmountAdministeredUnit,
+    string? ExpirationDate,
+    string? Route,
+    string? AdministrationSite,
+    string? CompletionStatus,
+    string? InformationSource,
+    string? Note,
+    int? Encounter);
 
 public sealed record ClinicalPrescriptionCreateRequest(
     string PatientId,

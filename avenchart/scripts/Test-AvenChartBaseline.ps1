@@ -281,6 +281,7 @@ try {
         problems = $clinicalLists.problems.Count
         allergies = $clinicalLists.allergies.Count
         medications = $clinicalLists.medications.Count
+        immunizations = $clinicalLists.immunizations.Count
         prescriptions = $clinicalLists.prescriptions.Count
         problem = $problem
         allergy = $allergy
@@ -290,6 +291,22 @@ try {
 }
 catch {
     Add-Check -Name "anchor clinical lists" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $immunizationLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0007" -Method Get -TimeoutSec 20
+    $influenza = $immunizationLists.immunizations | Where-Object { $_.vaccine -eq "Influenza, seasonal, injectable" -and $_.cvxCode -eq "141" } | Select-Object -First 1
+    $hepatitisA = $immunizationLists.immunizations | Where-Object { $_.vaccine -eq "Hep A, ped/adol, 2 dose" -and $_.manufacturer -eq "GlaxoSmithKline" } | Select-Object -First 1
+    $immunizationsPassed = $immunizationLists.patientId -eq "MOD-PAT-0007" -and $immunizationLists.immunizations.Count -ge 8 -and $null -ne $influenza -and $null -ne $hepatitisA
+    Add-Check -Name "anchor immunizations" -Result $(if ($immunizationsPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $immunizationLists.patientId
+        immunizations = $immunizationLists.immunizations.Count
+        influenza = $influenza
+        hepatitisA = $hepatitisA
+    }
+}
+catch {
+    Add-Check -Name "anchor immunizations" -Result "failed" -Details $_.Exception.Message
 }
 
 $clinicalAllergyMutationId = $null
