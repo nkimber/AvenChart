@@ -99,6 +99,23 @@ export type AppointmentDetail = AppointmentListItem & {
   patientPurpose?: string | null
 }
 
+export type AppointmentCreateInput = {
+  patientId: string
+  providerId?: number | null
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  categoryId?: number | null
+  room?: string | null
+}
+
+export type AppointmentStatusUpdate = {
+  status: string
+  title?: string | null
+}
+
 export type AppointmentSearchResponse = {
   datasetId: string
   datasetVersion: string
@@ -492,6 +509,51 @@ export async function getAppointmentDetail(
   }
 
   return response.json()
+}
+
+export async function createAppointment(
+  appointment: AppointmentCreateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(appointment),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Appointment create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateAppointmentStatus(
+  appointmentId: string,
+  update: AppointmentStatusUpdate,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/status`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Appointment status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteAppointment(appointmentId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Appointment delete failed with ${response.status}`)
+  }
 }
 
 export async function searchEncounters(

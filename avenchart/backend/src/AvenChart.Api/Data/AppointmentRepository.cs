@@ -131,6 +131,105 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
 
+    public async Task<AppointmentDetail?> CreateAsync(
+        AppointmentCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DateOnly.TryParse(request.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(request.StartTime, out var startTime)
+            || request.DurationMinutes <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with patient_match as (
+                select canonical_id, legacy_pid, provider_id, facility_id
+                from patients
+                where lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId
+                limit 1
+            )
+            insert into appointments (
+                id,
+                patient_id,
+                pid,
+                provider_id,
+                facility_id,
+                appointment_date,
+                start_time,
+                duration_minutes,
+                category_id,
+                title,
+                status,
+                room
+            )
+            select
+                @id,
+                canonical_id,
+                legacy_pid,
+                coalesce((select id from staff where id = @providerId), provider_id),
+                coalesce((select id from facilities where id = @facilityId), facility_id),
+                @appointmentDate,
+                @startTime,
+                @durationMinutes,
+                coalesce(@categoryId, 9),
+                @title,
+                '-',
+                @room
+            from patient_match
+            returning id;
+            """;
+        var appointmentId = $"APPT-MODERN-{Guid.NewGuid():N}";
+        command.Parameters.AddWithValue("id", appointmentId);
+        command.Parameters.AddWithValue("patientId", request.PatientId.Trim());
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
+        command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = startTime;
+        command.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
+        command.Parameters.Add("categoryId", NpgsqlDbType.Integer).Value = request.CategoryId is null ? DBNull.Value : request.CategoryId.Value;
+        command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
+        command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
+
+        var insertedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
+    }
+
+    public async Task<AppointmentDetail?> UpdateStatusAsync(
+        string appointmentId,
+        AppointmentStatusUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update appointments
+            set status = @status,
+                title = coalesce(@title, title)
+            where id = @appointmentId
+            returning id;
+            """;
+        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.AddWithValue("status", NormalizeText(request.Status) ?? "-");
+        command.Parameters.Add("title", NpgsqlDbType.Text).Value = NormalizeText(request.Title) ?? (object)DBNull.Value;
+
+        var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
+    }
+
+    public async Task<bool> DeleteAsync(string appointmentId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from appointments where id = @appointmentId;";
+        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -206,6 +305,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed.ToLowerInvariant();
+    }
+
+    private static string? NormalizeText(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
     private static DateOnly ParseDateOrDefault(string? value, DateOnly defaultDate) =>

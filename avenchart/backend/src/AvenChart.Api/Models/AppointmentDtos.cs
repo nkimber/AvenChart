@@ -45,3 +45,18 @@ public sealed record AppointmentDetail(
     string? ProviderName,
     string? FacilityName,
     string? PatientPurpose);
+
+public sealed record AppointmentCreateRequest(
+    string PatientId,
+    int? ProviderId,
+    string Title,
+    string Date,
+    string StartTime,
+    int DurationMinutes,
+    int? FacilityId,
+    int? CategoryId,
+    string? Room);
+
+public sealed record AppointmentStatusUpdateRequest(
+    string Status,
+    string? Title);

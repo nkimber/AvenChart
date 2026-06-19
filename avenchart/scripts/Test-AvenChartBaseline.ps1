@@ -94,6 +94,52 @@ catch {
     Add-Check -Name "anchor appointment detail" -Result "failed" -Details $_.Exception.Message
 }
 
+$appointmentMutationId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Mutation"
+        date = "2026-10-15"
+        startTime = "10:30"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "Smoke"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentMutationId = $createdAppointment.id
+
+    $cancelBody = @{
+        status = "x"
+        title = "Smoke Appointment Mutation Cancelled"
+    } | ConvertTo-Json
+    $cancelledAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId/status" -Method Put -ContentType "application/json" -Body $cancelBody -TimeoutSec 20
+    $appointmentMutationPassed = $createdAppointment.status -eq "-" -and $cancelledAppointment.status -eq "x" -and $cancelledAppointment.title -eq "Smoke Appointment Mutation Cancelled"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentMutationId = $null
+
+    Add-Check -Name "appointment mutation lifecycle" -Result $(if ($appointmentMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        createdStatus = $createdAppointment.status
+        cancelledStatus = $cancelledAppointment.status
+        cancelledTitle = $cancelledAppointment.title
+    }
+}
+catch {
+    Add-Check -Name "appointment mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

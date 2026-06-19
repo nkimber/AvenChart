@@ -107,6 +107,39 @@ appointments.MapGet("/{appointmentId}", async (
     })
     .WithName("GetAppointmentDetail");
 
+appointments.MapPost("/", async (
+        AppointmentRepository repository,
+        AppointmentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var appointment = await repository.CreateAsync(request, cancellationToken);
+        return appointment is null
+            ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")
+            : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+    })
+    .WithName("CreateAppointment");
+
+appointments.MapPut("/{appointmentId}/status", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        AppointmentStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var appointment = await repository.UpdateStatusAsync(appointmentId, request, cancellationToken);
+        return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+    })
+    .WithName("UpdateAppointmentStatus");
+
+appointments.MapDelete("/{appointmentId}", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteAsync(appointmentId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteAppointment");
+
 var encounters = app.MapGroup("/api/encounters").WithTags("Encounters");
 
 encounters.MapGet("/", async (

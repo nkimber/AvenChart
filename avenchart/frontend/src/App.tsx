@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import {
   Activity,
   Building2,
+  Ban,
   CalendarDays,
+  CalendarPlus,
   Check,
   ClipboardList,
   Clock,
@@ -15,6 +17,7 @@ import {
   Search,
   ShieldCheck,
   Stethoscope,
+  Trash2,
   UserRound,
   WalletCards,
   X,
@@ -30,14 +33,18 @@ import {
   getPatientMessages,
   getProcedureResults,
   getOperationalReports,
+  createAppointment,
+  deleteAppointment,
   searchAppointments,
   searchEncounters,
   searchPatients,
+  updateAppointmentStatus,
   updatePatientContact,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationUserItem,
   type AppointmentDetail,
+  type AppointmentCreateInput,
   type AppointmentListItem,
   type AppointmentSearchResponse,
   type AllergyListItem,
@@ -110,6 +117,7 @@ function App() {
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentDetailStatus, setAppointmentDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentError, setAppointmentError] = useState<string | null>(null)
+  const [appointmentRefreshKey, setAppointmentRefreshKey] = useState(0)
 
   const [encounterPatientId, setEncounterPatientId] = useState('MOD-PAT-0001')
   const [encounterFromDate, setEncounterFromDate] = useState('2026-01-01')
@@ -244,7 +252,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, appointmentPatientId, appointmentFromDate])
+  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'calendar' || !selectedAppointmentId) {
@@ -544,6 +552,68 @@ function App() {
     }
   }
 
+  async function handleAppointmentCreate(input: AppointmentCreateInput) {
+    setAppointmentStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const created = await createAppointment(input)
+      setAppointmentPatientId(created.patientId)
+      setAppointmentFromDate(created.date)
+      setSelectedAppointmentId(created.id)
+      setAppointmentDetail(created)
+      setAppointmentDetailStatus('ready')
+      setAppointmentStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return created
+    } catch (createError) {
+      setAppointmentStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Appointment create failed'
+      setAppointmentError(message)
+      throw createError
+    }
+  }
+
+  async function handleAppointmentCancel(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await updateAppointmentStatus(appointment.id, {
+        status: 'x',
+        title: appointment.title.endsWith('Cancelled') ? appointment.title : `${appointment.title} Cancelled`,
+      })
+      setAppointmentDetail(updated)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (cancelError) {
+      setAppointmentDetailStatus('error')
+      const message = cancelError instanceof Error ? cancelError.message : 'Appointment cancel failed'
+      setAppointmentError(message)
+      throw cancelError
+    }
+  }
+
+  async function handleAppointmentDelete(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      await deleteAppointment(appointment.id)
+      setSelectedAppointmentId(null)
+      setAppointmentDetail(null)
+      setAppointmentDetailStatus('idle')
+      setAppointmentRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setAppointmentDetailStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Appointment delete failed'
+      setAppointmentError(message)
+      throw deleteError
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -636,6 +706,9 @@ function App() {
             onPatientIdChange={setAppointmentPatientId}
             onFromDateChange={setAppointmentFromDate}
             onSelectAppointment={setSelectedAppointmentId}
+            onCreateAppointment={handleAppointmentCreate}
+            onCancelAppointment={handleAppointmentCancel}
+            onDeleteAppointment={handleAppointmentDelete}
           />
         )}
         {activeModule === 'encounters' && (
@@ -1027,6 +1100,9 @@ function CalendarWorkspace({
   onPatientIdChange,
   onFromDateChange,
   onSelectAppointment,
+  onCreateAppointment,
+  onCancelAppointment,
+  onDeleteAppointment,
 }: {
   patientId: string
   fromDate: string
@@ -1039,7 +1115,65 @@ function CalendarWorkspace({
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectAppointment: (appointmentId: string) => void
+  onCreateAppointment: (input: AppointmentCreateInput) => Promise<AppointmentDetail>
+  onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
+  onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
 }) {
+  const [draftTitle, setDraftTitle] = useState('Parity Appointment')
+  const [draftDate, setDraftDate] = useState('2026-10-15')
+  const [draftStartTime, setDraftStartTime] = useState('10:30')
+  const [draftDuration, setDraftDuration] = useState('30')
+  const [draftRoom, setDraftRoom] = useState('Parity')
+  const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationStatus('saving')
+
+    try {
+      await onCreateAppointment({
+        patientId,
+        title: draftTitle,
+        date: draftDate,
+        startTime: draftStartTime,
+        durationMinutes: Number(draftDuration),
+        room: draftRoom,
+        categoryId: 9,
+      })
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleCancelSelected() {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onCancelAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleDeleteSelected() {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onDeleteAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Appointment search">
@@ -1063,6 +1197,66 @@ function CalendarWorkspace({
             />
           </label>
         </div>
+
+        <form className="appointment-mutation-panel" onSubmit={handleCreateSubmit} aria-label="Create appointment">
+          <div className="panel-heading compact-heading">
+            <CalendarPlus size={17} />
+            <h3>Create Appointment</h3>
+          </div>
+          <label className="contact-field">
+            <span>Title</span>
+            <input
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              aria-label="Appointment title"
+            />
+          </label>
+          <div className="mutation-grid two-column">
+            <label className="contact-field">
+              <span>Date</span>
+              <input
+                type="date"
+                value={draftDate}
+                onChange={(event) => setDraftDate(event.target.value)}
+                aria-label="New appointment date"
+              />
+            </label>
+            <label className="contact-field">
+              <span>Start</span>
+              <input
+                type="time"
+                value={draftStartTime}
+                onChange={(event) => setDraftStartTime(event.target.value)}
+                aria-label="New appointment start time"
+              />
+            </label>
+          </div>
+          <div className="mutation-grid two-column">
+            <label className="contact-field">
+              <span>Minutes</span>
+              <input
+                type="number"
+                min="5"
+                step="5"
+                value={draftDuration}
+                onChange={(event) => setDraftDuration(event.target.value)}
+                aria-label="New appointment duration"
+              />
+            </label>
+            <label className="contact-field">
+              <span>Room</span>
+              <input value={draftRoom} onChange={(event) => setDraftRoom(event.target.value)} aria-label="New appointment room" />
+            </label>
+          </div>
+          <div className="contact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={mutationStatus === 'saving'}>
+              <CalendarPlus size={15} />
+              <span>{mutationStatus === 'saving' ? 'Saving' : 'Create'}</span>
+            </button>
+            {mutationStatus === 'saved' && <span className="save-note">Saved</span>}
+            {mutationStatus === 'error' && <span className="save-note error">Action failed</span>}
+          </div>
+        </form>
 
         <div className="result-meta">
           <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} appointments`}</span>
@@ -1099,6 +1293,27 @@ function CalendarWorkspace({
                 </p>
               </div>
               <div className="portal-pill">{appointmentDetail.status ?? 'Status pending'}</div>
+            </div>
+
+            <div className="detail-actions">
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={handleCancelSelected}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === 'x'}
+              >
+                <Ban size={15} />
+                <span>Cancel appointment</span>
+              </button>
+              <button
+                className="icon-text-button danger"
+                type="button"
+                onClick={handleDeleteSelected}
+                disabled={detailStatus === 'loading'}
+              >
+                <Trash2 size={15} />
+                <span>Delete appointment</span>
+              </button>
             </div>
 
             <div className="appointment-detail-grid">
