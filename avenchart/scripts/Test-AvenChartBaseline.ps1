@@ -974,6 +974,57 @@ finally {
     }
 }
 
+$patientDocumentDenialMutationId = $null
+try {
+    $deniedDocumentName = "Smoke Denied Patient Document"
+    $deniedDocumentBody = "Created by the smoke patient-document denial check."
+    $createDeniedDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $deniedDocumentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        content = $deniedDocumentBody
+        notes = "Created by the smoke patient-document denial check."
+    } | ConvertTo-Json
+    $createdDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createDeniedDocumentBody -TimeoutSec 20
+    $patientDocumentDenialMutationId = $createdDeniedDocument.id
+    $createdDeniedVisible = $createdDeniedDocument.detail.documents | Where-Object { $_.name -eq $deniedDocumentName -and $_.reviewStatus -eq "pending" } | Select-Object -First 1
+
+    $denyDocumentBody = @{
+        reviewStatus = "denied"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $deniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId/sign" -Method Put -ContentType "application/json" -Body $denyDocumentBody -TimeoutSec 20
+    $deniedVisible = $deniedDocument.detail.documents | Where-Object { $_.name -eq $deniedDocumentName -and $_.reviewStatus -eq "denied" -and $_.reviewedBy -eq "admin" } | Select-Object -First 1
+
+    $archivedDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedDeniedVisible = $archivedDeniedDocument.detail.documents | Where-Object { $_.name -eq $deniedDocumentName } | Select-Object -First 1
+    $patientDocumentDenialPassed = $null -ne $createdDeniedVisible -and $null -ne $deniedVisible -and $null -eq $archivedDeniedVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentDenialMutationId = $null
+
+    Add-Check -Name "patient document denial lifecycle" -Result $(if ($patientDocumentDenialPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdDeniedDocument.id
+        createdVisible = $createdDeniedVisible
+        deniedVisible = $deniedVisible
+        archivedVisible = $archivedDeniedVisible
+    }
+}
+catch {
+    Add-Check -Name "patient document denial lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentDenialMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentDenialMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientBinaryDocumentMutationId = $null
 try {
     $binaryDocumentName = "Smoke Binary Patient Document.pdf"

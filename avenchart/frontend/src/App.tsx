@@ -1775,6 +1775,27 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentDeny(document: PatientDocumentItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await signPatientDocument(document.id, {
+        reviewStatus: 'denied',
+        reviewedBy: 'admin',
+      })
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (denyError) {
+      setDocumentStatus('error')
+      const message = denyError instanceof Error ? denyError.message : 'Patient document denial failed'
+      setDocumentError(message)
+      throw denyError
+    }
+  }
+
   async function handlePatientDocumentDelete(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -1990,6 +2011,7 @@ function App() {
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onArchiveDocument={handlePatientDocumentArchive}
             onSignDocument={handlePatientDocumentSign}
+            onDenyDocument={handlePatientDocumentDeny}
             onDeleteDocument={handlePatientDocumentDelete}
           />
         )}
@@ -5102,6 +5124,7 @@ function DocumentsWorkspace({
   onCreateExternalLinkDocument,
   onArchiveDocument,
   onSignDocument,
+  onDenyDocument,
   onDeleteDocument,
 }: {
   patientId: string
@@ -5114,6 +5137,7 @@ function DocumentsWorkspace({
   onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
+  onDenyDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
 }) {
   const [documentName, setDocumentName] = useState('Parity Document')
@@ -5645,6 +5669,7 @@ function DocumentsWorkspace({
                       onView={handleDocumentView}
                       onArchive={onArchiveDocument}
                       onSign={onSignDocument}
+                      onDeny={onDenyDocument}
                       onDelete={onDeleteDocument}
                     />
                   ))}
@@ -6401,6 +6426,7 @@ function DocumentItem({
   onView,
   onArchive,
   onSign,
+  onDeny,
   onDelete,
 }: {
   document: PatientDocumentItem
@@ -6408,9 +6434,11 @@ function DocumentItem({
   onView: (document: PatientDocumentItem) => Promise<void>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
+  onDeny: (document: PatientDocumentItem) => Promise<unknown>
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
   const isApproved = document.reviewStatus === 'approved'
+  const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
   const isExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
 
   return (
@@ -6475,11 +6503,20 @@ function DocumentItem({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled || isApproved}
+          disabled={disabled || isReviewed}
           onClick={() => void onSign(document)}
         >
           <ShieldCheck size={14} />
           Sign
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || isReviewed}
+          onClick={() => void onDeny(document)}
+        >
+          <X size={14} />
+          Deny
         </button>
         <button
           className="icon-text-button"
