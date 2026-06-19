@@ -22,6 +22,7 @@ import {
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
+  getPatientBilling,
   getPatientMessages,
   getProcedureResults,
   searchAppointments,
@@ -31,6 +32,8 @@ import {
   type AppointmentListItem,
   type AppointmentSearchResponse,
   type AllergyListItem,
+  type BillingEncounterItem,
+  type BillingLineItem,
   type ClinicalListsResponse,
   type EncounterDetail,
   type EncounterListItem,
@@ -38,6 +41,7 @@ import {
   type MedicationListItem,
   type PatientChartSummary,
   type PatientListItem,
+  type PatientBillingResponse,
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
@@ -50,14 +54,14 @@ import {
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'procedures' | 'messages'
+type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'fees' | 'procedures' | 'messages'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
   { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
   { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
-  { id: 'fees', label: 'Fees', icon: WalletCards },
+  { id: 'fees', label: 'Fees', icon: WalletCards, implemented: 'fees' },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
   { id: 'reports', label: 'Reports', icon: FileText },
@@ -107,6 +111,11 @@ function App() {
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
   const [procedureStatus, setProcedureStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [procedureError, setProcedureError] = useState<string | null>(null)
+
+  const [billingPatientId, setBillingPatientId] = useState('MOD-PAT-0001')
+  const [patientBilling, setPatientBilling] = useState<PatientBillingResponse | null>(null)
+  const [billingStatus, setBillingStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [billingError, setBillingError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -380,6 +389,34 @@ function App() {
     }
   }, [activeModule, procedurePatientId])
 
+  useEffect(() => {
+    if (activeModule !== 'fees') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setBillingStatus('loading')
+      setBillingError(null)
+
+      try {
+        const result = await getPatientBilling(billingPatientId, controller.signal)
+        setPatientBilling(result)
+        setBillingStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setBillingStatus('error')
+          setBillingError(loadError instanceof Error ? loadError.message : 'Patient billing failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, billingPatientId])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -393,6 +430,8 @@ function App() {
         ? encounterResult?.datasetVersion ?? searchResult?.datasetVersion
         : activeModule === 'lists'
           ? clinicalLists?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'fees'
+            ? patientBilling?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'procedures'
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
@@ -497,6 +536,15 @@ function App() {
             onPatientIdChange={setClinicalPatientId}
           />
         )}
+        {activeModule === 'fees' && (
+          <FeesWorkspace
+            patientId={billingPatientId}
+            patientBilling={patientBilling}
+            status={billingStatus}
+            error={billingError}
+            onPatientIdChange={setBillingPatientId}
+          />
+        )}
         {activeModule === 'procedures' && (
           <ProceduresWorkspace
             patientId={procedurePatientId}
@@ -530,6 +578,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'lists') {
     return 'Clinical Lists'
   }
+  if (moduleId === 'fees') {
+    return 'Billing'
+  }
   if (moduleId === 'procedures') {
     return 'Labs And Orders'
   }
@@ -548,6 +599,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'lists') {
     return 'Lists'
+  }
+  if (moduleId === 'fees') {
+    return 'Fees'
   }
   if (moduleId === 'procedures') {
     return 'Procedures'
@@ -1022,6 +1076,104 @@ function ClinicalListsWorkspace({
   )
 }
 
+function FeesWorkspace({
+  patientId,
+  patientBilling,
+  status,
+  error,
+  onPatientIdChange,
+}: {
+  patientId: string
+  patientBilling: PatientBillingResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+}) {
+  const lineCount = countBillingLines(patientBilling?.encounters)
+  const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Fees search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Fees patient ID"
+              placeholder="MOD-PAT-0001"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Fee sheet lines'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {patientBilling ? (
+          <div className="list-counts">
+            <MetricRow label="Encounters" value={patientBilling.encounters.length} />
+            <MetricRow label="Billing lines" value={lineCount} />
+            <MetricRow label="CPT lines" value={countBillingLinesByType(patientBilling.encounters, 'CPT4')} />
+            <MetricRow label="Total fee" value={Math.round(totalFee)} />
+          </div>
+        ) : (
+          <div className="empty-state">No fee sheet loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Fees detail">
+        {patientBilling ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Fee Sheet</p>
+                <h2>{patientBilling.patientDisplayName}</h2>
+                <p className="patient-line">
+                  {patientBilling.pubpid} / PID {patientBilling.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">{formatCurrency(totalFee)}</div>
+            </div>
+
+            <div className="billing-detail-grid">
+              <InfoPanel title="Billing Summary" icon={WalletCards}>
+                <Field label="Patient ID" value={patientBilling.pubpid} />
+                <Field label="Encounters" value={patientBilling.encounters.length} />
+                <Field label="Billing lines" value={lineCount} />
+                <Field label="Total fee" value={formatCurrency(totalFee)} />
+              </InfoPanel>
+
+              <section className="info-panel billing-lines-panel">
+                <div className="panel-heading">
+                  <ClipboardList size={17} />
+                  <h3>Selected Fee Sheet Codes and Charges</h3>
+                </div>
+                <div className="billing-encounter-list">
+                  {patientBilling.encounters.map((encounter) => (
+                    <BillingEncounterCard key={encounter.encounter} encounter={encounter} />
+                  ))}
+                  {patientBilling.encounters.length === 0 && (
+                    <div className="timeline-placeholder">No billing lines recorded</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading fee sheet</div>
+        ) : (
+          <div className="empty-chart">Enter a patient ID to load fee sheet lines</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function ProceduresWorkspace({
   patientId,
   procedureResults,
@@ -1333,6 +1485,52 @@ function MessageItem({ message }: { message: PatientMessageItem }) {
   )
 }
 
+function BillingEncounterCard({ encounter }: { encounter: BillingEncounterItem }) {
+  return (
+    <article className="billing-encounter-card">
+      <div className="procedure-report-title">
+        <div>
+          <strong>{encounter.reason || 'Billing encounter'}</strong>
+          <span>
+            {encounter.date} / Encounter {encounter.encounter}
+          </span>
+        </div>
+        <span className="status-tag">{formatCurrency(encounter.totalFee)}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{encounter.providerName || 'Provider not recorded'}</span>
+        <span>{encounter.facilityName || 'Facility not recorded'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{encounter.diagnosisCode || 'No diagnosis'}</span>
+        <span>{encounter.diagnosisText || 'No diagnosis text'}</span>
+      </div>
+      <div className="billing-line-list">
+        {encounter.lines.map((line) => (
+          <BillingLineCard key={line.id} line={line} />
+        ))}
+        {encounter.lines.length === 0 && <div className="timeline-placeholder">No fee sheet codes recorded</div>}
+      </div>
+    </article>
+  )
+}
+
+function BillingLineCard({ line }: { line: BillingLineItem }) {
+  return (
+    <article className="billing-line-card">
+      <div className="message-item-header">
+        <strong>{line.code || 'Billing code'}</strong>
+        <span className="status-tag">{line.codeType || 'Code type'}</span>
+      </div>
+      <p>{line.codeText || 'No description recorded'}</p>
+      <div className="procedure-order-meta">
+        <span>{line.justify ? `Justify ${line.justify}` : 'No justification'}</span>
+        <span>{formatCurrency(line.fee)}</span>
+      </div>
+    </article>
+  )
+}
+
 function ProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
   return (
     <article className="procedure-order-card">
@@ -1571,6 +1769,19 @@ function countMessagesByStatus(messages: PatientMessageItem[] | undefined, statu
   return messages?.filter((message) => message.status === status).length ?? 0
 }
 
+function countBillingLines(encounters: BillingEncounterItem[] | undefined) {
+  return encounters?.reduce((count, encounter) => count + encounter.lines.length, 0) ?? 0
+}
+
+function countBillingLinesByType(encounters: BillingEncounterItem[] | undefined, codeType: string) {
+  return (
+    encounters?.reduce(
+      (count, encounter) => count + encounter.lines.filter((line) => line.codeType === codeType).length,
+      0,
+    ) ?? 0
+  )
+}
+
 function countProcedureReports(orders: ProcedureOrderItem[] | undefined) {
   return orders?.reduce((count, order) => count + order.reports.length, 0) ?? 0
 }
@@ -1638,6 +1849,10 @@ function formatAddress(chart: PatientChartSummary | null) {
   return [chart.street, [chart.city, chart.state, chart.postalCode].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
+}
+
+function formatCurrency(value?: number | null) {
+  return `$${(value ?? 0).toFixed(2)}`
 }
 
 export default App

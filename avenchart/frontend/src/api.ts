@@ -271,6 +271,42 @@ export type ProcedureResultsResponse = {
   orders: ProcedureOrderItem[]
 }
 
+export type BillingLineItem = {
+  id: string
+  encounter: number
+  billingDate: string
+  codeType?: string | null
+  code?: string | null
+  codeText?: string | null
+  fee?: number | null
+  justify?: string | null
+}
+
+export type BillingEncounterItem = {
+  id: number
+  encounter: number
+  date: string
+  reason?: string | null
+  diagnosisCode?: string | null
+  diagnosisText?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  totalFee: number
+  lines: BillingLineItem[]
+}
+
+export type PatientBillingResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  encounters: BillingEncounterItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -384,6 +420,15 @@ export async function getProcedureResults(patientId: string, signal?: AbortSigna
   const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure results load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientBilling(patientId: string, signal?: AbortSignal): Promise<PatientBillingResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Patient billing load failed with ${response.status}`)
   }
 
   return response.json()

@@ -355,6 +355,7 @@
 .encounter-detail-grid,
 .clinical-list-grid,
 .message-detail-grid,
+.billing-detail-grid,
 .procedure-detail-grid {
   display: grid;
   gap: 12px;
@@ -383,6 +384,10 @@
 
 .message-detail-grid {
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+}
+
+.billing-detail-grid {
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
 }
 
 .procedure-detail-grid {
@@ -551,6 +556,7 @@
 }
 
 .procedure-orders-panel,
+.billing-lines-panel,
 .procedure-results-panel {
   min-width: 0;
 }
@@ -559,6 +565,7 @@
   margin-top: 12px;
 }
 
+.billing-encounter-list,
 .procedure-order-list,
 .procedure-result-body {
   display: flex;
@@ -567,6 +574,8 @@
   padding: 12px;
 }
 
+.billing-encounter-card,
+.billing-line-card,
 .procedure-order-card,
 .procedure-report-group,
 .procedure-report-card,
@@ -577,17 +586,40 @@
   min-width: 0;
 }
 
+.billing-encounter-card,
+.billing-line-card,
 .procedure-order-card,
 .procedure-report-group,
 .procedure-result-card {
   padding: 12px;
 }
 
+.billing-encounter-card,
 .procedure-report-group,
 .procedure-report-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.billing-line-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.billing-line-card {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.billing-line-card p {
+  margin: 0;
+  color: #344657;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .procedure-report-card {
@@ -699,6 +731,7 @@
   .encounter-detail-grid,
   .clinical-list-grid,
   .message-detail-grid,
+  .billing-detail-grid,
   .procedure-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -744,6 +777,8 @@
   .encounter-detail-grid,
   .clinical-list-grid,
   .message-detail-grid,
+  .billing-detail-grid,
+  .billing-line-list,
   .procedure-detail-grid,
   .procedure-result-grid,
   .soap-grid {
