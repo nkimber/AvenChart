@@ -442,6 +442,7 @@ export type PatientDocumentItem = {
   pages?: number | null
   encounter?: number | null
   storageMethod?: string | null
+  fileName?: string | null
   url?: string | null
   hash?: string | null
   documentationOf?: string | null
@@ -472,6 +473,18 @@ export type PatientDocumentCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentBinaryCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  fileName: string
+  mimetype: string
+  contentBase64: string
+  notes?: string | null
+}
+
 export type PatientDocumentContentResponse = {
   id: number
   documentKey: string
@@ -493,6 +506,8 @@ export type PatientDocumentContentResponse = {
   documentationOf?: string | null
   notes?: string | null
   content: string
+  contentBase64?: string | null
+  isBinary: boolean
 }
 
 export type PatientDocumentMutationResponse = {
@@ -1413,6 +1428,23 @@ export async function createPatientDocument(
   })
   if (!response.ok) {
     throw new Error(`Patient document create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createPatientBinaryDocument(
+  document: PatientDocumentBinaryCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/binary`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Binary patient document create failed with ${response.status}`)
   }
 
   return response.json()

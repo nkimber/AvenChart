@@ -81,12 +81,12 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 command.CommandText = """
                     insert into patient_documents
                         (id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
-                         mimetype, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
-                         content, deleted)
+                         mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+                         content, content_bytes, deleted)
                     values
                         (@id, @documentKey, @patientId, @pid, @categoryId, @categoryName, @name, @docDate, @uploadedAt,
-                         'text/plain', @sizeBytes, 1, @encounter, 'database', @url, @hash, @documentationOf, @notes,
-                         @content, 0);
+                         'text/plain', @fileName, @sizeBytes, 1, @encounter, 'database', @url, @hash, @documentationOf, @notes,
+                         @content, null, 0);
                     """;
                 command.Parameters.AddWithValue("id", id);
                 command.Parameters.AddWithValue("documentKey", documentKey);
@@ -97,6 +97,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 command.Parameters.AddWithValue("name", name);
                 command.Parameters.AddWithValue("docDate", documentDate);
                 command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+                command.Parameters.AddWithValue("fileName", BuildDownloadFileName(name, "text/plain"));
                 command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
                 var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
                 encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
@@ -107,6 +108,111 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
                 notesParameter.Value = notes;
                 command.Parameters.AddWithValue("content", content);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
+    }
+
+    public async Task<PatientDocumentMutationResponse?> CreateBinaryAsync(
+        PatientDocumentBinaryCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Name)
+            || string.IsNullOrWhiteSpace(request.FileName)
+            || string.IsNullOrWhiteSpace(request.Mimetype)
+            || string.IsNullOrWhiteSpace(request.ContentBase64)
+            || !DateOnly.TryParse(request.DocDate, out var documentDate))
+        {
+            return null;
+        }
+
+        byte[] contentBytes;
+        try
+        {
+            contentBytes = Convert.FromBase64String(request.ContentBase64.Trim());
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        if (contentBytes.Length == 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = 0;
+        var categoryId = request.CategoryId <= 0 ? 3 : request.CategoryId;
+        var categoryName = CategoryNameFor(categoryId);
+        var name = request.Name.Trim();
+        var fileName = SanitizeFileName(request.FileName.Trim());
+        var mimetype = request.Mimetype.Trim();
+        var notes = NullableText(request.Notes);
+        var preview = $"Binary document: {fileName} ({mimetype})";
+        var documentKey = $"DOC-BINARY-{Guid.NewGuid():N}";
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using (var idCommand = connection.CreateCommand())
+            {
+                idCommand.Transaction = transaction;
+                idCommand.CommandText = """
+                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    from patient_documents;
+                    """;
+                id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    insert into patient_documents
+                        (id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
+                         mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of,
+                         notes, content, content_bytes, deleted)
+                    values
+                        (@id, @documentKey, @patientId, @pid, @categoryId, @categoryName, @name, @docDate, @uploadedAt,
+                         @mimetype, @fileName, @sizeBytes, @pages, @encounter, 'database', @url, @hash, @documentationOf,
+                         @notes, @content, @contentBytes, 0);
+                    """;
+                command.Parameters.AddWithValue("id", id);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patient.PatientId);
+                command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                command.Parameters.AddWithValue("categoryId", categoryId);
+                command.Parameters.AddWithValue("categoryName", categoryName);
+                command.Parameters.AddWithValue("name", name);
+                command.Parameters.AddWithValue("docDate", documentDate);
+                command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+                command.Parameters.AddWithValue("mimetype", mimetype);
+                command.Parameters.AddWithValue("fileName", fileName);
+                command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+                command.Parameters.AddWithValue("pages", string.Equals(mimetype, "application/pdf", StringComparison.OrdinalIgnoreCase) ? 1 : 0);
+                var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
+                encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+                command.Parameters.AddWithValue("url", $"modern://documents/{documentKey}/{fileName}");
+                command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+                var documentationParameter = command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text);
+                documentationParameter.Value = notes;
+                var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
+                notesParameter.Value = notes;
+                command.Parameters.AddWithValue("content", preview);
+                command.Parameters.Add("contentBytes", NpgsqlTypes.NpgsqlDbType.Bytea).Value = contentBytes;
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -128,8 +234,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
-              mimetype, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
-              coalesce(content, '') as content
+              mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              coalesce(content, '') as content, content_bytes
             from patient_documents
             where id = @id and deleted = 0
             limit 1;
@@ -145,6 +251,12 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var name = reader.GetString(reader.GetOrdinal("name"));
         var mimetype = ReadNullableString(reader, "mimetype");
         var content = reader.GetString(reader.GetOrdinal("content"));
+        var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
+        var contentBytes = reader.IsDBNull(contentBytesOrdinal) ? null : (byte[])reader.GetValue(contentBytesOrdinal);
+        var isBinary = contentBytes is { Length: > 0 };
+        var contentBase64 = isBinary
+            ? Convert.ToBase64String(contentBytes!)
+            : Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
 
         return new PatientDocumentContentResponse(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
@@ -154,7 +266,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
             CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
             Name: name,
-            FileName: BuildDownloadFileName(name, mimetype),
+            FileName: ReadNullableString(reader, "file_name") ?? BuildDownloadFileName(name, mimetype),
             DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
             UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
             Mimetype: mimetype,
@@ -166,7 +278,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Hash: ReadNullableString(reader, "hash"),
             DocumentationOf: ReadNullableString(reader, "documentation_of"),
             Notes: ReadNullableString(reader, "notes"),
-            Content: content);
+            Content: content,
+            ContentBase64: contentBase64,
+            IsBinary: isBinary);
     }
 
     public async Task<PatientDocumentMutationResponse?> SoftDeleteAsync(int documentId, CancellationToken cancellationToken)
@@ -284,8 +398,11 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
-              mimetype, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
-              left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260) as content_preview
+              mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              case
+                when content_bytes is not null then left(coalesce(content, ''), 260)
+                else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
+              end as content_preview
             from patient_documents
             where patient_id = @patientId and deleted = 0
             order by doc_date desc, id desc;
@@ -311,6 +428,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Pages: ReadNullableInt32(reader, "pages"),
                 Encounter: ReadNullableInt32(reader, "encounter"),
                 StorageMethod: ReadNullableString(reader, "storage_method"),
+                FileName: ReadNullableString(reader, "file_name"),
                 Url: ReadNullableString(reader, "url"),
                 Hash: ReadNullableString(reader, "hash"),
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
@@ -356,22 +474,27 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
     private static string BuildDownloadFileName(string name, string? mimetype)
     {
-        var safeName = string.Join(
-            "_",
-            name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        if (string.IsNullOrWhiteSpace(safeName))
-        {
-            safeName = "document";
-        }
+        var safeName = SanitizeFileName(name);
 
         if (Path.HasExtension(safeName))
         {
             return safeName;
         }
 
-        return string.Equals(mimetype, "text/plain", StringComparison.OrdinalIgnoreCase)
-            ? $"{safeName}.txt"
-            : safeName;
+        return mimetype?.ToLowerInvariant() switch
+        {
+            "text/plain" => $"{safeName}.txt",
+            "application/pdf" => $"{safeName}.pdf",
+            _ => safeName
+        };
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var safeName = string.Join(
+            "_",
+            value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return string.IsNullOrWhiteSpace(safeName) ? "document" : safeName;
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

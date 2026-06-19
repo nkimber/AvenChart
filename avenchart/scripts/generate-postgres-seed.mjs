@@ -531,6 +531,7 @@ create table patient_documents (
   doc_date date not null,
   uploaded_at timestamp not null,
   mimetype text,
+  file_name text,
   size_bytes integer,
   pages integer,
   encounter integer,
@@ -540,6 +541,7 @@ create table patient_documents (
   documentation_of text,
   notes text,
   content text,
+  content_bytes bytea,
   deleted integer not null default 0
 );
 
@@ -1055,6 +1057,7 @@ copyRows('patient_documents', [
   'doc_date',
   'uploaded_at',
   'mimetype',
+  'file_name',
   'size_bytes',
   'pages',
   'encounter',
@@ -1064,6 +1067,7 @@ copyRows('patient_documents', [
   'documentation_of',
   'notes',
   'content',
+  'content_bytes',
   'deleted',
 ], dataset.patientDocuments.map((document) => [
   document.id,
@@ -1076,6 +1080,7 @@ copyRows('patient_documents', [
   document.docDate,
   document.uploadedAt,
   document.mimetype,
+  document.name.endsWith('.txt') ? document.name : `${document.name}.txt`,
   document.sizeBytes,
   document.pages,
   document.encounter,
@@ -1085,6 +1090,7 @@ copyRows('patient_documents', [
   document.documentationOf,
   document.notes,
   document.content,
+  null,
   0,
 ]))
 

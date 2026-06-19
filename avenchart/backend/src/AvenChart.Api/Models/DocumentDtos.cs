@@ -27,6 +27,7 @@ public sealed record PatientDocumentItem(
     int? Pages,
     int? Encounter,
     string? StorageMethod,
+    string? FileName,
     string? Url,
     string? Hash,
     string? DocumentationOf,
@@ -40,6 +41,17 @@ public sealed record PatientDocumentCreateRequest(
     string DocDate,
     int? Encounter,
     string Content,
+    string? Notes);
+
+public sealed record PatientDocumentBinaryCreateRequest(
+    string PatientId,
+    int CategoryId,
+    string Name,
+    string DocDate,
+    int? Encounter,
+    string FileName,
+    string Mimetype,
+    string ContentBase64,
     string? Notes);
 
 public sealed record PatientDocumentContentResponse(
@@ -62,7 +74,9 @@ public sealed record PatientDocumentContentResponse(
     string? Hash,
     string? DocumentationOf,
     string? Notes,
-    string Content);
+    string Content,
+    string? ContentBase64,
+    bool IsBinary);
 
 public sealed record PatientDocumentMutationResponse(
     int Id,

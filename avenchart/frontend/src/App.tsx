@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   Activity,
   Building2,
@@ -21,6 +21,7 @@ import {
   Stethoscope,
   Syringe,
   Trash2,
+  Upload,
   UserRound,
   WalletCards,
   X,
@@ -49,6 +50,7 @@ import {
   createClinicalPrescription,
   createAdministrationFacility,
   createAdministrationUser,
+  createPatientBinaryDocument,
   createPatientDocument,
   createEncounter,
   createEncounterSoapNote,
@@ -129,6 +131,7 @@ import {
   type PatientInsuranceItem,
   type PatientListItem,
   type PatientBillingResponse,
+  type PatientDocumentBinaryCreateInput,
   type PatientContactUpdate,
   type PatientDocumentCreateInput,
   type PatientDocumentContentResponse,
@@ -1552,6 +1555,25 @@ function App() {
     }
   }
 
+  async function handlePatientBinaryDocumentCreate(input: PatientDocumentBinaryCreateInput) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await createPatientBinaryDocument(input)
+      setDocumentPatientId(response.detail.patientId)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setDocumentStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Binary patient document create failed'
+      setDocumentError(message)
+      throw createError
+    }
+  }
+
   async function handlePatientDocumentArchive(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -1776,6 +1798,7 @@ function App() {
             error={documentError}
             onPatientIdChange={setDocumentPatientId}
             onCreateDocument={handlePatientDocumentCreate}
+            onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onArchiveDocument={handlePatientDocumentArchive}
             onDeleteDocument={handlePatientDocumentDelete}
           />
@@ -4270,6 +4293,7 @@ function DocumentsWorkspace({
   error,
   onPatientIdChange,
   onCreateDocument,
+  onCreateBinaryDocument,
   onArchiveDocument,
   onDeleteDocument,
 }: {
@@ -4279,6 +4303,7 @@ function DocumentsWorkspace({
   error: string | null
   onPatientIdChange: (value: string) => void
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
+  onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
 }) {
@@ -4287,6 +4312,15 @@ function DocumentsWorkspace({
   const [documentDate, setDocumentDate] = useState('2026-06-18')
   const [documentEncounter, setDocumentEncounter] = useState('1000013')
   const [documentContent, setDocumentContent] = useState('Created from the modernized Documents workspace.')
+  const [binaryDocumentName, setBinaryDocumentName] = useState('Parity Binary Document')
+  const [binaryDocumentCategoryId, setBinaryDocumentCategoryId] = useState('3')
+  const [binaryDocumentDate, setBinaryDocumentDate] = useState('2026-06-18')
+  const [binaryDocumentEncounter, setBinaryDocumentEncounter] = useState('1000013')
+  const [binaryDocumentNotes, setBinaryDocumentNotes] = useState('Uploaded from the modernized Documents workspace.')
+  const [binaryFileName, setBinaryFileName] = useState('')
+  const [binaryMimeType, setBinaryMimeType] = useState('')
+  const [binaryContentBase64, setBinaryContentBase64] = useState('')
+  const [binaryFileMessage, setBinaryFileMessage] = useState('No file selected')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -4331,6 +4365,57 @@ function DocumentsWorkspace({
     })
 
     setMutationMessage('Document saved')
+  }
+
+  async function handleBinaryFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setBinaryFileName('')
+      setBinaryMimeType('')
+      setBinaryContentBase64('')
+      setBinaryFileMessage('No file selected')
+      return
+    }
+
+    const contentBase64 = await readFileAsBase64(file)
+    setBinaryFileName(file.name)
+    setBinaryMimeType(file.type || 'application/octet-stream')
+    setBinaryContentBase64(contentBase64)
+    setBinaryFileMessage(`${file.name} selected (${formatBytes(file.size)})`)
+    if (binaryDocumentName === 'Parity Binary Document') {
+      setBinaryDocumentName(file.name)
+    }
+  }
+
+  async function handleBinaryDocumentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    const categoryId = Number(binaryDocumentCategoryId)
+    const encounter = binaryDocumentEncounter.trim().length > 0 ? Number(binaryDocumentEncounter) : null
+    if (!Number.isInteger(categoryId) || (encounter !== null && !Number.isInteger(encounter))) {
+      setMutationMessage('Check numeric fields')
+      return
+    }
+
+    if (!binaryContentBase64 || !binaryFileName || !binaryMimeType) {
+      setMutationMessage('Choose a file to upload')
+      return
+    }
+
+    await onCreateBinaryDocument({
+      patientId,
+      categoryId,
+      name: binaryDocumentName,
+      docDate: binaryDocumentDate,
+      encounter,
+      fileName: binaryFileName,
+      mimetype: binaryMimeType,
+      contentBase64: binaryContentBase64,
+      notes: binaryDocumentNotes,
+    })
+
+    setMutationMessage('File uploaded')
   }
 
   async function handleDocumentView(document: PatientDocumentItem) {
@@ -4468,6 +4553,78 @@ function DocumentsWorkspace({
             {mutationMessage && <span className="save-note">{mutationMessage}</span>}
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleBinaryDocumentSubmit}>
+          <div className="panel-heading compact-heading">
+            <Upload size={16} />
+            <h3>Upload File</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={binaryDocumentName}
+                onChange={(event) => setBinaryDocumentName(event.target.value)}
+                aria-label="Binary document name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={binaryDocumentCategoryId}
+                  onChange={(event) => setBinaryDocumentCategoryId(event.target.value)}
+                  aria-label="Binary document category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={binaryDocumentDate}
+                  onChange={(event) => setBinaryDocumentDate(event.target.value)}
+                  aria-label="Binary document date"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={binaryDocumentEncounter}
+                onChange={(event) => setBinaryDocumentEncounter(event.target.value)}
+                aria-label="Binary document encounter"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="filter-field">
+              <span>File</span>
+              <input type="file" onChange={handleBinaryFileChange} aria-label="Binary document file" required />
+            </label>
+            <label className="filter-field">
+              <span>Notes</span>
+              <textarea
+                value={binaryDocumentNotes}
+                onChange={(event) => setBinaryDocumentNotes(event.target.value)}
+                aria-label="Binary document notes"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Upload size={15} />
+              Upload File
+            </button>
+            <span className="save-note">{binaryFileMessage}</span>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Documents detail">
@@ -4514,7 +4671,15 @@ function DocumentsWorkspace({
                       <Field label="MIME" value={viewedDocument.mimetype} />
                       <Field label="Hash" value={viewedDocument.hash} />
                     </div>
-                    <pre className="document-content-block">{viewedDocument.content}</pre>
+                    {viewedDocument.isBinary ? (
+                      <div className="document-content-block">
+                        <strong>{viewedDocument.fileName}</strong>
+                        <span>{viewedDocument.content}</span>
+                        <span>{formatBytes(viewedDocument.sizeBytes)} stored as {viewedDocument.mimetype}</span>
+                      </div>
+                    ) : (
+                      <pre className="document-content-block">{viewedDocument.content}</pre>
+                    )}
                     <div className="document-item-actions">
                       <a
                         className="icon-text-button secondary"
@@ -5328,7 +5493,7 @@ function DocumentItem({
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
       <div className="document-footnote">
         <span>{document.documentKey}</span>
-        <span>{document.hash || document.url || 'No document reference'}</span>
+        <span>{document.fileName || document.hash || document.url || 'No document reference'}</span>
       </div>
       <div className="document-item-actions">
         <button
@@ -6466,6 +6631,19 @@ function formatBytes(value?: number | null) {
   }
 
   return `${(value / 1024).toFixed(1)} KB`
+}
+
+function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      const [, base64] = result.split(',', 2)
+      resolve(base64 ?? '')
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('File read failed'))
+    reader.readAsDataURL(file)
+  })
 }
 
 export default App

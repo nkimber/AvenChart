@@ -665,6 +665,75 @@ finally {
     }
 }
 
+$patientBinaryDocumentMutationId = $null
+try {
+    $binaryDocumentName = "Smoke Binary Patient Document.pdf"
+    $binaryDocumentBody = "%PDF-1.4`n1 0 obj`n<< /Type /Catalog >>`nendobj`n% Smoke binary patient document check.`n%%EOF`n"
+    $binaryDocumentBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($binaryDocumentBody))
+    $createBinaryDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $binaryDocumentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        fileName = $binaryDocumentName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryDocumentBase64
+        notes = "Created by the smoke binary patient-document mutation check."
+    } | ConvertTo-Json
+    $createdBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/binary" -Method Post -ContentType "application/json" -Body $createBinaryDocumentBody -TimeoutSec 20
+    $patientBinaryDocumentMutationId = $createdBinaryDocument.id
+    $createdBinaryVisible = $createdBinaryDocument.detail.documents | Where-Object { $_.name -eq $binaryDocumentName -and $_.mimetype -eq "application/pdf" -and $_.contentPreview -and $_.contentPreview.Contains("Binary document") } | Select-Object -First 1
+
+    $binaryContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId/content" -Method Get -TimeoutSec 20
+    $binaryDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $binaryDownload = $binaryDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId/download").GetAwaiter().GetResult()
+        $binaryDownloadBytes = $binaryDownload.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $binaryDownloadContentType = $binaryDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $binaryDownloadClient.Dispose()
+    }
+
+    $archivedBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedBinaryVisible = $archivedBinaryDocument.detail.documents | Where-Object { $_.name -eq $binaryDocumentName } | Select-Object -First 1
+    $patientBinaryDocumentMutationPassed = $null -ne $createdBinaryVisible `
+        -and $binaryContent.name -eq $binaryDocumentName `
+        -and $binaryContent.fileName -eq $binaryDocumentName `
+        -and $binaryContent.mimetype -eq "application/pdf" `
+        -and $binaryContent.isBinary `
+        -and $binaryContent.contentBase64 -eq $binaryDocumentBase64 `
+        -and $binaryDownload.IsSuccessStatusCode `
+        -and $binaryDownloadContentType -eq "application/pdf" `
+        -and [Convert]::ToBase64String($binaryDownloadBytes) -eq $binaryDocumentBase64 `
+        -and $null -eq $archivedBinaryVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientBinaryDocumentMutationId = $null
+
+    Add-Check -Name "patient binary document mutation lifecycle" -Result $(if ($patientBinaryDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdBinaryDocument.id
+        createdVisible = $createdBinaryVisible
+        contentIsBinary = $binaryContent.isBinary
+        downloadStatus = [int]$binaryDownload.StatusCode
+        downloadContentType = $binaryDownloadContentType
+        archivedVisible = $archivedBinaryVisible
+    }
+}
+catch {
+    Add-Check -Name "patient binary document mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientBinaryDocumentMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientMessageMutationId = $null
 try {
     $messageTitle = "Smoke Patient Message Mutation"

@@ -502,8 +502,12 @@ documents.MapGet("/{documentId:int}/download", async (
             return Results.NotFound();
         }
 
+        var fileBytes = document.IsBinary && !string.IsNullOrWhiteSpace(document.ContentBase64)
+            ? Convert.FromBase64String(document.ContentBase64)
+            : Encoding.UTF8.GetBytes(document.Content);
+
         return Results.File(
-            Encoding.UTF8.GetBytes(document.Content),
+            fileBytes,
             document.Mimetype ?? "application/octet-stream",
             document.FileName);
     })
@@ -530,6 +534,18 @@ documents.MapPost("/", async (
             : Results.Created($"/api/documents/{mutation.Id}", mutation);
     })
     .WithName("CreatePatientDocument");
+
+documents.MapPost("/binary", async (
+        DocumentRepository repository,
+        PatientDocumentBinaryCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateBinaryAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Binary patient document could not be created from the supplied patient, file, and document details.")
+            : Results.Created($"/api/documents/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBinaryPatientDocument");
 
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
