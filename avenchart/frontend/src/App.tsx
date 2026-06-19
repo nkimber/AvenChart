@@ -99,6 +99,7 @@ import {
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
+  updateBillingLine,
   updateBillingLineStatus,
   updateEncounter,
   updatePatientDocumentMetadata,
@@ -125,6 +126,7 @@ import {
   type BillingEncounterItem,
   type BillingLineCreateInput,
   type BillingLineItem,
+  type BillingLineUpdateInput,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
   type ClinicalImmunizationCreateInput,
@@ -1294,6 +1296,23 @@ function App() {
     }
   }
 
+  async function handleBillingLineUpdate(lineId: string, input: BillingLineUpdateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await updateBillingLine(lineId, input)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (updateError) {
+      setBillingStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Billing line update failed'
+      setBillingError(message)
+      throw updateError
+    }
+  }
+
   async function handleBillingLineDeactivate(line: BillingLineItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -2039,6 +2058,7 @@ function App() {
             error={billingError}
             onPatientIdChange={setBillingPatientId}
             onCreateLine={handleBillingLineCreate}
+            onUpdateLine={handleBillingLineUpdate}
             onDeactivateLine={handleBillingLineDeactivate}
             onDeleteLine={handleBillingLineDelete}
           />
@@ -4495,6 +4515,7 @@ function FeesWorkspace({
   error,
   onPatientIdChange,
   onCreateLine,
+  onUpdateLine,
   onDeactivateLine,
   onDeleteLine,
 }: {
@@ -4504,6 +4525,7 @@ function FeesWorkspace({
   error: string | null
   onPatientIdChange: (value: string) => void
   onCreateLine: (input: BillingLineCreateInput) => Promise<unknown>
+  onUpdateLine: (lineId: string, input: BillingLineUpdateInput) => Promise<unknown>
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
 }) {
@@ -4516,6 +4538,11 @@ function FeesWorkspace({
   const [billingJustify, setBillingJustify] = useState('Z00.00')
   const [diagnosisCode, setDiagnosisCode] = useState('R73.03')
   const [diagnosisText, setDiagnosisText] = useState('Prediabetes')
+  const [correctionLineId, setCorrectionLineId] = useState('')
+  const [correctionCodeText, setCorrectionCodeText] = useState('Corrected established patient office visit')
+  const [correctionFee, setCorrectionFee] = useState('132.50')
+  const [correctionUnits, setCorrectionUnits] = useState('2')
+  const [correctionJustify, setCorrectionJustify] = useState('Z00.00')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
@@ -4570,6 +4597,29 @@ function FeesWorkspace({
     })
 
     setMutationMessage('Diagnosis line saved')
+  }
+
+  function handleSelectCorrectionLine(line: BillingLineItem) {
+    setCorrectionLineId(line.id)
+    setCorrectionCodeText(line.codeText || '')
+    setCorrectionFee(line.fee?.toFixed(2) ?? '0.00')
+    setCorrectionUnits(String(line.units))
+    setCorrectionJustify(line.justify || '')
+    setMutationMessage(null)
+  }
+
+  async function handleBillingCorrectionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onUpdateLine(correctionLineId, {
+      codeText: correctionCodeText,
+      fee: Number(correctionFee),
+      units: Number(correctionUnits),
+      justify: correctionJustify,
+    })
+
+    setMutationMessage('Billing correction saved')
   }
 
   return (
@@ -4751,6 +4801,74 @@ function FeesWorkspace({
             </button>
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleBillingCorrectionSubmit}>
+          <div className="panel-heading compact-heading">
+            <Pencil size={16} />
+            <h3>Correct Billing Line</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Line ID</span>
+              <input
+                value={correctionLineId}
+                onChange={(event) => setCorrectionLineId(event.target.value)}
+                aria-label="Billing correction line ID"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Description</span>
+              <input
+                value={correctionCodeText}
+                onChange={(event) => setCorrectionCodeText(event.target.value)}
+                aria-label="Billing correction description"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Fee</span>
+                <input
+                  value={correctionFee}
+                  onChange={(event) => setCorrectionFee(event.target.value)}
+                  aria-label="Billing correction fee"
+                  inputMode="decimal"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Units</span>
+                <input
+                  value={correctionUnits}
+                  onChange={(event) => setCorrectionUnits(event.target.value)}
+                  aria-label="Billing correction units"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Justify</span>
+              <input
+                value={correctionJustify}
+                onChange={(event) => setCorrectionJustify(event.target.value)}
+                aria-label="Billing correction justification"
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !patientBilling || !correctionLineId}
+            >
+              <Check size={15} />
+              Save Correction
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Fees detail">
@@ -4787,6 +4905,7 @@ function FeesWorkspace({
                       key={encounter.encounter}
                       encounter={encounter}
                       disabled={isLoading}
+                      onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
                     />
@@ -7233,11 +7352,13 @@ function MessageItem({
 function BillingEncounterCard({
   encounter,
   disabled,
+  onSelectCorrectionLine,
   onDeactivateLine,
   onDeleteLine,
 }: {
   encounter: BillingEncounterItem
   disabled: boolean
+  onSelectCorrectionLine: (line: BillingLineItem) => void
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
 }) {
@@ -7266,6 +7387,7 @@ function BillingEncounterCard({
             key={line.id}
             line={line}
             disabled={disabled}
+            onSelectCorrection={onSelectCorrectionLine}
             onDeactivate={onDeactivateLine}
             onDelete={onDeleteLine}
           />
@@ -7279,11 +7401,13 @@ function BillingEncounterCard({
 function BillingLineCard({
   line,
   disabled,
+  onSelectCorrection,
   onDeactivate,
   onDelete,
 }: {
   line: BillingLineItem
   disabled: boolean
+  onSelectCorrection: (line: BillingLineItem) => void
   onDeactivate: (line: BillingLineItem) => Promise<unknown>
   onDelete: (line: BillingLineItem) => Promise<void>
 }) {
@@ -7301,6 +7425,15 @@ function BillingLineCard({
         <span>{formatCurrency(line.fee)}</span>
       </div>
       <div className="detail-actions compact-actions">
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelectCorrection(line)}
+        >
+          <Pencil size={15} />
+          Correct
+        </button>
         <button
           className="icon-text-button secondary"
           type="button"

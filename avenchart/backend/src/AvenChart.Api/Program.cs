@@ -787,6 +787,17 @@ billing.MapPost("/lines", async (
     })
     .WithName("CreateBillingLine");
 
+billing.MapPut("/lines/{billingLineId}", async (
+        BillingRepository repository,
+        string billingLineId,
+        BillingLineUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateLineAsync(billingLineId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateBillingLine");
+
 billing.MapPut("/lines/{billingLineId}/status", async (
         BillingRepository repository,
         string billingLineId,

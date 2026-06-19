@@ -138,6 +138,51 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
     }
 
+    public async Task<BillingLineMutationResponse?> UpdateLineAsync(
+        string billingLineId,
+        BillingLineUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(billingLineId)
+            || string.IsNullOrWhiteSpace(request.CodeText)
+            || string.IsNullOrWhiteSpace(request.Justify)
+            || request.Fee < 0
+            || request.Units <= 0)
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update billing
+                set code_text = @codeText,
+                    fee = @fee,
+                    units = @units,
+                    justify = @justify
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", billingLineId);
+            command.Parameters.AddWithValue("codeText", request.CodeText.Trim());
+            command.Parameters.AddWithValue("fee", request.Fee);
+            command.Parameters.AddWithValue("units", request.Units);
+            command.Parameters.AddWithValue("justify", request.Justify.Trim());
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        return billing is null ? null : new BillingLineMutationResponse(billingLineId, billing);
+    }
+
     public async Task<bool> DeleteLineAsync(string billingLineId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(billingLineId))

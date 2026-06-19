@@ -48,6 +48,12 @@ public sealed record BillingLineCreateRequest(
     int Units,
     string Justify);
 
+public sealed record BillingLineUpdateRequest(
+    string CodeText,
+    decimal Fee,
+    int Units,
+    string Justify);
+
 public sealed record BillingLineStatusUpdateRequest(
     int Billed,
     int Activity);

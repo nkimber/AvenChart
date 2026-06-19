@@ -770,6 +770,13 @@ export type BillingLineCreateInput = {
   justify: string
 }
 
+export type BillingLineUpdateInput = {
+  codeText: string
+  fee: number
+  units: number
+  justify: string
+}
+
 export type BillingLineStatusUpdateInput = {
   billed: number
   activity: number
@@ -1930,6 +1937,24 @@ export async function updateBillingLineStatus(
   })
   if (!response.ok) {
     throw new Error(`Billing line status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateBillingLine(
+  billingLineId: string,
+  input: BillingLineUpdateInput,
+  signal?: AbortSignal,
+): Promise<BillingLineMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing line update failed with ${response.status}`)
   }
 
   return response.json()
