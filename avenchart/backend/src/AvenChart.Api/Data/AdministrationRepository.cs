@@ -17,6 +17,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var users = await GetUsersAsync(connection, cancellationToken);
         var facilities = await GetFacilitiesAsync(connection, cancellationToken);
+        var accessControl = await GetAccessControlAsync(connection, cancellationToken);
 
         return new AdministrationDirectoryResponse(
             DatasetId: metadata.DatasetId,
@@ -25,9 +26,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 Users: users.Count,
                 Providers: users.Count(user => string.Equals(user.Role, "provider", StringComparison.OrdinalIgnoreCase)),
                 CalendarUsers: users.Count(user => user.Calendar),
-                Facilities: facilities.Count),
+                Facilities: facilities.Count,
+                AccessGroups: accessControl.Groups.Count,
+                AccessPermissions: accessControl.Permissions.Count,
+                AccessGroupPermissions: accessControl.GroupPermissions.Count),
             Users: users,
-            Facilities: facilities);
+            Facilities: facilities,
+            AccessControl: accessControl);
     }
 
     public async Task<AdministrationUserMutationResponse> CreateUserAsync(
@@ -279,6 +284,81 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         }
 
         return facilities;
+    }
+
+    private static async Task<AdministrationAccessControlSummary> GetAccessControlAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var groups = new List<AdministrationAccessGroupItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    g.id,
+                    g.value,
+                    g.name,
+                    g.parent_id,
+                    count(gp.*) as permission_count
+                from access_groups g
+                left join access_group_permissions gp on gp.group_value = g.value
+                group by g.id, g.value, g.name, g.parent_id
+                order by g.id;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                groups.Add(new AdministrationAccessGroupItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    Value: reader.GetString(reader.GetOrdinal("value")),
+                    Name: reader.GetString(reader.GetOrdinal("name")),
+                    ParentId: ReadNullableInt(reader, "parent_id"),
+                    PermissionCount: (int)reader.GetInt64(reader.GetOrdinal("permission_count"))));
+            }
+        }
+
+        var permissions = new List<AdministrationAccessPermissionItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select section_value, value, name
+                from access_permissions
+                order by section_value, value;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                permissions.Add(new AdministrationAccessPermissionItem(
+                    SectionValue: reader.GetString(reader.GetOrdinal("section_value")),
+                    Value: reader.GetString(reader.GetOrdinal("value")),
+                    Name: reader.GetString(reader.GetOrdinal("name"))));
+            }
+        }
+
+        var groupPermissions = new List<AdministrationAccessGroupPermissionItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select group_value, section_value, permission_value, permission_name, return_value
+                from access_group_permissions
+                order by group_value, section_value, permission_value, return_value;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                groupPermissions.Add(new AdministrationAccessGroupPermissionItem(
+                    GroupValue: reader.GetString(reader.GetOrdinal("group_value")),
+                    SectionValue: reader.GetString(reader.GetOrdinal("section_value")),
+                    PermissionValue: reader.GetString(reader.GetOrdinal("permission_value")),
+                    PermissionName: reader.GetString(reader.GetOrdinal("permission_name")),
+                    ReturnValue: reader.GetString(reader.GetOrdinal("return_value"))));
+            }
+        }
+
+        return new AdministrationAccessControlSummary(groups, permissions, groupPermissions);
     }
 
     private async Task<int> GetNextStaffIdAsync(CancellationToken cancellationToken)

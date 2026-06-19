@@ -526,6 +526,9 @@ export type AdministrationDirectoryCounts = {
   providers: number
   calendarUsers: number
   facilities: number
+  accessGroups: number
+  accessPermissions: number
+  accessGroupPermissions: number
 }
 
 export type AdministrationUserItem = {
@@ -581,12 +584,41 @@ export type AdministrationFacilityMutationInput = {
   active?: boolean | null
 }
 
+export type AdministrationAccessGroupItem = {
+  id: number
+  value: string
+  name: string
+  parentId?: number | null
+  permissionCount: number
+}
+
+export type AdministrationAccessPermissionItem = {
+  sectionValue: string
+  value: string
+  name: string
+}
+
+export type AdministrationAccessGroupPermissionItem = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  permissionName: string
+  returnValue: string
+}
+
+export type AdministrationAccessControlSummary = {
+  groups: AdministrationAccessGroupItem[]
+  permissions: AdministrationAccessPermissionItem[]
+  groupPermissions: AdministrationAccessGroupPermissionItem[]
+}
+
 export type AdministrationDirectoryResponse = {
   datasetId: string
   datasetVersion: string
   counts: AdministrationDirectoryCounts
   users: AdministrationUserItem[]
   facilities: AdministrationFacilityItem[]
+  accessControl: AdministrationAccessControlSummary
 }
 
 export type AdministrationFacilityMutationResponse = {

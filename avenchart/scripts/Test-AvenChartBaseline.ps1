@@ -613,9 +613,25 @@ try {
         mainFacility = $mainFacility
         northFacility = $northFacility
     }
+
+    $adminGroup = $administration.accessControl.groups | Where-Object { $_.value -eq "admin" -and $_.name -eq "Administrators" -and $_.permissionCount -eq 64 } | Select-Object -First 1
+    $physicianGroup = $administration.accessControl.groups | Where-Object { $_.value -eq "doc" -and $_.name -eq "Physicians" -and $_.permissionCount -eq 31 } | Select-Object -First 1
+    $clinicianGroup = $administration.accessControl.groups | Where-Object { $_.value -eq "clin" -and $_.name -eq "Clinicians" -and $_.permissionCount -eq 23 } | Select-Object -First 1
+    $adminAclPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "admin" -and $_.sectionValue -eq "admin" -and $_.permissionValue -eq "acl" -and $_.returnValue -eq "write" } | Select-Object -First 1
+    $frontDeskDemoPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" -and $_.returnValue -eq "write" } | Select-Object -First 1
+    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission
+    Add-Check -Name "anchor administration access control" -Result $(if ($accessControlPassed) { "passed" } else { "failed" }) -Details @{
+        counts = $administration.counts
+        adminGroup = $adminGroup
+        physicianGroup = $physicianGroup
+        clinicianGroup = $clinicianGroup
+        adminAclPermission = $adminAclPermission
+        frontDeskDemoPermission = $frontDeskDemoPermission
+    }
 }
 catch {
     Add-Check -Name "anchor administration directory" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "anchor administration access control" -Result "failed" -Details $_.Exception.Message
 }
 
 $administrationUserMutationId = $null

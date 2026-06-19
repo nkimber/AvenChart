@@ -5,13 +5,17 @@ public sealed record AdministrationDirectoryResponse(
     string DatasetVersion,
     AdministrationDirectoryCounts Counts,
     IReadOnlyList<AdministrationUserItem> Users,
-    IReadOnlyList<AdministrationFacilityItem> Facilities);
+    IReadOnlyList<AdministrationFacilityItem> Facilities,
+    AdministrationAccessControlSummary AccessControl);
 
 public sealed record AdministrationDirectoryCounts(
     int Users,
     int Providers,
     int CalendarUsers,
-    int Facilities);
+    int Facilities,
+    int AccessGroups,
+    int AccessPermissions,
+    int AccessGroupPermissions);
 
 public sealed record AdministrationUserItem(
     int Id,
@@ -39,6 +43,30 @@ public sealed record AdministrationFacilityItem(
     string? State,
     string? PostalCode,
     string? Color);
+
+public sealed record AdministrationAccessControlSummary(
+    IReadOnlyList<AdministrationAccessGroupItem> Groups,
+    IReadOnlyList<AdministrationAccessPermissionItem> Permissions,
+    IReadOnlyList<AdministrationAccessGroupPermissionItem> GroupPermissions);
+
+public sealed record AdministrationAccessGroupItem(
+    int Id,
+    string Value,
+    string Name,
+    int? ParentId,
+    int PermissionCount);
+
+public sealed record AdministrationAccessPermissionItem(
+    string SectionValue,
+    string Value,
+    string Name);
+
+public sealed record AdministrationAccessGroupPermissionItem(
+    string GroupValue,
+    string SectionValue,
+    string PermissionValue,
+    string PermissionName,
+    string ReturnValue);
 
 public sealed record AdministrationFacilityMutationRequest(
     string Code,

@@ -20,6 +20,186 @@ const outputPath = path.join(outputDir, 'seed-gold.sql')
 const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'))
 fs.mkdirSync(outputDir, { recursive: true })
 
+const accessGroups = [
+  [10, 'users', 'Legacy EHR Users', null],
+  [11, 'admin', 'Administrators', 10],
+  [12, 'clin', 'Clinicians', 10],
+  [13, 'doc', 'Physicians', 10],
+  [14, 'front', 'Front Office', 10],
+  [15, 'back', 'Accounting', 10],
+  [16, 'breakglass', 'Emergency Login', 10],
+]
+
+const accessPermissions = [
+  ['acct', 'bill', 'Billing (write optional)'],
+  ['acct', 'disc', 'Price Discounting'],
+  ['acct', 'eob', 'EOB Data Entry'],
+  ['acct', 'rep', 'Financial Reporting - my encounters'],
+  ['acct', 'rep_a', 'Financial Reporting - anything'],
+  ['admin', 'acl', 'ACL Administration'],
+  ['admin', 'batchcom', 'Batch Communication Tool'],
+  ['admin', 'calendar', 'Calendar Settings'],
+  ['admin', 'database', 'Database Reporting'],
+  ['admin', 'drugs', 'Inventory Administration'],
+  ['admin', 'forms', 'Forms Administration'],
+  ['admin', 'language', 'Language Interface Tool'],
+  ['admin', 'manage_modules', 'Manage modules'],
+  ['admin', 'menu', 'Menu'],
+  ['admin', 'practice', 'Practice Settings'],
+  ['admin', 'super', 'Superuser'],
+  ['admin', 'superbill', 'Superbill Codes Administration'],
+  ['admin', 'users', 'Users/Groups/Logs Administration'],
+  ['encounters', 'auth', 'Authorize - my encounters'],
+  ['encounters', 'auth_a', 'Authorize - any encounters'],
+  ['encounters', 'coding', 'Coding - my encounters (write,wsome optional)'],
+  ['encounters', 'coding_a', 'Coding - any encounters (write,wsome optional)'],
+  ['encounters', 'date_a', 'Fix encounter dates - any encounters'],
+  ['encounters', 'notes', 'Notes - my encounters (write,addonly optional)'],
+  ['encounters', 'notes_a', 'Notes - any encounters (write,addonly optional)'],
+  ['encounters', 'relaxed', 'Less-protected information (write,addonly optional)'],
+  ['groups', 'gadd', 'View/Add/Update groups'],
+  ['groups', 'gcalendar', 'View/Create/Update groups appointment in calendar'],
+  ['groups', 'gdlog', 'Group detailed log of appointment in patient record'],
+  ['groups', 'glog', 'Group encounter log'],
+  ['groups', 'gm', 'Send message from the permanent group therapist to the personal therapist'],
+  ['inventory', 'adjustments', 'Adjustments'],
+  ['inventory', 'consumption', 'Consumption'],
+  ['inventory', 'destruction', 'Destruction'],
+  ['inventory', 'lots', 'Lots'],
+  ['inventory', 'purchases', 'Purchases'],
+  ['inventory', 'reporting', 'Reporting'],
+  ['inventory', 'sales', 'Sales'],
+  ['inventory', 'transfers', 'Transfers'],
+  ['lists', 'country', 'Country List (write,addonly optional)'],
+  ['lists', 'default', 'Default List (write,addonly optional)'],
+  ['lists', 'ethrace', 'Ethnicity-Race List (write,addonly optional)'],
+  ['lists', 'language', 'Language List (write,addonly optional)'],
+  ['lists', 'state', 'State List (write,addonly optional)'],
+  ['menus', 'modle', 'Modules'],
+  ['nationnotes', 'nn_configure', 'Nation Notes Configure'],
+  ['patientportal', 'portal', 'Patient Portal'],
+  ['patients', 'alert', 'Clinical Reminders/Alerts (write,addonly optional)'],
+  ['patients', 'amendment', 'Amendments (write,addonly optional)'],
+  ['patients', 'appt', 'Appointments (write,wsome optional)'],
+  ['patients', 'demo', 'Demographics (write,addonly optional)'],
+  ['patients', 'disclosure', 'Disclosures (write,addonly optional)'],
+  ['patients', 'docs', 'Documents (write,addonly optional)'],
+  ['patients', 'docs_rm', 'Documents Delete'],
+  ['patients', 'lab', 'Lab Results (write,addonly optional)'],
+  ['patients', 'med', 'Medical/History (write,addonly optional)'],
+  ['patients', 'notes', 'Patient Notes (write,addonly optional)'],
+  ['patients', 'pat_rep', 'Patient Report'],
+  ['patients', 'reminder', 'Patient Reminders (write,addonly optional)'],
+  ['patients', 'rx', 'Prescriptions (write,addonly optional)'],
+  ['patients', 'sign', 'Sign Lab Results (write,addonly optional)'],
+  ['patients', 'trans', 'Transactions (write optional)'],
+  ['placeholder', 'filler', 'Placeholder (Maintains empty ACLs)'],
+  ['sensitivities', 'high', 'High'],
+  ['sensitivities', 'normal', 'Normal'],
+]
+
+const permissionName = new Map(accessPermissions.map(([section, value, name]) => [`${section}:${value}`, name]))
+const allNonPlaceholderPermissions = accessPermissions
+  .filter(([section]) => section !== 'placeholder')
+  .map(([section, value]) => [section, value, 'write'])
+const groupPermissionRules = {
+  admin: allNonPlaceholderPermissions,
+  breakglass: allNonPlaceholderPermissions,
+  clin: [
+    ['admin', 'drugs', 'write'],
+    ['encounters', 'auth', 'write'],
+    ['encounters', 'coding', 'write'],
+    ['encounters', 'notes', 'addonly'],
+    ['encounters', 'notes', 'write'],
+    ['encounters', 'relaxed', 'addonly'],
+    ['groups', 'gcalendar', 'write'],
+    ['groups', 'glog', 'write'],
+    ['patients', 'alert', 'addonly'],
+    ['patients', 'amendment', 'addonly'],
+    ['patients', 'appt', 'write'],
+    ['patients', 'demo', 'addonly'],
+    ['patients', 'disclosure', 'addonly'],
+    ['patients', 'docs', 'addonly'],
+    ['patients', 'lab', 'addonly'],
+    ['patients', 'med', 'write'],
+    ['patients', 'notes', 'addonly'],
+    ['patients', 'pat_rep', 'view'],
+    ['patients', 'reminder', 'addonly'],
+    ['patients', 'rx', 'addonly'],
+    ['patients', 'trans', 'addonly'],
+    ['placeholder', 'filler', 'wsome'],
+    ['sensitivities', 'normal', 'addonly'],
+  ],
+  doc: [
+    ['acct', 'disc', 'write'],
+    ['acct', 'rep', 'write'],
+    ['admin', 'drugs', 'write'],
+    ['encounters', 'auth', 'write'],
+    ['encounters', 'auth_a', 'write'],
+    ['encounters', 'coding', 'write'],
+    ['encounters', 'coding_a', 'write'],
+    ['encounters', 'date_a', 'write'],
+    ['encounters', 'notes', 'write'],
+    ['encounters', 'notes_a', 'write'],
+    ['encounters', 'relaxed', 'write'],
+    ['groups', 'gcalendar', 'write'],
+    ['groups', 'glog', 'write'],
+    ['patients', 'alert', 'write'],
+    ['patients', 'amendment', 'write'],
+    ['patients', 'appt', 'write'],
+    ['patients', 'demo', 'write'],
+    ['patients', 'disclosure', 'write'],
+    ['patients', 'docs', 'write'],
+    ['patients', 'lab', 'write'],
+    ['patients', 'med', 'write'],
+    ['patients', 'notes', 'write'],
+    ['patients', 'pat_rep', 'view'],
+    ['patients', 'reminder', 'write'],
+    ['patients', 'rx', 'write'],
+    ['patients', 'sign', 'write'],
+    ['patients', 'trans', 'write'],
+    ['placeholder', 'filler', 'addonly'],
+    ['placeholder', 'filler', 'wsome'],
+    ['sensitivities', 'high', 'write'],
+    ['sensitivities', 'normal', 'write'],
+  ],
+  front: [
+    ['groups', 'gcalendar', 'write'],
+    ['patients', 'alert', 'view'],
+    ['patients', 'appt', 'write'],
+    ['patients', 'demo', 'write'],
+    ['placeholder', 'filler', 'addonly'],
+    ['placeholder', 'filler', 'wsome'],
+  ],
+  back: [
+    ['acct', 'bill', 'write'],
+    ['acct', 'disc', 'write'],
+    ['acct', 'eob', 'write'],
+    ['acct', 'rep', 'write'],
+    ['acct', 'rep_a', 'write'],
+    ['admin', 'practice', 'write'],
+    ['admin', 'superbill', 'write'],
+    ['encounters', 'auth_a', 'write'],
+    ['encounters', 'coding_a', 'write'],
+    ['encounters', 'date_a', 'write'],
+    ['patients', 'alert', 'view'],
+    ['patients', 'appt', 'write'],
+    ['patients', 'demo', 'write'],
+    ['placeholder', 'filler', 'addonly'],
+    ['placeholder', 'filler', 'wsome'],
+  ],
+}
+
+const accessGroupPermissions = Object.entries(groupPermissionRules).flatMap(([groupValue, rules]) =>
+  rules.map(([section, value, returnValue]) => [
+    groupValue,
+    section,
+    value,
+    permissionName.get(`${section}:${value}`) ?? value,
+    returnValue,
+  ]),
+)
+
 const lines = []
 lines.push(`-- Generated from ${dataset.datasetId} ${dataset.version}`)
 lines.push('set client_min_messages to warning;')
@@ -42,6 +222,9 @@ drop table if exists insurance_records;
 drop table if exists patients;
 drop table if exists staff;
 drop table if exists facilities;
+drop table if exists access_group_permissions;
+drop table if exists access_permissions;
+drop table if exists access_groups;
 drop table if exists dataset_metadata;
 
 create table dataset_metadata (
@@ -78,6 +261,30 @@ create table staff (
   email text,
   npi text,
   active boolean not null default true
+);
+
+create table access_groups (
+  id integer primary key,
+  value text not null unique,
+  name text not null,
+  parent_id integer references access_groups(id)
+);
+
+create table access_permissions (
+  section_value text not null,
+  value text not null,
+  name text not null,
+  primary key (section_value, value)
+);
+
+create table access_group_permissions (
+  group_value text not null references access_groups(value),
+  section_value text not null,
+  permission_value text not null,
+  permission_name text not null,
+  return_value text not null,
+  primary key (group_value, section_value, permission_value, return_value),
+  foreign key (section_value, permission_value) references access_permissions(section_value, value)
 );
 
 create table patients (
@@ -353,6 +560,16 @@ copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calenda
     staff.role === 'provider' ? `18888${staff.id}` : null,
     true,
   ]))
+
+copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)
+
+copyRows('access_permissions', ['section_value', 'value', 'name'], accessPermissions)
+
+copyRows(
+  'access_group_permissions',
+  ['group_value', 'section_value', 'permission_value', 'permission_name', 'return_value'],
+  accessGroupPermissions,
+)
 
 copyRows('patients', [
   'canonical_id',
@@ -755,6 +972,8 @@ create index idx_messages_pid on messages (pid);
 create index idx_problems_pid on problems (pid);
 create index idx_allergies_pid on allergies (pid);
 create index idx_medications_pid on medications (pid);
+create index idx_access_group_permissions_group on access_group_permissions (group_value);
+create index idx_access_group_permissions_permission on access_group_permissions (section_value, permission_value);
 commit;
 `)
 
@@ -782,6 +1001,9 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     problems: dataset.problems.length,
     allergies: dataset.allergies.length,
     medications: dataset.medicationLists.length,
+    accessGroups: accessGroups.length,
+    accessPermissions: accessPermissions.length,
+    accessGroupPermissions: accessGroupPermissions.length,
   },
 }, null, 2))
 

@@ -72,6 +72,8 @@ import {
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
+  type AdministrationAccessGroupItem,
+  type AdministrationAccessGroupPermissionItem,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
   type AppointmentDetail,
@@ -3670,6 +3672,10 @@ function AdministrationWorkspace({
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
   const visibleUsers = directory?.users.filter((user) => user.active) ?? []
   const visibleFacilities = directory?.facilities.filter((facility) => facility.active) ?? []
+  const leafAccessGroups = directory?.accessControl.groups.filter((group) => group.parentId !== null) ?? []
+  const accessPermissionAnchors = directory?.accessControl.groupPermissions.filter((permission) =>
+    ['admin', 'doc', 'clin', 'front', 'back', 'breakglass'].includes(permission.groupValue),
+  ) ?? []
   const [userDraft, setUserDraft] = useState<AdministrationUserMutationInput>({
     username: 'slice19-user',
     firstName: 'Morgan',
@@ -3780,9 +3786,15 @@ function AdministrationWorkspace({
             <h3>Access Control Status</h3>
           </div>
           <Field label="Authentication" value="Deferred" />
-          <Field label="Authorization" value="Deferred" />
+          <Field label="Authorization" value="Default ACL model mirrored" />
           <Field label="Audit logging" value="Planned" />
-          <Field label="Directory mode" value="User/facility mutation" />
+          <Field label="Directory mode" value="User/facility mutation and ACL read model" />
+          {directory && (
+            <>
+              <Field label="Access groups" value={String(directory.counts.accessGroups)} />
+              <Field label="Permission entries" value={String(directory.counts.accessGroupPermissions)} />
+            </>
+          )}
         </div>
 
         <form className="appointment-mutation-panel" onSubmit={handleUserCreate}>
@@ -3951,6 +3963,13 @@ function AdministrationWorkspace({
                 <MetricRow label="Calendar" value={directory.counts.calendarUsers} />
               </InfoPanel>
 
+              <InfoPanel title="Access Control Matrix" icon={ShieldCheck}>
+                <MetricRow label="Groups" value={directory.counts.accessGroups} />
+                <MetricRow label="Leaf groups" value={leafAccessGroups.length} />
+                <MetricRow label="Permissions" value={directory.counts.accessPermissions} />
+                <MetricRow label="Assignments" value={directory.counts.accessGroupPermissions} />
+              </InfoPanel>
+
               <section className="info-panel admin-users-panel">
                 <div className="panel-heading">
                   <ShieldCheck size={17} />
@@ -3963,6 +3982,22 @@ function AdministrationWorkspace({
                       user={user}
                       onDeactivate={handleUserDeactivate}
                       onDelete={handleUserDelete}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className="info-panel admin-access-panel">
+                <div className="panel-heading">
+                  <ShieldCheck size={17} />
+                  <h3>Access Groups</h3>
+                </div>
+                <div className="admin-directory-list">
+                  {leafAccessGroups.map((group) => (
+                    <AdministrationAccessGroupCard
+                      key={group.value}
+                      group={group}
+                      permissions={accessPermissionAnchors.filter((permission) => permission.groupValue === group.value)}
                     />
                   ))}
                 </div>
@@ -4042,6 +4077,59 @@ function ConditionReportCard({ condition }: { condition: ClinicalConditionReport
         <span>{condition.diagnosis}</span>
       </div>
       <div className="portal-pill">{condition.patients} patients</div>
+    </article>
+  )
+}
+
+const preferredAccessPermissionKeys = new Set([
+  'admin:acl',
+  'admin:super',
+  'patients:demo',
+  'patients:rx',
+  'patients:pat_rep',
+  'acct:eob',
+])
+
+function getAccessPermissionRank(permission: AdministrationAccessGroupPermissionItem) {
+  return preferredAccessPermissionKeys.has(`${permission.sectionValue}:${permission.permissionValue}`) ? 0 : 1
+}
+
+function AdministrationAccessGroupCard({
+  group,
+  permissions,
+}: {
+  group: AdministrationAccessGroupItem
+  permissions: AdministrationAccessGroupPermissionItem[]
+}) {
+  const visiblePermissions = [...permissions]
+    .sort(
+      (left, right) =>
+        getAccessPermissionRank(left) - getAccessPermissionRank(right) ||
+        left.sectionValue.localeCompare(right.sectionValue) ||
+        left.permissionValue.localeCompare(right.permissionValue) ||
+        left.returnValue.localeCompare(right.returnValue),
+    )
+    .slice(0, 4)
+  const remainingCount = Math.max(0, permissions.length - visiblePermissions.length)
+
+  return (
+    <article className="admin-user-card">
+      <div className="message-item-header">
+        <strong>{group.name}</strong>
+        <span className="status-tag">{group.value}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{group.permissionCount} permissions</span>
+        <span>{group.parentId ? `Parent ${group.parentId}` : 'Root group'}</span>
+      </div>
+      <div className="access-permission-list">
+        {visiblePermissions.map((permission) => (
+          <span key={`${permission.sectionValue}-${permission.permissionValue}-${permission.returnValue}`}>
+            {permission.permissionName} ({permission.sectionValue}:{permission.permissionValue} {permission.returnValue})
+          </span>
+        ))}
+        {remainingCount > 0 && <span>{remainingCount} more permissions</span>}
+      </div>
     </article>
   )
 }
