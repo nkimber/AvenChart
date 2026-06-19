@@ -19,24 +19,29 @@ import {
 } from 'lucide-react'
 import {
   getAppointmentDetail,
+  getEncounterDetail,
   getPatientChart,
   searchAppointments,
+  searchEncounters,
   searchPatients,
   type AppointmentDetail,
   type AppointmentListItem,
   type AppointmentSearchResponse,
+  type EncounterDetail,
+  type EncounterListItem,
+  type EncounterSearchResponse,
   type PatientChartSummary,
   type PatientListItem,
   type PatientSearchResponse,
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar'
+type ModuleId = 'patients' | 'calendar' | 'encounters'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
-  { id: 'encounters', label: 'Encounters', icon: Stethoscope },
+  { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
   { id: 'lists', label: 'Lists', icon: ClipboardList },
   { id: 'fees', label: 'Fees', icon: WalletCards },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical },
@@ -64,6 +69,15 @@ function App() {
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentDetailStatus, setAppointmentDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentError, setAppointmentError] = useState<string | null>(null)
+
+  const [encounterPatientId, setEncounterPatientId] = useState('MOD-PAT-0001')
+  const [encounterFromDate, setEncounterFromDate] = useState('2026-01-01')
+  const [encounterResult, setEncounterResult] = useState<EncounterSearchResponse | null>(null)
+  const [selectedEncounter, setSelectedEncounter] = useState<number | null>(null)
+  const [encounterDetail, setEncounterDetail] = useState<EncounterDetail | null>(null)
+  const [encounterStatus, setEncounterStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [encounterDetailStatus, setEncounterDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [encounterError, setEncounterError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -189,6 +203,70 @@ function App() {
     return () => controller.abort()
   }, [activeModule, selectedAppointmentId])
 
+  useEffect(() => {
+    if (activeModule !== 'encounters') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setEncounterStatus('loading')
+      setEncounterError(null)
+
+      try {
+        const result = await searchEncounters(encounterPatientId, encounterFromDate, controller.signal)
+        setEncounterResult(result)
+        setEncounterStatus('ready')
+
+        if (result.encounters.length > 0) {
+          setSelectedEncounter((current) => {
+            const currentStillVisible = result.encounters.some((encounter) => encounter.encounter === current)
+            return currentStillVisible ? current : result.encounters[0].encounter
+          })
+        } else {
+          setSelectedEncounter(null)
+          setEncounterDetail(null)
+        }
+      } catch (searchError) {
+        if (!controller.signal.aborted) {
+          setEncounterStatus('error')
+          setEncounterError(searchError instanceof Error ? searchError.message : 'Encounter search failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, encounterPatientId, encounterFromDate])
+
+  useEffect(() => {
+    if (activeModule !== 'encounters' || selectedEncounter === null) {
+      setEncounterDetailStatus('idle')
+      setEncounterDetail(null)
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadEncounterDetail() {
+      setEncounterDetailStatus('loading')
+      try {
+        const detail = await getEncounterDetail(selectedEncounter!, controller.signal)
+        setEncounterDetail(detail)
+        setEncounterDetailStatus('ready')
+      } catch (detailError) {
+        if (!controller.signal.aborted) {
+          setEncounterDetailStatus('error')
+          setEncounterError(detailError instanceof Error ? detailError.message : 'Encounter detail failed')
+        }
+      }
+    }
+
+    loadEncounterDetail()
+    return () => controller.abort()
+  }, [activeModule, selectedEncounter])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -198,6 +276,8 @@ function App() {
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
+      : activeModule === 'encounters'
+        ? encounterResult?.datasetVersion ?? searchResult?.datasetVersion
       : searchResult?.datasetVersion
 
   return (
@@ -236,8 +316,8 @@ function App() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">{activeModule === 'calendar' ? 'Scheduling' : 'Patient Finder'}</p>
-            <h1>{activeModule === 'calendar' ? 'Calendar' : 'Patient/Client'}</h1>
+            <p className="eyebrow">{moduleEyebrow(activeModule)}</p>
+            <h1>{moduleTitle(activeModule)}</h1>
           </div>
           <div className="dataset-chip">
             <Activity size={16} />
@@ -245,7 +325,7 @@ function App() {
           </div>
         </header>
 
-        {activeModule === 'patients' ? (
+        {activeModule === 'patients' && (
           <PatientWorkspace
             query={query}
             searchResult={searchResult}
@@ -258,7 +338,8 @@ function App() {
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
           />
-        ) : (
+        )}
+        {activeModule === 'calendar' && (
           <CalendarWorkspace
             patientId={appointmentPatientId}
             fromDate={appointmentFromDate}
@@ -273,9 +354,44 @@ function App() {
             onSelectAppointment={setSelectedAppointmentId}
           />
         )}
+        {activeModule === 'encounters' && (
+          <EncounterWorkspace
+            patientId={encounterPatientId}
+            fromDate={encounterFromDate}
+            searchResult={encounterResult}
+            selectedEncounter={selectedEncounter}
+            encounterDetail={encounterDetail}
+            searchStatus={encounterStatus}
+            detailStatus={encounterDetailStatus}
+            error={encounterError}
+            onPatientIdChange={setEncounterPatientId}
+            onFromDateChange={setEncounterFromDate}
+            onSelectEncounter={setSelectedEncounter}
+          />
+        )}
       </main>
     </div>
   )
+}
+
+function moduleEyebrow(moduleId: ModuleId) {
+  if (moduleId === 'calendar') {
+    return 'Scheduling'
+  }
+  if (moduleId === 'encounters') {
+    return 'Clinical Visits'
+  }
+  return 'Patient Finder'
+}
+
+function moduleTitle(moduleId: ModuleId) {
+  if (moduleId === 'calendar') {
+    return 'Calendar'
+  }
+  if (moduleId === 'encounters') {
+    return 'Encounters'
+  }
+  return 'Patient/Client'
 }
 
 function PatientWorkspace({
@@ -529,6 +645,139 @@ function CalendarWorkspace({
   )
 }
 
+function EncounterWorkspace({
+  patientId,
+  fromDate,
+  searchResult,
+  selectedEncounter,
+  encounterDetail,
+  searchStatus,
+  detailStatus,
+  error,
+  onPatientIdChange,
+  onFromDateChange,
+  onSelectEncounter,
+}: {
+  patientId: string
+  fromDate: string
+  searchResult: EncounterSearchResponse | null
+  selectedEncounter: number | null
+  encounterDetail: EncounterDetail | null
+  searchStatus: 'idle' | 'loading' | 'ready' | 'error'
+  detailStatus: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+  onFromDateChange: (value: string) => void
+  onSelectEncounter: (encounter: number) => void
+}) {
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Encounter search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Encounter patient ID"
+              placeholder="MOD-PAT-0001"
+            />
+          </label>
+          <label className="filter-field">
+            <span>From</span>
+            <input
+              value={fromDate}
+              onChange={(event) => onFromDateChange(event.target.value)}
+              aria-label="Encounter from date"
+              type="date"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} encounters`}</span>
+          <span>Clinical history</span>
+        </div>
+
+        {searchStatus === 'error' && <div className="status-banner error">{error}</div>}
+
+        <div className="appointment-list">
+          {searchResult?.encounters.map((encounter) => (
+            <EncounterResult
+              key={encounter.encounter}
+              encounter={encounter}
+              selected={encounter.encounter === selectedEncounter}
+              onSelect={() => onSelectEncounter(encounter.encounter)}
+            />
+          ))}
+
+          {searchStatus === 'ready' && searchResult?.encounters.length === 0 && (
+            <div className="empty-state">No matching encounters</div>
+          )}
+        </div>
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Encounter detail">
+        {encounterDetail ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Encounter Detail</p>
+                <h2>{encounterDetail.reason ?? 'Clinical encounter'}</h2>
+                <p className="patient-line">
+                  {encounterDetail.patientDisplayName} / {encounterDetail.pubpid} / PID {encounterDetail.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">{encounterDetail.diagnosisCode ?? 'No code'}</div>
+            </div>
+
+            <div className="encounter-detail-grid">
+              <InfoPanel title="Visit" icon={Stethoscope}>
+                <Field label="Date" value={encounterDetail.date} />
+                <Field label="Encounter" value={encounterDetail.encounter} />
+                <Field label="Provider" value={encounterDetail.providerName} />
+                <Field label="Facility" value={encounterDetail.facilityName} />
+              </InfoPanel>
+
+              <InfoPanel title="Assessment" icon={ClipboardList}>
+                <Field label="Diagnosis" value={encounterDetail.diagnosisText} />
+                <Field label="Billing lines" value={encounterDetail.billingLineCount} />
+                <Field label="SOAP note" value={encounterDetail.soapNote ? 'Recorded' : 'Not recorded'} />
+                <Field label="Vitals" value={encounterDetail.vitals ? 'Recorded' : 'Not recorded'} />
+              </InfoPanel>
+
+              <InfoPanel title="Vitals" icon={HeartPulse}>
+                <Field label="Blood Pressure" value={encounterDetail.vitals?.bloodPressure} />
+                <Field label="Pulse" value={encounterDetail.vitals?.pulse} />
+                <Field label="Respiration" value={encounterDetail.vitals?.respiration} />
+                <Field label="Oxygen" value={formatPercent(encounterDetail.vitals?.oxygenSaturation)} />
+                <Field label="BMI" value={encounterDetail.vitals?.bmi} />
+              </InfoPanel>
+            </div>
+
+            <section className="soap-panel" aria-label="SOAP note">
+              <div className="panel-heading">
+                <FileText size={17} />
+                <h3>SOAP Note</h3>
+              </div>
+              <div className="soap-grid">
+                <NoteBlock label="Subjective:" value={encounterDetail.soapNote?.subjective} />
+                <NoteBlock label="Objective:" value={encounterDetail.soapNote?.objective} />
+                <NoteBlock label="Assessment:" value={encounterDetail.soapNote?.assessment} />
+                <NoteBlock label="Plan:" value={encounterDetail.soapNote?.plan} />
+              </div>
+            </section>
+          </>
+        ) : detailStatus === 'loading' ? (
+          <div className="empty-chart">Loading encounter detail</div>
+        ) : (
+          <div className="empty-chart">Select an encounter to open the clinical detail</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function PatientResult({
   patient,
   selected,
@@ -586,6 +835,35 @@ function AppointmentResult({
   )
 }
 
+function EncounterResult({
+  encounter,
+  selected,
+  onSelect,
+}: {
+  encounter: EncounterListItem
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button type="button" className={selected ? 'appointment-result selected' : 'appointment-result'} onClick={onSelect}>
+      <div className="appointment-result-main">
+        <span className="patient-name">{encounter.reason ?? 'Clinical encounter'}</span>
+        <span className="status-tag">{encounter.diagnosisCode ?? 'Dx'}</span>
+      </div>
+      <div className="patient-result-sub">
+        <span>{encounter.date}</span>
+        <span>Encounter {encounter.encounter}</span>
+      </div>
+      <div className="patient-result-sub">
+        <span>{encounter.patientDisplayName}</span>
+        <span>
+          {encounter.hasSoapNote ? 'SOAP' : 'No SOAP'} / {encounter.hasVitals ? 'Vitals' : 'No vitals'}
+        </span>
+      </div>
+    </button>
+  )
+}
+
 function InfoPanel({
   title,
   icon: Icon,
@@ -606,6 +884,15 @@ function InfoPanel({
   )
 }
 
+function NoteBlock({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="note-block">
+      <strong>{label}</strong>
+      <p>{value || 'Not recorded'}</p>
+    </div>
+  )
+}
+
 function Field({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div className="field-row">
@@ -613,6 +900,10 @@ function Field({ label, value }: { label: string; value?: string | number | null
       <strong>{value || 'Not recorded'}</strong>
     </div>
   )
+}
+
+function formatPercent(value?: number | null) {
+  return value === null || value === undefined ? null : `${value}%`
 }
 
 function MetricRow({ label, value }: { label: string; value: number }) {

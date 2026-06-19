@@ -12,6 +12,7 @@ var connectionString = builder.Configuration.GetConnectionString("AvenChart")
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
+builder.Services.AddScoped<EncounterRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -88,5 +89,29 @@ appointments.MapGet("/{appointmentId}", async (
         return appointment is null ? Results.NotFound() : Results.Ok(appointment);
     })
     .WithName("GetAppointmentDetail");
+
+var encounters = app.MapGroup("/api/encounters").WithTags("Encounters");
+
+encounters.MapGet("/", async (
+        EncounterRepository repository,
+        string? patientId,
+        string? from,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.SearchAsync(patientId, from, limit ?? 25, cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("SearchEncounters");
+
+encounters.MapGet("/{encounter:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await repository.GetByEncounterAsync(encounter, cancellationToken);
+        return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
+    })
+    .WithName("GetEncounterDetail");
 
 app.Run();

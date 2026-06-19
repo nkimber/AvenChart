@@ -351,7 +351,8 @@
 
 .chart-grid,
 .timeline-row,
-.appointment-detail-grid {
+.appointment-detail-grid,
+.encounter-detail-grid {
   display: grid;
   gap: 12px;
   margin-top: 12px;
@@ -366,6 +367,10 @@
 }
 
 .appointment-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.encounter-detail-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -436,6 +441,42 @@
   color: #1d2a35;
 }
 
+.soap-panel {
+  border: 1px solid #d8e2e7;
+  border-radius: 8px;
+  background: #ffffff;
+  margin-top: 12px;
+}
+
+.soap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.note-block {
+  min-width: 0;
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 11px;
+}
+
+.note-block strong {
+  display: block;
+  color: #1d566b;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.note-block p {
+  margin: 0;
+  color: #344657;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .status-banner,
 .empty-state,
 .empty-chart {
@@ -461,7 +502,8 @@
 @media (max-width: 1180px) {
   .chart-grid,
   .timeline-row,
-  .appointment-detail-grid {
+  .appointment-detail-grid,
+  .encounter-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -502,7 +544,9 @@
   .module-nav,
   .chart-grid,
   .timeline-row,
-  .appointment-detail-grid {
+  .appointment-detail-grid,
+  .encounter-detail-grid,
+  .soap-grid {
     grid-template-columns: 1fr;
   }
 }

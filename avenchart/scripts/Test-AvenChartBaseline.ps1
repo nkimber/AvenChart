@@ -94,6 +94,37 @@ catch {
     Add-Check -Name "anchor appointment detail" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
+    $anchorEncounter = $encounters.encounters | Select-Object -First 1
+    $encounterPassed = $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote
+    Add-Check -Name "anchor encounter search" -Result $(if ($encounterPassed) { "passed" } else { "failed" }) -Details @{
+        totalMatches = $encounters.totalMatches
+        firstEncounter = $anchorEncounter
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter search" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    if ($null -eq $anchorEncounter) {
+        throw "Anchor encounter search did not return an encounter."
+    }
+
+    $encounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($anchorEncounter.encounter)" -Method Get -TimeoutSec 20
+    $encounterDetailPassed = $encounterDetail.patientId -eq "MOD-PAT-0001" -and $null -ne $encounterDetail.vitals -and $null -ne $encounterDetail.soapNote -and $null -ne $encounterDetail.soapNote.assessment
+    Add-Check -Name "anchor encounter detail" -Result $(if ($encounterDetailPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $encounterDetail.encounter
+        reason = $encounterDetail.reason
+        bloodPressure = $encounterDetail.vitals.bloodPressure
+        assessment = $encounterDetail.soapNote.assessment
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

@@ -97,6 +97,65 @@ export type AppointmentSearchResponse = {
   appointments: AppointmentListItem[]
 }
 
+export type EncounterListItem = {
+  id: number
+  encounter: number
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  date: string
+  reason?: string | null
+  diagnosisCode?: string | null
+  diagnosisText?: string | null
+  categoryId?: number | null
+  providerName?: string | null
+  facilityName?: string | null
+  hasVitals: boolean
+  hasSoapNote: boolean
+  billingLineCount: number
+}
+
+export type EncounterVitals = {
+  systolic?: number | null
+  diastolic?: number | null
+  bloodPressure?: string | null
+  weight?: number | null
+  height?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  bmi?: number | null
+  oxygenSaturation?: number | null
+}
+
+export type EncounterSoapNote = {
+  subjective?: string | null
+  objective?: string | null
+  assessment?: string | null
+  plan?: string | null
+}
+
+export type EncounterDetail = EncounterListItem & {
+  firstName: string
+  lastName: string
+  sex?: string | null
+  dateOfBirth: string
+  dateTime: string
+  vitals?: EncounterVitals | null
+  soapNote?: EncounterSoapNote | null
+}
+
+export type EncounterSearchResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId?: string | null
+  fromDate: string
+  limit: number
+  totalMatches: number
+  encounters: EncounterListItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -152,6 +211,37 @@ export async function getAppointmentDetail(
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, { signal })
   if (!response.ok) {
     throw new Error(`Appointment detail load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function searchEncounters(
+  patientId: string,
+  fromDate: string,
+  signal?: AbortSignal,
+): Promise<EncounterSearchResponse> {
+  const params = new URLSearchParams()
+  if (patientId.trim()) {
+    params.set('patientId', patientId.trim())
+  }
+  if (fromDate.trim()) {
+    params.set('from', fromDate.trim())
+  }
+  params.set('limit', '25')
+
+  const response = await fetch(`${apiBaseUrl}/api/encounters?${params.toString()}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Encounter search failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getEncounterDetail(encounter: number, signal?: AbortSignal): Promise<EncounterDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Encounter detail load failed with ${response.status}`)
   }
 
   return response.json()
