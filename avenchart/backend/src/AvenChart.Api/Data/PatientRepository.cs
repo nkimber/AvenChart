@@ -307,6 +307,90 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
+    public async Task<PatientChartSummary?> CreateInsuranceAsync(
+        string patientId,
+        PatientInsuranceMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryNormalizeInsurance(request, out var normalized))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into insurance_records
+                (id, patient_id, pid, type, provider, plan_name, policy_number, group_number, relationship)
+            values
+                (@id, @patientId, @pid, @type, @provider, @planName, @policyNumber, @groupNumber, @relationship);
+            """;
+        command.Parameters.AddWithValue("id", $"INS-PARITY-{Guid.NewGuid():N}");
+        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        AddInsuranceParameters(command, normalized);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> UpdateInsuranceAsync(
+        string insuranceId,
+        PatientInsuranceMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(insuranceId) || !TryNormalizeInsurance(request, out var normalized))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update insurance_records
+            set
+                type = @type,
+                provider = @provider,
+                plan_name = @planName,
+                policy_number = @policyNumber,
+                group_number = @groupNumber,
+                relationship = @relationship
+            where id = @id
+            returning patient_id;
+            """;
+        command.Parameters.AddWithValue("id", insuranceId);
+        AddInsuranceParameters(command, normalized);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> DeleteInsuranceAsync(string insuranceId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(insuranceId))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from insurance_records
+            where id = @id
+            returning patient_id;
+            """;
+        command.Parameters.AddWithValue("id", insuranceId);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -337,6 +421,30 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         AddSearchParameter(command, normalizedSearch);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
+    }
+
+    private static async Task<PatientIdentity?> GetPatientIdentityAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select canonical_id, legacy_pid
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new PatientIdentity(
+                CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")))
+            : null;
     }
 
     private const string PatientSearchPredicate = """
@@ -386,6 +494,42 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed.ToUpperInvariant();
+    }
+
+    private static bool TryNormalizeInsurance(
+        PatientInsuranceMutationRequest request,
+        out NormalizedInsurance normalized)
+    {
+        var type = request.Type?.Trim().ToLowerInvariant();
+        var provider = request.Provider?.Trim();
+        var planName = request.PlanName?.Trim();
+        var policyNumber = request.PolicyNumber?.Trim();
+        var groupNumber = request.GroupNumber?.Trim();
+        var relationship = request.Relationship?.Trim();
+
+        if (string.IsNullOrWhiteSpace(type)
+            || string.IsNullOrWhiteSpace(provider)
+            || string.IsNullOrWhiteSpace(planName)
+            || string.IsNullOrWhiteSpace(policyNumber)
+            || string.IsNullOrWhiteSpace(groupNumber)
+            || string.IsNullOrWhiteSpace(relationship))
+        {
+            normalized = new NormalizedInsurance("", "", "", "", "", "");
+            return false;
+        }
+
+        normalized = new NormalizedInsurance(type, provider, planName, policyNumber, groupNumber, relationship);
+        return true;
+    }
+
+    private static void AddInsuranceParameters(NpgsqlCommand command, NormalizedInsurance normalized)
+    {
+        command.Parameters.AddWithValue("type", normalized.Type);
+        command.Parameters.AddWithValue("provider", normalized.Provider);
+        command.Parameters.AddWithValue("planName", normalized.PlanName);
+        command.Parameters.AddWithValue("policyNumber", normalized.PolicyNumber);
+        command.Parameters.AddWithValue("groupNumber", normalized.GroupNumber);
+        command.Parameters.AddWithValue("relationship", normalized.Relationship);
     }
 
     private static PatientActivityCounts ReadCounts(DbDataReader reader) => new(
@@ -475,4 +619,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record PatientIdentity(string CanonicalId, int LegacyPid);
+
+    private sealed record NormalizedInsurance(
+        string Type,
+        string Provider,
+        string PlanName,
+        string PolicyNumber,
+        string GroupNumber,
+        string Relationship);
 }

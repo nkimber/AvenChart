@@ -85,6 +85,40 @@ patients.MapPut("/{patientId}/contact", async (
     })
     .WithName("UpdatePatientContact");
 
+patients.MapPost("/{patientId}/insurance", async (
+        PatientRepository repository,
+        string patientId,
+        PatientInsuranceMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.CreateInsuranceAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Insurance coverage could not be created from the supplied patient and coverage details.")
+            : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
+    })
+    .WithName("CreatePatientInsurance");
+
+patients.MapPut("/insurance/{insuranceId}", async (
+        PatientRepository repository,
+        string insuranceId,
+        PatientInsuranceMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateInsuranceAsync(insuranceId, request, cancellationToken);
+        return patient is null ? Results.NotFound() : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientInsurance");
+
+patients.MapDelete("/insurance/{insuranceId}", async (
+        PatientRepository repository,
+        string insuranceId,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.DeleteInsuranceAsync(insuranceId, cancellationToken);
+        return patient is null ? Results.NotFound() : Results.Ok(patient);
+    })
+    .WithName("DeletePatientInsurance");
+
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 
 appointments.MapGet("/", async (

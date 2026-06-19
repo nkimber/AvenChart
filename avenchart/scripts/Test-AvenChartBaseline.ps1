@@ -89,6 +89,74 @@ catch {
     Add-Check -Name "anchor insurance coverage" -Result "failed" -Details $_.Exception.Message
 }
 
+$insuranceMutationId = $null
+try {
+    $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $insuranceCreateBody = @{
+        type = "tertiary"
+        provider = "Acme Health"
+        planName = "Smoke Bridge $suffix"
+        policyNumber = "SMK$suffix"
+        groupNumber = "SGRP$suffix"
+        relationship = "self"
+    }
+    $createdCoverageChart = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005/insurance" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body ($insuranceCreateBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $createdCoverage = @($createdCoverageChart.insurance) | Where-Object { $_.policyNumber -eq $insuranceCreateBody.policyNumber } | Select-Object -First 1
+    if ($null -eq $createdCoverage) {
+        throw "Created coverage row was not returned in the chart summary."
+    }
+
+    $insuranceMutationId = $createdCoverage.id
+    $insuranceUpdateBody = @{
+        type = "tertiary"
+        provider = "Northstar HMO"
+        planName = "Smoke Updated $suffix"
+        policyNumber = "USMK$suffix"
+        groupNumber = "USGRP$suffix"
+        relationship = "self"
+    }
+    $updatedCoverageChart = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" `
+        -Method Put `
+        -ContentType "application/json" `
+        -Body ($insuranceUpdateBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $updatedCoverage = @($updatedCoverageChart.insurance) | Where-Object { $_.id -eq $insuranceMutationId } | Select-Object -First 1
+
+    $deletedCoverageChart = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" `
+        -Method Delete `
+        -TimeoutSec 20
+    $insuranceMutationId = $null
+    $deletedCoverage = @($deletedCoverageChart.insurance) | Where-Object { $_.policyNumber -eq $insuranceUpdateBody.policyNumber } | Select-Object -First 1
+
+    $insuranceMutationPassed = $createdCoverage.provider -eq "Acme Health" `
+        -and $createdCoverage.planName -eq $insuranceCreateBody.planName `
+        -and $updatedCoverage.provider -eq "Northstar HMO" `
+        -and $updatedCoverage.planName -eq $insuranceUpdateBody.planName `
+        -and $null -eq $deletedCoverage
+    Add-Check -Name "patient insurance mutation lifecycle" -Result $(if ($insuranceMutationPassed) { "passed" } else { "failed" }) -Details @{
+        created = $createdCoverage
+        updated = $updatedCoverage
+        deletedPolicyStillVisible = $null -ne $deletedCoverage
+    }
+}
+catch {
+    if ($insuranceMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    Add-Check -Name "patient insurance mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 try {
     $appointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" -Method Get -TimeoutSec 20
     $anchorAppointment = $appointments.appointments | Select-Object -First 1

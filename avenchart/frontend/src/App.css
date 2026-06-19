@@ -451,6 +451,16 @@
   gap: 10px;
 }
 
+.insurance-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border: 1px solid #d8e2e7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdfd;
+}
+
 .insurance-item {
   display: flex;
   flex-direction: column;
@@ -481,6 +491,13 @@
   text-transform: none;
 }
 
+.insurance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
 .contact-form {
   display: flex;
   flex-direction: column;
@@ -497,7 +514,8 @@
   text-transform: uppercase;
 }
 
-.contact-field input {
+.contact-field input,
+.contact-field select {
   min-height: 38px;
   border: 1px solid #c7d4db;
   border-radius: 7px;

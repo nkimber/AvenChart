@@ -94,6 +94,14 @@ public sealed record PatientInsuranceItem(
     string? GroupNumber,
     string? Relationship);
 
+public sealed record PatientInsuranceMutationRequest(
+    string Type,
+    string Provider,
+    string PlanName,
+    string PolicyNumber,
+    string GroupNumber,
+    string Relationship);
+
 public sealed record PatientContactUpdateRequest(
     string? PhoneHome,
     string? PhoneCell,

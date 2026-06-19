@@ -52,6 +52,15 @@ export type PatientInsuranceItem = {
   relationship?: string | null
 }
 
+export type PatientInsuranceMutationInput = {
+  type: string
+  provider: string
+  planName: string
+  policyNumber: string
+  groupNumber: string
+  relationship: string
+}
+
 export type PatientChartSummary = PatientListItem & {
   street?: string | null
   city?: string | null
@@ -941,6 +950,57 @@ export async function updatePatientContact(
   })
   if (!response.ok) {
     throw new Error(`Patient contact update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createPatientInsurance(
+  patientId: string,
+  insurance: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/insurance`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(insurance),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient insurance create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientInsurance(
+  insuranceId: string,
+  insurance: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(insurance),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient insurance update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deletePatientInsurance(
+  insuranceId: string,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient insurance delete failed with ${response.status}`)
   }
 
   return response.json()

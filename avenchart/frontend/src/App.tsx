@@ -50,6 +50,7 @@ import {
   createClinicalPrescription,
   createAdministrationFacility,
   createAdministrationUser,
+  createPatientInsurance,
   createPatientBinaryDocument,
   createPatientDocument,
   createEncounter,
@@ -69,6 +70,7 @@ import {
   deleteClinicalProblem,
   deleteClinicalPrescription,
   deleteEncounter,
+  deletePatientInsurance,
   deletePatientDocument,
   deletePatientMessage,
   deleteProcedureOrder,
@@ -91,6 +93,7 @@ import {
   updateAdministrationUser,
   updateBillingLineStatus,
   updateEncounter,
+  updatePatientInsurance,
   updatePatientMessageStatus,
   updatePatientContact,
   updateProcedureOrderStatus,
@@ -129,6 +132,7 @@ import {
   type MedicationListItem,
   type PatientChartSummary,
   type PatientInsuranceItem,
+  type PatientInsuranceMutationInput,
   type PatientListItem,
   type PatientBillingResponse,
   type PatientDocumentBinaryCreateInput,
@@ -670,6 +674,57 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient contact save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientInsuranceCreate(patientId: string, insurance: PatientInsuranceMutationInput) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const updated = await createPatientInsurance(patientId, insurance)
+      setChart(updated)
+      setChartStatus('ready')
+      return updated
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient insurance create failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientInsuranceUpdate(insuranceId: string, insurance: PatientInsuranceMutationInput) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const updated = await updatePatientInsurance(insuranceId, insurance)
+      setChart(updated)
+      setChartStatus('ready')
+      return updated
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient insurance update failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientInsuranceDelete(insuranceId: string) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const updated = await deletePatientInsurance(insuranceId)
+      setChart(updated)
+      setChartStatus('ready')
+      return updated
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient insurance delete failed'
       setPatientError(message)
       throw saveError
     }
@@ -1687,6 +1742,9 @@ function App() {
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
             onSaveContact={handlePatientContactSave}
+            onCreateInsurance={handlePatientInsuranceCreate}
+            onUpdateInsurance={handlePatientInsuranceUpdate}
+            onDeleteInsurance={handlePatientInsuranceDelete}
           />
         )}
         {activeModule === 'calendar' && (
@@ -1906,6 +1964,9 @@ function PatientWorkspace({
   onQueryChange,
   onSelectPatient,
   onSaveContact,
+  onCreateInsurance,
+  onUpdateInsurance,
+  onDeleteInsurance,
 }: {
   query: string
   searchResult: PatientSearchResponse | null
@@ -1918,19 +1979,32 @@ function PatientWorkspace({
   onQueryChange: (value: string) => void
   onSelectPatient: (canonicalId: string) => void
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
+  onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
+  onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
+  onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
 }) {
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [editingInsuranceId, setEditingInsuranceId] = useState<string | null>(null)
+  const [insuranceDraft, setInsuranceDraft] = useState<PatientInsuranceMutationInput>(() => buildInsuranceDraft())
+  const [insuranceSaveStatus, setInsuranceSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
+    setEditingInsuranceId(null)
+    setInsuranceDraft(buildInsuranceDraft())
+    setInsuranceSaveStatus('idle')
   }, [activePatient, chart])
 
   function updateDraft(field: keyof PatientContactUpdate, value: string) {
     setContactDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
+    setInsuranceDraft((current) => ({ ...current, [field]: value }))
   }
 
   async function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1946,6 +2020,47 @@ function PatientWorkspace({
       setContactSaveStatus('saved')
     } catch {
       setContactSaveStatus('error')
+    }
+  }
+
+  async function handleInsuranceSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setInsuranceSaveStatus('saving')
+    try {
+      if (editingInsuranceId) {
+        await onUpdateInsurance(editingInsuranceId, insuranceDraft)
+      } else {
+        await onCreateInsurance(chart.canonicalId, insuranceDraft)
+      }
+      setEditingInsuranceId(null)
+      setInsuranceDraft(buildInsuranceDraft())
+      setInsuranceSaveStatus('saved')
+    } catch {
+      setInsuranceSaveStatus('error')
+    }
+  }
+
+  function handleInsuranceEdit(item: PatientInsuranceItem) {
+    setEditingInsuranceId(item.id)
+    setInsuranceDraft(buildInsuranceDraft(item))
+    setInsuranceSaveStatus('idle')
+  }
+
+  async function handleInsuranceDelete(item: PatientInsuranceItem) {
+    setInsuranceSaveStatus('saving')
+    try {
+      await onDeleteInsurance(item.id)
+      if (editingInsuranceId === item.id) {
+        setEditingInsuranceId(null)
+        setInsuranceDraft(buildInsuranceDraft())
+      }
+      setInsuranceSaveStatus('saved')
+    } catch {
+      setInsuranceSaveStatus('error')
     }
   }
 
@@ -2103,7 +2218,102 @@ function PatientWorkspace({
               </InfoPanel>
 
               <InfoPanel title="Insurance" icon={WalletCards}>
-                <InsuranceCoverageList items={chart?.insurance ?? []} loading={chartStatus === 'loading'} />
+                <form className="insurance-form" onSubmit={handleInsuranceSubmit} aria-label="Insurance coverage form">
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Type</span>
+                      <select
+                        value={insuranceDraft.type}
+                        onChange={(event) => updateInsuranceDraft('type', event.target.value)}
+                        aria-label="Insurance type"
+                      >
+                        <option value="primary">Primary</option>
+                        <option value="secondary">Secondary</option>
+                        <option value="tertiary">Tertiary</option>
+                      </select>
+                    </label>
+                    <label className="contact-field">
+                      <span>Relationship</span>
+                      <select
+                        value={insuranceDraft.relationship}
+                        onChange={(event) => updateInsuranceDraft('relationship', event.target.value)}
+                        aria-label="Insurance relationship"
+                      >
+                        <option value="self">Self</option>
+                        <option value="spouse">Spouse</option>
+                        <option value="child">Child</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="contact-field">
+                    <span>Provider</span>
+                    <input
+                      value={insuranceDraft.provider}
+                      onChange={(event) => updateInsuranceDraft('provider', event.target.value)}
+                      aria-label="Insurance provider"
+                      required
+                    />
+                  </label>
+                  <label className="contact-field">
+                    <span>Plan</span>
+                    <input
+                      value={insuranceDraft.planName}
+                      onChange={(event) => updateInsuranceDraft('planName', event.target.value)}
+                      aria-label="Insurance plan"
+                      required
+                    />
+                  </label>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Policy</span>
+                      <input
+                        value={insuranceDraft.policyNumber}
+                        onChange={(event) => updateInsuranceDraft('policyNumber', event.target.value)}
+                        aria-label="Insurance policy"
+                        required
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Group</span>
+                      <input
+                        value={insuranceDraft.groupNumber}
+                        onChange={(event) => updateInsuranceDraft('groupNumber', event.target.value)}
+                        aria-label="Insurance group"
+                        required
+                      />
+                    </label>
+                  </div>
+                  <div className="contact-actions">
+                    <button className="icon-text-button primary" type="submit" disabled={!chart || insuranceSaveStatus === 'saving'}>
+                      <Check size={15} />
+                      <span>{editingInsuranceId ? 'Update coverage' : 'Add coverage'}</span>
+                    </button>
+                    {editingInsuranceId && (
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setEditingInsuranceId(null)
+                          setInsuranceDraft(buildInsuranceDraft())
+                          setInsuranceSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel edit</span>
+                      </button>
+                    )}
+                    {insuranceSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                    {insuranceSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                  </div>
+                </form>
+                <InsuranceCoverageList
+                  items={chart?.insurance ?? []}
+                  loading={chartStatus === 'loading'}
+                  disabled={!chart || insuranceSaveStatus === 'saving'}
+                  onEdit={handleInsuranceEdit}
+                  onDelete={(item) => void handleInsuranceDelete(item)}
+                />
               </InfoPanel>
 
               <InfoPanel title="Clinical Activity" icon={HeartPulse}>
@@ -6413,7 +6623,19 @@ function InfoPanel({
   )
 }
 
-function InsuranceCoverageList({ items, loading }: { items: PatientInsuranceItem[]; loading: boolean }) {
+function InsuranceCoverageList({
+  items,
+  loading,
+  disabled,
+  onEdit,
+  onDelete,
+}: {
+  items: PatientInsuranceItem[]
+  loading: boolean
+  disabled: boolean
+  onEdit: (item: PatientInsuranceItem) => void
+  onDelete: (item: PatientInsuranceItem) => void
+}) {
   if (loading) {
     return <div className="empty-state inline">Loading coverage</div>
   }
@@ -6434,6 +6656,16 @@ function InsuranceCoverageList({ items, loading }: { items: PatientInsuranceItem
           <Field label="Policy" value={item.policyNumber} />
           <Field label="Group" value={item.groupNumber} />
           <Field label="Relationship" value={formatCoverageRelationship(item.relationship)} />
+          <div className="insurance-actions">
+            <button className="icon-text-button" type="button" disabled={disabled} onClick={() => onEdit(item)}>
+              <Pencil size={14} />
+              Edit
+            </button>
+            <button className="icon-text-button danger" type="button" disabled={disabled} onClick={() => onDelete(item)}>
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
         </article>
       ))}
     </div>
@@ -6574,6 +6806,17 @@ function buildContactDraft(patient: PatientListItem | PatientChartSummary | null
     email: patient?.email ?? '',
     hipaaAllowSms: readContactPermission(patient, 'hipaaAllowSms'),
     hipaaAllowEmail: readContactPermission(patient, 'hipaaAllowEmail'),
+  }
+}
+
+function buildInsuranceDraft(item?: PatientInsuranceItem | null): PatientInsuranceMutationInput {
+  return {
+    type: item?.type ?? 'tertiary',
+    provider: item?.provider ?? 'Parity Coverage Co',
+    planName: item?.planName ?? 'Continuity Bridge',
+    policyNumber: item?.policyNumber ?? 'PAR-TEMP-1005',
+    groupNumber: item?.groupNumber ?? 'PAR-GRP-1005',
+    relationship: item?.relationship ?? 'self',
   }
 }
 
