@@ -1,3 +1,4 @@
+using System.Text;
 using Npgsql;
 using AvenChart.Api.Data;
 using AvenChart.Api.Models;
@@ -676,5 +677,17 @@ reports.MapGet("/operational", async (
         return Results.Ok(report);
     })
     .WithName("GetOperationalReports");
+
+reports.MapGet("/operational/export", async (
+        ReportRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var csv = await repository.GetOperationalReportsCsvAsync(cancellationToken);
+        return Results.File(
+            Encoding.UTF8.GetBytes(csv),
+            contentType: "text/csv",
+            fileDownloadName: "legacy-ehr-operational-report.csv");
+    })
+    .WithName("ExportOperationalReports");
 
 app.Run();

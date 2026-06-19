@@ -8,6 +8,7 @@ import {
   Check,
   ClipboardList,
   Clock,
+  Download,
   FileText,
   FlaskConical,
   HeartPulse,
@@ -33,6 +34,7 @@ import {
   getPatientMessages,
   getProcedureResults,
   getOperationalReports,
+  getOperationalReportsCsvUrl,
   createAppointment,
   createBillingLine,
   createClinicalAllergy,
@@ -3665,7 +3667,11 @@ function ReportsWorkspace({
               <Field label="As of" value={reports.asOfDate} />
               <Field label="Current year" value={reports.currentYear} />
               <Field label="Dataset" value={reports.datasetVersion} />
-              <Field label="Exports" value="Deferred" />
+              <Field label="Exports" value="CSV ready" />
+              <a className="icon-text-button secondary" href={getOperationalReportsCsvUrl()} download>
+                <Download size={15} />
+                CSV Export
+              </a>
             </div>
           </>
         ) : (

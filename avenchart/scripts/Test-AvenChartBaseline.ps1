@@ -913,6 +913,28 @@ catch {
     Add-Check -Name "anchor operational reports" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $reportExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/operational/export" -Method Get -UseBasicParsing -TimeoutSec 20
+    $contentType = ($reportExport.Headers["Content-Type"] -join ",")
+    $exportText = [string]$reportExport.Content
+    $sampleLines = $exportText -split "\r?\n" | Select-Object -First 5
+    $exportPassed = $reportExport.StatusCode -eq 200 `
+        -and $contentType -like "text/csv*" `
+        -and $exportText.Contains("Section,Name,Metric,Value") `
+        -and $exportText.Contains("Counts,Patients,Total,1000") `
+        -and $exportText.Contains("Provider Activity,gold-provider-02,Encounters,176") `
+        -and $exportText.Contains("Facility Activity,NORTH,Billing Total,148904.00") `
+        -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")
+    Add-Check -Name "operational reports csv export" -Result $(if ($exportPassed) { "passed" } else { "failed" }) -Details @{
+        statusCode = $reportExport.StatusCode
+        contentType = $contentType
+        sample = $sampleLines
+    }
+}
+catch {
+    Add-Check -Name "operational reports csv export" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

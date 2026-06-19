@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Globalization;
+using System.Text;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -24,6 +26,55 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             ProviderActivity: providers,
             FacilityActivity: facilities,
             ClinicalConditions: conditions);
+    }
+
+    public async Task<string> GetOperationalReportsCsvAsync(CancellationToken cancellationToken)
+    {
+        var report = await GetOperationalReportsAsync(cancellationToken);
+        var builder = new StringBuilder();
+        AppendCsvRow(builder, "Section", "Name", "Metric", "Value");
+
+        AppendCsvRow(builder, "Counts", "Patients", "Total", report.Counts.Patients);
+        AppendCsvRow(builder, "Counts", "Portal Patients", "Total", report.Counts.PortalPatients);
+        AppendCsvRow(builder, "Counts", "Appointments", "Total", report.Counts.Appointments);
+        AppendCsvRow(builder, "Counts", "Future Appointments", "Total", report.Counts.FutureAppointments);
+        AppendCsvRow(builder, "Counts", "Current Year Appointments", "Total", report.Counts.CurrentYearAppointments);
+        AppendCsvRow(builder, "Counts", "Encounters", "Total", report.Counts.Encounters);
+        AppendCsvRow(builder, "Counts", "Current Year Encounters", "Total", report.Counts.CurrentYearEncounters);
+        AppendCsvRow(builder, "Counts", "Billing Lines", "Total", report.Counts.BillingLines);
+        AppendCsvRow(builder, "Counts", "Billing Total", "USD", report.Counts.BillingTotal);
+        AppendCsvRow(builder, "Counts", "Lab Reports", "Total", report.Counts.LabReports);
+        AppendCsvRow(builder, "Counts", "Messages", "Total", report.Counts.Messages);
+        AppendCsvRow(builder, "Counts", "New Messages", "Total", report.Counts.NewMessages);
+        AppendCsvRow(builder, "Counts", "Done Messages", "Total", report.Counts.DoneMessages);
+        AppendCsvRow(builder, "Counts", "Facilities", "Total", report.Counts.Facilities);
+        AppendCsvRow(builder, "Counts", "Providers", "Total", report.Counts.Providers);
+
+        foreach (var provider in report.ProviderActivity)
+        {
+            AppendCsvRow(builder, "Provider Activity", provider.Username, "Display Name", provider.DisplayName);
+            AppendCsvRow(builder, "Provider Activity", provider.Username, "Encounters", provider.Encounters);
+            AppendCsvRow(builder, "Provider Activity", provider.Username, "Billing Lines", provider.BillingLines);
+            AppendCsvRow(builder, "Provider Activity", provider.Username, "Billing Total", provider.BillingTotal);
+        }
+
+        foreach (var facility in report.FacilityActivity)
+        {
+            AppendCsvRow(builder, "Facility Activity", facility.Code, "Name", facility.Name);
+            AppendCsvRow(builder, "Facility Activity", facility.Code, "Appointments", facility.Appointments);
+            AppendCsvRow(builder, "Facility Activity", facility.Code, "Encounters", facility.Encounters);
+            AppendCsvRow(builder, "Facility Activity", facility.Code, "Billing Lines", facility.BillingLines);
+            AppendCsvRow(builder, "Facility Activity", facility.Code, "Billing Total", facility.BillingTotal);
+        }
+
+        foreach (var condition in report.ClinicalConditions)
+        {
+            var key = string.IsNullOrWhiteSpace(condition.Diagnosis) ? condition.Title : condition.Diagnosis;
+            AppendCsvRow(builder, "Clinical Conditions", key, "Title", condition.Title);
+            AppendCsvRow(builder, "Clinical Conditions", key, "Patients", condition.Patients);
+        }
+
+        return builder.ToString();
     }
 
     private static async Task<ReportHeader> GetReportHeaderAsync(
@@ -235,6 +286,27 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
     private static int ReadCount(DbDataReader reader, string columnName)
     {
         return Convert.ToInt32(reader.GetInt64(reader.GetOrdinal(columnName)));
+    }
+
+    private static void AppendCsvRow(StringBuilder builder, params object[] values)
+    {
+        builder.AppendJoin(',', values.Select(FormatCsvValue));
+        builder.AppendLine();
+    }
+
+    private static string FormatCsvValue(object value)
+    {
+        var text = value switch
+        {
+            decimal decimalValue => decimalValue.ToString("0.00", CultureInfo.InvariantCulture),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            null => string.Empty,
+            _ => value.ToString() ?? string.Empty
+        };
+
+        return text.Contains(',') || text.Contains('"') || text.Contains('\n') || text.Contains('\r')
+            ? $"\"{text.Replace("\"", "\"\"")}\""
+            : text;
     }
 
     private sealed record ReportHeader(string DatasetId, string DatasetVersion, DateOnly BaseDate);

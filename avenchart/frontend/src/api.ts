@@ -1458,3 +1458,7 @@ export async function getOperationalReports(signal?: AbortSignal): Promise<Opera
 
   return response.json()
 }
+
+export function getOperationalReportsCsvUrl() {
+  return `${apiBaseUrl}/api/reports/operational/export`
+}
