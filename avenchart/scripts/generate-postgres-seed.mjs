@@ -221,9 +221,12 @@ create table lab_orders (
   encounter integer,
   provider_id integer references staff(id),
   order_date date not null,
+  order_priority text,
   code text,
   name text,
+  procedure_type text,
   diagnosis text,
+  instructions text,
   order_status text
 );
 
@@ -231,7 +234,9 @@ create table lab_reports (
   id integer primary key,
   order_id integer not null references lab_orders(id),
   report_date timestamp not null,
-  status text
+  status text,
+  review_status text,
+  notes text
 );
 
 create table lab_results (
@@ -609,9 +614,12 @@ copyRows('lab_orders', [
   'encounter',
   'provider_id',
   'order_date',
+  'order_priority',
   'code',
   'name',
+  'procedure_type',
   'diagnosis',
+  'instructions',
   'order_status',
 ], dataset.labOrders.map((order) => [
   order.id,
@@ -620,9 +628,12 @@ copyRows('lab_orders', [
   order.encounter,
   order.providerId,
   order.date,
+  order.orderPriority ?? 'routine',
   order.code,
   order.name,
+  order.procedureType ?? 'laboratory',
   order.diagnosis,
+  order.instructions ?? 'Gold dataset lab order',
   order.orderStatus,
 ]))
 
@@ -631,11 +642,15 @@ copyRows('lab_reports', [
   'order_id',
   'report_date',
   'status',
+  'review_status',
+  'notes',
 ], dataset.labReports.map((report) => [
   report.id,
   report.orderId,
   report.date,
   report.status,
+  report.reviewStatus ?? (report.status === 'complete' ? 'reviewed' : 'pending'),
+  report.notes ?? 'Gold dataset result',
 ]))
 
 copyRows('lab_results', [

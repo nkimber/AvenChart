@@ -380,6 +380,8 @@ export type ProcedureReportItem = {
   id: number
   reportDate: string
   status?: string | null
+  reviewStatus?: string | null
+  notes?: string | null
   results: ProcedureResultItem[]
 }
 
@@ -388,9 +390,12 @@ export type ProcedureOrderItem = {
   encounter?: number | null
   providerName?: string | null
   orderDate: string
+  orderPriority?: string | null
   code?: string | null
   name?: string | null
+  procedureType?: string | null
   diagnosis?: string | null
+  instructions?: string | null
   orderStatus?: string | null
   reports: ProcedureReportItem[]
 }
@@ -405,6 +410,53 @@ export type ProcedureResultsResponse = {
   firstName: string
   lastName: string
   orders: ProcedureOrderItem[]
+}
+
+export type ProcedureOrderCreateInput = {
+  patientId: string
+  providerId?: number | null
+  encounterId: number
+  dateOrdered: string
+  priority: string
+  status: string
+  procedureCode: string
+  procedureName: string
+  procedureType: string
+  diagnosis: string
+  instructions: string
+}
+
+export type ProcedureOrderStatusUpdateInput = {
+  status: string
+}
+
+export type ProcedureReportCreateInput = {
+  orderId: number
+  dateCollected: string
+  dateReport: string
+  specimenNumber: string
+  reportStatus: string
+  reviewStatus: string
+  notes: string
+}
+
+export type ProcedureResultCreateInput = {
+  reportId: number
+  resultCode: string
+  resultText: string
+  dateTime: string
+  facility: string
+  units: string
+  result: string
+  range: string
+  abnormal: string
+  comments: string
+  status: string
+}
+
+export type ProcedureMutationResponse = {
+  id: number
+  detail: ProcedureResultsResponse
 }
 
 export type BillingLineItem = {
@@ -979,6 +1031,85 @@ export async function getProcedureResults(patientId: string, signal?: AbortSigna
   }
 
   return response.json()
+}
+
+export async function createProcedureOrder(
+  input: ProcedureOrderCreateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/orders`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureOrderStatus(
+  orderId: number,
+  input: ProcedureOrderStatusUpdateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/status`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createProcedureReport(
+  input: ProcedureReportCreateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure report create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createProcedureResult(
+  input: ProcedureResultCreateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/results`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure result create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteProcedureOrder(orderId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order delete failed with ${response.status}`)
+  }
 }
 
 export async function getPatientBilling(patientId: string, signal?: AbortSignal): Promise<PatientBillingResponse> {

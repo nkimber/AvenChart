@@ -41,12 +41,16 @@ import {
   createEncounterSoapNote,
   createEncounterVitals,
   createPatientMessage,
+  createProcedureOrder,
+  createProcedureReport,
+  createProcedureResult,
   deleteAppointment,
   deleteBillingLine,
   deleteClinicalAllergy,
   deleteClinicalPrescription,
   deleteEncounter,
   deletePatientMessage,
+  deleteProcedureOrder,
   deactivateClinicalAllergy,
   deactivateClinicalPrescription,
   searchAppointments,
@@ -58,6 +62,7 @@ import {
   updateEncounter,
   updatePatientMessageStatus,
   updatePatientContact,
+  updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationUserItem,
@@ -92,8 +97,11 @@ import {
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
   type ClinicalConditionReportItem,
+  type ProcedureOrderCreateInput,
   type ProcedureOrderItem,
+  type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureResultCreateInput,
   type ProcedureResultItem,
   type ProcedureResultsResponse,
   type PrescriptionListItem,
@@ -171,6 +179,7 @@ function App() {
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
   const [procedureStatus, setProcedureStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [procedureError, setProcedureError] = useState<string | null>(null)
+  const [procedureRefreshKey, setProcedureRefreshKey] = useState(0)
 
   const [billingPatientId, setBillingPatientId] = useState('MOD-PAT-0001')
   const [patientBilling, setPatientBilling] = useState<PatientBillingResponse | null>(null)
@@ -455,7 +464,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, procedurePatientId])
+  }, [activeModule, procedurePatientId, procedureRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'fees') {
@@ -916,6 +925,97 @@ function App() {
     }
   }
 
+  async function handleProcedureOrderCreate(input: ProcedureOrderCreateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await createProcedureOrder(input)
+      setProcedurePatientId(response.detail.patientId)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setProcedureStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure order create failed'
+      setProcedureError(message)
+      throw createError
+    }
+  }
+
+  async function handleProcedureOrderComplete(order: ProcedureOrderItem) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await updateProcedureOrderStatus(order.id, { status: 'complete' })
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (statusError) {
+      setProcedureStatus('error')
+      const message = statusError instanceof Error ? statusError.message : 'Procedure order status update failed'
+      setProcedureError(message)
+      throw statusError
+    }
+  }
+
+  async function handleProcedureReportCreate(input: ProcedureReportCreateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await createProcedureReport(input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setProcedureStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure report create failed'
+      setProcedureError(message)
+      throw createError
+    }
+  }
+
+  async function handleProcedureResultCreate(input: ProcedureResultCreateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await createProcedureResult(input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setProcedureStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure result create failed'
+      setProcedureError(message)
+      throw createError
+    }
+  }
+
+  async function handleProcedureOrderDelete(order: ProcedureOrderItem) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      await deleteProcedureOrder(order.id)
+      const refreshed = await getProcedureResults(procedureResults?.patientId ?? procedurePatientId)
+      setProcedureResults(refreshed)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setProcedureStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Procedure order delete failed'
+      setProcedureError(message)
+      throw deleteError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1145,6 +1245,11 @@ function App() {
             status={procedureStatus}
             error={procedureError}
             onPatientIdChange={setProcedurePatientId}
+            onCreateOrder={handleProcedureOrderCreate}
+            onCompleteOrder={handleProcedureOrderComplete}
+            onCreateReport={handleProcedureReportCreate}
+            onCreateResult={handleProcedureResultCreate}
+            onDeleteOrder={handleProcedureOrderDelete}
           />
         )}
         {activeModule === 'messages' && (
@@ -2856,16 +2961,72 @@ function ProceduresWorkspace({
   status,
   error,
   onPatientIdChange,
+  onCreateOrder,
+  onCompleteOrder,
+  onCreateReport,
+  onCreateResult,
+  onDeleteOrder,
 }: {
   patientId: string
   procedureResults: ProcedureResultsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onPatientIdChange: (value: string) => void
+  onCreateOrder: (input: ProcedureOrderCreateInput) => Promise<unknown>
+  onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
+  onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
+  onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onDeleteOrder: (order: ProcedureOrderItem) => Promise<void>
 }) {
+  const [procedureEncounter, setProcedureEncounter] = useState('')
+  const [procedureDate, setProcedureDate] = useState('2026-06-18')
+  const [procedureCode, setProcedureCode] = useState('80053')
+  const [procedureName, setProcedureName] = useState('Comprehensive metabolic panel')
+  const [procedureDiagnosis, setProcedureDiagnosis] = useState('Z00.00')
+  const [procedureInstructions, setProcedureInstructions] = useState('Collect fasting sample.')
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const reportCount = countProcedureReports(procedureResults?.orders)
   const resultCount = countProcedureResults(procedureResults?.orders)
   const finalCount = countProcedureResultsByStatus(procedureResults?.orders, 'final')
+  const isLoading = status === 'loading'
+
+  useEffect(() => {
+    if (!procedureResults || procedureResults.orders.length === 0) {
+      return
+    }
+
+    const encounters = new Set(
+      procedureResults.orders
+        .map((order) => order.encounter)
+        .filter((encounter): encounter is number => typeof encounter === 'number'),
+    )
+    if (!procedureEncounter || !encounters.has(Number(procedureEncounter))) {
+      const firstEncounter = procedureResults.orders.find((order) => order.encounter)?.encounter
+      if (firstEncounter) {
+        setProcedureEncounter(String(firstEncounter))
+      }
+    }
+  }, [procedureEncounter, procedureResults])
+
+  async function handleOrderSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateOrder({
+      patientId,
+      encounterId: Number(procedureEncounter),
+      dateOrdered: procedureDate,
+      priority: 'routine',
+      status: 'pending',
+      procedureCode,
+      procedureName,
+      procedureType: 'laboratory',
+      diagnosis: procedureDiagnosis,
+      instructions: procedureInstructions,
+    })
+
+    setMutationMessage('Procedure order saved')
+  }
 
   return (
     <section className="scheduler-layout">
@@ -2884,7 +3045,7 @@ function ProceduresWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Procedure results'}</span>
-          <span>Read only</span>
+          <span>Lab lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -2899,6 +3060,82 @@ function ProceduresWorkspace({
         ) : (
           <div className="empty-state">No procedure results loaded</div>
         )}
+
+        <form className="appointment-mutation-panel" onSubmit={handleOrderSubmit}>
+          <div className="panel-heading compact-heading">
+            <FlaskConical size={16} />
+            <h3>New Lab Order</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={procedureEncounter}
+                onChange={(event) => setProcedureEncounter(event.target.value)}
+                aria-label="New procedure encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Date</span>
+                <input
+                  value={procedureDate}
+                  onChange={(event) => setProcedureDate(event.target.value)}
+                  aria-label="New procedure date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Code</span>
+                <input
+                  value={procedureCode}
+                  onChange={(event) => setProcedureCode(event.target.value)}
+                  aria-label="New procedure code"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={procedureName}
+                onChange={(event) => setProcedureName(event.target.value)}
+                aria-label="New procedure name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Diagnosis</span>
+              <input
+                value={procedureDiagnosis}
+                onChange={(event) => setProcedureDiagnosis(event.target.value)}
+                aria-label="New procedure diagnosis"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Instructions</span>
+              <input
+                value={procedureInstructions}
+                onChange={(event) => setProcedureInstructions(event.target.value)}
+                aria-label="New procedure instructions"
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !procedureResults || !procedureEncounter}
+            >
+              <Check size={15} />
+              Save Order
+            </button>
+            {mutationMessage && <span className="save-note">{mutationMessage}</span>}
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Procedure results detail">
@@ -2930,7 +3167,14 @@ function ProceduresWorkspace({
                 </div>
                 <div className="procedure-order-list">
                   {procedureResults.orders.map((order) => (
-                    <ProcedureOrderCard key={order.id} order={order} />
+                    <ProcedureOrderCard
+                      key={order.id}
+                      order={order}
+                      disabled={isLoading}
+                      onComplete={onCompleteOrder}
+                      onCreateReport={onCreateReport}
+                      onDelete={onDeleteOrder}
+                    />
                   ))}
                   {procedureResults.orders.length === 0 && (
                     <div className="timeline-placeholder">No procedure orders recorded</div>
@@ -2946,7 +3190,12 @@ function ProceduresWorkspace({
               </div>
               <div className="procedure-result-body">
                 {procedureResults.orders.map((order) => (
-                  <ProcedureReportGroup key={order.id} order={order} />
+                  <ProcedureReportGroup
+                    key={order.id}
+                    order={order}
+                    disabled={isLoading}
+                    onCreateResult={onCreateResult}
+                  />
                 ))}
                 {procedureResults.orders.length === 0 && (
                   <div className="timeline-placeholder">No report results recorded</div>
@@ -3686,7 +3935,31 @@ function BillingLineCard({
   )
 }
 
-function ProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
+function ProcedureOrderCard({
+  order,
+  disabled,
+  onComplete,
+  onCreateReport,
+  onDelete,
+}: {
+  order: ProcedureOrderItem
+  disabled: boolean
+  onComplete: (order: ProcedureOrderItem) => Promise<unknown>
+  onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
+  onDelete: (order: ProcedureOrderItem) => Promise<void>
+}) {
+  async function handleCreateReport() {
+    await onCreateReport({
+      orderId: order.id,
+      dateCollected: '2026-06-18 12:30:00',
+      dateReport: '2026-06-18 13:00:00',
+      specimenNumber: `MOD-${order.id}`,
+      reportStatus: 'final',
+      reviewStatus: 'reviewed',
+      notes: 'Created from the modernized Procedures workspace.',
+    })
+  }
+
   return (
     <article className="procedure-order-card">
       <div className="message-item-header">
@@ -3701,11 +3974,42 @@ function ProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
         <span>{order.providerName || 'Provider not recorded'}</span>
         <span>{order.encounter ? `Encounter ${order.encounter}` : 'No encounter'}</span>
       </div>
+      <div className="procedure-order-meta">
+        <span>{order.orderPriority || 'No priority'}</span>
+        <span>{order.procedureType || 'No procedure type'}</span>
+      </div>
+      <div className="detail-actions compact-actions">
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || order.orderStatus === 'complete'}
+          onClick={() => onComplete(order)}
+        >
+          <Check size={15} />
+          Complete
+        </button>
+        <button className="icon-text-button secondary" type="button" disabled={disabled} onClick={handleCreateReport}>
+          <FileText size={15} />
+          Add Report
+        </button>
+        <button className="icon-text-button danger" type="button" disabled={disabled} onClick={() => onDelete(order)}>
+          <Trash2 size={15} />
+          Delete
+        </button>
+      </div>
     </article>
   )
 }
 
-function ProcedureReportGroup({ order }: { order: ProcedureOrderItem }) {
+function ProcedureReportGroup({
+  order,
+  disabled,
+  onCreateResult,
+}: {
+  order: ProcedureOrderItem
+  disabled: boolean
+  onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+}) {
   return (
     <article className="procedure-report-group">
       <div className="procedure-report-title">
@@ -3717,22 +4021,52 @@ function ProcedureReportGroup({ order }: { order: ProcedureOrderItem }) {
       </div>
 
       {order.reports.map((report) => (
-        <ProcedureReportCard key={report.id} report={report} />
+        <ProcedureReportCard key={report.id} report={report} disabled={disabled} onCreateResult={onCreateResult} />
       ))}
       {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
     </article>
   )
 }
 
-function ProcedureReportCard({ report }: { report: ProcedureReportItem }) {
+function ProcedureReportCard({
+  report,
+  disabled,
+  onCreateResult,
+}: {
+  report: ProcedureReportItem
+  disabled: boolean
+  onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+}) {
+  async function handleCreateResult() {
+    await onCreateResult({
+      reportId: report.id,
+      resultCode: '2345-7',
+      resultText: 'Glucose',
+      dateTime: '2026-06-18 13:05:00',
+      facility: 'Modernization Family Medicine',
+      units: 'mg/dL',
+      result: '104',
+      range: '70-99',
+      abnormal: 'high',
+      comments: 'Created from the modernized Procedures workspace.',
+      status: 'final',
+    })
+  }
+
   return (
     <section className="procedure-report-card">
       <div className="procedure-report-title">
         <div>
           <strong>Report {report.id}</strong>
-          <span>{report.reportDate}</span>
+          <span>{[report.reportDate, report.reviewStatus, report.notes].filter(Boolean).join(' / ')}</span>
         </div>
         <span className="status-tag">{report.status || 'Status pending'}</span>
+      </div>
+      <div className="detail-actions compact-actions">
+        <button className="icon-text-button secondary" type="button" disabled={disabled} onClick={handleCreateResult}>
+          <Activity size={15} />
+          Add Result
+        </button>
       </div>
       <div className="procedure-result-grid">
         {report.results.map((result) => (

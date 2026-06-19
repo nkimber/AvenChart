@@ -390,6 +390,63 @@ procedures.MapGet("/{patientId}", async (
     })
     .WithName("GetProcedureResultsForPatient");
 
+procedures.MapPost("/orders", async (
+        ProcedureRepository repository,
+        ProcedureOrderCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateOrderAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure order could not be created from the supplied patient, encounter, and order details.")
+            : Results.Created($"/api/procedures/orders/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureOrder");
+
+procedures.MapPut("/orders/{orderId:int}/status", async (
+        ProcedureRepository repository,
+        int orderId,
+        ProcedureOrderStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateOrderStatusAsync(orderId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureOrderStatus");
+
+procedures.MapPost("/reports", async (
+        ProcedureRepository repository,
+        ProcedureReportCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateReportAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure report could not be created from the supplied order and report details.")
+            : Results.Created($"/api/procedures/reports/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureReport");
+
+procedures.MapPost("/results", async (
+        ProcedureRepository repository,
+        ProcedureResultCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateResultAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure result could not be created from the supplied report and result details.")
+            : Results.Created($"/api/procedures/results/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureResult");
+
+procedures.MapDelete("/orders/{orderId:int}", async (
+        ProcedureRepository repository,
+        int orderId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteOrderCascadeAsync(orderId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteProcedureOrderCascade");
+
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 
 billing.MapGet("/{patientId}", async (
