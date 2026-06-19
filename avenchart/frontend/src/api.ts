@@ -548,6 +548,7 @@ export type AdministrationFacilityItem = {
   id: number
   code: string
   name: string
+  active: boolean
   phone?: string | null
   street?: string | null
   city?: string | null
@@ -556,12 +557,29 @@ export type AdministrationFacilityItem = {
   color?: string | null
 }
 
+export type AdministrationFacilityMutationInput = {
+  code: string
+  name: string
+  phone?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  color?: string | null
+  active?: boolean | null
+}
+
 export type AdministrationDirectoryResponse = {
   datasetId: string
   datasetVersion: string
   counts: AdministrationDirectoryCounts
   users: AdministrationUserItem[]
   facilities: AdministrationFacilityItem[]
+}
+
+export type AdministrationFacilityMutationResponse = {
+  id: number
+  detail: AdministrationDirectoryResponse
 }
 
 export type OperationalReportCounts = {
@@ -1173,6 +1191,51 @@ export async function getAdministrationDirectory(signal?: AbortSignal): Promise<
   }
 
   return response.json()
+}
+
+export async function createAdministrationFacility(
+  input: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/facilities`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration facility create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateAdministrationFacility(
+  facilityId: number,
+  input: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration facility update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteAdministrationFacility(facilityId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration facility delete failed with ${response.status}`)
+  }
 }
 
 export async function getOperationalReports(signal?: AbortSignal): Promise<OperationalReportsResponse> {

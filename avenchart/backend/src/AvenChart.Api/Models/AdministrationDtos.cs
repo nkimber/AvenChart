@@ -32,9 +32,25 @@ public sealed record AdministrationFacilityItem(
     int Id,
     string Code,
     string Name,
+    bool Active,
     string? Phone,
     string? Street,
     string? City,
     string? State,
     string? PostalCode,
     string? Color);
+
+public sealed record AdministrationFacilityMutationRequest(
+    string Code,
+    string Name,
+    string? Phone,
+    string? Street,
+    string? City,
+    string? State,
+    string? PostalCode,
+    string? Color,
+    bool? Active);
+
+public sealed record AdministrationFacilityMutationResponse(
+    int Id,
+    AdministrationDirectoryResponse Detail);

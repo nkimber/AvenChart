@@ -63,7 +63,8 @@ create table facilities (
   city text,
   state text,
   postal_code text,
-  color text
+  color text,
+  inactive boolean not null default false
 );
 
 create table staff (

@@ -976,6 +976,12 @@
   border-color: #edc0b7;
 }
 
+.status-banner.success {
+  background: #eef8f4;
+  color: #1f684d;
+  border-color: #b8ddcb;
+}
+
 .empty-chart {
   min-height: 380px;
   display: grid;

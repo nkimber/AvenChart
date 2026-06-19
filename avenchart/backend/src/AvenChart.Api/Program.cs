@@ -501,6 +501,51 @@ administration.MapGet("/directory", async (
     })
     .WithName("GetAdministrationDirectory");
 
+administration.MapPost("/facilities", async (
+        AdministrationRepository repository,
+        AdministrationFacilityMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.CreateFacilityAsync(request, cancellationToken);
+            return Results.Created($"/api/administration/facilities/{mutation.Id}", mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CreateAdministrationFacility");
+
+administration.MapPut("/facilities/{facilityId:int}", async (
+        AdministrationRepository repository,
+        int facilityId,
+        AdministrationFacilityMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.UpdateFacilityAsync(facilityId, request, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("UpdateAdministrationFacility");
+
+administration.MapDelete("/facilities/{facilityId:int}", async (
+        AdministrationRepository repository,
+        int facilityId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteFacilityAsync(facilityId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteAdministrationFacility");
+
 var reports = app.MapGroup("/api/reports").WithTags("Reports");
 
 reports.MapGet("/operational", async (

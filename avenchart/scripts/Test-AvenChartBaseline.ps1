@@ -618,6 +618,63 @@ catch {
     Add-Check -Name "anchor administration directory" -Result "failed" -Details $_.Exception.Message
 }
 
+$administrationFacilityMutationId = $null
+try {
+    $facilityName = "Smoke Facility Mutation"
+    $createFacilityBody = @{
+        code = "SMOKE"
+        name = $facilityName
+        phone = "(619) 555-0198"
+        street = "901 Smoke Way"
+        city = "San Diego"
+        state = "CA"
+        postalCode = "92109"
+        color = "#356f9f"
+        active = $true
+    } | ConvertTo-Json
+
+    $createdFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities" -Method Post -ContentType "application/json" -Body $createFacilityBody -TimeoutSec 20
+    $administrationFacilityMutationId = $createdFacility.id
+    $createdVisible = $createdFacility.detail.facilities | Where-Object { $_.id -eq $administrationFacilityMutationId -and $_.name -eq $facilityName -and $_.active } | Select-Object -First 1
+
+    $updateFacilityBody = @{
+        code = "SMOKE"
+        name = "$facilityName Inactive"
+        phone = "(619) 555-0298"
+        street = "901 Smoke Way"
+        city = "San Diego"
+        state = "CA"
+        postalCode = "92109"
+        color = "#356f9f"
+        active = $false
+    } | ConvertTo-Json
+
+    $updatedFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Put -ContentType "application/json" -Body $updateFacilityBody -TimeoutSec 20
+    $updatedVisible = $updatedFacility.detail.facilities | Where-Object { $_.id -eq $administrationFacilityMutationId -and $_.name -eq "$facilityName Inactive" -and -not $_.active } | Select-Object -First 1
+    $facilityMutationPassed = $null -ne $createdVisible -and $null -ne $updatedVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $administrationFacilityMutationId = $null
+
+    Add-Check -Name "administration facility mutation lifecycle" -Result $(if ($facilityMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdFacility.id
+        createdVisible = $createdVisible
+        updatedVisible = $updatedVisible
+    }
+}
+catch {
+    Add-Check -Name "administration facility mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $administrationFacilityMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $reports = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/operational" -Method Get -TimeoutSec 20
     $topProvider = $reports.providerActivity | Where-Object { $_.username -eq "gold-provider-02" } | Select-Object -First 1

@@ -1,11 +1,14 @@
 using System.Data.Common;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
 public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 {
+    private const string DefaultFacilityColor = "#246b73";
+
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -24,6 +27,78 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 Facilities: facilities.Count),
             Users: users,
             Facilities: facilities);
+    }
+
+    public async Task<AdministrationFacilityMutationResponse> CreateFacilityAsync(
+        AdministrationFacilityMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var id = await GetNextFacilityIdAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into facilities
+              (id, code, name, phone, street, city, state, postal_code, color, inactive)
+            values
+              (@id, @code, @name, @phone, @street, @city, @state, @postalCode, @color, @inactive)
+            returning id;
+            """;
+
+        command.Parameters.Add("id", NpgsqlDbType.Integer).Value = id;
+        AddFacilityParameters(command, request, defaultActive: true);
+
+        var insertedId = (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Facility create did not return an ID."));
+
+        return new AdministrationFacilityMutationResponse(insertedId, await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<AdministrationFacilityMutationResponse?> UpdateFacilityAsync(
+        int facilityId,
+        AdministrationFacilityMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update facilities
+            set code = @code,
+                name = @name,
+                phone = @phone,
+                street = @street,
+                city = @city,
+                state = @state,
+                postal_code = @postalCode,
+                color = @color,
+                inactive = @inactive
+            where id = @facilityId
+            returning id;
+            """;
+
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId;
+        AddFacilityParameters(command, request, defaultActive: true);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new AdministrationFacilityMutationResponse((int)result, await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<bool> DeleteFacilityAsync(int facilityId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from facilities
+            where id = @facilityId;
+            """;
+
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId;
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -105,7 +180,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, code, name, phone, street, city, state, postal_code, color
+            select id, code, name, phone, street, city, state, postal_code, color, inactive
             from facilities
             order by id;
             """;
@@ -118,6 +193,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
                 Code: reader.GetString(reader.GetOrdinal("code")),
                 Name: reader.GetString(reader.GetOrdinal("name")),
+                Active: !reader.GetBoolean(reader.GetOrdinal("inactive")),
                 Phone: ReadNullableString(reader, "phone"),
                 Street: ReadNullableString(reader, "street"),
                 City: ReadNullableString(reader, "city"),
@@ -127,6 +203,52 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         }
 
         return facilities;
+    }
+
+    private async Task<int> GetNextFacilityIdAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select coalesce(max(id), 0) + 1 from facilities;";
+        return (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Facility ID allocation failed."));
+    }
+
+    private static void AddFacilityParameters(
+        NpgsqlCommand command,
+        AdministrationFacilityMutationRequest request,
+        bool defaultActive)
+    {
+        command.Parameters.Add("code", NpgsqlDbType.Text).Value = NormalizeRequired(request.Code, "Facility code");
+        command.Parameters.Add("name", NpgsqlDbType.Text).Value = NormalizeRequired(request.Name, "Facility name");
+        AddNullableText(command, "phone", request.Phone);
+        AddNullableText(command, "street", request.Street);
+        AddNullableText(command, "city", request.City);
+        AddNullableText(command, "state", request.State);
+        AddNullableText(command, "postalCode", request.PostalCode);
+        command.Parameters.Add("color", NpgsqlDbType.Text).Value = NormalizeOptional(request.Color) ?? DefaultFacilityColor;
+        command.Parameters.Add("inactive", NpgsqlDbType.Boolean).Value = !(request.Active ?? defaultActive);
+    }
+
+    private static string NormalizeRequired(string? value, string label)
+    {
+        var normalized = NormalizeOptional(value);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? throw new ArgumentException($"{label} is required.")
+            : normalized;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static void AddNullableText(NpgsqlCommand command, string name, string? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Text).Value = NormalizeOptional(value) is { } normalized
+            ? normalized
+            : DBNull.Value;
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)

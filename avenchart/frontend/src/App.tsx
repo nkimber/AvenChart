@@ -37,6 +37,7 @@ import {
   createBillingLine,
   createClinicalAllergy,
   createClinicalPrescription,
+  createAdministrationFacility,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
@@ -45,6 +46,7 @@ import {
   createProcedureReport,
   createProcedureResult,
   deleteAppointment,
+  deleteAdministrationFacility,
   deleteBillingLine,
   deleteClinicalAllergy,
   deleteClinicalPrescription,
@@ -58,6 +60,7 @@ import {
   searchPatients,
   softDeletePatientMessage,
   updateAppointmentStatus,
+  updateAdministrationFacility,
   updateBillingLineStatus,
   updateEncounter,
   updatePatientMessageStatus,
@@ -65,6 +68,7 @@ import {
   updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
+  type AdministrationFacilityMutationInput,
   type AdministrationUserItem,
   type AppointmentDetail,
   type AppointmentCreateInput,
@@ -189,6 +193,7 @@ function App() {
   const [administrationDirectory, setAdministrationDirectory] = useState<AdministrationDirectoryResponse | null>(null)
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [administrationError, setAdministrationError] = useState<string | null>(null)
+  const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
 
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -518,7 +523,7 @@ function App() {
 
     loadAdministrationDirectory()
     return () => controller.abort()
-  }, [activeModule])
+  }, [activeModule, administrationRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -1016,6 +1021,63 @@ function App() {
     }
   }
 
+  async function handleAdministrationFacilityCreate(input: AdministrationFacilityMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await createAdministrationFacility(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setAdministrationStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Administration facility create failed'
+      setAdministrationError(message)
+      throw createError
+    }
+  }
+
+  async function handleAdministrationFacilityUpdate(
+    facility: AdministrationFacilityItem,
+    input: AdministrationFacilityMutationInput,
+  ) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await updateAdministrationFacility(facility.id, input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setAdministrationStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Administration facility update failed'
+      setAdministrationError(message)
+      throw updateError
+    }
+  }
+
+  async function handleAdministrationFacilityDelete(facility: AdministrationFacilityItem) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      await deleteAdministrationFacility(facility.id)
+      const refreshed = await getAdministrationDirectory()
+      setAdministrationDirectory(refreshed)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setAdministrationStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Administration facility delete failed'
+      setAdministrationError(message)
+      throw deleteError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1277,6 +1339,9 @@ function App() {
             directory={administrationDirectory}
             status={administrationStatus}
             error={administrationError}
+            onCreateFacility={handleAdministrationFacilityCreate}
+            onUpdateFacility={handleAdministrationFacilityUpdate}
+            onDeleteFacility={handleAdministrationFacilityDelete}
           />
         )}
       </main>
@@ -3514,23 +3579,75 @@ function AdministrationWorkspace({
   directory,
   status,
   error,
+  onCreateFacility,
+  onUpdateFacility,
+  onDeleteFacility,
 }: {
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  onCreateFacility: (input: AdministrationFacilityMutationInput) => Promise<unknown>
+  onUpdateFacility: (
+    facility: AdministrationFacilityItem,
+    input: AdministrationFacilityMutationInput,
+  ) => Promise<unknown>
+  onDeleteFacility: (facility: AdministrationFacilityItem) => Promise<void>
 }) {
   const billingUsers = countUsersByRole(directory?.users, 'billing')
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
+  const visibleFacilities = directory?.facilities.filter((facility) => facility.active) ?? []
+  const [facilityDraft, setFacilityDraft] = useState<AdministrationFacilityMutationInput>({
+    code: 'WEST',
+    name: 'West County Health Center',
+    phone: '(619) 555-0180',
+    street: '440 Mission Road',
+    city: 'San Diego',
+    state: 'CA',
+    postalCode: '92111',
+    color: '#356f9f',
+    active: true,
+  })
+  const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+
+  async function handleFacilityCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+    await onCreateFacility(facilityDraft)
+    setMutationMessage(`Created ${facilityDraft.name}`)
+  }
+
+  async function handleFacilityDeactivate(facility: AdministrationFacilityItem) {
+    setMutationMessage(null)
+    await onUpdateFacility(facility, {
+      code: facility.code,
+      name: facility.name.endsWith('Inactive') ? facility.name : `${facility.name} Inactive`,
+      phone: facility.phone,
+      street: facility.street,
+      city: facility.city,
+      state: facility.state,
+      postalCode: facility.postalCode,
+      color: facility.color,
+      active: false,
+    })
+    setMutationMessage(`Updated ${facility.code} to inactive`)
+  }
+
+  async function handleFacilityDelete(facility: AdministrationFacilityItem) {
+    setMutationMessage(null)
+    await onDeleteFacility(facility)
+    setMutationMessage(`Deleted ${facility.code}`)
+  }
 
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Administration summary">
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Administration directory'}</span>
-          <span>Read only</span>
+          <span>Facility lifecycle</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
+        {mutationMessage && <div className="status-banner success">{mutationMessage}</div>}
 
         {directory ? (
           <div className="list-counts">
@@ -3551,8 +3668,77 @@ function AdministrationWorkspace({
           <Field label="Authentication" value="Deferred" />
           <Field label="Authorization" value="Deferred" />
           <Field label="Audit logging" value="Planned" />
-          <Field label="Directory mode" value="Read only" />
+          <Field label="Directory mode" value="Facility mutation" />
         </div>
+
+        <form className="appointment-mutation-panel" onSubmit={handleFacilityCreate}>
+          <div className="panel-heading">
+            <Building2 size={17} />
+            <h3>Create Facility</h3>
+          </div>
+          <label className="form-field">
+            <span>Facility code</span>
+            <input
+              value={facilityDraft.code}
+              onChange={(event) => setFacilityDraft((current) => ({ ...current, code: event.target.value }))}
+            />
+          </label>
+          <label className="form-field">
+            <span>Facility name</span>
+            <input
+              value={facilityDraft.name}
+              onChange={(event) => setFacilityDraft((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+          <label className="form-field">
+            <span>Phone</span>
+            <input
+              value={facilityDraft.phone ?? ''}
+              onChange={(event) => setFacilityDraft((current) => ({ ...current, phone: event.target.value }))}
+            />
+          </label>
+          <label className="form-field">
+            <span>Street</span>
+            <input
+              value={facilityDraft.street ?? ''}
+              onChange={(event) => setFacilityDraft((current) => ({ ...current, street: event.target.value }))}
+            />
+          </label>
+          <div className="mutation-grid two-column">
+            <label className="form-field">
+              <span>City</span>
+              <input
+                value={facilityDraft.city ?? ''}
+                onChange={(event) => setFacilityDraft((current) => ({ ...current, city: event.target.value }))}
+              />
+            </label>
+            <label className="form-field">
+              <span>State</span>
+              <input
+                value={facilityDraft.state ?? ''}
+                onChange={(event) => setFacilityDraft((current) => ({ ...current, state: event.target.value }))}
+              />
+            </label>
+            <label className="form-field">
+              <span>ZIP</span>
+              <input
+                value={facilityDraft.postalCode ?? ''}
+                onChange={(event) => setFacilityDraft((current) => ({ ...current, postalCode: event.target.value }))}
+              />
+            </label>
+          </div>
+          <label className="form-field">
+            <span>Color</span>
+            <input
+              value={facilityDraft.color ?? ''}
+              onChange={(event) => setFacilityDraft((current) => ({ ...current, color: event.target.value }))}
+            />
+          </label>
+          <button type="submit" className="icon-text-button primary" disabled={status === 'loading'}>
+            <Check size={16} />
+            Create facility
+          </button>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Administration directory">
@@ -3595,8 +3781,13 @@ function AdministrationWorkspace({
                   <h3>Facilities</h3>
                 </div>
                 <div className="admin-directory-list">
-                  {directory.facilities.map((facility) => (
-                    <AdministrationFacilityCard key={facility.id} facility={facility} />
+                  {visibleFacilities.map((facility) => (
+                    <AdministrationFacilityCard
+                      key={facility.id}
+                      facility={facility}
+                      onDeactivate={handleFacilityDeactivate}
+                      onDelete={handleFacilityDelete}
+                    />
                   ))}
                 </div>
               </section>
@@ -3713,18 +3904,42 @@ function AdministrationUserCard({ user }: { user: AdministrationUserItem }) {
   )
 }
 
-function AdministrationFacilityCard({ facility }: { facility: AdministrationFacilityItem }) {
+function AdministrationFacilityCard({
+  facility,
+  onDeactivate,
+  onDelete,
+}: {
+  facility: AdministrationFacilityItem
+  onDeactivate?: (facility: AdministrationFacilityItem) => Promise<void>
+  onDelete?: (facility: AdministrationFacilityItem) => Promise<void>
+}) {
   return (
     <article className="facility-card">
       <div className="message-item-header">
         <strong>{facility.name}</strong>
-        <span className="status-tag">{facility.code}</span>
+        <span className="status-tag">{facility.active ? facility.code : 'Inactive'}</span>
       </div>
       <div className="procedure-order-meta">
         <span>{facility.phone || 'No phone'}</span>
         <span>{facility.color || 'No color'}</span>
       </div>
       <p>{formatFacilityAddress(facility)}</p>
+      {(onDeactivate || onDelete) && (
+        <div className="detail-actions compact-actions">
+          {onDeactivate && facility.active && (
+            <button type="button" className="icon-text-button" onClick={() => onDeactivate(facility)}>
+              <Ban size={15} />
+              Deactivate
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" className="icon-text-button danger" onClick={() => onDelete(facility)}>
+              <Trash2 size={15} />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </article>
   )
 }
