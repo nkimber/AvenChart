@@ -85,6 +85,19 @@ patients.MapPut("/{patientId}/contact", async (
     })
     .WithName("UpdatePatientContact");
 
+patients.MapPut("/{patientId}/demographics", async (
+        PatientRepository repository,
+        string patientId,
+        PatientDemographicsUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateDemographicsAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient demographics could not be updated from the supplied patient and demographic details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientDemographics");
+
 patients.MapPost("/{patientId}/insurance", async (
         PatientRepository repository,
         string patientId,

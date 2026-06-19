@@ -65,6 +65,105 @@ catch {
     Add-Check -Name "anchor chart summary" -Result "failed" -Details $_.Exception.Message
 }
 
+$demographicsOriginal = $null
+try {
+    $demographicsOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -TimeoutSec 20
+    $originalDemographicsBody = @{
+        firstName = $demographicsOriginal.firstName
+        lastName = $demographicsOriginal.lastName
+        preferredName = $demographicsOriginal.preferredName
+        sex = $demographicsOriginal.sex
+        dateOfBirth = $demographicsOriginal.dateOfBirth
+        street = $demographicsOriginal.street
+        city = $demographicsOriginal.city
+        state = $demographicsOriginal.state
+        postalCode = $demographicsOriginal.postalCode
+        maritalStatus = $demographicsOriginal.maritalStatus
+        occupation = $demographicsOriginal.occupation
+    }
+    $demographicsBody = @{
+        firstName = "Morgan"
+        lastName = "Parity"
+        preferredName = "Slice36"
+        sex = if ($demographicsOriginal.sex -eq "Female") { "Male" } else { "Female" }
+        dateOfBirth = "1984-03-12"
+        street = "36 Parity Way"
+        city = "Bridgeport"
+        state = "CT"
+        postalCode = "06460"
+        maritalStatus = "married"
+        occupation = "Workflow Analyst"
+    }
+
+    $updatedDemographics = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+        -Method Put `
+        -ContentType "application/json" `
+        -Body ($demographicsBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $demographicsMutationPassed = $updatedDemographics.displayName -like "Parity, Morgan*" `
+        -and $updatedDemographics.firstName -eq $demographicsBody.firstName `
+        -and $updatedDemographics.lastName -eq $demographicsBody.lastName `
+        -and $updatedDemographics.preferredName -eq $demographicsBody.preferredName `
+        -and $updatedDemographics.sex -eq $demographicsBody.sex `
+        -and $updatedDemographics.dateOfBirth -eq $demographicsBody.dateOfBirth `
+        -and $updatedDemographics.street -eq $demographicsBody.street `
+        -and $updatedDemographics.city -eq $demographicsBody.city `
+        -and $updatedDemographics.state -eq $demographicsBody.state `
+        -and $updatedDemographics.postalCode -eq $demographicsBody.postalCode `
+        -and $updatedDemographics.maritalStatus -eq $demographicsBody.maritalStatus `
+        -and $updatedDemographics.occupation -eq $demographicsBody.occupation
+
+    $restoredDemographics = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+        -Method Put `
+        -ContentType "application/json" `
+        -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $demographicsOriginal = $null
+
+    $demographicsRestorePassed = $restoredDemographics.firstName -eq $originalDemographicsBody.firstName `
+        -and $restoredDemographics.lastName -eq $originalDemographicsBody.lastName `
+        -and $restoredDemographics.dateOfBirth -eq $originalDemographicsBody.dateOfBirth
+
+    Add-Check -Name "patient demographics mutation lifecycle" -Result $(if ($demographicsMutationPassed -and $demographicsRestorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedDisplayName = $updatedDemographics.displayName
+        updatedAddress = "$($updatedDemographics.street), $($updatedDemographics.city) $($updatedDemographics.state) $($updatedDemographics.postalCode)"
+        restoredDisplayName = $restoredDemographics.displayName
+    }
+}
+catch {
+    Add-Check -Name "patient demographics mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $demographicsOriginal) {
+        try {
+            $originalDemographicsBody = @{
+                firstName = $demographicsOriginal.firstName
+                lastName = $demographicsOriginal.lastName
+                preferredName = $demographicsOriginal.preferredName
+                sex = $demographicsOriginal.sex
+                dateOfBirth = $demographicsOriginal.dateOfBirth
+                street = $demographicsOriginal.street
+                city = $demographicsOriginal.city
+                state = $demographicsOriginal.state
+                postalCode = $demographicsOriginal.postalCode
+                maritalStatus = $demographicsOriginal.maritalStatus
+                occupation = $demographicsOriginal.occupation
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
+                -Method Put `
+                -ContentType "application/json" `
+                -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -TimeoutSec 20
     $coverage = @($coverageChart.insurance)

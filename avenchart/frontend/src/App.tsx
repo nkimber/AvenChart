@@ -96,6 +96,7 @@ import {
   updatePatientInsurance,
   updatePatientMessageStatus,
   updatePatientContact,
+  updatePatientDemographics,
   updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -137,6 +138,7 @@ import {
   type PatientBillingResponse,
   type PatientDocumentBinaryCreateInput,
   type PatientContactUpdate,
+  type PatientDemographicsUpdate,
   type PatientDocumentCreateInput,
   type PatientDocumentContentResponse,
   type PatientDocumentItem,
@@ -674,6 +676,53 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient contact save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientDemographicsSave(patientId: string, demographics: PatientDemographicsUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const updated = await updatePatientDemographics(patientId, demographics)
+      setChart(updated)
+      setSelectedPatientId(updated.canonicalId)
+      setChartStatus('ready')
+      setSearchResult((current) => {
+        if (!current) {
+          return current
+        }
+
+        return {
+          ...current,
+          patients: current.patients.map((patient) =>
+            patient.canonicalId === updated.canonicalId
+              ? {
+                  ...patient,
+                  displayName: updated.displayName,
+                  firstName: updated.firstName,
+                  lastName: updated.lastName,
+                  preferredName: updated.preferredName,
+                  sex: updated.sex,
+                  dateOfBirth: updated.dateOfBirth,
+                  age: updated.age,
+                  purpose: updated.purpose,
+                  phone: updated.phone,
+                  phoneHome: updated.phoneHome,
+                  phoneCell: updated.phoneCell,
+                  email: updated.email,
+                  facilityName: updated.facilityName,
+                  primaryProviderName: updated.primaryProviderName,
+                }
+              : patient,
+          ),
+        }
+      })
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient demographics save failed'
       setPatientError(message)
       throw saveError
     }
@@ -1742,6 +1791,7 @@ function App() {
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
             onSaveContact={handlePatientContactSave}
+            onSaveDemographics={handlePatientDemographicsSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -1964,6 +2014,7 @@ function PatientWorkspace({
   onQueryChange,
   onSelectPatient,
   onSaveContact,
+  onSaveDemographics,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -1979,10 +2030,16 @@ function PatientWorkspace({
   onQueryChange: (value: string) => void
   onSelectPatient: (canonicalId: string) => void
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
+  onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
 }) {
+  const [isEditingDemographics, setIsEditingDemographics] = useState(false)
+  const [demographicsDraft, setDemographicsDraft] = useState<PatientDemographicsUpdate>(() =>
+    buildDemographicsDraft(null),
+  )
+  const [demographicsSaveStatus, setDemographicsSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -1991,6 +2048,9 @@ function PatientWorkspace({
   const [insuranceSaveStatus, setInsuranceSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
+    setDemographicsDraft(buildDemographicsDraft(chart ?? activePatient))
+    setIsEditingDemographics(false)
+    setDemographicsSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -2003,8 +2063,28 @@ function PatientWorkspace({
     setContactDraft((current) => ({ ...current, [field]: value }))
   }
 
+  function updateDemographicsDraft(field: keyof PatientDemographicsUpdate, value: string) {
+    setDemographicsDraft((current) => ({ ...current, [field]: value }))
+  }
+
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
     setInsuranceDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleDemographicsSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setDemographicsSaveStatus('saving')
+    try {
+      await onSaveDemographics(chart.canonicalId, demographicsDraft)
+      setIsEditingDemographics(false)
+      setDemographicsSaveStatus('saved')
+    } catch {
+      setDemographicsSaveStatus('error')
+    }
   }
 
   async function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2117,10 +2197,165 @@ function PatientWorkspace({
 
             <div className="chart-grid">
               <InfoPanel title="Demographics" icon={UserRound}>
-                <Field label="Date of birth" value={activePatient.dateOfBirth} />
-                <Field label="Marital status" value={chart?.maritalStatus} />
-                <Field label="Occupation" value={chart?.occupation} />
-                <Field label="Registered" value={chart?.registrationDate} />
+                {isEditingDemographics && chart ? (
+                  <form className="contact-form" onSubmit={handleDemographicsSubmit}>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>First name</span>
+                        <input
+                          value={demographicsDraft.firstName}
+                          onChange={(event) => updateDemographicsDraft('firstName', event.target.value)}
+                          aria-label="Patient first name"
+                          required
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Last name</span>
+                        <input
+                          value={demographicsDraft.lastName}
+                          onChange={(event) => updateDemographicsDraft('lastName', event.target.value)}
+                          aria-label="Patient last name"
+                          required
+                        />
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Preferred</span>
+                        <input
+                          value={demographicsDraft.preferredName}
+                          onChange={(event) => updateDemographicsDraft('preferredName', event.target.value)}
+                          aria-label="Patient preferred name"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Sex</span>
+                        <select
+                          value={demographicsDraft.sex}
+                          onChange={(event) => updateDemographicsDraft('sex', event.target.value)}
+                          aria-label="Patient sex"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="Female">Female</option>
+                          <option value="Male">Male</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="contact-field">
+                      <span>Date of birth</span>
+                      <input
+                        type="date"
+                        value={demographicsDraft.dateOfBirth}
+                        onChange={(event) => updateDemographicsDraft('dateOfBirth', event.target.value)}
+                        aria-label="Patient date of birth"
+                        required
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Street</span>
+                      <input
+                        value={demographicsDraft.street}
+                        onChange={(event) => updateDemographicsDraft('street', event.target.value)}
+                        aria-label="Patient street"
+                      />
+                    </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>City</span>
+                        <input
+                          value={demographicsDraft.city}
+                          onChange={(event) => updateDemographicsDraft('city', event.target.value)}
+                          aria-label="Patient city"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>State</span>
+                        <input
+                          value={demographicsDraft.state}
+                          onChange={(event) => updateDemographicsDraft('state', event.target.value)}
+                          aria-label="Patient state"
+                        />
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Postal code</span>
+                        <input
+                          value={demographicsDraft.postalCode}
+                          onChange={(event) => updateDemographicsDraft('postalCode', event.target.value)}
+                          aria-label="Patient postal code"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Marital status</span>
+                        <select
+                          value={demographicsDraft.maritalStatus}
+                          onChange={(event) => updateDemographicsDraft('maritalStatus', event.target.value)}
+                          aria-label="Patient marital status"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="single">Single</option>
+                          <option value="married">Married</option>
+                          <option value="partnered">Partnered</option>
+                          <option value="divorced">Divorced</option>
+                          <option value="widowed">Widowed</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="contact-field">
+                      <span>Occupation</span>
+                      <input
+                        value={demographicsDraft.occupation}
+                        onChange={(event) => updateDemographicsDraft('occupation', event.target.value)}
+                        aria-label="Patient occupation"
+                      />
+                    </label>
+                    <div className="contact-actions">
+                      <button className="icon-text-button primary" type="submit" disabled={demographicsSaveStatus === 'saving'}>
+                        <Check size={15} />
+                        <span>{demographicsSaveStatus === 'saving' ? 'Saving' : 'Save'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setDemographicsDraft(buildDemographicsDraft(chart))
+                          setIsEditingDemographics(false)
+                          setDemographicsSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Date of birth" value={activePatient.dateOfBirth} />
+                    <Field label="Marital status" value={chart?.maritalStatus} />
+                    <Field label="Occupation" value={chart?.occupation} />
+                    <Field label="Address" value={formatAddress(chart)} />
+                    <Field label="Registered" value={chart?.registrationDate} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setDemographicsDraft(buildDemographicsDraft(chart ?? activePatient))
+                          setIsEditingDemographics(true)
+                          setDemographicsSaveStatus('idle')
+                        }}
+                        disabled={!chart}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit demographics</span>
+                      </button>
+                      {demographicsSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {demographicsSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
               </InfoPanel>
 
               <InfoPanel title="Contact" icon={Mail}>
@@ -6936,6 +7171,24 @@ function buildContactDraft(patient: PatientListItem | PatientChartSummary | null
   }
 }
 
+function buildDemographicsDraft(patient: PatientListItem | PatientChartSummary | null): PatientDemographicsUpdate {
+  const chart = hasChartDemographics(patient) ? patient : null
+
+  return {
+    firstName: patient?.firstName ?? '',
+    lastName: patient?.lastName ?? '',
+    preferredName: patient?.preferredName ?? '',
+    sex: patient?.sex ?? '',
+    dateOfBirth: patient?.dateOfBirth ?? '',
+    street: chart?.street ?? '',
+    city: chart?.city ?? '',
+    state: chart?.state ?? '',
+    postalCode: chart?.postalCode ?? '',
+    maritalStatus: chart?.maritalStatus ?? '',
+    occupation: chart?.occupation ?? '',
+  }
+}
+
 function buildInsuranceDraft(item?: PatientInsuranceItem | null): PatientInsuranceMutationInput {
   return {
     type: item?.type ?? 'tertiary',
@@ -6960,6 +7213,10 @@ function readContactPermission(
 
 function hasContactPermissions(patient: PatientListItem | PatientChartSummary | null): patient is PatientChartSummary {
   return Boolean(patient && 'hipaaAllowSms' in patient && 'hipaaAllowEmail' in patient)
+}
+
+function hasChartDemographics(patient: PatientListItem | PatientChartSummary | null): patient is PatientChartSummary {
+  return Boolean(patient && 'street' in patient && 'maritalStatus' in patient)
 }
 
 function formatAddress(chart: PatientChartSummary | null) {

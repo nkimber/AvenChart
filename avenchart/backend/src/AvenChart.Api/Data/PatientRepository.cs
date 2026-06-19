@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -307,6 +308,54 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
+    public async Task<PatientChartSummary?> UpdateDemographicsAsync(
+        string patientId,
+        PatientDemographicsUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryNormalizeDemographics(request, out var normalized))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set
+                first_name = @firstName,
+                last_name = @lastName,
+                preferred_name = @preferredName,
+                sex = @sex,
+                date_of_birth = @dateOfBirth,
+                street = @street,
+                city = @city,
+                state = @state,
+                postal_code = @postalCode,
+                marital_status = @maritalStatus,
+                occupation = @occupation
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("firstName", normalized.FirstName);
+        command.Parameters.AddWithValue("lastName", normalized.LastName);
+        command.Parameters.Add("preferredName", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PreferredName);
+        command.Parameters.Add("sex", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Sex);
+        command.Parameters.Add("dateOfBirth", NpgsqlDbType.Date).Value = normalized.DateOfBirth;
+        command.Parameters.Add("street", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Street);
+        command.Parameters.Add("city", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.City);
+        command.Parameters.Add("state", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.State);
+        command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
+        command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
+        command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
     public async Task<PatientChartSummary?> CreateInsuranceAsync(
         string patientId,
         PatientInsuranceMutationRequest request,
@@ -496,6 +545,48 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed.ToUpperInvariant();
     }
 
+    private static bool TryNormalizeDemographics(
+        PatientDemographicsUpdateRequest request,
+        out NormalizedPatientDemographics normalized)
+    {
+        var firstName = request.FirstName?.Trim();
+        var lastName = request.LastName?.Trim();
+        var dateOfBirthText = request.DateOfBirth?.Trim();
+
+        if (string.IsNullOrWhiteSpace(firstName)
+            || string.IsNullOrWhiteSpace(lastName)
+            || !DateOnly.TryParseExact(
+                dateOfBirthText,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var dateOfBirth))
+        {
+            normalized = new NormalizedPatientDemographics("", "", null, null, default, null, null, null, null, null, null);
+            return false;
+        }
+
+        normalized = new NormalizedPatientDemographics(
+            FirstName: firstName,
+            LastName: lastName,
+            PreferredName: NormalizeString(request.PreferredName),
+            Sex: NormalizeString(request.Sex),
+            DateOfBirth: dateOfBirth,
+            Street: NormalizeString(request.Street),
+            City: NormalizeString(request.City),
+            State: NormalizeString(request.State),
+            PostalCode: NormalizeString(request.PostalCode),
+            MaritalStatus: NormalizeString(request.MaritalStatus),
+            Occupation: NormalizeString(request.Occupation));
+        return true;
+    }
+
+    private static string? NormalizeString(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
     private static bool TryNormalizeInsurance(
         PatientInsuranceMutationRequest request,
         out NormalizedInsurance normalized)
@@ -629,4 +720,17 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string PolicyNumber,
         string GroupNumber,
         string Relationship);
+
+    private sealed record NormalizedPatientDemographics(
+        string FirstName,
+        string LastName,
+        string? PreferredName,
+        string? Sex,
+        DateOnly DateOfBirth,
+        string? Street,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string? MaritalStatus,
+        string? Occupation);
 }

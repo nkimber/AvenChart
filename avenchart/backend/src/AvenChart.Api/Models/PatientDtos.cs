@@ -108,3 +108,16 @@ public sealed record PatientContactUpdateRequest(
     string? Email,
     string? HipaaAllowSms,
     string? HipaaAllowEmail);
+
+public sealed record PatientDemographicsUpdateRequest(
+    string? FirstName,
+    string? LastName,
+    string? PreferredName,
+    string? Sex,
+    string? DateOfBirth,
+    string? Street,
+    string? City,
+    string? State,
+    string? PostalCode,
+    string? MaritalStatus,
+    string? Occupation);

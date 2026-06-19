@@ -94,6 +94,20 @@ export type PatientContactUpdate = {
   hipaaAllowEmail: string
 }
 
+export type PatientDemographicsUpdate = {
+  firstName: string
+  lastName: string
+  preferredName: string
+  sex: string
+  dateOfBirth: string
+  street: string
+  city: string
+  state: string
+  postalCode: string
+  maritalStatus: string
+  occupation: string
+}
+
 export type AppointmentListItem = {
   id: string
   patientId: string
@@ -962,6 +976,24 @@ export async function updatePatientContact(
   })
   if (!response.ok) {
     throw new Error(`Patient contact update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientDemographics(
+  patientId: string,
+  demographics: PatientDemographicsUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/demographics`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(demographics),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient demographics update failed with ${response.status}`)
   }
 
   return response.json()
