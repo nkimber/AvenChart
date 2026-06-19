@@ -1573,6 +1573,27 @@ catch {
     Add-Check -Name "anchor claim status summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $paymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $paymentRows = @($paymentBilling.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
+    $anchorPayment = $paymentRows | Where-Object { $_.reference -eq "EOB-NSTAR-1000052" -and $_.payAmount -eq 126 } | Select-Object -First 1
+    $anchorAdjustment = $paymentRows | Where-Object { $_.reference -eq "EOB-NSTAR-1000052" -and $_.adjustmentAmount -eq 42 -and $_.reasonCode -eq "CO-45" } | Select-Object -First 1
+    $paymentPostingPassed = $paymentBilling.patientId -eq "MOD-PAT-0005" `
+        -and $paymentRows.Count -ge 2 `
+        -and $null -ne $anchorPayment `
+        -and $null -ne $anchorAdjustment `
+        -and $anchorPayment.payerName -eq "Northstar HMO"
+    Add-Check -Name "anchor payment posting summary" -Result $(if ($paymentPostingPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $paymentBilling.patientId
+        paymentCount = $paymentRows.Count
+        anchorPayment = $anchorPayment
+        anchorAdjustment = $anchorAdjustment
+    }
+}
+catch {
+    Add-Check -Name "anchor payment posting summary" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

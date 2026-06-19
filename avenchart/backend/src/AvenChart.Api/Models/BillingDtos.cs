@@ -22,7 +22,8 @@ public sealed record BillingEncounterItem(
     string? FacilityName,
     decimal TotalFee,
     IReadOnlyList<BillingLineItem> Lines,
-    IReadOnlyList<BillingClaimItem> Claims);
+    IReadOnlyList<BillingClaimItem> Claims,
+    IReadOnlyList<BillingPaymentItem> Payments);
 
 public sealed record BillingLineItem(
     string Id,
@@ -52,6 +53,29 @@ public sealed record BillingClaimItem(
     string? ProcessFile,
     string? Target,
     string? SubmittedClaim);
+
+public sealed record BillingPaymentItem(
+    int Encounter,
+    int SequenceNo,
+    int SessionId,
+    string? Reference,
+    string? PayerName,
+    int PayerType,
+    string? PaymentType,
+    string? PaymentMethod,
+    string? CheckDate,
+    string? DepositDate,
+    string? PostDate,
+    string PostTime,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string? Memo,
+    decimal PayAmount,
+    decimal AdjustmentAmount,
+    string? AccountCode,
+    string? ReasonCode,
+    string? PayerClaimNumber);
 
 public sealed record BillingLineCreateRequest(
     string PatientId,

@@ -749,6 +749,30 @@ export type BillingClaimItem = {
   submittedClaim?: string | null
 }
 
+export type BillingPaymentItem = {
+  encounter: number
+  sequenceNo: number
+  sessionId: number
+  reference?: string | null
+  payerName?: string | null
+  payerType: number
+  paymentType?: string | null
+  paymentMethod?: string | null
+  checkDate?: string | null
+  depositDate?: string | null
+  postDate?: string | null
+  postTime: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo?: string | null
+  payAmount: number
+  adjustmentAmount: number
+  accountCode?: string | null
+  reasonCode?: string | null
+  payerClaimNumber?: string | null
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -761,6 +785,7 @@ export type BillingEncounterItem = {
   totalFee: number
   lines: BillingLineItem[]
   claims: BillingClaimItem[]
+  payments: BillingPaymentItem[]
 }
 
 export type PatientBillingResponse = {

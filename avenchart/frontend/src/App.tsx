@@ -125,6 +125,7 @@ import {
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingClaimItem,
+  type BillingPaymentItem,
   type BillingLineCreateInput,
   type BillingLineItem,
   type BillingLineUpdateInput,
@@ -4549,6 +4550,7 @@ function FeesWorkspace({
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
+  const paymentCount = countBillingPayments(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
   const isLoading = status === 'loading'
 
@@ -4656,6 +4658,7 @@ function FeesWorkspace({
             <MetricRow label="Encounters" value={patientBilling.encounters.length} />
             <MetricRow label="Billing lines" value={lineCount} />
             <MetricRow label="Claims" value={claimCount} />
+            <MetricRow label="Payments" value={paymentCount} />
             <MetricRow label="CPT lines" value={countBillingLinesByType(patientBilling.encounters, 'CPT4')} />
             <MetricRow label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
@@ -4917,6 +4920,7 @@ function FeesWorkspace({
                 <Field label="Encounters" value={patientBilling.encounters.length} />
                 <Field label="Billing lines" value={lineCount} />
                 <Field label="Claims" value={claimCount} />
+                <Field label="Payments" value={paymentCount} />
                 <Field label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
                 <Field label="Total fee" value={formatCurrency(totalFee)} />
               </InfoPanel>
@@ -7415,6 +7419,12 @@ function BillingEncounterCard({
         {encounter.claims.length === 0 && <div className="timeline-placeholder">No claim status recorded</div>}
       </div>
       <div className="billing-line-list">
+        {encounter.payments.map((payment) => (
+          <BillingPaymentCard key={`${payment.encounter}-${payment.sequenceNo}`} payment={payment} />
+        ))}
+        {encounter.payments.length === 0 && <div className="timeline-placeholder">No payment posting recorded</div>}
+      </div>
+      <div className="billing-line-list">
         {encounter.lines.map((line) => (
           <BillingLineCard
             key={line.id}
@@ -7447,6 +7457,36 @@ function BillingClaimCard({ claim }: { claim: BillingClaimItem }) {
         <span>{claim.processTime ? `Processed ${claim.processTime}` : 'Not processed'}</span>
         <span>{claim.processFile ? `File ${claim.processFile}` : 'No claim file'}</span>
         <span>{claim.submittedClaim ? 'Reviewed claim data' : 'No submitted claim payload'}</span>
+      </div>
+    </article>
+  )
+}
+
+function BillingPaymentCard({ payment }: { payment: BillingPaymentItem }) {
+  const statusLabel = payment.adjustmentAmount > 0 && payment.payAmount === 0 ? 'Adjustment' : 'Payment'
+  const postedDate = payment.postDate || payment.postTime
+
+  return (
+    <article className="billing-line-card">
+      <div className="message-item-header">
+        <strong>Payment Posting</strong>
+        <span className="status-tag">{statusLabel}</span>
+      </div>
+      <p>
+        {formatPayerType(payment.payerType)} {payment.payerName || 'Payer'} / {payment.reference || 'No reference'}
+      </p>
+      <div className="procedure-order-meta">
+        <span>{payment.code ? `${payment.code}${payment.modifier ? `:${payment.modifier}` : ''}` : 'No code'}</span>
+        <span>{payment.memo || 'No memo'}</span>
+        <span>{payment.paymentMethod || 'No method'}</span>
+        <span>{postedDate ? `Posted ${postedDate}` : 'No post date'}</span>
+        <span>{payment.payAmount > 0 ? `Paid ${formatCurrency(payment.payAmount)}` : 'No payment amount'}</span>
+        <span>
+          {payment.adjustmentAmount > 0 ? `Adjusted ${formatCurrency(payment.adjustmentAmount)}` : 'No adjustment'}
+        </span>
+        <span>{payment.accountCode ? `Account ${payment.accountCode}` : 'No account code'}</span>
+        <span>{payment.reasonCode ? `Reason ${payment.reasonCode}` : 'No reason code'}</span>
+        <span>{payment.payerClaimNumber ? `Claim ${payment.payerClaimNumber}` : 'No payer claim number'}</span>
       </div>
     </article>
   )
@@ -8120,6 +8160,10 @@ function countBillingLines(encounters: BillingEncounterItem[] | undefined) {
 
 function countBillingClaims(encounters: BillingEncounterItem[] | undefined) {
   return encounters?.reduce((count, encounter) => count + encounter.claims.length, 0) ?? 0
+}
+
+function countBillingPayments(encounters: BillingEncounterItem[] | undefined) {
+  return encounters?.reduce((count, encounter) => count + encounter.payments.length, 0) ?? 0
 }
 
 function countBillingLinesByType(encounters: BillingEncounterItem[] | undefined, codeType: string) {

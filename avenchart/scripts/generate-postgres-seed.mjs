@@ -218,6 +218,8 @@ drop table if exists messages;
 drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_orders;
+drop table if exists payment_activities;
+drop table if exists payment_sessions;
 drop table if exists claims;
 drop table if exists billing;
 drop table if exists immunizations;
@@ -493,6 +495,57 @@ create table claims (
   x12_partner_id integer not null default 0,
   submitted_claim text,
   unique (pid, encounter, version)
+);
+
+create table payment_sessions (
+  id integer primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  payer_id integer not null,
+  payer_name text,
+  user_id integer not null references staff(id),
+  user_name text,
+  closed integer not null default 0,
+  reference text not null,
+  check_date date,
+  deposit_date date,
+  pay_total numeric(12,2) not null default 0,
+  created_time timestamp not null,
+  modified_time timestamp not null,
+  global_amount numeric(12,2) not null default 0,
+  payment_type text not null,
+  description text,
+  adjustment_code text,
+  post_to_date date not null,
+  payment_method text not null
+);
+
+create table payment_activities (
+  id text primary key,
+  session_id integer not null references payment_sessions(id),
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  encounter integer not null,
+  sequence_no integer not null,
+  code_type text,
+  code text,
+  modifier text,
+  payer_type integer not null,
+  post_time timestamp not null,
+  post_user_id integer not null references staff(id),
+  post_user_name text,
+  memo text,
+  pay_amount numeric(12,2) not null default 0,
+  adj_amount numeric(12,2) not null default 0,
+  modified_time timestamp not null,
+  follow_up text,
+  follow_up_note text,
+  account_code text,
+  reason_code text,
+  deleted timestamp,
+  post_date date,
+  payer_claim_number text,
+  unique (pid, encounter, sequence_no)
 );
 
 create table lab_orders (
@@ -1037,6 +1090,102 @@ copyRows('claims', [
   claim.submittedClaim,
 ]))
 
+copyRows('payment_sessions', [
+  'id',
+  'patient_id',
+  'pid',
+  'payer_id',
+  'payer_name',
+  'user_id',
+  'user_name',
+  'closed',
+  'reference',
+  'check_date',
+  'deposit_date',
+  'pay_total',
+  'created_time',
+  'modified_time',
+  'global_amount',
+  'payment_type',
+  'description',
+  'adjustment_code',
+  'post_to_date',
+  'payment_method',
+], dataset.paymentSessions.map((session) => [
+  session.id,
+  session.patientId,
+  session.pid,
+  session.payerId,
+  session.payerName,
+  session.userId,
+  session.userName,
+  session.closed,
+  session.reference,
+  session.checkDate,
+  session.depositDate,
+  session.payTotal,
+  session.createdTime,
+  session.modifiedTime,
+  session.globalAmount,
+  session.paymentType,
+  session.description,
+  session.adjustmentCode,
+  session.postToDate,
+  session.paymentMethod,
+]))
+
+copyRows('payment_activities', [
+  'id',
+  'session_id',
+  'patient_id',
+  'pid',
+  'encounter',
+  'sequence_no',
+  'code_type',
+  'code',
+  'modifier',
+  'payer_type',
+  'post_time',
+  'post_user_id',
+  'post_user_name',
+  'memo',
+  'pay_amount',
+  'adj_amount',
+  'modified_time',
+  'follow_up',
+  'follow_up_note',
+  'account_code',
+  'reason_code',
+  'deleted',
+  'post_date',
+  'payer_claim_number',
+], dataset.paymentActivities.map((activity) => [
+  activity.id,
+  activity.sessionId,
+  activity.patientId,
+  activity.pid,
+  activity.encounter,
+  activity.sequenceNo,
+  activity.codeType,
+  activity.code,
+  activity.modifier,
+  activity.payerType,
+  activity.postTime,
+  activity.postUserId,
+  activity.postUserName,
+  activity.memo,
+  activity.payAmount,
+  activity.adjustmentAmount,
+  activity.modifiedTime,
+  activity.followUp,
+  activity.followUpNote,
+  activity.accountCode,
+  activity.reasonCode,
+  activity.deleted,
+  activity.postDate,
+  activity.payerClaimNumber,
+]))
+
 copyRows('lab_orders', [
   'id',
   'patient_id',
@@ -1230,6 +1379,8 @@ create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);
 create index idx_immunizations_pid_date on immunizations (pid, administered_at);
 create index idx_billing_pid on billing (pid);
+create index idx_payment_sessions_pid on payment_sessions (pid);
+create index idx_payment_activities_pid_encounter on payment_activities (pid, encounter);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_results_date on lab_results (result_date);
@@ -1265,6 +1416,8 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     immunizations: dataset.immunizations.length,
     billing: dataset.billing.length,
     claims: dataset.claims.length,
+    paymentSessions: dataset.paymentSessions.length,
+    paymentActivities: dataset.paymentActivities.length,
     labOrders: dataset.labOrders.length,
     labReports: dataset.labReports.length,
     labResults: dataset.labResults.length,

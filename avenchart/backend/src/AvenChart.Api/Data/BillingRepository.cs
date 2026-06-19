@@ -22,8 +22,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         var encounterNumbers = encounters.Select(encounter => encounter.Encounter).ToArray();
         var lines = await GetBillingLinesAsync(connection, patient.LegacyPid, encounterNumbers, cancellationToken);
         var claims = await GetClaimsAsync(connection, patient.LegacyPid, encounterNumbers, cancellationToken);
+        var payments = await GetPaymentsAsync(connection, patient.LegacyPid, encounterNumbers, cancellationToken);
         var linesByEncounter = lines.GroupBy(line => line.Encounter).ToDictionary(group => group.Key, group => group.ToList());
         var claimsByEncounter = claims.GroupBy(claim => claim.Encounter).ToDictionary(group => group.Key, group => group.ToList());
+        var paymentsByEncounter = payments.GroupBy(payment => payment.Encounter).ToDictionary(group => group.Key, group => group.ToList());
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -41,7 +43,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 {
                     TotalFee = encounterLines.Sum(line => line.Fee ?? 0m),
                     Lines = encounterLines,
-                    Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, [])
+                    Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, []),
+                    Payments = paymentsByEncounter.GetValueOrDefault(encounter.Encounter, [])
                 };
             }).ToList());
     }
@@ -307,7 +310,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 TotalFee: 0m,
                 Lines: [],
-                Claims: []));
+                Claims: [],
+                Payments: []));
         }
 
         return items;
@@ -401,6 +405,82 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 ProcessFile: ReadNullableString(reader, "process_file"),
                 Target: ReadNullableString(reader, "target"),
                 SubmittedClaim: ReadNullableString(reader, "submitted_claim")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<BillingPaymentItem>> GetPaymentsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        IReadOnlyList<int> encounters,
+        CancellationToken cancellationToken)
+    {
+        if (encounters.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                pa.encounter,
+                pa.sequence_no,
+                pa.session_id,
+                ps.reference,
+                ps.payer_name,
+                pa.payer_type,
+                ps.payment_type,
+                ps.payment_method,
+                ps.check_date::text as check_date,
+                ps.deposit_date::text as deposit_date,
+                pa.post_date::text as post_date,
+                to_char(pa.post_time, 'YYYY-MM-DD HH24:MI:SS') as post_time,
+                pa.code_type,
+                pa.code,
+                pa.modifier,
+                pa.memo,
+                pa.pay_amount,
+                pa.adj_amount,
+                pa.account_code,
+                pa.reason_code,
+                pa.payer_claim_number
+            from payment_activities pa
+            inner join payment_sessions ps on ps.id = pa.session_id
+            where pa.pid = @pid
+              and pa.encounter = any(@encounters)
+              and pa.deleted is null
+            order by pa.encounter desc, pa.sequence_no;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+        command.Parameters.AddWithValue("encounters", encounters.ToArray());
+
+        var items = new List<BillingPaymentItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new BillingPaymentItem(
+                Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+                SequenceNo: reader.GetInt32(reader.GetOrdinal("sequence_no")),
+                SessionId: reader.GetInt32(reader.GetOrdinal("session_id")),
+                Reference: ReadNullableString(reader, "reference"),
+                PayerName: ReadNullableString(reader, "payer_name"),
+                PayerType: reader.GetInt32(reader.GetOrdinal("payer_type")),
+                PaymentType: ReadNullableString(reader, "payment_type"),
+                PaymentMethod: ReadNullableString(reader, "payment_method"),
+                CheckDate: ReadNullableString(reader, "check_date"),
+                DepositDate: ReadNullableString(reader, "deposit_date"),
+                PostDate: ReadNullableString(reader, "post_date"),
+                PostTime: reader.GetString(reader.GetOrdinal("post_time")),
+                CodeType: ReadNullableString(reader, "code_type"),
+                Code: ReadNullableString(reader, "code"),
+                Modifier: ReadNullableString(reader, "modifier"),
+                Memo: ReadNullableString(reader, "memo"),
+                PayAmount: reader.GetDecimal(reader.GetOrdinal("pay_amount")),
+                AdjustmentAmount: reader.GetDecimal(reader.GetOrdinal("adj_amount")),
+                AccountCode: ReadNullableString(reader, "account_code"),
+                ReasonCode: ReadNullableString(reader, "reason_code"),
+                PayerClaimNumber: ReadNullableString(reader, "payer_claim_number")));
         }
 
         return items;
