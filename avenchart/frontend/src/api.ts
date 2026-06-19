@@ -400,6 +400,17 @@ export type ProcedureOrderItem = {
   reports: ProcedureReportItem[]
 }
 
+export type ProcedureOrderCounts = {
+  orders: number
+  completedOrders: number
+  scheduledOrders: number
+  reportlessOrders: number
+  futureScheduledOrders: number
+  reports: number
+  results: number
+  finalResults: number
+}
+
 export type ProcedureResultsResponse = {
   datasetId: string
   datasetVersion: string
@@ -409,6 +420,7 @@ export type ProcedureResultsResponse = {
   patientDisplayName: string
   firstName: string
   lastName: string
+  counts: ProcedureOrderCounts
   orders: ProcedureOrderItem[]
 }
 

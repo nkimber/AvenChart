@@ -32,6 +32,11 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     Results = resultsByReport.GetValueOrDefault(report.Id, [])
                 }).ToList());
 
+        var procedureOrders = orders.Select(order => order.Order with
+        {
+            Reports = reportsByOrder.GetValueOrDefault(order.Id, [])
+        }).ToList();
+
         return new ProcedureResultsResponse(
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
@@ -41,10 +46,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             PatientDisplayName: patient.DisplayName,
             FirstName: patient.FirstName,
             LastName: patient.LastName,
-            Orders: orders.Select(order => order.Order with
-            {
-                Reports = reportsByOrder.GetValueOrDefault(order.Id, [])
-            }).ToList());
+            Counts: BuildCounts(procedureOrders, metadata.BaseDate),
+            Orders: procedureOrders);
     }
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
@@ -582,6 +585,28 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static bool TryReadDateTime(string value, out DateTime dateTime)
     {
         return DateTime.TryParse(value, out dateTime);
+    }
+
+    private static ProcedureOrderCounts BuildCounts(IReadOnlyList<ProcedureOrderItem> orders, DateOnly baseDate)
+    {
+        var reports = orders.Sum(order => order.Reports.Count);
+        var results = orders.Sum(order => order.Reports.Sum(report => report.Results.Count));
+        var finalResults = orders.Sum(order =>
+            order.Reports.Sum(report =>
+                report.Results.Count(result => string.Equals(result.ResultStatus, "final", StringComparison.OrdinalIgnoreCase))));
+
+        return new ProcedureOrderCounts(
+            Orders: orders.Count,
+            CompletedOrders: orders.Count(order => string.Equals(order.OrderStatus, "complete", StringComparison.OrdinalIgnoreCase)),
+            ScheduledOrders: orders.Count(order => string.Equals(order.OrderStatus, "scheduled", StringComparison.OrdinalIgnoreCase)),
+            ReportlessOrders: orders.Count(order => order.Reports.Count == 0),
+            FutureScheduledOrders: orders.Count(order =>
+                string.Equals(order.OrderStatus, "scheduled", StringComparison.OrdinalIgnoreCase)
+                && DateOnly.TryParse(order.OrderDate, out var orderDate)
+                && orderDate > baseDate),
+            Reports: reports,
+            Results: results,
+            FinalResults: finalResults);
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)

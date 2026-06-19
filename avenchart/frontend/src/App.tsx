@@ -3199,9 +3199,15 @@ function ProceduresWorkspace({
   const [procedureDiagnosis, setProcedureDiagnosis] = useState('Z00.00')
   const [procedureInstructions, setProcedureInstructions] = useState('Collect fasting sample.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
-  const reportCount = countProcedureReports(procedureResults?.orders)
-  const resultCount = countProcedureResults(procedureResults?.orders)
-  const finalCount = countProcedureResultsByStatus(procedureResults?.orders, 'final')
+  const procedureCounts = procedureResults?.counts
+  const scheduledOrders = procedureResults?.orders.filter(isScheduledProcedureOrder) ?? []
+  const reportlessOrders = procedureResults?.orders.filter((order) => order.reports.length === 0) ?? []
+  const reportCount = procedureCounts?.reports ?? countProcedureReports(procedureResults?.orders)
+  const resultCount = procedureCounts?.results ?? countProcedureResults(procedureResults?.orders)
+  const finalCount = procedureCounts?.finalResults ?? countProcedureResultsByStatus(procedureResults?.orders, 'final')
+  const scheduledCount = procedureCounts?.scheduledOrders ?? scheduledOrders.length
+  const reportlessCount = procedureCounts?.reportlessOrders ?? reportlessOrders.length
+  const futureScheduledCount = procedureCounts?.futureScheduledOrders ?? scheduledOrders.length
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -3266,7 +3272,9 @@ function ProceduresWorkspace({
 
         {procedureResults ? (
           <div className="list-counts">
-            <MetricRow label="Orders" value={procedureResults.orders.length} />
+            <MetricRow label="Orders" value={procedureCounts?.orders ?? procedureResults.orders.length} />
+            <MetricRow label="Scheduled" value={scheduledCount} />
+            <MetricRow label="Reportless" value={reportlessCount} />
             <MetricRow label="Reports" value={reportCount} />
             <MetricRow label="Results" value={resultCount} />
             <MetricRow label="Final" value={finalCount} />
@@ -3369,7 +3377,10 @@ function ProceduresWorkspace({
             <div className="procedure-detail-grid">
               <InfoPanel title="Order Summary" icon={FlaskConical}>
                 <Field label="Patient ID" value={procedureResults.pubpid} />
-                <Field label="Orders" value={procedureResults.orders.length} />
+                <Field label="Orders" value={procedureCounts?.orders ?? procedureResults.orders.length} />
+                <Field label="Completed orders" value={procedureCounts?.completedOrders ?? '-'} />
+                <Field label="Scheduled orders" value={scheduledCount} />
+                <Field label="Future scheduled" value={futureScheduledCount} />
                 <Field label="Reports" value={reportCount} />
                 <Field label="Final results" value={finalCount} />
               </InfoPanel>
@@ -3392,6 +3403,21 @@ function ProceduresWorkspace({
                   ))}
                   {procedureResults.orders.length === 0 && (
                     <div className="timeline-placeholder">No procedure orders recorded</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="info-panel procedure-orders-panel">
+                <div className="panel-heading">
+                  <Clock size={17} />
+                  <h3>Pending/Scheduled Orders</h3>
+                </div>
+                <div className="procedure-order-list">
+                  {reportlessOrders.map((order) => (
+                    <ProcedureScheduledOrderCard key={order.id} order={order} />
+                  ))}
+                  {reportlessOrders.length === 0 && (
+                    <div className="timeline-placeholder">No pending or scheduled orders without reports</div>
                   )}
                 </div>
               </section>
@@ -4783,6 +4809,34 @@ function ProcedureOrderCard({
   )
 }
 
+function ProcedureScheduledOrderCard({ order }: { order: ProcedureOrderItem }) {
+  return (
+    <article className="procedure-order-card scheduled-order-card">
+      <div className="message-item-header">
+        <strong>{order.name || 'Procedure order'}</strong>
+        <span className="status-tag">{order.orderStatus || 'Status pending'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.code || 'No code'}</span>
+        <span>{order.orderDate}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.providerName || 'Provider not recorded'}</span>
+        <span>{order.encounter ? `Encounter ${order.encounter}` : 'No encounter'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.orderPriority || 'No priority'}</span>
+        <span>{order.procedureType || 'No procedure type'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.diagnosis || 'No diagnosis'}</span>
+        <span>{order.reports.length === 0 ? 'No report has been filed' : `${order.reports.length} reports recorded`}</span>
+      </div>
+      {order.instructions && <p className="procedure-scheduled-note">{order.instructions}</p>}
+    </article>
+  )
+}
+
 function ProcedureReportGroup({
   order,
   disabled,
@@ -5127,6 +5181,10 @@ function countUsersByRole(users: AdministrationUserItem[] | undefined, role: str
 
 function countProcedureReports(orders: ProcedureOrderItem[] | undefined) {
   return orders?.reduce((count, order) => count + order.reports.length, 0) ?? 0
+}
+
+function isScheduledProcedureOrder(order: ProcedureOrderItem) {
+  return order.orderStatus?.toLowerCase() === 'scheduled'
 }
 
 function countProcedureResults(orders: ProcedureOrderItem[] | undefined) {

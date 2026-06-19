@@ -443,6 +443,30 @@ catch {
     Add-Check -Name "anchor procedure results" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $scheduledProcedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0701" -Method Get -TimeoutSec 20
+    $scheduledOrder = $scheduledProcedures.orders | Where-Object {
+        $_.name -eq "Complete blood count" `
+            -and $_.code -eq "85025" `
+            -and $_.orderStatus -eq "scheduled" `
+            -and $_.orderDate -eq "2026-06-25" `
+            -and $_.reports.Count -eq 0
+    } | Select-Object -First 1
+    $scheduledProceduresPassed = $scheduledProcedures.patientId -eq "MOD-PAT-0701" `
+        -and $null -ne $scheduledOrder `
+        -and $scheduledProcedures.counts.scheduledOrders -ge 1 `
+        -and $scheduledProcedures.counts.futureScheduledOrders -ge 1 `
+        -and $scheduledProcedures.counts.reportlessOrders -ge 1
+    Add-Check -Name "anchor scheduled procedure orders" -Result $(if ($scheduledProceduresPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $scheduledProcedures.patientId
+        counts = $scheduledProcedures.counts
+        scheduledOrder = $scheduledOrder
+    }
+}
+catch {
+    Add-Check -Name "anchor scheduled procedure orders" -Result "failed" -Details $_.Exception.Message
+}
+
 $procedureOrderMutationId = $null
 try {
     if ($null -eq $completedOrder -or $null -eq $completedOrder.encounter) {

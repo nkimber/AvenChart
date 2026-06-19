@@ -831,6 +831,13 @@
   font-size: 12px;
 }
 
+.procedure-scheduled-note {
+  margin: 8px 0 0;
+  color: #344657;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .procedure-report-title strong,
 .procedure-result-card strong {
   color: #1d2a35;

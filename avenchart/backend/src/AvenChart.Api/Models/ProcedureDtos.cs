@@ -9,7 +9,18 @@ public sealed record ProcedureResultsResponse(
     string PatientDisplayName,
     string FirstName,
     string LastName,
+    ProcedureOrderCounts Counts,
     IReadOnlyList<ProcedureOrderItem> Orders);
+
+public sealed record ProcedureOrderCounts(
+    int Orders,
+    int CompletedOrders,
+    int ScheduledOrders,
+    int ReportlessOrders,
+    int FutureScheduledOrders,
+    int Reports,
+    int Results,
+    int FinalResults);
 
 public sealed record ProcedureOrderItem(
     int Id,
