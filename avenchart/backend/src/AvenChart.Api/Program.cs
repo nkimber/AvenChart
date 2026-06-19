@@ -14,6 +14,7 @@ builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
+builder.Services.AddScoped<MessageRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -126,5 +127,17 @@ clinicalLists.MapGet("/{patientId}", async (
         return lists is null ? Results.NotFound() : Results.Ok(lists);
     })
     .WithName("GetClinicalListsForPatient");
+
+var messages = app.MapGroup("/api/messages").WithTags("Messages");
+
+messages.MapGet("/{patientId}", async (
+        MessageRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var patientMessages = await repository.GetForPatientAsync(patientId, cancellationToken);
+        return patientMessages is null ? Results.NotFound() : Results.Ok(patientMessages);
+    })
+    .WithName("GetPatientMessages");
 
 app.Run();

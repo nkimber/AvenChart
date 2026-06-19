@@ -147,6 +147,23 @@ catch {
     Add-Check -Name "anchor clinical lists" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
+    $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
+    $portalMessage = $messages.messages | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
+    $messagesPassed = $messages.patientId -eq "MOD-PAT-0004" -and $messages.portalEnabled -and $null -ne $careTeamMessage -and $null -ne $portalMessage
+    Add-Check -Name "anchor patient messages" -Result $(if ($messagesPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $messages.patientId
+        portalEnabled = $messages.portalEnabled
+        messageCount = $messages.messages.Count
+        careTeamMessage = $careTeamMessage
+        portalMessage = $portalMessage
+    }
+}
+catch {
+    Add-Check -Name "anchor patient messages" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

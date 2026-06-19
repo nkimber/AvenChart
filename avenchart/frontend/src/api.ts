@@ -207,6 +207,27 @@ export type ClinicalListsResponse = {
   prescriptions: PrescriptionListItem[]
 }
 
+export type PatientMessageItem = {
+  id: string
+  date?: string | null
+  title?: string | null
+  body?: string | null
+  status?: string | null
+}
+
+export type PatientMessagesResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  portalEnabled: boolean
+  messages: PatientMessageItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -302,6 +323,15 @@ export async function getClinicalLists(patientId: string, signal?: AbortSignal):
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Clinical lists load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientMessages(patientId: string, signal?: AbortSignal): Promise<PatientMessagesResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Patient messages load failed with ${response.status}`)
   }
 
   return response.json()

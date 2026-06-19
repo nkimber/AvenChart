@@ -353,7 +353,8 @@
 .timeline-row,
 .appointment-detail-grid,
 .encounter-detail-grid,
-.clinical-list-grid {
+.clinical-list-grid,
+.message-detail-grid {
   display: grid;
   gap: 12px;
   margin-top: 12px;
@@ -377,6 +378,10 @@
 
 .clinical-list-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.message-detail-grid {
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
 }
 
 .info-panel {
@@ -495,6 +500,51 @@
   text-align: right;
 }
 
+.messages-panel {
+  min-width: 0;
+}
+
+.message-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.message-item {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.message-item strong {
+  color: #1d2a35;
+  font-size: 14px;
+}
+
+.message-item p {
+  margin: 0;
+  color: #344657;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.message-item > span {
+  color: #607280;
+  font-size: 12px;
+}
+
 .soap-panel {
   border: 1px solid #d8e2e7;
   border-radius: 8px;
@@ -558,7 +608,8 @@
   .timeline-row,
   .appointment-detail-grid,
   .encounter-detail-grid,
-  .clinical-list-grid {
+  .clinical-list-grid,
+  .message-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -602,6 +653,7 @@
   .appointment-detail-grid,
   .encounter-detail-grid,
   .clinical-list-grid,
+  .message-detail-grid,
   .soap-grid {
     grid-template-columns: 1fr;
   }
@@ -612,5 +664,9 @@
 
   .clinical-item span {
     text-align: left;
+  }
+
+  .message-item-header {
+    flex-direction: column;
   }
 }

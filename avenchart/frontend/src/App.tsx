@@ -22,6 +22,7 @@ import {
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
+  getPatientMessages,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -36,13 +37,15 @@ import {
   type MedicationListItem,
   type PatientChartSummary,
   type PatientListItem,
+  type PatientMessageItem,
+  type PatientMessagesResponse,
   type PatientSearchResponse,
   type PrescriptionListItem,
   type ProblemListItem,
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists'
+type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'messages'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
@@ -51,7 +54,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
   { id: 'fees', label: 'Fees', icon: WalletCards },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical },
-  { id: 'messages', label: 'Messages', icon: Mail },
+  { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
   { id: 'reports', label: 'Reports', icon: FileText },
   { id: 'admin', label: 'Admin', icon: ShieldCheck },
 ]
@@ -89,6 +92,11 @@ function App() {
   const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
   const [clinicalStatus, setClinicalStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [clinicalError, setClinicalError] = useState<string | null>(null)
+
+  const [messagePatientId, setMessagePatientId] = useState('MOD-PAT-0004')
+  const [patientMessages, setPatientMessages] = useState<PatientMessagesResponse | null>(null)
+  const [messageStatus, setMessageStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [messageError, setMessageError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -306,6 +314,34 @@ function App() {
     }
   }, [activeModule, clinicalPatientId])
 
+  useEffect(() => {
+    if (activeModule !== 'messages') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setMessageStatus('loading')
+      setMessageError(null)
+
+      try {
+        const result = await getPatientMessages(messagePatientId, controller.signal)
+        setPatientMessages(result)
+        setMessageStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setMessageStatus('error')
+          setMessageError(loadError instanceof Error ? loadError.message : 'Patient messages failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, messagePatientId])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -319,7 +355,9 @@ function App() {
         ? encounterResult?.datasetVersion ?? searchResult?.datasetVersion
         : activeModule === 'lists'
           ? clinicalLists?.datasetVersion ?? searchResult?.datasetVersion
-      : searchResult?.datasetVersion
+          : activeModule === 'messages'
+            ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
+            : searchResult?.datasetVersion
 
   return (
     <div className="app-shell">
@@ -419,6 +457,15 @@ function App() {
             onPatientIdChange={setClinicalPatientId}
           />
         )}
+        {activeModule === 'messages' && (
+          <MessagesWorkspace
+            patientId={messagePatientId}
+            patientMessages={patientMessages}
+            status={messageStatus}
+            error={messageError}
+            onPatientIdChange={setMessagePatientId}
+          />
+        )}
       </main>
     </div>
   )
@@ -434,6 +481,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'lists') {
     return 'Clinical Lists'
   }
+  if (moduleId === 'messages') {
+    return 'Patient Communications'
+  }
   return 'Patient Finder'
 }
 
@@ -446,6 +496,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'lists') {
     return 'Lists'
+  }
+  if (moduleId === 'messages') {
+    return 'Messages'
   }
   return 'Patient/Client'
 }
@@ -914,6 +967,104 @@ function ClinicalListsWorkspace({
   )
 }
 
+function MessagesWorkspace({
+  patientId,
+  patientMessages,
+  status,
+  error,
+  onPatientIdChange,
+}: {
+  patientId: string
+  patientMessages: PatientMessagesResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+}) {
+  const newCount = countMessagesByStatus(patientMessages?.messages, 'New')
+  const doneCount = countMessagesByStatus(patientMessages?.messages, 'Done')
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Messages search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Messages patient ID"
+              placeholder="MOD-PAT-0004"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Patient messages'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {patientMessages ? (
+          <div className="list-counts">
+            <MetricRow label="Messages" value={patientMessages.messages.length} />
+            <MetricRow label="New" value={newCount} />
+            <MetricRow label="Done" value={doneCount} />
+            <MetricRow label="Portal" value={patientMessages.portalEnabled ? 1 : 0} />
+          </div>
+        ) : (
+          <div className="empty-state">No patient messages loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Messages detail">
+        {patientMessages ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Patient Messages</p>
+                <h2>{patientMessages.patientDisplayName}</h2>
+                <p className="patient-line">
+                  {patientMessages.pubpid} / PID {patientMessages.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">{patientMessages.portalEnabled ? 'Portal enabled' : 'Portal pending'}</div>
+            </div>
+
+            <div className="message-detail-grid">
+              <InfoPanel title="Portal Status" icon={Mail}>
+                <Field label="Patient ID" value={patientMessages.pubpid} />
+                <Field label="Portal access" value={patientMessages.portalEnabled ? 'Enabled' : 'Pending'} />
+                <Field label="Open messages" value={newCount} />
+                <Field label="Closed messages" value={doneCount} />
+              </InfoPanel>
+
+              <section className="info-panel messages-panel">
+                <div className="panel-heading">
+                  <Mail size={17} />
+                  <h3>Messages</h3>
+                </div>
+                <div className="message-list-body">
+                  {patientMessages.messages.map((message) => (
+                    <MessageItem key={message.id} message={message} />
+                  ))}
+                  {patientMessages.messages.length === 0 && (
+                    <div className="timeline-placeholder">No messages recorded</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading patient messages</div>
+        ) : (
+          <div className="empty-chart">Enter a patient ID to load messages</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function PatientResult({
   patient,
   selected,
@@ -997,6 +1148,19 @@ function EncounterResult({
         </span>
       </div>
     </button>
+  )
+}
+
+function MessageItem({ message }: { message: PatientMessageItem }) {
+  return (
+    <article className="message-item">
+      <div className="message-item-header">
+        <strong>{message.title || 'Patient message'}</strong>
+        <span className="status-tag">{message.status || 'Status pending'}</span>
+      </div>
+      <p>{message.body || 'No message body recorded'}</p>
+      <span>{message.date || 'No date'}</span>
+    </article>
   )
 }
 
@@ -1151,6 +1315,10 @@ function MetricRow({ label, value }: { label: string; value: number }) {
       <strong>{value}</strong>
     </div>
   )
+}
+
+function countMessagesByStatus(messages: PatientMessageItem[] | undefined, status: string) {
+  return messages?.filter((message) => message.status === status).length ?? 0
 }
 
 function TimelinePanel({
