@@ -9,7 +9,14 @@ public sealed record PatientBillingResponse(
     string PatientDisplayName,
     string FirstName,
     string LastName,
+    BillingAccountSummary AccountSummary,
     IReadOnlyList<BillingEncounterItem> Encounters);
+
+public sealed record BillingAccountSummary(
+    decimal ChargeAmount,
+    decimal PaymentAmount,
+    decimal AdjustmentAmount,
+    decimal BalanceAmount);
 
 public sealed record BillingEncounterItem(
     int Id,
@@ -21,6 +28,9 @@ public sealed record BillingEncounterItem(
     string? ProviderName,
     string? FacilityName,
     decimal TotalFee,
+    decimal PaymentAmount,
+    decimal AdjustmentAmount,
+    decimal BalanceAmount,
     IReadOnlyList<BillingLineItem> Lines,
     IReadOnlyList<BillingClaimItem> Claims,
     IReadOnlyList<BillingPaymentItem> Payments);

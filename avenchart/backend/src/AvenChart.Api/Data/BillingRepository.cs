@@ -26,6 +26,30 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         var linesByEncounter = lines.GroupBy(line => line.Encounter).ToDictionary(group => group.Key, group => group.ToList());
         var claimsByEncounter = claims.GroupBy(claim => claim.Encounter).ToDictionary(group => group.Key, group => group.ToList());
         var paymentsByEncounter = payments.GroupBy(payment => payment.Encounter).ToDictionary(group => group.Key, group => group.ToList());
+        var encounterSummaries = encounters.Select(encounter =>
+        {
+            var encounterLines = linesByEncounter.GetValueOrDefault(encounter.Encounter, []);
+            var encounterPayments = paymentsByEncounter.GetValueOrDefault(encounter.Encounter, []);
+            var chargeAmount = encounterLines.Sum(line => line.Fee ?? 0m);
+            var paymentAmount = encounterPayments.Sum(payment => payment.PayAmount);
+            var adjustmentAmount = encounterPayments.Sum(payment => payment.AdjustmentAmount);
+
+            return encounter with
+            {
+                TotalFee = chargeAmount,
+                PaymentAmount = paymentAmount,
+                AdjustmentAmount = adjustmentAmount,
+                BalanceAmount = chargeAmount - paymentAmount - adjustmentAmount,
+                Lines = encounterLines,
+                Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, []),
+                Payments = encounterPayments
+            };
+        }).ToList();
+        var accountSummary = new BillingAccountSummary(
+            ChargeAmount: encounterSummaries.Sum(encounter => encounter.TotalFee),
+            PaymentAmount: encounterSummaries.Sum(encounter => encounter.PaymentAmount),
+            AdjustmentAmount: encounterSummaries.Sum(encounter => encounter.AdjustmentAmount),
+            BalanceAmount: encounterSummaries.Sum(encounter => encounter.BalanceAmount));
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -36,17 +60,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             PatientDisplayName: patient.DisplayName,
             FirstName: patient.FirstName,
             LastName: patient.LastName,
-            Encounters: encounters.Select(encounter =>
-            {
-                var encounterLines = linesByEncounter.GetValueOrDefault(encounter.Encounter, []);
-                return encounter with
-                {
-                    TotalFee = encounterLines.Sum(line => line.Fee ?? 0m),
-                    Lines = encounterLines,
-                    Claims = claimsByEncounter.GetValueOrDefault(encounter.Encounter, []),
-                    Payments = paymentsByEncounter.GetValueOrDefault(encounter.Encounter, [])
-                };
-            }).ToList());
+            AccountSummary: accountSummary,
+            Encounters: encounterSummaries);
     }
 
     public async Task<BillingLineMutationResponse?> CreateLineAsync(
@@ -309,6 +324,9 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 ProviderName: ReadNullableString(reader, "provider_name"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 TotalFee: 0m,
+                PaymentAmount: 0m,
+                AdjustmentAmount: 0m,
+                BalanceAmount: 0m,
                 Lines: [],
                 Claims: [],
                 Payments: []));

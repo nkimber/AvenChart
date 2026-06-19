@@ -1594,6 +1594,31 @@ catch {
     Add-Check -Name "anchor payment posting summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $balanceBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $balanceEncounter = $balanceBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1
+    $balanceSummary = $balanceBilling.accountSummary
+    $accountBalancePassed = $balanceBilling.patientId -eq "MOD-PAT-0005" `
+        -and $null -ne $balanceSummary `
+        -and $null -ne $balanceEncounter `
+        -and [decimal]$balanceEncounter.totalFee -eq 186 `
+        -and [decimal]$balanceEncounter.paymentAmount -eq 126 `
+        -and [decimal]$balanceEncounter.adjustmentAmount -eq 42 `
+        -and [decimal]$balanceEncounter.balanceAmount -eq 18 `
+        -and [decimal]$balanceSummary.chargeAmount -eq 635 `
+        -and [decimal]$balanceSummary.paymentAmount -eq 206 `
+        -and [decimal]$balanceSummary.adjustmentAmount -eq 64.25 `
+        -and [decimal]$balanceSummary.balanceAmount -eq 364.75
+    Add-Check -Name "anchor account balance summary" -Result $(if ($accountBalancePassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $balanceBilling.patientId
+        accountSummary = $balanceSummary
+        balanceEncounter = $balanceEncounter
+    }
+}
+catch {
+    Add-Check -Name "anchor account balance summary" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

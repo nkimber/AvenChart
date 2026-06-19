@@ -4552,6 +4552,7 @@ function FeesWorkspace({
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
   const totalFee = patientBilling?.encounters.reduce((sum, encounter) => sum + encounter.totalFee, 0) ?? 0
+  const accountSummary = patientBilling?.accountSummary
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -4662,6 +4663,7 @@ function FeesWorkspace({
             <MetricRow label="CPT lines" value={countBillingLinesByType(patientBilling.encounters, 'CPT4')} />
             <MetricRow label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
             <MetricRow label="Total fee" value={Math.round(totalFee)} />
+            <MetricRow label="Balance" value={Math.round(accountSummary?.balanceAmount ?? totalFee)} />
           </div>
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
@@ -4911,7 +4913,7 @@ function FeesWorkspace({
                   {patientBilling.pubpid} / PID {patientBilling.legacyPid}
                 </p>
               </div>
-              <div className="portal-pill">{formatCurrency(totalFee)}</div>
+              <div className="portal-pill">Balance {formatCurrency(accountSummary?.balanceAmount ?? totalFee)}</div>
             </div>
 
             <div className="billing-detail-grid">
@@ -4923,6 +4925,13 @@ function FeesWorkspace({
                 <Field label="Payments" value={paymentCount} />
                 <Field label="Diagnosis lines" value={countBillingLinesByType(patientBilling.encounters, 'ICD10')} />
                 <Field label="Total fee" value={formatCurrency(totalFee)} />
+              </InfoPanel>
+
+              <InfoPanel title="Account Balance" icon={WalletCards}>
+                <Field label="Charges" value={formatCurrency(accountSummary?.chargeAmount ?? totalFee)} />
+                <Field label="Paid" value={formatCurrency(accountSummary?.paymentAmount ?? 0)} />
+                <Field label="Adjusted" value={formatCurrency(accountSummary?.adjustmentAmount ?? 0)} />
+                <Field label="Balance" value={formatCurrency(accountSummary?.balanceAmount ?? totalFee)} />
               </InfoPanel>
 
               <section className="info-panel billing-lines-panel">
@@ -7402,7 +7411,7 @@ function BillingEncounterCard({
             {encounter.date} / Encounter {encounter.encounter}
           </span>
         </div>
-        <span className="status-tag">{formatCurrency(encounter.totalFee)}</span>
+        <span className="status-tag">Balance {formatCurrency(encounter.balanceAmount)}</span>
       </div>
       <div className="procedure-order-meta">
         <span>{encounter.providerName || 'Provider not recorded'}</span>
@@ -7411,6 +7420,12 @@ function BillingEncounterCard({
       <div className="procedure-order-meta">
         <span>{encounter.diagnosisCode || 'No diagnosis'}</span>
         <span>{encounter.diagnosisText || 'No diagnosis text'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>Charges {formatCurrency(encounter.totalFee)}</span>
+        <span>Paid {formatCurrency(encounter.paymentAmount)}</span>
+        <span>Adjusted {formatCurrency(encounter.adjustmentAmount)}</span>
+        <span>Balance {formatCurrency(encounter.balanceAmount)}</span>
       </div>
       <div className="billing-line-list">
         {encounter.claims.map((claim) => (
