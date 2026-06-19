@@ -190,45 +190,89 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("canonicalId", canonicalId);
         command.Parameters.AddWithValue("baseDate", metadata.BaseDate);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        PatientChartSummary summary;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            return null;
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            var dateOfBirth = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("date_of_birth"));
+            summary = new PatientChartSummary(
+                CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                DisplayName: BuildDisplayName(reader),
+                FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+                LastName: reader.GetString(reader.GetOrdinal("last_name")),
+                PreferredName: ReadNullableString(reader, "preferred_name"),
+                Sex: ReadNullableString(reader, "sex"),
+                DateOfBirth: dateOfBirth.ToString("yyyy-MM-dd"),
+                Age: CalculateAge(dateOfBirth, metadata.BaseDate),
+                Cohort: ReadNullableString(reader, "cohort"),
+                Purpose: ReadNullableString(reader, "purpose"),
+                Street: ReadNullableString(reader, "street"),
+                City: ReadNullableString(reader, "city"),
+                State: ReadNullableString(reader, "state"),
+                PostalCode: ReadNullableString(reader, "postal_code"),
+                Email: ReadNullableString(reader, "email"),
+                Phone: ReadNullableString(reader, "phone"),
+                PhoneHome: ReadNullableString(reader, "phone_home"),
+                PhoneCell: ReadNullableString(reader, "phone_cell"),
+                HipaaAllowSms: ReadNullableString(reader, "hipaa_allow_sms"),
+                HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
+                MaritalStatus: ReadNullableString(reader, "marital_status"),
+                Occupation: ReadNullableString(reader, "occupation"),
+                PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
+                RegistrationDate: ReadDate(reader, "registration_date"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                PrimaryProviderName: ReadNullableString(reader, "provider_name"),
+                Insurance: Array.Empty<PatientInsuranceItem>(),
+                Counts: ReadCounts(reader),
+                NextAppointment: ReadAppointment(reader),
+                LatestEncounter: ReadEncounter(reader));
         }
 
-        var dateOfBirth = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("date_of_birth"));
-        return new PatientChartSummary(
-            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
-            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
-            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
-            DisplayName: BuildDisplayName(reader),
-            FirstName: reader.GetString(reader.GetOrdinal("first_name")),
-            LastName: reader.GetString(reader.GetOrdinal("last_name")),
-            PreferredName: ReadNullableString(reader, "preferred_name"),
-            Sex: ReadNullableString(reader, "sex"),
-            DateOfBirth: dateOfBirth.ToString("yyyy-MM-dd"),
-            Age: CalculateAge(dateOfBirth, metadata.BaseDate),
-            Cohort: ReadNullableString(reader, "cohort"),
-            Purpose: ReadNullableString(reader, "purpose"),
-            Street: ReadNullableString(reader, "street"),
-            City: ReadNullableString(reader, "city"),
-            State: ReadNullableString(reader, "state"),
-            PostalCode: ReadNullableString(reader, "postal_code"),
-            Email: ReadNullableString(reader, "email"),
-            Phone: ReadNullableString(reader, "phone"),
-            PhoneHome: ReadNullableString(reader, "phone_home"),
-            PhoneCell: ReadNullableString(reader, "phone_cell"),
-            HipaaAllowSms: ReadNullableString(reader, "hipaa_allow_sms"),
-            HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
-            MaritalStatus: ReadNullableString(reader, "marital_status"),
-            Occupation: ReadNullableString(reader, "occupation"),
-            PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
-            RegistrationDate: ReadDate(reader, "registration_date"),
-            FacilityName: ReadNullableString(reader, "facility_name"),
-            PrimaryProviderName: ReadNullableString(reader, "provider_name"),
-            Counts: ReadCounts(reader),
-            NextAppointment: ReadAppointment(reader),
-            LatestEncounter: ReadEncounter(reader));
+        var insurance = await GetInsuranceForPatientAsync(connection, summary.CanonicalId, cancellationToken);
+        return summary with { Insurance = insurance };
+    }
+
+    private static async Task<IReadOnlyList<PatientInsuranceItem>> GetInsuranceForPatientAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, type, provider, plan_name, policy_number, group_number, relationship
+            from insurance_records
+            where lower(patient_id) = lower(@canonicalId)
+            order by
+                case lower(coalesce(type, ''))
+                    when 'primary' then 1
+                    when 'secondary' then 2
+                    else 3
+                end,
+                id;
+            """;
+        command.Parameters.AddWithValue("canonicalId", canonicalId);
+
+        var coverage = new List<PatientInsuranceItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            coverage.Add(new PatientInsuranceItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Type: ReadNullableString(reader, "type"),
+                Provider: ReadNullableString(reader, "provider"),
+                PlanName: ReadNullableString(reader, "plan_name"),
+                PolicyNumber: ReadNullableString(reader, "policy_number"),
+                GroupNumber: ReadNullableString(reader, "group_number"),
+                Relationship: ReadNullableString(reader, "relationship")));
+        }
+
+        return coverage;
     }
 
     public async Task<PatientChartSummary?> UpdateContactAsync(

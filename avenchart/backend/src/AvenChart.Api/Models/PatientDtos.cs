@@ -60,6 +60,7 @@ public sealed record PatientChartSummary(
     string RegistrationDate,
     string? FacilityName,
     string? PrimaryProviderName,
+    IReadOnlyList<PatientInsuranceItem> Insurance,
     PatientActivityCounts Counts,
     PatientTimelineItem? NextAppointment,
     PatientTimelineItem? LatestEncounter);
@@ -83,6 +84,15 @@ public sealed record PatientTimelineItem(
     string? Status,
     string? ProviderName,
     string? FacilityName);
+
+public sealed record PatientInsuranceItem(
+    string Id,
+    string? Type,
+    string? Provider,
+    string? PlanName,
+    string? PolicyNumber,
+    string? GroupNumber,
+    string? Relationship);
 
 public sealed record PatientContactUpdateRequest(
     string? PhoneHome,

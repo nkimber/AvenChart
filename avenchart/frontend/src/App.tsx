@@ -112,6 +112,7 @@ import {
   type EncounterVitalsCreateInput,
   type MedicationListItem,
   type PatientChartSummary,
+  type PatientInsuranceItem,
   type PatientListItem,
   type PatientBillingResponse,
   type PatientContactUpdate,
@@ -1882,6 +1883,10 @@ function PatientWorkspace({
                     </div>
                   </>
                 )}
+              </InfoPanel>
+
+              <InfoPanel title="Insurance" icon={WalletCards}>
+                <InsuranceCoverageList items={chart?.insurance ?? []} loading={chartStatus === 'loading'} />
               </InfoPanel>
 
               <InfoPanel title="Clinical Activity" icon={HeartPulse}>
@@ -5631,6 +5636,33 @@ function InfoPanel({
   )
 }
 
+function InsuranceCoverageList({ items, loading }: { items: PatientInsuranceItem[]; loading: boolean }) {
+  if (loading) {
+    return <div className="empty-state inline">Loading coverage</div>
+  }
+
+  if (items.length === 0) {
+    return <div className="empty-state inline">No coverage recorded</div>
+  }
+
+  return (
+    <div className="insurance-list" aria-label="Insurance coverage">
+      {items.map((item) => (
+        <article className="insurance-item" key={item.id}>
+          <div className="insurance-item-title">
+            <span>{formatCoverageType(item.type)}</span>
+            <strong>{item.provider || 'Not recorded'}</strong>
+          </div>
+          <Field label="Plan" value={item.planName} />
+          <Field label="Policy" value={item.policyNumber} />
+          <Field label="Group" value={item.groupNumber} />
+          <Field label="Relationship" value={formatCoverageRelationship(item.relationship)} />
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function NoteBlock({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="note-block">
@@ -5651,6 +5683,18 @@ function Field({ label, value }: { label: string; value?: string | number | null
 
 function formatPercent(value?: number | null) {
   return value === null || value === undefined ? null : `${value}%`
+}
+
+function formatCoverageType(value?: string | null) {
+  if (!value) {
+    return 'Coverage'
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
+}
+
+function formatCoverageRelationship(value?: string | null) {
+  return value ? formatCoverageType(value) : null
 }
 
 function MetricRow({ label, value }: { label: string; value: number }) {

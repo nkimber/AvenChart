@@ -42,6 +42,16 @@ export type PatientTimelineItem = {
   facilityName?: string | null
 }
 
+export type PatientInsuranceItem = {
+  id: string
+  type?: string | null
+  provider?: string | null
+  planName?: string | null
+  policyNumber?: string | null
+  groupNumber?: string | null
+  relationship?: string | null
+}
+
 export type PatientChartSummary = PatientListItem & {
   street?: string | null
   city?: string | null
@@ -53,6 +63,7 @@ export type PatientChartSummary = PatientListItem & {
   occupation?: string | null
   portalEnabled: boolean
   registrationDate: string
+  insurance: PatientInsuranceItem[]
   nextAppointment?: PatientTimelineItem | null
   latestEncounter?: PatientTimelineItem | null
 }

@@ -445,6 +445,42 @@
   padding: 12px;
 }
 
+.insurance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.insurance-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #d8e5e8;
+  border-radius: 7px;
+  background: #f9fbfb;
+  padding: 10px;
+}
+
+.insurance-item-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  color: #556978;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.insurance-item-title strong {
+  color: #163743;
+  font-size: 13px;
+  text-align: right;
+  text-transform: none;
+}
+
 .contact-form {
   display: flex;
   flex-direction: column;
@@ -1143,6 +1179,11 @@
   background: #eef8f4;
   color: #1f684d;
   border-color: #b8ddcb;
+}
+
+.empty-state.inline {
+  padding: 10px;
+  font-size: 13px;
 }
 
 .empty-chart {

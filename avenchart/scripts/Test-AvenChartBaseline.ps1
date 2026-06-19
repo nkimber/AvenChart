@@ -66,6 +66,30 @@ catch {
 }
 
 try {
+    $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $coverage = @($coverageChart.insurance)
+    $primary = $coverage | Where-Object { $_.type -eq "primary" } | Select-Object -First 1
+    $secondary = $coverage | Where-Object { $_.type -eq "secondary" } | Select-Object -First 1
+    $coveragePassed = $coverageChart.canonicalId -eq "MOD-PAT-0005" `
+        -and $coverage.Count -eq 2 `
+        -and $primary.provider -eq "Northstar HMO" `
+        -and $primary.planName -eq "Medicare Advantage" `
+        -and $primary.policyNumber -eq "POL100005" `
+        -and $primary.groupNumber -eq "GRP104" `
+        -and $secondary.provider -eq "Acme Health" `
+        -and $secondary.policyNumber -eq "SEC100005" `
+        -and $secondary.groupNumber -eq "GRP204"
+    Add-Check -Name "anchor insurance coverage" -Result $(if ($coveragePassed) { "passed" } else { "failed" }) -Details @{
+        canonicalId = $coverageChart.canonicalId
+        displayName = $coverageChart.displayName
+        coverage = $coverage
+    }
+}
+catch {
+    Add-Check -Name "anchor insurance coverage" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $appointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" -Method Get -TimeoutSec 20
     $anchorAppointment = $appointments.appointments | Select-Object -First 1
     $appointmentPassed = $null -ne $anchorAppointment -and ([datetime]$anchorAppointment.date) -gt ([datetime]"2026-06-18")
