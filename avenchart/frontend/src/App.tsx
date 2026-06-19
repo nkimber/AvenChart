@@ -26,6 +26,7 @@ import {
   getPatientBilling,
   getPatientMessages,
   getProcedureResults,
+  getOperationalReports,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -49,6 +50,10 @@ import {
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
+  type OperationalReportsResponse,
+  type ProviderActivityReportItem,
+  type FacilityActivityReportItem,
+  type ClinicalConditionReportItem,
   type ProcedureOrderItem,
   type ProcedureReportItem,
   type ProcedureResultItem,
@@ -58,7 +63,16 @@ import {
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'fees' | 'procedures' | 'messages' | 'admin'
+type ModuleId =
+  | 'patients'
+  | 'calendar'
+  | 'encounters'
+  | 'lists'
+  | 'fees'
+  | 'procedures'
+  | 'messages'
+  | 'reports'
+  | 'admin'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
@@ -68,7 +82,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'fees', label: 'Fees', icon: WalletCards, implemented: 'fees' },
   { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
-  { id: 'reports', label: 'Reports', icon: FileText },
+  { id: 'reports', label: 'Reports', icon: FileText, implemented: 'reports' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
 
@@ -124,6 +138,10 @@ function App() {
   const [administrationDirectory, setAdministrationDirectory] = useState<AdministrationDirectoryResponse | null>(null)
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [administrationError, setAdministrationError] = useState<string | null>(null)
+
+  const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
+  const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [reportsError, setReportsError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -451,6 +469,33 @@ function App() {
     return () => controller.abort()
   }, [activeModule])
 
+  useEffect(() => {
+    if (activeModule !== 'reports') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadOperationalReports() {
+      setReportsStatus('loading')
+      setReportsError(null)
+
+      try {
+        const result = await getOperationalReports(controller.signal)
+        setOperationalReports(result)
+        setReportsStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setReportsStatus('error')
+          setReportsError(loadError instanceof Error ? loadError.message : 'Operational reports failed')
+        }
+      }
+    }
+
+    loadOperationalReports()
+    return () => controller.abort()
+  }, [activeModule])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -470,6 +515,8 @@ function App() {
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'reports'
+            ? operationalReports?.datasetVersion ?? searchResult?.datasetVersion
             : activeModule === 'admin'
               ? administrationDirectory?.datasetVersion ?? searchResult?.datasetVersion
               : searchResult?.datasetVersion
@@ -599,6 +646,13 @@ function App() {
             onPatientIdChange={setMessagePatientId}
           />
         )}
+        {activeModule === 'reports' && (
+          <ReportsWorkspace
+            reports={operationalReports}
+            status={reportsStatus}
+            error={reportsError}
+          />
+        )}
         {activeModule === 'admin' && (
           <AdministrationWorkspace
             directory={administrationDirectory}
@@ -630,6 +684,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'messages') {
     return 'Patient Communications'
   }
+  if (moduleId === 'reports') {
+    return 'Reports And Exports'
+  }
   if (moduleId === 'admin') {
     return 'Administration'
   }
@@ -654,6 +711,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'messages') {
     return 'Messages'
+  }
+  if (moduleId === 'reports') {
+    return 'Reports'
   }
   if (moduleId === 'admin') {
     return 'Admin'
@@ -1435,6 +1495,127 @@ function MessagesWorkspace({
   )
 }
 
+function ReportsWorkspace({
+  reports,
+  status,
+  error,
+}: {
+  reports: OperationalReportsResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+}) {
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Reports summary">
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Operational reports'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {reports ? (
+          <>
+            <div className="list-counts">
+              <MetricRow label="Patients" value={reports.counts.patients} />
+              <MetricRow label="Encounters" value={reports.counts.encounters} />
+              <MetricRow label="Appointments" value={reports.counts.appointments} />
+              <MetricRow label="Billing lines" value={reports.counts.billingLines} />
+            </div>
+
+            <div className="access-scope-panel">
+              <div className="panel-heading">
+                <FileText size={17} />
+                <h3>Report Scope</h3>
+              </div>
+              <Field label="As of" value={reports.asOfDate} />
+              <Field label="Current year" value={reports.currentYear} />
+              <Field label="Dataset" value={reports.datasetVersion} />
+              <Field label="Exports" value="Deferred" />
+            </div>
+          </>
+        ) : (
+          <div className="empty-state">No operational reports loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Operational reports">
+        {reports ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Operational Reports</p>
+                <h2>Gold Data Snapshot</h2>
+                <p className="patient-line">
+                  As of {reports.asOfDate} / {reports.counts.providers} providers / {reports.counts.facilities}{' '}
+                  facilities
+                </p>
+              </div>
+              <div className="portal-pill">{formatCurrency(reports.counts.billingTotal)}</div>
+            </div>
+
+            <div className="reports-detail-grid">
+              <InfoPanel title="Activity Summary" icon={Activity}>
+                <MetricRow label="Portal patients" value={reports.counts.portalPatients} />
+                <MetricRow label="Future appointments" value={reports.counts.futureAppointments} />
+                <MetricRow label="Current year appointments" value={reports.counts.currentYearAppointments} />
+                <MetricRow label="Current year encounters" value={reports.counts.currentYearEncounters} />
+              </InfoPanel>
+
+              <InfoPanel title="Communication And Labs" icon={Mail}>
+                <MetricRow label="Messages" value={reports.counts.messages} />
+                <MetricRow label="New messages" value={reports.counts.newMessages} />
+                <MetricRow label="Done messages" value={reports.counts.doneMessages} />
+                <MetricRow label="Lab reports" value={reports.counts.labReports} />
+              </InfoPanel>
+
+              <section className="info-panel report-list-panel">
+                <div className="panel-heading">
+                  <UserRound size={17} />
+                  <h3>Provider Activity</h3>
+                </div>
+                <div className="report-card-list">
+                  {reports.providerActivity.map((provider) => (
+                    <ProviderReportCard key={provider.username} provider={provider} />
+                  ))}
+                </div>
+              </section>
+
+              <section className="info-panel report-list-panel">
+                <div className="panel-heading">
+                  <Building2 size={17} />
+                  <h3>Facility Activity</h3>
+                </div>
+                <div className="report-card-list">
+                  {reports.facilityActivity.map((facility) => (
+                    <FacilityReportCard key={facility.code} facility={facility} />
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <section className="info-panel report-conditions-panel">
+              <div className="panel-heading">
+                <HeartPulse size={17} />
+                <h3>Clinical Conditions</h3>
+              </div>
+              <div className="condition-report-grid">
+                {reports.clinicalConditions.map((condition) => (
+                  <ConditionReportCard key={`${condition.diagnosis}-${condition.title}`} condition={condition} />
+                ))}
+              </div>
+            </section>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading operational reports</div>
+        ) : (
+          <div className="empty-chart">Open Reports to load the operational report dashboard</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function AdministrationWorkspace({
   directory,
   status,
@@ -1534,6 +1715,56 @@ function AdministrationWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function ProviderReportCard({ provider }: { provider: ProviderActivityReportItem }) {
+  return (
+    <article className="report-row-card">
+      <div className="message-item-header">
+        <strong>{provider.displayName}</strong>
+        <span className="status-tag">{provider.username}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{provider.encounters} encounters</span>
+        <span>{provider.billingLines} billing lines</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{formatCurrency(provider.billingTotal)}</span>
+        <span>Seeded provider activity</span>
+      </div>
+    </article>
+  )
+}
+
+function FacilityReportCard({ facility }: { facility: FacilityActivityReportItem }) {
+  return (
+    <article className="report-row-card">
+      <div className="message-item-header">
+        <strong>{facility.name}</strong>
+        <span className="status-tag">{facility.code}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{facility.appointments} appointments</span>
+        <span>{facility.encounters} encounters</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{facility.billingLines} billing lines</span>
+        <span>{formatCurrency(facility.billingTotal)}</span>
+      </div>
+    </article>
+  )
+}
+
+function ConditionReportCard({ condition }: { condition: ClinicalConditionReportItem }) {
+  return (
+    <article className="condition-report-card">
+      <div>
+        <strong>{condition.title}</strong>
+        <span>{condition.diagnosis}</span>
+      </div>
+      <div className="portal-pill">{condition.patients} patients</div>
+    </article>
   )
 }
 

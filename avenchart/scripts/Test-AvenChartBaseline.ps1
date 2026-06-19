@@ -219,6 +219,33 @@ catch {
     Add-Check -Name "anchor administration directory" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $reports = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/operational" -Method Get -TimeoutSec 20
+    $topProvider = $reports.providerActivity | Where-Object { $_.username -eq "gold-provider-02" } | Select-Object -First 1
+    $northFacility = $reports.facilityActivity | Where-Object { $_.code -eq "NORTH" } | Select-Object -First 1
+    $asthmaCondition = $reports.clinicalConditions | Where-Object { $_.title -eq "Asthma, uncomplicated" -and $_.diagnosis -eq "ICD10:J45.909" } | Select-Object -First 1
+    $reportsPassed = $reports.counts.patients -eq 1000 `
+        -and $reports.counts.futureAppointments -eq 1261 `
+        -and $reports.counts.currentYearEncounters -eq 1100 `
+        -and $reports.counts.billingLines -eq 3000 `
+        -and $reports.counts.billingTotal -eq 446000 `
+        -and $null -ne $topProvider `
+        -and $topProvider.encounters -eq 176 `
+        -and $null -ne $northFacility `
+        -and $northFacility.appointments -eq 935 `
+        -and $null -ne $asthmaCondition `
+        -and $asthmaCondition.patients -eq 188
+    Add-Check -Name "anchor operational reports" -Result $(if ($reportsPassed) { "passed" } else { "failed" }) -Details @{
+        counts = $reports.counts
+        topProvider = $topProvider
+        northFacility = $northFacility
+        asthmaCondition = $asthmaCondition
+    }
+}
+catch {
+    Add-Check -Name "anchor operational reports" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

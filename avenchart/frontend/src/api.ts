@@ -350,6 +350,60 @@ export type AdministrationDirectoryResponse = {
   facilities: AdministrationFacilityItem[]
 }
 
+export type OperationalReportCounts = {
+  patients: number
+  portalPatients: number
+  appointments: number
+  futureAppointments: number
+  currentYearAppointments: number
+  encounters: number
+  currentYearEncounters: number
+  billingLines: number
+  billingTotal: number
+  labReports: number
+  messages: number
+  newMessages: number
+  doneMessages: number
+  facilities: number
+  providers: number
+}
+
+export type ProviderActivityReportItem = {
+  username: string
+  firstName: string
+  lastName: string
+  displayName: string
+  encounters: number
+  billingLines: number
+  billingTotal: number
+}
+
+export type FacilityActivityReportItem = {
+  code: string
+  name: string
+  appointments: number
+  encounters: number
+  billingLines: number
+  billingTotal: number
+}
+
+export type ClinicalConditionReportItem = {
+  title: string
+  diagnosis: string
+  patients: number
+}
+
+export type OperationalReportsResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  currentYear: number
+  counts: OperationalReportCounts
+  providerActivity: ProviderActivityReportItem[]
+  facilityActivity: FacilityActivityReportItem[]
+  clinicalConditions: ClinicalConditionReportItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -481,6 +535,15 @@ export async function getAdministrationDirectory(signal?: AbortSignal): Promise<
   const response = await fetch(`${apiBaseUrl}/api/administration/directory`, { signal })
   if (!response.ok) {
     throw new Error(`Administration directory load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getOperationalReports(signal?: AbortSignal): Promise<OperationalReportsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/reports/operational`, { signal })
+  if (!response.ok) {
+    throw new Error(`Operational reports load failed with ${response.status}`)
   }
 
   return response.json()

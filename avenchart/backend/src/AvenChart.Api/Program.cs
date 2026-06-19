@@ -18,6 +18,7 @@ builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
+builder.Services.AddScoped<ReportRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -177,5 +178,16 @@ administration.MapGet("/directory", async (
         return Results.Ok(directory);
     })
     .WithName("GetAdministrationDirectory");
+
+var reports = app.MapGroup("/api/reports").WithTags("Reports");
+
+reports.MapGet("/operational", async (
+        ReportRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var report = await repository.GetOperationalReportsAsync(cancellationToken);
+        return Results.Ok(report);
+    })
+    .WithName("GetOperationalReports");
 
 app.Run();
