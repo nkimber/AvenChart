@@ -186,10 +186,16 @@ create table prescriptions (
   provider_id integer references staff(id),
   encounter integer,
   start_date date,
+  end_date date,
   drug text not null,
+  rx_norm_code text,
   dosage text,
+  quantity text,
   route text,
-  diagnosis text
+  refills integer not null default 0,
+  diagnosis text,
+  note text,
+  active integer not null default 1
 );
 
 create table billing (
@@ -534,10 +540,16 @@ copyRows('prescriptions', [
   'provider_id',
   'encounter',
   'start_date',
+  'end_date',
   'drug',
+  'rx_norm_code',
   'dosage',
+  'quantity',
   'route',
+  'refills',
   'diagnosis',
+  'note',
+  'active',
 ], dataset.prescriptions.map((prescription) => [
   prescription.id,
   prescription.patientId,
@@ -545,10 +557,16 @@ copyRows('prescriptions', [
   prescription.providerId,
   prescription.encounter,
   prescription.startDate,
+  prescription.endDate,
   prescription.drug,
+  prescription.rxNormCode ?? '',
   prescription.dosage,
+  prescription.quantity ?? '30',
   prescription.route,
+  prescription.refills ?? 2,
   prescription.diagnosis,
+  prescription.note ?? 'Gold dataset prescription',
+  prescription.active ?? 1,
 ]))
 
 copyRows('billing', [

@@ -57,8 +57,31 @@ public sealed record PrescriptionListItem(
     string Id,
     string Drug,
     string? Dosage,
+    string? Quantity,
     string? Route,
+    string? RxNormCode,
     string? Diagnosis,
     string? StartDate,
+    string? EndDate,
+    int Refills,
+    int Active,
+    string? Note,
     int? Encounter,
     string? ProviderName);
+
+public sealed record ClinicalPrescriptionCreateRequest(
+    string PatientId,
+    int? ProviderId,
+    string StartDate,
+    string Drug,
+    string? RxNormCode,
+    string Dosage,
+    string Quantity,
+    string? Route,
+    int Refills,
+    string Note,
+    string Diagnosis);
+
+public sealed record ClinicalPrescriptionDeactivateRequest(
+    string EndDate,
+    string Note);

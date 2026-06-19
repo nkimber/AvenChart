@@ -35,15 +35,18 @@ import {
   getOperationalReports,
   createAppointment,
   createClinicalAllergy,
+  createClinicalPrescription,
   createEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
   createPatientMessage,
   deleteAppointment,
   deleteClinicalAllergy,
+  deleteClinicalPrescription,
   deleteEncounter,
   deletePatientMessage,
   deactivateClinicalAllergy,
+  deactivateClinicalPrescription,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -64,6 +67,7 @@ import {
   type BillingLineItem,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
+  type ClinicalPrescriptionCreateInput,
   type EncounterCreateInput,
   type EncounterDetail,
   type EncounterSoapNoteCreateInput,
@@ -795,6 +799,64 @@ function App() {
     }
   }
 
+  async function handleClinicalPrescriptionCreate(input: ClinicalPrescriptionCreateInput) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await createClinicalPrescription(input)
+      setClinicalPatientId(response.detail.patientId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setClinicalStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Clinical prescription create failed'
+      setClinicalError(message)
+      throw createError
+    }
+  }
+
+  async function handleClinicalPrescriptionDeactivate(prescription: PrescriptionListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await deactivateClinicalPrescription(prescription.id, {
+        endDate: '2026-08-15',
+        note: 'Deactivated from the modernized Lists workspace.',
+      })
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (deactivateError) {
+      setClinicalStatus('error')
+      const message = deactivateError instanceof Error ? deactivateError.message : 'Clinical prescription deactivate failed'
+      setClinicalError(message)
+      throw deactivateError
+    }
+  }
+
+  async function handleClinicalPrescriptionDelete(prescription: PrescriptionListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      await deleteClinicalPrescription(prescription.id)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      setClinicalLists(refreshed)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setClinicalStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Clinical prescription delete failed'
+      setClinicalError(message)
+      throw deleteError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1000,6 +1062,9 @@ function App() {
             onCreateAllergy={handleClinicalAllergyCreate}
             onDeactivateAllergy={handleClinicalAllergyDeactivate}
             onDeleteAllergy={handleClinicalAllergyDelete}
+            onCreatePrescription={handleClinicalPrescriptionCreate}
+            onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
+            onDeletePrescription={handleClinicalPrescriptionDelete}
           />
         )}
         {activeModule === 'fees' && (
@@ -2194,6 +2259,9 @@ function ClinicalListsWorkspace({
   onCreateAllergy,
   onDeactivateAllergy,
   onDeleteAllergy,
+  onCreatePrescription,
+  onDeactivatePrescription,
+  onDeletePrescription,
 }: {
   patientId: string
   clinicalLists: ClinicalListsResponse | null
@@ -2203,12 +2271,22 @@ function ClinicalListsWorkspace({
   onCreateAllergy: (input: ClinicalAllergyCreateInput) => Promise<unknown>
   onDeactivateAllergy: (allergy: AllergyListItem) => Promise<unknown>
   onDeleteAllergy: (allergy: AllergyListItem) => Promise<void>
+  onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
+  onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
+  onDeletePrescription: (prescription: PrescriptionListItem) => Promise<void>
 }) {
   const [allergyTitle, setAllergyTitle] = useState('Parity Allergy')
   const [allergyDate, setAllergyDate] = useState('2026-06-18 09:00:00')
   const [allergyReaction, setAllergyReaction] = useState('Rash')
   const [allergySeverity, setAllergySeverity] = useState('mild')
   const [allergyComments, setAllergyComments] = useState('Created from the modernized Lists workspace.')
+  const [prescriptionDrug, setPrescriptionDrug] = useState('Parity Medication')
+  const [prescriptionStartDate, setPrescriptionStartDate] = useState('2026-07-15')
+  const [prescriptionDosage, setPrescriptionDosage] = useState('1 tablet daily')
+  const [prescriptionQuantity, setPrescriptionQuantity] = useState('30')
+  const [prescriptionRefills, setPrescriptionRefills] = useState('1')
+  const [prescriptionDiagnosis, setPrescriptionDiagnosis] = useState('Z00.00')
+  const [prescriptionNote, setPrescriptionNote] = useState('Created from the modernized Lists workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const isLoading = status === 'loading'
 
@@ -2229,6 +2307,26 @@ function ClinicalListsWorkspace({
     setMutationMessage('Allergy saved')
   }
 
+  async function handlePrescriptionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreatePrescription({
+      patientId,
+      startDate: prescriptionStartDate,
+      drug: prescriptionDrug,
+      rxNormCode: '1049502',
+      dosage: prescriptionDosage,
+      quantity: prescriptionQuantity,
+      route: 'oral',
+      refills: Number(prescriptionRefills || 0),
+      note: prescriptionNote,
+      diagnosis: prescriptionDiagnosis,
+    })
+
+    setMutationMessage('Prescription saved')
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Clinical lists search">
@@ -2246,7 +2344,7 @@ function ClinicalListsWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Chart lists'}</span>
-          <span>Allergy lifecycle</span>
+          <span>Allergy and Rx lifecycles</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -2322,6 +2420,88 @@ function ClinicalListsWorkspace({
             {mutationMessage && <span className="save-note">{mutationMessage}</span>}
           </div>
         </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handlePrescriptionSubmit}>
+          <div className="panel-heading compact-heading">
+            <FileText size={16} />
+            <h3>New Prescription</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Drug</span>
+              <input
+                value={prescriptionDrug}
+                onChange={(event) => setPrescriptionDrug(event.target.value)}
+                aria-label="New prescription drug"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Start</span>
+                <input
+                  value={prescriptionStartDate}
+                  onChange={(event) => setPrescriptionStartDate(event.target.value)}
+                  aria-label="New prescription start date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Refills</span>
+                <input
+                  value={prescriptionRefills}
+                  onChange={(event) => setPrescriptionRefills(event.target.value)}
+                  aria-label="New prescription refills"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Dosage</span>
+                <input
+                  value={prescriptionDosage}
+                  onChange={(event) => setPrescriptionDosage(event.target.value)}
+                  aria-label="New prescription dosage"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Quantity</span>
+                <input
+                  value={prescriptionQuantity}
+                  onChange={(event) => setPrescriptionQuantity(event.target.value)}
+                  aria-label="New prescription quantity"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Diagnosis</span>
+              <input
+                value={prescriptionDiagnosis}
+                onChange={(event) => setPrescriptionDiagnosis(event.target.value)}
+                aria-label="New prescription diagnosis"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Note</span>
+              <textarea
+                value={prescriptionNote}
+                onChange={(event) => setPrescriptionNote(event.target.value)}
+                aria-label="New prescription note"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Rx
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="appointment-detail-panel" aria-label="Clinical lists detail">
@@ -2349,7 +2529,12 @@ function ClinicalListsWorkspace({
                 disabled={isLoading}
               />
               <MedicationPanel items={clinicalLists.medications} />
-              <PrescriptionPanel items={clinicalLists.prescriptions} />
+              <PrescriptionPanel
+                items={clinicalLists.prescriptions}
+                onDeactivate={onDeactivatePrescription}
+                onDelete={onDeletePrescription}
+                disabled={isLoading}
+              />
             </div>
           </>
         ) : status === 'loading' ? (
@@ -3399,7 +3584,17 @@ function MedicationPanel({ items }: { items: MedicationListItem[] }) {
   )
 }
 
-function PrescriptionPanel({ items }: { items: PrescriptionListItem[] }) {
+function PrescriptionPanel({
+  items,
+  onDeactivate,
+  onDelete,
+  disabled,
+}: {
+  items: PrescriptionListItem[]
+  onDeactivate: (prescription: PrescriptionListItem) => Promise<unknown>
+  onDelete: (prescription: PrescriptionListItem) => Promise<void>
+  disabled: boolean
+}) {
   return (
     <ClinicalSection title="Prescriptions" icon={FileText} emptyText="No prescriptions">
       {items.map((item) => (
@@ -3408,8 +3603,32 @@ function PrescriptionPanel({ items }: { items: PrescriptionListItem[] }) {
           title={item.drug}
           meta={[item.dosage, item.route, item.diagnosis].filter(Boolean).join(' / ')}
           date={item.startDate}
-          note={item.providerName}
-        />
+          note={[item.providerName, item.quantity ? `Qty ${item.quantity}` : null, `${item.refills} refill${item.refills === 1 ? '' : 's'}`]
+            .filter(Boolean)
+            .join(' / ')}
+        >
+          {item.note && <p className="clinical-item-note">{item.note}</p>}
+          <div className="clinical-item-actions">
+            <button
+              className="icon-text-button danger"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDeactivate(item)}
+            >
+              <Ban size={14} />
+              Deactivate
+            </button>
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDelete(item)}
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No prescriptions</div>}
     </ClinicalSection>

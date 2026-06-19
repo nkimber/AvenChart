@@ -258,9 +258,15 @@ export type PrescriptionListItem = {
   id: string
   drug: string
   dosage?: string | null
+  quantity?: string | null
   route?: string | null
+  rxNormCode?: string | null
   diagnosis?: string | null
   startDate?: string | null
+  endDate?: string | null
+  refills: number
+  active: number
+  note?: string | null
   encounter?: number | null
   providerName?: string | null
 }
@@ -297,6 +303,25 @@ export type ClinicalListDeactivateInput = {
 export type ClinicalListMutationResponse = {
   id: string
   detail: ClinicalListsResponse
+}
+
+export type ClinicalPrescriptionCreateInput = {
+  patientId: string
+  providerId?: number | null
+  startDate: string
+  drug: string
+  rxNormCode?: string | null
+  dosage: string
+  quantity: string
+  route?: string | null
+  refills: number
+  note: string
+  diagnosis: string
+}
+
+export type ClinicalPrescriptionDeactivateInput = {
+  endDate: string
+  note: string
 }
 
 export type PatientMessageItem = {
@@ -801,6 +826,54 @@ export async function deleteClinicalAllergy(allergyId: string, signal?: AbortSig
   })
   if (!response.ok) {
     throw new Error(`Clinical allergy delete failed with ${response.status}`)
+  }
+}
+
+export async function createClinicalPrescription(
+  prescription: ClinicalPrescriptionCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(prescription),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical prescription create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deactivateClinicalPrescription(
+  prescriptionId: string,
+  update: ClinicalPrescriptionDeactivateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/deactivate`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(update),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Clinical prescription deactivate failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteClinicalPrescription(prescriptionId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical prescription delete failed with ${response.status}`)
   }
 }
 

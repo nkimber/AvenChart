@@ -311,6 +311,56 @@ finally {
     }
 }
 
+$clinicalPrescriptionMutationId = $null
+try {
+    $prescriptionDrug = "Smoke Prescription Mutation"
+    $createPrescriptionBody = @{
+        patientId = "MOD-PAT-0008"
+        providerId = $null
+        startDate = "2026-07-15"
+        drug = $prescriptionDrug
+        rxNormCode = "1049502"
+        dosage = "1 tablet daily"
+        quantity = "30"
+        route = "oral"
+        refills = 1
+        note = "Created by the smoke prescription mutation check."
+        diagnosis = "Z00.00"
+    } | ConvertTo-Json
+    $createdPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -ContentType "application/json" -Body $createPrescriptionBody -TimeoutSec 20
+    $clinicalPrescriptionMutationId = $createdPrescription.id
+    $createdPrescriptionVisible = $createdPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug -and $_.dosage -eq "1 tablet daily" -and $_.active -eq 1 } | Select-Object -First 1
+
+    $deactivatePrescriptionBody = @{
+        endDate = "2026-08-15"
+        note = "Deactivated by the smoke prescription mutation check."
+    } | ConvertTo-Json
+    $deactivatedPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivatePrescriptionBody -TimeoutSec 20
+    $inactivePrescriptionVisible = $deactivatedPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug } | Select-Object -First 1
+    $clinicalPrescriptionMutationPassed = $null -ne $createdPrescriptionVisible -and $null -eq $inactivePrescriptionVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $clinicalPrescriptionMutationId = $null
+
+    Add-Check -Name "clinical prescription mutation lifecycle" -Result $(if ($clinicalPrescriptionMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdPrescription.id
+        createdVisible = $createdPrescriptionVisible
+        inactiveVisible = $inactivePrescriptionVisible
+    }
+}
+catch {
+    Add-Check -Name "clinical prescription mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $clinicalPrescriptionMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1

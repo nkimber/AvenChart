@@ -134,6 +134,110 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<ClinicalListMutationResponse?> CreatePrescriptionAsync(
+        ClinicalPrescriptionCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Drug)
+            || string.IsNullOrWhiteSpace(request.Dosage)
+            || string.IsNullOrWhiteSpace(request.Quantity)
+            || request.Refills < 0
+            || !TryReadDate(request.StartDate, out var startDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = $"RX-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into prescriptions
+                (id, patient_id, pid, provider_id, encounter, start_date, end_date, drug, rx_norm_code,
+                 dosage, quantity, route, refills, diagnosis, note, active)
+            values
+                (@id, @patientId, @pid, @providerId, 0, @startDate, null, @drug, @rxNormCode,
+                 @dosage, @quantity, @route, @refills, @diagnosis, @note, 1);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("patientId", patient.PatientId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        command.Parameters.AddWithValue("providerId", request.ProviderId ?? patient.ProviderId);
+        command.Parameters.Add("startDate", NpgsqlDbType.Date).Value = startDate;
+        command.Parameters.AddWithValue("drug", request.Drug.Trim());
+        command.Parameters.AddWithValue("rxNormCode", NullableText(request.RxNormCode));
+        command.Parameters.AddWithValue("dosage", request.Dosage.Trim());
+        command.Parameters.AddWithValue("quantity", request.Quantity.Trim());
+        command.Parameters.AddWithValue("route", string.IsNullOrWhiteSpace(request.Route) ? "oral" : request.Route.Trim());
+        command.Parameters.AddWithValue("refills", request.Refills);
+        command.Parameters.AddWithValue("diagnosis", NullableText(request.Diagnosis));
+        command.Parameters.AddWithValue("note", NullableText(request.Note));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(id, lists);
+    }
+
+    public async Task<ClinicalListMutationResponse?> DeactivatePrescriptionAsync(
+        string prescriptionId,
+        ClinicalPrescriptionDeactivateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId) || !TryReadDate(request.EndDate, out var endDate))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update prescriptions
+                set active = 0,
+                    end_date = @endDate,
+                    note = @note
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", prescriptionId);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = endDate;
+            command.Parameters.AddWithValue("note", NullableText(request.Note));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
+    }
+
+    public async Task<bool> DeletePrescriptionAsync(string prescriptionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from prescriptions
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", prescriptionId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -164,7 +268,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name
+            select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name, provider_id
             from patients
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
@@ -187,6 +291,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")),
             FirstName: firstName,
             LastName: lastName,
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
@@ -295,14 +400,20 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 pr.id,
                 pr.drug,
                 pr.dosage,
+                pr.quantity,
                 pr.route,
+                pr.rx_norm_code,
                 pr.diagnosis,
                 pr.start_date,
+                pr.end_date,
+                pr.refills,
+                pr.active,
+                pr.note,
                 pr.encounter,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name
             from prescriptions pr
             left join staff s on s.id = pr.provider_id
-            where pr.pid = @pid
+            where pr.pid = @pid and pr.active = 1
             order by pr.start_date desc, pr.id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
@@ -315,9 +426,15 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Id: reader.GetString(reader.GetOrdinal("id")),
                 Drug: reader.GetString(reader.GetOrdinal("drug")),
                 Dosage: ReadNullableString(reader, "dosage"),
+                Quantity: ReadNullableString(reader, "quantity"),
                 Route: ReadNullableString(reader, "route"),
+                RxNormCode: ReadNullableString(reader, "rx_norm_code"),
                 Diagnosis: ReadNullableString(reader, "diagnosis"),
                 StartDate: ReadNullableDate(reader, "start_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
+                Refills: ReadInt(reader, "refills"),
+                Active: ReadInt(reader, "active"),
+                Note: ReadNullableString(reader, "note"),
                 Encounter: ReadNullableInt(reader, "encounter"),
                 ProviderName: ReadNullableString(reader, "provider_name")));
         }
@@ -335,6 +452,11 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static int ReadInt(DbDataReader reader, string columnName)
+    {
+        return reader.GetInt32(reader.GetOrdinal(columnName));
     }
 
     private static string? ReadNullableDate(DbDataReader reader, string columnName)
@@ -369,6 +491,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string PatientId,
         int LegacyPid,
         string Pubpid,
+        int ProviderId,
         string FirstName,
         string LastName,
         string DisplayName);

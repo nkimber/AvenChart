@@ -290,6 +290,39 @@ clinicalLists.MapDelete("/allergies/{allergyId}", async (
     })
     .WithName("DeleteClinicalAllergy");
 
+clinicalLists.MapPost("/prescriptions", async (
+        ClinicalListRepository repository,
+        ClinicalPrescriptionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreatePrescriptionAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Prescription could not be created from the supplied patient, drug, dose, and start date.")
+            : Results.Created($"/api/clinical-lists/prescriptions/{mutation.Id}", mutation);
+    })
+    .WithName("CreateClinicalPrescription");
+
+clinicalLists.MapPut("/prescriptions/{prescriptionId}/deactivate", async (
+        ClinicalListRepository repository,
+        string prescriptionId,
+        ClinicalPrescriptionDeactivateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.DeactivatePrescriptionAsync(prescriptionId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("DeactivateClinicalPrescription");
+
+clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
+        ClinicalListRepository repository,
+        string prescriptionId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeletePrescriptionAsync(prescriptionId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteClinicalPrescription");
+
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 
 messages.MapGet("/{patientId}", async (
