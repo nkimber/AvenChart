@@ -392,6 +392,29 @@ export type PatientDocumentCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentContentResponse = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  categoryId: number
+  categoryName: string
+  name: string
+  fileName: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  sizeBytes?: number | null
+  pages?: number | null
+  encounter?: number | null
+  storageMethod?: string | null
+  url?: string | null
+  hash?: string | null
+  documentationOf?: string | null
+  notes?: string | null
+  content: string
+}
+
 export type PatientDocumentMutationResponse = {
   id: number
   detail: PatientDocumentsResponse
@@ -1137,6 +1160,24 @@ export async function getPatientDocuments(patientId: string, signal?: AbortSigna
   }
 
   return response.json()
+}
+
+export async function getPatientDocumentContent(
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentContentResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document content load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export function getPatientDocumentDownloadUrl(documentId: number) {
+  return `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`
 }
 
 export async function createPatientDocument(

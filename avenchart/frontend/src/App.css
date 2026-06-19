@@ -763,11 +763,35 @@
 }
 
 .documents-panel {
+  grid-column: 1 / -1;
   min-width: 0;
+}
+
+.document-viewer-panel {
+  min-width: 0;
+}
+
+.document-viewer-meta {
+  display: grid;
+  gap: 7px;
+}
+
+.document-content-block {
+  border: 1px solid #dce7eb;
+  border-radius: 7px;
+  background: #f8fafb;
+  color: #243544;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  margin: 10px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
 }
 
 .document-list-body {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   max-height: 620px;
   overflow: auto;
@@ -1216,6 +1240,7 @@
   }
 
   .document-meta-grid,
+  .document-list-body,
   .document-footnote {
     grid-template-columns: 1fr;
   }

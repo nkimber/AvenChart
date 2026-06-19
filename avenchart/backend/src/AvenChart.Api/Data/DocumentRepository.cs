@@ -117,6 +117,58 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
     }
 
+    public async Task<PatientDocumentContentResponse?> GetContentAsync(int documentId, CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
+              mimetype, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              coalesce(content, '') as content
+            from patient_documents
+            where id = @id and deleted = 0
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var name = reader.GetString(reader.GetOrdinal("name"));
+        var mimetype = ReadNullableString(reader, "mimetype");
+        var content = reader.GetString(reader.GetOrdinal("content"));
+
+        return new PatientDocumentContentResponse(
+            Id: reader.GetInt32(reader.GetOrdinal("id")),
+            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+            CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+            CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+            Name: name,
+            FileName: BuildDownloadFileName(name, mimetype),
+            DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
+            UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+            Mimetype: mimetype,
+            SizeBytes: ReadNullableInt32(reader, "size_bytes"),
+            Pages: ReadNullableInt32(reader, "pages"),
+            Encounter: ReadNullableInt32(reader, "encounter"),
+            StorageMethod: ReadNullableString(reader, "storage_method"),
+            Url: ReadNullableString(reader, "url"),
+            Hash: ReadNullableString(reader, "hash"),
+            DocumentationOf: ReadNullableString(reader, "documentation_of"),
+            Notes: ReadNullableString(reader, "notes"),
+            Content: content);
+    }
+
     public async Task<PatientDocumentMutationResponse?> SoftDeleteAsync(int documentId, CancellationToken cancellationToken)
     {
         if (documentId <= 0)
@@ -300,6 +352,26 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     private static object NullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    }
+
+    private static string BuildDownloadFileName(string name, string? mimetype)
+    {
+        var safeName = string.Join(
+            "_",
+            name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        if (string.IsNullOrWhiteSpace(safeName))
+        {
+            safeName = "document";
+        }
+
+        if (Path.HasExtension(safeName))
+        {
+            return safeName;
+        }
+
+        return string.Equals(mimetype, "text/plain", StringComparison.OrdinalIgnoreCase)
+            ? $"{safeName}.txt"
+            : safeName;
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

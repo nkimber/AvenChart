@@ -382,6 +382,34 @@ messages.MapDelete("/{messageId}", async (
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 
+documents.MapGet("/{documentId:int}/content", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetContentAsync(documentId, cancellationToken);
+        return document is null ? Results.NotFound() : Results.Ok(document);
+    })
+    .WithName("GetPatientDocumentContent");
+
+documents.MapGet("/{documentId:int}/download", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var document = await repository.GetContentAsync(documentId, cancellationToken);
+        if (document is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.File(
+            Encoding.UTF8.GetBytes(document.Content),
+            document.Mimetype ?? "application/octet-stream",
+            document.FileName);
+    })
+    .WithName("DownloadPatientDocument");
+
 documents.MapGet("/{patientId}", async (
         DocumentRepository repository,
         string patientId,

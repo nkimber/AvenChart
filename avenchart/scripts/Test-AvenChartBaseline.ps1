@@ -4,6 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.Net.Http
+
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-smoke-test.json"
@@ -396,6 +398,43 @@ try {
 }
 catch {
     Add-Check -Name "anchor patient documents" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
+    if ($null -eq $intakePacket) {
+        throw "Primary care intake packet document was not found."
+    }
+
+    $documentContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$($intakePacket.id)/content" -Method Get -TimeoutSec 20
+    $downloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $documentDownload = $downloadClient.GetAsync("$ApiBaseUrl/api/documents/$($intakePacket.id)/download").GetAwaiter().GetResult()
+        $documentDownloadBody = $documentDownload.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $documentDownloadContentType = $documentDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $downloadClient.Dispose()
+    }
+
+    $documentContentPassed = $documentContent.name -eq "Primary care intake packet" `
+        -and $documentContent.fileName -eq "Primary care intake packet.txt" `
+        -and $documentContent.content.Contains("Gold synthetic document DOC-MOD-PAT-0001-1") `
+        -and $documentContent.content.Contains("Purpose: Stable search and demographics navigation") `
+        -and $documentDownload.IsSuccessStatusCode `
+        -and $documentDownloadContentType -eq "text/plain" `
+        -and $documentDownloadBody.Contains("Gold synthetic document DOC-MOD-PAT-0001-1")
+    Add-Check -Name "anchor patient document content" -Result $(if ($documentContentPassed) { "passed" } else { "failed" }) -Details @{
+        documentId = $intakePacket.id
+        fileName = $documentContent.fileName
+        mimetype = $documentContent.mimetype
+        downloadStatus = [int]$documentDownload.StatusCode
+        downloadContentType = $documentDownloadContentType
+    }
+}
+catch {
+    Add-Check -Name "anchor patient document content" -Result "failed" -Details $_.Exception.Message
 }
 
 $patientDocumentMutationId = $null

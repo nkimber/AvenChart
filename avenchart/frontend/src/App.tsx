@@ -32,6 +32,8 @@ import {
   getEncounterDetail,
   getPatientChart,
   getPatientBilling,
+  getPatientDocumentContent,
+  getPatientDocumentDownloadUrl,
   getPatientDocuments,
   getPatientMessages,
   getProcedureResults,
@@ -114,6 +116,7 @@ import {
   type PatientBillingResponse,
   type PatientContactUpdate,
   type PatientDocumentCreateInput,
+  type PatientDocumentContentResponse,
   type PatientDocumentItem,
   type PatientDocumentsResponse,
   type PatientMessageCreateInput,
@@ -3773,6 +3776,9 @@ function DocumentsWorkspace({
   const [documentEncounter, setDocumentEncounter] = useState('1000013')
   const [documentContent, setDocumentContent] = useState('Created from the modernized Documents workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
+  const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [documentContentError, setDocumentContentError] = useState<string | null>(null)
   const documents = patientDocuments?.documents ?? []
   const categories = useMemo(
     () => Array.from(new Set(documents.map((document) => document.categoryName))).sort(),
@@ -3782,6 +3788,14 @@ function DocumentsWorkspace({
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
+
+  useEffect(() => {
+    if (viewedDocument && !documents.some((document) => document.id === viewedDocument.id)) {
+      setViewedDocument(null)
+      setDocumentContentStatus('idle')
+      setDocumentContentError(null)
+    }
+  }, [documents, viewedDocument])
 
   async function handleDocumentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -3805,6 +3819,21 @@ function DocumentsWorkspace({
     })
 
     setMutationMessage('Document saved')
+  }
+
+  async function handleDocumentView(document: PatientDocumentItem) {
+    setDocumentContentStatus('loading')
+    setDocumentContentError(null)
+
+    try {
+      const content = await getPatientDocumentContent(document.id)
+      setViewedDocument(content)
+      setDocumentContentStatus('ready')
+    } catch (error) {
+      setViewedDocument(null)
+      setDocumentContentStatus('error')
+      setDocumentContentError(error instanceof Error ? error.message : 'Patient document content load failed')
+    }
   }
 
   return (
@@ -3958,6 +3987,40 @@ function DocumentsWorkspace({
                 <Field label="Uploaded" value={latestDocument?.uploadedAt} />
               </InfoPanel>
 
+              <section className="info-panel document-viewer-panel" aria-label="Document viewer">
+                <div className="panel-heading">
+                  <FileText size={17} />
+                  <h3>Document Viewer</h3>
+                </div>
+                {documentContentStatus === 'loading' ? (
+                  <div className="timeline-placeholder">Loading document content</div>
+                ) : viewedDocument ? (
+                  <>
+                    <div className="document-viewer-meta">
+                      <Field label="Name" value={viewedDocument.name} />
+                      <Field label="File" value={viewedDocument.fileName} />
+                      <Field label="MIME" value={viewedDocument.mimetype} />
+                      <Field label="Hash" value={viewedDocument.hash} />
+                    </div>
+                    <pre className="document-content-block">{viewedDocument.content}</pre>
+                    <div className="document-item-actions">
+                      <a
+                        className="icon-text-button secondary"
+                        href={getPatientDocumentDownloadUrl(viewedDocument.id)}
+                        download={viewedDocument.fileName}
+                      >
+                        <Download size={14} />
+                        Download
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <div className="timeline-placeholder">
+                    {documentContentStatus === 'error' ? documentContentError : 'No document selected'}
+                  </div>
+                )}
+              </section>
+
               <section className="info-panel documents-panel">
                 <div className="panel-heading">
                   <FolderOpen size={17} />
@@ -3969,6 +4032,7 @@ function DocumentsWorkspace({
                       key={document.id}
                       document={document}
                       disabled={isLoading}
+                      onView={handleDocumentView}
                       onArchive={onArchiveDocument}
                       onDelete={onDeleteDocument}
                     />
@@ -4723,11 +4787,13 @@ function ConditionReportCard({ condition }: { condition: ClinicalConditionReport
 function DocumentItem({
   document,
   disabled,
+  onView,
   onArchive,
   onDelete,
 }: {
   document: PatientDocumentItem
   disabled: boolean
+  onView: (document: PatientDocumentItem) => Promise<void>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
@@ -4753,6 +4819,24 @@ function DocumentItem({
         <span>{document.hash || document.url || 'No document reference'}</span>
       </div>
       <div className="document-item-actions">
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => void onView(document)}
+        >
+          <FileText size={14} />
+          View
+        </button>
+        <a
+          className="icon-text-button secondary"
+          href={getPatientDocumentDownloadUrl(document.id)}
+          download
+          aria-disabled={disabled}
+        >
+          <Download size={14} />
+          Download
+        </a>
         <button
           className="icon-text-button danger"
           type="button"

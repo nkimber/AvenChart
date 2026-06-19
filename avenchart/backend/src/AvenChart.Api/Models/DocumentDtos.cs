@@ -42,6 +42,28 @@ public sealed record PatientDocumentCreateRequest(
     string Content,
     string? Notes);
 
+public sealed record PatientDocumentContentResponse(
+    int Id,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    int CategoryId,
+    string CategoryName,
+    string Name,
+    string FileName,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    int? SizeBytes,
+    int? Pages,
+    int? Encounter,
+    string? StorageMethod,
+    string? Url,
+    string? Hash,
+    string? DocumentationOf,
+    string? Notes,
+    string Content);
+
 public sealed record PatientDocumentMutationResponse(
     int Id,
     PatientDocumentsResponse Detail);
