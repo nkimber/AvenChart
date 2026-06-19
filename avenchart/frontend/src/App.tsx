@@ -57,6 +57,8 @@ import {
   deleteProcedureOrder,
   deactivateClinicalAllergy,
   deactivateClinicalPrescription,
+  grantAdministrationAccessPermission,
+  revokeAdministrationAccessPermission,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -73,6 +75,7 @@ import {
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
   type AdministrationAccessGroupItem,
+  type AdministrationAccessPermissionMutationInput,
   type AdministrationAccessGroupPermissionItem,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
@@ -1141,6 +1144,42 @@ function App() {
     }
   }
 
+  async function handleAdministrationAccessPermissionGrant(input: AdministrationAccessPermissionMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await grantAdministrationAccessPermission(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (grantError) {
+      setAdministrationStatus('error')
+      const message = grantError instanceof Error ? grantError.message : 'Administration access permission grant failed'
+      setAdministrationError(message)
+      throw grantError
+    }
+  }
+
+  async function handleAdministrationAccessPermissionRevoke(input: AdministrationAccessPermissionMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await revokeAdministrationAccessPermission(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (revokeError) {
+      setAdministrationStatus('error')
+      const message = revokeError instanceof Error ? revokeError.message : 'Administration access permission revoke failed'
+      setAdministrationError(message)
+      throw revokeError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1408,6 +1447,8 @@ function App() {
             onCreateFacility={handleAdministrationFacilityCreate}
             onUpdateFacility={handleAdministrationFacilityUpdate}
             onDeleteFacility={handleAdministrationFacilityDelete}
+            onGrantAccessPermission={handleAdministrationAccessPermissionGrant}
+            onRevokeAccessPermission={handleAdministrationAccessPermissionRevoke}
           />
         )}
       </main>
@@ -3651,6 +3692,8 @@ function AdministrationWorkspace({
   onCreateFacility,
   onUpdateFacility,
   onDeleteFacility,
+  onGrantAccessPermission,
+  onRevokeAccessPermission,
 }: {
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -3667,12 +3710,15 @@ function AdministrationWorkspace({
     input: AdministrationFacilityMutationInput,
   ) => Promise<unknown>
   onDeleteFacility: (facility: AdministrationFacilityItem) => Promise<void>
+  onGrantAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
+  onRevokeAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
 }) {
   const billingUsers = countUsersByRole(directory?.users, 'billing')
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
   const visibleUsers = directory?.users.filter((user) => user.active) ?? []
   const visibleFacilities = directory?.facilities.filter((facility) => facility.active) ?? []
   const leafAccessGroups = directory?.accessControl.groups.filter((group) => group.parentId !== null) ?? []
+  const accessPermissionOptions = directory?.accessControl.permissions ?? []
   const accessPermissionAnchors = directory?.accessControl.groupPermissions.filter((permission) =>
     ['admin', 'doc', 'clin', 'front', 'back', 'breakglass'].includes(permission.groupValue),
   ) ?? []
@@ -3697,6 +3743,12 @@ function AdministrationWorkspace({
     postalCode: '92111',
     color: '#356f9f',
     active: true,
+  })
+  const [accessDraft, setAccessDraft] = useState<AdministrationAccessPermissionMutationInput>({
+    groupValue: 'front',
+    sectionValue: 'patients',
+    permissionValue: 'demo',
+    returnValue: 'write',
   })
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
 
@@ -3758,6 +3810,19 @@ function AdministrationWorkspace({
     setMutationMessage(`Deleted ${facility.code}`)
   }
 
+  async function handleAccessGrant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+    await onGrantAccessPermission(accessDraft)
+    setMutationMessage(`Granted ${accessDraft.groupValue} ${accessDraft.sectionValue}:${accessDraft.permissionValue}`)
+  }
+
+  async function handleAccessRevoke() {
+    setMutationMessage(null)
+    await onRevokeAccessPermission(accessDraft)
+    setMutationMessage(`Revoked ${accessDraft.groupValue} ${accessDraft.sectionValue}:${accessDraft.permissionValue}`)
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Administration summary">
@@ -3796,6 +3861,69 @@ function AdministrationWorkspace({
             </>
           )}
         </div>
+
+        <form className="appointment-mutation-panel" onSubmit={handleAccessGrant}>
+          <div className="panel-heading">
+            <ShieldCheck size={17} />
+            <h3>Permission Assignment</h3>
+          </div>
+          <label className="form-field">
+            <span>Group</span>
+            <select
+              value={accessDraft.groupValue}
+              onChange={(event) => setAccessDraft((current) => ({ ...current, groupValue: event.target.value }))}
+            >
+              {leafAccessGroups.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Permission</span>
+            <select
+              value={`${accessDraft.sectionValue}:${accessDraft.permissionValue}`}
+              onChange={(event) => {
+                const [sectionValue, permissionValue] = event.target.value.split(':')
+                setAccessDraft((current) => ({ ...current, sectionValue, permissionValue }))
+              }}
+            >
+              {accessPermissionOptions.map((permission) => (
+                <option key={`${permission.sectionValue}:${permission.value}`} value={`${permission.sectionValue}:${permission.value}`}>
+                  {permission.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Return value</span>
+            <select
+              value={accessDraft.returnValue}
+              onChange={(event) => setAccessDraft((current) => ({ ...current, returnValue: event.target.value }))}
+            >
+              <option value="write">write</option>
+              <option value="view">view</option>
+              <option value="addonly">addonly</option>
+              <option value="wsome">wsome</option>
+            </select>
+          </label>
+          <div className="button-row">
+            <button type="submit" className="icon-text-button primary" disabled={status === 'loading'}>
+              <Check size={16} />
+              Grant
+            </button>
+            <button
+              type="button"
+              className="icon-text-button"
+              disabled={status === 'loading'}
+              onClick={handleAccessRevoke}
+            >
+              <Ban size={16} />
+              Revoke
+            </button>
+          </div>
+        </form>
 
         <form className="appointment-mutation-panel" onSubmit={handleUserCreate}>
           <div className="panel-heading">

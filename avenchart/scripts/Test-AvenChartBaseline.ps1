@@ -634,6 +634,54 @@ catch {
     Add-Check -Name "anchor administration access control" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $accessGrantBody = @{
+        groupValue = "front"
+        sectionValue = "patients"
+        permissionValue = "demo"
+        returnValue = "write"
+    } | ConvertTo-Json
+
+    $revokedAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions/front/patients/demo" -Method Delete -TimeoutSec 20
+    $revokedFrontGroup = $revokedAccess.detail.accessControl.groups | Where-Object { $_.value -eq "front" -and $_.permissionCount -eq 5 } | Select-Object -First 1
+    $revokedFrontDemo = $revokedAccess.detail.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" } | Select-Object -First 1
+
+    $restoredAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20
+    $restoredFrontGroup = $restoredAccess.detail.accessControl.groups | Where-Object { $_.value -eq "front" -and $_.permissionCount -eq 6 } | Select-Object -First 1
+    $restoredFrontDemo = $restoredAccess.detail.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" -and $_.returnValue -eq "write" } | Select-Object -First 1
+
+    $accessPermissionMutationPassed = $revokedAccess.detail.counts.accessGroupPermissions -eq 202 `
+        -and $restoredAccess.detail.counts.accessGroupPermissions -eq 203 `
+        -and $null -ne $revokedFrontGroup `
+        -and $null -eq $revokedFrontDemo `
+        -and $null -ne $restoredFrontGroup `
+        -and $null -ne $restoredFrontDemo
+
+    Add-Check -Name "administration access permission mutation lifecycle" -Result $(if ($accessPermissionMutationPassed) { "passed" } else { "failed" }) -Details @{
+        revokedCount = $revokedAccess.detail.counts.accessGroupPermissions
+        restoredCount = $restoredAccess.detail.counts.accessGroupPermissions
+        revokedFrontGroup = $revokedFrontGroup
+        restoredFrontGroup = $restoredFrontGroup
+        restoredFrontDemo = $restoredFrontDemo
+    }
+}
+catch {
+    Add-Check -Name "administration access permission mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    try {
+        $accessGrantBody = @{
+            groupValue = "front"
+            sectionValue = "patients"
+            permissionValue = "demo"
+            returnValue = "write"
+        } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20 | Out-Null
+    }
+    catch {
+    }
+}
+
 $administrationUserMutationId = $null
 try {
     $userName = "smoke-admin-user"

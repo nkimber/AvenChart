@@ -68,6 +68,19 @@ public sealed record AdministrationAccessGroupPermissionItem(
     string PermissionName,
     string ReturnValue);
 
+public sealed record AdministrationAccessPermissionMutationRequest(
+    string GroupValue,
+    string SectionValue,
+    string PermissionValue,
+    string ReturnValue);
+
+public sealed record AdministrationAccessPermissionMutationResponse(
+    string GroupValue,
+    string SectionValue,
+    string PermissionValue,
+    string? ReturnValue,
+    AdministrationDirectoryResponse Detail);
+
 public sealed record AdministrationFacilityMutationRequest(
     string Code,
     string Name,

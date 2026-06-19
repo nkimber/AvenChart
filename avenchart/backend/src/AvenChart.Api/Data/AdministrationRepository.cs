@@ -9,6 +9,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 {
     private const string DefaultFacilityColor = "#246b73";
     private const string DefaultUserEmailDomain = "example.test";
+    private static readonly HashSet<string> ValidAccessReturnValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "addonly",
+        "view",
+        "write",
+        "wsome"
+    };
 
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {
@@ -177,6 +184,98 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 
         command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = facilityId;
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<AdministrationAccessPermissionMutationResponse> GrantAccessGroupPermissionAsync(
+        AdministrationAccessPermissionMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var groupValue = NormalizeAccessToken(request.GroupValue, "Group");
+        var sectionValue = NormalizeAccessToken(request.SectionValue, "Permission section");
+        var permissionValue = NormalizeAccessToken(request.PermissionValue, "Permission");
+        var returnValue = NormalizeAccessReturnValue(request.ReturnValue);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (!await AccessGroupExistsAsync(connection, groupValue, cancellationToken))
+        {
+            throw new ArgumentException($"Access group '{groupValue}' was not found.");
+        }
+
+        var permissionName = await GetAccessPermissionNameAsync(connection, sectionValue, permissionValue, cancellationToken)
+            ?? throw new ArgumentException($"Access permission '{sectionValue}:{permissionValue}' was not found.");
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = transaction;
+            deleteCommand.CommandText = """
+                delete from access_group_permissions
+                where group_value = @groupValue
+                  and section_value = @sectionValue
+                  and permission_value = @permissionValue;
+                """;
+            AddAccessAssignmentKeys(deleteCommand, groupValue, sectionValue, permissionValue);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var insertCommand = connection.CreateCommand())
+        {
+            insertCommand.Transaction = transaction;
+            insertCommand.CommandText = """
+                insert into access_group_permissions
+                  (group_value, section_value, permission_value, permission_name, return_value)
+                values
+                  (@groupValue, @sectionValue, @permissionValue, @permissionName, @returnValue);
+                """;
+            AddAccessAssignmentKeys(insertCommand, groupValue, sectionValue, permissionValue);
+            insertCommand.Parameters.Add("permissionName", NpgsqlDbType.Text).Value = permissionName;
+            insertCommand.Parameters.Add("returnValue", NpgsqlDbType.Text).Value = returnValue;
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AdministrationAccessPermissionMutationResponse(
+            GroupValue: groupValue,
+            SectionValue: sectionValue,
+            PermissionValue: permissionValue,
+            ReturnValue: returnValue,
+            Detail: await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<AdministrationAccessPermissionMutationResponse?> RevokeAccessGroupPermissionAsync(
+        string groupValue,
+        string sectionValue,
+        string permissionValue,
+        CancellationToken cancellationToken)
+    {
+        var normalizedGroup = NormalizeAccessToken(groupValue, "Group");
+        var normalizedSection = NormalizeAccessToken(sectionValue, "Permission section");
+        var normalizedPermission = NormalizeAccessToken(permissionValue, "Permission");
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from access_group_permissions
+            where group_value = @groupValue
+              and section_value = @sectionValue
+              and permission_value = @permissionValue;
+            """;
+        AddAccessAssignmentKeys(command, normalizedGroup, normalizedSection, normalizedPermission);
+
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            return null;
+        }
+
+        return new AdministrationAccessPermissionMutationResponse(
+            GroupValue: normalizedGroup,
+            SectionValue: normalizedSection,
+            PermissionValue: normalizedPermission,
+            ReturnValue: null,
+            Detail: await GetDirectoryAsync(cancellationToken));
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -411,6 +510,66 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         AddNullableText(command, "postalCode", request.PostalCode);
         command.Parameters.Add("color", NpgsqlDbType.Text).Value = NormalizeOptional(request.Color) ?? DefaultFacilityColor;
         command.Parameters.Add("inactive", NpgsqlDbType.Boolean).Value = !(request.Active ?? defaultActive);
+    }
+
+    private static async Task<bool> AccessGroupExistsAsync(
+        NpgsqlConnection connection,
+        string groupValue,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists(
+                select 1
+                from access_groups
+                where value = @groupValue
+            );
+            """;
+        command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = groupValue;
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<string?> GetAccessPermissionNameAsync(
+        NpgsqlConnection connection,
+        string sectionValue,
+        string permissionValue,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select name
+            from access_permissions
+            where section_value = @sectionValue
+              and value = @permissionValue
+            limit 1;
+            """;
+        command.Parameters.Add("sectionValue", NpgsqlDbType.Text).Value = sectionValue;
+        command.Parameters.Add("permissionValue", NpgsqlDbType.Text).Value = permissionValue;
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static void AddAccessAssignmentKeys(
+        NpgsqlCommand command,
+        string groupValue,
+        string sectionValue,
+        string permissionValue)
+    {
+        command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = groupValue;
+        command.Parameters.Add("sectionValue", NpgsqlDbType.Text).Value = sectionValue;
+        command.Parameters.Add("permissionValue", NpgsqlDbType.Text).Value = permissionValue;
+    }
+
+    private static string NormalizeAccessToken(string? value, string label)
+    {
+        return NormalizeRequired(value, label).ToLowerInvariant();
+    }
+
+    private static string NormalizeAccessReturnValue(string? value)
+    {
+        var returnValue = NormalizeAccessToken(value, "Return value");
+        return ValidAccessReturnValues.Contains(returnValue)
+            ? returnValue
+            : throw new ArgumentException($"Return value '{returnValue}' is not supported.");
     }
 
     private static string NormalizeRequired(string? value, string label)

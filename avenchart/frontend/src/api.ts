@@ -606,6 +606,13 @@ export type AdministrationAccessGroupPermissionItem = {
   returnValue: string
 }
 
+export type AdministrationAccessPermissionMutationInput = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  returnValue: string
+}
+
 export type AdministrationAccessControlSummary = {
   groups: AdministrationAccessGroupItem[]
   permissions: AdministrationAccessPermissionItem[]
@@ -628,6 +635,14 @@ export type AdministrationFacilityMutationResponse = {
 
 export type AdministrationUserMutationResponse = {
   id: number
+  detail: AdministrationDirectoryResponse
+}
+
+export type AdministrationAccessPermissionMutationResponse = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  returnValue?: string | null
   detail: AdministrationDirectoryResponse
 }
 
@@ -1330,6 +1345,41 @@ export async function deleteAdministrationFacility(facilityId: number, signal?: 
   if (!response.ok) {
     throw new Error(`Administration facility delete failed with ${response.status}`)
   }
+}
+
+export async function grantAdministrationAccessPermission(
+  input: AdministrationAccessPermissionMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/access-control/group-permissions`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration access permission grant failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function revokeAdministrationAccessPermission(
+  input: Pick<AdministrationAccessPermissionMutationInput, 'groupValue' | 'sectionValue' | 'permissionValue'>,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/administration/access-control/group-permissions/${encodeURIComponent(input.groupValue)}/${encodeURIComponent(input.sectionValue)}/${encodeURIComponent(input.permissionValue)}`,
+    {
+      method: 'DELETE',
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Administration access permission revoke failed with ${response.status}`)
+  }
+
+  return response.json()
 }
 
 export async function getOperationalReports(signal?: AbortSignal): Promise<OperationalReportsResponse> {

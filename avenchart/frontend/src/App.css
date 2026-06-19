@@ -521,6 +521,12 @@
   cursor: default;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .save-note {
   color: #16605b;
   font-size: 13px;
