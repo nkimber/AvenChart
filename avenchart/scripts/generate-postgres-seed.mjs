@@ -579,7 +579,9 @@ create table medications (
   title text,
   diagnosis text,
   medication_date date,
-  comments text
+  comments text,
+  activity integer not null default 1,
+  end_date date
 );
 `)
 
@@ -1116,7 +1118,7 @@ copyRows('allergies', ['id', 'patient_id', 'pid', 'type', 'title', 'reaction', '
     allergy.listOptionId,
   ]))
 
-copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'medication_date', 'comments'],
+copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'medication_date', 'comments', 'activity', 'end_date'],
   dataset.medicationLists.map((medication) => [
     medication.id,
     medication.patientId,
@@ -1126,6 +1128,8 @@ copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis'
     medication.diagnosis,
     medication.date,
     medication.comments,
+    1,
+    null,
   ]))
 
 lines.push(`

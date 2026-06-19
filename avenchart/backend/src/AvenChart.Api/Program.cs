@@ -304,6 +304,39 @@ clinicalLists.MapDelete("/problems/{problemId}", async (
     })
     .WithName("DeleteClinicalProblem");
 
+clinicalLists.MapPost("/medications", async (
+        ClinicalListRepository repository,
+        ClinicalMedicationCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateMedicationAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Medication could not be created from the supplied patient, title, and date.")
+            : Results.Created($"/api/clinical-lists/medications/{mutation.Id}", mutation);
+    })
+    .WithName("CreateClinicalMedication");
+
+clinicalLists.MapPut("/medications/{medicationId}/deactivate", async (
+        ClinicalListRepository repository,
+        string medicationId,
+        ClinicalListDeactivateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.DeactivateMedicationAsync(medicationId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("DeactivateClinicalMedication");
+
+clinicalLists.MapDelete("/medications/{medicationId}", async (
+        ClinicalListRepository repository,
+        string medicationId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteMedicationAsync(medicationId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteClinicalMedication");
+
 clinicalLists.MapPut("/allergies/{allergyId}/deactivate", async (
         ClinicalListRepository repository,
         string allergyId,

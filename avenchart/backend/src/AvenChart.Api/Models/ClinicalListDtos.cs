@@ -60,7 +60,15 @@ public sealed record MedicationListItem(
     string Title,
     string? Diagnosis,
     string? Date,
-    string? Comments);
+    string? Comments,
+    int Activity);
+
+public sealed record ClinicalMedicationCreateRequest(
+    string PatientId,
+    string Title,
+    string DateTime,
+    string? Diagnosis,
+    string Comments);
 
 public sealed record PrescriptionListItem(
     string Id,

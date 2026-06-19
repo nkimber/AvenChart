@@ -264,6 +264,7 @@ export type MedicationListItem = {
   diagnosis?: string | null
   date?: string | null
   comments?: string | null
+  activity: number
 }
 
 export type PrescriptionListItem = {
@@ -333,6 +334,14 @@ export type ClinicalAllergyCreateInput = {
 }
 
 export type ClinicalProblemCreateInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  diagnosis?: string | null
+  comments: string
+}
+
+export type ClinicalMedicationCreateInput = {
   patientId: string
   title: string
   dateTime: string
@@ -1181,6 +1190,51 @@ export async function deleteClinicalProblem(problemId: string, signal?: AbortSig
   })
   if (!response.ok) {
     throw new Error(`Clinical problem delete failed with ${response.status}`)
+  }
+}
+
+export async function createClinicalMedication(
+  medication: ClinicalMedicationCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(medication),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical medication create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deactivateClinicalMedication(
+  medicationId: string,
+  update: ClinicalListDeactivateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}/deactivate`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical medication deactivate failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteClinicalMedication(medicationId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Clinical medication delete failed with ${response.status}`)
   }
 }
 

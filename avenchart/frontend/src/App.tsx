@@ -44,6 +44,7 @@ import {
   createBillingLine,
   createClinicalAllergy,
   createClinicalImmunization,
+  createClinicalMedication,
   createClinicalProblem,
   createClinicalPrescription,
   createAdministrationFacility,
@@ -62,6 +63,7 @@ import {
   deleteBillingLine,
   deleteClinicalAllergy,
   deleteClinicalImmunization,
+  deleteClinicalMedication,
   deleteClinicalProblem,
   deleteClinicalPrescription,
   deleteEncounter,
@@ -69,6 +71,7 @@ import {
   deletePatientMessage,
   deleteProcedureOrder,
   deactivateClinicalAllergy,
+  deactivateClinicalMedication,
   deactivateClinicalProblem,
   deactivateClinicalPrescription,
   markClinicalImmunizationEnteredInError,
@@ -110,6 +113,7 @@ import {
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
   type ClinicalImmunizationCreateInput,
+  type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
   type ClinicalPrescriptionCreateInput,
   type EncounterCreateInput,
@@ -947,6 +951,63 @@ function App() {
     }
   }
 
+  async function handleClinicalMedicationCreate(input: ClinicalMedicationCreateInput) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await createClinicalMedication(input)
+      setClinicalPatientId(response.detail.patientId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setClinicalStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Clinical medication create failed'
+      setClinicalError(message)
+      throw createError
+    }
+  }
+
+  async function handleClinicalMedicationDeactivate(medication: MedicationListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const response = await deactivateClinicalMedication(medication.id, {
+        comments: 'Deactivated from the modernized Lists workspace.',
+      })
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (deactivateError) {
+      setClinicalStatus('error')
+      const message = deactivateError instanceof Error ? deactivateError.message : 'Clinical medication deactivate failed'
+      setClinicalError(message)
+      throw deactivateError
+    }
+  }
+
+  async function handleClinicalMedicationDelete(medication: MedicationListItem) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      await deleteClinicalMedication(medication.id)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      setClinicalLists(refreshed)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setClinicalStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Clinical medication delete failed'
+      setClinicalError(message)
+      throw deleteError
+    }
+  }
+
   async function handleClinicalPrescriptionCreate(input: ClinicalPrescriptionCreateInput) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -1657,6 +1718,9 @@ function App() {
             onCreateProblem={handleClinicalProblemCreate}
             onDeactivateProblem={handleClinicalProblemDeactivate}
             onDeleteProblem={handleClinicalProblemDelete}
+            onCreateMedication={handleClinicalMedicationCreate}
+            onDeactivateMedication={handleClinicalMedicationDeactivate}
+            onDeleteMedication={handleClinicalMedicationDelete}
             onCreatePrescription={handleClinicalPrescriptionCreate}
             onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
             onDeletePrescription={handleClinicalPrescriptionDelete}
@@ -2900,6 +2964,9 @@ function ClinicalListsWorkspace({
   onCreateProblem,
   onDeactivateProblem,
   onDeleteProblem,
+  onCreateMedication,
+  onDeactivateMedication,
+  onDeleteMedication,
   onCreatePrescription,
   onDeactivatePrescription,
   onDeletePrescription,
@@ -2918,6 +2985,9 @@ function ClinicalListsWorkspace({
   onCreateProblem: (input: ClinicalProblemCreateInput) => Promise<unknown>
   onDeactivateProblem: (problem: ProblemListItem) => Promise<unknown>
   onDeleteProblem: (problem: ProblemListItem) => Promise<void>
+  onCreateMedication: (input: ClinicalMedicationCreateInput) => Promise<unknown>
+  onDeactivateMedication: (medication: MedicationListItem) => Promise<unknown>
+  onDeleteMedication: (medication: MedicationListItem) => Promise<void>
   onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
   onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
   onDeletePrescription: (prescription: PrescriptionListItem) => Promise<void>
@@ -2934,6 +3004,10 @@ function ClinicalListsWorkspace({
   const [problemDate, setProblemDate] = useState('2026-06-18 09:00:00')
   const [problemDiagnosis, setProblemDiagnosis] = useState('ICD10:Z00.00')
   const [problemComments, setProblemComments] = useState('Created from the modernized Lists workspace.')
+  const [medicationTitle, setMedicationTitle] = useState('Parity Medication List Entry')
+  const [medicationDate, setMedicationDate] = useState('2026-07-15 09:00:00')
+  const [medicationDiagnosis, setMedicationDiagnosis] = useState('ICD10:Z00.00')
+  const [medicationComments, setMedicationComments] = useState('Created from the modernized Lists workspace.')
   const [prescriptionDrug, setPrescriptionDrug] = useState('Parity Medication')
   const [prescriptionStartDate, setPrescriptionStartDate] = useState('2026-07-15')
   const [prescriptionDosage, setPrescriptionDosage] = useState('1 tablet daily')
@@ -2983,6 +3057,21 @@ function ClinicalListsWorkspace({
     })
 
     setMutationMessage('Problem saved')
+  }
+
+  async function handleMedicationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateMedication({
+      patientId,
+      title: medicationTitle,
+      dateTime: medicationDate,
+      diagnosis: medicationDiagnosis,
+      comments: medicationComments,
+    })
+
+    setMutationMessage('Medication saved')
   }
 
   async function handlePrescriptionSubmit(event: FormEvent<HTMLFormElement>) {
@@ -3050,7 +3139,7 @@ function ClinicalListsWorkspace({
 
         <div className="result-meta">
           <span>{status === 'loading' ? 'Loading' : 'Chart lists'}</span>
-          <span>Problem, allergy, Rx, and immunization lifecycles</span>
+          <span>Problem, allergy, medication, Rx, and immunization lifecycles</span>
         </div>
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
@@ -3176,6 +3265,58 @@ function ClinicalListsWorkspace({
             <button className="icon-text-button primary" type="submit" disabled={isLoading}>
               <Check size={15} />
               Save Allergy
+            </button>
+          </div>
+        </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleMedicationSubmit}>
+          <div className="panel-heading compact-heading">
+            <HeartPulse size={16} />
+            <h3>New Medication</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Title</span>
+              <input
+                value={medicationTitle}
+                onChange={(event) => setMedicationTitle(event.target.value)}
+                aria-label="New medication title"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Date</span>
+                <input
+                  value={medicationDate}
+                  onChange={(event) => setMedicationDate(event.target.value)}
+                  aria-label="New medication date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Diagnosis</span>
+                <input
+                  value={medicationDiagnosis}
+                  onChange={(event) => setMedicationDiagnosis(event.target.value)}
+                  aria-label="New medication diagnosis"
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Comments</span>
+              <textarea
+                value={medicationComments}
+                onChange={(event) => setMedicationComments(event.target.value)}
+                aria-label="New medication comments"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+              <Check size={15} />
+              Save Medication
             </button>
           </div>
         </form>
@@ -3391,7 +3532,12 @@ function ClinicalListsWorkspace({
                 onDelete={onDeleteAllergy}
                 disabled={isLoading}
               />
-              <MedicationPanel items={clinicalLists.medications} />
+              <MedicationPanel
+                items={clinicalLists.medications}
+                onDeactivate={onDeactivateMedication}
+                onDelete={onDeleteMedication}
+                disabled={isLoading}
+              />
               <ImmunizationPanel
                 items={clinicalLists.immunizations}
                 onMarkEnteredInError={onMarkImmunizationEnteredInError}
@@ -5892,11 +6038,42 @@ function AllergyPanel({
   )
 }
 
-function MedicationPanel({ items }: { items: MedicationListItem[] }) {
+function MedicationPanel({
+  items,
+  onDeactivate,
+  onDelete,
+  disabled,
+}: {
+  items: MedicationListItem[]
+  onDeactivate: (medication: MedicationListItem) => Promise<unknown>
+  onDelete: (medication: MedicationListItem) => Promise<void>
+  disabled: boolean
+}) {
   return (
     <ClinicalSection title="Medication List" icon={HeartPulse} emptyText="No active medications">
       {items.map((item) => (
-        <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments} />
+        <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments}>
+          <div className="clinical-item-actions">
+            <button
+              className="icon-text-button danger"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDeactivate(item)}
+            >
+              <Ban size={14} />
+              Deactivate
+            </button>
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onDelete(item)}
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No active medications</div>}
     </ClinicalSection>

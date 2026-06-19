@@ -397,6 +397,49 @@ finally {
     }
 }
 
+$clinicalMedicationMutationId = $null
+try {
+    $medicationTitle = "Smoke Medication List Mutation"
+    $createMedicationBody = @{
+        patientId = "MOD-PAT-0006"
+        title = $medicationTitle
+        dateTime = "2026-07-15 09:00:00"
+        diagnosis = "ICD10:Z00.00"
+        comments = "Created by the smoke medication-list mutation check."
+    } | ConvertTo-Json
+    $createdMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post -ContentType "application/json" -Body $createMedicationBody -TimeoutSec 20
+    $clinicalMedicationMutationId = $createdMedication.id
+    $createdMedicationVisible = $createdMedication.detail.medications | Where-Object { $_.title -eq $medicationTitle -and $_.diagnosis -eq "ICD10:Z00.00" -and $_.activity -eq 1 } | Select-Object -First 1
+
+    $deactivateMedicationBody = @{
+        comments = "Deactivated by the smoke medication-list mutation check."
+    } | ConvertTo-Json
+    $deactivatedMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateMedicationBody -TimeoutSec 20
+    $inactiveMedicationVisible = $deactivatedMedication.detail.medications | Where-Object { $_.title -eq $medicationTitle } | Select-Object -First 1
+    $clinicalMedicationMutationPassed = $null -ne $createdMedicationVisible -and $null -eq $inactiveMedicationVisible
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $clinicalMedicationMutationId = $null
+
+    Add-Check -Name "clinical medication mutation lifecycle" -Result $(if ($clinicalMedicationMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdMedication.id
+        createdVisible = $createdMedicationVisible
+        inactiveVisible = $inactiveMedicationVisible
+    }
+}
+catch {
+    Add-Check -Name "clinical medication mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $clinicalMedicationMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $clinicalPrescriptionMutationId = $null
 try {
     $prescriptionDrug = "Smoke Prescription Mutation"

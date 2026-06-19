@@ -362,7 +362,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             (select count(*) from messages m where m.pid = {pidExpression})::int as message_count,
             (select count(*) from problems prob where prob.pid = {pidExpression} and prob.activity = 1)::int as problem_count,
             (select count(*) from allergies al where al.pid = {pidExpression})::int as allergy_count,
-            (select count(*) from medications med where med.pid = {pidExpression})::int as medication_count
+            (select count(*) from medications med where med.pid = {pidExpression} and med.activity = 1)::int as medication_count
         """;
 
     private static void AddSearchParameter(NpgsqlCommand command, string? normalizedSearch)

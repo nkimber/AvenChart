@@ -175,6 +175,99 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<ClinicalListMutationResponse?> CreateMedicationAsync(
+        ClinicalMedicationCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Title)
+            || !TryReadDate(request.DateTime, out var medicationDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = $"MED-MODERN-{Guid.NewGuid():N}";
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into medications
+                (id, patient_id, pid, type, title, diagnosis, medication_date, comments, activity, end_date)
+            values
+                (@id, @patientId, @pid, 'medication', @title, @diagnosis, @medicationDate, @comments, 1, null);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("patientId", patient.PatientId);
+        command.Parameters.AddWithValue("pid", patient.LegacyPid);
+        command.Parameters.AddWithValue("title", request.Title.Trim());
+        command.Parameters.AddWithValue("diagnosis", NullableText(request.Diagnosis));
+        command.Parameters.Add("medicationDate", NpgsqlDbType.Date).Value = medicationDate;
+        command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(id, lists);
+    }
+
+    public async Task<ClinicalListMutationResponse?> DeactivateMedicationAsync(
+        string medicationId,
+        ClinicalListDeactivateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(medicationId))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update medications
+                set activity = 0,
+                    end_date = @endDate,
+                    comments = @comments
+                where id = @id and type = 'medication'
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", medicationId);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = new DateOnly(2026, 6, 18);
+            command.Parameters.AddWithValue("comments", NullableText(request.Comments));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(medicationId, lists);
+    }
+
+    public async Task<bool> DeleteMedicationAsync(string medicationId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(medicationId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from medications
+            where id = @id and type = 'medication';
+            """;
+        command.Parameters.AddWithValue("id", medicationId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<ClinicalListMutationResponse?> DeactivateAllergyAsync(
         string allergyId,
         ClinicalListDeactivateRequest request,
@@ -581,9 +674,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, diagnosis, medication_date, comments
+            select id, title, diagnosis, medication_date, comments, activity
             from medications
-            where pid = @pid
+            where pid = @pid and activity = 1
             order by medication_date desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
@@ -597,7 +690,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Title: reader.GetString(reader.GetOrdinal("title")),
                 Diagnosis: ReadNullableString(reader, "diagnosis"),
                 Date: ReadNullableDate(reader, "medication_date"),
-                Comments: ReadNullableString(reader, "comments")));
+                Comments: ReadNullableString(reader, "comments"),
+                Activity: reader.GetInt32(reader.GetOrdinal("activity"))));
         }
 
         return items;
