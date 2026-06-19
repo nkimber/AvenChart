@@ -8,7 +8,10 @@ namespace AvenChart.Api.Data;
 
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
-    public async Task<PatientDocumentsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
+    public async Task<PatientDocumentsResponse?> GetForPatientAsync(
+        string patientId,
+        CancellationToken cancellationToken,
+        bool includeArchived = false)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
 
@@ -19,7 +22,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var documents = await GetDocumentsAsync(connection, patient.PatientId, cancellationToken);
+        var documents = await GetDocumentsAsync(connection, patient.PatientId, includeArchived, cancellationToken);
 
         return new PatientDocumentsResponse(
             DatasetId: metadata.DatasetId,
@@ -509,6 +512,36 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
+    public async Task<PatientDocumentMutationResponse?> RestoreAsync(int documentId, CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set deleted = 0
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+    }
+
     public async Task<bool> DeleteAsync(int documentId, CancellationToken cancellationToken)
     {
         if (documentId <= 0)
@@ -589,22 +622,25 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     private static async Task<IReadOnlyList<PatientDocumentItem>> GetDocumentsAsync(
         NpgsqlConnection connection,
         string patientId,
+        bool includeArchived,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              deleted,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
                 when content_bytes is not null then left(coalesce(content, ''), 260)
                 else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
               end as content_preview
             from patient_documents
-            where patient_id = @patientId and deleted = 0
-            order by doc_date desc, id desc;
+            where patient_id = @patientId and (@includeArchived or deleted = 0)
+            order by deleted, doc_date desc, id desc;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("includeArchived", includeArchived);
 
         var items = new List<PatientDocumentItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -630,6 +666,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Hash: ReadNullableString(reader, "hash"),
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
+                Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),
                 ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
                 ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                 ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),

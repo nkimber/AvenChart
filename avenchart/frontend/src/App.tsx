@@ -20,6 +20,7 @@ import {
   Search,
   ShieldCheck,
   Stethoscope,
+  RotateCcw,
   Syringe,
   Trash2,
   Upload,
@@ -93,6 +94,7 @@ import {
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
+  restorePatientDocument,
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
@@ -245,6 +247,7 @@ function App() {
   const [documentStatus, setDocumentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentError, setDocumentError] = useState<string | null>(null)
   const [documentRefreshKey, setDocumentRefreshKey] = useState(0)
+  const [documentIncludeArchived, setDocumentIncludeArchived] = useState(false)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -521,7 +524,7 @@ function App() {
       setDocumentError(null)
 
       try {
-        const result = await getPatientDocuments(documentPatientId, controller.signal)
+        const result = await getPatientDocuments(documentPatientId, documentIncludeArchived, controller.signal)
         setPatientDocuments(result)
         setDocumentStatus('ready')
       } catch (loadError) {
@@ -536,7 +539,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, documentPatientId, documentRefreshKey])
+  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -1777,6 +1780,24 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentRestore(document: PatientDocumentItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await restorePatientDocument(document.id)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (restoreError) {
+      setDocumentStatus('error')
+      const message = restoreError instanceof Error ? restoreError.message : 'Patient document restore failed'
+      setDocumentError(message)
+      throw restoreError
+    }
+  }
+
   async function handlePatientDocumentSign(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -1825,7 +1846,10 @@ function App() {
 
     try {
       await deletePatientDocument(document.id)
-      const refreshed = await getPatientDocuments(patientDocuments?.patientId ?? documentPatientId)
+      const refreshed = await getPatientDocuments(
+        patientDocuments?.patientId ?? documentPatientId,
+        documentIncludeArchived,
+      )
       setPatientDocuments(refreshed)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -2028,12 +2052,15 @@ function App() {
             patientDocuments={patientDocuments}
             status={documentStatus}
             error={documentError}
+            includeArchived={documentIncludeArchived}
             onPatientIdChange={setDocumentPatientId}
+            onIncludeArchivedChange={setDocumentIncludeArchived}
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onUpdateDocumentMetadata={handlePatientDocumentMetadataUpdate}
             onArchiveDocument={handlePatientDocumentArchive}
+            onRestoreDocument={handlePatientDocumentRestore}
             onSignDocument={handlePatientDocumentSign}
             onDenyDocument={handlePatientDocumentDeny}
             onDeleteDocument={handlePatientDocumentDelete}
@@ -5142,12 +5169,15 @@ function DocumentsWorkspace({
   patientDocuments,
   status,
   error,
+  includeArchived,
   onPatientIdChange,
+  onIncludeArchivedChange,
   onCreateDocument,
   onCreateBinaryDocument,
   onCreateExternalLinkDocument,
   onUpdateDocumentMetadata,
   onArchiveDocument,
+  onRestoreDocument,
   onSignDocument,
   onDenyDocument,
   onDeleteDocument,
@@ -5156,7 +5186,9 @@ function DocumentsWorkspace({
   patientDocuments: PatientDocumentsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  includeArchived: boolean
   onPatientIdChange: (value: string) => void
+  onIncludeArchivedChange: (value: boolean) => void
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
   onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
@@ -5165,6 +5197,7 @@ function DocumentsWorkspace({
     input: PatientDocumentMetadataUpdateInput,
   ) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
+  onRestoreDocument: (document: PatientDocumentItem) => Promise<unknown>
   onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDenyDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
@@ -5194,6 +5227,8 @@ function DocumentsWorkspace({
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentContentError, setDocumentContentError] = useState<string | null>(null)
   const documents = patientDocuments?.documents ?? []
+  const activeDocumentCount = documents.filter((document) => document.deleted === 0).length
+  const archivedDocumentCount = documents.filter((document) => document.deleted !== 0).length
   const categories = useMemo(
     () => Array.from(new Set(documents.map((document) => document.categoryName))).sort(),
     [documents],
@@ -5338,6 +5373,15 @@ function DocumentsWorkspace({
               placeholder="MOD-PAT-0001"
             />
           </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeArchived}
+              onChange={(event) => onIncludeArchivedChange(event.target.checked)}
+              aria-label="Show archived documents"
+            />
+            <span>Show archived documents</span>
+          </label>
         </div>
 
         <div className="result-meta">
@@ -5351,6 +5395,8 @@ function DocumentsWorkspace({
           <>
             <div className="list-counts">
               <MetricRow label="Documents" value={patientDocuments.count} />
+              <MetricRow label="Active" value={activeDocumentCount} />
+              <MetricRow label="Archived" value={archivedDocumentCount} />
               <MetricRow label="Categories" value={categories.length} />
               <MetricRow label="Linked encounters" value={linkedEncounterCount} />
               <MetricRow label="Pages" value={totalPages} />
@@ -5614,6 +5660,8 @@ function DocumentsWorkspace({
             <div className="documents-detail-grid">
               <InfoPanel title="Document Summary" icon={FolderOpen}>
                 <MetricRow label="Documents" value={patientDocuments.count} />
+                <MetricRow label="Active" value={activeDocumentCount} />
+                <MetricRow label="Archived" value={archivedDocumentCount} />
                 <MetricRow label="Categories" value={categories.length} />
                 <MetricRow label="Linked encounters" value={linkedEncounterCount} />
                 <MetricRow label="Pages" value={totalPages} />
@@ -5702,6 +5750,7 @@ function DocumentsWorkspace({
                       onView={handleDocumentView}
                       onUpdateMetadata={onUpdateDocumentMetadata}
                       onArchive={onArchiveDocument}
+                      onRestore={onRestoreDocument}
                       onSign={onSignDocument}
                       onDeny={onDenyDocument}
                       onDelete={onDeleteDocument}
@@ -6460,6 +6509,7 @@ function DocumentItem({
   onView,
   onUpdateMetadata,
   onArchive,
+  onRestore,
   onSign,
   onDeny,
   onDelete,
@@ -6469,6 +6519,7 @@ function DocumentItem({
   onView: (document: PatientDocumentItem) => Promise<void>
   onUpdateMetadata: (document: PatientDocumentItem, input: PatientDocumentMetadataUpdateInput) => Promise<unknown>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
+  onRestore: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
   onDeny: (document: PatientDocumentItem) => Promise<unknown>
   onDelete: (document: PatientDocumentItem) => Promise<void>
@@ -6483,6 +6534,7 @@ function DocumentItem({
   const isApproved = document.reviewStatus === 'approved'
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
   const isExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
+  const isArchived = document.deleted !== 0
 
   useEffect(() => {
     setEditName(document.name)
@@ -6518,7 +6570,10 @@ function DocumentItem({
     <article className="document-card">
       <div className="message-item-header">
         <strong>{document.name}</strong>
-        <span className="status-tag">{document.categoryName}</span>
+        <div className="document-card-tags">
+          <span className="status-tag">{document.categoryName}</span>
+          {isArchived && <span className="status-tag danger">Archived</span>}
+        </div>
       </div>
       <div className="document-meta-grid">
         <span>{document.docDate}</span>
@@ -6613,7 +6668,7 @@ function DocumentItem({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled}
+          disabled={disabled || isArchived}
           onClick={() => void onView(document)}
         >
           <FileText size={14} />
@@ -6623,7 +6678,12 @@ function DocumentItem({
           className="icon-text-button secondary"
           href={getPatientDocumentDownloadUrl(document.id)}
           download
-          aria-disabled={disabled}
+          aria-disabled={disabled || isArchived}
+          onClick={(event) => {
+            if (disabled || isArchived) {
+              event.preventDefault()
+            }
+          }}
         >
           <Download size={14} />
           Download
@@ -6637,7 +6697,7 @@ function DocumentItem({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled}
+          disabled={disabled || isArchived}
           onClick={() => setIsEditing((current) => !current)}
         >
           <Pencil size={14} />
@@ -6646,16 +6706,27 @@ function DocumentItem({
         <button
           className="icon-text-button danger"
           type="button"
-          disabled={disabled}
+          disabled={disabled || isArchived}
           onClick={() => void onArchive(document)}
         >
           <Ban size={14} />
           Archive
         </button>
+        {isArchived && (
+          <button
+            className="icon-text-button secondary"
+            type="button"
+            disabled={disabled}
+            onClick={() => void onRestore(document)}
+          >
+            <RotateCcw size={14} />
+            Restore
+          </button>
+        )}
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled || isReviewed}
+          disabled={disabled || isReviewed || isArchived}
           onClick={() => void onSign(document)}
         >
           <ShieldCheck size={14} />
@@ -6664,7 +6735,7 @@ function DocumentItem({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled || isReviewed}
+          disabled={disabled || isReviewed || isArchived}
           onClick={() => void onDeny(document)}
         >
           <X size={14} />

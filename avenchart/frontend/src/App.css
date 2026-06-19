@@ -312,6 +312,19 @@
   font-weight: 800;
 }
 
+.status-tag.danger {
+  background: #fdeceb;
+  color: #9f312c;
+}
+
+.document-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .patient-id,
 .patient-result-sub,
 .patient-mini-metrics {

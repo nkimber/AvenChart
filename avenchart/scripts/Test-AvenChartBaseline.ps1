@@ -1091,6 +1091,73 @@ finally {
     }
 }
 
+$patientDocumentArchiveRestoreId = $null
+try {
+    $archiveDocumentName = "Smoke Archive Restore Patient Document"
+    $archiveDocumentBody = "Created by the smoke patient-document archive restore check."
+    $createArchiveDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $archiveDocumentName
+        docDate = "2026-06-19"
+        encounter = 1000013
+        content = $archiveDocumentBody
+        notes = "Created by the smoke patient-document archive restore check."
+    } | ConvertTo-Json
+    $createdArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createArchiveDocumentBody -TimeoutSec 20
+    $patientDocumentArchiveRestoreId = $createdArchiveDocument.id
+    $createdArchiveVisible = $createdArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 0 } | Select-Object -First 1
+
+    $archivedArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedDefaultVisible = $archivedArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName } | Select-Object -First 1
+    $archivedList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001?includeArchived=true" -Method Get -TimeoutSec 20
+    $archivedIncludeVisible = $archivedList.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 1 } | Select-Object -First 1
+
+    $archiveContentClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $archivedContent = $archiveContentClient.GetAsync("$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/content").GetAwaiter().GetResult()
+        $archivedContentStatus = [int]$archivedContent.StatusCode
+    }
+    finally {
+        $archiveContentClient.Dispose()
+    }
+
+    $restoredArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/restore" -Method Put -TimeoutSec 20
+    $restoredArchiveVisible = $restoredArchiveDocument.detail.documents | Where-Object { $_.name -eq $archiveDocumentName -and $_.deleted -eq 0 } | Select-Object -First 1
+    $restoredArchiveContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId/content" -Method Get -TimeoutSec 20
+
+    $patientDocumentArchiveRestorePassed = $null -ne $createdArchiveVisible `
+        -and $null -eq $archivedDefaultVisible `
+        -and $null -ne $archivedIncludeVisible `
+        -and $archivedContentStatus -eq 404 `
+        -and $null -ne $restoredArchiveVisible `
+        -and $restoredArchiveContent.content.Contains($archiveDocumentBody)
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentArchiveRestoreId = $null
+
+    Add-Check -Name "patient document archive restore lifecycle" -Result $(if ($patientDocumentArchiveRestorePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdArchiveDocument.id
+        createdVisible = $createdArchiveVisible
+        archivedDefaultVisible = $archivedDefaultVisible
+        archivedIncludeVisible = $archivedIncludeVisible
+        archivedContentStatus = $archivedContentStatus
+        restoredVisible = $restoredArchiveVisible
+    }
+}
+catch {
+    Add-Check -Name "patient document archive restore lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentArchiveRestoreId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentArchiveRestoreId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientBinaryDocumentMutationId = $null
 try {
     $binaryDocumentName = "Smoke Binary Patient Document.pdf"

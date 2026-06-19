@@ -32,6 +32,7 @@ public sealed record PatientDocumentItem(
     string? Hash,
     string? DocumentationOf,
     string? Notes,
+    int Deleted,
     string ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,

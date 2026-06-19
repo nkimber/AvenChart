@@ -585,9 +585,10 @@ documents.MapGet("/{documentId:int}/download", async (
 documents.MapGet("/{patientId}", async (
         DocumentRepository repository,
         string patientId,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        bool includeArchived = false) =>
     {
-        var patientDocuments = await repository.GetForPatientAsync(patientId, cancellationToken);
+        var patientDocuments = await repository.GetForPatientAsync(patientId, cancellationToken, includeArchived);
         return patientDocuments is null ? Results.NotFound() : Results.Ok(patientDocuments);
     })
     .WithName("GetPatientDocuments");
@@ -650,6 +651,16 @@ documents.MapPut("/{documentId:int}/soft-delete", async (
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("SoftDeletePatientDocument");
+
+documents.MapPut("/{documentId:int}/restore", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.RestoreAsync(documentId, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("RestorePatientDocument");
 
 documents.MapPut("/{documentId:int}/sign", async (
         DocumentRepository repository,

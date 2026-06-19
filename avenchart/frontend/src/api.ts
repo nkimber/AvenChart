@@ -491,6 +491,7 @@ export type PatientDocumentItem = {
   hash?: string | null
   documentationOf?: string | null
   notes?: string | null
+  deleted: number
   reviewStatus: string
   reviewedBy?: string | null
   reviewedAt?: string | null
@@ -1558,8 +1559,15 @@ export async function getPatientMessages(patientId: string, signal?: AbortSignal
   return response.json()
 }
 
-export async function getPatientDocuments(patientId: string, signal?: AbortSignal): Promise<PatientDocumentsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(patientId.trim())}`, { signal })
+export async function getPatientDocuments(
+  patientId: string,
+  includeArchived = false,
+  signal?: AbortSignal,
+): Promise<PatientDocumentsResponse> {
+  const query = includeArchived ? '?includeArchived=true' : ''
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(patientId.trim())}${query}`, {
+    signal,
+  })
   if (!response.ok) {
     throw new Error(`Patient documents load failed with ${response.status}`)
   }
@@ -1664,6 +1672,21 @@ export async function softDeletePatientDocument(
   })
   if (!response.ok) {
     throw new Error(`Patient document archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function restorePatientDocument(
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/restore`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document restore failed with ${response.status}`)
   }
 
   return response.json()
