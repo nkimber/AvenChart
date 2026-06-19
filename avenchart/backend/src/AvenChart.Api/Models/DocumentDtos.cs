@@ -32,6 +32,9 @@ public sealed record PatientDocumentItem(
     string? Hash,
     string? DocumentationOf,
     string? Notes,
+    string ReviewStatus,
+    string? ReviewedBy,
+    string? ReviewedAt,
     string? ContentPreview);
 
 public sealed record PatientDocumentCreateRequest(
@@ -74,9 +77,16 @@ public sealed record PatientDocumentContentResponse(
     string? Hash,
     string? DocumentationOf,
     string? Notes,
+    string ReviewStatus,
+    string? ReviewedBy,
+    string? ReviewedAt,
     string Content,
     string? ContentBase64,
     bool IsBinary);
+
+public sealed record PatientDocumentSignRequest(
+    string ReviewStatus,
+    string ReviewedBy);
 
 public sealed record PatientDocumentMutationResponse(
     int Id,

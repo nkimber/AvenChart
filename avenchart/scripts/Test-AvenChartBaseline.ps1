@@ -940,9 +940,16 @@ try {
     $patientDocumentMutationId = $createdDocument.id
     $createdVisible = $createdDocument.detail.documents | Where-Object { $_.name -eq $documentName -and $_.categoryName -eq "Medical Record" -and $_.contentPreview -and $_.contentPreview.Contains($documentBody) } | Select-Object -First 1
 
+    $signDocumentBody = @{
+        reviewStatus = "approved"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $signedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId/sign" -Method Put -ContentType "application/json" -Body $signDocumentBody -TimeoutSec 20
+    $signedVisible = $signedDocument.detail.documents | Where-Object { $_.name -eq $documentName -and $_.reviewStatus -eq "approved" -and $_.reviewedBy -eq "admin" } | Select-Object -First 1
+
     $archivedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId/soft-delete" -Method Put -TimeoutSec 20
     $archivedVisible = $archivedDocument.detail.documents | Where-Object { $_.name -eq $documentName } | Select-Object -First 1
-    $patientDocumentMutationPassed = $null -ne $createdVisible -and $null -eq $archivedVisible
+    $patientDocumentMutationPassed = $null -ne $createdVisible -and $null -ne $signedVisible -and $null -eq $archivedVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $patientDocumentMutationId = $null
@@ -950,6 +957,7 @@ try {
     Add-Check -Name "patient document mutation lifecycle" -Result $(if ($patientDocumentMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdDocument.id
         createdVisible = $createdVisible
+        signedVisible = $signedVisible
         archivedVisible = $archivedVisible
     }
 }

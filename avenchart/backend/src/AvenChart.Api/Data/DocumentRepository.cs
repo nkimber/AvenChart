@@ -235,6 +235,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               coalesce(content, '') as content, content_bytes
             from patient_documents
             where id = @id and deleted = 0
@@ -278,9 +279,56 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Hash: ReadNullableString(reader, "hash"),
             DocumentationOf: ReadNullableString(reader, "documentation_of"),
             Notes: ReadNullableString(reader, "notes"),
+            ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+            ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+            ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
             Content: content,
             ContentBase64: contentBase64,
             IsBinary: isBinary);
+    }
+
+    public async Task<PatientDocumentMutationResponse?> SignAsync(
+        int documentId,
+        PatientDocumentSignRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0 || string.IsNullOrWhiteSpace(request.ReviewStatus) || string.IsNullOrWhiteSpace(request.ReviewedBy))
+        {
+            return null;
+        }
+
+        var reviewStatus = NormalizeReviewStatus(request.ReviewStatus);
+        if (reviewStatus is null)
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set review_status = @reviewStatus,
+                    reviewed_by = @reviewedBy,
+                    reviewed_at = @reviewedAt
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            command.Parameters.AddWithValue("reviewStatus", reviewStatus);
+            command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
+            command.Parameters.AddWithValue("reviewedAt", DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
     public async Task<PatientDocumentMutationResponse?> SoftDeleteAsync(int documentId, CancellationToken cancellationToken)
@@ -399,6 +447,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
                 when content_bytes is not null then left(coalesce(content, ''), 260)
                 else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
@@ -433,6 +482,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Hash: ReadNullableString(reader, "hash"),
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
+                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+                ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
                 ContentPreview: ReadNullableString(reader, "content_preview")));
         }
 
@@ -443,6 +495,12 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static string? ReadNullableDateTimeString(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm:ss");
     }
 
     private static int? ReadNullableInt32(DbDataReader reader, string columnName)
@@ -495,6 +553,19 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             "_",
             value.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         return string.IsNullOrWhiteSpace(safeName) ? "document" : safeName;
+    }
+
+    private static string? NormalizeReviewStatus(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "pending" => "pending",
+            "approved" => "approved",
+            "signed" => "approved",
+            "denied" => "denied",
+            "rejected" => "denied",
+            _ => null
+        };
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

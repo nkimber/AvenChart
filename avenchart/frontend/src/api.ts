@@ -491,6 +491,9 @@ export type PatientDocumentItem = {
   hash?: string | null
   documentationOf?: string | null
   notes?: string | null
+  reviewStatus: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   contentPreview?: string | null
 }
 
@@ -549,9 +552,17 @@ export type PatientDocumentContentResponse = {
   hash?: string | null
   documentationOf?: string | null
   notes?: string | null
+  reviewStatus: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   content: string
   contentBase64?: string | null
   isBinary: boolean
+}
+
+export type PatientDocumentSignInput = {
+  reviewStatus: string
+  reviewedBy: string
 }
 
 export type PatientDocumentMutationResponse = {
@@ -1600,6 +1611,24 @@ export async function softDeletePatientDocument(
   })
   if (!response.ok) {
     throw new Error(`Patient document archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function signPatientDocument(
+  documentId: number,
+  signature: PatientDocumentSignInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(signature),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient document sign-off failed with ${response.status}`)
   }
 
   return response.json()

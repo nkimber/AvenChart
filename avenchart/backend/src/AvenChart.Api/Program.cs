@@ -626,6 +626,17 @@ documents.MapPut("/{documentId:int}/soft-delete", async (
     })
     .WithName("SoftDeletePatientDocument");
 
+documents.MapPut("/{documentId:int}/sign", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentSignRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.SignAsync(documentId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("SignPatientDocument");
+
 documents.MapDelete("/{documentId:int}", async (
         DocumentRepository repository,
         int documentId,

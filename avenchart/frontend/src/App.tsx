@@ -88,6 +88,7 @@ import {
   searchAppointments,
   searchEncounters,
   searchPatients,
+  signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
   updateAppointmentStatus,
@@ -1731,6 +1732,27 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentSign(document: PatientDocumentItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await signPatientDocument(document.id, {
+        reviewStatus: 'approved',
+        reviewedBy: 'admin',
+      })
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (signError) {
+      setDocumentStatus('error')
+      const message = signError instanceof Error ? signError.message : 'Patient document sign-off failed'
+      setDocumentError(message)
+      throw signError
+    }
+  }
+
   async function handlePatientDocumentDelete(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -1944,6 +1966,7 @@ function App() {
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onArchiveDocument={handlePatientDocumentArchive}
+            onSignDocument={handlePatientDocumentSign}
             onDeleteDocument={handlePatientDocumentDelete}
           />
         )}
@@ -5054,6 +5077,7 @@ function DocumentsWorkspace({
   onCreateDocument,
   onCreateBinaryDocument,
   onArchiveDocument,
+  onSignDocument,
   onDeleteDocument,
 }: {
   patientId: string
@@ -5064,6 +5088,7 @@ function DocumentsWorkspace({
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
+  onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
 }) {
   const [documentName, setDocumentName] = useState('Parity Document')
@@ -5229,8 +5254,9 @@ function DocumentsWorkspace({
                 <h3>Document Scope</h3>
               </div>
               <Field label="Patient" value={patientDocuments.patientDisplayName} />
-              <Field label="Latest document" value={latestDocument?.docDate} />
-              <Field label="Storage" value="Synthetic database payloads" />
+                <Field label="Latest document" value={latestDocument?.docDate} />
+                <Field label="Review status" value={latestDocument?.reviewStatus} />
+                <Field label="Storage" value="Synthetic database payloads" />
               <div className="document-category-stack">
                 {categories.map((category) => (
                   <span className="status-tag" key={category}>
@@ -5413,6 +5439,7 @@ function DocumentsWorkspace({
                 <Field label="Category" value={latestDocument?.categoryName} />
                 <Field label="Document date" value={latestDocument?.docDate} />
                 <Field label="Uploaded" value={latestDocument?.uploadedAt} />
+                <Field label="Review status" value={latestDocument?.reviewStatus} />
               </InfoPanel>
 
               <section className="info-panel document-viewer-panel" aria-label="Document viewer">
@@ -5429,6 +5456,8 @@ function DocumentsWorkspace({
                       <Field label="File" value={viewedDocument.fileName} />
                       <Field label="MIME" value={viewedDocument.mimetype} />
                       <Field label="Hash" value={viewedDocument.hash} />
+                      <Field label="Review status" value={viewedDocument.reviewStatus} />
+                      <Field label="Reviewed by" value={viewedDocument.reviewedBy} />
                     </div>
                     {viewedDocument.isBinary ? (
                       <div className="document-content-block">
@@ -5470,6 +5499,7 @@ function DocumentsWorkspace({
                       disabled={isLoading}
                       onView={handleDocumentView}
                       onArchive={onArchiveDocument}
+                      onSign={onSignDocument}
                       onDelete={onDeleteDocument}
                     />
                   ))}
@@ -6225,14 +6255,18 @@ function DocumentItem({
   disabled,
   onView,
   onArchive,
+  onSign,
   onDelete,
 }: {
   document: PatientDocumentItem
   disabled: boolean
   onView: (document: PatientDocumentItem) => Promise<void>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
+  onSign: (document: PatientDocumentItem) => Promise<unknown>
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
+  const isApproved = document.reviewStatus === 'approved'
+
   return (
     <article className="document-card">
       <div className="message-item-header">
@@ -6248,6 +6282,10 @@ function DocumentItem({
       <div className="procedure-order-meta">
         <span>{document.encounter ? `Encounter ${document.encounter}` : 'No linked encounter'}</span>
         <span>{document.storageMethod || 'Storage not recorded'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{isApproved ? 'approved' : document.reviewStatus}</span>
+        <span>{document.reviewedBy ? `Reviewed by ${document.reviewedBy}` : 'Not reviewed'}</span>
       </div>
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
       <div className="document-footnote">
@@ -6281,6 +6319,15 @@ function DocumentItem({
         >
           <Ban size={14} />
           Archive
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || isApproved}
+          onClick={() => void onSign(document)}
+        >
+          <ShieldCheck size={14} />
+          Sign
         </button>
         <button
           className="icon-text-button"
