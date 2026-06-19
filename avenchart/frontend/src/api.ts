@@ -307,6 +307,49 @@ export type PatientBillingResponse = {
   encounters: BillingEncounterItem[]
 }
 
+export type AdministrationDirectoryCounts = {
+  users: number
+  providers: number
+  calendarUsers: number
+  facilities: number
+}
+
+export type AdministrationUserItem = {
+  id: number
+  username: string
+  firstName: string
+  lastName: string
+  displayName: string
+  role: string
+  authorized: boolean
+  active: boolean
+  calendar: boolean
+  facilityId?: number | null
+  facilityName?: string | null
+  email?: string | null
+  npi?: string | null
+}
+
+export type AdministrationFacilityItem = {
+  id: number
+  code: string
+  name: string
+  phone?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  color?: string | null
+}
+
+export type AdministrationDirectoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  counts: AdministrationDirectoryCounts
+  users: AdministrationUserItem[]
+  facilities: AdministrationFacilityItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -429,6 +472,15 @@ export async function getPatientBilling(patientId: string, signal?: AbortSignal)
   const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient billing load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getAdministrationDirectory(signal?: AbortSignal): Promise<AdministrationDirectoryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/directory`, { signal })
+  if (!response.ok) {
+    throw new Error(`Administration directory load failed with ${response.status}`)
   }
 
   return response.json()

@@ -17,6 +17,7 @@ builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
+builder.Services.AddScoped<AdministrationRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -165,5 +166,16 @@ billing.MapGet("/{patientId}", async (
         return patientBilling is null ? Results.NotFound() : Results.Ok(patientBilling);
     })
     .WithName("GetBillingForPatient");
+
+var administration = app.MapGroup("/api/administration").WithTags("Administration");
+
+administration.MapGet("/directory", async (
+        AdministrationRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var directory = await repository.GetDirectoryAsync(cancellationToken);
+        return Results.Ok(directory);
+    })
+    .WithName("GetAdministrationDirectory");
 
 app.Run();

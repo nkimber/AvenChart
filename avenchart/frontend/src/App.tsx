@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import {
   getAppointmentDetail,
+  getAdministrationDirectory,
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
@@ -28,6 +29,9 @@ import {
   searchAppointments,
   searchEncounters,
   searchPatients,
+  type AdministrationDirectoryResponse,
+  type AdministrationFacilityItem,
+  type AdministrationUserItem,
   type AppointmentDetail,
   type AppointmentListItem,
   type AppointmentSearchResponse,
@@ -54,7 +58,7 @@ import {
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'fees' | 'procedures' | 'messages'
+type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'fees' | 'procedures' | 'messages' | 'admin'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
@@ -65,7 +69,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
   { id: 'reports', label: 'Reports', icon: FileText },
-  { id: 'admin', label: 'Admin', icon: ShieldCheck },
+  { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
 
 function App() {
@@ -116,6 +120,10 @@ function App() {
   const [patientBilling, setPatientBilling] = useState<PatientBillingResponse | null>(null)
   const [billingStatus, setBillingStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [billingError, setBillingError] = useState<string | null>(null)
+
+  const [administrationDirectory, setAdministrationDirectory] = useState<AdministrationDirectoryResponse | null>(null)
+  const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [administrationError, setAdministrationError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -417,6 +425,32 @@ function App() {
     }
   }, [activeModule, billingPatientId])
 
+  useEffect(() => {
+    if (activeModule !== 'admin') {
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadAdministrationDirectory() {
+      setAdministrationStatus('loading')
+      setAdministrationError(null)
+
+      try {
+        const result = await getAdministrationDirectory(controller.signal)
+        setAdministrationDirectory(result)
+        setAdministrationStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setAdministrationStatus('error')
+          setAdministrationError(loadError instanceof Error ? loadError.message : 'Administration directory failed')
+        }
+      }
+    }
+
+    loadAdministrationDirectory()
+    return () => controller.abort()
+  }, [activeModule])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -436,7 +470,9 @@ function App() {
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
-            : searchResult?.datasetVersion
+            : activeModule === 'admin'
+              ? administrationDirectory?.datasetVersion ?? searchResult?.datasetVersion
+              : searchResult?.datasetVersion
 
   return (
     <div className="app-shell">
@@ -563,6 +599,13 @@ function App() {
             onPatientIdChange={setMessagePatientId}
           />
         )}
+        {activeModule === 'admin' && (
+          <AdministrationWorkspace
+            directory={administrationDirectory}
+            status={administrationStatus}
+            error={administrationError}
+          />
+        )}
       </main>
     </div>
   )
@@ -587,6 +630,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'messages') {
     return 'Patient Communications'
   }
+  if (moduleId === 'admin') {
+    return 'Administration'
+  }
   return 'Patient Finder'
 }
 
@@ -608,6 +654,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'messages') {
     return 'Messages'
+  }
+  if (moduleId === 'admin') {
+    return 'Admin'
   }
   return 'Patient/Client'
 }
@@ -1386,6 +1435,108 @@ function MessagesWorkspace({
   )
 }
 
+function AdministrationWorkspace({
+  directory,
+  status,
+  error,
+}: {
+  directory: AdministrationDirectoryResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+}) {
+  const billingUsers = countUsersByRole(directory?.users, 'billing')
+  const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Administration summary">
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Administration directory'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {directory ? (
+          <div className="list-counts">
+            <MetricRow label="Users" value={directory.counts.users} />
+            <MetricRow label="Providers" value={directory.counts.providers} />
+            <MetricRow label="Calendar users" value={directory.counts.calendarUsers} />
+            <MetricRow label="Facilities" value={directory.counts.facilities} />
+          </div>
+        ) : (
+          <div className="empty-state">No administration directory loaded</div>
+        )}
+
+        <div className="access-scope-panel">
+          <div className="panel-heading">
+            <ShieldCheck size={17} />
+            <h3>Access Control Status</h3>
+          </div>
+          <Field label="Authentication" value="Deferred" />
+          <Field label="Authorization" value="Deferred" />
+          <Field label="Audit logging" value="Planned" />
+          <Field label="Directory mode" value="Read only" />
+        </div>
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Administration directory">
+        {directory ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Administration Directory</p>
+                <h2>Users And Facilities</h2>
+                <p className="patient-line">
+                  {directory.counts.users} users / {directory.counts.facilities} facilities / {directory.datasetVersion}
+                </p>
+              </div>
+              <div className="portal-pill">{directory.counts.providers} providers</div>
+            </div>
+
+            <div className="admin-detail-grid">
+              <InfoPanel title="Role Mix" icon={UserRound}>
+                <MetricRow label="Providers" value={directory.counts.providers} />
+                <MetricRow label="Billing" value={billingUsers} />
+                <MetricRow label="Front desk" value={frontDeskUsers} />
+                <MetricRow label="Calendar" value={directory.counts.calendarUsers} />
+              </InfoPanel>
+
+              <section className="info-panel admin-users-panel">
+                <div className="panel-heading">
+                  <ShieldCheck size={17} />
+                  <h3>Users</h3>
+                </div>
+                <div className="admin-directory-list">
+                  {directory.users.map((user) => (
+                    <AdministrationUserCard key={user.id} user={user} />
+                  ))}
+                </div>
+              </section>
+
+              <section className="info-panel admin-facilities-panel">
+                <div className="panel-heading">
+                  <Building2 size={17} />
+                  <h3>Facilities</h3>
+                </div>
+                <div className="admin-directory-list">
+                  {directory.facilities.map((facility) => (
+                    <AdministrationFacilityCard key={facility.id} facility={facility} />
+                  ))}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading administration directory</div>
+        ) : (
+          <div className="empty-chart">Open Admin to load the users and facilities directory</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function PatientResult({
   patient,
   selected,
@@ -1411,6 +1562,45 @@ function PatientResult({
         <span>{patient.counts.prescriptions} rx</span>
       </div>
     </button>
+  )
+}
+
+function AdministrationUserCard({ user }: { user: AdministrationUserItem }) {
+  return (
+    <article className="admin-user-card">
+      <div className="message-item-header">
+        <strong>{user.displayName}</strong>
+        <span className="status-tag">{user.role}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{user.username}</span>
+        <span>{user.active ? 'Active' : 'Inactive'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{user.facilityName || 'Facility not assigned'}</span>
+        <span>{user.calendar ? 'Calendar enabled' : 'No calendar'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{user.email || 'No email'}</span>
+        <span>{user.authorized ? 'Authorized provider' : 'Operational user'}</span>
+      </div>
+    </article>
+  )
+}
+
+function AdministrationFacilityCard({ facility }: { facility: AdministrationFacilityItem }) {
+  return (
+    <article className="facility-card">
+      <div className="message-item-header">
+        <strong>{facility.name}</strong>
+        <span className="status-tag">{facility.code}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{facility.phone || 'No phone'}</span>
+        <span>{facility.color || 'No color'}</span>
+      </div>
+      <p>{formatFacilityAddress(facility)}</p>
+    </article>
   )
 }
 
@@ -1782,6 +1972,10 @@ function countBillingLinesByType(encounters: BillingEncounterItem[] | undefined,
   )
 }
 
+function countUsersByRole(users: AdministrationUserItem[] | undefined, role: string) {
+  return users?.filter((user) => user.role === role).length ?? 0
+}
+
 function countProcedureReports(orders: ProcedureOrderItem[] | undefined) {
   return orders?.reduce((count, order) => count + order.reports.length, 0) ?? 0
 }
@@ -1849,6 +2043,11 @@ function formatAddress(chart: PatientChartSummary | null) {
   return [chart.street, [chart.city, chart.state, chart.postalCode].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
+}
+
+function formatFacilityAddress(facility: AdministrationFacilityItem) {
+  const cityLine = [facility.city, facility.state, facility.postalCode].filter(Boolean).join(' ')
+  return [facility.street, cityLine].filter(Boolean).join(', ') || 'No address recorded'
 }
 
 function formatCurrency(value?: number | null) {

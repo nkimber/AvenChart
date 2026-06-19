@@ -660,6 +660,44 @@
   gap: 10px;
 }
 
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.admin-users-panel,
+.admin-facilities-panel {
+  min-width: 0;
+}
+
+.admin-directory-list {
+  display: grid;
+  gap: 10px;
+  max-height: 620px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.admin-user-card,
+.facility-card {
+  border: 1px solid #d8e2e7;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 10px;
+}
+
+.facility-card p {
+  margin: 8px 0 0;
+  color: #344657;
+  font-size: 13px;
+}
+
+.access-scope-panel {
+  border-top: 1px solid #dbe5ea;
+  padding-top: 12px;
+}
+
 .procedure-result-value span:first-child {
   color: #1d2a35;
   font-size: 20px;
@@ -732,7 +770,8 @@
   .clinical-list-grid,
   .message-detail-grid,
   .billing-detail-grid,
-  .procedure-detail-grid {
+  .procedure-detail-grid,
+  .admin-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -780,6 +819,7 @@
   .billing-detail-grid,
   .billing-line-list,
   .procedure-detail-grid,
+  .admin-detail-grid,
   .procedure-result-grid,
   .soap-grid {
     grid-template-columns: 1fr;
