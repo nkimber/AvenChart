@@ -30,6 +30,11 @@ const accessGroups = [
   [16, 'breakglass', 'Emergency Login', 10],
 ]
 
+const accessUserMemberships = [
+  ['admin', 'Administrator', 'admin', 'Administrators'],
+  ['oe-system', 'System Operation User', 'admin', 'Administrators'],
+]
+
 const accessPermissions = [
   ['acct', 'bill', 'Billing (write optional)'],
   ['acct', 'disc', 'Price Discounting'],
@@ -220,6 +225,7 @@ drop table if exists encounters;
 drop table if exists appointments;
 drop table if exists insurance_records;
 drop table if exists patients;
+drop table if exists access_user_memberships;
 drop table if exists staff;
 drop table if exists facilities;
 drop table if exists access_group_permissions;
@@ -285,6 +291,15 @@ create table access_group_permissions (
   return_value text not null,
   primary key (group_value, section_value, permission_value, return_value),
   foreign key (section_value, permission_value) references access_permissions(section_value, value)
+);
+
+create table access_user_memberships (
+  user_value text not null,
+  user_name text not null,
+  group_value text not null references access_groups(value),
+  group_name text not null,
+  staff_id integer references staff(id),
+  primary key (user_value, group_value)
 );
 
 create table patients (
@@ -569,6 +584,12 @@ copyRows(
   'access_group_permissions',
   ['group_value', 'section_value', 'permission_value', 'permission_name', 'return_value'],
   accessGroupPermissions,
+)
+
+copyRows(
+  'access_user_memberships',
+  ['user_value', 'user_name', 'group_value', 'group_name', 'staff_id'],
+  accessUserMemberships.map(([userValue, userName, groupValue, groupName]) => [userValue, userName, groupValue, groupName, null]),
 )
 
 copyRows('patients', [
@@ -974,6 +995,8 @@ create index idx_allergies_pid on allergies (pid);
 create index idx_medications_pid on medications (pid);
 create index idx_access_group_permissions_group on access_group_permissions (group_value);
 create index idx_access_group_permissions_permission on access_group_permissions (section_value, permission_value);
+create index idx_access_user_memberships_user on access_user_memberships (user_value);
+create index idx_access_user_memberships_group on access_user_memberships (group_value);
 commit;
 `)
 
@@ -1004,6 +1027,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     accessGroups: accessGroups.length,
     accessPermissions: accessPermissions.length,
     accessGroupPermissions: accessGroupPermissions.length,
+    accessUserMemberships: accessUserMemberships.length,
   },
 }, null, 2))
 

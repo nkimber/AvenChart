@@ -58,7 +58,9 @@ import {
   deactivateClinicalAllergy,
   deactivateClinicalPrescription,
   grantAdministrationAccessPermission,
+  grantAdministrationAccessUserMembership,
   revokeAdministrationAccessPermission,
+  revokeAdministrationAccessUserMembership,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -77,6 +79,8 @@ import {
   type AdministrationAccessGroupItem,
   type AdministrationAccessPermissionMutationInput,
   type AdministrationAccessGroupPermissionItem,
+  type AdministrationAccessUserMembershipItem,
+  type AdministrationAccessUserMembershipMutationInput,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
   type AppointmentDetail,
@@ -1180,6 +1184,42 @@ function App() {
     }
   }
 
+  async function handleAdministrationAccessUserMembershipGrant(input: AdministrationAccessUserMembershipMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await grantAdministrationAccessUserMembership(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (grantError) {
+      setAdministrationStatus('error')
+      const message = grantError instanceof Error ? grantError.message : 'Administration access membership grant failed'
+      setAdministrationError(message)
+      throw grantError
+    }
+  }
+
+  async function handleAdministrationAccessUserMembershipRevoke(input: AdministrationAccessUserMembershipMutationInput) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const response = await revokeAdministrationAccessUserMembership(input)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (revokeError) {
+      setAdministrationStatus('error')
+      const message = revokeError instanceof Error ? revokeError.message : 'Administration access membership revoke failed'
+      setAdministrationError(message)
+      throw revokeError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -1449,6 +1489,8 @@ function App() {
             onDeleteFacility={handleAdministrationFacilityDelete}
             onGrantAccessPermission={handleAdministrationAccessPermissionGrant}
             onRevokeAccessPermission={handleAdministrationAccessPermissionRevoke}
+            onGrantAccessMembership={handleAdministrationAccessUserMembershipGrant}
+            onRevokeAccessMembership={handleAdministrationAccessUserMembershipRevoke}
           />
         )}
       </main>
@@ -3694,6 +3736,8 @@ function AdministrationWorkspace({
   onDeleteFacility,
   onGrantAccessPermission,
   onRevokeAccessPermission,
+  onGrantAccessMembership,
+  onRevokeAccessMembership,
 }: {
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -3712,6 +3756,8 @@ function AdministrationWorkspace({
   onDeleteFacility: (facility: AdministrationFacilityItem) => Promise<void>
   onGrantAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
   onRevokeAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
+  onGrantAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
+  onRevokeAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
 }) {
   const billingUsers = countUsersByRole(directory?.users, 'billing')
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
@@ -3719,6 +3765,7 @@ function AdministrationWorkspace({
   const visibleFacilities = directory?.facilities.filter((facility) => facility.active) ?? []
   const leafAccessGroups = directory?.accessControl.groups.filter((group) => group.parentId !== null) ?? []
   const accessPermissionOptions = directory?.accessControl.permissions ?? []
+  const accessMembershipOptions = directory?.accessControl.userMemberships ?? []
   const accessPermissionAnchors = directory?.accessControl.groupPermissions.filter((permission) =>
     ['admin', 'doc', 'clin', 'front', 'back', 'breakglass'].includes(permission.groupValue),
   ) ?? []
@@ -3749,6 +3796,10 @@ function AdministrationWorkspace({
     sectionValue: 'patients',
     permissionValue: 'demo',
     returnValue: 'write',
+  })
+  const [accessMembershipDraft, setAccessMembershipDraft] = useState<AdministrationAccessUserMembershipMutationInput>({
+    userValue: 'gold-frontdesk-01',
+    groupValue: 'front',
   })
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
 
@@ -3823,6 +3874,19 @@ function AdministrationWorkspace({
     setMutationMessage(`Revoked ${accessDraft.groupValue} ${accessDraft.sectionValue}:${accessDraft.permissionValue}`)
   }
 
+  async function handleAccessMembershipGrant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+    await onGrantAccessMembership(accessMembershipDraft)
+    setMutationMessage(`Assigned ${accessMembershipDraft.userValue} to ${accessMembershipDraft.groupValue}`)
+  }
+
+  async function handleAccessMembershipRevoke() {
+    setMutationMessage(null)
+    await onRevokeAccessMembership(accessMembershipDraft)
+    setMutationMessage(`Revoked ${accessMembershipDraft.userValue} from ${accessMembershipDraft.groupValue}`)
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Administration summary">
@@ -3858,6 +3922,7 @@ function AdministrationWorkspace({
             <>
               <Field label="Access groups" value={String(directory.counts.accessGroups)} />
               <Field label="Permission entries" value={String(directory.counts.accessGroupPermissions)} />
+              <Field label="Access memberships" value={String(directory.counts.accessUserMemberships)} />
             </>
           )}
         </div>
@@ -3918,6 +3983,58 @@ function AdministrationWorkspace({
               className="icon-text-button"
               disabled={status === 'loading'}
               onClick={handleAccessRevoke}
+            >
+              <Ban size={16} />
+              Revoke
+            </button>
+          </div>
+        </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleAccessMembershipGrant}>
+          <div className="panel-heading">
+            <ShieldCheck size={17} />
+            <h3>User Group Membership</h3>
+          </div>
+          <label className="form-field">
+            <span>User</span>
+            <select
+              value={accessMembershipDraft.userValue}
+              onChange={(event) =>
+                setAccessMembershipDraft((current) => ({ ...current, userValue: event.target.value }))
+              }
+            >
+              {visibleUsers.map((user) => (
+                <option key={user.id} value={user.username}>
+                  {user.displayName} ({user.username})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Group</span>
+            <select
+              value={accessMembershipDraft.groupValue}
+              onChange={(event) =>
+                setAccessMembershipDraft((current) => ({ ...current, groupValue: event.target.value }))
+              }
+            >
+              {leafAccessGroups.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="button-row">
+            <button type="submit" className="icon-text-button primary" disabled={status === 'loading'}>
+              <Check size={16} />
+              Assign
+            </button>
+            <button
+              type="button"
+              className="icon-text-button"
+              disabled={status === 'loading'}
+              onClick={handleAccessMembershipRevoke}
             >
               <Ban size={16} />
               Revoke
@@ -4096,6 +4213,7 @@ function AdministrationWorkspace({
                 <MetricRow label="Leaf groups" value={leafAccessGroups.length} />
                 <MetricRow label="Permissions" value={directory.counts.accessPermissions} />
                 <MetricRow label="Assignments" value={directory.counts.accessGroupPermissions} />
+                <MetricRow label="Memberships" value={directory.counts.accessUserMemberships} />
               </InfoPanel>
 
               <section className="info-panel admin-users-panel">
@@ -4108,6 +4226,9 @@ function AdministrationWorkspace({
                     <AdministrationUserCard
                       key={user.id}
                       user={user}
+                      memberships={accessMembershipOptions.filter(
+                        (membership) => membership.staffId === user.id || membership.userValue === user.username,
+                      )}
                       onDeactivate={handleUserDeactivate}
                       onDelete={handleUserDelete}
                     />
@@ -4292,13 +4413,17 @@ function PatientResult({
 
 function AdministrationUserCard({
   user,
+  memberships,
   onDeactivate,
   onDelete,
 }: {
   user: AdministrationUserItem
+  memberships?: AdministrationAccessUserMembershipItem[]
   onDeactivate?: (user: AdministrationUserItem) => Promise<void>
   onDelete?: (user: AdministrationUserItem) => Promise<void>
 }) {
+  const visibleMemberships = memberships ?? []
+
   return (
     <article className="admin-user-card">
       <div className="message-item-header">
@@ -4317,6 +4442,15 @@ function AdministrationUserCard({
         <span>{user.email || 'No email'}</span>
         <span>{user.authorized ? 'Authorized provider' : 'Operational user'}</span>
       </div>
+      {visibleMemberships.length > 0 && (
+        <div className="access-permission-list">
+          {visibleMemberships.map((membership) => (
+            <span key={`${membership.userValue}-${membership.groupValue}`}>
+              {membership.groupName} membership
+            </span>
+          ))}
+        </div>
+      )}
       {(onDeactivate || onDelete) && (
         <div className="detail-actions compact-actions">
           {onDeactivate && user.active && (

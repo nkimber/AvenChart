@@ -619,7 +619,9 @@ try {
     $clinicianGroup = $administration.accessControl.groups | Where-Object { $_.value -eq "clin" -and $_.name -eq "Clinicians" -and $_.permissionCount -eq 23 } | Select-Object -First 1
     $adminAclPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "admin" -and $_.sectionValue -eq "admin" -and $_.permissionValue -eq "acl" -and $_.returnValue -eq "write" } | Select-Object -First 1
     $frontDeskDemoPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" -and $_.returnValue -eq "write" } | Select-Object -First 1
-    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission
+    $adminMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "admin" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
+    $systemMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "oe-system" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
+    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $administration.counts.accessUserMemberships -eq 2 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission -and $null -ne $adminMembership -and $null -ne $systemMembership
     Add-Check -Name "anchor administration access control" -Result $(if ($accessControlPassed) { "passed" } else { "failed" }) -Details @{
         counts = $administration.counts
         adminGroup = $adminGroup
@@ -627,6 +629,8 @@ try {
         clinicianGroup = $clinicianGroup
         adminAclPermission = $adminAclPermission
         frontDeskDemoPermission = $frontDeskDemoPermission
+        adminMembership = $adminMembership
+        systemMembership = $systemMembership
     }
 }
 catch {
@@ -679,6 +683,68 @@ finally {
         Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20 | Out-Null
     }
     catch {
+    }
+}
+
+$administrationMembershipUserId = $null
+try {
+    $membershipUserName = "smoke-membership-user"
+    $createMembershipUserBody = @{
+        username = $membershipUserName
+        firstName = "Smoke"
+        lastName = "Membership"
+        role = "frontdesk"
+        calendar = $false
+        facilityId = 10
+        email = "$membershipUserName@example.test"
+        npi = ""
+        active = $true
+    } | ConvertTo-Json
+
+    $createdMembershipUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -ContentType "application/json" -Body $createMembershipUserBody -TimeoutSec 20
+    $administrationMembershipUserId = $createdMembershipUser.id
+
+    $membershipGrantBody = @{
+        userValue = $membershipUserName
+        groupValue = "front"
+    } | ConvertTo-Json
+
+    $grantedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships" -Method Put -ContentType "application/json" -Body $membershipGrantBody -TimeoutSec 20
+    $frontMembership = $grantedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" -and $_.groupName -eq "Front Office" } | Select-Object -First 1
+
+    $revokedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/$membershipUserName/front" -Method Delete -TimeoutSec 20
+    $revokedFrontMembership = $revokedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" } | Select-Object -First 1
+
+    $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 3 `
+        -and $revokedMembership.detail.counts.accessUserMemberships -eq 2 `
+        -and $null -ne $frontMembership `
+        -and $null -eq $revokedFrontMembership
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -TimeoutSec 20 | Out-Null
+    $administrationMembershipUserId = $null
+
+    Add-Check -Name "administration user group membership mutation lifecycle" -Result $(if ($membershipMutationPassed) { "passed" } else { "failed" }) -Details @{
+        grantedCount = $grantedMembership.detail.counts.accessUserMemberships
+        revokedCount = $revokedMembership.detail.counts.accessUserMemberships
+        frontMembership = $frontMembership
+        revokedFrontMembership = $revokedFrontMembership
+    }
+}
+catch {
+    Add-Check -Name "administration user group membership mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    try {
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/smoke-membership-user/front" -Method Delete -TimeoutSec 20 | Out-Null
+    }
+    catch {
+    }
+    if ($null -ne $administrationMembershipUserId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
     }
 }
 

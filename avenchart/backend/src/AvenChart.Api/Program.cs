@@ -631,6 +631,41 @@ administration.MapDelete("/access-control/group-permissions/{groupValue}/{sectio
     })
     .WithName("RevokeAdministrationAccessGroupPermission");
 
+administration.MapPut("/access-control/user-memberships", async (
+        AdministrationRepository repository,
+        AdministrationAccessUserMembershipMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.GrantAccessUserMembershipAsync(request, cancellationToken);
+            return Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GrantAdministrationAccessUserMembership");
+
+administration.MapDelete("/access-control/user-memberships/{userValue}/{groupValue}", async (
+        AdministrationRepository repository,
+        string userValue,
+        string groupValue,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var mutation = await repository.RevokeAccessUserMembershipAsync(userValue, groupValue, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("RevokeAdministrationAccessUserMembership");
+
 var reports = app.MapGroup("/api/reports").WithTags("Reports");
 
 reports.MapGet("/operational", async (

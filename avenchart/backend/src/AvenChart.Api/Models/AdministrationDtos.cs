@@ -15,7 +15,8 @@ public sealed record AdministrationDirectoryCounts(
     int Facilities,
     int AccessGroups,
     int AccessPermissions,
-    int AccessGroupPermissions);
+    int AccessGroupPermissions,
+    int AccessUserMemberships);
 
 public sealed record AdministrationUserItem(
     int Id,
@@ -47,7 +48,8 @@ public sealed record AdministrationFacilityItem(
 public sealed record AdministrationAccessControlSummary(
     IReadOnlyList<AdministrationAccessGroupItem> Groups,
     IReadOnlyList<AdministrationAccessPermissionItem> Permissions,
-    IReadOnlyList<AdministrationAccessGroupPermissionItem> GroupPermissions);
+    IReadOnlyList<AdministrationAccessGroupPermissionItem> GroupPermissions,
+    IReadOnlyList<AdministrationAccessUserMembershipItem> UserMemberships);
 
 public sealed record AdministrationAccessGroupItem(
     int Id,
@@ -68,6 +70,13 @@ public sealed record AdministrationAccessGroupPermissionItem(
     string PermissionName,
     string ReturnValue);
 
+public sealed record AdministrationAccessUserMembershipItem(
+    string UserValue,
+    string UserName,
+    string GroupValue,
+    string GroupName,
+    int? StaffId);
+
 public sealed record AdministrationAccessPermissionMutationRequest(
     string GroupValue,
     string SectionValue,
@@ -79,6 +88,15 @@ public sealed record AdministrationAccessPermissionMutationResponse(
     string SectionValue,
     string PermissionValue,
     string? ReturnValue,
+    AdministrationDirectoryResponse Detail);
+
+public sealed record AdministrationAccessUserMembershipMutationRequest(
+    string UserValue,
+    string GroupValue);
+
+public sealed record AdministrationAccessUserMembershipMutationResponse(
+    string UserValue,
+    string GroupValue,
     AdministrationDirectoryResponse Detail);
 
 public sealed record AdministrationFacilityMutationRequest(

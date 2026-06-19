@@ -36,7 +36,8 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 Facilities: facilities.Count,
                 AccessGroups: accessControl.Groups.Count,
                 AccessPermissions: accessControl.Permissions.Count,
-                AccessGroupPermissions: accessControl.GroupPermissions.Count),
+                AccessGroupPermissions: accessControl.GroupPermissions.Count,
+                AccessUserMemberships: accessControl.UserMemberships.Count),
             Users: users,
             Facilities: facilities,
             AccessControl: accessControl);
@@ -104,14 +105,30 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     public async Task<bool> DeleteUserAsync(int userId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var membershipCommand = connection.CreateCommand())
+        {
+            membershipCommand.Transaction = transaction;
+            membershipCommand.CommandText = """
+                delete from access_user_memberships
+                where staff_id = @userId;
+                """;
+            membershipCommand.Parameters.Add("userId", NpgsqlDbType.Integer).Value = userId;
+            await membershipCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             delete from staff
             where id = @userId;
             """;
 
         command.Parameters.Add("userId", NpgsqlDbType.Integer).Value = userId;
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        await transaction.CommitAsync(cancellationToken);
+        return deleted;
     }
 
     public async Task<AdministrationFacilityMutationResponse> CreateFacilityAsync(
@@ -275,6 +292,73 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             SectionValue: normalizedSection,
             PermissionValue: normalizedPermission,
             ReturnValue: null,
+            Detail: await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<AdministrationAccessUserMembershipMutationResponse> GrantAccessUserMembershipAsync(
+        AdministrationAccessUserMembershipMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userValue = NormalizeAccessToken(request.UserValue, "User");
+        var groupValue = NormalizeAccessToken(request.GroupValue, "Group");
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var groupName = await GetAccessGroupNameAsync(connection, groupValue, cancellationToken)
+            ?? throw new ArgumentException($"Access group '{groupValue}' was not found.");
+        var staff = await GetStaffAccessUserAsync(connection, userValue, cancellationToken)
+            ?? throw new ArgumentException($"User '{userValue}' was not found.");
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into access_user_memberships
+              (user_value, user_name, group_value, group_name, staff_id)
+            values
+              (@userValue, @userName, @groupValue, @groupName, @staffId)
+            on conflict (user_value, group_value) do update
+            set user_name = excluded.user_name,
+                group_name = excluded.group_name,
+                staff_id = excluded.staff_id;
+            """;
+        command.Parameters.Add("userValue", NpgsqlDbType.Text).Value = staff.UserValue;
+        command.Parameters.Add("userName", NpgsqlDbType.Text).Value = staff.UserName;
+        command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = groupValue;
+        command.Parameters.Add("groupName", NpgsqlDbType.Text).Value = groupName;
+        command.Parameters.Add("staffId", NpgsqlDbType.Integer).Value = staff.StaffId;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return new AdministrationAccessUserMembershipMutationResponse(
+            UserValue: staff.UserValue,
+            GroupValue: groupValue,
+            Detail: await GetDirectoryAsync(cancellationToken));
+    }
+
+    public async Task<AdministrationAccessUserMembershipMutationResponse?> RevokeAccessUserMembershipAsync(
+        string userValue,
+        string groupValue,
+        CancellationToken cancellationToken)
+    {
+        var normalizedUser = NormalizeAccessToken(userValue, "User");
+        var normalizedGroup = NormalizeAccessToken(groupValue, "Group");
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from access_user_memberships
+            where user_value = @userValue
+              and group_value = @groupValue;
+            """;
+        command.Parameters.Add("userValue", NpgsqlDbType.Text).Value = normalizedUser;
+        command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = normalizedGroup;
+
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            return null;
+        }
+
+        return new AdministrationAccessUserMembershipMutationResponse(
+            UserValue: normalizedUser,
+            GroupValue: normalizedGroup,
             Detail: await GetDirectoryAsync(cancellationToken));
     }
 
@@ -457,7 +541,28 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             }
         }
 
-        return new AdministrationAccessControlSummary(groups, permissions, groupPermissions);
+        var userMemberships = new List<AdministrationAccessUserMembershipItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select user_value, user_name, group_value, group_name, staff_id
+                from access_user_memberships
+                order by user_value, group_value;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                userMemberships.Add(new AdministrationAccessUserMembershipItem(
+                    UserValue: reader.GetString(reader.GetOrdinal("user_value")),
+                    UserName: reader.GetString(reader.GetOrdinal("user_name")),
+                    GroupValue: reader.GetString(reader.GetOrdinal("group_value")),
+                    GroupName: reader.GetString(reader.GetOrdinal("group_name")),
+                    StaffId: ReadNullableInt(reader, "staff_id")));
+            }
+        }
+
+        return new AdministrationAccessControlSummary(groups, permissions, groupPermissions, userMemberships);
     }
 
     private async Task<int> GetNextStaffIdAsync(CancellationToken cancellationToken)
@@ -527,6 +632,50 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             """;
         command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = groupValue;
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<string?> GetAccessGroupNameAsync(
+        NpgsqlConnection connection,
+        string groupValue,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select name
+            from access_groups
+            where value = @groupValue
+            limit 1;
+            """;
+        command.Parameters.Add("groupValue", NpgsqlDbType.Text).Value = groupValue;
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task<AccessStaffUser?> GetStaffAccessUserAsync(
+        NpgsqlConnection connection,
+        string userValue,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, username, first_name, last_name
+            from staff
+            where lower(username) = @userValue
+            limit 1;
+            """;
+        command.Parameters.Add("userValue", NpgsqlDbType.Text).Value = userValue;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+        var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+        return new AccessStaffUser(
+            StaffId: reader.GetInt32(reader.GetOrdinal("id")),
+            UserValue: reader.GetString(reader.GetOrdinal("username")),
+            UserName: $"{lastName}, {firstName}");
     }
 
     private static async Task<string?> GetAccessPermissionNameAsync(
@@ -613,4 +762,6 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record AccessStaffUser(int StaffId, string UserValue, string UserName);
 }

@@ -529,6 +529,7 @@ export type AdministrationDirectoryCounts = {
   accessGroups: number
   accessPermissions: number
   accessGroupPermissions: number
+  accessUserMemberships: number
 }
 
 export type AdministrationUserItem = {
@@ -606,6 +607,14 @@ export type AdministrationAccessGroupPermissionItem = {
   returnValue: string
 }
 
+export type AdministrationAccessUserMembershipItem = {
+  userValue: string
+  userName: string
+  groupValue: string
+  groupName: string
+  staffId?: number | null
+}
+
 export type AdministrationAccessPermissionMutationInput = {
   groupValue: string
   sectionValue: string
@@ -613,10 +622,16 @@ export type AdministrationAccessPermissionMutationInput = {
   returnValue: string
 }
 
+export type AdministrationAccessUserMembershipMutationInput = {
+  userValue: string
+  groupValue: string
+}
+
 export type AdministrationAccessControlSummary = {
   groups: AdministrationAccessGroupItem[]
   permissions: AdministrationAccessPermissionItem[]
   groupPermissions: AdministrationAccessGroupPermissionItem[]
+  userMemberships: AdministrationAccessUserMembershipItem[]
 }
 
 export type AdministrationDirectoryResponse = {
@@ -643,6 +658,12 @@ export type AdministrationAccessPermissionMutationResponse = {
   sectionValue: string
   permissionValue: string
   returnValue?: string | null
+  detail: AdministrationDirectoryResponse
+}
+
+export type AdministrationAccessUserMembershipMutationResponse = {
+  userValue: string
+  groupValue: string
   detail: AdministrationDirectoryResponse
 }
 
@@ -1377,6 +1398,41 @@ export async function revokeAdministrationAccessPermission(
   )
   if (!response.ok) {
     throw new Error(`Administration access permission revoke failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function grantAdministrationAccessUserMembership(
+  input: AdministrationAccessUserMembershipMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/access-control/user-memberships`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Administration access user membership grant failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function revokeAdministrationAccessUserMembership(
+  input: AdministrationAccessUserMembershipMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/administration/access-control/user-memberships/${encodeURIComponent(input.userValue)}/${encodeURIComponent(input.groupValue)}`,
+    {
+      method: 'DELETE',
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Administration access user membership revoke failed with ${response.status}`)
   }
 
   return response.json()
