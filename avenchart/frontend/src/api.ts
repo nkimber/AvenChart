@@ -228,6 +228,49 @@ export type PatientMessagesResponse = {
   messages: PatientMessageItem[]
 }
 
+export type ProcedureResultItem = {
+  id: number
+  code?: string | null
+  text?: string | null
+  units?: string | null
+  result?: string | null
+  range?: string | null
+  abnormal?: string | null
+  resultDate: string
+  resultStatus?: string | null
+}
+
+export type ProcedureReportItem = {
+  id: number
+  reportDate: string
+  status?: string | null
+  results: ProcedureResultItem[]
+}
+
+export type ProcedureOrderItem = {
+  id: number
+  encounter?: number | null
+  providerName?: string | null
+  orderDate: string
+  code?: string | null
+  name?: string | null
+  diagnosis?: string | null
+  orderStatus?: string | null
+  reports: ProcedureReportItem[]
+}
+
+export type ProcedureResultsResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  orders: ProcedureOrderItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
@@ -332,6 +375,15 @@ export async function getPatientMessages(patientId: string, signal?: AbortSignal
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient messages load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getProcedureResults(patientId: string, signal?: AbortSignal): Promise<ProcedureResultsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure results load failed with ${response.status}`)
   }
 
   return response.json()

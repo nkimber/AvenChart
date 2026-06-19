@@ -23,6 +23,7 @@ import {
   getEncounterDetail,
   getPatientChart,
   getPatientMessages,
+  getProcedureResults,
   searchAppointments,
   searchEncounters,
   searchPatients,
@@ -40,12 +41,16 @@ import {
   type PatientMessageItem,
   type PatientMessagesResponse,
   type PatientSearchResponse,
+  type ProcedureOrderItem,
+  type ProcedureReportItem,
+  type ProcedureResultItem,
+  type ProcedureResultsResponse,
   type PrescriptionListItem,
   type ProblemListItem,
 } from './api'
 import './App.css'
 
-type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'messages'
+type ModuleId = 'patients' | 'calendar' | 'encounters' | 'lists' | 'procedures' | 'messages'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
@@ -53,7 +58,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
   { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
   { id: 'fees', label: 'Fees', icon: WalletCards },
-  { id: 'procedures', label: 'Procedures', icon: FlaskConical },
+  { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
   { id: 'reports', label: 'Reports', icon: FileText },
   { id: 'admin', label: 'Admin', icon: ShieldCheck },
@@ -97,6 +102,11 @@ function App() {
   const [patientMessages, setPatientMessages] = useState<PatientMessagesResponse | null>(null)
   const [messageStatus, setMessageStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [messageError, setMessageError] = useState<string | null>(null)
+
+  const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
+  const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
+  const [procedureStatus, setProcedureStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [procedureError, setProcedureError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -342,6 +352,34 @@ function App() {
     }
   }, [activeModule, messagePatientId])
 
+  useEffect(() => {
+    if (activeModule !== 'procedures') {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setProcedureStatus('loading')
+      setProcedureError(null)
+
+      try {
+        const result = await getProcedureResults(procedurePatientId, controller.signal)
+        setProcedureResults(result)
+        setProcedureStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setProcedureStatus('error')
+          setProcedureError(loadError instanceof Error ? loadError.message : 'Procedure results failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, procedurePatientId])
+
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
     [searchResult, selectedPatientId],
@@ -355,6 +393,8 @@ function App() {
         ? encounterResult?.datasetVersion ?? searchResult?.datasetVersion
         : activeModule === 'lists'
           ? clinicalLists?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'procedures'
+            ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
             : searchResult?.datasetVersion
@@ -457,6 +497,15 @@ function App() {
             onPatientIdChange={setClinicalPatientId}
           />
         )}
+        {activeModule === 'procedures' && (
+          <ProceduresWorkspace
+            patientId={procedurePatientId}
+            procedureResults={procedureResults}
+            status={procedureStatus}
+            error={procedureError}
+            onPatientIdChange={setProcedurePatientId}
+          />
+        )}
         {activeModule === 'messages' && (
           <MessagesWorkspace
             patientId={messagePatientId}
@@ -481,6 +530,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'lists') {
     return 'Clinical Lists'
   }
+  if (moduleId === 'procedures') {
+    return 'Labs And Orders'
+  }
   if (moduleId === 'messages') {
     return 'Patient Communications'
   }
@@ -496,6 +548,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'lists') {
     return 'Lists'
+  }
+  if (moduleId === 'procedures') {
+    return 'Procedures'
   }
   if (moduleId === 'messages') {
     return 'Messages'
@@ -967,6 +1022,120 @@ function ClinicalListsWorkspace({
   )
 }
 
+function ProceduresWorkspace({
+  patientId,
+  procedureResults,
+  status,
+  error,
+  onPatientIdChange,
+}: {
+  patientId: string
+  procedureResults: ProcedureResultsResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onPatientIdChange: (value: string) => void
+}) {
+  const reportCount = countProcedureReports(procedureResults?.orders)
+  const resultCount = countProcedureResults(procedureResults?.orders)
+  const finalCount = countProcedureResultsByStatus(procedureResults?.orders, 'final')
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Procedure results search">
+        <div className="filter-grid">
+          <label className="filter-field">
+            <span>Patient ID</span>
+            <input
+              value={patientId}
+              onChange={(event) => onPatientIdChange(event.target.value)}
+              aria-label="Procedure patient ID"
+              placeholder="MOD-PAT-0009"
+            />
+          </label>
+        </div>
+
+        <div className="result-meta">
+          <span>{status === 'loading' ? 'Loading' : 'Procedure results'}</span>
+          <span>Read only</span>
+        </div>
+
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+
+        {procedureResults ? (
+          <div className="list-counts">
+            <MetricRow label="Orders" value={procedureResults.orders.length} />
+            <MetricRow label="Reports" value={reportCount} />
+            <MetricRow label="Results" value={resultCount} />
+            <MetricRow label="Final" value={finalCount} />
+          </div>
+        ) : (
+          <div className="empty-state">No procedure results loaded</div>
+        )}
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Procedure results detail">
+        {procedureResults ? (
+          <>
+            <div className="appointment-banner">
+              <div>
+                <p className="eyebrow">Procedure Results</p>
+                <h2>{procedureResults.patientDisplayName}</h2>
+                <p className="patient-line">
+                  {procedureResults.pubpid} / PID {procedureResults.legacyPid}
+                </p>
+              </div>
+              <div className="portal-pill">{resultCount} results</div>
+            </div>
+
+            <div className="procedure-detail-grid">
+              <InfoPanel title="Order Summary" icon={FlaskConical}>
+                <Field label="Patient ID" value={procedureResults.pubpid} />
+                <Field label="Orders" value={procedureResults.orders.length} />
+                <Field label="Reports" value={reportCount} />
+                <Field label="Final results" value={finalCount} />
+              </InfoPanel>
+
+              <section className="info-panel procedure-orders-panel">
+                <div className="panel-heading">
+                  <ClipboardList size={17} />
+                  <h3>Orders</h3>
+                </div>
+                <div className="procedure-order-list">
+                  {procedureResults.orders.map((order) => (
+                    <ProcedureOrderCard key={order.id} order={order} />
+                  ))}
+                  {procedureResults.orders.length === 0 && (
+                    <div className="timeline-placeholder">No procedure orders recorded</div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <section className="info-panel procedure-results-panel">
+              <div className="panel-heading">
+                <Activity size={17} />
+                <h3>Order Report Results</h3>
+              </div>
+              <div className="procedure-result-body">
+                {procedureResults.orders.map((order) => (
+                  <ProcedureReportGroup key={order.id} order={order} />
+                ))}
+                {procedureResults.orders.length === 0 && (
+                  <div className="timeline-placeholder">No report results recorded</div>
+                )}
+              </div>
+            </section>
+          </>
+        ) : status === 'loading' ? (
+          <div className="empty-chart">Loading procedure results</div>
+        ) : (
+          <div className="empty-chart">Enter a patient ID to load procedure results</div>
+        )}
+      </section>
+    </section>
+  )
+}
+
 function MessagesWorkspace({
   patientId,
   patientMessages,
@@ -1164,6 +1333,87 @@ function MessageItem({ message }: { message: PatientMessageItem }) {
   )
 }
 
+function ProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
+  return (
+    <article className="procedure-order-card">
+      <div className="message-item-header">
+        <strong>{order.name || 'Procedure order'}</strong>
+        <span className="status-tag">{order.orderStatus || 'Status pending'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.code || 'No code'}</span>
+        <span>{order.orderDate}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{order.providerName || 'Provider not recorded'}</span>
+        <span>{order.encounter ? `Encounter ${order.encounter}` : 'No encounter'}</span>
+      </div>
+    </article>
+  )
+}
+
+function ProcedureReportGroup({ order }: { order: ProcedureOrderItem }) {
+  return (
+    <article className="procedure-report-group">
+      <div className="procedure-report-title">
+        <div>
+          <strong>{order.name || 'Procedure order'}</strong>
+          <span>{[order.code, order.diagnosis, order.orderDate].filter(Boolean).join(' / ')}</span>
+        </div>
+        <span className="status-tag">{order.orderStatus || 'Status pending'}</span>
+      </div>
+
+      {order.reports.map((report) => (
+        <ProcedureReportCard key={report.id} report={report} />
+      ))}
+      {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
+    </article>
+  )
+}
+
+function ProcedureReportCard({ report }: { report: ProcedureReportItem }) {
+  return (
+    <section className="procedure-report-card">
+      <div className="procedure-report-title">
+        <div>
+          <strong>Report {report.id}</strong>
+          <span>{report.reportDate}</span>
+        </div>
+        <span className="status-tag">{report.status || 'Status pending'}</span>
+      </div>
+      <div className="procedure-result-grid">
+        {report.results.map((result) => (
+          <ProcedureResultCard key={result.id} result={result} />
+        ))}
+        {report.results.length === 0 && <div className="timeline-placeholder">No result rows recorded</div>}
+      </div>
+    </section>
+  )
+}
+
+function ProcedureResultCard({ result }: { result: ProcedureResultItem }) {
+  return (
+    <article className="procedure-result-card">
+      <div>
+        <strong>{result.text || 'Result'}</strong>
+        <span className="status-tag">{result.resultStatus || 'Status pending'}</span>
+      </div>
+      <div className="procedure-result-value">
+        <span>{result.result || 'No value'}</span>
+        <span>{result.units || 'No units'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{result.code || 'No code'}</span>
+        <span>{result.range ? `Range ${result.range}` : 'No range'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{result.abnormal || 'No flag'}</span>
+        <span>{result.resultDate}</span>
+      </div>
+    </article>
+  )
+}
+
 function ProblemPanel({ items }: { items: ProblemListItem[] }) {
   return (
     <ClinicalSection title="Problems" icon={ClipboardList} emptyText="No active problems">
@@ -1319,6 +1569,33 @@ function MetricRow({ label, value }: { label: string; value: number }) {
 
 function countMessagesByStatus(messages: PatientMessageItem[] | undefined, status: string) {
   return messages?.filter((message) => message.status === status).length ?? 0
+}
+
+function countProcedureReports(orders: ProcedureOrderItem[] | undefined) {
+  return orders?.reduce((count, order) => count + order.reports.length, 0) ?? 0
+}
+
+function countProcedureResults(orders: ProcedureOrderItem[] | undefined) {
+  return orders?.reduce((count, order) => count + countReportResults(order.reports), 0) ?? 0
+}
+
+function countProcedureResultsByStatus(orders: ProcedureOrderItem[] | undefined, status: string) {
+  return (
+    orders?.reduce(
+      (count, order) =>
+        count +
+        order.reports.reduce(
+          (reportCount, report) =>
+            reportCount + report.results.filter((result) => result.resultStatus?.toLowerCase() === status).length,
+          0,
+        ),
+      0,
+    ) ?? 0
+  )
+}
+
+function countReportResults(reports: ProcedureReportItem[]) {
+  return reports.reduce((count, report) => count + report.results.length, 0)
 }
 
 function TimelinePanel({

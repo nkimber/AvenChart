@@ -354,7 +354,8 @@
 .appointment-detail-grid,
 .encounter-detail-grid,
 .clinical-list-grid,
-.message-detail-grid {
+.message-detail-grid,
+.procedure-detail-grid {
   display: grid;
   gap: 12px;
   margin-top: 12px;
@@ -382,6 +383,10 @@
 
 .message-detail-grid {
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+}
+
+.procedure-detail-grid {
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
 }
 
 .info-panel {
@@ -545,6 +550,90 @@
   font-size: 12px;
 }
 
+.procedure-orders-panel,
+.procedure-results-panel {
+  min-width: 0;
+}
+
+.procedure-results-panel {
+  margin-top: 12px;
+}
+
+.procedure-order-list,
+.procedure-result-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.procedure-order-card,
+.procedure-report-group,
+.procedure-report-card,
+.procedure-result-card {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  min-width: 0;
+}
+
+.procedure-order-card,
+.procedure-report-group,
+.procedure-result-card {
+  padding: 12px;
+}
+
+.procedure-report-group,
+.procedure-report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.procedure-report-card {
+  background: #ffffff;
+  padding: 10px;
+}
+
+.procedure-order-meta,
+.procedure-report-title,
+.procedure-result-card > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.procedure-order-meta {
+  margin-top: 7px;
+  color: #607280;
+  font-size: 12px;
+}
+
+.procedure-report-title strong,
+.procedure-result-card strong {
+  color: #1d2a35;
+  font-size: 14px;
+}
+
+.procedure-report-title span,
+.procedure-result-card span {
+  color: #607280;
+  font-size: 12px;
+}
+
+.procedure-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.procedure-result-value span:first-child {
+  color: #1d2a35;
+  font-size: 20px;
+  font-weight: 800;
+}
+
 .soap-panel {
   border: 1px solid #d8e2e7;
   border-radius: 8px;
@@ -609,7 +698,8 @@
   .appointment-detail-grid,
   .encounter-detail-grid,
   .clinical-list-grid,
-  .message-detail-grid {
+  .message-detail-grid,
+  .procedure-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -654,6 +744,8 @@
   .encounter-detail-grid,
   .clinical-list-grid,
   .message-detail-grid,
+  .procedure-detail-grid,
+  .procedure-result-grid,
   .soap-grid {
     grid-template-columns: 1fr;
   }
@@ -667,6 +759,12 @@
   }
 
   .message-item-header {
+    flex-direction: column;
+  }
+
+  .procedure-order-meta,
+  .procedure-report-title,
+  .procedure-result-card > div {
     flex-direction: column;
   }
 }
