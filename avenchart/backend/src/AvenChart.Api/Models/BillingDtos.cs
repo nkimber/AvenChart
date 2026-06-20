@@ -121,6 +121,7 @@ public sealed record BillingClaimItem(
     string? SubmittedClaim);
 
 public sealed record BillingPaymentItem(
+    string ActivityId,
     int Encounter,
     int SequenceNo,
     int SessionId,
@@ -169,4 +170,31 @@ public sealed record BillingLineStatusUpdateRequest(
 
 public sealed record BillingLineMutationResponse(
     string Id,
+    PatientBillingResponse Detail);
+
+public sealed record BillingPaymentCreateRequest(
+    string PatientId,
+    int Encounter,
+    int PayerId,
+    string? PayerName,
+    int PayerType,
+    string Reference,
+    string PostDate,
+    string? CheckDate,
+    string? DepositDate,
+    string PaymentType,
+    string PaymentMethod,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string Memo,
+    decimal PayAmount,
+    decimal AdjustmentAmount,
+    string? AccountCode,
+    string? ReasonCode,
+    string? PayerClaimNumber);
+
+public sealed record BillingPaymentMutationResponse(
+    string Id,
+    int SessionId,
     PatientBillingResponse Detail);

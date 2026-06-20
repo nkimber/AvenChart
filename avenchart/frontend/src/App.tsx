@@ -46,6 +46,7 @@ import {
   getOperationalReportsCsvUrl,
   createAppointment,
   createBillingLine,
+  createBillingPaymentPosting,
   createClinicalAllergy,
   createClinicalImmunization,
   createClinicalMedication,
@@ -69,6 +70,7 @@ import {
   deleteAdministrationFacility,
   deleteAdministrationUser,
   deleteBillingLine,
+  deleteBillingPaymentPosting,
   deleteClinicalAllergy,
   deleteClinicalImmunization,
   deleteClinicalMedication,
@@ -101,6 +103,7 @@ import {
   updateAdministrationUser,
   updateBillingLine,
   updateBillingLineStatus,
+  voidBillingPaymentPosting,
   updateEncounter,
   updatePatientDocumentMetadata,
   updatePatientInsurance,
@@ -130,6 +133,7 @@ import {
   type BillingLineCreateInput,
   type BillingLineItem,
   type BillingLineUpdateInput,
+  type BillingPaymentCreateInput,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
   type ClinicalImmunizationCreateInput,
@@ -1353,6 +1357,57 @@ function App() {
     }
   }
 
+  async function handleBillingPaymentCreate(input: BillingPaymentCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await createBillingPaymentPosting(input)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing payment posting create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
+  async function handleBillingPaymentVoid(payment: BillingPaymentItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await voidBillingPaymentPosting(payment.activityId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (voidError) {
+      setBillingStatus('error')
+      const message = voidError instanceof Error ? voidError.message : 'Billing payment posting void failed'
+      setBillingError(message)
+      throw voidError
+    }
+  }
+
+  async function handleBillingPaymentDelete(payment: BillingPaymentItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      await deleteBillingPaymentPosting(payment.activityId)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      setPatientBilling(refreshed)
+      setBillingStatus('ready')
+    } catch (deleteError) {
+      setBillingStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Billing payment posting delete failed'
+      setBillingError(message)
+      throw deleteError
+    }
+  }
+
   async function handleProcedureOrderCreate(input: ProcedureOrderCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2064,6 +2119,9 @@ function App() {
             onUpdateLine={handleBillingLineUpdate}
             onDeactivateLine={handleBillingLineDeactivate}
             onDeleteLine={handleBillingLineDelete}
+            onCreatePayment={handleBillingPaymentCreate}
+            onVoidPayment={handleBillingPaymentVoid}
+            onDeletePayment={handleBillingPaymentDelete}
           />
         )}
         {activeModule === 'procedures' && (
@@ -4521,6 +4579,9 @@ function FeesWorkspace({
   onUpdateLine,
   onDeactivateLine,
   onDeleteLine,
+  onCreatePayment,
+  onVoidPayment,
+  onDeletePayment,
 }: {
   patientId: string
   patientBilling: PatientBillingResponse | null
@@ -4531,6 +4592,9 @@ function FeesWorkspace({
   onUpdateLine: (lineId: string, input: BillingLineUpdateInput) => Promise<unknown>
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
+  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
+  onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
 }) {
   const [billingEncounter, setBillingEncounter] = useState('')
   const [billingDate, setBillingDate] = useState('2026-06-18')
@@ -4548,6 +4612,16 @@ function FeesWorkspace({
   const [correctionFee, setCorrectionFee] = useState('132.50')
   const [correctionUnits, setCorrectionUnits] = useState('2')
   const [correctionJustify, setCorrectionJustify] = useState('Z00.00')
+  const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
+  const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
+  const [paymentPayerId, setPaymentPayerId] = useState('9005')
+  const [paymentPayerName, setPaymentPayerName] = useState('Northstar HMO')
+  const [paymentCode, setPaymentCode] = useState('99214')
+  const [paymentMemo, setPaymentMemo] = useState('Parity payment posting')
+  const [paymentPayAmount, setPaymentPayAmount] = useState('21.00')
+  const [paymentAdjustmentAmount, setPaymentAdjustmentAmount] = useState('3.50')
+  const [paymentReasonCode, setPaymentReasonCode] = useState('CO-45')
+  const [paymentPayerClaimNumber, setPaymentPayerClaimNumber] = useState('NSTAR-CLM-PARITY')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
@@ -4635,6 +4709,35 @@ function FeesWorkspace({
     })
 
     setMutationMessage('Billing correction saved')
+  }
+
+  async function handlePaymentPostingSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreatePayment({
+      patientId,
+      encounter: Number(billingEncounter),
+      payerId: Number(paymentPayerId),
+      payerName: paymentPayerName,
+      payerType: 1,
+      reference: paymentReference,
+      postDate: paymentPostDate,
+      checkDate: paymentPostDate,
+      depositDate: paymentPostDate,
+      paymentType: 'insurance_payment',
+      paymentMethod: 'check_payment',
+      codeType: 'CPT4',
+      code: paymentCode,
+      memo: paymentMemo,
+      payAmount: Number(paymentPayAmount),
+      adjustmentAmount: Number(paymentAdjustmentAmount),
+      accountCode: paymentReasonCode.replace('-', ''),
+      reasonCode: paymentReasonCode,
+      payerClaimNumber: paymentPayerClaimNumber,
+    })
+
+    setMutationMessage('Payment posting saved')
   }
 
   return (
@@ -4832,6 +4935,132 @@ function FeesWorkspace({
           </div>
         </form>
 
+        <form className="appointment-mutation-panel" onSubmit={handlePaymentPostingSubmit}>
+          <div className="panel-heading compact-heading">
+            <WalletCards size={16} />
+            <h3>Payment Posting</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={billingEncounter}
+                onChange={(event) => setBillingEncounter(event.target.value)}
+                aria-label="New payment encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Post date</span>
+                <input
+                  value={paymentPostDate}
+                  onChange={(event) => setPaymentPostDate(event.target.value)}
+                  aria-label="New payment post date"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Payer ID</span>
+                <input
+                  value={paymentPayerId}
+                  onChange={(event) => setPaymentPayerId(event.target.value)}
+                  aria-label="New payment payer ID"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Payer</span>
+              <input
+                value={paymentPayerName}
+                onChange={(event) => setPaymentPayerName(event.target.value)}
+                aria-label="New payment payer name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Reference</span>
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                aria-label="New payment reference"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Paid</span>
+                <input
+                  value={paymentPayAmount}
+                  onChange={(event) => setPaymentPayAmount(event.target.value)}
+                  aria-label="New payment amount"
+                  inputMode="decimal"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Adjusted</span>
+                <input
+                  value={paymentAdjustmentAmount}
+                  onChange={(event) => setPaymentAdjustmentAmount(event.target.value)}
+                  aria-label="New payment adjustment amount"
+                  inputMode="decimal"
+                  required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>CPT</span>
+                <input
+                  value={paymentCode}
+                  onChange={(event) => setPaymentCode(event.target.value)}
+                  aria-label="New payment CPT code"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Reason</span>
+                <input
+                  value={paymentReasonCode}
+                  onChange={(event) => setPaymentReasonCode(event.target.value)}
+                  aria-label="New payment reason code"
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Claim</span>
+              <input
+                value={paymentPayerClaimNumber}
+                onChange={(event) => setPaymentPayerClaimNumber(event.target.value)}
+                aria-label="New payment payer claim number"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Memo</span>
+              <input
+                value={paymentMemo}
+                onChange={(event) => setPaymentMemo(event.target.value)}
+                aria-label="New payment memo"
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+            >
+              <Check size={15} />
+              Post Payment
+            </button>
+          </div>
+        </form>
+
         <form className="appointment-mutation-panel" onSubmit={handleBillingCorrectionSubmit}>
           <div className="panel-heading compact-heading">
             <Pencil size={16} />
@@ -5018,6 +5247,8 @@ function FeesWorkspace({
                       onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
+                      onVoidPayment={onVoidPayment}
+                      onDeletePayment={onDeletePayment}
                     />
                   ))}
                   {patientBilling.encounters.length === 0 && (
@@ -7484,12 +7715,16 @@ function BillingEncounterCard({
   onSelectCorrectionLine,
   onDeactivateLine,
   onDeleteLine,
+  onVoidPayment,
+  onDeletePayment,
 }: {
   encounter: BillingEncounterItem
   disabled: boolean
   onSelectCorrectionLine: (line: BillingLineItem) => void
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
+  onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
+  onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
 }) {
   return (
     <article className="billing-encounter-card">
@@ -7528,7 +7763,13 @@ function BillingEncounterCard({
       </div>
       <div className="billing-line-list">
         {encounter.payments.map((payment) => (
-          <BillingPaymentCard key={`${payment.encounter}-${payment.sequenceNo}`} payment={payment} />
+          <BillingPaymentCard
+            key={payment.activityId}
+            payment={payment}
+            disabled={disabled}
+            onVoid={onVoidPayment}
+            onDelete={onDeletePayment}
+          />
         ))}
         {encounter.payments.length === 0 && <div className="timeline-placeholder">No payment posting recorded</div>}
       </div>
@@ -7570,7 +7811,17 @@ function BillingClaimCard({ claim }: { claim: BillingClaimItem }) {
   )
 }
 
-function BillingPaymentCard({ payment }: { payment: BillingPaymentItem }) {
+function BillingPaymentCard({
+  payment,
+  disabled,
+  onVoid,
+  onDelete,
+}: {
+  payment: BillingPaymentItem
+  disabled: boolean
+  onVoid: (payment: BillingPaymentItem) => Promise<unknown>
+  onDelete: (payment: BillingPaymentItem) => Promise<void>
+}) {
   const statusLabel = payment.adjustmentAmount > 0 && payment.payAmount === 0 ? 'Adjustment' : 'Payment'
   const postedDate = payment.postDate || payment.postTime
 
@@ -7595,6 +7846,26 @@ function BillingPaymentCard({ payment }: { payment: BillingPaymentItem }) {
         <span>{payment.accountCode ? `Account ${payment.accountCode}` : 'No account code'}</span>
         <span>{payment.reasonCode ? `Reason ${payment.reasonCode}` : 'No reason code'}</span>
         <span>{payment.payerClaimNumber ? `Claim ${payment.payerClaimNumber}` : 'No payer claim number'}</span>
+      </div>
+      <div className="detail-actions compact-actions">
+        <button
+          type="button"
+          className="icon-text-button"
+          disabled={disabled}
+          onClick={() => void onVoid(payment)}
+        >
+          <Ban size={14} />
+          Void
+        </button>
+        <button
+          type="button"
+          className="icon-text-button danger"
+          disabled={disabled}
+          onClick={() => void onDelete(payment)}
+        >
+          <Trash2 size={14} />
+          Delete
+        </button>
       </div>
     </article>
   )

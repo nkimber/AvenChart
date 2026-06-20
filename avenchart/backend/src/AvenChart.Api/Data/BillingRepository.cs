@@ -260,6 +260,231 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<BillingPaymentMutationResponse?> CreatePaymentAsync(
+        BillingPaymentCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || request.Encounter <= 0
+            || request.PayerId <= 0
+            || request.PayerType <= 0
+            || string.IsNullOrWhiteSpace(request.Reference)
+            || string.IsNullOrWhiteSpace(request.PaymentType)
+            || string.IsNullOrWhiteSpace(request.PaymentMethod)
+            || string.IsNullOrWhiteSpace(request.Memo)
+            || request.PayAmount < 0
+            || request.AdjustmentAmount < 0
+            || (request.PayAmount == 0m && request.AdjustmentAmount == 0m)
+            || !TryReadDate(request.PostDate, out var postDate))
+        {
+            return null;
+        }
+
+        var checkDate = TryReadOptionalDate(request.CheckDate, out var parsedCheckDate) ? parsedCheckDate : postDate;
+        var depositDate = TryReadOptionalDate(request.DepositDate, out var parsedDepositDate) ? parsedDepositDate : postDate;
+        var postTime = postDate.ToDateTime(new TimeOnly(10, 45, 0));
+        int sessionId;
+        int sequenceNo;
+        int legacyPid;
+        var activityId = $"PAY-MODERN-{Guid.NewGuid():N}";
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+            if (patient is null)
+            {
+                return null;
+            }
+
+            var encounter = await GetEncounterForPatientAsync(connection, patient.LegacyPid, request.Encounter, cancellationToken);
+            if (encounter is null)
+            {
+                return null;
+            }
+
+            legacyPid = patient.LegacyPid;
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            sessionId = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                cancellationToken);
+            sequenceNo = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                cancellationToken,
+                command =>
+                {
+                    command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    command.Parameters.AddWithValue("encounter", encounter.Encounter);
+                });
+
+            await using (var sessionCommand = connection.CreateCommand())
+            {
+                sessionCommand.Transaction = transaction;
+                sessionCommand.CommandText = """
+                    insert into payment_sessions
+                        (id, patient_id, pid, payer_id, payer_name, user_id, user_name, closed, reference,
+                         check_date, deposit_date, pay_total, created_time, modified_time, global_amount,
+                         payment_type, description, adjustment_code, post_to_date, payment_method)
+                    values
+                        (@id, @patientId, @pid, @payerId, @payerName, 119, 'gold-billing-01', 1, @reference,
+                         @checkDate, @depositDate, @payTotal, @postTime, @postTime, 0,
+                         @paymentType, @description, @adjustmentCode, @postDate, @paymentMethod);
+                    """;
+                sessionCommand.Parameters.AddWithValue("id", sessionId);
+                sessionCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                sessionCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                sessionCommand.Parameters.AddWithValue("payerId", request.PayerId);
+                sessionCommand.Parameters.AddWithValue("payerName", NormalizeText(request.PayerName) ?? string.Empty);
+                sessionCommand.Parameters.AddWithValue("reference", request.Reference.Trim());
+                sessionCommand.Parameters.Add("checkDate", NpgsqlDbType.Date).Value = checkDate;
+                sessionCommand.Parameters.Add("depositDate", NpgsqlDbType.Date).Value = depositDate;
+                sessionCommand.Parameters.AddWithValue("payTotal", request.PayAmount);
+                sessionCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                sessionCommand.Parameters.AddWithValue("paymentType", request.PaymentType.Trim());
+                sessionCommand.Parameters.AddWithValue("description", request.Memo.Trim());
+                sessionCommand.Parameters.AddWithValue("adjustmentCode", request.AdjustmentAmount > 0m ? "contractual_adjustment" : string.Empty);
+                sessionCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                sessionCommand.Parameters.AddWithValue("paymentMethod", request.PaymentMethod.Trim());
+                await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var activityCommand = connection.CreateCommand())
+            {
+                activityCommand.Transaction = transaction;
+                activityCommand.CommandText = """
+                    insert into payment_activities
+                        (id, session_id, patient_id, pid, encounter, sequence_no, code_type, code, modifier,
+                         payer_type, post_time, post_user_id, post_user_name, memo, pay_amount, adj_amount,
+                         modified_time, follow_up, follow_up_note, account_code, reason_code, deleted, post_date,
+                         payer_claim_number)
+                    values
+                        (@id, @sessionId, @patientId, @pid, @encounter, @sequenceNo, @codeType, @code, @modifier,
+                         @payerType, @postTime, 119, 'gold-billing-01', @memo, @payAmount, @adjustmentAmount,
+                         @postTime, '', '', @accountCode, @reasonCode, null, @postDate, @payerClaimNumber);
+                    """;
+                activityCommand.Parameters.AddWithValue("id", activityId);
+                activityCommand.Parameters.AddWithValue("sessionId", sessionId);
+                activityCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                activityCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                activityCommand.Parameters.AddWithValue("encounter", encounter.Encounter);
+                activityCommand.Parameters.AddWithValue("sequenceNo", sequenceNo);
+                activityCommand.Parameters.AddWithValue("codeType", NormalizeText(request.CodeType) ?? string.Empty);
+                activityCommand.Parameters.AddWithValue("code", NormalizeText(request.Code) ?? string.Empty);
+                activityCommand.Parameters.AddWithValue("modifier", NormalizeText(request.Modifier) ?? string.Empty);
+                activityCommand.Parameters.AddWithValue("payerType", request.PayerType);
+                activityCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                activityCommand.Parameters.AddWithValue("memo", request.Memo.Trim());
+                activityCommand.Parameters.AddWithValue("payAmount", request.PayAmount);
+                activityCommand.Parameters.AddWithValue("adjustmentAmount", request.AdjustmentAmount);
+                activityCommand.Parameters.AddWithValue("accountCode", NormalizeText(request.AccountCode) ?? string.Empty);
+                activityCommand.Parameters.AddWithValue("reasonCode", NormalizeText(request.ReasonCode) ?? string.Empty);
+                activityCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                activityCommand.Parameters.AddWithValue("payerClaimNumber", NormalizeText(request.PayerClaimNumber) ?? string.Empty);
+                await activityCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var billing = await GetForPatientAsync(legacyPid.ToString(), cancellationToken);
+        return billing is null ? null : new BillingPaymentMutationResponse(activityId, sessionId, billing);
+    }
+
+    public async Task<BillingPaymentMutationResponse?> VoidPaymentAsync(
+        string activityId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(activityId))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        int? sessionId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update payment_activities
+                set deleted = now(),
+                    modified_time = now()
+                where id = @id
+                returning pid, session_id;
+                """;
+            command.Parameters.AddWithValue("id", activityId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                pid = reader.GetInt32(reader.GetOrdinal("pid"));
+                sessionId = reader.GetInt32(reader.GetOrdinal("session_id"));
+            }
+        }
+
+        if (pid is null || sessionId is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        return billing is null ? null : new BillingPaymentMutationResponse(activityId, sessionId.Value, billing);
+    }
+
+    public async Task<bool> DeletePaymentAsync(string activityId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(activityId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        int? sessionId = null;
+        await using (var lookupCommand = connection.CreateCommand())
+        {
+            lookupCommand.Transaction = transaction;
+            lookupCommand.CommandText = "select session_id from payment_activities where id = @id limit 1;";
+            lookupCommand.Parameters.AddWithValue("id", activityId);
+            var result = await lookupCommand.ExecuteScalarAsync(cancellationToken);
+            sessionId = result is null ? null : Convert.ToInt32(result);
+        }
+
+        if (sessionId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await using (var activityCommand = connection.CreateCommand())
+        {
+            activityCommand.Transaction = transaction;
+            activityCommand.CommandText = "delete from payment_activities where id = @id;";
+            activityCommand.Parameters.AddWithValue("id", activityId);
+            await activityCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var sessionCommand = connection.CreateCommand())
+        {
+            sessionCommand.Transaction = transaction;
+            sessionCommand.CommandText = """
+                delete from payment_sessions ps
+                where ps.id = @sessionId
+                  and not exists (
+                    select 1
+                    from payment_activities pa
+                    where pa.session_id = ps.id
+                  );
+                """;
+            sessionCommand.Parameters.AddWithValue("sessionId", sessionId.Value);
+            await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -488,6 +713,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
+                pa.id as activity_id,
                 pa.encounter,
                 pa.sequence_no,
                 pa.session_id,
@@ -524,6 +750,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         while (await reader.ReadAsync(cancellationToken))
         {
             items.Add(new BillingPaymentItem(
+                ActivityId: reader.GetString(reader.GetOrdinal("activity_id")),
                 Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
                 SequenceNo: reader.GetInt32(reader.GetOrdinal("sequence_no")),
                 SessionId: reader.GetInt32(reader.GetOrdinal("session_id")),
@@ -606,9 +833,35 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             || DateOnly.TryParse(value, out date);
     }
 
+    private static bool TryReadOptionalDate(string? value, out DateOnly date)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            date = default;
+            return false;
+        }
+
+        return TryReadDate(value, out date);
+    }
+
     private static DateOnly ReadDateOnly(string value, DateOnly fallback)
     {
         return TryReadDate(value, out var date) ? date : fallback;
+    }
+
+    private static async Task<int> NextIntAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken,
+        Action<NpgsqlCommand>? configure = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        configure?.Invoke(command);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null ? 1 : Convert.ToInt32(result);
     }
 
     private static string AgingBucketLabel(int ageDays)

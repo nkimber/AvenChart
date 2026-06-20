@@ -776,6 +776,7 @@ export type BillingClaimItem = {
 }
 
 export type BillingPaymentItem = {
+  activityId: string
   encounter: number
   sequenceNo: number
   sessionId: number
@@ -926,6 +927,35 @@ export type BillingLineStatusUpdateInput = {
 
 export type BillingLineMutationResponse = {
   id: string
+  detail: PatientBillingResponse
+}
+
+export type BillingPaymentCreateInput = {
+  patientId: string
+  encounter: number
+  payerId: number
+  payerName?: string | null
+  payerType: number
+  reference: string
+  postDate: string
+  checkDate?: string | null
+  depositDate?: string | null
+  paymentType: string
+  paymentMethod: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo: string
+  payAmount: number
+  adjustmentAmount: number
+  accountCode?: string | null
+  reasonCode?: string | null
+  payerClaimNumber?: string | null
+}
+
+export type BillingPaymentMutationResponse = {
+  id: string
+  sessionId: number
   detail: PatientBillingResponse
 }
 
@@ -2109,6 +2139,48 @@ export async function deleteBillingLine(billingLineId: string, signal?: AbortSig
   })
   if (!response.ok) {
     throw new Error(`Billing line delete failed with ${response.status}`)
+  }
+}
+
+export async function createBillingPaymentPosting(
+  input: BillingPaymentCreateInput,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing payment posting create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function voidBillingPaymentPosting(
+  activityId: string,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}/void`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing payment posting void failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteBillingPaymentPosting(activityId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing payment posting delete failed with ${response.status}`)
   }
 }
 

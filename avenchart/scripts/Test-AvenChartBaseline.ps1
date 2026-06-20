@@ -1704,6 +1704,76 @@ catch {
     Add-Check -Name "anchor payment posting summary" -Result "failed" -Details $_.Exception.Message
 }
 
+$paymentPostingMutationId = $null
+try {
+    $beforePaymentMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforePaymentMutationSummary = $beforePaymentMutationBilling.accountSummary
+    $paymentPostingReference = "EOB-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    $paymentPostingClaim = "NSTAR-CLM-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    $createPaymentPostingBody = @{
+        patientId = "MOD-PAT-0005"
+        encounter = 1000052
+        payerId = 9005
+        payerName = "Northstar HMO"
+        payerType = 1
+        reference = $paymentPostingReference
+        postDate = "2026-06-18"
+        checkDate = "2026-06-18"
+        depositDate = "2026-06-18"
+        paymentType = "insurance_payment"
+        paymentMethod = "check_payment"
+        codeType = "CPT4"
+        code = "99214"
+        memo = "Smoke payment posting"
+        payAmount = 21.00
+        adjustmentAmount = 3.50
+        accountCode = "CO45"
+        reasonCode = "CO-45"
+        payerClaimNumber = $paymentPostingClaim
+    } | ConvertTo-Json
+    $createdPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -ContentType "application/json" -Body $createPaymentPostingBody -TimeoutSec 20
+    $paymentPostingMutationId = $createdPaymentPosting.id
+    $createdPaymentRows = @($createdPaymentPosting.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
+    $createdPaymentVisible = $createdPaymentRows | Where-Object { $_.activityId -eq $paymentPostingMutationId -and $_.reference -eq $paymentPostingReference -and $_.payAmount -eq 21 -and $_.adjustmentAmount -eq 3.5 -and $_.reasonCode -eq "CO-45" } | Select-Object -First 1
+    $createdPaymentSummary = $createdPaymentPosting.detail.accountSummary
+
+    $voidedPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId/void" -Method Put -TimeoutSec 20
+    $voidedPaymentRows = @($voidedPaymentPosting.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
+    $voidedPaymentVisible = $voidedPaymentRows | Where-Object { $_.activityId -eq $paymentPostingMutationId } | Select-Object -First 1
+    $voidedPaymentSummary = $voidedPaymentPosting.detail.accountSummary
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $paymentPostingMutationId = $null
+
+    $paymentPostingMutationPassed = $null -ne $createdPaymentVisible `
+        -and [decimal]$createdPaymentSummary.paymentAmount -eq ([decimal]$beforePaymentMutationSummary.paymentAmount + 21) `
+        -and [decimal]$createdPaymentSummary.adjustmentAmount -eq ([decimal]$beforePaymentMutationSummary.adjustmentAmount + 3.5) `
+        -and [decimal]$createdPaymentSummary.balanceAmount -eq ([decimal]$beforePaymentMutationSummary.balanceAmount - 24.5) `
+        -and $null -eq $voidedPaymentVisible `
+        -and [decimal]$voidedPaymentSummary.paymentAmount -eq [decimal]$beforePaymentMutationSummary.paymentAmount `
+        -and [decimal]$voidedPaymentSummary.adjustmentAmount -eq [decimal]$beforePaymentMutationSummary.adjustmentAmount `
+        -and [decimal]$voidedPaymentSummary.balanceAmount -eq [decimal]$beforePaymentMutationSummary.balanceAmount
+    Add-Check -Name "payment posting mutation lifecycle" -Result $(if ($paymentPostingMutationPassed) { "passed" } else { "failed" }) -Details @{
+        paymentId = $createdPaymentPosting.id
+        reference = $paymentPostingReference
+        createdPayment = $createdPaymentVisible
+        createdSummary = $createdPaymentSummary
+        voidedSummary = $voidedPaymentSummary
+    }
+}
+catch {
+    Add-Check -Name "payment posting mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $paymentPostingMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $balanceBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
     $balanceEncounter = $balanceBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1

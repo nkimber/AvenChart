@@ -819,6 +819,36 @@ billing.MapDelete("/lines/{billingLineId}", async (
     })
     .WithName("DeleteBillingLine");
 
+billing.MapPost("/payments", async (
+        BillingRepository repository,
+        BillingPaymentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreatePaymentAsync(request, cancellationToken);
+        return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/payments/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBillingPaymentPosting");
+
+billing.MapPut("/payments/{activityId}/void", async (
+        BillingRepository repository,
+        string activityId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.VoidPaymentAsync(activityId, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("VoidBillingPaymentPosting");
+
+billing.MapDelete("/payments/{activityId}", async (
+        BillingRepository repository,
+        string activityId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeletePaymentAsync(activityId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteBillingPaymentPosting");
+
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 
 administration.MapGet("/directory", async (
