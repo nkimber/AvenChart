@@ -689,6 +689,73 @@ finally {
     }
 }
 
+$smokeEncounterDocumentDenialId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $deniedDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $deniedDocumentName = "Smoke Encounter Denied Document $deniedDocumentSuffix"
+    $deniedDocumentBody = @{
+        categoryId = 3
+        name = $deniedDocumentName
+        docDate = "2026-06-18"
+        content = "Smoke encounter document denial content $deniedDocumentSuffix."
+        notes = "Created by the smoke encounter document denial check."
+    } | ConvertTo-Json
+
+    $createdEncounterDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $deniedDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentDenialId = $createdEncounterDeniedDocument.id
+    $createdDeniedDocumentVisible = @($createdEncounterDeniedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentDenialId `
+            -and $_.name -eq $deniedDocumentName `
+            -and $_.reviewStatus -eq "pending" `
+            -and [string]::IsNullOrWhiteSpace($_.reviewedBy)
+    } | Select-Object -First 1
+
+    $denyBody = @{
+        reviewStatus = "denied"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $deniedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentDenialId/sign" -Method Put -ContentType "application/json" -Body $denyBody -TimeoutSec 20
+    $deniedEncounterDocumentVisible = @($deniedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentDenialId `
+            -and $_.name -eq $deniedDocumentName `
+            -and $_.reviewStatus -eq "denied" `
+            -and $_.reviewedBy -eq "admin" `
+            -and -not [string]::IsNullOrWhiteSpace($_.reviewedAt)
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentDenialId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentDenialId = $null
+    $afterDeleteDeniedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedDeniedDocumentVisible = @($afterDeleteDeniedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $deniedDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentDenialPassed = $null -ne $createdDeniedDocumentVisible `
+        -and $null -ne $deniedEncounterDocumentVisible `
+        -and $null -eq $deletedDeniedDocumentVisible
+    Add-Check -Name "encounter document denial lifecycle" -Result $(if ($encounterDocumentDenialPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterDeniedDocument.id
+        document = $deniedEncounterDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document denial lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentDenialId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentDenialId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

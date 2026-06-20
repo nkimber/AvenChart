@@ -1829,6 +1829,25 @@ export async function signEncounterDocument(
   return response.json()
 }
 
+export async function denyEncounterDocument(
+  encounter: number,
+  documentId: number,
+  signature: PatientDocumentSignInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(signature),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document denial failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function deleteEncounterSignature(
   encounter: number,
   signatureId: number,

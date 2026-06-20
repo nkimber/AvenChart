@@ -88,6 +88,7 @@ import {
   deleteClinicalPrescription,
   deleteEncounter,
   deleteEncounterSignature,
+  denyEncounterDocument,
   deletePatientInsurance,
   deletePatientDocument,
   deletePatientMessage,
@@ -1145,6 +1146,31 @@ function App() {
       const message = signError instanceof Error ? signError.message : 'Encounter document sign-off failed'
       setEncounterError(message)
       throw signError
+    }
+  }
+
+  async function handleEncounterDocumentDeny(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await denyEncounterDocument(encounter.encounter, document.id, {
+        reviewStatus: 'denied',
+        reviewedBy: 'admin',
+      })
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (denyError) {
+      setEncounterDetailStatus('error')
+      const message = denyError instanceof Error ? denyError.message : 'Encounter document denial failed'
+      setEncounterError(message)
+      throw denyError
     }
   }
 
@@ -2399,6 +2425,7 @@ function App() {
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
             onSignEncounterDocument={handleEncounterDocumentSign}
+            onDenyEncounterDocument={handleEncounterDocumentDeny}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
@@ -3631,6 +3658,7 @@ function EncounterWorkspace({
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
   onSignEncounterDocument,
+  onDenyEncounterDocument,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
@@ -3662,6 +3690,10 @@ function EncounterWorkspace({
     input: EncounterBinaryDocumentCreateInput,
   ) => Promise<EncounterDocumentMutationResponse>
   onSignEncounterDocument: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onDenyEncounterDocument: (
     encounter: EncounterDetail,
     document: EncounterDocumentAttachment,
   ) => Promise<EncounterDocumentMutationResponse>
@@ -3731,7 +3763,9 @@ function EncounterWorkspace({
   const [encounterBinaryContentBase64, setEncounterBinaryContentBase64] = useState('')
   const [encounterBinaryFileMessage, setEncounterBinaryFileMessage] = useState('No file selected')
   const [encounterBinaryDocumentStatus, setEncounterBinaryDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<
+    'idle' | 'saving' | 'signed' | 'denied' | 'error'
+  >('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -4025,7 +4059,21 @@ function EncounterWorkspace({
     setEncounterDocumentReviewStatus('saving')
     try {
       await onSignEncounterDocument(encounterDetail, document)
-      setEncounterDocumentReviewStatus('saved')
+      setEncounterDocumentReviewStatus('signed')
+    } catch {
+      setEncounterDocumentReviewStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentDeny(document: EncounterDocumentAttachment) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentReviewStatus('saving')
+    try {
+      await onDenyEncounterDocument(encounterDetail, document)
+      setEncounterDocumentReviewStatus('denied')
     } catch {
       setEncounterDocumentReviewStatus('error')
     }
@@ -4759,6 +4807,7 @@ function EncounterWorkspace({
                     document={document}
                     disabled={encounterDocumentReviewStatus === 'saving'}
                     onSign={handleEncounterDocumentSign}
+                    onDeny={handleEncounterDocumentDeny}
                   />
                 ))}
                 {attachedDocuments.length === 0 && (
@@ -4766,12 +4815,14 @@ function EncounterWorkspace({
                 )}
               </div>
               <span className={encounterDocumentReviewStatus === 'error' ? 'save-note error' : 'save-note'}>
-                {encounterDocumentReviewStatus === 'saved'
+                {encounterDocumentReviewStatus === 'signed'
                   ? 'Document signed'
+                  : encounterDocumentReviewStatus === 'denied'
+                    ? 'Document denied'
                   : encounterDocumentReviewStatus === 'saving'
-                    ? 'Signing document'
+                    ? 'Reviewing document'
                     : encounterDocumentReviewStatus === 'error'
-                      ? 'Document sign-off failed'
+                      ? 'Document review failed'
                       : ''}
               </span>
             </section>
@@ -5402,10 +5453,12 @@ function EncounterDocumentAttachmentCard({
   document,
   disabled,
   onSign,
+  onDeny,
 }: {
   document: EncounterDocumentAttachment
   disabled: boolean
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
+  onDeny: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
@@ -5466,6 +5519,15 @@ function EncounterDocumentAttachmentCard({
         >
           <ShieldCheck size={14} />
           Sign
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || isReviewed}
+          onClick={() => void onDeny(document)}
+        >
+          <X size={14} />
+          Deny
         </button>
       </div>
     </article>
