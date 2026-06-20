@@ -518,6 +518,68 @@ finally {
     }
 }
 
+$appointmentCheckoutId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Checkout"
+        date = "2026-11-05"
+        startTime = "11:00"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "Checkout"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentCheckoutId = $createdAppointment.id
+
+    $arrivalBody = @{
+        status = "@"
+        title = "Smoke Appointment Checkout Arrived"
+    } | ConvertTo-Json
+    $arrivedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId/status" -Method Put -ContentType "application/json" -Body $arrivalBody -TimeoutSec 20
+
+    $checkoutBody = @{
+        status = ">"
+        title = "Smoke Appointment Checkout Checked Out"
+    } | ConvertTo-Json
+    $checkedOutAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId/status" -Method Put -ContentType "application/json" -Body $checkoutBody -TimeoutSec 20
+    $appointmentCheckoutPassed = $createdAppointment.status -eq "-" `
+        -and $arrivedAppointment.status -eq "@" `
+        -and $checkedOutAppointment.status -eq ">" `
+        -and $checkedOutAppointment.title -eq "Smoke Appointment Checkout Checked Out" `
+        -and $checkedOutAppointment.date -eq "2026-11-05" `
+        -and $checkedOutAppointment.startTime -eq "11:00" `
+        -and $checkedOutAppointment.durationMinutes -eq 30 `
+        -and $checkedOutAppointment.room -eq "Checkout"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentCheckoutId = $null
+
+    Add-Check -Name "appointment check-out lifecycle" -Result $(if ($appointmentCheckoutPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        arrivedTitle = $arrivedAppointment.title
+        checkedOutTitle = $checkedOutAppointment.title
+        date = $checkedOutAppointment.date
+        startTime = $checkedOutAppointment.startTime
+        durationMinutes = $checkedOutAppointment.durationMinutes
+        status = $checkedOutAppointment.status
+    }
+}
+catch {
+    Add-Check -Name "appointment check-out lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentCheckoutId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCheckoutId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

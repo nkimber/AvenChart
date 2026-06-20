@@ -976,6 +976,31 @@ function App() {
     }
   }
 
+  async function handleAppointmentCheckOut(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const baseTitle = appointment.title.endsWith(' Arrived')
+        ? appointment.title.slice(0, -' Arrived'.length)
+        : appointment.title
+      const updated = await updateAppointmentStatus(appointment.id, {
+        status: '>',
+        title: baseTitle.endsWith('Checked Out') ? baseTitle : `${baseTitle} Checked Out`,
+      })
+      setAppointmentDetail(updated)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (checkoutError) {
+      setAppointmentDetailStatus('error')
+      const message = checkoutError instanceof Error ? checkoutError.message : 'Appointment check-out update failed'
+      setAppointmentError(message)
+      throw checkoutError
+    }
+  }
+
   async function handleAppointmentDelete(appointment: AppointmentDetail) {
     setAppointmentDetailStatus('loading')
     setAppointmentError(null)
@@ -2598,6 +2623,7 @@ function App() {
             onCreateAppointment={handleAppointmentCreate}
             onUpdateAppointment={handleAppointmentUpdate}
             onArriveAppointment={handleAppointmentArrive}
+            onCheckOutAppointment={handleAppointmentCheckOut}
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
           />
@@ -3598,6 +3624,7 @@ function CalendarWorkspace({
   onCreateAppointment,
   onUpdateAppointment,
   onArriveAppointment,
+  onCheckOutAppointment,
   onCancelAppointment,
   onDeleteAppointment,
 }: {
@@ -3615,6 +3642,7 @@ function CalendarWorkspace({
   onCreateAppointment: (input: AppointmentCreateInput) => Promise<AppointmentDetail>
   onUpdateAppointment: (appointment: AppointmentDetail, input: AppointmentUpdateInput) => Promise<AppointmentDetail>
   onArriveAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
+  onCheckOutAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
 }) {
@@ -3686,6 +3714,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onArriveAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleCheckOutSelected() {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onCheckOutAppointment(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -3855,10 +3897,19 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleArriveSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '@'}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
               >
                 <Check size={15} />
                 <span>Mark arrived</span>
+              </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={handleCheckOutSelected}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '>'}
+              >
+                <ClipboardList size={15} />
+                <span>Mark checked out</span>
               </button>
               <button
                 className="icon-text-button"
