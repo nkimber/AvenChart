@@ -8,6 +8,8 @@ namespace AvenChart.Api.Data;
 
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
+    private const int MaxInlineThumbnailBytes = 262_144;
+
     public async Task<PatientDocumentsResponse?> GetForPatientAsync(
         string patientId,
         CancellationToken cancellationToken,
@@ -706,6 +708,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              content_bytes,
               deleted,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
@@ -732,6 +735,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
             var revisionHash = ReadNullableString(reader, "hash");
             var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
+            var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
+            var contentBytes = reader.IsDBNull(contentBytesOrdinal) ? null : (byte[])reader.GetValue(contentBytesOrdinal);
+            var thumbnailDataUri = BuildThumbnailDataUri(mimetype, contentBytes);
 
             items.Add(new PatientDocumentItem(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
@@ -769,6 +775,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 PreviewStatus: previewInfo.PreviewStatus,
                 ThumbnailLabel: previewInfo.ThumbnailLabel,
                 ThumbnailText: previewInfo.ThumbnailText,
+                ThumbnailDataUri: thumbnailDataUri,
                 CanPreviewInline: previewInfo.CanPreviewInline,
                 CanDownload: previewInfo.CanDownload));
         }
@@ -871,6 +878,19 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         return "FILE";
+    }
+
+    private static string? BuildThumbnailDataUri(string? mimetype, byte[]? contentBytes)
+    {
+        var normalizedMimetype = NormalizeText(mimetype)?.ToLowerInvariant() ?? string.Empty;
+        if (!normalizedMimetype.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            || contentBytes is not { Length: > 0 }
+            || contentBytes.Length > MaxInlineThumbnailBytes)
+        {
+            return null;
+        }
+
+        return $"data:{normalizedMimetype};base64,{Convert.ToBase64String(contentBytes)}";
     }
 
     private static string? TrimThumbnailText(string? value)

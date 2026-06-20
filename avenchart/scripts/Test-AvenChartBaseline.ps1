@@ -2521,6 +2521,7 @@ try {
     $imageDocumentName = "Smoke Image Patient Document.svg"
     $imageDocumentBody = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect width="64" height="40" fill="#ffffff"/><path d="M8 28l10-10 8 7 9-12 21 15H8z" fill="#32746d"/><circle cx="48" cy="11" r="5" fill="#f2b84b"/></svg>'
     $imageDocumentBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($imageDocumentBody))
+    $imageDocumentThumbnailDataUri = "data:image/svg+xml;base64,$imageDocumentBase64"
     $createImageDocumentBody = @{
         patientId = "MOD-PAT-0001"
         categoryId = 3
@@ -2566,6 +2567,8 @@ try {
         -and $imageDownload.IsSuccessStatusCode `
         -and $imageDownloadContentType -like "image/svg+xml*" `
         -and [Convert]::ToBase64String($imageDownloadBytes) -eq $imageDocumentBase64
+    $patientImageDocumentThumbnailPassed = $null -ne $createdImageVisible `
+        -and $createdImageVisible.thumbnailDataUri -eq $imageDocumentThumbnailDataUri
 
     Add-Check -Name "patient image document preview lifecycle" -Result $(if ($patientImageDocumentPreviewPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdImageDocument.id
@@ -2575,9 +2578,15 @@ try {
         downloadStatus = [int]$imageDownload.StatusCode
         downloadContentType = $imageDownloadContentType
     }
+    Add-Check -Name "patient image document thumbnail readiness" -Result $(if ($patientImageDocumentThumbnailPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdImageDocument.id
+        expectedThumbnail = $imageDocumentThumbnailDataUri
+        actualThumbnail = $createdImageVisible.thumbnailDataUri
+    }
 }
 catch {
     Add-Check -Name "patient image document preview lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "patient image document thumbnail readiness" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $patientImageDocumentPreviewId) {

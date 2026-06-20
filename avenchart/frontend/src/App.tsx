@@ -9997,7 +9997,15 @@ function DocumentItem({
       </div>
       <div className="document-preview-readiness">
         <div className={`document-thumbnail document-thumbnail-${document.previewKind || 'file'}`} aria-label={`Document preview ${document.thumbnailLabel || 'DOC'}`}>
-          <span>{document.thumbnailLabel || 'DOC'}</span>
+          {document.thumbnailDataUri ? (
+            <img
+              alt={`${document.name} thumbnail`}
+              className="document-thumbnail-image-preview"
+              src={document.thumbnailDataUri}
+            />
+          ) : (
+            <span>{document.thumbnailLabel || 'DOC'}</span>
+          )}
         </div>
         <div className="document-preview-summary">
           <span>{document.previewStatus || 'Preview pending'}</span>

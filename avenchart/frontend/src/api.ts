@@ -632,6 +632,7 @@ export type PatientDocumentItem = {
   previewStatus: string
   thumbnailLabel: string
   thumbnailText: string
+  thumbnailDataUri?: string | null
   canPreviewInline: boolean
   canDownload: boolean
 }

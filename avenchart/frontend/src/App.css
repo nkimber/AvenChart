@@ -1294,6 +1294,14 @@
   font-weight: 900;
   justify-content: center;
   min-width: 0;
+  overflow: hidden;
+}
+
+.document-thumbnail-image-preview {
+  background: #ffffff;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
 }
 
 .document-thumbnail-pdf {

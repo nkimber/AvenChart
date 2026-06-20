@@ -48,6 +48,7 @@ public sealed record PatientDocumentItem(
     string PreviewStatus,
     string ThumbnailLabel,
     string ThumbnailText,
+    string? ThumbnailDataUri,
     bool CanPreviewInline,
     bool CanDownload);
 
