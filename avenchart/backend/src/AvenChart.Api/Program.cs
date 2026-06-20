@@ -284,6 +284,30 @@ encounters.MapPost("/{encounter:int}/soap-notes", async (
     })
     .WithName("CreateEncounterSoapNote");
 
+encounters.MapPut("/{encounter:int}/sign", async (
+        EncounterRepository repository,
+        int encounter,
+        EncounterSignRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.SignAsync(encounter, request, cancellationToken);
+        return response is null
+            ? Results.BadRequest("Encounter could not be signed from the supplied encounter and signer details.")
+            : Results.Ok(response);
+    })
+    .WithName("SignEncounter");
+
+encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
+        EncounterRepository repository,
+        int encounter,
+        int signatureId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteSignatureAsync(encounter, signatureId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteEncounterSignature");
+
 encounters.MapDelete("/{encounter:int}/vitals/{vitalsId:int}", async (
         EncounterRepository repository,
         int encounter,

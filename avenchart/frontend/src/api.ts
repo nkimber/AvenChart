@@ -246,6 +246,18 @@ export type EncounterDiagnosisCode = {
   supportingBillingCodes: string[]
 }
 
+export type EncounterSignatureItem = {
+  id: number
+  tableName: string
+  signerUserId: number | null
+  signerUsername: string
+  signedAt: string
+  isLock: boolean
+  amendment?: string | null
+  hash: string
+  signatureHash: string
+}
+
 export type EncounterDetail = EncounterListItem & {
   firstName: string
   lastName: string
@@ -259,6 +271,7 @@ export type EncounterDetail = EncounterListItem & {
   billingLines: BillingLineItem[]
   claims: BillingClaimItem[]
   procedureOrders: ProcedureOrderItem[]
+  signatures: EncounterSignatureItem[]
   documents: EncounterDocumentAttachment[]
 }
 
@@ -307,6 +320,18 @@ export type EncounterSoapNoteCreateInput = {
 }
 
 export type EncounterFormMutationResponse = {
+  id: number
+  detail: EncounterDetail
+}
+
+export type EncounterSignInput = {
+  signerUsername: string
+  signedAt: string
+  isLock: boolean
+  amendment?: string | null
+}
+
+export type EncounterSignatureMutationResponse = {
   id: number
   detail: EncounterDetail
 }
@@ -1703,6 +1728,38 @@ export async function createEncounterSoapNote(
   }
 
   return response.json()
+}
+
+export async function signEncounter(
+  encounter: number,
+  signature: EncounterSignInput,
+  signal?: AbortSignal,
+): Promise<EncounterSignatureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(signature),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter sign-off failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteEncounterSignature(
+  encounter: number,
+  signatureId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/signatures/${signatureId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Encounter signature delete failed with ${response.status}`)
+  }
 }
 
 export async function getClinicalLists(patientId: string, signal?: AbortSignal): Promise<ClinicalListsResponse> {

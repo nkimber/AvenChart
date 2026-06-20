@@ -944,9 +944,22 @@
 .encounter-claim-panel,
 .encounter-procedure-panel,
 .encounter-documents-panel,
+.encounter-signature-panel,
 .encounter-fee-sheet-panel,
 .encounter-procedure-entry-panel {
   margin-top: 12px;
+}
+
+.encounter-signature-form {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(170px, 1fr) minmax(110px, 0.6fr) minmax(220px, 1.4fr) auto;
+  padding: 12px;
+}
+
+.encounter-signature-note-field {
+  min-width: 0;
 }
 
 .encounter-fee-sheet-grid {
@@ -979,6 +992,7 @@
 .encounter-billing-list,
 .encounter-diagnosis-list,
 .encounter-claim-list,
+.encounter-signature-list,
 .encounter-documents-list {
   display: grid;
   gap: 10px;
@@ -996,6 +1010,7 @@
 .encounter-billing-card,
 .encounter-diagnosis-card,
 .encounter-claim-card,
+.encounter-signature-card,
 .encounter-document-card {
   background: #f8fafb;
   border: 1px solid #e0e8ec;
@@ -1005,6 +1020,40 @@
   gap: 8px;
   min-width: 0;
   padding: 12px;
+}
+
+.encounter-signature-card {
+  align-items: flex-start;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.encounter-signature-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.encounter-signature-card strong {
+  color: #123743;
+  font-size: 14px;
+}
+
+.encounter-signature-card span,
+.encounter-signature-card p {
+  color: #52636b;
+  font-size: 13px;
+  margin: 0;
+}
+
+.encounter-signature-card code {
+  align-self: flex-start;
+  background: #edf5f6;
+  border-radius: 5px;
+  color: #14605c;
+  font-size: 11px;
+  padding: 3px 6px;
 }
 
 .encounter-procedure-card,
@@ -1855,8 +1904,10 @@
   .encounter-billing-list,
   .encounter-diagnosis-list,
   .encounter-claim-list,
+  .encounter-signature-list,
   .encounter-documents-list,
   .encounter-procedure-result-list,
+  .encounter-signature-form,
   .encounter-fee-sheet-grid,
   .encounter-procedure-entry-grid,
   .encounter-procedure-result-entry-grid,

@@ -62,7 +62,19 @@ public sealed record EncounterDetail(
     IReadOnlyList<BillingLineItem> BillingLines,
     IReadOnlyList<BillingClaimItem> Claims,
     IReadOnlyList<ProcedureOrderItem> ProcedureOrders,
+    IReadOnlyList<EncounterSignatureItem> Signatures,
     IReadOnlyList<EncounterDocumentAttachment> Documents);
+
+public sealed record EncounterSignatureItem(
+    int Id,
+    string TableName,
+    int? SignerUserId,
+    string SignerUsername,
+    string SignedAt,
+    bool IsLock,
+    string? Amendment,
+    string Hash,
+    string SignatureHash);
 
 public sealed record EncounterDiagnosisCode(
     string Code,
@@ -155,5 +167,15 @@ public sealed record EncounterSoapNoteCreateRequest(
     string? Plan);
 
 public sealed record EncounterFormMutationResponse(
+    int Id,
+    EncounterDetail Detail);
+
+public sealed record EncounterSignRequest(
+    string SignerUsername,
+    string SignedAt,
+    bool IsLock,
+    string? Amendment);
+
+public sealed record EncounterSignatureMutationResponse(
     int Id,
     EncounterDetail Detail);

@@ -435,6 +435,58 @@ catch {
     Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
 }
 
+$smokeEncounterSignatureId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $signatureSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $signatureNote = "Smoke encounter sign-off $signatureSuffix"
+    $signatureBody = @{
+        signerUsername = "admin"
+        signedAt = "2026-06-18 10:20:00"
+        isLock = $false
+        amendment = $signatureNote
+    } | ConvertTo-Json -Depth 5
+
+    $createdSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $signatureBody -TimeoutSec 20
+    $smokeEncounterSignatureId = $createdSignature.id
+    $createdSignatureVisible = @($createdSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterSignatureId `
+            -and $_.signerUsername -eq "admin" `
+            -and $_.signedAt -eq "2026-06-18 10:20" `
+            -and $_.isLock -eq $false `
+            -and $_.amendment -eq $signatureNote
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterSignatureId = $null
+    $afterDeleteSignatureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedSignatureVisible = @($afterDeleteSignatureDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.amendment -eq $signatureNote
+    } | Select-Object -First 1
+
+    $encounterSignOffPassed = $null -ne $createdSignatureVisible -and $null -eq $deletedSignatureVisible
+    Add-Check -Name "encounter sign-off lifecycle" -Result $(if ($encounterSignOffPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        signatureId = $createdSignature.id
+        signature = $createdSignatureVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter sign-off lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterSignatureId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

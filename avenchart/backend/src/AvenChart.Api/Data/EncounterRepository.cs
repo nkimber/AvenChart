@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -178,12 +180,14 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             BillingLines: Array.Empty<BillingLineItem>(),
             Claims: Array.Empty<BillingClaimItem>(),
             ProcedureOrders: Array.Empty<ProcedureOrderItem>(),
+            Signatures: Array.Empty<EncounterSignatureItem>(),
             Documents: Array.Empty<EncounterDocumentAttachment>());
 
         await reader.DisposeAsync();
         var billingLines = await GetBillingLinesForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        var signatures = await GetSignaturesForEncounterAsync(connection, detail.Encounter, cancellationToken);
         var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
         var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         return detail with
@@ -193,6 +197,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             BillingLines = billingLines,
             Claims = claims,
             ProcedureOrders = procedureOrders,
+            Signatures = signatures,
             Documents = documents
         };
     }
@@ -484,6 +489,106 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new EncounterFormMutationResponse(Convert.ToInt32(id), detail);
     }
 
+    public async Task<EncounterSignatureMutationResponse?> SignAsync(
+        int encounter,
+        EncounterSignRequest request,
+        CancellationToken cancellationToken)
+    {
+        var signerUsername = NormalizeText(request.SignerUsername);
+        if (signerUsername is null || !TryParseDateTime(request.SignedAt, out var signedAt))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with selected_encounter as (
+                select id, encounter, patient_id, pid
+                from encounters
+                where encounter = @encounter
+                limit 1
+            ),
+            selected_user as (
+                select id, username
+                from staff
+                where lower(username) = lower(@signerUsername)
+                union all
+                select null::integer as id, user_value as username
+                from access_user_memberships
+                where lower(user_value) = lower(@signerUsername)
+                limit 1
+            ),
+            next_id as (
+                select coalesce(max(id), 0) + 1 as id
+                from encounter_signatures
+            )
+            insert into encounter_signatures (
+                id,
+                encounter_id,
+                encounter,
+                patient_id,
+                pid,
+                table_name,
+                signer_user_id,
+                signer_username,
+                signed_at,
+                is_lock,
+                amendment,
+                hash,
+                signature_hash
+            )
+            select
+                next_id.id,
+                selected_encounter.id,
+                selected_encounter.encounter,
+                selected_encounter.patient_id,
+                selected_encounter.pid,
+                'form_encounter',
+                selected_user.id,
+                selected_user.username,
+                @signedAt,
+                @isLock,
+                @amendment,
+                @hash,
+                @signatureHash
+            from selected_encounter
+            join selected_user on true
+            cross join next_id
+            returning id;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.Add("signerUsername", NpgsqlDbType.Text).Value = signerUsername;
+        command.Parameters.Add("signedAt", NpgsqlDbType.Timestamp).Value = signedAt;
+        command.Parameters.Add("isLock", NpgsqlDbType.Boolean).Value = request.IsLock;
+        AddNullableText(command, "amendment", NormalizeText(request.Amendment));
+        var hash = CreateSignatureHash($"{encounter}|form_encounter|{signerUsername}|{signedAt:O}|{request.IsLock}|{request.Amendment}");
+        command.Parameters.Add("hash", NpgsqlDbType.Text).Value = hash;
+        command.Parameters.Add("signatureHash", NpgsqlDbType.Text).Value = CreateSignatureHash($"{hash}|{signerUsername}");
+
+        var id = await command.ExecuteScalarAsync(cancellationToken);
+        if (id is null || id is DBNull)
+        {
+            return null;
+        }
+
+        var detail = await GetByEncounterAsync(encounter, cancellationToken);
+        return detail is null ? null : new EncounterSignatureMutationResponse(Convert.ToInt32(id), detail);
+    }
+
+    public async Task<bool> DeleteSignatureAsync(int encounter, int signatureId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from encounter_signatures
+            where encounter = @encounter and id = @signatureId;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("signatureId", signatureId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<bool> DeleteVitalsAsync(int encounter, int vitalsId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -521,6 +626,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             ),
             deleted_vitals as (
                 delete from vitals
+                where encounter = @encounter
+            ),
+            deleted_signatures as (
+                delete from encounter_signatures
                 where encounter = @encounter
             ),
             deleted_encounter as (
@@ -813,6 +922,39 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         {
             Reports = reportsByOrder.GetValueOrDefault(row.Id, [])
         }).ToList();
+    }
+
+    private static async Task<IReadOnlyList<EncounterSignatureItem>> GetSignaturesForEncounterAsync(
+        NpgsqlConnection connection,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, table_name, signer_user_id, signer_username, signed_at, is_lock, amendment, hash, signature_hash
+            from encounter_signatures
+            where encounter = @encounter
+            order by signed_at desc, id desc;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var signatures = new List<EncounterSignatureItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            signatures.Add(new EncounterSignatureItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                TableName: reader.GetString(reader.GetOrdinal("table_name")),
+                SignerUserId: ReadNullableInt(reader, "signer_user_id"),
+                SignerUsername: reader.GetString(reader.GetOrdinal("signer_username")),
+                SignedAt: ReadDateTime(reader, "signed_at"),
+                IsLock: reader.GetBoolean(reader.GetOrdinal("is_lock")),
+                Amendment: ReadNullableString(reader, "amendment"),
+                Hash: reader.GetString(reader.GetOrdinal("hash")),
+                SignatureHash: reader.GetString(reader.GetOrdinal("signature_hash"))));
+        }
+
+        return signatures;
     }
 
     private static async Task<IReadOnlyList<ProcedureReportRow>> GetProcedureReportsForOrdersAsync(
@@ -1216,6 +1358,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     private static bool TryParseDateTime(string? value, out DateTime parsed)
     {
         return DateTime.TryParse(value, out parsed);
+    }
+
+    private static string CreateSignatureHash(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static decimal? ComputeBmi(decimal? weight, decimal? height)

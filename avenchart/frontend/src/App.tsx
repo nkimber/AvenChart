@@ -85,6 +85,7 @@ import {
   deleteClinicalProblem,
   deleteClinicalPrescription,
   deleteEncounter,
+  deleteEncounterSignature,
   deletePatientInsurance,
   deletePatientDocument,
   deletePatientMessage,
@@ -101,6 +102,7 @@ import {
   searchAppointments,
   searchEncounters,
   searchPatients,
+  signEncounter,
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
@@ -164,6 +166,9 @@ import {
   type EncounterSoapNoteCreateInput,
   type EncounterListItem,
   type EncounterSearchResponse,
+  type EncounterSignInput,
+  type EncounterSignatureItem,
+  type EncounterSignatureMutationResponse,
   type EncounterUpdateInput,
   type EncounterVitalsCreateInput,
   type ImmunizationListItem,
@@ -1024,6 +1029,47 @@ function App() {
       const message = soapError instanceof Error ? soapError.message : 'Encounter SOAP note save failed'
       setEncounterError(message)
       throw soapError
+    }
+  }
+
+  async function handleEncounterSign(
+    encounter: EncounterDetail,
+    input: EncounterSignInput,
+  ): Promise<EncounterSignatureMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await signEncounter(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (signError) {
+      setEncounterDetailStatus('error')
+      const message = signError instanceof Error ? signError.message : 'Encounter sign-off failed'
+      setEncounterError(message)
+      throw signError
+    }
+  }
+
+  async function handleEncounterSignatureDelete(encounter: EncounterDetail, signature: EncounterSignatureItem) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      await deleteEncounterSignature(encounter.encounter, signature.id)
+      const refreshed = await getEncounterDetail(encounter.encounter)
+      setEncounterDetail(refreshed)
+      setSelectedEncounter(refreshed.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+    } catch (deleteError) {
+      setEncounterDetailStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Encounter signature delete failed'
+      setEncounterError(message)
+      throw deleteError
     }
   }
 
@@ -2273,6 +2319,8 @@ function App() {
             onDeleteEncounter={handleEncounterDelete}
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
+            onSignEncounter={handleEncounterSign}
+            onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
@@ -3500,6 +3548,8 @@ function EncounterWorkspace({
   onDeleteEncounter,
   onCreateVitals,
   onCreateSoapNote,
+  onSignEncounter,
+  onDeleteEncounterSignature,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
@@ -3520,6 +3570,8 @@ function EncounterWorkspace({
   onDeleteEncounter: (encounter: EncounterDetail) => Promise<void>
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
+  onSignEncounter: (encounter: EncounterDetail, input: EncounterSignInput) => Promise<EncounterSignatureMutationResponse>
+  onDeleteEncounterSignature: (encounter: EncounterDetail, signature: EncounterSignatureItem) => Promise<void>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
   onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
   onCreateProcedureResultSet: (
@@ -3564,6 +3616,12 @@ function EncounterWorkspace({
   const [soapAssessment, setSoapAssessment] = useState('Stable clinical condition.')
   const [soapPlan, setSoapPlan] = useState('Continue validation plan.')
   const [soapStatus, setSoapStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const [signatureSigner, setSignatureSigner] = useState('admin')
+  const [signatureSignedAt, setSignatureSignedAt] = useState('2026-06-18T10:20')
+  const [signatureMode, setSignatureMode] = useState<'signed' | 'locked'>('signed')
+  const [signatureAmendment, setSignatureAmendment] = useState('Encounter reviewed and signed from modernized workspace.')
+  const [signatureStatus, setSignatureStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3610,6 +3668,7 @@ function EncounterWorkspace({
     setSummaryBillingNote(encounterDetail.billingNote ?? '')
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
+    setSignatureSignedAt(`${encounterDetail.date}T10:20`)
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -3740,6 +3799,40 @@ function EncounterWorkspace({
     }
   }
 
+  async function handleSignatureSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setSignatureStatus('saving')
+    try {
+      await onSignEncounter(encounterDetail, {
+        signerUsername: signatureSigner,
+        signedAt: signatureSignedAt,
+        isLock: signatureMode === 'locked',
+        amendment: signatureAmendment,
+      })
+      setSignatureStatus('saved')
+    } catch {
+      setSignatureStatus('error')
+    }
+  }
+
+  async function handleSignatureDelete(signature: EncounterSignatureItem) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setSignatureStatus('saving')
+    try {
+      await onDeleteEncounterSignature(encounterDetail, signature)
+      setSignatureStatus('saved')
+    } catch {
+      setSignatureStatus('error')
+    }
+  }
+
   async function handleFeeSheetSubmit(event: FormEvent) {
     event.preventDefault()
     if (!encounterDetail) {
@@ -3793,6 +3886,7 @@ function EncounterWorkspace({
   }
 
   const attachedDocuments = encounterDetail?.documents ?? []
+  const encounterSignatures = encounterDetail?.signatures ?? []
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
   const encounterClaims = encounterDetail?.claims ?? []
@@ -4014,6 +4108,74 @@ function EncounterWorkspace({
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
               </InfoPanel>
             </div>
+
+            <section className="info-panel encounter-signature-panel" aria-label="Encounter sign-off">
+              <div className="panel-heading">
+                <ShieldCheck size={17} />
+                <h3>Sign-Off</h3>
+                <span className="panel-count-pill">{encounterSignatures.length}</span>
+                {encounterSignatures.length > 0 && <span className="panel-count-pill">Signed</span>}
+              </div>
+              <form className="encounter-signature-form" onSubmit={handleSignatureSubmit}>
+                <label className="filter-field">
+                  <span>Signer</span>
+                  <input
+                    value={signatureSigner}
+                    onChange={(event) => setSignatureSigner(event.target.value)}
+                    aria-label="Encounter sign-off signer"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Signed At</span>
+                  <input
+                    value={signatureSignedAt}
+                    onChange={(event) => setSignatureSignedAt(event.target.value)}
+                    aria-label="Encounter sign-off signed at"
+                    type="datetime-local"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Mode</span>
+                  <select
+                    value={signatureMode}
+                    onChange={(event) => setSignatureMode(event.target.value === 'locked' ? 'locked' : 'signed')}
+                    aria-label="Encounter sign-off mode"
+                  >
+                    <option value="signed">Signed</option>
+                    <option value="locked">Locked</option>
+                  </select>
+                </label>
+                <label className="filter-field encounter-signature-note-field">
+                  <span>Note</span>
+                  <input
+                    value={signatureAmendment}
+                    onChange={(event) => setSignatureAmendment(event.target.value)}
+                    aria-label="Encounter sign-off note"
+                  />
+                </label>
+                <button className="icon-text-button primary" type="submit" disabled={signatureStatus === 'saving'}>
+                  <ShieldCheck size={16} />
+                  <span>{signatureStatus === 'saving' ? 'Saving' : 'Sign'}</span>
+                </button>
+              </form>
+              {signatureStatus === 'saved' && <span className="save-note">Saved</span>}
+              {signatureStatus === 'error' && <span className="save-note error">Action failed</span>}
+              <div className="encounter-signature-list">
+                {encounterSignatures.map((signature) => (
+                  <EncounterSignatureCard
+                    key={signature.id}
+                    signature={signature}
+                    disabled={signatureStatus === 'saving'}
+                    onDelete={() => handleSignatureDelete(signature)}
+                  />
+                ))}
+                {encounterSignatures.length === 0 && (
+                  <div className="timeline-placeholder">No sign-off recorded for this encounter</div>
+                )}
+              </div>
+            </section>
 
             <section className="info-panel encounter-diagnosis-panel" aria-label="Encounter diagnosis coding linkage">
               <div className="panel-heading">
@@ -4575,6 +4737,36 @@ function EncounterDiagnosisCodeCard({ diagnosis }: { diagnosis: EncounterDiagnos
         <span>{supportingCodes}</span>
         <span>{sources}</span>
       </div>
+    </article>
+  )
+}
+
+function EncounterSignatureCard({
+  signature,
+  disabled,
+  onDelete,
+}: {
+  signature: EncounterSignatureItem
+  disabled: boolean
+  onDelete: () => void
+}) {
+  return (
+    <article className="encounter-signature-card">
+      <div>
+        <strong>{signature.isLock ? 'Locked' : 'Signed'}</strong>
+        <span>{signature.signerUsername} / {signature.signedAt}</span>
+        {signature.amendment && <p>{signature.amendment}</p>}
+        <code>{signature.hash.slice(0, 12)}</code>
+      </div>
+      <button
+        className="icon-button danger"
+        type="button"
+        aria-label={`Remove encounter signature ${signature.id}`}
+        onClick={onDelete}
+        disabled={disabled}
+      >
+        <Trash2 size={15} />
+      </button>
     </article>
   )
 }

@@ -218,6 +218,7 @@ drop table if exists messages;
 drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_orders;
+drop table if exists encounter_signatures;
 drop table if exists payment_activities;
 drop table if exists payment_sessions;
 drop table if exists claims;
@@ -382,6 +383,22 @@ create table encounters (
   external_id text,
   pos_code integer,
   billing_note text
+);
+
+create table encounter_signatures (
+  id integer primary key,
+  encounter_id integer not null references encounters(id) on delete cascade,
+  encounter integer not null,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  table_name text not null,
+  signer_user_id integer references staff(id),
+  signer_username text not null,
+  signed_at timestamp not null,
+  is_lock boolean not null default false,
+  amendment text,
+  hash text not null,
+  signature_hash text not null
 );
 
 create table vitals (
@@ -1374,6 +1391,7 @@ create index idx_patients_legacy_pid on patients (legacy_pid);
 create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);
 create index idx_encounters_pid_date on encounters (pid, encounter_date);
+create index idx_encounter_signatures_encounter on encounter_signatures (encounter, signed_at);
 create index idx_vitals_pid_date on vitals (pid, vital_datetime);
 create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);
