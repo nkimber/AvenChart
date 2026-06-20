@@ -927,6 +927,50 @@ catch {
 
 try {
     $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" } | Select-Object -First 1
+    $advanceDirective = $documents.documents | Where-Object { $_.name -eq "Advance directive acknowledgement" } | Select-Object -First 1
+    $documentRevisionPassed = $null -ne $intakePacket `
+        -and $null -ne $advanceDirective `
+        -and $intakePacket.currentVersion -eq 1 `
+        -and $intakePacket.versionLabel -eq "Version 1" `
+        -and $intakePacket.versionStatus -eq "Current version" `
+        -and $intakePacket.versionHistoryCount -eq 1 `
+        -and -not $intakePacket.hasPriorVersions `
+        -and $intakePacket.revisionAt -eq "2026-06-10 14:30:00" `
+        -and $intakePacket.revisionHash -eq $intakePacket.hash `
+        -and $advanceDirective.currentVersion -eq 1 `
+        -and $advanceDirective.versionLabel -eq "Version 1" `
+        -and $advanceDirective.versionStatus -eq "Current version" `
+        -and $advanceDirective.revisionAt -eq "2026-06-12 15:00:00" `
+        -and $advanceDirective.revisionHash -eq $advanceDirective.hash
+    Add-Check -Name "anchor patient document revision readiness" -Result $(if ($documentRevisionPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $documents.patientId
+        intakeRevision = if ($null -ne $intakePacket) { @{
+            currentVersion = $intakePacket.currentVersion
+            versionLabel = $intakePacket.versionLabel
+            versionStatus = $intakePacket.versionStatus
+            revisionAt = $intakePacket.revisionAt
+            versionHistoryCount = $intakePacket.versionHistoryCount
+            hasPriorVersions = $intakePacket.hasPriorVersions
+            revisionHash = $intakePacket.revisionHash
+        } } else { $null }
+        advanceDirectiveRevision = if ($null -ne $advanceDirective) { @{
+            currentVersion = $advanceDirective.currentVersion
+            versionLabel = $advanceDirective.versionLabel
+            versionStatus = $advanceDirective.versionStatus
+            revisionAt = $advanceDirective.revisionAt
+            versionHistoryCount = $advanceDirective.versionHistoryCount
+            hasPriorVersions = $advanceDirective.hasPriorVersions
+            revisionHash = $advanceDirective.revisionHash
+        } } else { $null }
+    }
+}
+catch {
+    Add-Check -Name "anchor patient document revision readiness" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
     $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
     if ($null -eq $intakePacket) {
         throw "Primary care intake packet document was not found."

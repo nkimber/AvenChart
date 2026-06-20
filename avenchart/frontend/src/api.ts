@@ -481,6 +481,13 @@ export type PatientDocumentItem = {
   name: string
   docDate: string
   uploadedAt: string
+  revisionAt: string
+  currentVersion: number
+  versionLabel: string
+  versionStatus: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+  revisionHash?: string | null
   mimetype?: string | null
   sizeBytes?: number | null
   pages?: number | null
@@ -573,6 +580,13 @@ export type PatientDocumentContentResponse = {
   fileName: string
   docDate: string
   uploadedAt: string
+  revisionAt: string
+  currentVersion: number
+  versionLabel: string
+  versionStatus: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+  revisionHash?: string | null
   mimetype?: string | null
   sizeBytes?: number | null
   pages?: number | null

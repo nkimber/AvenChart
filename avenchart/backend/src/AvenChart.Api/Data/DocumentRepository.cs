@@ -352,6 +352,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var storageMethod = ReadNullableString(reader, "storage_method");
         var url = ReadNullableString(reader, "url");
         var pages = ReadNullableInt32(reader, "pages");
+        var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
+        var revisionHash = ReadNullableString(reader, "hash");
         var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, content);
 
         return new PatientDocumentContentResponse(
@@ -364,14 +366,21 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Name: name,
             FileName: fileName,
             DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
-            UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+            UploadedAt: uploadedAt,
+            RevisionAt: uploadedAt,
+            CurrentVersion: 1,
+            VersionLabel: "Version 1",
+            VersionStatus: "Current version",
+            VersionHistoryCount: 1,
+            HasPriorVersions: false,
+            RevisionHash: revisionHash,
             Mimetype: mimetype,
             SizeBytes: ReadNullableInt32(reader, "size_bytes"),
             Pages: pages,
             Encounter: ReadNullableInt32(reader, "encounter"),
             StorageMethod: storageMethod,
             Url: url,
-            Hash: ReadNullableString(reader, "hash"),
+            Hash: revisionHash,
             DocumentationOf: ReadNullableString(reader, "documentation_of"),
             Notes: ReadNullableString(reader, "notes"),
             ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
@@ -720,6 +729,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var url = ReadNullableString(reader, "url");
             var pages = ReadNullableInt32(reader, "pages");
             var contentPreview = ReadNullableString(reader, "content_preview");
+            var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
+            var revisionHash = ReadNullableString(reader, "hash");
             var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
 
             items.Add(new PatientDocumentItem(
@@ -731,7 +742,14 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
                 Name: reader.GetString(reader.GetOrdinal("name")),
                 DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
-                UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                UploadedAt: uploadedAt,
+                RevisionAt: uploadedAt,
+                CurrentVersion: 1,
+                VersionLabel: "Version 1",
+                VersionStatus: "Current version",
+                VersionHistoryCount: 1,
+                HasPriorVersions: false,
+                RevisionHash: revisionHash,
                 Mimetype: mimetype,
                 SizeBytes: ReadNullableInt32(reader, "size_bytes"),
                 Pages: pages,
@@ -739,7 +757,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 StorageMethod: storageMethod,
                 FileName: fileName,
                 Url: url,
-                Hash: ReadNullableString(reader, "hash"),
+                Hash: revisionHash,
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
                 Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),

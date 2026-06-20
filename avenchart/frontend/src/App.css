@@ -959,6 +959,23 @@
   overflow-wrap: anywhere;
 }
 
+.document-revision-readiness {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12px;
+  color: #536879;
+}
+
+.document-revision-readiness span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+  border: 1px solid #d8e4eb;
+  border-radius: 5px;
+  background: #f4f8fa;
+}
+
 .document-meta-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1517,6 +1534,7 @@
   }
 
   .document-meta-grid,
+  .document-revision-readiness,
   .document-list-body,
   .document-footnote {
     grid-template-columns: 1fr;

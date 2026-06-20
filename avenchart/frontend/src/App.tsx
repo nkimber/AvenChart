@@ -6010,6 +6010,8 @@ function DocumentsWorkspace({
                 <Field label="Category" value={latestDocument?.categoryName} />
                 <Field label="Document date" value={latestDocument?.docDate} />
                 <Field label="Uploaded" value={latestDocument?.uploadedAt} />
+                <Field label="Revision" value={latestDocument?.versionLabel} />
+                <Field label="Revision time" value={latestDocument?.revisionAt} />
                 <Field label="Review status" value={latestDocument?.reviewStatus} />
               </InfoPanel>
 
@@ -6027,6 +6029,9 @@ function DocumentsWorkspace({
                       <Field label="Category" value={viewedDocument.categoryName} />
                       <Field label="Document date" value={viewedDocument.docDate} />
                       <Field label="File" value={viewedDocument.fileName} />
+                      <Field label="Revision" value={viewedDocument.versionLabel} />
+                      <Field label="Revision time" value={viewedDocument.revisionAt} />
+                      <Field label="Version history" value={`${viewedDocument.versionHistoryCount} current version`} />
                       <Field label="MIME" value={viewedDocument.mimetype} />
                       <Field label="Encounter" value={viewedDocument.encounter} />
                       <Field label="Storage" value={viewedDocument.storageMethod} />
@@ -6949,6 +6954,11 @@ function DocumentItem({
           <span>{document.previewStatus || 'Preview pending'}</span>
           <p>{document.thumbnailText || document.contentPreview || document.fileName || 'No preview generated'}</p>
         </div>
+      </div>
+      <div className="document-revision-readiness">
+        <span>{document.versionLabel || 'Version 1'} / {document.versionStatus || 'Current version'}</span>
+        <span>{document.revisionAt || document.uploadedAt}</span>
+        <span>{document.hasPriorVersions ? `${document.versionHistoryCount} versions` : 'No prior versions'}</span>
       </div>
       <div className="document-meta-grid">
         <span>{document.docDate}</span>
