@@ -235,6 +235,7 @@ export type EncounterDocumentAttachment = {
   url?: string | null
   hash?: string | null
   notes?: string | null
+  deleted: number
   reviewStatus: string
   reviewedBy?: string | null
   reviewedAt?: string | null
@@ -1683,8 +1684,13 @@ export async function searchEncounters(
   return response.json()
 }
 
-export async function getEncounterDetail(encounter: number, signal?: AbortSignal): Promise<EncounterDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, { signal })
+export async function getEncounterDetail(
+  encounter: number,
+  signal?: AbortSignal,
+  includeArchivedDocuments = false,
+): Promise<EncounterDetail> {
+  const query = includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}${query}`, { signal })
   if (!response.ok) {
     throw new Error(`Encounter detail load failed with ${response.status}`)
   }
@@ -1879,6 +1885,38 @@ export async function replaceEncounterDocumentContent(
   })
   if (!response.ok) {
     throw new Error(`Encounter document content replacement failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function softDeleteEncounterDocument(
+  encounter: number,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/soft-delete`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function restoreEncounterDocument(
+  encounter: number,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/restore`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document restore failed with ${response.status}`)
   }
 
   return response.json()

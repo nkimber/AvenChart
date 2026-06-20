@@ -228,9 +228,13 @@ encounters.MapGet("/", async (
 encounters.MapGet("/{encounter:int}", async (
         EncounterRepository repository,
         int encounter,
+        bool? includeArchivedDocuments,
         CancellationToken cancellationToken) =>
     {
-        var encounterDetail = await repository.GetByEncounterAsync(encounter, cancellationToken);
+        var encounterDetail = await repository.GetByEncounterAsync(
+            encounter,
+            cancellationToken,
+            includeArchivedDocuments == true);
         return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
     })
     .WithName("GetEncounterDetail");
@@ -490,6 +494,77 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
     .WithName("ReplaceEncounterDocumentContent");
+
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!encounterDetail.Documents.Any(document => document.Id == documentId))
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.SoftDeleteAsync(documentId, cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document could not be archived.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(
+            encounter,
+            cancellationToken,
+            includeArchivedDocuments: true);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+    })
+    .WithName("SoftDeleteEncounterDocument");
+
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(
+            encounter,
+            cancellationToken,
+            includeArchivedDocuments: true);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!encounterDetail.Documents.Any(document => document.Id == documentId))
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.RestoreAsync(documentId, cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document could not be restored.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(
+            encounter,
+            cancellationToken,
+            includeArchivedDocuments: true);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+    })
+    .WithName("RestoreEncounterDocument");
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         EncounterRepository encounterRepository,

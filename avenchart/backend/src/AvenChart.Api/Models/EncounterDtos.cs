@@ -107,6 +107,7 @@ public sealed record EncounterDocumentAttachment(
     string? Url,
     string? Hash,
     string? Notes,
+    int Deleted,
     string ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,

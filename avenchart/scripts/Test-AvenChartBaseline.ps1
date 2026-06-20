@@ -765,6 +765,95 @@ finally {
     }
 }
 
+$smokeEncounterDocumentArchiveRestoreId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $archiveDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $archiveDocumentName = "Smoke Encounter Archive Document $archiveDocumentSuffix"
+    $archiveDocumentContent = "Smoke encounter document archive restore content $archiveDocumentSuffix."
+    $archiveDocumentBody = @{
+        categoryId = 3
+        name = $archiveDocumentName
+        docDate = "2026-06-18"
+        content = $archiveDocumentContent
+        notes = "Created by the smoke encounter document archive restore check."
+    } | ConvertTo-Json
+
+    $createdEncounterArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $archiveDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentArchiveRestoreId = $createdEncounterArchiveDocument.id
+    $createdArchiveDocumentVisible = @($createdEncounterArchiveDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
+            -and $_.name -eq $archiveDocumentName `
+            -and $_.deleted -eq 0 `
+            -and $_.contentPreview -like "*$archiveDocumentContent*"
+    } | Select-Object -First 1
+
+    $archivedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedDocumentVisible = @($archivedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
+            -and $_.name -eq $archiveDocumentName `
+            -and $_.deleted -eq 1
+    } | Select-Object -First 1
+    $activeOnlyAfterArchive = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $archivedDocumentHidden = @($activeOnlyAfterArchive.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId
+    } | Select-Object -First 1
+    $archivedDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    $archivedDocumentIncluded = @($archivedDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
+            -and $_.deleted -eq 1
+    } | Select-Object -First 1
+
+    $restoredEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/restore" -Method Put -TimeoutSec 20
+    $restoredArchiveDocumentVisible = @($restoredEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
+            -and $_.name -eq $archiveDocumentName `
+            -and $_.deleted -eq 0 `
+            -and $_.contentPreview -like "*$archiveDocumentContent*"
+    } | Select-Object -First 1
+    $activeOnlyAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $restoredDocumentActive = @($activeOnlyAfterRestore.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
+            -and $_.deleted -eq 0
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentArchiveRestoreId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentArchiveRestoreId = $null
+    $afterDeleteArchiveDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    $deletedArchiveDocumentVisible = @($afterDeleteArchiveDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $archiveDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentArchiveRestorePassed = $null -ne $createdArchiveDocumentVisible `
+        -and $null -ne $archivedDocumentVisible `
+        -and $null -eq $archivedDocumentHidden `
+        -and $null -ne $archivedDocumentIncluded `
+        -and $null -ne $restoredArchiveDocumentVisible `
+        -and $null -ne $restoredDocumentActive `
+        -and $null -eq $deletedArchiveDocumentVisible
+    Add-Check -Name "encounter document archive restore lifecycle" -Result $(if ($encounterDocumentArchiveRestorePassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterArchiveDocument.id
+        archived = $archivedDocumentVisible
+        restored = $restoredArchiveDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document archive restore lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentArchiveRestoreId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentArchiveRestoreId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentMoveId = $null
 try {
     if ($null -eq $encounterDetail) {

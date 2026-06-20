@@ -78,7 +78,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             Encounters: encounters);
     }
 
-    public async Task<EncounterDetail?> GetByEncounterAsync(int encounter, CancellationToken cancellationToken)
+    public async Task<EncounterDetail?> GetByEncounterAsync(
+        int encounter,
+        CancellationToken cancellationToken,
+        bool includeArchivedDocuments = false)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -189,7 +192,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var signatures = await GetSignaturesForEncounterAsync(connection, detail.Encounter, cancellationToken);
         var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
-        var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        var documents = await GetDocumentsForEncounterAsync(
+            connection,
+            detail.LegacyPid,
+            detail.Encounter,
+            includeArchivedDocuments,
+            cancellationToken);
         return detail with
         {
             DiagnosisCodes = diagnosisCodes,
@@ -1196,23 +1204,25 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         int pid,
         int encounter,
+        bool includeArchivedDocuments,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, category_id, category_name, name, doc_date, uploaded_at,
-              mimetype, size_bytes, pages, storage_method, file_name, url, hash, notes,
+              mimetype, size_bytes, pages, storage_method, file_name, url, hash, notes, deleted,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
                 when content_bytes is not null then left(coalesce(content, ''), 220)
                 else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 220)
               end as content_preview
             from patient_documents
-            where pid = @pid and encounter = @encounter and deleted = 0
+            where pid = @pid and encounter = @encounter and (@includeArchivedDocuments or deleted = 0)
             order by doc_date desc, id desc;
             """;
         command.Parameters.AddWithValue("pid", pid);
         command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("includeArchivedDocuments", includeArchivedDocuments);
 
         var documents = new List<EncounterDocumentAttachment>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1250,6 +1260,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 Url: url,
                 Hash: hash,
                 Notes: ReadNullableString(reader, "notes"),
+                Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),
                 ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
                 ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                 ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),

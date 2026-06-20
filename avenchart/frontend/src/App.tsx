@@ -108,9 +108,11 @@ import {
   searchPatients,
   signEncounter,
   signEncounterDocument,
+  softDeleteEncounterDocument,
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
+  restoreEncounterDocument,
   restorePatientDocument,
   replaceEncounterDocumentContent,
   replacePatientDocumentContent,
@@ -284,6 +286,7 @@ function App() {
   const [encounterDetailStatus, setEncounterDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [encounterError, setEncounterError] = useState<string | null>(null)
   const [encounterRefreshKey, setEncounterRefreshKey] = useState(0)
+  const [encounterIncludeArchivedDocuments, setEncounterIncludeArchivedDocuments] = useState(false)
 
   const [clinicalPatientId, setClinicalPatientId] = useState('MOD-PAT-0001')
   const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
@@ -497,7 +500,11 @@ function App() {
     async function loadEncounterDetail() {
       setEncounterDetailStatus('loading')
       try {
-        const detail = await getEncounterDetail(selectedEncounter!, controller.signal)
+        const detail = await getEncounterDetail(
+          selectedEncounter!,
+          controller.signal,
+          encounterIncludeArchivedDocuments,
+        )
         setEncounterDetail(detail)
         setEncounterDetailStatus('ready')
       } catch (detailError) {
@@ -510,7 +517,7 @@ function App() {
 
     loadEncounterDetail()
     return () => controller.abort()
-  }, [activeModule, selectedEncounter])
+  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments])
 
   useEffect(() => {
     if (activeModule !== 'lists') {
@@ -1197,6 +1204,52 @@ function App() {
         replaceError instanceof Error ? replaceError.message : 'Encounter document content replacement failed'
       setEncounterError(message)
       throw replaceError
+    }
+  }
+
+  async function handleEncounterDocumentArchive(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await softDeleteEncounterDocument(encounter.encounter, document.id)
+      setEncounterIncludeArchivedDocuments(true)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (archiveError) {
+      setEncounterDetailStatus('error')
+      const message = archiveError instanceof Error ? archiveError.message : 'Encounter document archive failed'
+      setEncounterError(message)
+      throw archiveError
+    }
+  }
+
+  async function handleEncounterDocumentRestore(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await restoreEncounterDocument(encounter.encounter, document.id)
+      setEncounterIncludeArchivedDocuments(true)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (restoreError) {
+      setEncounterDetailStatus('error')
+      const message = restoreError instanceof Error ? restoreError.message : 'Encounter document restore failed'
+      setEncounterError(message)
+      throw restoreError
     }
   }
 
@@ -2488,9 +2541,11 @@ function App() {
             searchStatus={encounterStatus}
             detailStatus={encounterDetailStatus}
             error={encounterError}
+            includeArchivedDocuments={encounterIncludeArchivedDocuments}
             onPatientIdChange={setEncounterPatientId}
             onFromDateChange={setEncounterFromDate}
             onSelectEncounter={setSelectedEncounter}
+            onIncludeArchivedDocumentsChange={setEncounterIncludeArchivedDocuments}
             onCreateEncounter={handleEncounterCreate}
             onUpdateEncounter={handleEncounterUpdate}
             onDeleteEncounter={handleEncounterDelete}
@@ -2503,6 +2558,8 @@ function App() {
             onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
             onMoveEncounterDocument={handleEncounterDocumentMove}
             onReplaceEncounterDocumentContent={handleEncounterDocumentContentReplace}
+            onArchiveEncounterDocument={handleEncounterDocumentArchive}
+            onRestoreEncounterDocument={handleEncounterDocumentRestore}
             onSignEncounterDocument={handleEncounterDocumentSign}
             onDenyEncounterDocument={handleEncounterDocumentDeny}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
@@ -3724,9 +3781,11 @@ function EncounterWorkspace({
   searchStatus,
   detailStatus,
   error,
+  includeArchivedDocuments,
   onPatientIdChange,
   onFromDateChange,
   onSelectEncounter,
+  onIncludeArchivedDocumentsChange,
   onCreateEncounter,
   onUpdateEncounter,
   onDeleteEncounter,
@@ -3739,6 +3798,8 @@ function EncounterWorkspace({
   onUpdateEncounterDocumentMetadata,
   onMoveEncounterDocument,
   onReplaceEncounterDocumentContent,
+  onArchiveEncounterDocument,
+  onRestoreEncounterDocument,
   onSignEncounterDocument,
   onDenyEncounterDocument,
   onCreateFeeSheetLine,
@@ -3753,9 +3814,11 @@ function EncounterWorkspace({
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  includeArchivedDocuments: boolean
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectEncounter: (encounter: number) => void
+  onIncludeArchivedDocumentsChange: (value: boolean) => void
   onCreateEncounter: (input: EncounterCreateInput) => Promise<EncounterDetail>
   onUpdateEncounter: (encounter: EncounterDetail, update: EncounterUpdateInput) => Promise<EncounterDetail>
   onDeleteEncounter: (encounter: EncounterDetail) => Promise<void>
@@ -3785,6 +3848,14 @@ function EncounterWorkspace({
     encounter: EncounterDetail,
     document: EncounterDocumentAttachment,
     input: PatientDocumentContentReplaceInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onArchiveEncounterDocument: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onRestoreEncounterDocument: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
   ) => Promise<EncounterDocumentMutationResponse>
   onSignEncounterDocument: (
     encounter: EncounterDetail,
@@ -3872,6 +3943,9 @@ function EncounterWorkspace({
   const [encounterDocumentContentStatus, setEncounterDocumentContentStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
+  const [encounterDocumentArchiveStatus, setEncounterDocumentArchiveStatus] = useState<
+    'idle' | 'saving' | 'archived' | 'restored' | 'error'
+  >('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3911,6 +3985,7 @@ function EncounterWorkspace({
       setEncounterDocumentMetadataStatus('idle')
       setEncounterDocumentMoveStatus('idle')
       setEncounterDocumentContentStatus('idle')
+      setEncounterDocumentArchiveStatus('idle')
       return
     }
 
@@ -3929,6 +4004,7 @@ function EncounterWorkspace({
     setEncounterDocumentMetadataStatus('idle')
     setEncounterDocumentMoveStatus('idle')
     setEncounterDocumentContentStatus('idle')
+    setEncounterDocumentArchiveStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -4211,6 +4287,34 @@ function EncounterWorkspace({
     }
   }
 
+  async function handleEncounterDocumentArchive(document: EncounterDocumentAttachment) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentArchiveStatus('saving')
+    try {
+      await onArchiveEncounterDocument(encounterDetail, document)
+      setEncounterDocumentArchiveStatus('archived')
+    } catch {
+      setEncounterDocumentArchiveStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentRestore(document: EncounterDocumentAttachment) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentArchiveStatus('saving')
+    try {
+      await onRestoreEncounterDocument(encounterDetail, document)
+      setEncounterDocumentArchiveStatus('restored')
+    } catch {
+      setEncounterDocumentArchiveStatus('error')
+    }
+  }
+
   async function handleEncounterDocumentSign(document: EncounterDocumentAttachment) {
     if (!encounterDetail) {
       return
@@ -4292,6 +4396,8 @@ function EncounterWorkspace({
   }
 
   const attachedDocuments = encounterDetail?.documents ?? []
+  const archivedAttachedDocuments = attachedDocuments.filter((document) => document.deleted !== 0)
+  const activeAttachedDocumentCount = attachedDocuments.length - archivedAttachedDocuments.length
   const encounterSignatures = encounterDetail?.signatures ?? []
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
@@ -4849,8 +4955,20 @@ function EncounterWorkspace({
               <div className="panel-heading">
                 <FolderOpen size={17} />
                 <h3>Attached Documents</h3>
-                <span className="panel-count-pill">{attachedDocuments.length}</span>
+                <span className="panel-count-pill">{activeAttachedDocumentCount}</span>
               </div>
+              <label className="inline-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeArchivedDocuments}
+                  onChange={(event) => onIncludeArchivedDocumentsChange(event.target.checked)}
+                  aria-label="Show archived attached documents"
+                />
+                <span>Show archived attached documents</span>
+                {archivedAttachedDocuments.length > 0 && (
+                  <span className="status-tag danger">{archivedAttachedDocuments.length} archived</span>
+                )}
+              </label>
               <form className="encounter-document-form" onSubmit={handleEncounterDocumentSubmit} aria-label="Encounter document upload">
                 <label className="filter-field">
                   <span>Category</span>
@@ -4971,10 +5089,13 @@ function EncounterWorkspace({
                       || encounterDocumentMetadataStatus === 'saving'
                       || encounterDocumentMoveStatus === 'saving'
                       || encounterDocumentContentStatus === 'saving'
+                      || encounterDocumentArchiveStatus === 'saving'
                     }
                     onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
                     onMove={handleEncounterDocumentMove}
                     onReplaceContent={handleEncounterDocumentContentReplace}
+                    onArchive={handleEncounterDocumentArchive}
+                    onRestore={handleEncounterDocumentRestore}
                     onSign={handleEncounterDocumentSign}
                     onDeny={handleEncounterDocumentDeny}
                   />
@@ -4989,6 +5110,7 @@ function EncounterWorkspace({
                   || encounterDocumentMetadataStatus === 'error'
                   || encounterDocumentMoveStatus === 'error'
                   || encounterDocumentContentStatus === 'error'
+                  || encounterDocumentArchiveStatus === 'error'
                     ? 'save-note error'
                     : 'save-note'
                 }
@@ -5019,7 +5141,15 @@ function EncounterWorkspace({
                     ? 'Saving document content'
                   : encounterDocumentContentStatus === 'error'
                     ? 'Document content replacement failed'
-                      : ''}
+                  : encounterDocumentArchiveStatus === 'archived'
+                    ? 'Document archived'
+                  : encounterDocumentArchiveStatus === 'restored'
+                    ? 'Document restored'
+                  : encounterDocumentArchiveStatus === 'saving'
+                    ? 'Saving document archive state'
+                  : encounterDocumentArchiveStatus === 'error'
+                    ? 'Document archive state failed'
+                    : ''}
               </span>
             </section>
 
@@ -5652,6 +5782,8 @@ function EncounterDocumentAttachmentCard({
   onUpdateMetadata,
   onMove,
   onReplaceContent,
+  onArchive,
+  onRestore,
   onSign,
   onDeny,
 }: {
@@ -5667,6 +5799,8 @@ function EncounterDocumentAttachmentCard({
     document: EncounterDocumentAttachment,
     input: PatientDocumentContentReplaceInput,
   ) => Promise<void>
+  onArchive: (document: EncounterDocumentAttachment) => Promise<void>
+  onRestore: (document: EncounterDocumentAttachment) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
   onDeny: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
@@ -5684,7 +5818,8 @@ function EncounterDocumentAttachmentCard({
   const [replacementContent, setReplacementContent] = useState('')
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
-  const canReplaceContent = !hasExternalLink
+  const isArchived = document.deleted !== 0
+  const canReplaceContent = !isArchived && !hasExternalLink
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
 
   useEffect(() => {
@@ -5781,6 +5916,7 @@ function EncounterDocumentAttachmentCard({
         </div>
         <div className="document-preview-summary">
           <strong>{document.name}</strong>
+          {isArchived && <span className="status-tag danger">Archived</span>}
           <span>{document.previewStatus || 'Preview pending'}</span>
           <p>{document.thumbnailText || document.contentPreview || document.fileName || 'No preview generated'}</p>
         </div>
@@ -5943,7 +6079,16 @@ function EncounterDocumentAttachmentCard({
 
       <div className="document-item-actions">
         {document.canDownload && (
-          <a className="icon-text-button secondary" href={getPatientDocumentDownloadUrl(document.id)}>
+          <a
+            className="icon-text-button secondary"
+            href={getPatientDocumentDownloadUrl(document.id)}
+            aria-disabled={disabled || isArchived}
+            onClick={(event) => {
+              if (disabled || isArchived) {
+                event.preventDefault()
+              }
+            }}
+          >
             <Download size={14} />
             Download
           </a>
@@ -5957,7 +6102,7 @@ function EncounterDocumentAttachmentCard({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled}
+          disabled={disabled || isArchived}
           onClick={() => {
             setIsMoving(false)
             setIsReplacing(false)
@@ -5970,7 +6115,7 @@ function EncounterDocumentAttachmentCard({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled}
+          disabled={disabled || isArchived}
           onClick={() => {
             setIsEditing(false)
             setIsReplacing(false)
@@ -5994,9 +6139,29 @@ function EncounterDocumentAttachmentCard({
           Replace
         </button>
         <button
+          className="icon-text-button danger"
+          type="button"
+          disabled={disabled || isArchived}
+          onClick={() => void onArchive(document)}
+        >
+          <Ban size={14} />
+          Archive
+        </button>
+        {isArchived && (
+          <button
+            className="icon-text-button secondary"
+            type="button"
+            disabled={disabled}
+            onClick={() => void onRestore(document)}
+          >
+            <RotateCcw size={14} />
+            Restore
+          </button>
+        )}
+        <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled || isReviewed}
+          disabled={disabled || isReviewed || isArchived}
           onClick={() => void onSign(document)}
         >
           <ShieldCheck size={14} />
@@ -6005,7 +6170,7 @@ function EncounterDocumentAttachmentCard({
         <button
           className="icon-text-button secondary"
           type="button"
-          disabled={disabled || isReviewed}
+          disabled={disabled || isReviewed || isArchived}
           onClick={() => void onDeny(document)}
         >
           <X size={14} />
