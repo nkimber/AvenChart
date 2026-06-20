@@ -816,6 +816,66 @@ finally {
     }
 }
 
+$appointmentFacilityId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Smoke Appointment Facility"
+        date = "2026-12-10"
+        startTime = "10:00"
+        durationMinutes = 30
+        facilityId = 10
+        categoryId = 9
+        room = "Facility"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentFacilityId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = 101
+        title = "Smoke Appointment Facility Reassigned"
+        date = "2026-12-10"
+        startTime = "10:00"
+        durationMinutes = 30
+        facilityId = 11
+        categoryId = 9
+        room = "Facility"
+        status = "-"
+    } | ConvertTo-Json
+    $reassignedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentFacilityPassed = $createdAppointment.facilityId -eq 10 `
+        -and $reassignedAppointment.facilityId -eq 11 `
+        -and $reassignedAppointment.providerId -eq 101 `
+        -and $reassignedAppointment.title -eq "Smoke Appointment Facility Reassigned" `
+        -and $reassignedAppointment.date -eq "2026-12-10" `
+        -and $reassignedAppointment.startTime -eq "10:00" `
+        -and $reassignedAppointment.room -eq "Facility"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentFacilityId = $null
+
+    Add-Check -Name "appointment facility reassignment lifecycle" -Result $(if ($appointmentFacilityPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        createdFacilityId = $createdAppointment.facilityId
+        reassignedFacilityId = $reassignedAppointment.facilityId
+        providerId = $reassignedAppointment.providerId
+        title = $reassignedAppointment.title
+    }
+}
+catch {
+    Add-Check -Name "appointment facility reassignment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentFacilityId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentFacilityId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
