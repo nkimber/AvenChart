@@ -332,6 +332,43 @@ encounters.MapPost("/{encounter:int}/documents", async (
     })
     .WithName("CreateEncounterDocument");
 
+encounters.MapPost("/{encounter:int}/documents/binary", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        EncounterBinaryDocumentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.CreateBinaryAsync(
+            new PatientDocumentBinaryCreateRequest(
+                PatientId: encounterDetail.PatientId,
+                CategoryId: request.CategoryId,
+                Name: request.Name,
+                DocDate: request.DocDate,
+                Encounter: encounterDetail.Encounter,
+                FileName: request.FileName,
+                Mimetype: request.Mimetype,
+                ContentBase64: request.ContentBase64,
+                Notes: request.Notes),
+            cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Binary encounter document could not be attached from the supplied file details.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
+    })
+    .WithName("CreateBinaryEncounterDocument");
+
 encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
         EncounterRepository repository,
         int encounter,

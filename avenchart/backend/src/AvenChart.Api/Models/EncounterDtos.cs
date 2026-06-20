@@ -187,6 +187,15 @@ public sealed record EncounterDocumentCreateRequest(
     string Content,
     string? Notes);
 
+public sealed record EncounterBinaryDocumentCreateRequest(
+    int CategoryId,
+    string Name,
+    string DocDate,
+    string FileName,
+    string Mimetype,
+    string ContentBase64,
+    string? Notes);
+
 public sealed record EncounterDocumentMutationResponse(
     int Id,
     EncounterDetail Detail);

@@ -543,6 +543,85 @@ finally {
     }
 }
 
+$smokeEncounterBinaryDocumentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $binaryDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $binaryDocumentName = "Smoke Encounter Binary Attachment $binaryDocumentSuffix.pdf"
+    $binaryDocumentPayload = "Smoke binary encounter attachment content $binaryDocumentSuffix."
+    $binaryDocumentBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($binaryDocumentPayload))
+    $binaryDocumentBody = @{
+        categoryId = 3
+        name = $binaryDocumentName
+        docDate = "2026-06-18"
+        fileName = $binaryDocumentName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryDocumentBase64
+        notes = "Created by the smoke encounter binary document attachment check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryDocumentBody -TimeoutSec 20
+    $smokeEncounterBinaryDocumentId = $createdEncounterBinaryDocument.id
+    $createdEncounterBinaryDocumentVisible = @($createdEncounterBinaryDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterBinaryDocumentId `
+            -and $_.name -eq $binaryDocumentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18" `
+            -and $_.mimetype -eq "application/pdf" `
+            -and $_.fileName -eq $binaryDocumentName `
+            -and $_.storageMethod -eq "database" `
+            -and $_.previewKind -eq "pdf" `
+            -and $_.thumbnailLabel -eq "PDF" `
+            -and $_.canDownload -eq $true
+    } | Select-Object -First 1
+
+    $encounterBinaryContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId/content" -Method Get -TimeoutSec 20
+    $encounterBinaryDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $encounterBinaryDownload = $encounterBinaryDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId/download").GetAwaiter().GetResult()
+        $encounterBinaryDownloadBytes = $encounterBinaryDownload.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $encounterBinaryDownloadContentType = $encounterBinaryDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $encounterBinaryDownloadClient.Dispose()
+    }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterBinaryDocumentId = $null
+    $afterDeleteBinaryDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterBinaryDocumentVisible = @($afterDeleteBinaryDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $binaryDocumentName
+    } | Select-Object -First 1
+
+    $encounterBinaryDocumentAttachmentPassed = $null -ne $createdEncounterBinaryDocumentVisible `
+        -and $encounterBinaryContent.contentBase64 -eq $binaryDocumentBase64 `
+        -and $encounterBinaryDownload.IsSuccessStatusCode `
+        -and $encounterBinaryDownloadContentType -eq "application/pdf" `
+        -and [Convert]::ToBase64String($encounterBinaryDownloadBytes) -eq $binaryDocumentBase64 `
+        -and $null -eq $deletedEncounterBinaryDocumentVisible
+    Add-Check -Name "encounter binary document attachment lifecycle" -Result $(if ($encounterBinaryDocumentAttachmentPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterBinaryDocument.id
+        document = $createdEncounterBinaryDocumentVisible
+        downloadContentType = $encounterBinaryDownloadContentType
+    }
+}
+catch {
+    Add-Check -Name "encounter binary document attachment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterBinaryDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

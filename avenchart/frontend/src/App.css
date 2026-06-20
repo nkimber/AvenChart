@@ -976,6 +976,7 @@
 }
 
 .encounter-document-name-field,
+.encounter-binary-file-field,
 .encounter-document-note-field {
   min-width: 0;
 }

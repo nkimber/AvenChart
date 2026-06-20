@@ -344,6 +344,16 @@ export type EncounterDocumentCreateInput = {
   notes?: string | null
 }
 
+export type EncounterBinaryDocumentCreateInput = {
+  categoryId: number
+  name: string
+  docDate: string
+  fileName: string
+  mimetype: string
+  contentBase64: string
+  notes?: string | null
+}
+
 export type EncounterDocumentMutationResponse = {
   id: number
   detail: EncounterDetail
@@ -1774,6 +1784,24 @@ export async function createEncounterDocument(
   })
   if (!response.ok) {
     throw new Error(`Encounter document attach failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createEncounterBinaryDocument(
+  encounter: number,
+  document: EncounterBinaryDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/binary`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Binary encounter document attach failed with ${response.status}`)
   }
 
   return response.json()

@@ -66,6 +66,7 @@ import {
   createPatientDocument,
   createPatientExternalLinkDocument,
   createEncounter,
+  createEncounterBinaryDocument,
   createEncounterDocument,
   createEncounterSoapNote,
   createEncounterVitals,
@@ -161,6 +162,7 @@ import {
   type CollectionsWorkQueueResponse,
   type CollectionsFollowUpMutationResponse,
   type EncounterCreateInput,
+  type EncounterBinaryDocumentCreateInput,
   type EncounterDiagnosisCode,
   type EncounterDetail,
   type EncounterDocumentCreateInput,
@@ -1093,6 +1095,28 @@ function App() {
     } catch (createError) {
       setEncounterDetailStatus('error')
       const message = createError instanceof Error ? createError.message : 'Encounter document attach failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
+  async function handleEncounterBinaryDocumentCreate(
+    encounter: EncounterDetail,
+    input: EncounterBinaryDocumentCreateInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createEncounterBinaryDocument(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Binary encounter document attach failed'
       setEncounterError(message)
       throw createError
     }
@@ -2347,6 +2371,7 @@ function App() {
             onSignEncounter={handleEncounterSign}
             onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateEncounterDocument={handleEncounterDocumentCreate}
+            onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
@@ -3577,6 +3602,7 @@ function EncounterWorkspace({
   onSignEncounter,
   onDeleteEncounterSignature,
   onCreateEncounterDocument,
+  onCreateEncounterBinaryDocument,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
@@ -3602,6 +3628,10 @@ function EncounterWorkspace({
   onCreateEncounterDocument: (
     encounter: EncounterDetail,
     input: EncounterDocumentCreateInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onCreateEncounterBinaryDocument: (
+    encounter: EncounterDetail,
+    input: EncounterBinaryDocumentCreateInput,
   ) => Promise<EncounterDocumentMutationResponse>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
   onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
@@ -3660,6 +3690,15 @@ function EncounterWorkspace({
   const [encounterDocumentNotes, setEncounterDocumentNotes] = useState('Attached from the modernized encounter workspace.')
   const [encounterDocumentContent, setEncounterDocumentContent] = useState('Encounter attachment text payload.')
   const [encounterDocumentStatus, setEncounterDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterBinaryDocumentCategoryId, setEncounterBinaryDocumentCategoryId] = useState('3')
+  const [encounterBinaryDocumentName, setEncounterBinaryDocumentName] = useState('Encounter binary attachment')
+  const [encounterBinaryDocumentDate, setEncounterBinaryDocumentDate] = useState('2026-06-18')
+  const [encounterBinaryDocumentNotes, setEncounterBinaryDocumentNotes] = useState('Binary file attached from the modernized encounter workspace.')
+  const [encounterBinaryFileName, setEncounterBinaryFileName] = useState('')
+  const [encounterBinaryMimeType, setEncounterBinaryMimeType] = useState('')
+  const [encounterBinaryContentBase64, setEncounterBinaryContentBase64] = useState('')
+  const [encounterBinaryFileMessage, setEncounterBinaryFileMessage] = useState('No file selected')
+  const [encounterBinaryDocumentStatus, setEncounterBinaryDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3708,6 +3747,7 @@ function EncounterWorkspace({
     setSoapDateTime(`${encounterDetail.date}T10:10`)
     setSignatureSignedAt(`${encounterDetail.date}T10:20`)
     setEncounterDocumentDate(encounterDetail.date)
+    setEncounterBinaryDocumentDate(encounterDetail.date)
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -3890,6 +3930,55 @@ function EncounterWorkspace({
       setEncounterDocumentStatus('saved')
     } catch {
       setEncounterDocumentStatus('error')
+    }
+  }
+
+  async function handleEncounterBinaryFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setEncounterBinaryFileName('')
+      setEncounterBinaryMimeType('')
+      setEncounterBinaryContentBase64('')
+      setEncounterBinaryFileMessage('No file selected')
+      return
+    }
+
+    const contentBase64 = await readFileAsBase64(file)
+    setEncounterBinaryFileName(file.name)
+    setEncounterBinaryMimeType(file.type || 'application/octet-stream')
+    setEncounterBinaryContentBase64(contentBase64)
+    setEncounterBinaryFileMessage(`${file.name} selected (${formatBytes(file.size)})`)
+    if (encounterBinaryDocumentName === 'Encounter binary attachment') {
+      setEncounterBinaryDocumentName(file.name)
+    }
+  }
+
+  async function handleEncounterBinaryDocumentSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    if (!encounterBinaryContentBase64 || !encounterBinaryFileName || !encounterBinaryMimeType) {
+      setEncounterBinaryFileMessage('Choose a file to upload')
+      setEncounterBinaryDocumentStatus('error')
+      return
+    }
+
+    setEncounterBinaryDocumentStatus('saving')
+    try {
+      await onCreateEncounterBinaryDocument(encounterDetail, {
+        categoryId: Number(encounterBinaryDocumentCategoryId),
+        name: encounterBinaryDocumentName,
+        docDate: encounterBinaryDocumentDate,
+        fileName: encounterBinaryFileName,
+        mimetype: encounterBinaryMimeType,
+        contentBase64: encounterBinaryContentBase64,
+        notes: encounterBinaryDocumentNotes,
+      })
+      setEncounterBinaryDocumentStatus('saved')
+    } catch {
+      setEncounterBinaryDocumentStatus('error')
     }
   }
 
@@ -4561,6 +4650,58 @@ function EncounterWorkspace({
                 </button>
                 {encounterDocumentStatus === 'saved' && <span className="save-note">Saved</span>}
                 {encounterDocumentStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </form>
+              <form className="encounter-document-form encounter-binary-document-form" onSubmit={handleEncounterBinaryDocumentSubmit} aria-label="Encounter binary document upload">
+                <label className="filter-field">
+                  <span>Category</span>
+                  <select
+                    value={encounterBinaryDocumentCategoryId}
+                    onChange={(event) => setEncounterBinaryDocumentCategoryId(event.target.value)}
+                    aria-label="Encounter binary document category"
+                  >
+                    <option value="3">Medical Record</option>
+                    <option value="6">Advance Directive</option>
+                    <option value="13">CCDA</option>
+                  </select>
+                </label>
+                <label className="filter-field">
+                  <span>Date</span>
+                  <input
+                    value={encounterBinaryDocumentDate}
+                    onChange={(event) => setEncounterBinaryDocumentDate(event.target.value)}
+                    aria-label="Encounter binary document date"
+                    type="date"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-document-name-field">
+                  <span>Name</span>
+                  <input
+                    value={encounterBinaryDocumentName}
+                    onChange={(event) => setEncounterBinaryDocumentName(event.target.value)}
+                    aria-label="Encounter binary document name"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-binary-file-field">
+                  <span>File</span>
+                  <input type="file" onChange={handleEncounterBinaryFileChange} aria-label="Encounter binary document file" required />
+                </label>
+                <label className="filter-field encounter-document-note-field">
+                  <span>Notes</span>
+                  <input
+                    value={encounterBinaryDocumentNotes}
+                    onChange={(event) => setEncounterBinaryDocumentNotes(event.target.value)}
+                    aria-label="Encounter binary document notes"
+                  />
+                </label>
+                <button className="icon-text-button primary" type="submit" disabled={encounterBinaryDocumentStatus === 'saving'}>
+                  <Upload size={16} />
+                  <span>{encounterBinaryDocumentStatus === 'saving' ? 'Uploading' : 'Upload'}</span>
+                </button>
+                <span className={encounterBinaryDocumentStatus === 'error' ? 'save-note error' : 'save-note'}>
+                  {encounterBinaryDocumentStatus === 'saved' ? 'Uploaded' : encounterBinaryFileMessage}
+                </span>
               </form>
               <div className="encounter-documents-list">
                 {attachedDocuments.map((document) => (
