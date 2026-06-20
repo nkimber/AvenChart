@@ -409,6 +409,56 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async 
     })
     .WithName("UpdateEncounterDocumentMetadata");
 
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        EncounterDocumentMoveRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var sourceDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (sourceDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        var document = sourceDetail.Documents.FirstOrDefault(document => document.Id == documentId);
+        if (document is null)
+        {
+            return Results.NotFound();
+        }
+
+        var targetDetail = await encounterRepository.GetByEncounterAsync(request.TargetEncounter, cancellationToken);
+        if (targetDetail is null)
+        {
+            return Results.BadRequest("Target encounter was not found.");
+        }
+
+        if (targetDetail.LegacyPid != sourceDetail.LegacyPid)
+        {
+            return Results.BadRequest("Encounter document can only be moved to another encounter for the same patient.");
+        }
+
+        var mutation = await documentRepository.UpdateMetadataAsync(documentId, new PatientDocumentMetadataUpdateRequest(
+            CategoryId: document.CategoryId,
+            Name: document.Name,
+            DocDate: document.DocDate,
+            Encounter: targetDetail.Encounter,
+            Notes: document.Notes), cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document could not be moved to the supplied target encounter.");
+        }
+
+        var refreshedSource = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        var refreshedTarget = await encounterRepository.GetByEncounterAsync(targetDetail.Encounter, cancellationToken);
+        return refreshedSource is null || refreshedTarget is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMoveResponse(documentId, refreshedSource, refreshedTarget));
+    })
+    .WithName("MoveEncounterDocument");
+
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,

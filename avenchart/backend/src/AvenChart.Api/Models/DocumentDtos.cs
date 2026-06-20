@@ -87,6 +87,14 @@ public sealed record PatientDocumentMetadataUpdateRequest(
     int? Encounter,
     string? Notes);
 
+public sealed record EncounterDocumentMoveRequest(
+    int TargetEncounter);
+
+public sealed record EncounterDocumentMoveResponse(
+    int Id,
+    EncounterDetail SourceDetail,
+    EncounterDetail TargetDetail);
+
 public sealed record PatientDocumentContentReplaceRequest(
     string FileName,
     string Content);

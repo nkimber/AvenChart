@@ -362,6 +362,16 @@ export type EncounterDocumentMutationResponse = {
   detail: EncounterDetail
 }
 
+export type EncounterDocumentMoveInput = {
+  targetEncounter: number
+}
+
+export type EncounterDocumentMoveResponse = {
+  id: number
+  sourceDetail: EncounterDetail
+  targetDetail: EncounterDetail
+}
+
 export type EncounterSearchResponse = {
   datasetId: string
   datasetVersion: string
@@ -1824,6 +1834,25 @@ export async function updateEncounterDocumentMetadata(
   })
   if (!response.ok) {
     throw new Error(`Encounter document metadata update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function moveEncounterDocument(
+  encounter: number,
+  documentId: number,
+  input: EncounterDocumentMoveInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMoveResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/move`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document move failed with ${response.status}`)
   }
 
   return response.json()

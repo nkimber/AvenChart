@@ -98,6 +98,7 @@ import {
   deactivateClinicalProblem,
   deactivateClinicalPrescription,
   markClinicalImmunizationEnteredInError,
+  moveEncounterDocument,
   grantAdministrationAccessPermission,
   grantAdministrationAccessUserMembership,
   revokeAdministrationAccessPermission,
@@ -170,6 +171,7 @@ import {
   type EncounterDetail,
   type EncounterDocumentCreateInput,
   type EncounterDocumentAttachment,
+  type EncounterDocumentMoveResponse,
   type EncounterDocumentMutationResponse,
   type EncounterSoapNoteCreateInput,
   type EncounterListItem,
@@ -1145,6 +1147,31 @@ function App() {
       const message = metadataError instanceof Error ? metadataError.message : 'Encounter document metadata update failed'
       setEncounterError(message)
       throw metadataError
+    }
+  }
+
+  async function handleEncounterDocumentMove(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    targetEncounter: number,
+  ): Promise<EncounterDocumentMoveResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await moveEncounterDocument(encounter.encounter, document.id, { targetEncounter })
+      setEncounterDetail(response.targetDetail)
+      setSelectedEncounter(response.targetDetail.encounter)
+      setEncounterPatientId(response.targetDetail.pubpid)
+      setEncounterFromDate(response.targetDetail.date)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (moveError) {
+      setEncounterDetailStatus('error')
+      const message = moveError instanceof Error ? moveError.message : 'Encounter document move failed'
+      setEncounterError(message)
+      throw moveError
     }
   }
 
@@ -2449,6 +2476,7 @@ function App() {
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
             onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
+            onMoveEncounterDocument={handleEncounterDocumentMove}
             onSignEncounterDocument={handleEncounterDocumentSign}
             onDenyEncounterDocument={handleEncounterDocumentDeny}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
@@ -3683,6 +3711,7 @@ function EncounterWorkspace({
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
   onUpdateEncounterDocumentMetadata,
+  onMoveEncounterDocument,
   onSignEncounterDocument,
   onDenyEncounterDocument,
   onCreateFeeSheetLine,
@@ -3720,6 +3749,11 @@ function EncounterWorkspace({
     document: EncounterDocumentAttachment,
     input: PatientDocumentMetadataUpdateInput,
   ) => Promise<EncounterDocumentMutationResponse>
+  onMoveEncounterDocument: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    targetEncounter: number,
+  ) => Promise<EncounterDocumentMoveResponse>
   onSignEncounterDocument: (
     encounter: EncounterDetail,
     document: EncounterDocumentAttachment,
@@ -3800,6 +3834,9 @@ function EncounterWorkspace({
   const [encounterDocumentMetadataStatus, setEncounterDocumentMetadataStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
+  const [encounterDocumentMoveStatus, setEncounterDocumentMoveStatus] = useState<
+    'idle' | 'saving' | 'moved' | 'error'
+  >('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3837,6 +3874,7 @@ function EncounterWorkspace({
       setSummaryBillingNote('')
       setEncounterDocumentReviewStatus('idle')
       setEncounterDocumentMetadataStatus('idle')
+      setEncounterDocumentMoveStatus('idle')
       return
     }
 
@@ -3853,6 +3891,7 @@ function EncounterWorkspace({
     setEncounterBinaryDocumentDate(encounterDetail.date)
     setEncounterDocumentReviewStatus('idle')
     setEncounterDocumentMetadataStatus('idle')
+    setEncounterDocumentMoveStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -4101,6 +4140,20 @@ function EncounterWorkspace({
       setEncounterDocumentMetadataStatus('saved')
     } catch {
       setEncounterDocumentMetadataStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentMove(document: EncounterDocumentAttachment, targetEncounter: number) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentMoveStatus('saving')
+    try {
+      await onMoveEncounterDocument(encounterDetail, document, targetEncounter)
+      setEncounterDocumentMoveStatus('moved')
+    } catch {
+      setEncounterDocumentMoveStatus('error')
     }
   }
 
@@ -4859,8 +4912,13 @@ function EncounterWorkspace({
                     key={document.id}
                     document={document}
                     encounter={encounterDetail.encounter}
-                    disabled={encounterDocumentReviewStatus === 'saving' || encounterDocumentMetadataStatus === 'saving'}
+                    disabled={
+                      encounterDocumentReviewStatus === 'saving'
+                      || encounterDocumentMetadataStatus === 'saving'
+                      || encounterDocumentMoveStatus === 'saving'
+                    }
                     onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
+                    onMove={handleEncounterDocumentMove}
                     onSign={handleEncounterDocumentSign}
                     onDeny={handleEncounterDocumentDeny}
                   />
@@ -4869,7 +4927,15 @@ function EncounterWorkspace({
                   <div className="timeline-placeholder">No documents linked to this encounter</div>
                 )}
               </div>
-              <span className={encounterDocumentReviewStatus === 'error' ? 'save-note error' : 'save-note'}>
+              <span
+                className={
+                  encounterDocumentReviewStatus === 'error'
+                  || encounterDocumentMetadataStatus === 'error'
+                  || encounterDocumentMoveStatus === 'error'
+                    ? 'save-note error'
+                    : 'save-note'
+                }
+              >
                 {encounterDocumentReviewStatus === 'signed'
                   ? 'Document signed'
                   : encounterDocumentReviewStatus === 'denied'
@@ -4884,6 +4950,12 @@ function EncounterWorkspace({
                     ? 'Saving document metadata'
                   : encounterDocumentMetadataStatus === 'error'
                     ? 'Document metadata update failed'
+                  : encounterDocumentMoveStatus === 'moved'
+                    ? 'Document moved'
+                  : encounterDocumentMoveStatus === 'saving'
+                    ? 'Moving document'
+                  : encounterDocumentMoveStatus === 'error'
+                    ? 'Document move failed'
                       : ''}
               </span>
             </section>
@@ -5515,6 +5587,7 @@ function EncounterDocumentAttachmentCard({
   encounter,
   disabled,
   onUpdateMetadata,
+  onMove,
   onSign,
   onDeny,
 }: {
@@ -5525,15 +5598,19 @@ function EncounterDocumentAttachmentCard({
     document: EncounterDocumentAttachment,
     input: PatientDocumentMetadataUpdateInput,
   ) => Promise<void>
+  onMove: (document: EncounterDocumentAttachment, targetEncounter: number) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
   onDeny: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
   const [isEditing, setIsEditing] = useState(false)
+  const [isMoving, setIsMoving] = useState(false)
   const [editName, setEditName] = useState(document.name)
   const [editCategoryId, setEditCategoryId] = useState(String(document.categoryId || 3))
   const [editDocDate, setEditDocDate] = useState(document.docDate)
   const [editNotes, setEditNotes] = useState(document.notes ?? '')
   const [editError, setEditError] = useState<string | null>(null)
+  const [moveEncounter, setMoveEncounter] = useState('')
+  const [moveError, setMoveError] = useState<string | null>(null)
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
 
@@ -5543,6 +5620,9 @@ function EncounterDocumentAttachmentCard({
     setEditDocDate(document.docDate)
     setEditNotes(document.notes ?? '')
     setEditError(null)
+    setIsMoving(false)
+    setMoveEncounter('')
+    setMoveError(null)
   }, [document])
 
   async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
@@ -5566,6 +5646,29 @@ function EncounterDocumentAttachmentCard({
       setIsEditing(false)
     } catch {
       setEditError('Metadata save failed')
+    }
+  }
+
+  async function handleMoveSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMoveError(null)
+
+    const targetEncounter = Number(moveEncounter)
+    if (!Number.isInteger(targetEncounter) || targetEncounter <= 0) {
+      setMoveError('Enter a target encounter')
+      return
+    }
+
+    if (targetEncounter === encounter) {
+      setMoveError('Choose a different encounter')
+      return
+    }
+
+    try {
+      await onMove(document, targetEncounter)
+      setIsMoving(false)
+    } catch {
+      setMoveError('Move failed')
     }
   }
 
@@ -5670,6 +5773,34 @@ function EncounterDocumentAttachmentCard({
         </form>
       )}
 
+      {isMoving && (
+        <form className="document-edit-form" onSubmit={handleMoveSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Target Encounter</span>
+              <input
+                value={moveEncounter}
+                onChange={(event) => setMoveEncounter(event.target.value)}
+                aria-label="Encounter document move target encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <MapPin size={14} />
+              Move
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsMoving(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {moveError && <span className="save-note error">{moveError}</span>}
+          </div>
+        </form>
+      )}
+
       <div className="document-item-actions">
         {document.canDownload && (
           <a className="icon-text-button secondary" href={getPatientDocumentDownloadUrl(document.id)}>
@@ -5687,10 +5818,25 @@ function EncounterDocumentAttachmentCard({
           className="icon-text-button secondary"
           type="button"
           disabled={disabled}
-          onClick={() => setIsEditing((current) => !current)}
+          onClick={() => {
+            setIsMoving(false)
+            setIsEditing((current) => !current)
+          }}
         >
           <Pencil size={14} />
           Edit
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            setIsEditing(false)
+            setIsMoving((current) => !current)
+          }}
+        >
+          <MapPin size={14} />
+          Move
         </button>
         <button
           className="icon-text-button secondary"

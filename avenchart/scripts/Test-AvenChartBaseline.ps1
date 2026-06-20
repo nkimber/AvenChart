@@ -692,6 +692,77 @@ finally {
     }
 }
 
+$smokeEncounterDocumentMoveId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $moveDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $moveDocumentName = "Smoke Encounter Moved Document $moveDocumentSuffix"
+    $moveDocumentBody = @{
+        categoryId = 3
+        name = $moveDocumentName
+        docDate = "2026-06-18"
+        content = "Smoke encounter document move content $moveDocumentSuffix."
+        notes = "Created by the smoke encounter document move check."
+    } | ConvertTo-Json
+
+    $createdEncounterMoveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $moveDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentMoveId = $createdEncounterMoveDocument.id
+    $createdMoveDocumentVisible = @($createdEncounterMoveDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentMoveId `
+            -and $_.name -eq $moveDocumentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18"
+    } | Select-Object -First 1
+
+    $moveBody = @{
+        targetEncounter = 1000011
+    } | ConvertTo-Json
+    $movedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMoveId/move" -Method Put -ContentType "application/json" -Body $moveBody -TimeoutSec 20
+    $movedSourceDocumentVisible = @($movedEncounterDocument.sourceDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentMoveId
+    } | Select-Object -First 1
+    $movedTargetDocumentVisible = @($movedEncounterDocument.targetDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentMoveId `
+            -and $_.name -eq $moveDocumentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18" `
+            -and $_.notes -eq "Created by the smoke encounter document move check."
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMoveId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentMoveId = $null
+    $afterDeleteMovedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    $deletedMovedDocumentVisible = @($afterDeleteMovedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $moveDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentMovePassed = $null -ne $createdMoveDocumentVisible `
+        -and $null -eq $movedSourceDocumentVisible `
+        -and $null -ne $movedTargetDocumentVisible `
+        -and $null -eq $deletedMovedDocumentVisible
+    Add-Check -Name "encounter document move lifecycle" -Result $(if ($encounterDocumentMovePassed) { "passed" } else { "failed" }) -Details @{
+        sourceEncounter = 1000013
+        targetEncounter = 1000011
+        documentId = $createdEncounterMoveDocument.id
+        document = $movedTargetDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document move lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentMoveId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMoveId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentSignOffId = $null
 try {
     if ($null -eq $encounterDetail) {
