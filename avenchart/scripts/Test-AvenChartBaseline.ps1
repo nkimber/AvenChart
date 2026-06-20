@@ -2118,6 +2118,35 @@ catch {
     Add-Check -Name "anchor patient statement PDF export" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $statementBatch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/statements/batch?limit=5" -Method Get -TimeoutSec 20
+    $statementBatchCandidates = @($statementBatch.candidates)
+    $firstStatementBatchCandidate = $statementBatchCandidates | Select-Object -First 1
+    $statementBatchPassed = $statementBatch.asOfDate -eq "2026-06-18" `
+        -and $statementBatch.candidateCount -gt 5 `
+        -and $statementBatchCandidates.Count -eq 5 `
+        -and [decimal]$statementBatch.totalBalanceAmount -gt 0 `
+        -and [decimal]$statementBatch.totalPastDueAmount -gt 0 `
+        -and [decimal]$statementBatch.totalCurrentDueAmount -gt 0 `
+        -and $null -ne $firstStatementBatchCandidate `
+        -and $firstStatementBatchCandidate.statementNumber -like "STMT-MOD-PAT-*" `
+        -and @("Past due review", "Ready for statement") -contains $firstStatementBatchCandidate.statementStatus `
+        -and [decimal]$firstStatementBatchCandidate.balanceDueAmount -gt 0 `
+        -and $firstStatementBatchCandidate.openEncounterCount -gt 0 `
+        -and @("Email-ready", "Print") -contains $firstStatementBatchCandidate.deliveryMethod
+    Add-Check -Name "anchor statement batch candidates" -Result $(if ($statementBatchPassed) { "passed" } else { "failed" }) -Details @{
+        asOfDate = $statementBatch.asOfDate
+        candidateCount = $statementBatch.candidateCount
+        totalBalanceAmount = $statementBatch.totalBalanceAmount
+        totalPastDueAmount = $statementBatch.totalPastDueAmount
+        totalCurrentDueAmount = $statementBatch.totalCurrentDueAmount
+        firstCandidate = $firstStatementBatchCandidate
+    }
+}
+catch {
+    Add-Check -Name "anchor statement batch candidates" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

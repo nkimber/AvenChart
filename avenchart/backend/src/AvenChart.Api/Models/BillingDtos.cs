@@ -109,6 +109,34 @@ public sealed record BillingStatementLineItem(
     decimal AdjustmentAmount,
     decimal BalanceAmount);
 
+public sealed record StatementBatchResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int CandidateCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalCurrentDueAmount,
+    IReadOnlyList<StatementBatchCandidate> Candidates);
+
+public sealed record StatementBatchCandidate(
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal CurrentDueAmount,
+    int OpenEncounterCount,
+    int LedgerEntryCount,
+    int OldestOpenAgeDays,
+    string OldestOpenDate,
+    string DeliveryMethod);
+
 public sealed record BillingEncounterItem(
     int Id,
     int Encounter,

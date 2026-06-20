@@ -900,6 +900,36 @@ export type BillingStatementDocument = {
   lineItems: BillingStatementLineItem[]
 }
 
+export type StatementBatchCandidate = {
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  openEncounterCount: number
+  ledgerEntryCount: number
+  oldestOpenAgeDays: number
+  oldestOpenDate: string
+  deliveryMethod: string
+}
+
+export type StatementBatchResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  candidateCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  candidates: StatementBatchCandidate[]
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -2145,6 +2175,17 @@ export async function getPatientBilling(patientId: string, signal?: AbortSignal)
   const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Patient billing load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getStatementBatch(limit = 10, signal?: AbortSignal): Promise<StatementBatchResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`, {
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Statement batch load failed with ${response.status}`)
   }
 
   return response.json()

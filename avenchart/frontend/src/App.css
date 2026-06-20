@@ -1038,12 +1038,17 @@
 }
 
 .procedure-orders-panel,
+.statement-batch-panel,
 .statement-readiness-panel,
 .statement-document-panel,
 .billing-ledger-panel,
 .billing-lines-panel,
 .procedure-results-panel {
   min-width: 0;
+}
+
+.statement-batch-panel {
+  margin-bottom: 12px;
 }
 
 .statement-readiness-panel,
@@ -1070,6 +1075,72 @@
 
 .statement-readiness-body {
   padding: 12px;
+}
+
+.statement-batch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.statement-batch-summary,
+.statement-batch-row-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.statement-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.statement-batch-row {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 10px;
+  min-width: 0;
+}
+
+.statement-batch-row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  min-width: 0;
+}
+
+.statement-batch-row-main > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.statement-batch-row-main strong {
+  color: #172b3a;
+  overflow-wrap: anywhere;
+}
+
+.statement-batch-row-main span {
+  color: #607280;
+  font-size: 12px;
+}
+
+.statement-batch-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.statement-batch-actions .status-pill {
+  white-space: nowrap;
 }
 
 .statement-payment-instructions {
@@ -1537,6 +1608,8 @@
   .documents-detail-grid,
   .billing-detail-grid,
   .billing-line-list,
+  .statement-batch-summary,
+  .statement-batch-row-grid,
   .statement-readiness-grid,
   .ledger-summary-grid,
   .procedure-detail-grid,
@@ -1561,6 +1634,7 @@
   }
 
   .statement-status-row,
+  .statement-batch-row-main,
   .ledger-entry-main,
   .procedure-order-meta,
   .procedure-report-title,

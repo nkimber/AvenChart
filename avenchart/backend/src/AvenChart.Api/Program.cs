@@ -767,6 +767,16 @@ procedures.MapDelete("/orders/{orderId:int}", async (
 
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 
+billing.MapGet("/statements/batch", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var statementBatch = await repository.GetStatementBatchAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(statementBatch);
+    })
+    .WithName("GetBillingStatementBatch");
+
 billing.MapGet("/{patientId}", async (
         BillingRepository repository,
         string patientId,

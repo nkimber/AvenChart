@@ -39,6 +39,7 @@ import {
   getPatientChart,
   getPatientBilling,
   getBillingStatementPdfUrl,
+  getStatementBatch,
   getPatientDocumentContent,
   getPatientDocumentDownloadUrl,
   getPatientDocuments,
@@ -177,6 +178,8 @@ import {
   type PatientMessagesResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
+  type StatementBatchCandidate,
+  type StatementBatchResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
@@ -4698,6 +4701,9 @@ function FeesWorkspace({
   const [paymentReasonCode, setPaymentReasonCode] = useState('CO-45')
   const [paymentPayerClaimNumber, setPaymentPayerClaimNumber] = useState('NSTAR-CLM-PARITY')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [statementBatch, setStatementBatch] = useState<StatementBatchResponse | null>(null)
+  const [statementBatchStatus, setStatementBatchStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [statementBatchError, setStatementBatchError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -4710,6 +4716,26 @@ function FeesWorkspace({
   const ledgerEntries = patientBilling?.ledgerEntries ?? []
   const statementLineItems = statementDocument?.lineItems ?? []
   const isLoading = status === 'loading'
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setStatementBatchStatus('loading')
+    setStatementBatchError(null)
+
+    getStatementBatch(5, controller.signal)
+      .then((result) => {
+        setStatementBatch(result)
+        setStatementBatchStatus('ready')
+      })
+      .catch((loadError: unknown) => {
+        if (!controller.signal.aborted) {
+          setStatementBatchError(loadError instanceof Error ? loadError.message : 'Statement batch load failed')
+          setStatementBatchStatus('error')
+        }
+      })
+
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     if (!patientBilling || patientBilling.encounters.length === 0) {
@@ -5344,6 +5370,13 @@ function FeesWorkspace({
       </section>
 
       <section className="appointment-detail-panel" aria-label="Fees detail">
+        <StatementBatchPanel
+          batch={statementBatch}
+          status={statementBatchStatus}
+          error={statementBatchError}
+          onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
+        />
+
         {patientBilling ? (
           <>
             <div className="appointment-banner">
@@ -5521,6 +5554,78 @@ function FeesWorkspace({
           <div className="empty-chart">Enter a patient ID to load fee sheet lines</div>
         )}
       </section>
+    </section>
+  )
+}
+
+function StatementBatchPanel({
+  batch,
+  status,
+  error,
+  onSelectCandidate,
+}: {
+  batch: StatementBatchResponse | null
+  status: 'loading' | 'ready' | 'error'
+  error: string | null
+  onSelectCandidate: (candidate: StatementBatchCandidate) => void
+}) {
+  const candidates = batch?.candidates ?? []
+
+  return (
+    <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
+      <div className="panel-heading">
+        <Mail size={17} />
+        <h3>Statement Batch</h3>
+      </div>
+
+      <div className="statement-batch-body">
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+        <div className="statement-batch-summary">
+          <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
+          <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : 'Loading'} />
+          <Field label="Past due" value={batch ? formatCurrency(batch.totalPastDueAmount) : 'Loading'} />
+          <Field label="Current due" value={batch ? formatCurrency(batch.totalCurrentDueAmount) : 'Loading'} />
+          <Field label="As of" value={batch?.asOfDate ?? 'Loading'} />
+        </div>
+
+        <div className="statement-batch-list">
+          {candidates.map((candidate) => (
+            <article className="statement-batch-row" key={candidate.statementNumber}>
+              <div className="statement-batch-row-main">
+                <div>
+                  <strong>{candidate.patientDisplayName}</strong>
+                  <span>{candidate.pubpid} / {candidate.statementNumber}</span>
+                </div>
+                <div className="statement-batch-actions">
+                  <span className="status-pill">{candidate.statementStatus}</span>
+                  <button
+                    className="icon-text-button secondary"
+                    type="button"
+                    onClick={() => onSelectCandidate(candidate)}
+                  >
+                    <Search size={14} />
+                    Open
+                  </button>
+                </div>
+              </div>
+              <div className="statement-batch-row-grid">
+                <Field label="Balance" value={formatCurrency(candidate.balanceDueAmount)} />
+                <Field label="Past due" value={formatCurrency(candidate.pastDueAmount)} />
+                <Field label="Due date" value={candidate.dueDate} />
+                <Field label="Oldest age" value={`${candidate.oldestOpenAgeDays} days`} />
+                <Field label="Open encounters" value={candidate.openEncounterCount} />
+                <Field label="Ledger entries" value={candidate.ledgerEntryCount} />
+                <Field label="Delivery" value={candidate.deliveryMethod} />
+              </div>
+            </article>
+          ))}
+
+          {status === 'loading' && <div className="timeline-placeholder">Loading statement candidates</div>}
+          {status === 'ready' && candidates.length === 0 && (
+            <div className="timeline-placeholder">No accounts are ready for statements</div>
+          )}
+        </div>
+      </div>
     </section>
   )
 }
