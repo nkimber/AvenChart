@@ -137,6 +137,39 @@ public sealed record StatementBatchCandidate(
     string OldestOpenDate,
     string DeliveryMethod);
 
+public sealed record CollectionsWorkQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int AccountCount,
+    int HighPriorityCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalOver90Amount,
+    IReadOnlyList<CollectionsWorkQueueItem> Items);
+
+public sealed record CollectionsWorkQueueItem(
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal Over90Amount,
+    decimal CurrentDueAmount,
+    int OpenEncounterCount,
+    int LedgerEntryCount,
+    int OldestOpenAgeDays,
+    string OldestOpenDate,
+    string CollectionTier,
+    string RecommendedAction,
+    string ContactMethod,
+    string? Email,
+    string? Phone);
+
 public sealed record BillingEncounterItem(
     int Id,
     int Encounter,

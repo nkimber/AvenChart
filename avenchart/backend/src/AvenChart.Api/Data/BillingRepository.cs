@@ -328,6 +328,141 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return (memory.ToArray(), fileName);
     }
 
+    public async Task<CollectionsWorkQueueResponse> GetCollectionsWorkQueueAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var rollups = new List<CollectionsWorkQueueRollupRow>();
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                with charges as (
+                    select
+                        pid,
+                        encounter,
+                        count(*) as line_count,
+                        coalesce(sum(coalesce(fee, 0)), 0) as charge_amount,
+                        max(billing_date) as last_billing_date
+                    from billing
+                    where activity = 1
+                    group by pid, encounter
+                ),
+                payments as (
+                    select
+                        pid,
+                        encounter,
+                        count(*) as payment_count,
+                        coalesce(sum(pay_amount), 0) as payment_amount,
+                        coalesce(sum(adj_amount), 0) as adjustment_amount
+                    from payment_activities
+                    where deleted is null
+                    group by pid, encounter
+                ),
+                aged as (
+                    select
+                        c.pid,
+                        c.encounter,
+                        c.line_count,
+                        coalesce(p.payment_count, 0) as payment_count,
+                        c.last_billing_date,
+                        greatest((cast(@asOfDate as date) - c.last_billing_date)::int, 0) as age_days,
+                        c.charge_amount - coalesce(p.payment_amount, 0) - coalesce(p.adjustment_amount, 0) as balance_amount
+                    from charges c
+                    left join payments p on p.pid = c.pid and p.encounter = c.encounter
+                    union all
+                    select
+                        p.pid,
+                        p.encounter,
+                        0 as line_count,
+                        p.payment_count,
+                        cast(@asOfDate as date) as last_billing_date,
+                        0 as age_days,
+                        0 - p.payment_amount - p.adjustment_amount as balance_amount
+                    from payments p
+                    left join charges c on c.pid = p.pid and c.encounter = p.encounter
+                    where c.encounter is null
+                ),
+                rollup as (
+                    select
+                        pid,
+                        count(*) filter (where balance_amount > 0) as open_encounter_count,
+                        coalesce(max(age_days) filter (where balance_amount > 0), 0) as oldest_open_age_days,
+                        coalesce(min(last_billing_date) filter (where balance_amount > 0), cast(@asOfDate as date)) as oldest_open_date,
+                        sum(case when age_days <= 30 then balance_amount else 0 end) as current_due_amount,
+                        sum(case when age_days > 30 then balance_amount else 0 end) as past_due_amount,
+                        sum(case when age_days > 90 then balance_amount else 0 end) as over90_amount,
+                        sum(balance_amount) as balance_due_amount
+                    from aged
+                    group by pid
+                    having sum(balance_amount) > 0
+                ),
+                queue as (
+                    select *
+                    from rollup
+                    where past_due_amount > 0
+                )
+                select
+                    p.legacy_pid,
+                    count(*) over() as account_count,
+                    sum(case when q.over90_amount > 0 or q.oldest_open_age_days >= 91 then 1 else 0 end) over() as high_priority_count,
+                    sum(q.balance_due_amount) over() as total_balance_amount,
+                    sum(q.past_due_amount) over() as total_past_due_amount,
+                    sum(q.over90_amount) over() as total_over90_amount
+                from queue q
+                inner join patients p on p.legacy_pid = q.pid
+                order by
+                    q.over90_amount desc,
+                    q.past_due_amount desc,
+                    q.balance_due_amount desc,
+                    q.oldest_open_age_days desc,
+                    p.legacy_pid
+                limit @limit;
+                """;
+            command.Parameters.Add("asOfDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
+            command.Parameters.AddWithValue("limit", boundedLimit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rollups.Add(new CollectionsWorkQueueRollupRow(
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                    AccountCount: Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("account_count"))),
+                    HighPriorityCount: Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("high_priority_count"))),
+                    TotalBalanceAmount: reader.GetDecimal(reader.GetOrdinal("total_balance_amount")),
+                    TotalPastDueAmount: reader.GetDecimal(reader.GetOrdinal("total_past_due_amount")),
+                    TotalOver90Amount: reader.GetDecimal(reader.GetOrdinal("total_over90_amount"))));
+            }
+        }
+
+        var items = new List<CollectionsWorkQueueItem>();
+        foreach (var rollup in rollups)
+        {
+            var billing = await GetForPatientAsync(rollup.LegacyPid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+            if (billing is null || billing.StatementSummary.PastDueAmount <= 0m)
+            {
+                continue;
+            }
+
+            items.Add(BuildCollectionsWorkQueueItem(billing));
+        }
+
+        var totals = rollups.FirstOrDefault();
+        return new CollectionsWorkQueueResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            AccountCount: totals?.AccountCount ?? items.Count,
+            HighPriorityCount: totals?.HighPriorityCount ?? items.Count(item => item.CollectionTier == "High"),
+            TotalBalanceAmount: totals?.TotalBalanceAmount ?? items.Sum(item => item.BalanceDueAmount),
+            TotalPastDueAmount: totals?.TotalPastDueAmount ?? items.Sum(item => item.PastDueAmount),
+            TotalOver90Amount: totals?.TotalOver90Amount ?? items.Sum(item => item.Over90Amount),
+            Items: items);
+    }
+
     public async Task<BillingLineMutationResponse?> CreateLineAsync(
         BillingLineCreateRequest request,
         CancellationToken cancellationToken)
@@ -1433,6 +1568,80 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             DeliveryMethod: NormalizeText(summary.Email) is null ? "Print" : "Email-ready");
     }
 
+    private static CollectionsWorkQueueItem BuildCollectionsWorkQueueItem(PatientBillingResponse billing)
+    {
+        var summary = billing.StatementSummary;
+        var document = billing.StatementDocument;
+        var over90Amount = billing.AgingSummary.Over90Amount;
+
+        return new CollectionsWorkQueueItem(
+            PatientId: billing.PatientId,
+            LegacyPid: billing.LegacyPid,
+            Pubpid: billing.Pubpid,
+            PatientDisplayName: billing.PatientDisplayName,
+            StatementNumber: document.StatementNumber,
+            StatementDate: summary.StatementDate,
+            DueDate: summary.DueDate,
+            BalanceDueAmount: summary.BalanceDueAmount,
+            PastDueAmount: summary.PastDueAmount,
+            Over90Amount: over90Amount,
+            CurrentDueAmount: summary.CurrentDueAmount,
+            OpenEncounterCount: summary.OpenEncounterCount,
+            LedgerEntryCount: summary.LedgerEntryCount,
+            OldestOpenAgeDays: summary.OldestOpenAgeDays,
+            OldestOpenDate: summary.OldestOpenDate,
+            CollectionTier: CollectionTier(summary.OldestOpenAgeDays, over90Amount),
+            RecommendedAction: CollectionRecommendedAction(summary.OldestOpenAgeDays, over90Amount),
+            ContactMethod: CollectionContactMethod(summary.Email, summary.Phone),
+            Email: NormalizeText(summary.Email),
+            Phone: NormalizeText(summary.Phone));
+    }
+
+    private static string CollectionTier(int oldestOpenAgeDays, decimal over90Amount)
+    {
+        if (over90Amount > 0m || oldestOpenAgeDays >= 91)
+        {
+            return "High";
+        }
+
+        if (oldestOpenAgeDays >= 61)
+        {
+            return "Medium";
+        }
+
+        return "Early";
+    }
+
+    private static string CollectionRecommendedAction(int oldestOpenAgeDays, decimal over90Amount)
+    {
+        if (over90Amount > 0m || oldestOpenAgeDays >= 181)
+        {
+            return "Final notice review";
+        }
+
+        if (oldestOpenAgeDays >= 91)
+        {
+            return "Phone outreach";
+        }
+
+        if (oldestOpenAgeDays >= 61)
+        {
+            return "Second reminder";
+        }
+
+        return "First reminder";
+    }
+
+    private static string CollectionContactMethod(string? email, string? phone)
+    {
+        if (NormalizeText(email) is not null)
+        {
+            return "Email-ready";
+        }
+
+        return NormalizeText(phone) is null ? "Print" : "Phone";
+    }
+
     private static BillingStatementLineItem BuildStatementLineItem(int lineNumber, BillingLedgerEntry entry)
     {
         return new BillingStatementLineItem(
@@ -1733,6 +1942,14 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         decimal TotalBalanceAmount,
         decimal TotalPastDueAmount,
         decimal TotalCurrentDueAmount);
+
+    private sealed record CollectionsWorkQueueRollupRow(
+        int LegacyPid,
+        int AccountCount,
+        int HighPriorityCount,
+        decimal TotalBalanceAmount,
+        decimal TotalPastDueAmount,
+        decimal TotalOver90Amount);
 
     private sealed record StatementBatchPackageManifest(
         string DatasetId,

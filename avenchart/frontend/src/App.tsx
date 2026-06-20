@@ -39,6 +39,7 @@ import {
   getPatientChart,
   getPatientBilling,
   getBillingStatementPdfUrl,
+  getCollectionsWorkQueue,
   getStatementBatch,
   getStatementBatchPackageUrl,
   getPatientDocumentContent,
@@ -150,6 +151,8 @@ import {
   type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
   type ClinicalPrescriptionCreateInput,
+  type CollectionsWorkQueueItem,
+  type CollectionsWorkQueueResponse,
   type EncounterCreateInput,
   type EncounterDetail,
   type EncounterSoapNoteCreateInput,
@@ -4705,6 +4708,9 @@ function FeesWorkspace({
   const [statementBatch, setStatementBatch] = useState<StatementBatchResponse | null>(null)
   const [statementBatchStatus, setStatementBatchStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [statementBatchError, setStatementBatchError] = useState<string | null>(null)
+  const [collectionsWorkQueue, setCollectionsWorkQueue] = useState<CollectionsWorkQueueResponse | null>(null)
+  const [collectionsWorkQueueStatus, setCollectionsWorkQueueStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [collectionsWorkQueueError, setCollectionsWorkQueueError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -4722,6 +4728,8 @@ function FeesWorkspace({
     const controller = new AbortController()
     setStatementBatchStatus('loading')
     setStatementBatchError(null)
+    setCollectionsWorkQueueStatus('loading')
+    setCollectionsWorkQueueError(null)
 
     getStatementBatch(5, controller.signal)
       .then((result) => {
@@ -4732,6 +4740,18 @@ function FeesWorkspace({
         if (!controller.signal.aborted) {
           setStatementBatchError(loadError instanceof Error ? loadError.message : 'Statement batch load failed')
           setStatementBatchStatus('error')
+        }
+      })
+
+    getCollectionsWorkQueue(5, controller.signal)
+      .then((result) => {
+        setCollectionsWorkQueue(result)
+        setCollectionsWorkQueueStatus('ready')
+      })
+      .catch((loadError: unknown) => {
+        if (!controller.signal.aborted) {
+          setCollectionsWorkQueueError(loadError instanceof Error ? loadError.message : 'Collections work queue load failed')
+          setCollectionsWorkQueueStatus('error')
         }
       })
 
@@ -5378,6 +5398,13 @@ function FeesWorkspace({
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
+        <CollectionsWorkQueuePanel
+          queue={collectionsWorkQueue}
+          status={collectionsWorkQueueStatus}
+          error={collectionsWorkQueueError}
+          onSelectItem={(item) => onPatientIdChange(item.pubpid)}
+        />
+
         {patientBilling ? (
           <>
             <div className="appointment-banner">
@@ -5632,6 +5659,78 @@ function StatementBatchPanel({
           {status === 'loading' && <div className="timeline-placeholder">Loading statement candidates</div>}
           {status === 'ready' && candidates.length === 0 && (
             <div className="timeline-placeholder">No accounts are ready for statements</div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CollectionsWorkQueuePanel({
+  queue,
+  status,
+  error,
+  onSelectItem,
+}: {
+  queue: CollectionsWorkQueueResponse | null
+  status: 'loading' | 'ready' | 'error'
+  error: string | null
+  onSelectItem: (item: CollectionsWorkQueueItem) => void
+}) {
+  const items = queue?.items ?? []
+
+  return (
+    <section className="info-panel statement-batch-panel collections-work-queue-panel" aria-label="Collections work queue">
+      <div className="panel-heading">
+        <WalletCards size={17} />
+        <h3>Collections Work Queue</h3>
+      </div>
+
+      <div className="statement-batch-body">
+        {status === 'error' && <div className="status-banner error">{error}</div>}
+        <div className="statement-batch-summary">
+          <Field label="Accounts" value={queue?.accountCount ?? (status === 'loading' ? 'Loading' : 0)} />
+          <Field label="High priority" value={queue?.highPriorityCount ?? (status === 'loading' ? 'Loading' : 0)} />
+          <Field label="Past due" value={queue ? formatCurrency(queue.totalPastDueAmount) : 'Loading'} />
+          <Field label="Over 90" value={queue ? formatCurrency(queue.totalOver90Amount) : 'Loading'} />
+          <Field label="As of" value={queue?.asOfDate ?? 'Loading'} />
+        </div>
+
+        <div className="statement-batch-list">
+          {items.map((item) => (
+            <article className="statement-batch-row" key={`${item.pubpid}-${item.statementNumber}`}>
+              <div className="statement-batch-row-main">
+                <div>
+                  <strong>{item.patientDisplayName}</strong>
+                  <span>{item.pubpid} / {item.statementNumber}</span>
+                </div>
+                <div className="statement-batch-actions">
+                  <span className="status-pill">{item.collectionTier}</span>
+                  <button
+                    className="icon-text-button secondary"
+                    type="button"
+                    onClick={() => onSelectItem(item)}
+                  >
+                    <Search size={14} />
+                    Open
+                  </button>
+                </div>
+              </div>
+              <div className="statement-batch-row-grid">
+                <Field label="Action" value={item.recommendedAction} />
+                <Field label="Past due" value={formatCurrency(item.pastDueAmount)} />
+                <Field label="Over 90" value={formatCurrency(item.over90Amount)} />
+                <Field label="Balance" value={formatCurrency(item.balanceDueAmount)} />
+                <Field label="Oldest age" value={`${item.oldestOpenAgeDays} days`} />
+                <Field label="Due date" value={item.dueDate} />
+                <Field label="Contact" value={item.contactMethod} />
+              </div>
+            </article>
+          ))}
+
+          {status === 'loading' && <div className="timeline-placeholder">Loading collections work queue</div>}
+          {status === 'ready' && items.length === 0 && (
+            <div className="timeline-placeholder">No accounts require collections follow-up</div>
           )}
         </div>
       </div>

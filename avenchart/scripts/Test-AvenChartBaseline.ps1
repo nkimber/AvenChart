@@ -2222,6 +2222,34 @@ catch {
     Add-Check -Name "anchor statement batch package export" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -TimeoutSec 20
+    $firstCollectionItem = @($collectionsWorkQueue.items) | Select-Object -First 1
+    $collectionsWorkQueuePassed = $collectionsWorkQueue.asOfDate -eq "2026-06-18" `
+        -and [int]$collectionsWorkQueue.accountCount -gt 0 `
+        -and [int]$collectionsWorkQueue.highPriorityCount -gt 0 `
+        -and [decimal]$collectionsWorkQueue.totalPastDueAmount -gt 0 `
+        -and [decimal]$collectionsWorkQueue.totalOver90Amount -gt 0 `
+        -and @($collectionsWorkQueue.items).Count -eq 5 `
+        -and $null -ne $firstCollectionItem `
+        -and $firstCollectionItem.statementNumber -like "STMT-MOD-PAT-*" `
+        -and $firstCollectionItem.collectionTier -eq "High" `
+        -and $firstCollectionItem.recommendedAction -eq "Final notice review" `
+        -and [decimal]$firstCollectionItem.pastDueAmount -gt 0 `
+        -and [decimal]$firstCollectionItem.over90Amount -gt 0
+    Add-Check -Name "anchor collections work queue" -Result $(if ($collectionsWorkQueuePassed) { "passed" } else { "failed" }) -Details @{
+        asOfDate = $collectionsWorkQueue.asOfDate
+        accountCount = $collectionsWorkQueue.accountCount
+        highPriorityCount = $collectionsWorkQueue.highPriorityCount
+        totalPastDueAmount = $collectionsWorkQueue.totalPastDueAmount
+        totalOver90Amount = $collectionsWorkQueue.totalOver90Amount
+        firstItem = $firstCollectionItem
+    }
+}
+catch {
+    Add-Check -Name "anchor collections work queue" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

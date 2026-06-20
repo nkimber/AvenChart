@@ -930,6 +930,41 @@ export type StatementBatchResponse = {
   candidates: StatementBatchCandidate[]
 }
 
+export type CollectionsWorkQueueItem = {
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  statementNumber: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  over90Amount: number
+  currentDueAmount: number
+  openEncounterCount: number
+  ledgerEntryCount: number
+  oldestOpenAgeDays: number
+  oldestOpenDate: string
+  collectionTier: string
+  recommendedAction: string
+  contactMethod: string
+  email?: string | null
+  phone?: string | null
+}
+
+export type CollectionsWorkQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  accountCount: number
+  highPriorityCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalOver90Amount: number
+  items: CollectionsWorkQueueItem[]
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -2186,6 +2221,17 @@ export async function getStatementBatch(limit = 10, signal?: AbortSignal): Promi
   })
   if (!response.ok) {
     throw new Error(`Statement batch load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getCollectionsWorkQueue(limit = 10, signal?: AbortSignal): Promise<CollectionsWorkQueueResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, {
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Collections work queue load failed with ${response.status}`)
   }
 
   return response.json()
