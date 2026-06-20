@@ -29,7 +29,12 @@ public sealed record AppointmentListItem(
     string? FacilityName,
     int? BillingLocationId,
     string? BillingLocationName,
-    string? Comments);
+    string? Comments,
+    int RecurrenceType,
+    int? RepeatFrequency,
+    int? RepeatUnit,
+    string? RecurrenceEndDate,
+    string RecurrenceLabel);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -56,6 +61,11 @@ public sealed record AppointmentDetail(
     int? BillingLocationId,
     string? BillingLocationName,
     string? Comments,
+    int RecurrenceType,
+    int? RepeatFrequency,
+    int? RepeatUnit,
+    string? RecurrenceEndDate,
+    string RecurrenceLabel,
     string? PatientPurpose);
 
 public sealed record AppointmentCreateRequest(
@@ -69,7 +79,11 @@ public sealed record AppointmentCreateRequest(
     int? BillingLocationId,
     int? CategoryId,
     string? Room,
-    string? Comments);
+    string? Comments,
+    int? RecurrenceType,
+    int? RepeatFrequency,
+    int? RepeatUnit,
+    string? RecurrenceEndDate);
 
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
@@ -82,7 +96,11 @@ public sealed record AppointmentUpdateRequest(
     int? CategoryId,
     string? Room,
     string? Status,
-    string? Comments);
+    string? Comments,
+    int? RecurrenceType,
+    int? RepeatFrequency,
+    int? RepeatUnit,
+    string? RecurrenceEndDate);
 
 public sealed record AppointmentStatusUpdateRequest(
     string Status,

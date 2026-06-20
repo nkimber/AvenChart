@@ -363,7 +363,11 @@ create table appointments (
   title text,
   status text,
   room text,
-  comments text
+  comments text,
+  recurrence_type integer not null default 0,
+  repeat_frequency integer,
+  repeat_unit integer,
+  recurrence_end_date date
 );
 
 create table encounters (
@@ -844,6 +848,10 @@ copyRows('appointments', [
   'status',
   'room',
   'comments',
+  'recurrence_type',
+  'repeat_frequency',
+  'repeat_unit',
+  'recurrence_end_date',
 ], dataset.appointments.map((appointment) => [
   appointment.id,
   appointment.patientId,
@@ -859,6 +867,10 @@ copyRows('appointments', [
   appointment.status,
   appointment.room,
   appointment.comments ?? appointment.homeText ?? `Gold dataset appointment ${appointment.id}`,
+  appointment.recurrenceType ?? 0,
+  appointment.repeatFrequency ?? null,
+  appointment.repeatUnit ?? null,
+  appointment.recurrenceEndDate ?? null,
 ]))
 
 copyRows('encounters', [

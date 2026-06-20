@@ -1005,6 +1005,80 @@ finally {
     }
 }
 
+$appointmentRecurrenceId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Smoke Appointment Recurrence"
+        date = "2026-12-29"
+        startTime = "10:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Repeat"
+        comments = "Smoke recurrence metadata create."
+        recurrenceType = 1
+        repeatFrequency = 1
+        repeatUnit = 1
+        recurrenceEndDate = "2026-12-31"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentRecurrenceId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = 101
+        title = "Smoke Appointment Recurrence Updated"
+        date = "2026-12-29"
+        startTime = "10:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Repeat"
+        status = "-"
+        comments = "Smoke recurrence metadata update."
+        recurrenceType = 1
+        repeatFrequency = 2
+        repeatUnit = 1
+        recurrenceEndDate = "2027-01-28"
+    } | ConvertTo-Json
+    $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentRecurrencePassed = $createdAppointment.recurrenceType -eq 1 `
+        -and $createdAppointment.repeatFrequency -eq 1 `
+        -and $createdAppointment.repeatUnit -eq 1 `
+        -and $createdAppointment.recurrenceEndDate -eq "2026-12-31" `
+        -and $createdAppointment.recurrenceLabel -eq "Every week until 2026-12-31" `
+        -and $updatedAppointment.repeatFrequency -eq 2 `
+        -and $updatedAppointment.repeatUnit -eq 1 `
+        -and $updatedAppointment.recurrenceEndDate -eq "2027-01-28" `
+        -and $updatedAppointment.recurrenceLabel -eq "Every 2 weeks until 2027-01-28" `
+        -and $updatedAppointment.title -eq "Smoke Appointment Recurrence Updated"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentRecurrenceId = $null
+
+    Add-Check -Name "appointment recurrence metadata lifecycle" -Result $(if ($appointmentRecurrencePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        createdLabel = $createdAppointment.recurrenceLabel
+        updatedLabel = $updatedAppointment.recurrenceLabel
+        updatedFrequency = $updatedAppointment.repeatFrequency
+    }
+}
+catch {
+    Add-Check -Name "appointment recurrence metadata lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentRecurrenceId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRecurrenceId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

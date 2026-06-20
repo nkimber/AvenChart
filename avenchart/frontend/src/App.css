@@ -604,6 +604,16 @@
   resize: vertical;
 }
 
+.contact-field.checkbox-field {
+  align-items: center;
+  flex-direction: row;
+  min-height: 38px;
+}
+
+.contact-field.checkbox-field input {
+  min-height: auto;
+}
+
 .contact-toggle-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

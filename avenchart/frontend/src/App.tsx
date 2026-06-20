@@ -3638,6 +3638,14 @@ const appointmentCategoryOptions = [
   { id: 13, label: 'Preventive Care Services' },
 ] as const
 
+const appointmentRepeatUnitOptions = [
+  { id: 0, label: 'Day' },
+  { id: 4, label: 'Workday' },
+  { id: 1, label: 'Week' },
+  { id: 2, label: 'Month' },
+  { id: 3, label: 'Year' },
+] as const
+
 function appointmentCategoryLabel(appointment: Pick<AppointmentListItem, 'categoryId' | 'categoryName'>) {
   return appointment.categoryName ?? appointmentCategoryOptions.find((category) => category.id === appointment.categoryId)?.label ?? 'Category not recorded'
 }
@@ -3700,6 +3708,10 @@ function CalendarWorkspace({
   const [draftFacilityId, setDraftFacilityId] = useState('10')
   const [draftBillingLocationId, setDraftBillingLocationId] = useState('10')
   const [draftComments, setDraftComments] = useState('')
+  const [draftRepeats, setDraftRepeats] = useState(false)
+  const [draftRepeatFrequency, setDraftRepeatFrequency] = useState('1')
+  const [draftRepeatUnit, setDraftRepeatUnit] = useState('1')
+  const [draftRecurrenceEndDate, setDraftRecurrenceEndDate] = useState('2026-12-31')
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editStartTime, setEditStartTime] = useState('')
@@ -3710,6 +3722,10 @@ function CalendarWorkspace({
   const [editFacilityId, setEditFacilityId] = useState('')
   const [editBillingLocationId, setEditBillingLocationId] = useState('')
   const [editComments, setEditComments] = useState('')
+  const [editRepeats, setEditRepeats] = useState(false)
+  const [editRepeatFrequency, setEditRepeatFrequency] = useState('1')
+  const [editRepeatUnit, setEditRepeatUnit] = useState('1')
+  const [editRecurrenceEndDate, setEditRecurrenceEndDate] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -3728,6 +3744,10 @@ function CalendarWorkspace({
     setEditFacilityId(appointmentDetail.facilityId ? String(appointmentDetail.facilityId) : '')
     setEditBillingLocationId(appointmentDetail.billingLocationId ? String(appointmentDetail.billingLocationId) : '')
     setEditComments(appointmentDetail.comments ?? '')
+    setEditRepeats(appointmentDetail.recurrenceType > 0)
+    setEditRepeatFrequency(String(appointmentDetail.repeatFrequency ?? 1))
+    setEditRepeatUnit(String(appointmentDetail.repeatUnit ?? 1))
+    setEditRecurrenceEndDate(appointmentDetail.recurrenceEndDate ?? appointmentDetail.date)
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
@@ -3748,6 +3768,10 @@ function CalendarWorkspace({
         facilityId: numberOrNull(draftFacilityId),
         billingLocationId: numberOrNull(draftBillingLocationId),
         comments: draftComments,
+        recurrenceType: draftRepeats ? 1 : 0,
+        repeatFrequency: draftRepeats ? Number(draftRepeatFrequency) : null,
+        repeatUnit: draftRepeats ? Number(draftRepeatUnit) : null,
+        recurrenceEndDate: draftRepeats ? draftRecurrenceEndDate : null,
       })
       setMutationStatus('saved')
     } catch {
@@ -3831,6 +3855,10 @@ function CalendarWorkspace({
         billingLocationId: numberOrNull(editBillingLocationId),
         status: editStatus,
         comments: editComments,
+        recurrenceType: editRepeats ? 1 : 0,
+        repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
+        repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
+        recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
       })
       setMutationStatus('saved')
     } catch {
@@ -3972,6 +4000,51 @@ function CalendarWorkspace({
                 value={draftComments}
                 onChange={(event) => setDraftComments(event.target.value)}
                 aria-label="New appointment comments"
+              />
+            </label>
+            <label className="contact-field checkbox-field">
+              <input
+                type="checkbox"
+                checked={draftRepeats}
+                onChange={(event) => setDraftRepeats(event.target.checked)}
+                aria-label="New appointment repeats"
+              />
+              <span>Repeats</span>
+            </label>
+            <label className="contact-field">
+              <span>Every</span>
+              <input
+                type="number"
+                min="1"
+                value={draftRepeatFrequency}
+                onChange={(event) => setDraftRepeatFrequency(event.target.value)}
+                aria-label="New appointment repeat frequency"
+                disabled={!draftRepeats}
+              />
+            </label>
+            <label className="contact-field">
+              <span>Repeat unit</span>
+              <select
+                value={draftRepeatUnit}
+                onChange={(event) => setDraftRepeatUnit(event.target.value)}
+                aria-label="New appointment repeat unit"
+                disabled={!draftRepeats}
+              >
+                {appointmentRepeatUnitOptions.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="contact-field">
+              <span>Until</span>
+              <input
+                type="date"
+                value={draftRecurrenceEndDate}
+                onChange={(event) => setDraftRecurrenceEndDate(event.target.value)}
+                aria-label="New appointment recurrence end date"
+                disabled={!draftRepeats}
               />
             </label>
           </div>
@@ -4178,6 +4251,51 @@ function CalendarWorkspace({
                     aria-label="Edit appointment comments"
                   />
                 </label>
+                <label className="contact-field checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={editRepeats}
+                    onChange={(event) => setEditRepeats(event.target.checked)}
+                    aria-label="Edit appointment repeats"
+                  />
+                  <span>Repeats</span>
+                </label>
+                <label className="contact-field">
+                  <span>Every</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editRepeatFrequency}
+                    onChange={(event) => setEditRepeatFrequency(event.target.value)}
+                    aria-label="Edit appointment repeat frequency"
+                    disabled={!editRepeats}
+                  />
+                </label>
+                <label className="contact-field">
+                  <span>Repeat unit</span>
+                  <select
+                    value={editRepeatUnit}
+                    onChange={(event) => setEditRepeatUnit(event.target.value)}
+                    aria-label="Edit appointment repeat unit"
+                    disabled={!editRepeats}
+                  >
+                    {appointmentRepeatUnitOptions.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="contact-field">
+                  <span>Until</span>
+                  <input
+                    type="date"
+                    value={editRecurrenceEndDate}
+                    onChange={(event) => setEditRecurrenceEndDate(event.target.value)}
+                    aria-label="Edit appointment recurrence end date"
+                    disabled={!editRepeats}
+                  />
+                </label>
               </div>
               <div className="contact-actions">
                 <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
@@ -4194,6 +4312,7 @@ function CalendarWorkspace({
                 <Field label="Duration" value={`${appointmentDetail.durationMinutes} minutes`} />
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
+                <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
               </InfoPanel>
 
               <InfoPanel title="Patient" icon={UserRound}>

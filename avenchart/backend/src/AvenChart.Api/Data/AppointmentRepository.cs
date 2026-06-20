@@ -41,6 +41,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.status,
                 a.room,
                 a.comments,
+                a.recurrence_type,
+                a.repeat_frequency,
+                a.repeat_unit,
+                a.recurrence_end_date,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -100,6 +104,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.status,
                 a.room,
                 a.comments,
+                a.recurrence_type,
+                a.repeat_frequency,
+                a.repeat_unit,
+                a.recurrence_end_date,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -120,6 +128,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         {
             return null;
         }
+
+        var recurrenceType = ReadRecurrenceType(reader);
+        var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
+        var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
 
         return new AppointmentDetail(
             Id: reader.GetString(reader.GetOrdinal("id")),
@@ -146,6 +159,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
             BillingLocationName: ReadNullableString(reader, "billing_location_name"),
             Comments: ReadNullableString(reader, "comments"),
+            RecurrenceType: recurrenceType,
+            RepeatFrequency: repeatFrequency,
+            RepeatUnit: repeatUnit,
+            RecurrenceEndDate: recurrenceEndDate,
+            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, recurrenceEndDate),
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
 
@@ -185,7 +203,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 title,
                 status,
                 room,
-                comments
+                comments,
+                recurrence_type,
+                repeat_frequency,
+                repeat_unit,
+                recurrence_end_date
             )
             select
                 @id,
@@ -201,7 +223,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 @title,
                 '-',
                 @room,
-                @comments
+                @comments,
+                @recurrenceType,
+                @repeatFrequency,
+                @repeatUnit,
+                @recurrenceEndDate
             from patient_match
             returning id;
             """;
@@ -218,6 +244,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
         command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
+        AddRecurrenceParameters(command, request.RecurrenceType, request.RepeatFrequency, request.RepeatUnit, request.RecurrenceEndDate);
 
         var insertedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
@@ -271,7 +298,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 title = @title,
                 status = coalesce(@status, status),
                 room = @room,
-                comments = @comments
+                comments = @comments,
+                recurrence_type = @recurrenceType,
+                repeat_frequency = @repeatFrequency,
+                repeat_unit = @repeatUnit,
+                recurrence_end_date = @recurrenceEndDate
             where id = @appointmentId
             returning id;
             """;
@@ -287,6 +318,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("status", NpgsqlDbType.Text).Value = NormalizeText(request.Status) ?? (object)DBNull.Value;
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
         command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
+        AddRecurrenceParameters(command, request.RecurrenceType, request.RepeatFrequency, request.RepeatUnit, request.RecurrenceEndDate);
 
         var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
@@ -356,27 +388,41 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
     }
 
-    private static AppointmentListItem ReadListItem(DbDataReader reader) => new(
-        Id: reader.GetString(reader.GetOrdinal("id")),
-        PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
-        LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
-        Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
-        PatientDisplayName: BuildDisplayName(reader),
-        Date: ReadDate(reader, "appointment_date"),
-        StartTime: ReadTime(reader, "start_time"),
-        DurationMinutes: reader.GetInt32(reader.GetOrdinal("duration_minutes")),
-        Title: ReadNullableString(reader, "title") ?? "Appointment",
-        Status: ReadNullableString(reader, "status"),
-        Room: ReadNullableString(reader, "room"),
-        CategoryId: ReadNullableInt(reader, "category_id"),
-        CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
-        ProviderId: ReadNullableInt(reader, "provider_id"),
-        ProviderName: ReadNullableString(reader, "provider_name"),
-        FacilityId: ReadNullableInt(reader, "facility_id"),
-        FacilityName: ReadNullableString(reader, "facility_name"),
-        BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
-        BillingLocationName: ReadNullableString(reader, "billing_location_name"),
-        Comments: ReadNullableString(reader, "comments"));
+    private static AppointmentListItem ReadListItem(DbDataReader reader)
+    {
+        var categoryId = ReadNullableInt(reader, "category_id");
+        var recurrenceType = ReadRecurrenceType(reader);
+        var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
+        var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
+
+        return new AppointmentListItem(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            PatientDisplayName: BuildDisplayName(reader),
+            Date: ReadDate(reader, "appointment_date"),
+            StartTime: ReadTime(reader, "start_time"),
+            DurationMinutes: reader.GetInt32(reader.GetOrdinal("duration_minutes")),
+            Title: ReadNullableString(reader, "title") ?? "Appointment",
+            Status: ReadNullableString(reader, "status"),
+            Room: ReadNullableString(reader, "room"),
+            CategoryId: categoryId,
+            CategoryName: GetAppointmentCategoryName(categoryId),
+            ProviderId: ReadNullableInt(reader, "provider_id"),
+            ProviderName: ReadNullableString(reader, "provider_name"),
+            FacilityId: ReadNullableInt(reader, "facility_id"),
+            FacilityName: ReadNullableString(reader, "facility_name"),
+            BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
+            BillingLocationName: ReadNullableString(reader, "billing_location_name"),
+            Comments: ReadNullableString(reader, "comments"),
+            RecurrenceType: recurrenceType,
+            RepeatFrequency: repeatFrequency,
+            RepeatUnit: repeatUnit,
+            RecurrenceEndDate: recurrenceEndDate,
+            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, recurrenceEndDate));
+    }
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
     {
@@ -386,6 +432,43 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         null => null,
         _ => $"Category {categoryId.Value}"
     };
+
+    private static void AddRecurrenceParameters(NpgsqlCommand command, int? recurrenceType, int? repeatFrequency, int? repeatUnit, string? recurrenceEndDate)
+    {
+        var normalizedType = recurrenceType.GetValueOrDefault();
+        DateOnly? parsedEndDate = null;
+        if (normalizedType > 0 && DateOnly.TryParse(recurrenceEndDate, out var endDate))
+        {
+            parsedEndDate = endDate;
+        }
+
+        command.Parameters.AddWithValue("recurrenceType", Math.Max(0, normalizedType));
+        command.Parameters.Add("repeatFrequency", NpgsqlDbType.Integer).Value = normalizedType > 0 ? repeatFrequency.GetValueOrDefault(1) : (object)DBNull.Value;
+        command.Parameters.Add("repeatUnit", NpgsqlDbType.Integer).Value = normalizedType > 0 ? repeatUnit.GetValueOrDefault(1) : (object)DBNull.Value;
+        command.Parameters.Add("recurrenceEndDate", NpgsqlDbType.Date).Value = parsedEndDate is null ? DBNull.Value : (object)parsedEndDate.Value;
+    }
+
+    private static int ReadRecurrenceType(DbDataReader reader) => ReadNullableInt(reader, "recurrence_type").GetValueOrDefault();
+
+    private static string BuildRecurrenceLabel(int recurrenceType, int? repeatFrequency, int? repeatUnit, string? recurrenceEndDate)
+    {
+        if (recurrenceType <= 0)
+        {
+            return "Does not repeat";
+        }
+
+        var frequency = Math.Max(1, repeatFrequency.GetValueOrDefault(1));
+        var unit = repeatUnit switch
+        {
+            0 => frequency == 1 ? "day" : "days",
+            4 => frequency == 1 ? "workday" : "workdays",
+            2 => frequency == 1 ? "month" : "months",
+            3 => frequency == 1 ? "year" : "years",
+            _ => frequency == 1 ? "week" : "weeks"
+        };
+        var cadence = frequency == 1 ? $"Every {unit}" : $"Every {frequency} {unit}";
+        return string.IsNullOrWhiteSpace(recurrenceEndDate) ? cadence : $"{cadence} until {recurrenceEndDate}";
+    }
 
     private static string? Normalize(string? value)
     {
@@ -428,6 +511,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static string? ReadNullableDate(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

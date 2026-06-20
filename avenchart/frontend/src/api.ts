@@ -138,6 +138,11 @@ export type AppointmentListItem = {
   billingLocationId?: number | null
   billingLocationName?: string | null
   comments?: string | null
+  recurrenceType: number
+  repeatFrequency?: number | null
+  repeatUnit?: number | null
+  recurrenceEndDate?: string | null
+  recurrenceLabel: string
 }
 
 export type AppointmentDetail = AppointmentListItem & {
@@ -160,6 +165,10 @@ export type AppointmentCreateInput = {
   categoryId?: number | null
   room?: string | null
   comments?: string | null
+  recurrenceType?: number | null
+  repeatFrequency?: number | null
+  repeatUnit?: number | null
+  recurrenceEndDate?: string | null
 }
 
 export type AppointmentUpdateInput = {
@@ -174,6 +183,10 @@ export type AppointmentUpdateInput = {
   room?: string | null
   status?: string | null
   comments?: string | null
+  recurrenceType?: number | null
+  repeatFrequency?: number | null
+  repeatUnit?: number | null
+  recurrenceEndDate?: string | null
 }
 
 export type AppointmentStatusUpdate = {
