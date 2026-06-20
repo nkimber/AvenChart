@@ -109,6 +109,44 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
     }
 
+    public async Task<PatientMessageMutationResponse?> UpdateContentAsync(
+        string messageId,
+        PatientMessageContentUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)
+            || string.IsNullOrWhiteSpace(request.Title)
+            || string.IsNullOrWhiteSpace(request.Body))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update messages
+                set title = @title,
+                    body = @body
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", messageId);
+            command.Parameters.AddWithValue("title", request.Title.Trim());
+            command.Parameters.AddWithValue("body", request.Body.Trim());
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
     public async Task<PatientMessageMutationResponse?> UpdateAssignmentAsync(
         string messageId,
         PatientMessageAssignmentUpdateRequest request,

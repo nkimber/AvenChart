@@ -1479,11 +1479,24 @@ try {
     $patientMessageMutationId = $createdMessage.id
     $createdVisible = $createdMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
 
+    $editedMessageTitle = "Smoke Patient Message Edited"
+    $editedMessageBody = "Edited by the smoke patient-message content check."
+    $contentBody = @{
+        title = $editedMessageTitle
+        body = $editedMessageBody
+    } | ConvertTo-Json
+    $editedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content" -Method Put -ContentType "application/json" -Body $contentBody -TimeoutSec 20
+    $editedVisible = $editedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.body -eq $editedMessageBody -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
+    Add-Check -Name "patient message content update" -Result $(if ($null -ne $editedVisible) { "passed" } else { "failed" }) -Details @{
+        messageId = $patientMessageMutationId
+        editedVisible = $editedVisible
+    }
+
     $assignmentBody = @{
         assignedTo = "billing"
     } | ConvertTo-Json
     $assignedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/assignment" -Method Put -ContentType "application/json" -Body $assignmentBody -TimeoutSec 20
-    $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "billing" } | Select-Object -First 1
+    $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "billing" } | Select-Object -First 1
     Add-Check -Name "patient message assignment update" -Result $(if ($null -ne $assignedVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
         assignedVisible = $assignedVisible
@@ -1494,11 +1507,11 @@ try {
         body = "Closed by the smoke patient-message mutation check."
     } | ConvertTo-Json
     $closedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/status" -Method Put -ContentType "application/json" -Body $closeBody -TimeoutSec 20
-    $closedVisible = $closedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "Done" -and $_.body -eq "Closed by the smoke patient-message mutation check." } | Select-Object -First 1
+    $closedVisible = $closedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "Done" -and $_.body -eq "Closed by the smoke patient-message mutation check." } | Select-Object -First 1
 
     $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -TimeoutSec 20
-    $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle } | Select-Object -First 1
-    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
+    $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle } | Select-Object -First 1
+    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $patientMessageMutationId = $null
@@ -1506,6 +1519,7 @@ try {
     Add-Check -Name "patient message mutation lifecycle" -Result $(if ($patientMessageMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdMessage.id
         createdVisible = $createdVisible
+        editedVisible = $editedVisible
         assignedVisible = $assignedVisible
         closedVisible = $closedVisible
         archivedVisible = $archivedVisible
