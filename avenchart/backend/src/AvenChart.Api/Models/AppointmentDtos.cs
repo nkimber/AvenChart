@@ -23,7 +23,9 @@ public sealed record AppointmentListItem(
     string? Room,
     int? CategoryId,
     string? CategoryName,
+    int? ProviderId,
     string? ProviderName,
+    int? FacilityId,
     string? FacilityName);
 
 public sealed record AppointmentDetail(
@@ -44,7 +46,9 @@ public sealed record AppointmentDetail(
     string? Room,
     int? CategoryId,
     string? CategoryName,
+    int? ProviderId,
     string? ProviderName,
+    int? FacilityId,
     string? FacilityName,
     string? PatientPurpose);
 

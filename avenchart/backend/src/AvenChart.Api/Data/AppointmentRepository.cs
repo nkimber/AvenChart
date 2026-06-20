@@ -40,7 +40,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.title,
                 a.status,
                 a.room,
+                a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                a.facility_id,
                 f.name as facility_name
             from appointments a
             join patients p on p.legacy_pid = a.pid
@@ -93,7 +95,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.title,
                 a.status,
                 a.room,
+                a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                a.facility_id,
                 f.name as facility_name
             from appointments a
             join patients p on p.legacy_pid = a.pid
@@ -127,7 +131,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             Room: ReadNullableString(reader, "room"),
             CategoryId: ReadNullableInt(reader, "category_id"),
             CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
+            ProviderId: ReadNullableInt(reader, "provider_id"),
             ProviderName: ReadNullableString(reader, "provider_name"),
+            FacilityId: ReadNullableInt(reader, "facility_id"),
             FacilityName: ReadNullableString(reader, "facility_name"),
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
@@ -343,7 +349,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         Room: ReadNullableString(reader, "room"),
         CategoryId: ReadNullableInt(reader, "category_id"),
         CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
+        ProviderId: ReadNullableInt(reader, "provider_id"),
         ProviderName: ReadNullableString(reader, "provider_name"),
+        FacilityId: ReadNullableInt(reader, "facility_id"),
         FacilityName: ReadNullableString(reader, "facility_name"));
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch

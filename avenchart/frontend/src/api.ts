@@ -131,7 +131,9 @@ export type AppointmentListItem = {
   room?: string | null
   categoryId?: number | null
   categoryName?: string | null
+  providerId?: number | null
   providerName?: string | null
+  facilityId?: number | null
   facilityName?: string | null
 }
 
