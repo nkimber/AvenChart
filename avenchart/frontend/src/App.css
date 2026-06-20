@@ -587,7 +587,8 @@
 }
 
 .contact-field input,
-.contact-field select {
+.contact-field select,
+.contact-field textarea {
   min-height: 38px;
   border: 1px solid #c7d4db;
   border-radius: 7px;
@@ -596,6 +597,11 @@
   padding: 0 10px;
   font: inherit;
   text-transform: none;
+}
+
+.contact-field textarea {
+  padding-top: 8px;
+  resize: vertical;
 }
 
 .contact-toggle-row {

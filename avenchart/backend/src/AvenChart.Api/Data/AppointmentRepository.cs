@@ -40,6 +40,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.title,
                 a.status,
                 a.room,
+                a.comments,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -98,6 +99,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.title,
                 a.status,
                 a.room,
+                a.comments,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -143,6 +145,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             FacilityName: ReadNullableString(reader, "facility_name"),
             BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
             BillingLocationName: ReadNullableString(reader, "billing_location_name"),
+            Comments: ReadNullableString(reader, "comments"),
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
 
@@ -181,7 +184,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 category_id,
                 title,
                 status,
-                room
+                room,
+                comments
             )
             select
                 @id,
@@ -196,7 +200,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 coalesce(@categoryId, 9),
                 @title,
                 '-',
-                @room
+                @room,
+                @comments
             from patient_match
             returning id;
             """;
@@ -212,6 +217,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("categoryId", NpgsqlDbType.Integer).Value = request.CategoryId is null ? DBNull.Value : request.CategoryId.Value;
         command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
+        command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
 
         var insertedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
@@ -264,7 +270,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 category_id = coalesce(@categoryId, category_id),
                 title = @title,
                 status = coalesce(@status, status),
-                room = @room
+                room = @room,
+                comments = @comments
             where id = @appointmentId
             returning id;
             """;
@@ -279,6 +286,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
         command.Parameters.Add("status", NpgsqlDbType.Text).Value = NormalizeText(request.Status) ?? (object)DBNull.Value;
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
+        command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
 
         var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
@@ -367,7 +375,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         FacilityId: ReadNullableInt(reader, "facility_id"),
         FacilityName: ReadNullableString(reader, "facility_name"),
         BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
-        BillingLocationName: ReadNullableString(reader, "billing_location_name"));
+        BillingLocationName: ReadNullableString(reader, "billing_location_name"),
+        Comments: ReadNullableString(reader, "comments"));
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
     {

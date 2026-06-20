@@ -362,7 +362,8 @@ create table appointments (
   category_id integer,
   title text,
   status text,
-  room text
+  room text,
+  comments text
 );
 
 create table encounters (
@@ -842,6 +843,7 @@ copyRows('appointments', [
   'title',
   'status',
   'room',
+  'comments',
 ], dataset.appointments.map((appointment) => [
   appointment.id,
   appointment.patientId,
@@ -856,6 +858,7 @@ copyRows('appointments', [
   appointment.title,
   appointment.status,
   appointment.room,
+  appointment.comments ?? appointment.homeText ?? `Gold dataset appointment ${appointment.id}`,
 ]))
 
 copyRows('encounters', [

@@ -28,7 +28,8 @@ public sealed record AppointmentListItem(
     int? FacilityId,
     string? FacilityName,
     int? BillingLocationId,
-    string? BillingLocationName);
+    string? BillingLocationName,
+    string? Comments);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -54,6 +55,7 @@ public sealed record AppointmentDetail(
     string? FacilityName,
     int? BillingLocationId,
     string? BillingLocationName,
+    string? Comments,
     string? PatientPurpose);
 
 public sealed record AppointmentCreateRequest(
@@ -66,7 +68,8 @@ public sealed record AppointmentCreateRequest(
     int? FacilityId,
     int? BillingLocationId,
     int? CategoryId,
-    string? Room);
+    string? Room,
+    string? Comments);
 
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
@@ -78,7 +81,8 @@ public sealed record AppointmentUpdateRequest(
     int? BillingLocationId,
     int? CategoryId,
     string? Room,
-    string? Status);
+    string? Status,
+    string? Comments);
 
 public sealed record AppointmentStatusUpdateRequest(
     string Status,

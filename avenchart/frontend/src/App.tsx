@@ -3699,6 +3699,7 @@ function CalendarWorkspace({
   const [draftProviderId, setDraftProviderId] = useState('')
   const [draftFacilityId, setDraftFacilityId] = useState('10')
   const [draftBillingLocationId, setDraftBillingLocationId] = useState('10')
+  const [draftComments, setDraftComments] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editStartTime, setEditStartTime] = useState('')
@@ -3708,6 +3709,7 @@ function CalendarWorkspace({
   const [editProviderId, setEditProviderId] = useState('')
   const [editFacilityId, setEditFacilityId] = useState('')
   const [editBillingLocationId, setEditBillingLocationId] = useState('')
+  const [editComments, setEditComments] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -3725,6 +3727,7 @@ function CalendarWorkspace({
     setEditProviderId(appointmentDetail.providerId ? String(appointmentDetail.providerId) : '')
     setEditFacilityId(appointmentDetail.facilityId ? String(appointmentDetail.facilityId) : '')
     setEditBillingLocationId(appointmentDetail.billingLocationId ? String(appointmentDetail.billingLocationId) : '')
+    setEditComments(appointmentDetail.comments ?? '')
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
@@ -3744,6 +3747,7 @@ function CalendarWorkspace({
         providerId: numberOrNull(draftProviderId),
         facilityId: numberOrNull(draftFacilityId),
         billingLocationId: numberOrNull(draftBillingLocationId),
+        comments: draftComments,
       })
       setMutationStatus('saved')
     } catch {
@@ -3826,6 +3830,7 @@ function CalendarWorkspace({
         facilityId: numberOrNull(editFacilityId),
         billingLocationId: numberOrNull(editBillingLocationId),
         status: editStatus,
+        comments: editComments,
       })
       setMutationStatus('saved')
     } catch {
@@ -3959,6 +3964,15 @@ function CalendarWorkspace({
             <label className="contact-field">
               <span>Room</span>
               <input value={draftRoom} onChange={(event) => setDraftRoom(event.target.value)} aria-label="New appointment room" />
+            </label>
+            <label className="contact-field">
+              <span>Comments</span>
+              <textarea
+                rows={2}
+                value={draftComments}
+                onChange={(event) => setDraftComments(event.target.value)}
+                aria-label="New appointment comments"
+              />
             </label>
           </div>
           <div className="contact-actions">
@@ -4155,6 +4169,15 @@ function CalendarWorkspace({
                   <span>Room</span>
                   <input value={editRoom} onChange={(event) => setEditRoom(event.target.value)} aria-label="Edit appointment room" />
                 </label>
+                <label className="contact-field">
+                  <span>Comments</span>
+                  <textarea
+                    rows={2}
+                    value={editComments}
+                    onChange={(event) => setEditComments(event.target.value)}
+                    aria-label="Edit appointment comments"
+                  />
+                </label>
               </div>
               <div className="contact-actions">
                 <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
@@ -4170,6 +4193,7 @@ function CalendarWorkspace({
                 <Field label="Start time" value={appointmentDetail.startTime} />
                 <Field label="Duration" value={`${appointmentDetail.durationMinutes} minutes`} />
                 <Field label="Room" value={appointmentDetail.room} />
+                <Field label="Comments" value={appointmentDetail.comments} />
               </InfoPanel>
 
               <InfoPanel title="Patient" icon={UserRound}>

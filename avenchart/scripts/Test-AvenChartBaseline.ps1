@@ -941,6 +941,70 @@ finally {
     }
 }
 
+$appointmentCommentsId = $null
+try {
+    $initialComments = "Smoke scheduling comments for the appointment note lifecycle."
+    $updatedComments = "Updated smoke scheduling comments with referral packet reminder."
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Smoke Appointment Comments"
+        date = "2026-12-24"
+        startTime = "08:30"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Comments"
+        comments = $initialComments
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentCommentsId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = 101
+        title = "Smoke Appointment Comments Updated"
+        date = "2026-12-24"
+        startTime = "08:30"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Comments"
+        status = "-"
+        comments = $updatedComments
+    } | ConvertTo-Json
+    $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentCommentsPassed = $createdAppointment.comments -eq $initialComments `
+        -and $updatedAppointment.comments -eq $updatedComments `
+        -and $updatedAppointment.title -eq "Smoke Appointment Comments Updated" `
+        -and $updatedAppointment.date -eq "2026-12-24" `
+        -and $updatedAppointment.startTime -eq "08:30" `
+        -and $updatedAppointment.room -eq "Comments"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentCommentsId = $null
+
+    Add-Check -Name "appointment comments lifecycle" -Result $(if ($appointmentCommentsPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        initialComments = $createdAppointment.comments
+        updatedComments = $updatedAppointment.comments
+        title = $updatedAppointment.title
+    }
+}
+catch {
+    Add-Check -Name "appointment comments lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentCommentsId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCommentsId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
