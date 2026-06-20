@@ -1192,6 +1192,8 @@ try {
     $createdReplaceDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createReplaceDocumentBody -TimeoutSec 20
     $patientDocumentContentReplaceId = $createdReplaceDocument.id
     $createdReplaceVisible = $createdReplaceDocument.detail.documents | Where-Object { $_.name -eq $replaceDocumentName -and $_.contentPreview -and $_.contentPreview.Contains($replaceDocumentOriginalBody) } | Select-Object -First 1
+    $createdReplaceContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/content" -Method Get -TimeoutSec 20
+    Start-Sleep -Seconds 1
 
     $replaceContentBody = @{
         fileName = $replaceDocumentFileName
@@ -1200,6 +1202,20 @@ try {
     $replacedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/content" -Method Put -ContentType "application/json" -Body $replaceContentBody -TimeoutSec 20
     $replacedVisible = $replacedDocument.detail.documents | Where-Object { $_.name -eq $replaceDocumentName -and $_.fileName -eq $replaceDocumentFileName -and $_.contentPreview -and $_.contentPreview.Contains($replaceDocumentUpdatedBody) } | Select-Object -First 1
     $replacedContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentContentReplaceId/content" -Method Get -TimeoutSec 20
+    $patientDocumentReplacementRevisionPassed = $null -ne $createdReplaceContent `
+        -and $null -ne $replacedContent `
+        -and $createdReplaceContent.currentVersion -eq 1 `
+        -and $replacedContent.currentVersion -eq 1 `
+        -and $replacedContent.versionLabel -eq "Version 1" `
+        -and $replacedContent.versionStatus -eq "Current version" `
+        -and $replacedContent.versionHistoryCount -eq 1 `
+        -and -not $replacedContent.hasPriorVersions `
+        -and $createdReplaceContent.revisionHash -eq $createdReplaceContent.hash `
+        -and $replacedContent.revisionHash -eq $replacedContent.hash `
+        -and $replacedContent.hash -ne $createdReplaceContent.hash `
+        -and $replacedContent.revisionAt -ne $createdReplaceContent.revisionAt `
+        -and $replacedContent.content.Contains($replaceDocumentUpdatedBody) `
+        -and -not $replacedContent.content.Contains($replaceDocumentOriginalBody)
 
     $replaceDownloadClient = [System.Net.Http.HttpClient]::new()
     try {
@@ -1238,9 +1254,20 @@ try {
         downloadContentType = $replaceDownloadContentType
         archivedVisible = $archivedReplacedVisible
     }
+    Add-Check -Name "patient document replacement revision lifecycle" -Result $(if ($patientDocumentReplacementRevisionPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdReplaceDocument.id
+        createdRevisionAt = $createdReplaceContent.revisionAt
+        createdRevisionHash = $createdReplaceContent.revisionHash
+        replacedRevisionAt = $replacedContent.revisionAt
+        replacedRevisionHash = $replacedContent.revisionHash
+        replacedVersionLabel = $replacedContent.versionLabel
+        replacedVersionHistoryCount = $replacedContent.versionHistoryCount
+        replacedHasPriorVersions = $replacedContent.hasPriorVersions
+    }
 }
 catch {
     Add-Check -Name "patient document content replacement lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "patient document replacement revision lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $patientDocumentContentReplaceId) {
