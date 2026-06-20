@@ -9082,6 +9082,19 @@ function DocumentsWorkspace({
                         <strong>{viewedDocument.url}</strong>
                         <span>{viewedDocument.content}</span>
                       </div>
+                    ) : viewedDocument.previewKind === 'image' && viewedDocument.contentBase64 ? (
+                      <div className="document-image-preview">
+                        <img
+                          alt={viewedDocument.name}
+                          className="document-inline-image-preview"
+                          src={`data:${viewedDocument.mimetype || 'application/octet-stream'};base64,${viewedDocument.contentBase64}`}
+                        />
+                        <div className="document-image-caption">
+                          <strong>{viewedDocument.fileName}</strong>
+                          <span>{viewedDocument.previewStatus}</span>
+                          <span>{formatBytes(viewedDocument.sizeBytes)} stored as {viewedDocument.mimetype}</span>
+                        </div>
+                      </div>
                     ) : viewedDocument.isBinary ? (
                       <div className="document-content-block">
                         <strong>{viewedDocument.fileName}</strong>

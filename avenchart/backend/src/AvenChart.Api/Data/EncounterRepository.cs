@@ -1408,10 +1408,10 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         {
             return new EncounterDocumentPreviewInfo(
                 PreviewKind: "image",
-                PreviewStatus: "Image preview pending",
+                PreviewStatus: "Inline image preview",
                 ThumbnailLabel: "IMG",
                 ThumbnailText: normalizedFileName.Length == 0 ? "Image document" : TrimPreviewText(normalizedFileName),
-                CanPreviewInline: false,
+                CanPreviewInline: true,
                 CanDownload: true);
         }
 

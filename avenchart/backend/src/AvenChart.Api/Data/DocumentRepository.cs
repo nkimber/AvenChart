@@ -825,10 +825,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         {
             return new DocumentPreviewInfo(
                 PreviewKind: "image",
-                PreviewStatus: "Image preview pending",
+                PreviewStatus: "Inline image preview",
                 ThumbnailLabel: "IMG",
                 ThumbnailText: TrimThumbnailText(fileName) ?? "Image document",
-                CanPreviewInline: false,
+                CanPreviewInline: true,
                 CanDownload: true);
         }
 

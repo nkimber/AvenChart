@@ -1219,6 +1219,37 @@
   white-space: pre-wrap;
 }
 
+.document-image-preview {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  min-width: 0;
+}
+
+.document-inline-image-preview {
+  background: #ffffff;
+  border: 1px solid #dce7eb;
+  border-radius: 7px;
+  display: block;
+  max-height: 320px;
+  max-width: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+
+.document-image-caption {
+  color: #526879;
+  display: grid;
+  font-size: 12px;
+  gap: 3px;
+  line-height: 1.4;
+}
+
+.document-image-caption strong {
+  color: #1d2a35;
+  font-size: 13px;
+}
+
 .document-list-body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

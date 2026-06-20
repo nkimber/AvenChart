@@ -2516,6 +2516,79 @@ finally {
     }
 }
 
+$patientImageDocumentPreviewId = $null
+try {
+    $imageDocumentName = "Smoke Image Patient Document.svg"
+    $imageDocumentBody = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect width="64" height="40" fill="#ffffff"/><path d="M8 28l10-10 8 7 9-12 21 15H8z" fill="#32746d"/><circle cx="48" cy="11" r="5" fill="#f2b84b"/></svg>'
+    $imageDocumentBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($imageDocumentBody))
+    $createImageDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $imageDocumentName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        fileName = $imageDocumentName
+        mimetype = "image/svg+xml"
+        contentBase64 = $imageDocumentBase64
+        notes = "Created by the smoke image patient-document preview check."
+    } | ConvertTo-Json
+    $createdImageDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/binary" -Method Post -ContentType "application/json" -Body $createImageDocumentBody -TimeoutSec 20
+    $patientImageDocumentPreviewId = $createdImageDocument.id
+    $createdImageVisible = $createdImageDocument.detail.documents | Where-Object {
+        $_.name -eq $imageDocumentName `
+            -and $_.mimetype -eq "image/svg+xml" `
+            -and $_.previewKind -eq "image" `
+            -and $_.previewStatus -eq "Inline image preview" `
+            -and $_.thumbnailLabel -eq "IMG" `
+            -and $_.canPreviewInline
+    } | Select-Object -First 1
+
+    $imageContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId/content" -Method Get -TimeoutSec 20
+    $imageDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $imageDownload = $imageDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId/download").GetAwaiter().GetResult()
+        $imageDownloadBytes = $imageDownload.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $imageDownloadContentType = $imageDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $imageDownloadClient.Dispose()
+    }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientImageDocumentPreviewId = $null
+
+    $patientImageDocumentPreviewPassed = $null -ne $createdImageVisible `
+        -and $imageContent.name -eq $imageDocumentName `
+        -and $imageContent.previewKind -eq "image" `
+        -and $imageContent.previewStatus -eq "Inline image preview" `
+        -and $imageContent.canPreviewInline `
+        -and $imageContent.contentBase64 -eq $imageDocumentBase64 `
+        -and $imageDownload.IsSuccessStatusCode `
+        -and $imageDownloadContentType -like "image/svg+xml*" `
+        -and [Convert]::ToBase64String($imageDownloadBytes) -eq $imageDocumentBase64
+
+    Add-Check -Name "patient image document preview lifecycle" -Result $(if ($patientImageDocumentPreviewPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdImageDocument.id
+        createdVisible = $createdImageVisible
+        contentPreviewKind = $imageContent.previewKind
+        contentCanPreviewInline = $imageContent.canPreviewInline
+        downloadStatus = [int]$imageDownload.StatusCode
+        downloadContentType = $imageDownloadContentType
+    }
+}
+catch {
+    Add-Check -Name "patient image document preview lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientImageDocumentPreviewId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientImageDocumentPreviewId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientExternalLinkDocumentMutationId = $null
 try {
     $externalLinkDocumentName = "Smoke External Link Patient Document"
