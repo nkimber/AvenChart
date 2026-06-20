@@ -9077,6 +9077,15 @@ function DocumentsWorkspace({
                       <Field label="Review status" value={viewedDocument.reviewStatus} />
                       <Field label="Reviewed by" value={viewedDocument.reviewedBy} />
                     </div>
+                    <div className="document-lifecycle-readiness" aria-label={`Lifecycle for ${viewedDocument.name}`}>
+                      {(viewedDocument.lifecycleEvents ?? []).map((event) => (
+                        <div className="document-lifecycle-event" key={event.code}>
+                          <strong>{event.label}</strong>
+                          <span>{event.occurredAt || 'Current state'}</span>
+                          <span>{event.actor ? `By ${event.actor}` : event.detail}</span>
+                        </div>
+                      ))}
+                    </div>
                     {viewedDocument.storageMethod === 'web_url' && viewedDocument.url ? (
                       <div className="document-content-block">
                         <strong>{viewedDocument.url}</strong>
@@ -10030,6 +10039,15 @@ function DocumentItem({
         <span>{document.versionLabel || 'Version 1'} / {document.versionStatus || 'Current version'}</span>
         <span>{document.revisionAt || document.uploadedAt}</span>
         <span>{document.hasPriorVersions ? `${document.versionHistoryCount} versions` : 'No prior versions'}</span>
+      </div>
+      <div className="document-lifecycle-readiness" aria-label={`Lifecycle for ${document.name}`}>
+        {(document.lifecycleEvents ?? []).map((event) => (
+          <div className="document-lifecycle-event" key={event.code}>
+            <strong>{event.label}</strong>
+            <span>{event.occurredAt || 'Current state'}</span>
+            <span>{event.actor ? `By ${event.actor}` : event.detail}</span>
+          </div>
+        ))}
       </div>
       <div className="document-meta-grid">
         <span>{document.docDate}</span>

@@ -635,6 +635,15 @@ export type PatientDocumentItem = {
   thumbnailDataUri?: string | null
   canPreviewInline: boolean
   canDownload: boolean
+  lifecycleEvents: PatientDocumentLifecycleEvent[]
+}
+
+export type PatientDocumentLifecycleEvent = {
+  code: string
+  label: string
+  occurredAt?: string | null
+  actor?: string | null
+  detail: string
 }
 
 export type PatientDocumentsResponse = {
@@ -734,6 +743,7 @@ export type PatientDocumentContentResponse = {
   thumbnailText: string
   canPreviewInline: boolean
   canDownload: boolean
+  lifecycleEvents: PatientDocumentLifecycleEvent[]
 }
 
 export type PatientDocumentSignInput = {

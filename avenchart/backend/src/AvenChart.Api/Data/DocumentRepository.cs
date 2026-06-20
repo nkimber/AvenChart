@@ -327,6 +327,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
+              deleted,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               coalesce(content, '') as content, content_bytes
             from patient_documents
@@ -356,6 +357,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var pages = ReadNullableInt32(reader, "pages");
         var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
         var revisionHash = ReadNullableString(reader, "hash");
+        var reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
+        var reviewedBy = ReadNullableString(reader, "reviewed_by");
+        var reviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
+        var deleted = reader.GetInt32(reader.GetOrdinal("deleted"));
         var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, content);
 
         return new PatientDocumentContentResponse(
@@ -385,9 +390,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Hash: revisionHash,
             DocumentationOf: ReadNullableString(reader, "documentation_of"),
             Notes: ReadNullableString(reader, "notes"),
-            ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
-            ReviewedBy: ReadNullableString(reader, "reviewed_by"),
-            ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
+            ReviewStatus: reviewStatus,
+            ReviewedBy: reviewedBy,
+            ReviewedAt: reviewedAt,
             Content: content,
             ContentBase64: contentBase64,
             IsBinary: isBinary,
@@ -396,7 +401,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             ThumbnailLabel: previewInfo.ThumbnailLabel,
             ThumbnailText: previewInfo.ThumbnailText,
             CanPreviewInline: previewInfo.CanPreviewInline,
-            CanDownload: previewInfo.CanDownload);
+            CanDownload: previewInfo.CanDownload,
+            LifecycleEvents: BuildDocumentLifecycleEvents(
+                uploadedAt,
+                uploadedAt,
+                reviewStatus,
+                reviewedBy,
+                reviewedAt,
+                deleted,
+                revisionHash));
     }
 
     public async Task<PatientDocumentMutationResponse?> UpdateMetadataAsync(
@@ -738,6 +751,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
             var contentBytes = reader.IsDBNull(contentBytesOrdinal) ? null : (byte[])reader.GetValue(contentBytesOrdinal);
             var thumbnailDataUri = BuildThumbnailDataUri(mimetype, contentBytes);
+            var reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
+            var reviewedBy = ReadNullableString(reader, "reviewed_by");
+            var reviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
+            var deleted = reader.GetInt32(reader.GetOrdinal("deleted"));
 
             items.Add(new PatientDocumentItem(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
@@ -766,10 +783,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Hash: revisionHash,
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
-                Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),
-                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
-                ReviewedBy: ReadNullableString(reader, "reviewed_by"),
-                ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
+                Deleted: deleted,
+                ReviewStatus: reviewStatus,
+                ReviewedBy: reviewedBy,
+                ReviewedAt: reviewedAt,
                 ContentPreview: contentPreview,
                 PreviewKind: previewInfo.PreviewKind,
                 PreviewStatus: previewInfo.PreviewStatus,
@@ -777,10 +794,85 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 ThumbnailText: previewInfo.ThumbnailText,
                 ThumbnailDataUri: thumbnailDataUri,
                 CanPreviewInline: previewInfo.CanPreviewInline,
-                CanDownload: previewInfo.CanDownload));
+                CanDownload: previewInfo.CanDownload,
+                LifecycleEvents: BuildDocumentLifecycleEvents(
+                    uploadedAt,
+                    uploadedAt,
+                    reviewStatus,
+                    reviewedBy,
+                    reviewedAt,
+                    deleted,
+                    revisionHash)));
         }
 
         return items;
+    }
+
+    private static IReadOnlyList<PatientDocumentLifecycleEvent> BuildDocumentLifecycleEvents(
+        string uploadedAt,
+        string revisionAt,
+        string reviewStatus,
+        string? reviewedBy,
+        string? reviewedAt,
+        int deleted,
+        string? revisionHash)
+    {
+        var normalizedReviewStatus = (NormalizeText(reviewStatus) ?? string.Empty).ToLowerInvariant();
+        PatientDocumentLifecycleEvent reviewEvent = normalizedReviewStatus switch
+        {
+            "approved" => new PatientDocumentLifecycleEvent(
+                Code: "review-approved",
+                Label: "Review approved",
+                OccurredAt: reviewedAt,
+                Actor: NormalizeText(reviewedBy),
+                Detail: "Document approved"),
+            "denied" => new PatientDocumentLifecycleEvent(
+                Code: "review-denied",
+                Label: "Review denied",
+                OccurredAt: reviewedAt,
+                Actor: NormalizeText(reviewedBy),
+                Detail: "Document denied"),
+            _ => new PatientDocumentLifecycleEvent(
+                Code: "review-pending",
+                Label: "Review pending",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Awaiting review")
+        };
+
+        var archiveEvent = deleted == 0
+            ? new PatientDocumentLifecycleEvent(
+                Code: "active",
+                Label: "Active",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Visible in active patient documents")
+            : new PatientDocumentLifecycleEvent(
+                Code: "archived",
+                Label: "Archived",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Hidden from active patient documents");
+
+        return
+        [
+            new PatientDocumentLifecycleEvent(
+                Code: "filed",
+                Label: "Filed",
+                OccurredAt: uploadedAt,
+                Actor: "admin",
+                Detail: "Filed to patient documents"),
+            new PatientDocumentLifecycleEvent(
+                Code: "current-version",
+                Label: "Current version",
+                OccurredAt: revisionAt,
+                Actor: null,
+                Detail: NormalizeText(revisionHash) is { } hash
+                    ? $"Version 1 / {hash}"
+                    : "Version 1"),
+            reviewEvent,
+            archiveEvent
+        ];
     }
 
     private static DocumentPreviewInfo BuildPreviewInfo(

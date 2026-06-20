@@ -2447,6 +2447,81 @@ finally {
     }
 }
 
+$patientDocumentLifecycleId = $null
+try {
+    $lifecycleDocumentName = "Smoke Lifecycle Patient Document"
+    $lifecycleDocumentBody = "Created by the smoke patient-document lifecycle timeline check."
+    $createLifecycleDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $lifecycleDocumentName
+        docDate = "2026-06-19"
+        encounter = 1000013
+        content = $lifecycleDocumentBody
+        notes = "Created by the smoke patient-document lifecycle timeline check."
+    } | ConvertTo-Json
+    $createdLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents" -Method Post -ContentType "application/json" -Body $createLifecycleDocumentBody -TimeoutSec 20
+    $patientDocumentLifecycleId = $createdLifecycleDocument.id
+    $createdLifecycleVisible = $createdLifecycleDocument.detail.documents | Where-Object { $_.id -eq $patientDocumentLifecycleId -and $_.name -eq $lifecycleDocumentName } | Select-Object -First 1
+    $createdLifecycleCodes = if ($null -eq $createdLifecycleVisible) { @() } else { @($createdLifecycleVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    $signLifecycleBody = @{
+        reviewStatus = "approved"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $signedLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId/sign" -Method Put -ContentType "application/json" -Body $signLifecycleBody -TimeoutSec 20
+    $signedLifecycleVisible = $signedLifecycleDocument.detail.documents | Where-Object { $_.id -eq $patientDocumentLifecycleId -and $_.reviewStatus -eq "approved" -and $_.reviewedBy -eq "admin" } | Select-Object -First 1
+    $signedLifecycleCodes = if ($null -eq $signedLifecycleVisible) { @() } else { @($signedLifecycleVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId/soft-delete" -Method Put -TimeoutSec 20 | Out-Null
+    $archivedLifecycleList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001?includeArchived=true" -Method Get -TimeoutSec 20
+    $archivedLifecycleVisible = $archivedLifecycleList.documents | Where-Object { $_.id -eq $patientDocumentLifecycleId -and $_.deleted -eq 1 } | Select-Object -First 1
+    $archivedLifecycleCodes = if ($null -eq $archivedLifecycleVisible) { @() } else { @($archivedLifecycleVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    $restoredLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId/restore" -Method Put -TimeoutSec 20
+    $restoredLifecycleVisible = $restoredLifecycleDocument.detail.documents | Where-Object { $_.id -eq $patientDocumentLifecycleId -and $_.deleted -eq 0 } | Select-Object -First 1
+    $restoredLifecycleCodes = if ($null -eq $restoredLifecycleVisible) { @() } else { @($restoredLifecycleVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    $viewerLifecycleContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId/content" -Method Get -TimeoutSec 20
+    $viewerLifecycleCodes = @($viewerLifecycleContent.lifecycleEvents | ForEach-Object { $_.code })
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientDocumentLifecycleId = $null
+
+    $patientDocumentLifecyclePassed = $null -ne $createdLifecycleVisible `
+        -and ($createdLifecycleCodes -contains "filed") `
+        -and ($createdLifecycleCodes -contains "current-version") `
+        -and ($createdLifecycleCodes -contains "review-pending") `
+        -and ($createdLifecycleCodes -contains "active") `
+        -and $null -ne $signedLifecycleVisible `
+        -and ($signedLifecycleCodes -contains "review-approved") `
+        -and $null -ne $archivedLifecycleVisible `
+        -and ($archivedLifecycleCodes -contains "archived") `
+        -and $null -ne $restoredLifecycleVisible `
+        -and ($restoredLifecycleCodes -contains "active") `
+        -and ($viewerLifecycleCodes -contains "review-approved")
+    Add-Check -Name "patient document lifecycle timeline" -Result $(if ($patientDocumentLifecyclePassed) { "passed" } else { "failed" }) -Details @{
+        documentId = $createdLifecycleDocument.id
+        createdCodes = $createdLifecycleCodes
+        signedCodes = $signedLifecycleCodes
+        archivedCodes = $archivedLifecycleCodes
+        restoredCodes = $restoredLifecycleCodes
+        viewerCodes = $viewerLifecycleCodes
+    }
+}
+catch {
+    Add-Check -Name "patient document lifecycle timeline" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientDocumentLifecycleId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientDocumentLifecycleId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientBinaryDocumentMutationId = $null
 try {
     $binaryDocumentName = "Smoke Binary Patient Document.pdf"

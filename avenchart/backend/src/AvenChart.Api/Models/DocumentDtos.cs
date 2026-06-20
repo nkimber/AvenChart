@@ -50,7 +50,15 @@ public sealed record PatientDocumentItem(
     string ThumbnailText,
     string? ThumbnailDataUri,
     bool CanPreviewInline,
-    bool CanDownload);
+    bool CanDownload,
+    IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents);
+
+public sealed record PatientDocumentLifecycleEvent(
+    string Code,
+    string Label,
+    string? OccurredAt,
+    string? Actor,
+    string Detail);
 
 public sealed record PatientDocumentCreateRequest(
     string PatientId,
@@ -138,7 +146,8 @@ public sealed record PatientDocumentContentResponse(
     string ThumbnailLabel,
     string ThumbnailText,
     bool CanPreviewInline,
-    bool CanDownload);
+    bool CanDownload,
+    IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents);
 
 public sealed record PatientDocumentSignRequest(
     string ReviewStatus,
