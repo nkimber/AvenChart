@@ -112,6 +112,7 @@ import {
   softDeletePatientDocument,
   softDeletePatientMessage,
   restorePatientDocument,
+  replaceEncounterDocumentContent,
   replacePatientDocumentContent,
   updatePatientMessageAssignment,
   updatePatientMessageContent,
@@ -1172,6 +1173,30 @@ function App() {
       const message = moveError instanceof Error ? moveError.message : 'Encounter document move failed'
       setEncounterError(message)
       throw moveError
+    }
+  }
+
+  async function handleEncounterDocumentContentReplace(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentContentReplaceInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await replaceEncounterDocumentContent(encounter.encounter, document.id, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (replaceError) {
+      setEncounterDetailStatus('error')
+      const message =
+        replaceError instanceof Error ? replaceError.message : 'Encounter document content replacement failed'
+      setEncounterError(message)
+      throw replaceError
     }
   }
 
@@ -2477,6 +2502,7 @@ function App() {
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
             onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
             onMoveEncounterDocument={handleEncounterDocumentMove}
+            onReplaceEncounterDocumentContent={handleEncounterDocumentContentReplace}
             onSignEncounterDocument={handleEncounterDocumentSign}
             onDenyEncounterDocument={handleEncounterDocumentDeny}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
@@ -3712,6 +3738,7 @@ function EncounterWorkspace({
   onCreateEncounterBinaryDocument,
   onUpdateEncounterDocumentMetadata,
   onMoveEncounterDocument,
+  onReplaceEncounterDocumentContent,
   onSignEncounterDocument,
   onDenyEncounterDocument,
   onCreateFeeSheetLine,
@@ -3754,6 +3781,11 @@ function EncounterWorkspace({
     document: EncounterDocumentAttachment,
     targetEncounter: number,
   ) => Promise<EncounterDocumentMoveResponse>
+  onReplaceEncounterDocumentContent: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentContentReplaceInput,
+  ) => Promise<EncounterDocumentMutationResponse>
   onSignEncounterDocument: (
     encounter: EncounterDetail,
     document: EncounterDocumentAttachment,
@@ -3837,6 +3869,9 @@ function EncounterWorkspace({
   const [encounterDocumentMoveStatus, setEncounterDocumentMoveStatus] = useState<
     'idle' | 'saving' | 'moved' | 'error'
   >('idle')
+  const [encounterDocumentContentStatus, setEncounterDocumentContentStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3875,6 +3910,7 @@ function EncounterWorkspace({
       setEncounterDocumentReviewStatus('idle')
       setEncounterDocumentMetadataStatus('idle')
       setEncounterDocumentMoveStatus('idle')
+      setEncounterDocumentContentStatus('idle')
       return
     }
 
@@ -3892,6 +3928,7 @@ function EncounterWorkspace({
     setEncounterDocumentReviewStatus('idle')
     setEncounterDocumentMetadataStatus('idle')
     setEncounterDocumentMoveStatus('idle')
+    setEncounterDocumentContentStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -4154,6 +4191,23 @@ function EncounterWorkspace({
       setEncounterDocumentMoveStatus('moved')
     } catch {
       setEncounterDocumentMoveStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentContentReplace(
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentContentReplaceInput,
+  ) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentContentStatus('saving')
+    try {
+      await onReplaceEncounterDocumentContent(encounterDetail, document, input)
+      setEncounterDocumentContentStatus('saved')
+    } catch {
+      setEncounterDocumentContentStatus('error')
     }
   }
 
@@ -4916,9 +4970,11 @@ function EncounterWorkspace({
                       encounterDocumentReviewStatus === 'saving'
                       || encounterDocumentMetadataStatus === 'saving'
                       || encounterDocumentMoveStatus === 'saving'
+                      || encounterDocumentContentStatus === 'saving'
                     }
                     onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
                     onMove={handleEncounterDocumentMove}
+                    onReplaceContent={handleEncounterDocumentContentReplace}
                     onSign={handleEncounterDocumentSign}
                     onDeny={handleEncounterDocumentDeny}
                   />
@@ -4932,6 +4988,7 @@ function EncounterWorkspace({
                   encounterDocumentReviewStatus === 'error'
                   || encounterDocumentMetadataStatus === 'error'
                   || encounterDocumentMoveStatus === 'error'
+                  || encounterDocumentContentStatus === 'error'
                     ? 'save-note error'
                     : 'save-note'
                 }
@@ -4956,6 +5013,12 @@ function EncounterWorkspace({
                     ? 'Moving document'
                   : encounterDocumentMoveStatus === 'error'
                     ? 'Document move failed'
+                  : encounterDocumentContentStatus === 'saved'
+                    ? 'Document content saved'
+                  : encounterDocumentContentStatus === 'saving'
+                    ? 'Saving document content'
+                  : encounterDocumentContentStatus === 'error'
+                    ? 'Document content replacement failed'
                       : ''}
               </span>
             </section>
@@ -5588,6 +5651,7 @@ function EncounterDocumentAttachmentCard({
   disabled,
   onUpdateMetadata,
   onMove,
+  onReplaceContent,
   onSign,
   onDeny,
 }: {
@@ -5599,6 +5663,10 @@ function EncounterDocumentAttachmentCard({
     input: PatientDocumentMetadataUpdateInput,
   ) => Promise<void>
   onMove: (document: EncounterDocumentAttachment, targetEncounter: number) => Promise<void>
+  onReplaceContent: (
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentContentReplaceInput,
+  ) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
   onDeny: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
@@ -5611,7 +5679,12 @@ function EncounterDocumentAttachmentCard({
   const [editError, setEditError] = useState<string | null>(null)
   const [moveEncounter, setMoveEncounter] = useState('')
   const [moveError, setMoveError] = useState<string | null>(null)
+  const [isReplacing, setIsReplacing] = useState(false)
+  const [replacementFileName, setReplacementFileName] = useState(document.fileName || `${document.name}.txt`)
+  const [replacementContent, setReplacementContent] = useState('')
+  const [replaceError, setReplaceError] = useState<string | null>(null)
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
+  const canReplaceContent = !hasExternalLink
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
 
   useEffect(() => {
@@ -5623,6 +5696,10 @@ function EncounterDocumentAttachmentCard({
     setIsMoving(false)
     setMoveEncounter('')
     setMoveError(null)
+    setIsReplacing(false)
+    setReplacementFileName(document.fileName || `${document.name}.txt`)
+    setReplacementContent('')
+    setReplaceError(null)
   }, [document])
 
   async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
@@ -5672,6 +5749,27 @@ function EncounterDocumentAttachmentCard({
     }
   }
 
+  async function handleContentReplacementSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setReplaceError(null)
+
+    if (!replacementFileName.trim() || !replacementContent.trim()) {
+      setReplaceError('Enter a file name and replacement body')
+      return
+    }
+
+    try {
+      await onReplaceContent(document, {
+        fileName: replacementFileName,
+        content: replacementContent,
+      })
+      setIsReplacing(false)
+      setReplacementContent('')
+    } catch {
+      setReplaceError('Content save failed')
+    }
+  }
+
   return (
     <article className="encounter-document-card">
       <div className="document-preview-readiness">
@@ -5693,6 +5791,11 @@ function EncounterDocumentAttachmentCard({
         <span>{document.docDate}</span>
         <span>{document.mimetype || 'No mimetype'}</span>
         <span>{formatBytes(document.sizeBytes)}</span>
+      </div>
+      <div className="document-revision-readiness">
+        <span>{document.versionLabel || 'Version 1'} / {document.versionStatus || 'Current version'}</span>
+        <span>{document.revisionAt || document.uploadedAt}</span>
+        <span>{document.hasPriorVersions ? `${document.versionHistoryCount} versions` : 'No prior versions'}</span>
       </div>
       <div className="procedure-order-meta">
         <span>{document.reviewStatus === 'approved' ? 'approved' : document.reviewStatus || 'pending'}</span>
@@ -5773,6 +5876,43 @@ function EncounterDocumentAttachmentCard({
         </form>
       )}
 
+      {isReplacing && (
+        <form className="document-edit-form" onSubmit={handleContentReplacementSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>File Name</span>
+              <input
+                value={replacementFileName}
+                onChange={(event) => setReplacementFileName(event.target.value)}
+                aria-label="Encounter replacement document file name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Replacement Body</span>
+              <textarea
+                value={replacementContent}
+                onChange={(event) => setReplacementContent(event.target.value)}
+                aria-label="Encounter replacement document body"
+                rows={4}
+                required
+              />
+            </label>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Content
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsReplacing(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {replaceError && <span className="save-note error">{replaceError}</span>}
+          </div>
+        </form>
+      )}
+
       {isMoving && (
         <form className="document-edit-form" onSubmit={handleMoveSubmit}>
           <div className="mutation-grid">
@@ -5820,6 +5960,7 @@ function EncounterDocumentAttachmentCard({
           disabled={disabled}
           onClick={() => {
             setIsMoving(false)
+            setIsReplacing(false)
             setIsEditing((current) => !current)
           }}
         >
@@ -5832,11 +5973,25 @@ function EncounterDocumentAttachmentCard({
           disabled={disabled}
           onClick={() => {
             setIsEditing(false)
+            setIsReplacing(false)
             setIsMoving((current) => !current)
           }}
         >
           <MapPin size={14} />
           Move
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || !canReplaceContent}
+          onClick={() => {
+            setIsEditing(false)
+            setIsMoving(false)
+            setIsReplacing((current) => !current)
+          }}
+        >
+          <FileText size={14} />
+          Replace
         </button>
         <button
           className="icon-text-button secondary"

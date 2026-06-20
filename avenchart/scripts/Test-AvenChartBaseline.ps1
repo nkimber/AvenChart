@@ -692,6 +692,79 @@ finally {
     }
 }
 
+$smokeEncounterDocumentContentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $contentDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $contentDocumentName = "Smoke Encounter Content Document $contentDocumentSuffix"
+    $originalContent = "Smoke encounter document original content $contentDocumentSuffix."
+    $replacementContent = "Smoke encounter document replacement content $contentDocumentSuffix."
+    $contentDocumentBody = @{
+        categoryId = 3
+        name = $contentDocumentName
+        docDate = "2026-06-18"
+        content = $originalContent
+        notes = "Created by the smoke encounter document content check."
+    } | ConvertTo-Json
+
+    $createdEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $contentDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentContentId = $createdEncounterContentDocument.id
+    $createdContentDocumentVisible = @($createdEncounterContentDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentContentId `
+            -and $_.name -eq $contentDocumentName `
+            -and $_.contentPreview -like "*$originalContent*" `
+            -and $_.versionLabel -eq "Version 1"
+    } | Select-Object -First 1
+
+    $replacementFileName = "$($contentDocumentName).txt"
+    $contentReplacementBody = @{
+        fileName = $replacementFileName
+        content = $replacementContent
+    } | ConvertTo-Json
+    $replacedEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentContentId/content" -Method Put -ContentType "application/json" -Body $contentReplacementBody -TimeoutSec 20
+    $replacedContentDocumentVisible = @($replacedEncounterContentDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentContentId `
+            -and $_.name -eq $contentDocumentName `
+            -and $_.mimetype -eq "text/plain" `
+            -and $_.storageMethod -eq "database" `
+            -and $_.fileName -eq $replacementFileName `
+            -and $_.contentPreview -like "*$replacementContent*" `
+            -and $_.revisionHash -eq $_.hash `
+            -and $_.previewKind -eq "text"
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentContentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentContentId = $null
+    $afterDeleteContentDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedContentDocumentVisible = @($afterDeleteContentDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $contentDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentContentPassed = $null -ne $createdContentDocumentVisible `
+        -and $null -ne $replacedContentDocumentVisible `
+        -and $null -eq $deletedContentDocumentVisible
+    Add-Check -Name "encounter document content replacement lifecycle" -Result $(if ($encounterDocumentContentPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterContentDocument.id
+        document = $replacedContentDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document content replacement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentContentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentContentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentMoveId = $null
 try {
     if ($null -eq $encounterDetail) {

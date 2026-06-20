@@ -1222,6 +1222,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             var storageMethod = ReadNullableString(reader, "storage_method");
             var fileName = ReadNullableString(reader, "file_name");
             var url = ReadNullableString(reader, "url");
+            var hash = ReadNullableString(reader, "hash");
             var pages = ReadNullableInt(reader, "pages");
             var contentPreview = ReadNullableString(reader, "content_preview");
             var preview = BuildDocumentPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
@@ -1234,13 +1235,20 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 Name: reader.GetString(reader.GetOrdinal("name")),
                 DocDate: ReadDate(reader, "doc_date"),
                 UploadedAt: ReadDateTime(reader, "uploaded_at"),
+                RevisionAt: ReadDateTime(reader, "uploaded_at"),
+                CurrentVersion: 1,
+                VersionLabel: "Version 1",
+                VersionStatus: "Current version",
+                VersionHistoryCount: 1,
+                HasPriorVersions: false,
+                RevisionHash: hash,
                 Mimetype: mimetype,
                 SizeBytes: ReadNullableInt(reader, "size_bytes"),
                 Pages: pages,
                 StorageMethod: storageMethod,
                 FileName: fileName,
                 Url: url,
-                Hash: ReadNullableString(reader, "hash"),
+                Hash: hash,
                 Notes: ReadNullableString(reader, "notes"),
                 ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
                 ReviewedBy: ReadNullableString(reader, "reviewed_by"),

@@ -220,6 +220,13 @@ export type EncounterDocumentAttachment = {
   name: string
   docDate: string
   uploadedAt: string
+  revisionAt: string
+  currentVersion: number
+  versionLabel: string
+  versionStatus: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+  revisionHash?: string | null
   mimetype?: string | null
   sizeBytes?: number | null
   pages?: number | null
@@ -1853,6 +1860,25 @@ export async function moveEncounterDocument(
   })
   if (!response.ok) {
     throw new Error(`Encounter document move failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function replaceEncounterDocumentContent(
+  encounter: number,
+  documentId: number,
+  document: PatientDocumentContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document content replacement failed with ${response.status}`)
   }
 
   return response.json()
