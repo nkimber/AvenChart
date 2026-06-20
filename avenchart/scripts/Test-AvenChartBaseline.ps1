@@ -2676,6 +2676,7 @@ finally {
 
 $diagnosisLineMutationId = $null
 try {
+    $encounterDiagnosisMutationPassed = $false
     $diagnosisCodeText = "Smoke Diagnosis Mutation"
     $createDiagnosisBody = @{
         patientId = "MOD-PAT-0001"
@@ -2693,6 +2694,15 @@ try {
     $diagnosisLineMutationId = $createdDiagnosisLine.id
     $createdDiagnosisEncounter = $createdDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdDiagnosisVisible = $createdDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId -and $_.codeType -eq "ICD10" -and $_.code -eq "R73.03" -and $_.codeText -eq $diagnosisCodeText -and $_.fee -eq 0 -and $_.justify -eq "R73.03" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
+    $createdDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdEncounterDiagnosisVisible = @($createdDiagnosisEncounterDetail.diagnosisCodes | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.code -eq "R73.03" `
+            -and $_.description -eq $diagnosisCodeText `
+            -and $_.billingLineCount -eq 2 `
+            -and (@($_.sources) -contains "Fee sheet diagnosis line") `
+            -and (@($_.sources) -contains "Fee sheet justification") `
+            -and (@($_.supportingBillingCodes) -contains "ICD10 R73.03")
+    } | Select-Object -First 1
 
     $statusDiagnosisBody = @{
         billed = 1
@@ -2701,7 +2711,10 @@ try {
     $inactiveDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusDiagnosisBody -TimeoutSec 20
     $inactiveDiagnosisEncounter = $inactiveDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveDiagnosisVisible = $inactiveDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId } | Select-Object -First 1
+    $inactiveDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $inactiveEncounterDiagnosisVisible = @($inactiveDiagnosisEncounterDetail.diagnosisCodes | Where-Object { $null -ne $_ }) | Where-Object { $_.code -eq "R73.03" } | Select-Object -First 1
     $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible
+    $encounterDiagnosisMutationPassed = $null -ne $createdEncounterDiagnosisVisible -and $null -eq $inactiveEncounterDiagnosisVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $diagnosisLineMutationId = $null
@@ -2711,9 +2724,14 @@ try {
         createdVisible = $createdDiagnosisVisible
         inactiveVisible = $inactiveDiagnosisVisible
     }
+    Add-Check -Name "encounter diagnosis coding mutation visibility" -Result $(if ($encounterDiagnosisMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdDiagnosis = $createdEncounterDiagnosisVisible
+        inactiveDiagnosis = $inactiveEncounterDiagnosisVisible
+    }
 }
 catch {
     Add-Check -Name "billing diagnosis mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "encounter diagnosis coding mutation visibility" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $diagnosisLineMutationId) {
