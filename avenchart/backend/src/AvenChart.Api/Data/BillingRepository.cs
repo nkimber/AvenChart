@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -81,6 +82,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             ledgerSummary,
             encounterSummaries,
             metadata.BaseDate);
+        var statementDocument = BuildStatementDocument(
+            patient,
+            statementSummary,
+            ledgerEntries);
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -95,6 +100,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             AgingSummary: agingSummary,
             LedgerSummary: ledgerSummary,
             StatementSummary: statementSummary,
+            StatementDocument: statementDocument,
             LedgerEntries: ledgerEntries,
             Encounters: encounterSummaries);
     }
@@ -1113,6 +1119,92 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             .Where(value => value is not null));
         return string.Join(" ", new[] { NormalizeText(cityState), NormalizeText(patient.PostalCode) }
             .Where(value => value is not null));
+    }
+
+    private static BillingStatementDocument BuildStatementDocument(
+        BillingPatient patient,
+        BillingStatementSummary statementSummary,
+        IReadOnlyList<BillingLedgerEntry> ledgerEntries)
+    {
+        const string title = "Patient Statement";
+        var statementNumber = $"STMT-{patient.Pubpid}-{statementSummary.StatementDate.Replace("-", string.Empty)}";
+        var paymentInstructions = statementSummary.BalanceDueAmount > 0m
+            ? $"Please pay {FormatMoney(statementSummary.BalanceDueAmount)} by {statementSummary.DueDate}."
+            : "No payment is due for this statement.";
+        var lineItems = ledgerEntries
+            .Select((entry, index) => BuildStatementLineItem(index + 1, entry))
+            .ToList();
+        var generatedLines = new List<string>
+        {
+            $"{title} {statementNumber}",
+            statementSummary.RecipientName,
+            statementSummary.MailingAddressLine1,
+            statementSummary.MailingAddressLine2,
+            $"Period {statementSummary.StatementPeriodStart} to {statementSummary.StatementPeriodEnd}",
+            $"Statement date {statementSummary.StatementDate}",
+            $"Due date {statementSummary.DueDate}",
+            $"Total charges {FormatMoney(statementSummary.ChargeAmount)}",
+            $"Payments {FormatMoney(statementSummary.PaymentAmount)}",
+            $"Adjustments {FormatMoney(statementSummary.AdjustmentAmount)}",
+            $"Current due {FormatMoney(statementSummary.CurrentDueAmount)}",
+            $"Past due {FormatMoney(statementSummary.PastDueAmount)}",
+            $"Balance due {FormatMoney(statementSummary.BalanceDueAmount)}",
+            paymentInstructions
+        };
+
+        if (!string.IsNullOrWhiteSpace(statementSummary.Email))
+        {
+            generatedLines.Insert(4, $"Email {statementSummary.Email}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(statementSummary.Phone))
+        {
+            generatedLines.Insert(5, $"Phone {statementSummary.Phone}");
+        }
+
+        return new BillingStatementDocument(
+            StatementNumber: statementNumber,
+            Title: title,
+            StatementStatus: statementSummary.StatementStatus,
+            StatementDate: statementSummary.StatementDate,
+            DueDate: statementSummary.DueDate,
+            StatementPeriodStart: statementSummary.StatementPeriodStart,
+            StatementPeriodEnd: statementSummary.StatementPeriodEnd,
+            RecipientName: statementSummary.RecipientName,
+            MailingAddressLine1: statementSummary.MailingAddressLine1,
+            MailingAddressLine2: statementSummary.MailingAddressLine2,
+            Email: statementSummary.Email,
+            Phone: statementSummary.Phone,
+            PaymentInstructions: paymentInstructions,
+            GeneratedText: string.Join('\n', generatedLines.Where(line => !string.IsNullOrWhiteSpace(line))),
+            ChargeAmount: statementSummary.ChargeAmount,
+            PaymentAmount: statementSummary.PaymentAmount,
+            AdjustmentAmount: statementSummary.AdjustmentAmount,
+            CurrentDueAmount: statementSummary.CurrentDueAmount,
+            PastDueAmount: statementSummary.PastDueAmount,
+            BalanceDueAmount: statementSummary.BalanceDueAmount,
+            LineItems: lineItems);
+    }
+
+    private static BillingStatementLineItem BuildStatementLineItem(int lineNumber, BillingLedgerEntry entry)
+    {
+        return new BillingStatementLineItem(
+            LineNumber: lineNumber,
+            EntryDate: entry.EntryDate,
+            Encounter: entry.Encounter,
+            EntryType: entry.EntryType,
+            Description: entry.Description,
+            Code: entry.Code,
+            Reference: entry.Reference,
+            ChargeAmount: entry.EntryType == "Charge" ? entry.Amount : 0m,
+            PaymentAmount: entry.EntryType == "Payment" ? Math.Abs(entry.Amount) : 0m,
+            AdjustmentAmount: entry.EntryType == "Adjustment" ? Math.Abs(entry.Amount) : 0m,
+            BalanceAmount: entry.RunningBalanceAmount);
+    }
+
+    private static string FormatMoney(decimal amount)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"${amount:0.00}");
     }
 
     private static IReadOnlyList<BillingLedgerEntry> BuildLedgerEntries(

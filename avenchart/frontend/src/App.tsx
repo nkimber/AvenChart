@@ -135,6 +135,7 @@ import {
   type BillingClaimCreateInput,
   type BillingClaimStatusUpdateInput,
   type BillingLedgerEntry,
+  type BillingStatementLineItem,
   type BillingPaymentItem,
   type BillingLineCreateInput,
   type BillingLineItem,
@@ -4704,7 +4705,9 @@ function FeesWorkspace({
   const agingSummary = patientBilling?.agingSummary
   const ledgerSummary = patientBilling?.ledgerSummary
   const statementSummary = patientBilling?.statementSummary
+  const statementDocument = patientBilling?.statementDocument
   const ledgerEntries = patientBilling?.ledgerEntries ?? []
+  const statementLineItems = statementDocument?.lineItems ?? []
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -5408,6 +5411,45 @@ function FeesWorkspace({
                     <Field label="Oldest age" value={`${statementSummary?.oldestOpenAgeDays ?? 0} days`} />
                     <Field label="Ledger entries" value={statementSummary?.ledgerEntryCount ?? ledgerEntries.length} />
                   </div>
+                </div>
+              </section>
+
+              <section className="info-panel statement-document-panel">
+                <div className="panel-heading">
+                  <FileText size={17} />
+                  <h3>Patient Statement</h3>
+                </div>
+                <div className="statement-readiness-body">
+                  <div className="statement-status-row">
+                    <span className="status-pill">{statementDocument?.statementNumber ?? 'No statement'}</span>
+                    <strong>{formatCurrency(statementDocument?.balanceDueAmount ?? 0)}</strong>
+                  </div>
+                  <div className="statement-readiness-grid">
+                    <Field label="Status" value={statementDocument?.statementStatus} />
+                    <Field label="Period" value={`${statementDocument?.statementPeriodStart ?? ''} to ${statementDocument?.statementPeriodEnd ?? ''}`} />
+                    <Field label="Statement date" value={statementDocument?.statementDate} />
+                    <Field label="Due date" value={statementDocument?.dueDate} />
+                    <Field label="Recipient" value={statementDocument?.recipientName} />
+                    <Field label="Address" value={statementDocument?.mailingAddressLine1} />
+                    <Field label="City/state" value={statementDocument?.mailingAddressLine2} />
+                    <Field label="Lines" value={statementLineItems.length} />
+                    <Field label="Charges" value={formatCurrency(statementDocument?.chargeAmount ?? 0)} />
+                    <Field label="Paid" value={formatCurrency(statementDocument?.paymentAmount ?? 0)} />
+                    <Field label="Adjusted" value={formatCurrency(statementDocument?.adjustmentAmount ?? 0)} />
+                    <Field label="Balance due" value={formatCurrency(statementDocument?.balanceDueAmount ?? 0)} />
+                  </div>
+                  {statementDocument?.paymentInstructions && (
+                    <div className="statement-payment-instructions">{statementDocument.paymentInstructions}</div>
+                  )}
+                  {statementDocument?.generatedText && (
+                    <pre className="statement-document-preview">{statementDocument.generatedText}</pre>
+                  )}
+                </div>
+                <div className="statement-document-line-list">
+                  {statementLineItems.map((line) => (
+                    <BillingStatementLineItemCard key={`${line.lineNumber}-${line.encounter}-${line.entryDate}`} line={line} />
+                  ))}
+                  {statementLineItems.length === 0 && <div className="timeline-placeholder">No patient statement lines</div>}
                 </div>
               </section>
 
@@ -8128,6 +8170,38 @@ function BillingPaymentCard({
           <Trash2 size={14} />
           Delete
         </button>
+      </div>
+    </article>
+  )
+}
+
+function BillingStatementLineItemCard({ line }: { line: BillingStatementLineItem }) {
+  const amountClassName = line.chargeAmount > 0 ? 'ledger-amount charge' : 'ledger-amount credit'
+  const primaryAmount = line.chargeAmount > 0
+    ? line.chargeAmount
+    : -(line.paymentAmount || line.adjustmentAmount)
+
+  return (
+    <article className="billing-ledger-entry">
+      <div className="ledger-entry-main">
+        <div>
+          <strong>{line.description}</strong>
+          <span>
+            Line {line.lineNumber} / {line.entryDate} / Encounter {line.encounter}
+          </span>
+        </div>
+        <div className="document-card-tags">
+          <span className="status-tag">{line.entryType}</span>
+          <span className={amountClassName}>{formatCurrency(primaryAmount)}</span>
+        </div>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{line.code ? `Code ${line.code}` : 'No code'}</span>
+        <span>{line.reference ? `Reference ${line.reference}` : 'No reference'}</span>
+        <span>Charge {formatCurrency(line.chargeAmount)}</span>
+        <span>Payment {formatCurrency(line.paymentAmount)}</span>
+        <span>Adjustment {formatCurrency(line.adjustmentAmount)}</span>
+        <span>Balance {formatCurrency(line.balanceAmount)}</span>
       </div>
     </article>
   )

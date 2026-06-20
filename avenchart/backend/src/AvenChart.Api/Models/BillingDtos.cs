@@ -13,6 +13,7 @@ public sealed record PatientBillingResponse(
     BillingAgingSummary AgingSummary,
     BillingLedgerSummary LedgerSummary,
     BillingStatementSummary StatementSummary,
+    BillingStatementDocument StatementDocument,
     IReadOnlyList<BillingLedgerEntry> LedgerEntries,
     IReadOnlyList<BillingEncounterItem> Encounters);
 
@@ -71,6 +72,42 @@ public sealed record BillingStatementSummary(
     decimal CurrentDueAmount,
     decimal PastDueAmount,
     decimal BalanceDueAmount);
+
+public sealed record BillingStatementDocument(
+    string StatementNumber,
+    string Title,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    string StatementPeriodStart,
+    string StatementPeriodEnd,
+    string RecipientName,
+    string MailingAddressLine1,
+    string MailingAddressLine2,
+    string? Email,
+    string? Phone,
+    string PaymentInstructions,
+    string GeneratedText,
+    decimal ChargeAmount,
+    decimal PaymentAmount,
+    decimal AdjustmentAmount,
+    decimal CurrentDueAmount,
+    decimal PastDueAmount,
+    decimal BalanceDueAmount,
+    IReadOnlyList<BillingStatementLineItem> LineItems);
+
+public sealed record BillingStatementLineItem(
+    int LineNumber,
+    string EntryDate,
+    int Encounter,
+    string EntryType,
+    string Description,
+    string? Code,
+    string? Reference,
+    decimal ChargeAmount,
+    decimal PaymentAmount,
+    decimal AdjustmentAmount,
+    decimal BalanceAmount);
 
 public sealed record BillingEncounterItem(
     int Id,

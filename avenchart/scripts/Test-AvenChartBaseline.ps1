@@ -2058,6 +2058,37 @@ catch {
     Add-Check -Name "anchor account statement readiness" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $statementDocumentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $statementDocument = $statementDocumentBilling.statementDocument
+    $lastStatementLine = if ($null -ne $statementDocument -and $statementDocument.lineItems.Count -gt 0) {
+        $statementDocument.lineItems[$statementDocument.lineItems.Count - 1]
+    } else {
+        $null
+    }
+    $statementDocumentPassed = $statementDocumentBilling.patientId -eq "MOD-PAT-0005" `
+        -and $null -ne $statementDocument `
+        -and $statementDocument.statementNumber -eq "STMT-MOD-PAT-0005-20260625" `
+        -and $statementDocument.title -eq "Patient Statement" `
+        -and $statementDocument.paymentInstructions -eq "Please pay `$364.75 by 2026-07-25." `
+        -and $statementDocument.generatedText -like "*Patient Statement STMT-MOD-PAT-0005-20260625*" `
+        -and $statementDocument.generatedText -like "*Balance due `$364.75*" `
+        -and [decimal]$statementDocument.balanceDueAmount -eq 364.75 `
+        -and $statementDocument.lineItems.Count -eq 10 `
+        -and $null -ne $lastStatementLine `
+        -and $lastStatementLine.lineNumber -eq 10 `
+        -and $lastStatementLine.entryType -eq "Adjustment" `
+        -and [decimal]$lastStatementLine.adjustmentAmount -eq 22.25 `
+        -and [decimal]$lastStatementLine.balanceAmount -eq 364.75
+    Add-Check -Name "anchor patient statement generation" -Result $(if ($statementDocumentPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $statementDocumentBilling.patientId
+        statementDocument = $statementDocument
+    }
+}
+catch {
+    Add-Check -Name "anchor patient statement generation" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

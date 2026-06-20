@@ -1039,6 +1039,7 @@
 
 .procedure-orders-panel,
 .statement-readiness-panel,
+.statement-document-panel,
 .billing-ledger-panel,
 .billing-lines-panel,
 .procedure-results-panel {
@@ -1046,6 +1047,7 @@
 }
 
 .statement-readiness-panel,
+.statement-document-panel,
 .billing-ledger-panel,
 .billing-lines-panel {
   grid-column: 1 / -1;
@@ -1057,6 +1059,7 @@
 
 .billing-encounter-list,
 .billing-ledger-list,
+.statement-document-line-list,
 .procedure-order-list,
 .procedure-result-body {
   display: flex;
@@ -1067,6 +1070,31 @@
 
 .statement-readiness-body {
   padding: 12px;
+}
+
+.statement-payment-instructions {
+  margin-top: 10px;
+  border: 1px solid #d8e2e7;
+  border-radius: 7px;
+  background: #f8fafb;
+  color: #172b3a;
+  font-weight: 800;
+  padding: 10px;
+}
+
+.statement-document-preview {
+  margin: 10px 0 0;
+  border: 1px solid #d8e2e7;
+  border-radius: 7px;
+  background: #fbfdfe;
+  color: #243947;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 10px;
+  white-space: pre-wrap;
 }
 
 .statement-status-row {
