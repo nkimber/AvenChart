@@ -811,6 +811,29 @@ export type BillingLedgerEntry = {
   runningBalanceAmount: number
 }
 
+export type BillingStatementSummary = {
+  statementStatus: string
+  statementPeriodStart: string
+  statementPeriodEnd: string
+  statementDate: string
+  dueDate: string
+  recipientName: string
+  mailingAddressLine1: string
+  mailingAddressLine2: string
+  email?: string | null
+  phone?: string | null
+  openEncounterCount: number
+  ledgerEntryCount: number
+  oldestOpenAgeDays: number
+  oldestOpenDate: string
+  chargeAmount: number
+  paymentAmount: number
+  adjustmentAmount: number
+  currentDueAmount: number
+  pastDueAmount: number
+  balanceDueAmount: number
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -843,6 +866,7 @@ export type PatientBillingResponse = {
   accountSummary: BillingAccountSummary
   agingSummary: BillingAgingSummary
   ledgerSummary: BillingLedgerSummary
+  statementSummary: BillingStatementSummary
   ledgerEntries: BillingLedgerEntry[]
   encounters: BillingEncounterItem[]
 }

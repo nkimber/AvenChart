@@ -4556,6 +4556,7 @@ function FeesWorkspace({
   const accountSummary = patientBilling?.accountSummary
   const agingSummary = patientBilling?.agingSummary
   const ledgerSummary = patientBilling?.ledgerSummary
+  const statementSummary = patientBilling?.statementSummary
   const ledgerEntries = patientBilling?.ledgerEntries ?? []
   const isLoading = status === 'loading'
 
@@ -4670,6 +4671,7 @@ function FeesWorkspace({
             <MetricRow label="Balance" value={Math.round(accountSummary?.balanceAmount ?? totalFee)} />
             <MetricRow label="Aging total" value={Math.round(agingSummary?.totalBalanceAmount ?? 0)} />
             <MetricRow label="Ledger entries" value={ledgerEntries.length} />
+            <MetricRow label="Statement ready" value={statementSummary ? 1 : 0} />
           </div>
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
@@ -4948,6 +4950,37 @@ function FeesWorkspace({
                 <Field label="Over 90" value={formatCurrency(agingSummary?.over90Amount ?? 0)} />
                 <Field label="Total balance" value={formatCurrency(agingSummary?.totalBalanceAmount ?? 0)} />
               </InfoPanel>
+
+              <section className="info-panel statement-readiness-panel">
+                <div className="panel-heading">
+                  <Mail size={17} />
+                  <h3>Statement Readiness</h3>
+                </div>
+                <div className="statement-readiness-body">
+                  <div className="statement-status-row">
+                    <span className="status-pill">{statementSummary?.statementStatus ?? 'Pending'}</span>
+                    <strong>{formatCurrency(statementSummary?.balanceDueAmount ?? 0)}</strong>
+                  </div>
+                  <div className="statement-readiness-grid">
+                    <Field label="Period" value={`${statementSummary?.statementPeriodStart ?? ''} to ${statementSummary?.statementPeriodEnd ?? ''}`} />
+                    <Field label="Statement date" value={statementSummary?.statementDate} />
+                    <Field label="Due date" value={statementSummary?.dueDate} />
+                    <Field label="Open encounters" value={statementSummary?.openEncounterCount ?? 0} />
+                    <Field label="Recipient" value={statementSummary?.recipientName} />
+                    <Field label="Address" value={statementSummary?.mailingAddressLine1} />
+                    <Field label="City/state" value={statementSummary?.mailingAddressLine2} />
+                    <Field label="Phone" value={statementSummary?.phone} />
+                    <Field label="Charges" value={formatCurrency(statementSummary?.chargeAmount ?? 0)} />
+                    <Field label="Paid" value={formatCurrency(statementSummary?.paymentAmount ?? 0)} />
+                    <Field label="Adjusted" value={formatCurrency(statementSummary?.adjustmentAmount ?? 0)} />
+                    <Field label="Past due" value={formatCurrency(statementSummary?.pastDueAmount ?? 0)} />
+                    <Field label="Current due" value={formatCurrency(statementSummary?.currentDueAmount ?? 0)} />
+                    <Field label="Oldest open" value={statementSummary?.oldestOpenDate} />
+                    <Field label="Oldest age" value={`${statementSummary?.oldestOpenAgeDays ?? 0} days`} />
+                    <Field label="Ledger entries" value={statementSummary?.ledgerEntryCount ?? ledgerEntries.length} />
+                  </div>
+                </div>
+              </section>
 
               <section className="info-panel billing-ledger-panel">
                 <div className="panel-heading">

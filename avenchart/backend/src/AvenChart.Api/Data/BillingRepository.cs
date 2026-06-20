@@ -74,6 +74,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             PaymentAmount: -ledgerEntries.Where(entry => entry.EntryType == "Payment").Sum(entry => entry.Amount),
             AdjustmentAmount: -ledgerEntries.Where(entry => entry.EntryType == "Adjustment").Sum(entry => entry.Amount),
             EndingBalanceAmount: ledgerEntries.LastOrDefault()?.RunningBalanceAmount ?? 0m);
+        var statementSummary = BuildStatementSummary(
+            patient,
+            accountSummary,
+            agingSummary,
+            ledgerSummary,
+            encounterSummaries,
+            metadata.BaseDate);
 
         return new PatientBillingResponse(
             DatasetId: metadata.DatasetId,
@@ -87,6 +94,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             AccountSummary: accountSummary,
             AgingSummary: agingSummary,
             LedgerSummary: ledgerSummary,
+            StatementSummary: statementSummary,
             LedgerEntries: ledgerEntries,
             Encounters: encounterSummaries);
     }
@@ -282,7 +290,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name
+            select canonical_id, legacy_pid, pubpid, first_name, last_name, preferred_name,
+                street, city, state, postal_code, email, phone, phone_home, phone_cell
             from patients
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
@@ -307,6 +316,14 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
             FirstName: firstName,
             LastName: lastName,
+            Street: ReadNullableString(reader, "street"),
+            City: ReadNullableString(reader, "city"),
+            State: ReadNullableString(reader, "state"),
+            PostalCode: ReadNullableString(reader, "postal_code"),
+            Email: ReadNullableString(reader, "email"),
+            Phone: NormalizeText(ReadNullableString(reader, "phone_home"))
+                ?? NormalizeText(ReadNullableString(reader, "phone"))
+                ?? NormalizeText(ReadNullableString(reader, "phone_cell")),
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
                 ? $"{lastName}, {firstName}"
                 : $"{lastName}, {firstName} ({preferredName})");
@@ -621,6 +638,65 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             .Sum(encounter => encounter.BalanceAmount);
     }
 
+    private static BillingStatementSummary BuildStatementSummary(
+        BillingPatient patient,
+        BillingAccountSummary accountSummary,
+        BillingAgingSummary agingSummary,
+        BillingLedgerSummary ledgerSummary,
+        IReadOnlyList<BillingEncounterItem> encounters,
+        DateOnly fallbackDate)
+    {
+        var statementDate = ReadDateOnly(ledgerSummary.LastEntryDate ?? agingSummary.AsOfDate, fallbackDate);
+        var periodStart = ledgerSummary.FirstEntryDate ?? agingSummary.AsOfDate;
+        var openEncounters = encounters
+            .Where(encounter => encounter.BalanceAmount > 0m)
+            .ToList();
+        var oldestOpen = openEncounters
+            .OrderByDescending(encounter => encounter.AgeDays)
+            .FirstOrDefault();
+        var pastDueAmount = agingSummary.Days31To60Amount
+            + agingSummary.Days61To90Amount
+            + agingSummary.Over90Amount;
+        var statementStatus = accountSummary.BalanceAmount <= 0m
+            ? "No balance due"
+            : pastDueAmount > 0m
+                ? "Past due review"
+                : "Ready for statement";
+
+        return new BillingStatementSummary(
+            StatementStatus: statementStatus,
+            StatementPeriodStart: periodStart,
+            StatementPeriodEnd: ledgerSummary.LastEntryDate ?? agingSummary.AsOfDate,
+            StatementDate: statementDate.ToString("yyyy-MM-dd"),
+            DueDate: statementDate.AddDays(30).ToString("yyyy-MM-dd"),
+            RecipientName: $"{patient.FirstName} {patient.LastName}",
+            MailingAddressLine1: NormalizeText(patient.Street) ?? string.Empty,
+            MailingAddressLine2: BuildMailingAddressLine2(patient),
+            Email: NormalizeText(patient.Email),
+            Phone: NormalizeText(patient.Phone),
+            OpenEncounterCount: openEncounters.Count,
+            LedgerEntryCount: ledgerSummary.EntryCount,
+            OldestOpenAgeDays: oldestOpen?.AgeDays ?? 0,
+            OldestOpenDate: oldestOpen?.Lines
+                .Select(line => line.BillingDate)
+                .OrderBy(date => date)
+                .FirstOrDefault() ?? periodStart,
+            ChargeAmount: accountSummary.ChargeAmount,
+            PaymentAmount: accountSummary.PaymentAmount,
+            AdjustmentAmount: accountSummary.AdjustmentAmount,
+            CurrentDueAmount: agingSummary.CurrentAmount,
+            PastDueAmount: pastDueAmount,
+            BalanceDueAmount: accountSummary.BalanceAmount);
+    }
+
+    private static string BuildMailingAddressLine2(BillingPatient patient)
+    {
+        var cityState = string.Join(", ", new[] { NormalizeText(patient.City), NormalizeText(patient.State) }
+            .Where(value => value is not null));
+        return string.Join(" ", new[] { NormalizeText(cityState), NormalizeText(patient.PostalCode) }
+            .Where(value => value is not null));
+    }
+
     private static IReadOnlyList<BillingLedgerEntry> BuildLedgerEntries(
         IReadOnlyList<BillingEncounterItem> encounters,
         DateOnly fallbackDate)
@@ -752,6 +828,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         string Pubpid,
         string FirstName,
         string LastName,
+        string? Street,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string? Email,
+        string? Phone,
         string DisplayName);
 
     private sealed record BillingEncounterMutationContext(

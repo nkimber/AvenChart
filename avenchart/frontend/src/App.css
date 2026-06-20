@@ -960,12 +960,14 @@
 }
 
 .procedure-orders-panel,
+.statement-readiness-panel,
 .billing-ledger-panel,
 .billing-lines-panel,
 .procedure-results-panel {
   min-width: 0;
 }
 
+.statement-readiness-panel,
 .billing-ledger-panel,
 .billing-lines-panel {
   grid-column: 1 / -1;
@@ -983,6 +985,44 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
+}
+
+.statement-readiness-body {
+  padding: 12px;
+}
+
+.statement-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d8e2e7;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.statement-status-row strong {
+  color: #172b3a;
+  font-size: 20px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fff8e7;
+  color: #73510c;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 9px;
+}
+
+.statement-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .ledger-summary-grid {
@@ -1383,6 +1423,7 @@
   .documents-detail-grid,
   .billing-detail-grid,
   .billing-line-list,
+  .statement-readiness-grid,
   .ledger-summary-grid,
   .procedure-detail-grid,
   .reports-detail-grid,
@@ -1405,6 +1446,7 @@
     flex-direction: column;
   }
 
+  .statement-status-row,
   .ledger-entry-main,
   .procedure-order-meta,
   .procedure-report-title,

@@ -1693,6 +1693,38 @@ catch {
     Add-Check -Name "anchor account ledger summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $statementBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $statementSummary = $statementBilling.statementSummary
+    $accountStatementPassed = $statementBilling.patientId -eq "MOD-PAT-0005" `
+        -and $null -ne $statementSummary `
+        -and $statementSummary.statementStatus -eq "Past due review" `
+        -and $statementSummary.statementPeriodStart -eq "2025-06-22" `
+        -and $statementSummary.statementPeriodEnd -eq "2026-06-25" `
+        -and $statementSummary.statementDate -eq "2026-06-25" `
+        -and $statementSummary.dueDate -eq "2026-07-25" `
+        -and $statementSummary.recipientName -eq "Elias Morgan" `
+        -and $statementSummary.mailingAddressLine1 -eq "105 Test Patient Avenue" `
+        -and $statementSummary.mailingAddressLine2 -eq "Carlsbad, CA 92008" `
+        -and $statementSummary.openEncounterCount -eq 3 `
+        -and $statementSummary.ledgerEntryCount -eq 10 `
+        -and $statementSummary.oldestOpenAgeDays -eq 361 `
+        -and $statementSummary.oldestOpenDate -eq "2025-06-22" `
+        -and [decimal]$statementSummary.chargeAmount -eq 635 `
+        -and [decimal]$statementSummary.paymentAmount -eq 206 `
+        -and [decimal]$statementSummary.adjustmentAmount -eq 64.25 `
+        -and [decimal]$statementSummary.currentDueAmount -eq 83.75 `
+        -and [decimal]$statementSummary.pastDueAmount -eq 281 `
+        -and [decimal]$statementSummary.balanceDueAmount -eq 364.75
+    Add-Check -Name "anchor account statement readiness" -Result $(if ($accountStatementPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $statementBilling.patientId
+        statementSummary = $statementSummary
+    }
+}
+catch {
+    Add-Check -Name "anchor account statement readiness" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"
