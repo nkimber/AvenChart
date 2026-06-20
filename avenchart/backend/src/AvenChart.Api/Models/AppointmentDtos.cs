@@ -57,6 +57,17 @@ public sealed record AppointmentCreateRequest(
     int? CategoryId,
     string? Room);
 
+public sealed record AppointmentUpdateRequest(
+    int? ProviderId,
+    string Title,
+    string Date,
+    string StartTime,
+    int DurationMinutes,
+    int? FacilityId,
+    int? CategoryId,
+    string? Room,
+    string? Status);
+
 public sealed record AppointmentStatusUpdateRequest(
     string Status,
     string? Title);

@@ -154,6 +154,18 @@ export type AppointmentCreateInput = {
   room?: string | null
 }
 
+export type AppointmentUpdateInput = {
+  providerId?: number | null
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  categoryId?: number | null
+  room?: string | null
+  status?: string | null
+}
+
 export type AppointmentStatusUpdate = {
   status: string
   title?: string | null
@@ -1685,6 +1697,24 @@ export async function updateAppointmentStatus(
   })
   if (!response.ok) {
     throw new Error(`Appointment status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateAppointment(
+  appointmentId: string,
+  update: AppointmentUpdateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Appointment update failed with ${response.status}`)
   }
 
   return response.json()

@@ -190,6 +190,19 @@ appointments.MapPost("/", async (
     })
     .WithName("CreateAppointment");
 
+appointments.MapPut("/{appointmentId}", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        AppointmentUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var appointment = await repository.UpdateAsync(appointmentId, request, cancellationToken);
+        return appointment is null
+            ? Results.BadRequest("Appointment could not be updated from the supplied date, time, and duration.")
+            : Results.Ok(appointment);
+    })
+    .WithName("UpdateAppointment");
+
 appointments.MapPut("/{appointmentId}/status", async (
         AppointmentRepository repository,
         string appointmentId,

@@ -404,6 +404,66 @@ finally {
     }
 }
 
+$appointmentRescheduleId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Reschedule"
+        date = "2026-10-15"
+        startTime = "10:30"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "Smoke"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentRescheduleId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = $null
+        title = "Smoke Appointment Rescheduled"
+        date = "2026-10-22"
+        startTime = "14:15"
+        durationMinutes = 45
+        facilityId = $null
+        categoryId = 9
+        room = "Resched"
+        status = "@"
+    } | ConvertTo-Json
+    $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentReschedulePassed = $updatedAppointment.title -eq "Smoke Appointment Rescheduled" `
+        -and $updatedAppointment.date -eq "2026-10-22" `
+        -and $updatedAppointment.startTime -eq "14:15" `
+        -and $updatedAppointment.durationMinutes -eq 45 `
+        -and $updatedAppointment.room -eq "Resched" `
+        -and $updatedAppointment.status -eq "@"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentRescheduleId = $null
+
+    Add-Check -Name "appointment reschedule lifecycle" -Result $(if ($appointmentReschedulePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        title = $updatedAppointment.title
+        date = $updatedAppointment.date
+        startTime = $updatedAppointment.startTime
+        durationMinutes = $updatedAppointment.durationMinutes
+        status = $updatedAppointment.status
+    }
+}
+catch {
+    Add-Check -Name "appointment reschedule lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentRescheduleId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRescheduleId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

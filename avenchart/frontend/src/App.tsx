@@ -119,6 +119,7 @@ import {
   replacePatientDocumentContent,
   updatePatientMessageAssignment,
   updatePatientMessageContent,
+  updateAppointment,
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
@@ -148,6 +149,7 @@ import {
   type AppointmentCreateInput,
   type AppointmentListItem,
   type AppointmentSearchResponse,
+  type AppointmentUpdateInput,
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingClaimItem,
@@ -906,6 +908,27 @@ function App() {
       const message = createError instanceof Error ? createError.message : 'Appointment create failed'
       setAppointmentError(message)
       throw createError
+    }
+  }
+
+  async function handleAppointmentUpdate(appointment: AppointmentDetail, input: AppointmentUpdateInput) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await updateAppointment(appointment.id, input)
+      setAppointmentPatientId(updated.patientId)
+      setAppointmentFromDate(updated.date)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetail(updated)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (updateError) {
+      setAppointmentDetailStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Appointment update failed'
+      setAppointmentError(message)
+      throw updateError
     }
   }
 
@@ -2551,6 +2574,7 @@ function App() {
             onFromDateChange={setAppointmentFromDate}
             onSelectAppointment={setSelectedAppointmentId}
             onCreateAppointment={handleAppointmentCreate}
+            onUpdateAppointment={handleAppointmentUpdate}
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
           />
@@ -3549,6 +3573,7 @@ function CalendarWorkspace({
   onFromDateChange,
   onSelectAppointment,
   onCreateAppointment,
+  onUpdateAppointment,
   onCancelAppointment,
   onDeleteAppointment,
 }: {
@@ -3564,6 +3589,7 @@ function CalendarWorkspace({
   onFromDateChange: (value: string) => void
   onSelectAppointment: (appointmentId: string) => void
   onCreateAppointment: (input: AppointmentCreateInput) => Promise<AppointmentDetail>
+  onUpdateAppointment: (appointment: AppointmentDetail, input: AppointmentUpdateInput) => Promise<AppointmentDetail>
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
 }) {
@@ -3572,7 +3598,26 @@ function CalendarWorkspace({
   const [draftStartTime, setDraftStartTime] = useState('10:30')
   const [draftDuration, setDraftDuration] = useState('30')
   const [draftRoom, setDraftRoom] = useState('Parity')
+  const [editTitle, setEditTitle] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editStartTime, setEditStartTime] = useState('')
+  const [editDuration, setEditDuration] = useState('')
+  const [editRoom, setEditRoom] = useState('')
+  const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setEditTitle(appointmentDetail.title)
+    setEditDate(appointmentDetail.date)
+    setEditStartTime(appointmentDetail.startTime)
+    setEditDuration(String(appointmentDetail.durationMinutes))
+    setEditRoom(appointmentDetail.room ?? '')
+    setEditStatus(appointmentDetail.status ?? '-')
+  }, [appointmentDetail])
 
   async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -3602,6 +3647,29 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onCancelAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleUpdateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onUpdateAppointment(appointmentDetail, {
+        title: editTitle,
+        date: editDate,
+        startTime: editStartTime,
+        durationMinutes: Number(editDuration),
+        room: editRoom,
+        categoryId: appointmentDetail.categoryId,
+        status: editStatus,
+      })
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -3763,6 +3831,73 @@ function CalendarWorkspace({
                 <span>Delete appointment</span>
               </button>
             </div>
+
+            <form className="appointment-mutation-panel appointment-edit-panel" onSubmit={handleUpdateSubmit} aria-label="Reschedule appointment">
+              <div className="panel-heading compact-heading">
+                <Pencil size={16} />
+                <h3>Reschedule Appointment</h3>
+              </div>
+              <label className="contact-field">
+                <span>Title</span>
+                <input
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  aria-label="Edit appointment title"
+                />
+              </label>
+              <div className="mutation-grid two-column">
+                <label className="contact-field">
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(event) => setEditDate(event.target.value)}
+                    aria-label="Edit appointment date"
+                  />
+                </label>
+                <label className="contact-field">
+                  <span>Start</span>
+                  <input
+                    type="time"
+                    value={editStartTime}
+                    onChange={(event) => setEditStartTime(event.target.value)}
+                    aria-label="Edit appointment start time"
+                  />
+                </label>
+              </div>
+              <div className="mutation-grid two-column">
+                <label className="contact-field">
+                  <span>Minutes</span>
+                  <input
+                    type="number"
+                    min="5"
+                    step="5"
+                    value={editDuration}
+                    onChange={(event) => setEditDuration(event.target.value)}
+                    aria-label="Edit appointment duration"
+                  />
+                </label>
+                <label className="contact-field">
+                  <span>Status</span>
+                  <select value={editStatus} onChange={(event) => setEditStatus(event.target.value)} aria-label="Edit appointment status">
+                    <option value="-">Scheduled</option>
+                    <option value="@">Arrived</option>
+                    <option value="~">Pending</option>
+                    <option value="x">Cancelled</option>
+                  </select>
+                </label>
+              </div>
+              <label className="contact-field">
+                <span>Room</span>
+                <input value={editRoom} onChange={(event) => setEditRoom(event.target.value)} aria-label="Edit appointment room" />
+              </label>
+              <div className="contact-actions">
+                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
+                  <Check size={15} />
+                  <span>{mutationStatus === 'saving' ? 'Saving' : 'Save schedule'}</span>
+                </button>
+              </div>
+            </form>
 
             <div className="appointment-detail-grid">
               <InfoPanel title="Schedule" icon={Clock}>

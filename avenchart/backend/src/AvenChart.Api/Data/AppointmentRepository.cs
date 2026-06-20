@@ -221,6 +221,49 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
     }
 
+    public async Task<AppointmentDetail?> UpdateAsync(
+        string appointmentId,
+        AppointmentUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DateOnly.TryParse(request.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(request.StartTime, out var startTime)
+            || request.DurationMinutes <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update appointments
+            set provider_id = coalesce((select id from staff where id = @providerId), provider_id),
+                facility_id = coalesce((select id from facilities where id = @facilityId), facility_id),
+                appointment_date = @appointmentDate,
+                start_time = @startTime,
+                duration_minutes = @durationMinutes,
+                category_id = coalesce(@categoryId, category_id),
+                title = @title,
+                status = coalesce(@status, status),
+                room = @room
+            where id = @appointmentId
+            returning id;
+            """;
+        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
+        command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = startTime;
+        command.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
+        command.Parameters.Add("categoryId", NpgsqlDbType.Integer).Value = request.CategoryId is null ? DBNull.Value : request.CategoryId.Value;
+        command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
+        command.Parameters.Add("status", NpgsqlDbType.Text).Value = NormalizeText(request.Status) ?? (object)DBNull.Value;
+        command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
+
+        var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
+    }
+
     public async Task<bool> DeleteAsync(string appointmentId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
