@@ -958,7 +958,25 @@
   padding: 12px;
 }
 
+.encounter-document-form {
+  align-items: end;
+  border-bottom: 1px solid #e0e8ec;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(150px, 0.8fr) minmax(210px, 1.2fr) minmax(230px, 1.2fr) auto;
+  padding: 12px;
+}
+
 .encounter-signature-note-field {
+  min-width: 0;
+}
+
+.encounter-document-content-field {
+  grid-column: 1 / -2;
+}
+
+.encounter-document-name-field,
+.encounter-document-note-field {
   min-width: 0;
 }
 
@@ -1908,6 +1926,7 @@
   .encounter-documents-list,
   .encounter-procedure-result-list,
   .encounter-signature-form,
+  .encounter-document-form,
   .encounter-fee-sheet-grid,
   .encounter-procedure-entry-grid,
   .encounter-procedure-result-entry-grid,
@@ -1916,6 +1935,7 @@
   }
 
   .fee-sheet-description-field,
+  .encounter-document-content-field,
   .procedure-order-name-field,
   .procedure-order-instructions-field,
   .procedure-result-comment-field {

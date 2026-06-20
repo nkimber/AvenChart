@@ -297,6 +297,41 @@ encounters.MapPut("/{encounter:int}/sign", async (
     })
     .WithName("SignEncounter");
 
+encounters.MapPost("/{encounter:int}/documents", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        EncounterDocumentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.CreateAsync(
+            new PatientDocumentCreateRequest(
+                PatientId: encounterDetail.PatientId,
+                CategoryId: request.CategoryId,
+                Name: request.Name,
+                DocDate: request.DocDate,
+                Encounter: encounterDetail.Encounter,
+                Content: request.Content,
+                Notes: request.Notes),
+            cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document could not be attached from the supplied document details.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
+    })
+    .WithName("CreateEncounterDocument");
+
 encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
         EncounterRepository repository,
         int encounter,

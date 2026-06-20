@@ -336,6 +336,19 @@ export type EncounterSignatureMutationResponse = {
   detail: EncounterDetail
 }
 
+export type EncounterDocumentCreateInput = {
+  categoryId: number
+  name: string
+  docDate: string
+  content: string
+  notes?: string | null
+}
+
+export type EncounterDocumentMutationResponse = {
+  id: number
+  detail: EncounterDetail
+}
+
 export type EncounterSearchResponse = {
   datasetId: string
   datasetVersion: string
@@ -1743,6 +1756,24 @@ export async function signEncounter(
   })
   if (!response.ok) {
     throw new Error(`Encounter sign-off failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createEncounterDocument(
+  encounter: number,
+  document: EncounterDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document attach failed with ${response.status}`)
   }
 
   return response.json()

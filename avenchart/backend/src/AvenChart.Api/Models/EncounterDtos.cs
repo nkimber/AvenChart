@@ -179,3 +179,14 @@ public sealed record EncounterSignRequest(
 public sealed record EncounterSignatureMutationResponse(
     int Id,
     EncounterDetail Detail);
+
+public sealed record EncounterDocumentCreateRequest(
+    int CategoryId,
+    string Name,
+    string DocDate,
+    string Content,
+    string? Notes);
+
+public sealed record EncounterDocumentMutationResponse(
+    int Id,
+    EncounterDetail Detail);

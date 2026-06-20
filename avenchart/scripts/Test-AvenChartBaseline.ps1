@@ -487,6 +487,62 @@ finally {
     }
 }
 
+$smokeEncounterDocumentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $documentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $documentName = "Smoke Encounter Attachment $documentSuffix"
+    $documentContent = "Smoke encounter attachment content $documentSuffix."
+    $documentBody = @{
+        categoryId = 3
+        name = $documentName
+        docDate = "2026-06-18"
+        content = $documentContent
+        notes = "Created by the smoke encounter document attachment check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $documentBody -TimeoutSec 20
+    $smokeEncounterDocumentId = $createdEncounterDocument.id
+    $createdEncounterDocumentVisible = @($createdEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentId `
+            -and $_.name -eq $documentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18" `
+            -and $_.mimetype -eq "text/plain" `
+            -and $_.storageMethod -eq "database" `
+            -and $_.contentPreview -like "*$documentContent*"
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentId = $null
+    $afterDeleteDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterDocumentVisible = @($afterDeleteDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $documentName
+    } | Select-Object -First 1
+
+    $encounterDocumentAttachmentPassed = $null -ne $createdEncounterDocumentVisible -and $null -eq $deletedEncounterDocumentVisible
+    Add-Check -Name "encounter document attachment lifecycle" -Result $(if ($encounterDocumentAttachmentPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterDocument.id
+        document = $createdEncounterDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document attachment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

@@ -66,6 +66,7 @@ import {
   createPatientDocument,
   createPatientExternalLinkDocument,
   createEncounter,
+  createEncounterDocument,
   createEncounterSoapNote,
   createEncounterVitals,
   createPatientMessage,
@@ -162,7 +163,9 @@ import {
   type EncounterCreateInput,
   type EncounterDiagnosisCode,
   type EncounterDetail,
+  type EncounterDocumentCreateInput,
   type EncounterDocumentAttachment,
+  type EncounterDocumentMutationResponse,
   type EncounterSoapNoteCreateInput,
   type EncounterListItem,
   type EncounterSearchResponse,
@@ -1070,6 +1073,28 @@ function App() {
       const message = deleteError instanceof Error ? deleteError.message : 'Encounter signature delete failed'
       setEncounterError(message)
       throw deleteError
+    }
+  }
+
+  async function handleEncounterDocumentCreate(
+    encounter: EncounterDetail,
+    input: EncounterDocumentCreateInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createEncounterDocument(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Encounter document attach failed'
+      setEncounterError(message)
+      throw createError
     }
   }
 
@@ -2321,6 +2346,7 @@ function App() {
             onCreateSoapNote={handleEncounterSoapCreate}
             onSignEncounter={handleEncounterSign}
             onDeleteEncounterSignature={handleEncounterSignatureDelete}
+            onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
@@ -3550,6 +3576,7 @@ function EncounterWorkspace({
   onCreateSoapNote,
   onSignEncounter,
   onDeleteEncounterSignature,
+  onCreateEncounterDocument,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
@@ -3572,6 +3599,10 @@ function EncounterWorkspace({
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onSignEncounter: (encounter: EncounterDetail, input: EncounterSignInput) => Promise<EncounterSignatureMutationResponse>
   onDeleteEncounterSignature: (encounter: EncounterDetail, signature: EncounterSignatureItem) => Promise<void>
+  onCreateEncounterDocument: (
+    encounter: EncounterDetail,
+    input: EncounterDocumentCreateInput,
+  ) => Promise<EncounterDocumentMutationResponse>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
   onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
   onCreateProcedureResultSet: (
@@ -3623,6 +3654,13 @@ function EncounterWorkspace({
   const [signatureAmendment, setSignatureAmendment] = useState('Encounter reviewed and signed from modernized workspace.')
   const [signatureStatus, setSignatureStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
+  const [encounterDocumentCategoryId, setEncounterDocumentCategoryId] = useState('3')
+  const [encounterDocumentName, setEncounterDocumentName] = useState('Encounter attachment')
+  const [encounterDocumentDate, setEncounterDocumentDate] = useState('2026-06-18')
+  const [encounterDocumentNotes, setEncounterDocumentNotes] = useState('Attached from the modernized encounter workspace.')
+  const [encounterDocumentContent, setEncounterDocumentContent] = useState('Encounter attachment text payload.')
+  const [encounterDocumentStatus, setEncounterDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
   const [feeSheetCode, setFeeSheetCode] = useState('99499')
@@ -3669,6 +3707,7 @@ function EncounterWorkspace({
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
     setSignatureSignedAt(`${encounterDetail.date}T10:20`)
+    setEncounterDocumentDate(encounterDetail.date)
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -3830,6 +3869,27 @@ function EncounterWorkspace({
       setSignatureStatus('saved')
     } catch {
       setSignatureStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentStatus('saving')
+    try {
+      await onCreateEncounterDocument(encounterDetail, {
+        categoryId: Number(encounterDocumentCategoryId),
+        name: encounterDocumentName,
+        docDate: encounterDocumentDate,
+        content: encounterDocumentContent,
+        notes: encounterDocumentNotes,
+      })
+      setEncounterDocumentStatus('saved')
+    } catch {
+      setEncounterDocumentStatus('error')
     }
   }
 
@@ -4445,6 +4505,63 @@ function EncounterWorkspace({
                 <h3>Attached Documents</h3>
                 <span className="panel-count-pill">{attachedDocuments.length}</span>
               </div>
+              <form className="encounter-document-form" onSubmit={handleEncounterDocumentSubmit} aria-label="Encounter document upload">
+                <label className="filter-field">
+                  <span>Category</span>
+                  <select
+                    value={encounterDocumentCategoryId}
+                    onChange={(event) => setEncounterDocumentCategoryId(event.target.value)}
+                    aria-label="Encounter document category"
+                  >
+                    <option value="3">Medical Record</option>
+                    <option value="6">Advance Directive</option>
+                    <option value="13">CCDA</option>
+                  </select>
+                </label>
+                <label className="filter-field">
+                  <span>Date</span>
+                  <input
+                    value={encounterDocumentDate}
+                    onChange={(event) => setEncounterDocumentDate(event.target.value)}
+                    aria-label="Encounter document date"
+                    type="date"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-document-name-field">
+                  <span>Name</span>
+                  <input
+                    value={encounterDocumentName}
+                    onChange={(event) => setEncounterDocumentName(event.target.value)}
+                    aria-label="Encounter document name"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-document-note-field">
+                  <span>Notes</span>
+                  <input
+                    value={encounterDocumentNotes}
+                    onChange={(event) => setEncounterDocumentNotes(event.target.value)}
+                    aria-label="Encounter document notes"
+                  />
+                </label>
+                <label className="filter-field encounter-document-content-field">
+                  <span>Content</span>
+                  <textarea
+                    value={encounterDocumentContent}
+                    onChange={(event) => setEncounterDocumentContent(event.target.value)}
+                    aria-label="Encounter document content"
+                    rows={2}
+                    required
+                  />
+                </label>
+                <button className="icon-text-button primary" type="submit" disabled={encounterDocumentStatus === 'saving'}>
+                  <Upload size={16} />
+                  <span>{encounterDocumentStatus === 'saving' ? 'Saving' : 'Attach'}</span>
+                </button>
+                {encounterDocumentStatus === 'saved' && <span className="save-note">Saved</span>}
+                {encounterDocumentStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </form>
               <div className="encounter-documents-list">
                 {attachedDocuments.map((document) => (
                   <EncounterDocumentAttachmentCard key={document.id} document={document} />
