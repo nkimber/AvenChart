@@ -1045,6 +1045,29 @@ function App() {
     }
   }
 
+  async function handleEncounterProcedureOrderCreate(
+    encounter: EncounterDetail,
+    input: ProcedureOrderCreateInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createProcedureOrder(input)
+      const refreshed = await getEncounterDetail(encounter.encounter)
+      setEncounterDetail(refreshed)
+      setSelectedEncounter(refreshed.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Encounter procedure order create failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
   async function handleClinicalAllergyCreate(input: ClinicalAllergyCreateInput) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -2216,6 +2239,7 @@ function App() {
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
+            onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
           />
         )}
         {activeModule === 'lists' && (
@@ -3441,6 +3465,7 @@ function EncounterWorkspace({
   onCreateVitals,
   onCreateSoapNote,
   onCreateFeeSheetLine,
+  onCreateProcedureOrder,
 }: {
   patientId: string
   fromDate: string
@@ -3459,6 +3484,7 @@ function EncounterWorkspace({
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
+  onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
 }) {
   const [createPatientId, setCreatePatientId] = useState(patientId)
   const [createDateTime, setCreateDateTime] = useState('2026-06-18T10:00')
@@ -3508,6 +3534,18 @@ function EncounterWorkspace({
   const [feeSheetJustify, setFeeSheetJustify] = useState('E78.5')
   const [feeSheetStatus, setFeeSheetStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
+  const [encounterProcedureDate, setEncounterProcedureDate] = useState('2026-06-18')
+  const [encounterProcedureCode, setEncounterProcedureCode] = useState('80053')
+  const [encounterProcedureName, setEncounterProcedureName] = useState('Comprehensive metabolic panel')
+  const [encounterProcedureDiagnosis, setEncounterProcedureDiagnosis] = useState('E78.5')
+  const [encounterProcedurePriority, setEncounterProcedurePriority] = useState('routine')
+  const [encounterProcedureStatusValue, setEncounterProcedureStatusValue] = useState('pending')
+  const [encounterProcedureType, setEncounterProcedureType] = useState('laboratory')
+  const [encounterProcedureInstructions, setEncounterProcedureInstructions] = useState('Collect fasting sample.')
+  const [encounterProcedureStatus, setEncounterProcedureStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  )
+
   useEffect(() => {
     setCreatePatientId(patientId)
   }, [patientId])
@@ -3532,6 +3570,7 @@ function EncounterWorkspace({
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
     setFeeSheetDate(encounterDetail.date)
+    setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
 
   function handleFeeSheetCodeTypeChange(event: ChangeEvent<HTMLSelectElement>) {
@@ -3683,6 +3722,32 @@ function EncounterWorkspace({
       setFeeSheetStatus('saved')
     } catch {
       setFeeSheetStatus('error')
+    }
+  }
+
+  async function handleEncounterProcedureSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterProcedureStatus('saving')
+    try {
+      await onCreateProcedureOrder(encounterDetail, {
+        patientId: encounterDetail.pubpid,
+        encounterId: encounterDetail.encounter,
+        dateOrdered: encounterProcedureDate,
+        priority: encounterProcedurePriority,
+        status: encounterProcedureStatusValue,
+        procedureCode: encounterProcedureCode,
+        procedureName: encounterProcedureName,
+        procedureType: encounterProcedureType,
+        diagnosis: encounterProcedureDiagnosis,
+        instructions: encounterProcedureInstructions,
+      })
+      setEncounterProcedureStatus('saved')
+    } catch {
+      setEncounterProcedureStatus('error')
     }
   }
 
@@ -4071,6 +4136,101 @@ function EncounterWorkspace({
                 )}
               </div>
             </section>
+
+            <form className="appointment-mutation-panel encounter-procedure-entry-panel" onSubmit={handleEncounterProcedureSubmit} aria-label="Encounter procedure order entry">
+              <div className="panel-heading compact-heading">
+                <FlaskConical size={16} />
+                <h3>Procedure Order Entry</h3>
+              </div>
+              <div className="mutation-grid encounter-procedure-entry-grid">
+                <label className="filter-field">
+                  <span>Date</span>
+                  <input
+                    value={encounterProcedureDate}
+                    onChange={(event) => setEncounterProcedureDate(event.target.value)}
+                    aria-label="Encounter procedure order date"
+                    type="date"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Code</span>
+                  <input
+                    value={encounterProcedureCode}
+                    onChange={(event) => setEncounterProcedureCode(event.target.value)}
+                    aria-label="Encounter procedure order code"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Priority</span>
+                  <select
+                    value={encounterProcedurePriority}
+                    onChange={(event) => setEncounterProcedurePriority(event.target.value)}
+                    aria-label="Encounter procedure order priority"
+                  >
+                    <option value="routine">Routine</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="stat">STAT</option>
+                  </select>
+                </label>
+                <label className="filter-field">
+                  <span>Status</span>
+                  <select
+                    value={encounterProcedureStatusValue}
+                    onChange={(event) => setEncounterProcedureStatusValue(event.target.value)}
+                    aria-label="Encounter procedure order status"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="complete">Complete</option>
+                  </select>
+                </label>
+                <label className="filter-field procedure-order-name-field">
+                  <span>Name</span>
+                  <input
+                    value={encounterProcedureName}
+                    onChange={(event) => setEncounterProcedureName(event.target.value)}
+                    aria-label="Encounter procedure order name"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Diagnosis</span>
+                  <input
+                    value={encounterProcedureDiagnosis}
+                    onChange={(event) => setEncounterProcedureDiagnosis(event.target.value)}
+                    aria-label="Encounter procedure order diagnosis"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Type</span>
+                  <input
+                    value={encounterProcedureType}
+                    onChange={(event) => setEncounterProcedureType(event.target.value)}
+                    aria-label="Encounter procedure order type"
+                    required
+                  />
+                </label>
+                <label className="filter-field procedure-order-instructions-field">
+                  <span>Instructions</span>
+                  <input
+                    value={encounterProcedureInstructions}
+                    onChange={(event) => setEncounterProcedureInstructions(event.target.value)}
+                    aria-label="Encounter procedure order instructions"
+                  />
+                </label>
+              </div>
+              <div className="detail-actions">
+                <button className="icon-text-button primary" type="submit" disabled={encounterProcedureStatus === 'saving'}>
+                  <Check size={16} />
+                  <span>{encounterProcedureStatus === 'saving' ? 'Saving' : 'Add Order'}</span>
+                </button>
+                {encounterProcedureStatus === 'saved' && <span className="save-note">Saved</span>}
+                {encounterProcedureStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </div>
+            </form>
 
             <section className="info-panel encounter-documents-panel" aria-label="Encounter attached documents">
               <div className="panel-heading">

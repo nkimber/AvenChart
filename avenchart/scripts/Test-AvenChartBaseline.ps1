@@ -570,6 +570,64 @@ catch {
     Add-Check -Name "anchor encounter procedure order linkage" -Result "failed" -Details $_.Exception.Message
 }
 
+$smokeEncounterProcedureOrderId = $null
+try {
+    $procedureOrderSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $procedureOrderName = "Smoke Encounter Procedure Order $procedureOrderSuffix"
+    $procedureOrderBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounterId = 1000013
+        dateOrdered = "2026-06-18"
+        priority = "routine"
+        status = "pending"
+        procedureCode = "80053"
+        procedureName = $procedureOrderName
+        procedureType = "laboratory"
+        diagnosis = "E78.5"
+        instructions = "Created by the smoke encounter procedure order entry check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureOrderBody -TimeoutSec 20
+    $smokeEncounterProcedureOrderId = $createdEncounterProcedureOrder.id
+    $refreshedEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdEncounterProcedureOrderRow = @($refreshedEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterProcedureOrderId `
+            -and $_.name -eq $procedureOrderName `
+            -and $_.code -eq "80053" `
+            -and $_.diagnosis -eq "E78.5" `
+            -and $_.orderStatus -eq "pending" `
+            -and $_.orderPriority -eq "routine" `
+            -and @($_.reports).Count -eq 0
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterProcedureOrderId = $null
+    $afterDeleteEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterProcedureOrderRow = @($afterDeleteEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $procedureOrderName
+    } | Select-Object -First 1
+
+    $encounterProcedureOrderEntryPassed = $null -ne $createdEncounterProcedureOrderRow -and $null -eq $deletedEncounterProcedureOrderRow
+    Add-Check -Name "encounter procedure order entry lifecycle" -Result $(if ($encounterProcedureOrderEntryPassed) { "passed" } else { "failed" }) -Details @{
+        createdOrderId = $createdEncounterProcedureOrder.id
+        encounter = $refreshedEncounterProcedureDetail.encounter
+        order = $createdEncounterProcedureOrderRow
+    }
+}
+catch {
+    Add-Check -Name "encounter procedure order entry lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterProcedureOrderId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

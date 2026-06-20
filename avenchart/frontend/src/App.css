@@ -944,7 +944,8 @@
 .encounter-claim-panel,
 .encounter-procedure-panel,
 .encounter-documents-panel,
-.encounter-fee-sheet-panel {
+.encounter-fee-sheet-panel,
+.encounter-procedure-entry-panel {
   margin-top: 12px;
 }
 
@@ -952,7 +953,16 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.encounter-procedure-entry-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .fee-sheet-description-field {
+  grid-column: span 2;
+}
+
+.procedure-order-name-field,
+.procedure-order-instructions-field {
   grid-column: span 2;
 }
 
@@ -1838,11 +1848,14 @@
   .encounter-documents-list,
   .encounter-procedure-result-list,
   .encounter-fee-sheet-grid,
+  .encounter-procedure-entry-grid,
   .document-list-body {
     grid-template-columns: 1fr;
   }
 
-  .fee-sheet-description-field {
+  .fee-sheet-description-field,
+  .procedure-order-name-field,
+  .procedure-order-instructions-field {
     grid-column: auto;
   }
 }
