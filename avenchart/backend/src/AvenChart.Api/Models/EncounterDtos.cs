@@ -215,6 +215,13 @@ public sealed record EncounterBinaryDocumentCreateRequest(
     string ContentBase64,
     string? Notes);
 
+public sealed record EncounterExternalLinkDocumentCreateRequest(
+    int CategoryId,
+    string Name,
+    string DocDate,
+    string Url,
+    string? Notes);
+
 public sealed record EncounterDocumentMutationResponse(
     int Id,
     EncounterDetail Detail);

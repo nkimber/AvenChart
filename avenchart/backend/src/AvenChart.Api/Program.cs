@@ -373,6 +373,41 @@ encounters.MapPost("/{encounter:int}/documents/binary", async (
     })
     .WithName("CreateBinaryEncounterDocument");
 
+encounters.MapPost("/{encounter:int}/documents/external-link", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        EncounterExternalLinkDocumentCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.CreateExternalLinkAsync(
+            new PatientDocumentExternalLinkCreateRequest(
+                PatientId: encounterDetail.PatientId,
+                CategoryId: request.CategoryId,
+                Name: request.Name,
+                DocDate: request.DocDate,
+                Encounter: encounterDetail.Encounter,
+                Url: request.Url,
+                Notes: request.Notes),
+            cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("External-link encounter document could not be attached from the supplied URL and document details.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
+    })
+    .WithName("CreateExternalLinkEncounterDocument");
+
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,

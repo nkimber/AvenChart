@@ -984,12 +984,20 @@
   padding: 12px;
 }
 
+.encounter-external-link-form {
+  grid-template-columns: minmax(130px, 0.75fr) minmax(150px, 0.75fr) minmax(190px, 1fr) minmax(260px, 1.3fr) minmax(210px, 1fr) auto;
+}
+
 .encounter-signature-note-field {
   min-width: 0;
 }
 
 .encounter-document-content-field {
   grid-column: 1 / -2;
+}
+
+.encounter-external-link-url-field {
+  min-width: 0;
 }
 
 .encounter-document-name-field,

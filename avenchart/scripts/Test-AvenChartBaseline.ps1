@@ -622,6 +622,69 @@ finally {
     }
 }
 
+$smokeEncounterExternalLinkDocumentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $externalLinkDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $externalLinkDocumentName = "Smoke Encounter External Link $externalLinkDocumentSuffix"
+    $externalLinkUrl = "https://example.test/legacy-ehr/encounter-record/$externalLinkDocumentSuffix"
+    $externalLinkDocumentBody = @{
+        categoryId = 3
+        name = $externalLinkDocumentName
+        docDate = "2026-06-18"
+        url = $externalLinkUrl
+        notes = "Created by the smoke encounter external-link document check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterExternalLinkDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/external-link" -Method Post -ContentType "application/json" -Body $externalLinkDocumentBody -TimeoutSec 20
+    $smokeEncounterExternalLinkDocumentId = $createdEncounterExternalLinkDocument.id
+    $createdEncounterExternalLinkDocumentVisible = @($createdEncounterExternalLinkDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterExternalLinkDocumentId `
+            -and $_.name -eq $externalLinkDocumentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18" `
+            -and $_.mimetype -eq "text/uri-list" `
+            -and $_.storageMethod -eq "web_url" `
+            -and $_.url -eq $externalLinkUrl `
+            -and $_.previewKind -eq "external-link" `
+            -and $_.thumbnailLabel -eq "LINK" `
+            -and $_.canDownload -eq $true
+    } | Select-Object -First 1
+
+    $externalLinkContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId/content" -Method Get -TimeoutSec 20
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterExternalLinkDocumentId = $null
+    $afterDeleteExternalLinkDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterExternalLinkDocumentVisible = @($afterDeleteExternalLinkDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $externalLinkDocumentName
+    } | Select-Object -First 1
+
+    $encounterExternalLinkDocumentPassed = $null -ne $createdEncounterExternalLinkDocumentVisible `
+        -and $externalLinkContent.content -like "*$externalLinkUrl*" `
+        -and $null -eq $deletedEncounterExternalLinkDocumentVisible
+    Add-Check -Name "encounter external-link document lifecycle" -Result $(if ($encounterExternalLinkDocumentPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterExternalLinkDocument.id
+        document = $createdEncounterExternalLinkDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter external-link document lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterExternalLinkDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentMetadataId = $null
 try {
     if ($null -eq $encounterDetail) {

@@ -68,6 +68,7 @@ import {
   createEncounter,
   createEncounterBinaryDocument,
   createEncounterDocument,
+  createEncounterExternalLinkDocument,
   createEncounterSoapNote,
   createEncounterVitals,
   createPatientMessage,
@@ -174,6 +175,7 @@ import {
   type EncounterDetail,
   type EncounterDocumentCreateInput,
   type EncounterDocumentAttachment,
+  type EncounterExternalLinkDocumentCreateInput,
   type EncounterDocumentMoveResponse,
   type EncounterDocumentMutationResponse,
   type EncounterSoapNoteCreateInput,
@@ -1130,6 +1132,28 @@ function App() {
     } catch (createError) {
       setEncounterDetailStatus('error')
       const message = createError instanceof Error ? createError.message : 'Binary encounter document attach failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
+  async function handleEncounterExternalLinkDocumentCreate(
+    encounter: EncounterDetail,
+    input: EncounterExternalLinkDocumentCreateInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createEncounterExternalLinkDocument(encounter.encounter, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'External-link encounter document attach failed'
       setEncounterError(message)
       throw createError
     }
@@ -2555,6 +2579,7 @@ function App() {
             onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
+            onCreateEncounterExternalLinkDocument={handleEncounterExternalLinkDocumentCreate}
             onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
             onMoveEncounterDocument={handleEncounterDocumentMove}
             onReplaceEncounterDocumentContent={handleEncounterDocumentContentReplace}
@@ -3795,6 +3820,7 @@ function EncounterWorkspace({
   onDeleteEncounterSignature,
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
+  onCreateEncounterExternalLinkDocument,
   onUpdateEncounterDocumentMetadata,
   onMoveEncounterDocument,
   onReplaceEncounterDocumentContent,
@@ -3833,6 +3859,10 @@ function EncounterWorkspace({
   onCreateEncounterBinaryDocument: (
     encounter: EncounterDetail,
     input: EncounterBinaryDocumentCreateInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onCreateEncounterExternalLinkDocument: (
+    encounter: EncounterDetail,
+    input: EncounterExternalLinkDocumentCreateInput,
   ) => Promise<EncounterDocumentMutationResponse>
   onUpdateEncounterDocumentMetadata: (
     encounter: EncounterDetail,
@@ -3931,6 +3961,12 @@ function EncounterWorkspace({
   const [encounterBinaryContentBase64, setEncounterBinaryContentBase64] = useState('')
   const [encounterBinaryFileMessage, setEncounterBinaryFileMessage] = useState('No file selected')
   const [encounterBinaryDocumentStatus, setEncounterBinaryDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterExternalLinkCategoryId, setEncounterExternalLinkCategoryId] = useState('3')
+  const [encounterExternalLinkName, setEncounterExternalLinkName] = useState('Encounter external link')
+  const [encounterExternalLinkDate, setEncounterExternalLinkDate] = useState('2026-06-18')
+  const [encounterExternalLinkUrl, setEncounterExternalLinkUrl] = useState('https://example.test/legacy-ehr/encounter-record')
+  const [encounterExternalLinkNotes, setEncounterExternalLinkNotes] = useState('External link attached from the modernized encounter workspace.')
+  const [encounterExternalLinkStatus, setEncounterExternalLinkStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<
     'idle' | 'saving' | 'signed' | 'denied' | 'error'
   >('idle')
@@ -3986,6 +4022,7 @@ function EncounterWorkspace({
       setEncounterDocumentMoveStatus('idle')
       setEncounterDocumentContentStatus('idle')
       setEncounterDocumentArchiveStatus('idle')
+      setEncounterExternalLinkStatus('idle')
       return
     }
 
@@ -4000,11 +4037,13 @@ function EncounterWorkspace({
     setSignatureSignedAt(`${encounterDetail.date}T10:20`)
     setEncounterDocumentDate(encounterDetail.date)
     setEncounterBinaryDocumentDate(encounterDetail.date)
+    setEncounterExternalLinkDate(encounterDetail.date)
     setEncounterDocumentReviewStatus('idle')
     setEncounterDocumentMetadataStatus('idle')
     setEncounterDocumentMoveStatus('idle')
     setEncounterDocumentContentStatus('idle')
     setEncounterDocumentArchiveStatus('idle')
+    setEncounterExternalLinkStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -4236,6 +4275,27 @@ function EncounterWorkspace({
       setEncounterBinaryDocumentStatus('saved')
     } catch {
       setEncounterBinaryDocumentStatus('error')
+    }
+  }
+
+  async function handleEncounterExternalLinkSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterExternalLinkStatus('saving')
+    try {
+      await onCreateEncounterExternalLinkDocument(encounterDetail, {
+        categoryId: Number(encounterExternalLinkCategoryId),
+        name: encounterExternalLinkName,
+        docDate: encounterExternalLinkDate,
+        url: encounterExternalLinkUrl,
+        notes: encounterExternalLinkNotes,
+      })
+      setEncounterExternalLinkStatus('saved')
+    } catch {
+      setEncounterExternalLinkStatus('error')
     }
   }
 
@@ -5078,6 +5138,63 @@ function EncounterWorkspace({
                   {encounterBinaryDocumentStatus === 'saved' ? 'Uploaded' : encounterBinaryFileMessage}
                 </span>
               </form>
+              <form className="encounter-document-form encounter-external-link-form" onSubmit={handleEncounterExternalLinkSubmit} aria-label="Encounter external-link document attach">
+                <label className="filter-field">
+                  <span>Category</span>
+                  <select
+                    value={encounterExternalLinkCategoryId}
+                    onChange={(event) => setEncounterExternalLinkCategoryId(event.target.value)}
+                    aria-label="Encounter external-link document category"
+                  >
+                    <option value="3">Medical Record</option>
+                    <option value="6">Advance Directive</option>
+                    <option value="13">CCDA</option>
+                  </select>
+                </label>
+                <label className="filter-field">
+                  <span>Date</span>
+                  <input
+                    value={encounterExternalLinkDate}
+                    onChange={(event) => setEncounterExternalLinkDate(event.target.value)}
+                    aria-label="Encounter external-link document date"
+                    type="date"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-document-name-field">
+                  <span>Name</span>
+                  <input
+                    value={encounterExternalLinkName}
+                    onChange={(event) => setEncounterExternalLinkName(event.target.value)}
+                    aria-label="Encounter external-link document name"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-external-link-url-field">
+                  <span>URL</span>
+                  <input
+                    value={encounterExternalLinkUrl}
+                    onChange={(event) => setEncounterExternalLinkUrl(event.target.value)}
+                    aria-label="Encounter external-link document URL"
+                    type="url"
+                    required
+                  />
+                </label>
+                <label className="filter-field encounter-document-note-field">
+                  <span>Notes</span>
+                  <input
+                    value={encounterExternalLinkNotes}
+                    onChange={(event) => setEncounterExternalLinkNotes(event.target.value)}
+                    aria-label="Encounter external-link document notes"
+                  />
+                </label>
+                <button className="icon-text-button primary" type="submit" disabled={encounterExternalLinkStatus === 'saving'}>
+                  <ExternalLink size={16} />
+                  <span>{encounterExternalLinkStatus === 'saving' ? 'Saving' : 'Attach Link'}</span>
+                </button>
+                {encounterExternalLinkStatus === 'saved' && <span className="save-note">Linked</span>}
+                {encounterExternalLinkStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </form>
               <div className="encounter-documents-list">
                 {attachedDocuments.map((document) => (
                   <EncounterDocumentAttachmentCard
@@ -5090,6 +5207,7 @@ function EncounterWorkspace({
                       || encounterDocumentMoveStatus === 'saving'
                       || encounterDocumentContentStatus === 'saving'
                       || encounterDocumentArchiveStatus === 'saving'
+                      || encounterExternalLinkStatus === 'saving'
                     }
                     onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
                     onMove={handleEncounterDocumentMove}

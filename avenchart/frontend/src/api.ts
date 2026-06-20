@@ -374,6 +374,14 @@ export type EncounterBinaryDocumentCreateInput = {
   notes?: string | null
 }
 
+export type EncounterExternalLinkDocumentCreateInput = {
+  categoryId: number
+  name: string
+  docDate: string
+  url: string
+  notes?: string | null
+}
+
 export type EncounterDocumentMutationResponse = {
   id: number
   detail: EncounterDetail
@@ -1837,6 +1845,24 @@ export async function createEncounterBinaryDocument(
   })
   if (!response.ok) {
     throw new Error(`Binary encounter document attach failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createEncounterExternalLinkDocument(
+  encounter: number,
+  document: EncounterExternalLinkDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/external-link`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`External-link encounter document attach failed with ${response.status}`)
   }
 
   return response.json()
