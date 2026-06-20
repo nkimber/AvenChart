@@ -220,6 +220,11 @@ type ModuleId =
   | 'reports'
   | 'admin'
 
+type EncounterProcedureResultSetInput = {
+  report: ProcedureReportCreateInput
+  result: Omit<ProcedureResultCreateInput, 'reportId'>
+}
+
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
@@ -1063,6 +1068,36 @@ function App() {
     } catch (createError) {
       setEncounterDetailStatus('error')
       const message = createError instanceof Error ? createError.message : 'Encounter procedure order create failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
+  async function handleEncounterProcedureResultSetCreate(
+    encounter: EncounterDetail,
+    input: EncounterProcedureResultSetInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const reportResponse = await createProcedureReport(input.report)
+      const resultResponse = await createProcedureResult({
+        ...input.result,
+        reportId: reportResponse.id,
+      })
+      const refreshed = await getEncounterDetail(encounter.encounter)
+      setEncounterDetail(refreshed)
+      setSelectedEncounter(refreshed.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return {
+        reportId: reportResponse.id,
+        resultId: resultResponse.id,
+      }
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Encounter procedure result create failed'
       setEncounterError(message)
       throw createError
     }
@@ -2240,6 +2275,7 @@ function App() {
             onCreateSoapNote={handleEncounterSoapCreate}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
+            onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
           />
         )}
         {activeModule === 'lists' && (
@@ -3466,6 +3502,7 @@ function EncounterWorkspace({
   onCreateSoapNote,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
+  onCreateProcedureResultSet,
 }: {
   patientId: string
   fromDate: string
@@ -3485,6 +3522,10 @@ function EncounterWorkspace({
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
   onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
+  onCreateProcedureResultSet: (
+    encounter: EncounterDetail,
+    input: EncounterProcedureResultSetInput,
+  ) => Promise<unknown>
 }) {
   const [createPatientId, setCreatePatientId] = useState(patientId)
   const [createDateTime, setCreateDateTime] = useState('2026-06-18T10:00')
@@ -4129,7 +4170,11 @@ function EncounterWorkspace({
               </div>
               <div className="encounter-procedure-list">
                 {encounterProcedureOrders.map((order) => (
-                  <EncounterProcedureOrderCard key={order.id} order={order} />
+                  <EncounterProcedureOrderCard
+                    key={order.id}
+                    order={order}
+                    onCreateResultSet={(input) => onCreateProcedureResultSet(encounterDetail, input)}
+                  />
                 ))}
                 {encounterProcedureOrders.length === 0 && (
                   <div className="timeline-placeholder">No procedure orders linked to this encounter</div>
@@ -4561,9 +4606,62 @@ function EncounterClaimCard({ claim }: { claim: BillingClaimItem }) {
   )
 }
 
-function EncounterProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
+function EncounterProcedureOrderCard({
+  order,
+  onCreateResultSet,
+}: {
+  order: ProcedureOrderItem
+  onCreateResultSet: (input: EncounterProcedureResultSetInput) => Promise<unknown>
+}) {
   const reportCount = order.reports.length
   const resultCount = countReportResults(order.reports)
+  const defaultResultDate = order.orderDate || '2026-06-18'
+  const [reportDate, setReportDate] = useState(defaultResultDate)
+  const [specimenNumber, setSpecimenNumber] = useState('ENCOUNTER-SPECIMEN')
+  const [reviewStatus, setReviewStatus] = useState('reviewed')
+  const [resultCode, setResultCode] = useState('2345-7')
+  const [resultText, setResultText] = useState('Glucose')
+  const [resultValue, setResultValue] = useState('104')
+  const [resultUnits, setResultUnits] = useState('mg/dL')
+  const [resultRange, setResultRange] = useState('70-99')
+  const [abnormalFlag, setAbnormalFlag] = useState('high')
+  const [resultStatusValue, setResultStatusValue] = useState('final')
+  const [resultComments, setResultComments] = useState('Entered from the modernized encounter workflow.')
+  const [resultEntryStatus, setResultEntryStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  async function handleProcedureResultSubmit(event: FormEvent) {
+    event.preventDefault()
+    setResultEntryStatus('saving')
+
+    try {
+      await onCreateResultSet({
+        report: {
+          orderId: order.id,
+          dateCollected: `${reportDate} 12:30:00`,
+          dateReport: `${reportDate} 13:00:00`,
+          specimenNumber,
+          reportStatus: resultStatusValue,
+          reviewStatus,
+          notes: resultComments,
+        },
+        result: {
+          resultCode,
+          resultText,
+          dateTime: `${reportDate} 13:05:00`,
+          facility: 'Legacy EHR Modernization Clinic',
+          units: resultUnits,
+          result: resultValue,
+          range: resultRange,
+          abnormal: abnormalFlag,
+          comments: resultComments,
+          status: resultStatusValue,
+        },
+      })
+      setResultEntryStatus('saved')
+    } catch {
+      setResultEntryStatus('error')
+    }
+  }
 
   return (
     <article className="encounter-procedure-card">
@@ -4592,6 +4690,130 @@ function EncounterProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
         ))}
         {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
       </div>
+
+      <form
+        className="appointment-mutation-panel encounter-procedure-result-entry-panel"
+        onSubmit={handleProcedureResultSubmit}
+        aria-label={`Encounter procedure result entry ${order.id}`}
+      >
+        <div className="panel-heading compact-heading">
+          <FlaskConical size={16} />
+          <h3>Result Entry</h3>
+        </div>
+        <div className="mutation-grid encounter-procedure-result-entry-grid">
+          <label className="filter-field">
+            <span>Report Date</span>
+            <input
+              value={reportDate}
+              onChange={(event) => setReportDate(event.target.value)}
+              aria-label="Encounter procedure report date"
+              type="date"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Specimen</span>
+            <input
+              value={specimenNumber}
+              onChange={(event) => setSpecimenNumber(event.target.value)}
+              aria-label="Encounter procedure specimen number"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Review</span>
+            <select
+              value={reviewStatus}
+              onChange={(event) => setReviewStatus(event.target.value)}
+              aria-label="Encounter procedure review status"
+            >
+              <option value="reviewed">Reviewed</option>
+              <option value="pending">Pending</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Status</span>
+            <select
+              value={resultStatusValue}
+              onChange={(event) => setResultStatusValue(event.target.value)}
+              aria-label="Encounter procedure result status"
+            >
+              <option value="final">Final</option>
+              <option value="preliminary">Preliminary</option>
+              <option value="corrected">Corrected</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Code</span>
+            <input
+              value={resultCode}
+              onChange={(event) => setResultCode(event.target.value)}
+              aria-label="Encounter procedure result code"
+              required
+            />
+          </label>
+          <label className="filter-field procedure-order-name-field">
+            <span>Result</span>
+            <input
+              value={resultText}
+              onChange={(event) => setResultText(event.target.value)}
+              aria-label="Encounter procedure result text"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Value</span>
+            <input
+              value={resultValue}
+              onChange={(event) => setResultValue(event.target.value)}
+              aria-label="Encounter procedure result value"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Units</span>
+            <input
+              value={resultUnits}
+              onChange={(event) => setResultUnits(event.target.value)}
+              aria-label="Encounter procedure result units"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Range</span>
+            <input
+              value={resultRange}
+              onChange={(event) => setResultRange(event.target.value)}
+              aria-label="Encounter procedure result range"
+              required
+            />
+          </label>
+          <label className="filter-field">
+            <span>Flag</span>
+            <input
+              value={abnormalFlag}
+              onChange={(event) => setAbnormalFlag(event.target.value)}
+              aria-label="Encounter procedure result abnormal flag"
+            />
+          </label>
+          <label className="filter-field procedure-result-comment-field">
+            <span>Notes</span>
+            <input
+              value={resultComments}
+              onChange={(event) => setResultComments(event.target.value)}
+              aria-label="Encounter procedure result notes"
+            />
+          </label>
+        </div>
+        <div className="detail-actions compact-actions">
+          <button className="icon-text-button primary" type="submit" disabled={resultEntryStatus === 'saving'}>
+            <Check size={16} />
+            <span>{resultEntryStatus === 'saving' ? 'Saving' : 'Add Result'}</span>
+          </button>
+          {resultEntryStatus === 'saved' && <span className="save-note">Saved</span>}
+          {resultEntryStatus === 'error' && <span className="save-note error">Action failed</span>}
+        </div>
+      </form>
     </article>
   )
 }

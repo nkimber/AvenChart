@@ -957,12 +957,22 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.encounter-procedure-result-entry-panel {
+  background: #ffffff;
+  gap: 8px;
+}
+
+.encounter-procedure-result-entry-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .fee-sheet-description-field {
   grid-column: span 2;
 }
 
 .procedure-order-name-field,
-.procedure-order-instructions-field {
+.procedure-order-instructions-field,
+.procedure-result-comment-field {
   grid-column: span 2;
 }
 
@@ -1849,13 +1859,15 @@
   .encounter-procedure-result-list,
   .encounter-fee-sheet-grid,
   .encounter-procedure-entry-grid,
+  .encounter-procedure-result-entry-grid,
   .document-list-body {
     grid-template-columns: 1fr;
   }
 
   .fee-sheet-description-field,
   .procedure-order-name-field,
-  .procedure-order-instructions-field {
+  .procedure-order-instructions-field,
+  .procedure-result-comment-field {
     grid-column: auto;
   }
 }

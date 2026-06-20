@@ -628,6 +628,116 @@ finally {
     }
 }
 
+$smokeEncounterProcedureResultOrderId = $null
+try {
+    $procedureResultSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $procedureResultOrderName = "Smoke Encounter Procedure Result $procedureResultSuffix"
+    $procedureResultText = "Smoke Encounter Glucose $procedureResultSuffix"
+    $procedureResultOrderBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounterId = 1000013
+        dateOrdered = "2026-06-18"
+        priority = "routine"
+        status = "pending"
+        procedureCode = "80053"
+        procedureName = $procedureResultOrderName
+        procedureType = "laboratory"
+        diagnosis = "E78.5"
+        instructions = "Created by the smoke encounter procedure result entry check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterProcedureResultOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureResultOrderBody -TimeoutSec 20
+    $smokeEncounterProcedureResultOrderId = $createdEncounterProcedureResultOrder.id
+
+    $procedureResultReportBody = @{
+        orderId = $smokeEncounterProcedureResultOrderId
+        dateCollected = "2026-06-18 12:30:00"
+        dateReport = "2026-06-18 13:00:00"
+        specimenNumber = "SMOKE-ENC-PROC"
+        reportStatus = "final"
+        reviewStatus = "reviewed"
+        notes = "Created by the smoke encounter procedure result entry check."
+    } | ConvertTo-Json -Depth 5
+    $createdEncounterProcedureResultReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $procedureResultReportBody -TimeoutSec 20
+
+    $procedureResultBody = @{
+        reportId = $createdEncounterProcedureResultReport.id
+        resultCode = "2345-7"
+        resultText = $procedureResultText
+        dateTime = "2026-06-18 13:05:00"
+        facility = "Legacy EHR Modernization Clinic"
+        units = "mg/dL"
+        result = "104"
+        range = "70-99"
+        abnormal = "high"
+        comments = "Created by the smoke encounter procedure result entry check."
+        status = "final"
+    } | ConvertTo-Json -Depth 5
+    $createdEncounterProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $procedureResultBody -TimeoutSec 20
+
+    $refreshedEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdEncounterProcedureResultOrderRow = @($refreshedEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterProcedureResultOrderId `
+            -and $_.name -eq $procedureResultOrderName `
+            -and $_.code -eq "80053" `
+            -and $_.diagnosis -eq "E78.5" `
+            -and $_.orderStatus -eq "pending"
+    } | Select-Object -First 1
+    $createdEncounterProcedureResultReportRow = if ($null -ne $createdEncounterProcedureResultOrderRow) {
+        @($createdEncounterProcedureResultOrderRow.reports | Where-Object { $null -ne $_ }) | Where-Object {
+            $_.id -eq $createdEncounterProcedureResultReport.id -and $_.status -eq "final" -and $_.reviewStatus -eq "reviewed"
+        } | Select-Object -First 1
+    } else {
+        $null
+    }
+    $createdEncounterProcedureResultRow = if ($null -ne $createdEncounterProcedureResultReportRow) {
+        @($createdEncounterProcedureResultReportRow.results | Where-Object { $null -ne $_ }) | Where-Object {
+            $_.id -eq $createdEncounterProcedureResult.id `
+                -and $_.text -eq $procedureResultText `
+                -and $_.result -eq "104" `
+                -and $_.units -eq "mg/dL" `
+                -and $_.abnormal -eq "high" `
+                -and $_.resultStatus -eq "final"
+        } | Select-Object -First 1
+    } else {
+        $null
+    }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterProcedureResultOrderId = $null
+    $afterDeleteEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterProcedureResultOrderRow = @($afterDeleteEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $procedureResultOrderName
+    } | Select-Object -First 1
+
+    $encounterProcedureResultEntryPassed = $null -ne $createdEncounterProcedureResultOrderRow `
+        -and $null -ne $createdEncounterProcedureResultReportRow `
+        -and $null -ne $createdEncounterProcedureResultRow `
+        -and $null -eq $deletedEncounterProcedureResultOrderRow
+    Add-Check -Name "encounter procedure result entry lifecycle" -Result $(if ($encounterProcedureResultEntryPassed) { "passed" } else { "failed" }) -Details @{
+        createdOrderId = $createdEncounterProcedureResultOrder.id
+        reportId = $createdEncounterProcedureResultReport.id
+        resultId = $createdEncounterProcedureResult.id
+        encounter = $refreshedEncounterProcedureResultDetail.encounter
+        order = $createdEncounterProcedureResultOrderRow
+        report = $createdEncounterProcedureResultReportRow
+        result = $createdEncounterProcedureResultRow
+    }
+}
+catch {
+    Add-Check -Name "encounter procedure result entry lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterProcedureResultOrderId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."
