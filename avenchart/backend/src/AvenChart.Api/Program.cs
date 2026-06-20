@@ -369,6 +369,38 @@ encounters.MapPost("/{encounter:int}/documents/binary", async (
     })
     .WithName("CreateBinaryEncounterDocument");
 
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        PatientDocumentSignRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!encounterDetail.Documents.Any(document => document.Id == documentId))
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.SignAsync(documentId, request, cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document could not be signed from the supplied review details.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+    })
+    .WithName("SignEncounterDocument");
+
 encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
         EncounterRepository repository,
         int encounter,

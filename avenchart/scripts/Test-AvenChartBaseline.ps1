@@ -622,6 +622,73 @@ finally {
     }
 }
 
+$smokeEncounterDocumentSignOffId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $signedDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $signedDocumentName = "Smoke Encounter Signed Document $signedDocumentSuffix"
+    $signedDocumentBody = @{
+        categoryId = 3
+        name = $signedDocumentName
+        docDate = "2026-06-18"
+        content = "Smoke encounter document sign-off content $signedDocumentSuffix."
+        notes = "Created by the smoke encounter document sign-off check."
+    } | ConvertTo-Json
+
+    $createdEncounterSignedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $signedDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentSignOffId = $createdEncounterSignedDocument.id
+    $createdSignedDocumentVisible = @($createdEncounterSignedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentSignOffId `
+            -and $_.name -eq $signedDocumentName `
+            -and $_.reviewStatus -eq "pending" `
+            -and [string]::IsNullOrWhiteSpace($_.reviewedBy)
+    } | Select-Object -First 1
+
+    $signBody = @{
+        reviewStatus = "approved"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $signedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentSignOffId/sign" -Method Put -ContentType "application/json" -Body $signBody -TimeoutSec 20
+    $signedEncounterDocumentVisible = @($signedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentSignOffId `
+            -and $_.name -eq $signedDocumentName `
+            -and $_.reviewStatus -eq "approved" `
+            -and $_.reviewedBy -eq "admin" `
+            -and -not [string]::IsNullOrWhiteSpace($_.reviewedAt)
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentSignOffId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentSignOffId = $null
+    $afterDeleteSignedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedSignedDocumentVisible = @($afterDeleteSignedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $signedDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentSignOffPassed = $null -ne $createdSignedDocumentVisible `
+        -and $null -ne $signedEncounterDocumentVisible `
+        -and $null -eq $deletedSignedDocumentVisible
+    Add-Check -Name "encounter document sign-off lifecycle" -Result $(if ($encounterDocumentSignOffPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterSignedDocument.id
+        document = $signedEncounterDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document sign-off lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentSignOffId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentSignOffId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

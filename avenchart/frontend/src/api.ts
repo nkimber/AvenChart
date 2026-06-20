@@ -228,6 +228,9 @@ export type EncounterDocumentAttachment = {
   url?: string | null
   hash?: string | null
   notes?: string | null
+  reviewStatus: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   contentPreview?: string | null
   previewKind: string
   previewStatus: string
@@ -1802,6 +1805,25 @@ export async function createEncounterBinaryDocument(
   })
   if (!response.ok) {
     throw new Error(`Binary encounter document attach failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function signEncounterDocument(
+  encounter: number,
+  documentId: number,
+  signature: PatientDocumentSignInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(signature),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document sign-off failed with ${response.status}`)
   }
 
   return response.json()

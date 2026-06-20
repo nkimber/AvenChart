@@ -1202,6 +1202,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select id, document_key, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, size_bytes, pages, storage_method, file_name, url, hash, notes,
+              coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
                 when content_bytes is not null then left(coalesce(content, ''), 220)
                 else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 220)
@@ -1241,6 +1242,9 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 Url: url,
                 Hash: ReadNullableString(reader, "hash"),
                 Notes: ReadNullableString(reader, "notes"),
+                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+                ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
                 ContentPreview: contentPreview,
                 PreviewKind: preview.PreviewKind,
                 PreviewStatus: preview.PreviewStatus,

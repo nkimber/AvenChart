@@ -105,6 +105,7 @@ import {
   searchEncounters,
   searchPatients,
   signEncounter,
+  signEncounterDocument,
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
@@ -1119,6 +1120,31 @@ function App() {
       const message = createError instanceof Error ? createError.message : 'Binary encounter document attach failed'
       setEncounterError(message)
       throw createError
+    }
+  }
+
+  async function handleEncounterDocumentSign(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await signEncounterDocument(encounter.encounter, document.id, {
+        reviewStatus: 'approved',
+        reviewedBy: 'admin',
+      })
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (signError) {
+      setEncounterDetailStatus('error')
+      const message = signError instanceof Error ? signError.message : 'Encounter document sign-off failed'
+      setEncounterError(message)
+      throw signError
     }
   }
 
@@ -2372,6 +2398,7 @@ function App() {
             onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
+            onSignEncounterDocument={handleEncounterDocumentSign}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
@@ -3603,6 +3630,7 @@ function EncounterWorkspace({
   onDeleteEncounterSignature,
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
+  onSignEncounterDocument,
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
@@ -3632,6 +3660,10 @@ function EncounterWorkspace({
   onCreateEncounterBinaryDocument: (
     encounter: EncounterDetail,
     input: EncounterBinaryDocumentCreateInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onSignEncounterDocument: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
   ) => Promise<EncounterDocumentMutationResponse>
   onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
   onCreateProcedureOrder: (encounter: EncounterDetail, input: ProcedureOrderCreateInput) => Promise<unknown>
@@ -3699,6 +3731,7 @@ function EncounterWorkspace({
   const [encounterBinaryContentBase64, setEncounterBinaryContentBase64] = useState('')
   const [encounterBinaryFileMessage, setEncounterBinaryFileMessage] = useState('No file selected')
   const [encounterBinaryDocumentStatus, setEncounterBinaryDocumentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3734,6 +3767,7 @@ function EncounterWorkspace({
       setSummaryExternalId('')
       setSummaryPosCode('')
       setSummaryBillingNote('')
+      setEncounterDocumentReviewStatus('idle')
       return
     }
 
@@ -3748,6 +3782,7 @@ function EncounterWorkspace({
     setSignatureSignedAt(`${encounterDetail.date}T10:20`)
     setEncounterDocumentDate(encounterDetail.date)
     setEncounterBinaryDocumentDate(encounterDetail.date)
+    setEncounterDocumentReviewStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -3979,6 +4014,20 @@ function EncounterWorkspace({
       setEncounterBinaryDocumentStatus('saved')
     } catch {
       setEncounterBinaryDocumentStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentSign(document: EncounterDocumentAttachment) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentReviewStatus('saving')
+    try {
+      await onSignEncounterDocument(encounterDetail, document)
+      setEncounterDocumentReviewStatus('saved')
+    } catch {
+      setEncounterDocumentReviewStatus('error')
     }
   }
 
@@ -4705,12 +4754,26 @@ function EncounterWorkspace({
               </form>
               <div className="encounter-documents-list">
                 {attachedDocuments.map((document) => (
-                  <EncounterDocumentAttachmentCard key={document.id} document={document} />
+                  <EncounterDocumentAttachmentCard
+                    key={document.id}
+                    document={document}
+                    disabled={encounterDocumentReviewStatus === 'saving'}
+                    onSign={handleEncounterDocumentSign}
+                  />
                 ))}
                 {attachedDocuments.length === 0 && (
                   <div className="timeline-placeholder">No documents linked to this encounter</div>
                 )}
               </div>
+              <span className={encounterDocumentReviewStatus === 'error' ? 'save-note error' : 'save-note'}>
+                {encounterDocumentReviewStatus === 'saved'
+                  ? 'Document signed'
+                  : encounterDocumentReviewStatus === 'saving'
+                    ? 'Signing document'
+                    : encounterDocumentReviewStatus === 'error'
+                      ? 'Document sign-off failed'
+                      : ''}
+              </span>
             </section>
 
             <section className="soap-panel" aria-label="SOAP note">
@@ -5335,8 +5398,17 @@ function EncounterBillingLineCard({ line }: { line: BillingLineItem }) {
   )
 }
 
-function EncounterDocumentAttachmentCard({ document }: { document: EncounterDocumentAttachment }) {
+function EncounterDocumentAttachmentCard({
+  document,
+  disabled,
+  onSign,
+}: {
+  document: EncounterDocumentAttachment
+  disabled: boolean
+  onSign: (document: EncounterDocumentAttachment) => Promise<void>
+}) {
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
+  const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
 
   return (
     <article className="encounter-document-card">
@@ -5360,6 +5432,11 @@ function EncounterDocumentAttachmentCard({ document }: { document: EncounterDocu
         <span>{document.mimetype || 'No mimetype'}</span>
         <span>{formatBytes(document.sizeBytes)}</span>
       </div>
+      <div className="procedure-order-meta">
+        <span>{document.reviewStatus === 'approved' ? 'approved' : document.reviewStatus || 'pending'}</span>
+        <span>{document.reviewedBy ? `Reviewed by ${document.reviewedBy}` : 'Not reviewed'}</span>
+        <span>{document.reviewedAt || 'No review time'}</span>
+      </div>
 
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
 
@@ -5381,6 +5458,15 @@ function EncounterDocumentAttachmentCard({ document }: { document: EncounterDocu
             Open Link
           </a>
         )}
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || isReviewed}
+          onClick={() => void onSign(document)}
+        >
+          <ShieldCheck size={14} />
+          Sign
+        </button>
       </div>
     </article>
   )
