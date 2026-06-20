@@ -1022,6 +1022,29 @@ function App() {
     }
   }
 
+  async function handleEncounterFeeSheetLineCreate(
+    encounter: EncounterDetail,
+    input: BillingLineCreateInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await createBillingLine(input)
+      const refreshed = await getEncounterDetail(encounter.encounter)
+      setEncounterDetail(refreshed)
+      setSelectedEncounter(refreshed.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setEncounterDetailStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Encounter fee sheet line create failed'
+      setEncounterError(message)
+      throw createError
+    }
+  }
+
   async function handleClinicalAllergyCreate(input: ClinicalAllergyCreateInput) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -2192,6 +2215,7 @@ function App() {
             onDeleteEncounter={handleEncounterDelete}
             onCreateVitals={handleEncounterVitalsCreate}
             onCreateSoapNote={handleEncounterSoapCreate}
+            onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
           />
         )}
         {activeModule === 'lists' && (
@@ -3416,6 +3440,7 @@ function EncounterWorkspace({
   onDeleteEncounter,
   onCreateVitals,
   onCreateSoapNote,
+  onCreateFeeSheetLine,
 }: {
   patientId: string
   fromDate: string
@@ -3433,6 +3458,7 @@ function EncounterWorkspace({
   onDeleteEncounter: (encounter: EncounterDetail) => Promise<void>
   onCreateVitals: (encounter: EncounterDetail, input: EncounterVitalsCreateInput) => Promise<unknown>
   onCreateSoapNote: (encounter: EncounterDetail, input: EncounterSoapNoteCreateInput) => Promise<unknown>
+  onCreateFeeSheetLine: (encounter: EncounterDetail, input: BillingLineCreateInput) => Promise<unknown>
 }) {
   const [createPatientId, setCreatePatientId] = useState(patientId)
   const [createDateTime, setCreateDateTime] = useState('2026-06-18T10:00')
@@ -3472,6 +3498,16 @@ function EncounterWorkspace({
   const [soapPlan, setSoapPlan] = useState('Continue validation plan.')
   const [soapStatus, setSoapStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
+  const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
+  const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
+  const [feeSheetCode, setFeeSheetCode] = useState('99499')
+  const [feeSheetModifier, setFeeSheetModifier] = useState('')
+  const [feeSheetDescription, setFeeSheetDescription] = useState('Encounter fee sheet service')
+  const [feeSheetFee, setFeeSheetFee] = useState('42.00')
+  const [feeSheetUnits, setFeeSheetUnits] = useState('1')
+  const [feeSheetJustify, setFeeSheetJustify] = useState('E78.5')
+  const [feeSheetStatus, setFeeSheetStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
   useEffect(() => {
     setCreatePatientId(patientId)
   }, [patientId])
@@ -3495,7 +3531,29 @@ function EncounterWorkspace({
     setSummaryBillingNote(encounterDetail.billingNote ?? '')
     setVitalsDateTime(`${encounterDetail.date}T10:05`)
     setSoapDateTime(`${encounterDetail.date}T10:10`)
+    setFeeSheetDate(encounterDetail.date)
   }, [encounterDetail])
+
+  function handleFeeSheetCodeTypeChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextCodeType = event.target.value === 'ICD10' ? 'ICD10' : 'CPT4'
+    setFeeSheetCodeType(nextCodeType)
+    setFeeSheetStatus('idle')
+
+    if (nextCodeType === 'ICD10') {
+      setFeeSheetCode('R73.03')
+      setFeeSheetModifier('')
+      setFeeSheetDescription('Prediabetes')
+      setFeeSheetFee('0.00')
+      setFeeSheetUnits('1')
+      setFeeSheetJustify('R73.03')
+    } else {
+      setFeeSheetCode('99499')
+      setFeeSheetDescription('Encounter fee sheet service')
+      setFeeSheetFee('42.00')
+      setFeeSheetUnits('1')
+      setFeeSheetJustify('E78.5')
+    }
+  }
 
   async function handleCreateSubmit(event: FormEvent) {
     event.preventDefault()
@@ -3599,6 +3657,32 @@ function EncounterWorkspace({
       setSoapStatus('saved')
     } catch {
       setSoapStatus('error')
+    }
+  }
+
+  async function handleFeeSheetSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!encounterDetail) {
+      return
+    }
+
+    setFeeSheetStatus('saving')
+    try {
+      await onCreateFeeSheetLine(encounterDetail, {
+        patientId: encounterDetail.pubpid,
+        encounter: encounterDetail.encounter,
+        billingDate: feeSheetDate,
+        codeType: feeSheetCodeType,
+        code: feeSheetCode,
+        modifier: feeSheetCodeType === 'ICD10' ? '' : feeSheetModifier,
+        codeText: feeSheetDescription,
+        fee: Number(feeSheetFee),
+        units: Number(feeSheetUnits),
+        justify: feeSheetJustify,
+      })
+      setFeeSheetStatus('saved')
+    } catch {
+      setFeeSheetStatus('error')
     }
   }
 
@@ -3859,6 +3943,101 @@ function EncounterWorkspace({
                 )}
               </div>
             </section>
+
+            <form className="appointment-mutation-panel encounter-fee-sheet-panel" onSubmit={handleFeeSheetSubmit} aria-label="Encounter fee sheet entry">
+              <div className="panel-heading compact-heading">
+                <WalletCards size={16} />
+                <h3>Fee Sheet Entry</h3>
+              </div>
+              <div className="mutation-grid encounter-fee-sheet-grid">
+                <label className="filter-field">
+                  <span>Type</span>
+                  <select
+                    value={feeSheetCodeType}
+                    onChange={handleFeeSheetCodeTypeChange}
+                    aria-label="Encounter fee sheet code type"
+                  >
+                    <option value="CPT4">CPT4</option>
+                    <option value="ICD10">ICD10</option>
+                  </select>
+                </label>
+                <label className="filter-field">
+                  <span>Date</span>
+                  <input
+                    value={feeSheetDate}
+                    onChange={(event) => setFeeSheetDate(event.target.value)}
+                    aria-label="Encounter fee sheet date"
+                    type="date"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Code</span>
+                  <input
+                    value={feeSheetCode}
+                    onChange={(event) => setFeeSheetCode(event.target.value)}
+                    aria-label="Encounter fee sheet code"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Modifier</span>
+                  <input
+                    value={feeSheetModifier}
+                    onChange={(event) => setFeeSheetModifier(event.target.value)}
+                    aria-label="Encounter fee sheet modifier"
+                    disabled={feeSheetCodeType === 'ICD10'}
+                    placeholder="25"
+                  />
+                </label>
+                <label className="filter-field fee-sheet-description-field">
+                  <span>Description</span>
+                  <input
+                    value={feeSheetDescription}
+                    onChange={(event) => setFeeSheetDescription(event.target.value)}
+                    aria-label="Encounter fee sheet description"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Fee</span>
+                  <input
+                    value={feeSheetFee}
+                    onChange={(event) => setFeeSheetFee(event.target.value)}
+                    aria-label="Encounter fee sheet fee"
+                    inputMode="decimal"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Units</span>
+                  <input
+                    value={feeSheetUnits}
+                    onChange={(event) => setFeeSheetUnits(event.target.value)}
+                    aria-label="Encounter fee sheet units"
+                    inputMode="numeric"
+                    required
+                  />
+                </label>
+                <label className="filter-field">
+                  <span>Justify</span>
+                  <input
+                    value={feeSheetJustify}
+                    onChange={(event) => setFeeSheetJustify(event.target.value)}
+                    aria-label="Encounter fee sheet justification"
+                    required
+                  />
+                </label>
+              </div>
+              <div className="detail-actions">
+                <button className="icon-text-button primary" type="submit" disabled={feeSheetStatus === 'saving'}>
+                  <Check size={16} />
+                  <span>{feeSheetStatus === 'saving' ? 'Saving' : 'Add Line'}</span>
+                </button>
+                {feeSheetStatus === 'saved' && <span className="save-note">Saved</span>}
+                {feeSheetStatus === 'error' && <span className="save-note error">Action failed</span>}
+              </div>
+            </form>
 
             <section className="info-panel encounter-claim-panel" aria-label="Encounter claim linkage">
               <div className="panel-heading">

@@ -943,8 +943,17 @@
 .encounter-diagnosis-panel,
 .encounter-claim-panel,
 .encounter-procedure-panel,
-.encounter-documents-panel {
+.encounter-documents-panel,
+.encounter-fee-sheet-panel {
   margin-top: 12px;
+}
+
+.encounter-fee-sheet-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fee-sheet-description-field {
+  grid-column: span 2;
 }
 
 .encounter-billing-list,
@@ -1828,8 +1837,13 @@
   .encounter-claim-list,
   .encounter-documents-list,
   .encounter-procedure-result-list,
+  .encounter-fee-sheet-grid,
   .document-list-body {
     grid-template-columns: 1fr;
+  }
+
+  .fee-sheet-description-field {
+    grid-column: auto;
   }
 }
 
