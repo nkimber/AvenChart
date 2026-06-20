@@ -58,6 +58,7 @@ public sealed record EncounterDetail(
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount,
+    IReadOnlyList<BillingLineItem> BillingLines,
     IReadOnlyList<EncounterDocumentAttachment> Documents);
 
 public sealed record EncounterDocumentAttachment(

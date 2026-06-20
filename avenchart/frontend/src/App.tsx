@@ -3602,6 +3602,8 @@ function EncounterWorkspace({
   }
 
   const attachedDocuments = encounterDetail?.documents ?? []
+  const encounterBillingLines = encounterDetail?.billingLines ?? []
+  const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
 
   return (
     <section className="scheduler-layout">
@@ -3812,6 +3814,23 @@ function EncounterWorkspace({
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
               </InfoPanel>
             </div>
+
+            <section className="info-panel encounter-billing-panel" aria-label="Encounter billing linkage">
+              <div className="panel-heading">
+                <WalletCards size={17} />
+                <h3>Fee Sheet Linkage</h3>
+                <span className="panel-count-pill">{encounterBillingLines.length}</span>
+                <span className="billing-total-pill">{formatCurrency(encounterBillingTotal)}</span>
+              </div>
+              <div className="encounter-billing-list">
+                {encounterBillingLines.map((line) => (
+                  <EncounterBillingLineCard key={line.id} line={line} />
+                ))}
+                {encounterBillingLines.length === 0 && (
+                  <div className="timeline-placeholder">No active fee-sheet lines linked to this encounter</div>
+                )}
+              </div>
+            </section>
 
             <section className="info-panel encounter-documents-panel" aria-label="Encounter attached documents">
               <div className="panel-heading">
@@ -4088,6 +4107,34 @@ function EncounterWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function EncounterBillingLineCard({ line }: { line: BillingLineItem }) {
+  const codeLabel = [line.codeType, line.code].filter(Boolean).join(' ')
+  const statusLabel = line.billed === 1 ? 'Billed' : 'Unbilled'
+  const activityLabel = line.activity === 1 ? 'Active' : 'Inactive'
+
+  return (
+    <article className="encounter-billing-card">
+      <div className="billing-line-main">
+        <div>
+          <strong>{codeLabel || 'Uncoded line'}</strong>
+          <span>{line.codeText || 'No billing description'}</span>
+        </div>
+        <div className="billing-line-fee">{formatCurrency(line.fee)}</div>
+      </div>
+      <div className="document-meta-grid encounter-billing-meta">
+        <span>{line.billingDate}</span>
+        <span>Units {line.units}</span>
+        <span>{statusLabel}</span>
+        <span>{activityLabel}</span>
+      </div>
+      <div className="document-footnote">
+        <span>Justification {line.justify || 'None'}</span>
+        <span>{line.modifier ? `Modifier ${line.modifier}` : line.id}</span>
+      </div>
+    </article>
   )
 }
 

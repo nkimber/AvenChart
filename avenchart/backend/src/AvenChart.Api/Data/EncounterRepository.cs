@@ -174,11 +174,13 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
+            BillingLines: Array.Empty<BillingLineItem>(),
             Documents: Array.Empty<EncounterDocumentAttachment>());
 
         await reader.DisposeAsync();
+        var billingLines = await GetBillingLinesForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
-        return detail with { Documents = documents };
+        return detail with { BillingLines = billingLines, Documents = documents };
     }
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
@@ -638,6 +640,44 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return new EncounterSoapNote(subjective, objective, assessment, plan);
     }
 
+    private static async Task<IReadOnlyList<BillingLineItem>> GetBillingLinesForEncounterAsync(
+        NpgsqlConnection connection,
+        int pid,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, encounter, billing_date, code_type, code, modifier, code_text, fee, justify, units, billed, activity
+            from billing
+            where pid = @pid and encounter = @encounter and activity = 1
+            order by id;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var lines = new List<BillingLineItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(new BillingLineItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+                BillingDate: ReadDate(reader, "billing_date"),
+                CodeType: ReadNullableString(reader, "code_type"),
+                Code: ReadNullableString(reader, "code"),
+                Modifier: ReadNullableString(reader, "modifier"),
+                CodeText: ReadNullableString(reader, "code_text"),
+                Fee: ReadNullableDecimal(reader, "fee"),
+                Justify: ReadNullableString(reader, "justify"),
+                Units: ReadInt(reader, "units"),
+                Billed: ReadInt(reader, "billed"),
+                Activity: ReadInt(reader, "activity")));
+        }
+
+        return lines;
+    }
+
     private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
         NpgsqlConnection connection,
         int pid,
@@ -863,6 +903,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static int ReadInt(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? 0 : reader.GetInt32(ordinal);
     }
 
     private static decimal? ReadNullableDecimal(DbDataReader reader, string columnName)

@@ -466,6 +466,19 @@
   padding: 3px 9px;
 }
 
+.billing-total-pill {
+  align-items: center;
+  background: #f3f7ec;
+  border: 1px solid #d6e4c0;
+  border-radius: 999px;
+  color: #355b20;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  padding: 3px 9px;
+}
+
 .panel-body {
   display: flex;
   flex-direction: column;
@@ -912,10 +925,12 @@
   min-width: 0;
 }
 
+.encounter-billing-panel,
 .encounter-documents-panel {
   margin-top: 12px;
 }
 
+.encounter-billing-list,
 .encounter-documents-list {
   display: grid;
   gap: 10px;
@@ -923,6 +938,7 @@
   padding: 12px;
 }
 
+.encounter-billing-card,
 .encounter-document-card {
   background: #f8fafb;
   border: 1px solid #e0e8ec;
@@ -934,6 +950,38 @@
   padding: 12px;
 }
 
+.billing-line-main {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.billing-line-main > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.billing-line-main strong {
+  color: #123743;
+  font-size: 14px;
+}
+
+.billing-line-main span {
+  color: #52636b;
+  font-size: 13px;
+}
+
+.billing-line-fee {
+  color: #315c1f;
+  font-size: 15px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.encounter-billing-meta,
 .encounter-document-meta {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1686,6 +1734,7 @@
     max-height: 420px;
   }
 
+  .encounter-billing-list,
   .encounter-documents-list,
   .document-list-body {
     grid-template-columns: 1fr;

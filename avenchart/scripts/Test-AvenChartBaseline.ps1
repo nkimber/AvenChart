@@ -440,6 +440,29 @@ try {
         throw "Anchor encounter detail did not load."
     }
 
+    $encounterBillingLines = if ($null -eq $encounterDetail.billingLines) { @() } else { @($encounterDetail.billingLines) }
+    $officeVisitLine = $encounterBillingLines | Where-Object { $_.codeType -eq "CPT4" -and $_.code -eq "99214" -and $_.codeText -eq "Established patient office visit" -and $_.fee -eq 168.00 -and $_.justify -eq "E78.5" } | Select-Object -First 1
+    $venipunctureLine = $encounterBillingLines | Where-Object { $_.codeType -eq "CPT4" -and $_.code -eq "36415" -and $_.codeText -eq "Routine venipuncture" -and $_.fee -eq 18.00 -and $_.justify -eq "E78.5" } | Select-Object -First 1
+    $encounterBillingPassed = $encounterDetail.encounter -eq 1000013 `
+        -and $encounterDetail.billingLineCount -eq 2 `
+        -and $encounterBillingLines.Count -eq 2 `
+        -and $null -ne $officeVisitLine `
+        -and $null -ne $venipunctureLine
+    Add-Check -Name "anchor encounter billing linkage" -Result $(if ($encounterBillingPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $encounterDetail.encounter
+        billingLineCount = $encounterDetail.billingLineCount
+        linkedBillingLines = $encounterBillingLines | Select-Object id, codeType, code, codeText, fee, justify, units, billed, activity
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter billing linkage" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
     $attachedDocuments = if ($null -eq $encounterDetail.documents) { @() } else { @($encounterDetail.documents) }
     $intakePacketAttachment = $attachedDocuments | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
     $advanceDirectiveAttachment = $attachedDocuments | Where-Object { $_.name -eq "Advance directive acknowledgement" -and $_.categoryName -eq "Advance Directive" } | Select-Object -First 1
