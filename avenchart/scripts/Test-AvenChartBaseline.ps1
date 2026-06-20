@@ -2522,6 +2522,66 @@ finally {
     }
 }
 
+$patientScannedDocumentId = $null
+try {
+    $scanDocumentName = "Smoke Scanned Attachment Patient Document"
+    $scanFileName = "smoke-scanned-attachment.pdf"
+    $scanNotes = "Scan source: front-desk scanner; OCR pending; Created by the smoke scanned attachment readiness check."
+    $scanPdfText = "%PDF-1.4`n% Smoke scanned attachment readiness PDF`n1 0 obj << /Type /Catalog >> endobj`n%%EOF"
+    $scanPdfBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($scanPdfText))
+    $createScanDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $scanDocumentName
+        docDate = "2026-06-19"
+        encounter = 1000013
+        fileName = $scanFileName
+        mimetype = "application/pdf"
+        contentBase64 = $scanPdfBase64
+        notes = $scanNotes
+    } | ConvertTo-Json
+    $createdScanDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/binary" -Method Post -ContentType "application/json" -Body $createScanDocumentBody -TimeoutSec 20
+    $patientScannedDocumentId = $createdScanDocument.id
+    $createdScanVisible = $createdScanDocument.detail.documents | Where-Object { $_.id -eq $patientScannedDocumentId -and $_.name -eq $scanDocumentName } | Select-Object -First 1
+    $scanContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientScannedDocumentId/content" -Method Get -TimeoutSec 20
+
+    $patientScannedAttachmentPassed = $null -ne $createdScanVisible `
+        -and $createdScanVisible.isScannedAttachment `
+        -and $createdScanVisible.scanStatus -eq "Scanned attachment" `
+        -and $createdScanVisible.captureSource -eq "front-desk scanner" `
+        -and $createdScanVisible.scanPageCount -eq 1 `
+        -and $createdScanVisible.ocrStatus -eq "OCR pending" `
+        -and $scanContent.isScannedAttachment `
+        -and $scanContent.scanStatus -eq "Scanned attachment" `
+        -and $scanContent.captureSource -eq "front-desk scanner" `
+        -and $scanContent.scanPageCount -eq 1 `
+        -and $scanContent.ocrStatus -eq "OCR pending"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientScannedDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientScannedDocumentId = $null
+
+    Add-Check -Name "patient scanned attachment readiness" -Result $(if ($patientScannedAttachmentPassed) { "passed" } else { "failed" }) -Details @{
+        documentId = $createdScanDocument.id
+        scanListStatus = $createdScanVisible.scanStatus
+        scanViewerStatus = $scanContent.scanStatus
+        captureSource = $scanContent.captureSource
+        scanPageCount = $scanContent.scanPageCount
+        ocrStatus = $scanContent.ocrStatus
+    }
+}
+catch {
+    Add-Check -Name "patient scanned attachment readiness" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientScannedDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientScannedDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientBinaryDocumentMutationId = $null
 try {
     $binaryDocumentName = "Smoke Binary Patient Document.pdf"

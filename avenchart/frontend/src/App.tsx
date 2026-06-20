@@ -9068,6 +9068,10 @@ function DocumentsWorkspace({
                       <Field label="Revision" value={viewedDocument.versionLabel} />
                       <Field label="Revision time" value={viewedDocument.revisionAt} />
                       <Field label="Version history" value={`${viewedDocument.versionHistoryCount} current version`} />
+                      <Field label="Scan status" value={viewedDocument.scanStatus} />
+                      <Field label="Capture source" value={viewedDocument.captureSource} />
+                      <Field label="Scan pages" value={viewedDocument.scanPageCount} />
+                      <Field label="OCR status" value={viewedDocument.ocrStatus} />
                       <Field label="MIME" value={viewedDocument.mimetype} />
                       <Field label="Encounter" value={viewedDocument.encounter} />
                       <Field label="Storage" value={viewedDocument.storageMethod} />
@@ -10040,6 +10044,14 @@ function DocumentItem({
         <span>{document.revisionAt || document.uploadedAt}</span>
         <span>{document.hasPriorVersions ? `${document.versionHistoryCount} versions` : 'No prior versions'}</span>
       </div>
+      {document.isScannedAttachment && (
+        <div className="document-scan-readiness" aria-label={`Scan readiness for ${document.name}`}>
+          <span>{document.scanStatus}</span>
+          <span>{document.captureSource}</span>
+          <span>{document.scanPageCount} scanned page{document.scanPageCount === 1 ? '' : 's'}</span>
+          <span>{document.ocrStatus}</span>
+        </div>
+      )}
       <div className="document-lifecycle-readiness" aria-label={`Lifecycle for ${document.name}`}>
         {(document.lifecycleEvents ?? []).map((event) => (
           <div className="document-lifecycle-event" key={event.code}>

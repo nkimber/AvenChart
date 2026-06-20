@@ -635,6 +635,11 @@ export type PatientDocumentItem = {
   thumbnailDataUri?: string | null
   canPreviewInline: boolean
   canDownload: boolean
+  isScannedAttachment: boolean
+  scanStatus: string
+  captureSource: string
+  scanPageCount: number
+  ocrStatus: string
   lifecycleEvents: PatientDocumentLifecycleEvent[]
 }
 
@@ -743,6 +748,11 @@ export type PatientDocumentContentResponse = {
   thumbnailText: string
   canPreviewInline: boolean
   canDownload: boolean
+  isScannedAttachment: boolean
+  scanStatus: string
+  captureSource: string
+  scanPageCount: number
+  ocrStatus: string
   lifecycleEvents: PatientDocumentLifecycleEvent[]
 }
 

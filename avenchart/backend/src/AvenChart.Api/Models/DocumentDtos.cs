@@ -51,6 +51,11 @@ public sealed record PatientDocumentItem(
     string? ThumbnailDataUri,
     bool CanPreviewInline,
     bool CanDownload,
+    bool IsScannedAttachment,
+    string ScanStatus,
+    string CaptureSource,
+    int ScanPageCount,
+    string OcrStatus,
     IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents);
 
 public sealed record PatientDocumentLifecycleEvent(
@@ -147,6 +152,11 @@ public sealed record PatientDocumentContentResponse(
     string ThumbnailText,
     bool CanPreviewInline,
     bool CanDownload,
+    bool IsScannedAttachment,
+    string ScanStatus,
+    string CaptureSource,
+    int ScanPageCount,
+    string OcrStatus,
     IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents);
 
 public sealed record PatientDocumentSignRequest(
