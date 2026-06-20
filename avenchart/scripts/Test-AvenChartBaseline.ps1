@@ -2250,6 +2250,60 @@ catch {
     Add-Check -Name "anchor collections work queue" -Result "failed" -Details $_.Exception.Message
 }
 
+$collectionsFollowUpId = $null
+try {
+    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -TimeoutSec 20
+    $firstCollectionItem = @($collectionsWorkQueue.items) | Select-Object -First 1
+    $createFollowUpBody = @{
+        patientId = $firstCollectionItem.pubpid
+        assignedTo = "billing"
+        action = $firstCollectionItem.recommendedAction
+        note = "Created by the smoke collections follow-up check."
+    } | ConvertTo-Json
+    $createdFollowUp = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/follow-ups" -Method Post -ContentType "application/json" -Body $createFollowUpBody -TimeoutSec 20
+    $collectionsFollowUpId = $createdFollowUp.id
+
+    $closeFollowUpBody = @{
+        status = "Done"
+        body = "Closed by the smoke collections follow-up check."
+    } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/status" -Method Put -ContentType "application/json" -Body $closeFollowUpBody -TimeoutSec 20 | Out-Null
+    $patientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)" -Method Get -TimeoutSec 20
+    $closedFollowUp = $patientMessages.messages | Where-Object { $_.id -eq $collectionsFollowUpId -and $_.status -eq "Done" } | Select-Object -First 1
+    $collectionsFollowUpPassed = $createdFollowUp.task.title -eq "Collections follow-up: $($firstCollectionItem.statementNumber)" `
+        -and $createdFollowUp.task.assignedTo -eq "billing" `
+        -and $createdFollowUp.task.action -eq $firstCollectionItem.recommendedAction `
+        -and $createdFollowUp.task.collectionTier -eq $firstCollectionItem.collectionTier `
+        -and $createdFollowUp.task.body -like "*$($firstCollectionItem.statementNumber)*" `
+        -and $createdFollowUp.task.body -like "*Created by the smoke collections follow-up check.*" `
+        -and $null -ne $closedFollowUp `
+        -and $closedFollowUp.body -eq "Closed by the smoke collections follow-up check."
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -TimeoutSec 20 | Out-Null
+    $collectionsFollowUpId = $null
+
+    Add-Check -Name "collections follow-up task lifecycle" -Result $(if ($collectionsFollowUpPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $firstCollectionItem.pubpid
+        taskId = $createdFollowUp.id
+        title = $createdFollowUp.task.title
+        assignedTo = $createdFollowUp.task.assignedTo
+        action = $createdFollowUp.task.action
+        closedVisible = $null -ne $closedFollowUp
+    }
+}
+catch {
+    Add-Check -Name "collections follow-up task lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $collectionsFollowUpId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"

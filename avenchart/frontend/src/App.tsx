@@ -60,6 +60,7 @@ import {
   createClinicalPrescription,
   createAdministrationFacility,
   createAdministrationUser,
+  createCollectionsFollowUp,
   createPatientInsurance,
   createPatientBinaryDocument,
   createPatientDocument,
@@ -153,6 +154,7 @@ import {
   type ClinicalPrescriptionCreateInput,
   type CollectionsWorkQueueItem,
   type CollectionsWorkQueueResponse,
+  type CollectionsFollowUpMutationResponse,
   type EncounterCreateInput,
   type EncounterDetail,
   type EncounterSoapNoteCreateInput,
@@ -4711,6 +4713,8 @@ function FeesWorkspace({
   const [collectionsWorkQueue, setCollectionsWorkQueue] = useState<CollectionsWorkQueueResponse | null>(null)
   const [collectionsWorkQueueStatus, setCollectionsWorkQueueStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [collectionsWorkQueueError, setCollectionsWorkQueueError] = useState<string | null>(null)
+  const [collectionsFollowUpStatus, setCollectionsFollowUpStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [collectionsFollowUpMessage, setCollectionsFollowUpMessage] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -4884,6 +4888,29 @@ function FeesWorkspace({
     })
 
     setMutationMessage('Payment posting saved')
+  }
+
+  async function handleCollectionsFollowUp(item: CollectionsWorkQueueItem): Promise<CollectionsFollowUpMutationResponse> {
+    setCollectionsFollowUpStatus('saving')
+    setCollectionsFollowUpMessage(null)
+
+    try {
+      const response = await createCollectionsFollowUp({
+        patientId: item.pubpid,
+        assignedTo: 'billing',
+        action: item.recommendedAction,
+        note: 'Created from the modernized Fees collections work queue.',
+      })
+      setCollectionsFollowUpStatus('saved')
+      setCollectionsFollowUpMessage(`Created ${response.task.title} assigned to ${response.task.assignedTo}`)
+      onPatientIdChange(response.task.pubpid)
+      return response
+    } catch (followUpError) {
+      setCollectionsFollowUpStatus('error')
+      const message = followUpError instanceof Error ? followUpError.message : 'Collections follow-up create failed'
+      setCollectionsFollowUpMessage(message)
+      throw followUpError
+    }
   }
 
   return (
@@ -5402,7 +5429,10 @@ function FeesWorkspace({
           queue={collectionsWorkQueue}
           status={collectionsWorkQueueStatus}
           error={collectionsWorkQueueError}
+          followUpStatus={collectionsFollowUpStatus}
+          followUpMessage={collectionsFollowUpMessage}
           onSelectItem={(item) => onPatientIdChange(item.pubpid)}
+          onCreateFollowUp={handleCollectionsFollowUp}
         />
 
         {patientBilling ? (
@@ -5670,12 +5700,18 @@ function CollectionsWorkQueuePanel({
   queue,
   status,
   error,
+  followUpStatus,
+  followUpMessage,
   onSelectItem,
+  onCreateFollowUp,
 }: {
   queue: CollectionsWorkQueueResponse | null
   status: 'loading' | 'ready' | 'error'
   error: string | null
+  followUpStatus: 'idle' | 'saving' | 'saved' | 'error'
+  followUpMessage: string | null
   onSelectItem: (item: CollectionsWorkQueueItem) => void
+  onCreateFollowUp: (item: CollectionsWorkQueueItem) => Promise<unknown>
 }) {
   const items = queue?.items ?? []
 
@@ -5688,6 +5724,11 @@ function CollectionsWorkQueuePanel({
 
       <div className="statement-batch-body">
         {status === 'error' && <div className="status-banner error">{error}</div>}
+        {followUpMessage && (
+          <div className={followUpStatus === 'error' ? 'status-banner error' : 'status-banner success'}>
+            {followUpMessage}
+          </div>
+        )}
         <div className="statement-batch-summary">
           <Field label="Accounts" value={queue?.accountCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="High priority" value={queue?.highPriorityCount ?? (status === 'loading' ? 'Loading' : 0)} />
@@ -5713,6 +5754,15 @@ function CollectionsWorkQueuePanel({
                   >
                     <Search size={14} />
                     Open
+                  </button>
+                  <button
+                    className="icon-text-button primary"
+                    type="button"
+                    disabled={followUpStatus === 'saving'}
+                    onClick={() => void onCreateFollowUp(item)}
+                  >
+                    <ClipboardList size={14} />
+                    Create Task
                   </button>
                 </div>
               </div>

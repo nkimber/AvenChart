@@ -463,6 +463,51 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
+    public async Task<CollectionsFollowUpMutationResponse?> CreateCollectionsFollowUpAsync(
+        CollectionsFollowUpCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId))
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(request.PatientId.Trim(), cancellationToken);
+        if (billing is null || billing.StatementSummary.PastDueAmount <= 0m)
+        {
+            return null;
+        }
+
+        var action = NormalizeText(request.Action)
+            ?? CollectionRecommendedAction(billing.StatementSummary.OldestOpenAgeDays, billing.AgingSummary.Over90Amount);
+        var assignedTo = NormalizeText(request.AssignedTo) ?? "billing";
+        var note = NormalizeText(request.Note);
+        var id = $"COLL-MODERN-{Guid.NewGuid():N}";
+        var task = BuildCollectionsFollowUpTask(id, billing, assignedTo, action, note);
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                insert into messages
+                    (id, patient_id, pid, message_date, title, body, status, assigned_to, deleted, activity)
+                values
+                    (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, 0, 1);
+                """;
+            command.Parameters.AddWithValue("id", id);
+            command.Parameters.AddWithValue("patientId", billing.PatientId);
+            command.Parameters.AddWithValue("pid", billing.LegacyPid);
+            command.Parameters.Add("messageDate", NpgsqlDbType.Date).Value =
+                DateOnly.ParseExact(billing.StatementSummary.StatementDate, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+            command.Parameters.AddWithValue("title", task.Title);
+            command.Parameters.AddWithValue("body", task.Body);
+            command.Parameters.AddWithValue("assignedTo", assignedTo);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return new CollectionsFollowUpMutationResponse(id, task, billing);
+    }
+
     public async Task<BillingLineMutationResponse?> CreateLineAsync(
         BillingLineCreateRequest request,
         CancellationToken cancellationToken)
@@ -1595,6 +1640,66 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             ContactMethod: CollectionContactMethod(summary.Email, summary.Phone),
             Email: NormalizeText(summary.Email),
             Phone: NormalizeText(summary.Phone));
+    }
+
+    private static CollectionsFollowUpTask BuildCollectionsFollowUpTask(
+        string id,
+        PatientBillingResponse billing,
+        string assignedTo,
+        string action,
+        string? note)
+    {
+        var summary = billing.StatementSummary;
+        var document = billing.StatementDocument;
+        var over90Amount = billing.AgingSummary.Over90Amount;
+        var tier = CollectionTier(summary.OldestOpenAgeDays, over90Amount);
+        var title = $"Collections follow-up: {document.StatementNumber}";
+
+        return new CollectionsFollowUpTask(
+            Id: id,
+            PatientId: billing.PatientId,
+            LegacyPid: billing.LegacyPid,
+            Pubpid: billing.Pubpid,
+            PatientDisplayName: billing.PatientDisplayName,
+            StatementNumber: document.StatementNumber,
+            Title: title,
+            Body: BuildCollectionsFollowUpBody(billing, action, tier, note),
+            Status: "New",
+            AssignedTo: assignedTo,
+            Action: action,
+            CollectionTier: tier,
+            PastDueAmount: summary.PastDueAmount,
+            Over90Amount: over90Amount);
+    }
+
+    private static string BuildCollectionsFollowUpBody(
+        PatientBillingResponse billing,
+        string action,
+        string tier,
+        string? note)
+    {
+        var summary = billing.StatementSummary;
+        var document = billing.StatementDocument;
+        var lines = new List<string>
+        {
+            "Collections follow-up created from the work queue.",
+            $"Patient: {billing.PatientDisplayName} ({billing.Pubpid})",
+            $"Statement: {document.StatementNumber}",
+            $"Action: {action}",
+            $"Priority: {tier}",
+            $"Past due: {FormatMoney(summary.PastDueAmount)}",
+            $"Over 90: {FormatMoney(billing.AgingSummary.Over90Amount)}",
+            $"Balance: {FormatMoney(summary.BalanceDueAmount)}",
+            $"Oldest open: {summary.OldestOpenDate} ({summary.OldestOpenAgeDays} days)",
+            $"Due date: {summary.DueDate}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add($"Note: {note}");
+        }
+
+        return string.Join('\n', lines);
     }
 
     private static string CollectionTier(int oldestOpenAgeDays, decimal over90Amount)

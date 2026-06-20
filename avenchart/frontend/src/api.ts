@@ -965,6 +965,36 @@ export type CollectionsWorkQueueResponse = {
   items: CollectionsWorkQueueItem[]
 }
 
+export type CollectionsFollowUpCreateInput = {
+  patientId: string
+  assignedTo?: string | null
+  action?: string | null
+  note?: string | null
+}
+
+export type CollectionsFollowUpTask = {
+  id: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  statementNumber: string
+  title: string
+  body: string
+  status: string
+  assignedTo: string
+  action: string
+  collectionTier: string
+  pastDueAmount: number
+  over90Amount: number
+}
+
+export type CollectionsFollowUpMutationResponse = {
+  id: string
+  task: CollectionsFollowUpTask
+  detail: PatientBillingResponse
+}
+
 export type BillingEncounterItem = {
   id: number
   encounter: number
@@ -2232,6 +2262,23 @@ export async function getCollectionsWorkQueue(limit = 10, signal?: AbortSignal):
   })
   if (!response.ok) {
     throw new Error(`Collections work queue load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createCollectionsFollowUp(
+  input: CollectionsFollowUpCreateInput,
+  signal?: AbortSignal,
+): Promise<CollectionsFollowUpMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/collections/follow-ups`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Collections follow-up create failed with ${response.status}`)
   }
 
   return response.json()

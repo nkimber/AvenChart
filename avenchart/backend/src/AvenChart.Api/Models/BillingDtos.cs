@@ -170,6 +170,33 @@ public sealed record CollectionsWorkQueueItem(
     string? Email,
     string? Phone);
 
+public sealed record CollectionsFollowUpCreateRequest(
+    string PatientId,
+    string? AssignedTo,
+    string? Action,
+    string? Note);
+
+public sealed record CollectionsFollowUpTask(
+    string Id,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string Title,
+    string Body,
+    string Status,
+    string AssignedTo,
+    string Action,
+    string CollectionTier,
+    decimal PastDueAmount,
+    decimal Over90Amount);
+
+public sealed record CollectionsFollowUpMutationResponse(
+    string Id,
+    CollectionsFollowUpTask Task,
+    PatientBillingResponse Detail);
+
 public sealed record BillingEncounterItem(
     int Id,
     int Encounter,

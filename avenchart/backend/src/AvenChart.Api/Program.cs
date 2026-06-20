@@ -800,6 +800,18 @@ billing.MapGet("/collections/work-queue", async (
     })
     .WithName("GetBillingCollectionsWorkQueue");
 
+billing.MapPost("/collections/follow-ups", async (
+        BillingRepository repository,
+        CollectionsFollowUpCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateCollectionsFollowUpAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Collections follow-up could not be created from the supplied patient and account state.")
+            : Results.Created($"/api/messages/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBillingCollectionsFollowUp");
+
 billing.MapGet("/{patientId}", async (
         BillingRepository repository,
         string patientId,
