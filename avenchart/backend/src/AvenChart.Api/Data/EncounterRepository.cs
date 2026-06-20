@@ -47,7 +47,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 f.name as facility_name,
                 exists (select 1 from vitals v where v.pid = e.pid and v.encounter = e.encounter) as has_vitals,
                 exists (select 1 from clinical_notes cn where cn.pid = e.pid and cn.encounter = e.encounter) as has_soap_note,
-                (select count(*) from billing b where b.pid = e.pid and b.encounter = e.encounter)::int as billing_line_count
+                (select count(*) from billing b where b.pid = e.pid and b.encounter = e.encounter and b.activity = 1)::int as billing_line_count
             from encounters e
             join patients p on p.legacy_pid = e.pid
             left join staff s on s.id = e.provider_id
@@ -118,7 +118,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 cn.objective,
                 cn.assessment,
                 cn.plan,
-                (select count(*) from billing b where b.pid = e.pid and b.encounter = e.encounter)::int as billing_line_count
+                (select count(*) from billing b where b.pid = e.pid and b.encounter = e.encounter and b.activity = 1)::int as billing_line_count
             from encounters e
             join patients p on p.legacy_pid = e.pid
             left join staff s on s.id = e.provider_id
@@ -189,6 +189,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return detail with
         {
             DiagnosisCodes = diagnosisCodes,
+            BillingLineCount = billingLines.Count,
             BillingLines = billingLines,
             Claims = claims,
             ProcedureOrders = procedureOrders,

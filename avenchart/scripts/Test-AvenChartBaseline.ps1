@@ -2511,6 +2511,8 @@ try {
     $billingLineMutationId = $createdBillingLine.id
     $createdBillingEncounter = $createdBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdBillingVisible = $createdBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
+    $createdEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdEncounterBillingVisible = $createdEncounterDetail.billingLines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.activity -eq 1 } | Select-Object -First 1
 
     $statusBillingBody = @{
         billed = 1
@@ -2519,7 +2521,10 @@ try {
     $inactiveBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusBillingBody -TimeoutSec 20
     $inactiveBillingEncounter = $inactiveBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveBillingVisible = $inactiveBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
+    $inactiveEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $inactiveEncounterBillingVisible = $inactiveEncounterDetail.billingLines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
     $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible
+    $encounterBillingLinkMutationPassed = $null -ne $createdEncounterBillingVisible -and $null -eq $inactiveEncounterBillingVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $billingLineMutationId = $null
@@ -2529,9 +2534,15 @@ try {
         createdVisible = $createdBillingVisible
         inactiveVisible = $inactiveBillingVisible
     }
+    Add-Check -Name "encounter billing linkage mutation visibility" -Result $(if ($encounterBillingLinkMutationPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdBillingLine.id
+        encounterBillingVisible = $createdEncounterBillingVisible
+        inactiveEncounterBillingVisible = $inactiveEncounterBillingVisible
+    }
 }
 catch {
     Add-Check -Name "billing line mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "encounter billing linkage mutation visibility" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $billingLineMutationId) {
