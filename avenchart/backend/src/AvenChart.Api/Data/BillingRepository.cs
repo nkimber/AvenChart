@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using System.Text;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -103,6 +104,22 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             StatementDocument: statementDocument,
             LedgerEntries: ledgerEntries,
             Encounters: encounterSummaries);
+    }
+
+    public async Task<(byte[] Content, string FileName)?> GetStatementPdfAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var patientBilling = await GetForPatientAsync(patientId, cancellationToken);
+        if (patientBilling is null)
+        {
+            return null;
+        }
+
+        var document = patientBilling.StatementDocument;
+        return (
+            Content: BuildStatementPdf(document),
+            FileName: $"{document.StatementNumber}.pdf");
     }
 
     public async Task<BillingLineMutationResponse?> CreateLineAsync(
@@ -1205,6 +1222,97 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private static string FormatMoney(decimal amount)
     {
         return string.Create(CultureInfo.InvariantCulture, $"${amount:0.00}");
+    }
+
+    private static byte[] BuildStatementPdf(BillingStatementDocument document)
+    {
+        var lines = new List<string>
+        {
+            $"{document.Title} {document.StatementNumber}",
+            document.RecipientName,
+            document.MailingAddressLine1,
+            document.MailingAddressLine2,
+            $"Statement status {document.StatementStatus}",
+            $"Period {document.StatementPeriodStart} to {document.StatementPeriodEnd}",
+            $"Statement date {document.StatementDate}",
+            $"Due date {document.DueDate}",
+            $"Total charges {FormatMoney(document.ChargeAmount)}",
+            $"Payments {FormatMoney(document.PaymentAmount)}",
+            $"Adjustments {FormatMoney(document.AdjustmentAmount)}",
+            $"Current due {FormatMoney(document.CurrentDueAmount)}",
+            $"Past due {FormatMoney(document.PastDueAmount)}",
+            $"Balance due {FormatMoney(document.BalanceDueAmount)}",
+            document.PaymentInstructions,
+            string.Empty,
+            "Statement lines"
+        };
+
+        lines.AddRange(document.LineItems.Select(line =>
+            $"{line.LineNumber}. {line.EntryDate} Encounter {line.Encounter} {line.EntryType} {line.Description} "
+            + $"Code {line.Code ?? "None"} Reference {line.Reference ?? "None"} "
+            + $"Charge {FormatMoney(line.ChargeAmount)} Payment {FormatMoney(line.PaymentAmount)} "
+            + $"Adjustment {FormatMoney(line.AdjustmentAmount)} Balance {FormatMoney(line.BalanceAmount)}"));
+
+        var contentBuilder = new StringBuilder();
+        contentBuilder.AppendLine("BT");
+        contentBuilder.AppendLine("/F1 10 Tf");
+        contentBuilder.AppendLine("50 760 Td");
+        foreach (var line in lines)
+        {
+            contentBuilder.Append('(');
+            contentBuilder.Append(EscapePdfText(line));
+            contentBuilder.AppendLine(") Tj");
+            contentBuilder.AppendLine("0 -14 Td");
+        }
+        contentBuilder.AppendLine("ET");
+
+        var content = contentBuilder.ToString();
+        var contentLength = Encoding.ASCII.GetByteCount(content);
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            $"<< /Length {contentLength} >>\nstream\n{content}endstream"
+        };
+
+        var pdf = new StringBuilder();
+        var offsets = new List<int>();
+        pdf.AppendLine("%PDF-1.4");
+        for (var i = 0; i < objects.Length; i++)
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+            pdf.Append(i + 1);
+            pdf.AppendLine(" 0 obj");
+            pdf.AppendLine(objects[i]);
+            pdf.AppendLine("endobj");
+        }
+
+        var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+        pdf.AppendLine("xref");
+        pdf.AppendLine($"0 {objects.Length + 1}");
+        pdf.AppendLine("0000000000 65535 f ");
+        foreach (var offset in offsets)
+        {
+            pdf.AppendLine($"{offset:0000000000} 00000 n ");
+        }
+
+        pdf.AppendLine("trailer");
+        pdf.AppendLine($"<< /Size {objects.Length + 1} /Root 1 0 R >>");
+        pdf.AppendLine("startxref");
+        pdf.AppendLine(xrefOffset.ToString(CultureInfo.InvariantCulture));
+        pdf.Append("%%EOF");
+
+        return Encoding.ASCII.GetBytes(pdf.ToString());
+    }
+
+    private static string EscapePdfText(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<BillingLedgerEntry> BuildLedgerEntries(

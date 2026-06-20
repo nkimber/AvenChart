@@ -777,6 +777,21 @@ billing.MapGet("/{patientId}", async (
     })
     .WithName("GetBillingForPatient");
 
+billing.MapGet("/{patientId}/statement.pdf", async (
+        BillingRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var export = await repository.GetStatementPdfAsync(patientId, cancellationToken);
+        return export is null
+            ? Results.NotFound()
+            : Results.File(
+                export.Value.Content,
+                contentType: "application/pdf",
+                fileDownloadName: export.Value.FileName);
+    })
+    .WithName("DownloadBillingStatementPdf");
+
 billing.MapPost("/lines", async (
         BillingRepository repository,
         BillingLineCreateRequest request,

@@ -2150,6 +2150,10 @@ export async function getPatientBilling(patientId: string, signal?: AbortSignal)
   return response.json()
 }
 
+export function getBillingStatementPdfUrl(patientId: string) {
+  return `${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}/statement.pdf`
+}
+
 export async function createBillingLine(
   input: BillingLineCreateInput,
   signal?: AbortSignal,

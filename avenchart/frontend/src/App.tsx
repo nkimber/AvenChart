@@ -38,6 +38,7 @@ import {
   getEncounterDetail,
   getPatientChart,
   getPatientBilling,
+  getBillingStatementPdfUrl,
   getPatientDocumentContent,
   getPatientDocumentDownloadUrl,
   getPatientDocuments,
@@ -5424,6 +5425,18 @@ function FeesWorkspace({
                     <span className="status-pill">{statementDocument?.statementNumber ?? 'No statement'}</span>
                     <strong>{formatCurrency(statementDocument?.balanceDueAmount ?? 0)}</strong>
                   </div>
+                  {statementDocument && (
+                    <div className="statement-document-actions">
+                      <a
+                        className="icon-text-button secondary"
+                        href={getBillingStatementPdfUrl(patientBilling.pubpid)}
+                        download={`${statementDocument.statementNumber}.pdf`}
+                      >
+                        <Download size={14} />
+                        PDF Export
+                      </a>
+                    </div>
+                  )}
                   <div className="statement-readiness-grid">
                     <Field label="Status" value={statementDocument?.statementStatus} />
                     <Field label="Period" value={`${statementDocument?.statementPeriodStart ?? ''} to ${statementDocument?.statementPeriodEnd ?? ''}`} />

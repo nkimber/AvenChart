@@ -1082,6 +1082,14 @@
   padding: 10px;
 }
 
+.statement-document-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -2px 0 10px;
+}
+
 .statement-document-preview {
   margin: 10px 0 0;
   border: 1px solid #d8e2e7;

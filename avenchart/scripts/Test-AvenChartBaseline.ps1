@@ -2089,6 +2089,35 @@ catch {
     Add-Check -Name "anchor patient statement generation" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $statementPdfResponse = Invoke-WebRequest -UseBasicParsing -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005/statement.pdf" -Method Get -TimeoutSec 20
+    $statementPdfBytes = if ($statementPdfResponse.Content -is [byte[]]) {
+        $statementPdfResponse.Content
+    } else {
+        [System.Text.Encoding]::ASCII.GetBytes([string]$statementPdfResponse.Content)
+    }
+    $statementPdfText = [System.Text.Encoding]::ASCII.GetString($statementPdfBytes)
+    $statementPdfContentType = [string]$statementPdfResponse.Headers["Content-Type"]
+    $statementPdfDisposition = [string]$statementPdfResponse.Headers["Content-Disposition"]
+    $statementPdfPassed = $statementPdfResponse.StatusCode -eq 200 `
+        -and $statementPdfContentType -like "application/pdf*" `
+        -and $statementPdfDisposition -like "*STMT-MOD-PAT-0005-20260625.pdf*" `
+        -and $statementPdfText.StartsWith("%PDF-1.4") `
+        -and $statementPdfText -like "*Patient Statement STMT-MOD-PAT-0005-20260625*" `
+        -and $statementPdfText -like "*Please pay `$364.75 by 2026-07-25.*" `
+        -and $statementPdfText -like "*Northstar HMO insurance payment*" `
+        -and $statementPdfText -like "*EOB-NSTAR-1000052*"
+    Add-Check -Name "anchor patient statement PDF export" -Result $(if ($statementPdfPassed) { "passed" } else { "failed" }) -Details @{
+        statusCode = $statementPdfResponse.StatusCode
+        contentType = $statementPdfContentType
+        contentDisposition = $statementPdfDisposition
+        byteLength = $statementPdfBytes.Length
+    }
+}
+catch {
+    Add-Check -Name "anchor patient statement PDF export" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"
