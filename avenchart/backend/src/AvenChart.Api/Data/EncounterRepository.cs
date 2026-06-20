@@ -176,13 +176,15 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
             BillingLines: Array.Empty<BillingLineItem>(),
             Claims: Array.Empty<BillingClaimItem>(),
+            ProcedureOrders: Array.Empty<ProcedureOrderItem>(),
             Documents: Array.Empty<EncounterDocumentAttachment>());
 
         await reader.DisposeAsync();
         var billingLines = await GetBillingLinesForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
-        return detail with { BillingLines = billingLines, Claims = claims, Documents = documents };
+        return detail with { BillingLines = billingLines, Claims = claims, ProcedureOrders = procedureOrders, Documents = documents };
     }
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
@@ -723,6 +725,165 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return claims;
     }
 
+    private static async Task<IReadOnlyList<ProcedureOrderItem>> GetProcedureOrdersForEncounterAsync(
+        NpgsqlConnection connection,
+        int pid,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                lo.id,
+                lo.encounter,
+                nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                lo.order_date,
+                lo.order_priority,
+                lo.code,
+                lo.name,
+                lo.procedure_type,
+                lo.diagnosis,
+                lo.instructions,
+                lo.order_status
+            from lab_orders lo
+            left join staff s on s.id = lo.provider_id
+            where lo.pid = @pid and lo.encounter = @encounter
+            order by lo.order_date desc, lo.id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var orderRows = new List<ProcedureOrderRow>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetInt32(reader.GetOrdinal("id"));
+                orderRows.Add(new ProcedureOrderRow(
+                    Id: id,
+                    Order: new ProcedureOrderItem(
+                        Id: id,
+                        Encounter: ReadNullableInt(reader, "encounter"),
+                        ProviderName: ReadNullableString(reader, "provider_name"),
+                        OrderDate: ReadDate(reader, "order_date"),
+                        OrderPriority: ReadNullableString(reader, "order_priority"),
+                        Code: ReadNullableString(reader, "code"),
+                        Name: ReadNullableString(reader, "name"),
+                        ProcedureType: ReadNullableString(reader, "procedure_type"),
+                        Diagnosis: ReadNullableString(reader, "diagnosis"),
+                        Instructions: ReadNullableString(reader, "instructions"),
+                        OrderStatus: ReadNullableString(reader, "order_status"),
+                        Reports: [])));
+            }
+        }
+
+        if (orderRows.Count == 0)
+        {
+            return [];
+        }
+
+        var orderIds = orderRows.Select(row => row.Id).ToArray();
+        var reportRows = await GetProcedureReportsForOrdersAsync(connection, orderIds, cancellationToken);
+        var reportIds = reportRows.Select(row => row.Id).ToArray();
+        var resultRows = await GetProcedureResultsForReportsAsync(connection, reportIds, cancellationToken);
+
+        var resultsByReport = resultRows
+            .GroupBy(row => row.ReportId)
+            .ToDictionary(group => group.Key, group => group.Select(row => row.Result).ToList());
+        var reportsByOrder = reportRows
+            .GroupBy(row => row.OrderId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(row => row.Report with
+                {
+                    Results = resultsByReport.GetValueOrDefault(row.Id, [])
+                }).ToList());
+
+        return orderRows.Select(row => row.Order with
+        {
+            Reports = reportsByOrder.GetValueOrDefault(row.Id, [])
+        }).ToList();
+    }
+
+    private static async Task<IReadOnlyList<ProcedureReportRow>> GetProcedureReportsForOrdersAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken)
+    {
+        if (orderIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, order_id, report_date, status, review_status, notes
+            from lab_reports
+            where order_id = any(@orderIds)
+            order by report_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("orderIds", orderIds.ToArray());
+
+        var rows = new List<ProcedureReportRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetInt32(reader.GetOrdinal("id"));
+            rows.Add(new ProcedureReportRow(
+                Id: id,
+                OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                Report: new ProcedureReportItem(
+                    Id: id,
+                    ReportDate: ReadDateTime(reader, "report_date"),
+                    Status: ReadNullableString(reader, "status"),
+                    ReviewStatus: ReadNullableString(reader, "review_status"),
+                    Notes: ReadNullableString(reader, "notes"),
+                    Results: [])));
+        }
+
+        return rows;
+    }
+
+    private static async Task<IReadOnlyList<ProcedureResultRow>> GetProcedureResultsForReportsAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> reportIds,
+        CancellationToken cancellationToken)
+    {
+        if (reportIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, report_id, code, text, units, result, range, abnormal, result_date, result_status
+            from lab_results
+            where report_id = any(@reportIds)
+            order by id;
+            """;
+        command.Parameters.AddWithValue("reportIds", reportIds.ToArray());
+
+        var rows = new List<ProcedureResultRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ProcedureResultRow(
+                ReportId: reader.GetInt32(reader.GetOrdinal("report_id")),
+                Result: new ProcedureResultItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    Code: ReadNullableString(reader, "code"),
+                    Text: ReadNullableString(reader, "text"),
+                    Units: ReadNullableString(reader, "units"),
+                    Result: ReadNullableString(reader, "result"),
+                    Range: ReadNullableString(reader, "range"),
+                    Abnormal: ReadNullableString(reader, "abnormal"),
+                    ResultDate: ReadDateTime(reader, "result_date"),
+                    ResultStatus: ReadNullableString(reader, "result_status"))));
+        }
+
+        return rows;
+    }
+
     private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
         NpgsqlConnection connection,
         int pid,
@@ -994,6 +1155,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         string ThumbnailText,
         bool CanPreviewInline,
         bool CanDownload);
+
+    private sealed record ProcedureOrderRow(int Id, ProcedureOrderItem Order);
+
+    private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
+
+    private sealed record ProcedureResultRow(int ReportId, ProcedureResultItem Result);
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 }

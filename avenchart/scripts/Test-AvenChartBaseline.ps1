@@ -483,6 +483,55 @@ catch {
 }
 
 try {
+    $procedureEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    if ($null -eq $procedureEncounterDetail) {
+        throw "Procedure-linked encounter detail did not load."
+    }
+
+    $encounterProcedureOrders = @($procedureEncounterDetail.procedureOrders | Where-Object { $null -ne $_ })
+    $linkedProcedureOrder = $encounterProcedureOrders | Where-Object {
+        $_.id -eq 5000001 `
+            -and $_.code -eq "83036" `
+            -and $_.name -eq "Hemoglobin A1c" `
+            -and $_.orderStatus -eq "complete" `
+            -and $_.diagnosis -eq "E11.9"
+    } | Select-Object -First 1
+    $linkedProcedureReport = if ($null -ne $linkedProcedureOrder) {
+        @($linkedProcedureOrder.reports | Where-Object { $null -ne $_ }) | Where-Object {
+            $_.id -eq 6000001 -and $_.status -eq "complete" -and $_.reviewStatus -eq "reviewed"
+        } | Select-Object -First 1
+    } else {
+        $null
+    }
+    $linkedProcedureResults = if ($null -ne $linkedProcedureReport) {
+        @($linkedProcedureReport.results | Where-Object { $null -ne $_ })
+    } else {
+        @()
+    }
+    $hemoglobinA1cResult = $linkedProcedureResults | Where-Object {
+        $_.code -eq "4548-4" -and $_.text -eq "Hemoglobin A1c" -and $_.result -eq "5.7" -and $_.units -eq "%"
+    } | Select-Object -First 1
+    $linkedProcedureReportCount = if ($null -eq $linkedProcedureOrder) { 0 } else { @($linkedProcedureOrder.reports | Where-Object { $null -ne $_ }).Count }
+    $encounterProcedurePassed = $procedureEncounterDetail.encounter -eq 1000011 `
+        -and $encounterProcedureOrders.Count -eq 1 `
+        -and $null -ne $linkedProcedureOrder `
+        -and $null -ne $linkedProcedureReport `
+        -and $linkedProcedureResults.Count -eq 4 `
+        -and $null -ne $hemoglobinA1cResult
+    Add-Check -Name "anchor encounter procedure order linkage" -Result $(if ($encounterProcedurePassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $procedureEncounterDetail.encounter
+        procedureOrderCount = $encounterProcedureOrders.Count
+        linkedProcedureOrders = $encounterProcedureOrders | Select-Object id, encounter, orderDate, orderStatus, orderPriority, code, name, procedureType, diagnosis
+        reportCount = $linkedProcedureReportCount
+        resultCount = $linkedProcedureResults.Count
+        hemoglobinA1cResult = $hemoglobinA1cResult
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter procedure order linkage" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."
     }

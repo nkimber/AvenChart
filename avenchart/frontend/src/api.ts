@@ -248,6 +248,7 @@ export type EncounterDetail = EncounterListItem & {
   soapNote?: EncounterSoapNote | null
   billingLines: BillingLineItem[]
   claims: BillingClaimItem[]
+  procedureOrders: ProcedureOrderItem[]
   documents: EncounterDocumentAttachment[]
 }
 

@@ -941,6 +941,7 @@
 
 .encounter-billing-panel,
 .encounter-claim-panel,
+.encounter-procedure-panel,
 .encounter-documents-panel {
   margin-top: 12px;
 }
@@ -951,6 +952,13 @@
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.encounter-procedure-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
   padding: 12px;
 }
 
@@ -965,6 +973,56 @@
   gap: 8px;
   min-width: 0;
   padding: 12px;
+}
+
+.encounter-procedure-card,
+.encounter-procedure-report-card,
+.encounter-procedure-result-card {
+  background: #f8fafb;
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.encounter-procedure-report-card {
+  background: #ffffff;
+}
+
+.encounter-procedure-result-card {
+  background: #ffffff;
+  gap: 7px;
+  padding: 10px;
+}
+
+.encounter-procedure-result-card > div {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.encounter-procedure-result-card strong {
+  color: #1d2a35;
+  font-size: 13px;
+}
+
+.encounter-procedure-result-card span {
+  color: #607280;
+  font-size: 12px;
+}
+
+.encounter-procedure-report-list,
+.encounter-procedure-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.encounter-procedure-result-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .claim-line-main,
@@ -1004,6 +1062,7 @@
 
 .encounter-billing-meta,
 .encounter-claim-meta,
+.encounter-procedure-meta,
 .encounter-document-meta {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1759,6 +1818,7 @@
   .encounter-billing-list,
   .encounter-claim-list,
   .encounter-documents-list,
+  .encounter-procedure-result-list,
   .document-list-body {
     grid-template-columns: 1fr;
   }
@@ -1813,6 +1873,7 @@
   .procedure-order-meta,
   .procedure-report-title,
   .procedure-result-card > div,
+  .encounter-procedure-result-card > div,
   .condition-report-card {
     flex-direction: column;
   }

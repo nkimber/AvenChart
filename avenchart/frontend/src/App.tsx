@@ -3605,6 +3605,8 @@ function EncounterWorkspace({
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
   const encounterClaims = encounterDetail?.claims ?? []
+  const encounterProcedureOrders = encounterDetail?.procedureOrders ?? []
+  const encounterProcedureResultCount = countProcedureResults(encounterProcedureOrders)
 
   return (
     <section className="scheduler-layout">
@@ -3845,6 +3847,23 @@ function EncounterWorkspace({
                 ))}
                 {encounterClaims.length === 0 && (
                   <div className="timeline-placeholder">No claim status linked to this encounter</div>
+                )}
+              </div>
+            </section>
+
+            <section className="info-panel encounter-procedure-panel" aria-label="Encounter procedure order linkage">
+              <div className="panel-heading">
+                <FlaskConical size={17} />
+                <h3>Procedure Orders</h3>
+                <span className="panel-count-pill">{encounterProcedureOrders.length}</span>
+                <span className="panel-count-pill">{encounterProcedureResultCount} results</span>
+              </div>
+              <div className="encounter-procedure-list">
+                {encounterProcedureOrders.map((order) => (
+                  <EncounterProcedureOrderCard key={order.id} order={order} />
+                ))}
+                {encounterProcedureOrders.length === 0 && (
+                  <div className="timeline-placeholder">No procedure orders linked to this encounter</div>
                 )}
               </div>
             </section>
@@ -4149,6 +4168,80 @@ function EncounterClaimCard({ claim }: { claim: BillingClaimItem }) {
       <div className="document-footnote">
         <span>{processLabel}</span>
         <span>{claim.submittedClaim ? 'Submitted payload recorded' : claim.id}</span>
+      </div>
+    </article>
+  )
+}
+
+function EncounterProcedureOrderCard({ order }: { order: ProcedureOrderItem }) {
+  const reportCount = order.reports.length
+  const resultCount = countReportResults(order.reports)
+
+  return (
+    <article className="encounter-procedure-card">
+      <div className="procedure-report-title">
+        <div>
+          <strong>{order.name || 'Procedure order'}</strong>
+          <span>{[order.code, order.diagnosis, order.orderDate].filter(Boolean).join(' / ')}</span>
+        </div>
+        <span className="status-tag">{order.orderStatus || 'Status pending'}</span>
+      </div>
+
+      <div className="document-meta-grid encounter-procedure-meta">
+        <span>{order.providerName || 'Provider not recorded'}</span>
+        <span>{order.orderPriority || 'No priority'}</span>
+        <span>{order.procedureType || 'No type'}</span>
+        <span>
+          {reportCount} reports / {resultCount} results
+        </span>
+      </div>
+
+      {order.instructions && <p className="procedure-scheduled-note">{order.instructions}</p>}
+
+      <div className="encounter-procedure-report-list">
+        {order.reports.map((report) => (
+          <EncounterProcedureReportCard key={report.id} report={report} />
+        ))}
+        {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
+      </div>
+    </article>
+  )
+}
+
+function EncounterProcedureReportCard({ report }: { report: ProcedureReportItem }) {
+  return (
+    <section className="encounter-procedure-report-card">
+      <div className="procedure-report-title">
+        <div>
+          <strong>Report {report.id}</strong>
+          <span>{[report.reportDate, report.reviewStatus, report.notes].filter(Boolean).join(' / ')}</span>
+        </div>
+        <span className="status-tag">{report.status || 'Status pending'}</span>
+      </div>
+      <div className="encounter-procedure-result-list">
+        {report.results.map((result) => (
+          <EncounterProcedureResultCard key={result.id} result={result} />
+        ))}
+        {report.results.length === 0 && <div className="timeline-placeholder">No result rows recorded</div>}
+      </div>
+    </section>
+  )
+}
+
+function EncounterProcedureResultCard({ result }: { result: ProcedureResultItem }) {
+  return (
+    <article className="encounter-procedure-result-card">
+      <div>
+        <strong>{result.text || 'Result'}</strong>
+        <span className="status-tag">{result.resultStatus || 'Status pending'}</span>
+      </div>
+      <div className="procedure-result-value">
+        <span>{result.result || 'No value'}</span>
+        <span>{result.units || 'No units'}</span>
+      </div>
+      <div className="procedure-order-meta">
+        <span>{result.code || 'No code'}</span>
+        <span>{result.range || 'No range'}</span>
       </div>
     </article>
   )

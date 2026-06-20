@@ -60,6 +60,7 @@ public sealed record EncounterDetail(
     int BillingLineCount,
     IReadOnlyList<BillingLineItem> BillingLines,
     IReadOnlyList<BillingClaimItem> Claims,
+    IReadOnlyList<ProcedureOrderItem> ProcedureOrders,
     IReadOnlyList<EncounterDocumentAttachment> Documents);
 
 public sealed record EncounterDocumentAttachment(
