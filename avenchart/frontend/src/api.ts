@@ -135,6 +135,8 @@ export type AppointmentListItem = {
   providerName?: string | null
   facilityId?: number | null
   facilityName?: string | null
+  billingLocationId?: number | null
+  billingLocationName?: string | null
 }
 
 export type AppointmentDetail = AppointmentListItem & {
@@ -153,6 +155,7 @@ export type AppointmentCreateInput = {
   startTime: string
   durationMinutes: number
   facilityId?: number | null
+  billingLocationId?: number | null
   categoryId?: number | null
   room?: string | null
 }
@@ -164,6 +167,7 @@ export type AppointmentUpdateInput = {
   startTime: string
   durationMinutes: number
   facilityId?: number | null
+  billingLocationId?: number | null
   categoryId?: number | null
   room?: string | null
   status?: string | null

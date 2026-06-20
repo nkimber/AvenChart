@@ -43,11 +43,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
-                f.name as facility_name
+                f.name as facility_name,
+                a.billing_location_id,
+                bf.name as billing_location_name
             from appointments a
             join patients p on p.legacy_pid = a.pid
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
+            left join facilities bf on bf.id = a.billing_location_id
             where {AppointmentSearchPredicate}
             order by a.appointment_date, a.start_time, a.id
             limit @limit;
@@ -98,11 +101,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
-                f.name as facility_name
+                f.name as facility_name,
+                a.billing_location_id,
+                bf.name as billing_location_name
             from appointments a
             join patients p on p.legacy_pid = a.pid
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
+            left join facilities bf on bf.id = a.billing_location_id
             where a.id = @appointmentId;
             """;
         command.Parameters.AddWithValue("appointmentId", appointmentId);
@@ -135,6 +141,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ProviderName: ReadNullableString(reader, "provider_name"),
             FacilityId: ReadNullableInt(reader, "facility_id"),
             FacilityName: ReadNullableString(reader, "facility_name"),
+            BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
+            BillingLocationName: ReadNullableString(reader, "billing_location_name"),
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
 
@@ -166,6 +174,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 pid,
                 provider_id,
                 facility_id,
+                billing_location_id,
                 appointment_date,
                 start_time,
                 duration_minutes,
@@ -180,6 +189,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 legacy_pid,
                 coalesce((select id from staff where id = @providerId), provider_id),
                 coalesce((select id from facilities where id = @facilityId), facility_id),
+                coalesce((select id from facilities where id = @billingLocationId), (select id from facilities where id = @facilityId), facility_id),
                 @appointmentDate,
                 @startTime,
                 @durationMinutes,
@@ -195,6 +205,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("patientId", request.PatientId.Trim());
         command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
         command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
         command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
         command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = startTime;
         command.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
@@ -246,6 +257,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             update appointments
             set provider_id = coalesce((select id from staff where id = @providerId), provider_id),
                 facility_id = coalesce((select id from facilities where id = @facilityId), facility_id),
+                billing_location_id = coalesce((select id from facilities where id = @billingLocationId), billing_location_id),
                 appointment_date = @appointmentDate,
                 start_time = @startTime,
                 duration_minutes = @durationMinutes,
@@ -259,6 +271,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("appointmentId", appointmentId);
         command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
         command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
         command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
         command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = startTime;
         command.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
@@ -352,7 +365,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         ProviderId: ReadNullableInt(reader, "provider_id"),
         ProviderName: ReadNullableString(reader, "provider_name"),
         FacilityId: ReadNullableInt(reader, "facility_id"),
-        FacilityName: ReadNullableString(reader, "facility_name"));
+        FacilityName: ReadNullableString(reader, "facility_name"),
+        BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
+        BillingLocationName: ReadNullableString(reader, "billing_location_name"));
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
     {

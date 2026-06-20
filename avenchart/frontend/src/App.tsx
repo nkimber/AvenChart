@@ -3698,6 +3698,7 @@ function CalendarWorkspace({
   const [draftCategoryId, setDraftCategoryId] = useState('9')
   const [draftProviderId, setDraftProviderId] = useState('')
   const [draftFacilityId, setDraftFacilityId] = useState('10')
+  const [draftBillingLocationId, setDraftBillingLocationId] = useState('10')
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editStartTime, setEditStartTime] = useState('')
@@ -3706,6 +3707,7 @@ function CalendarWorkspace({
   const [editCategoryId, setEditCategoryId] = useState('9')
   const [editProviderId, setEditProviderId] = useState('')
   const [editFacilityId, setEditFacilityId] = useState('')
+  const [editBillingLocationId, setEditBillingLocationId] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -3722,6 +3724,7 @@ function CalendarWorkspace({
     setEditCategoryId(String(appointmentDetail.categoryId ?? 9))
     setEditProviderId(appointmentDetail.providerId ? String(appointmentDetail.providerId) : '')
     setEditFacilityId(appointmentDetail.facilityId ? String(appointmentDetail.facilityId) : '')
+    setEditBillingLocationId(appointmentDetail.billingLocationId ? String(appointmentDetail.billingLocationId) : '')
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
@@ -3740,6 +3743,7 @@ function CalendarWorkspace({
         categoryId: Number(draftCategoryId),
         providerId: numberOrNull(draftProviderId),
         facilityId: numberOrNull(draftFacilityId),
+        billingLocationId: numberOrNull(draftBillingLocationId),
       })
       setMutationStatus('saved')
     } catch {
@@ -3820,6 +3824,7 @@ function CalendarWorkspace({
         categoryId: Number(editCategoryId),
         providerId: numberOrNull(editProviderId),
         facilityId: numberOrNull(editFacilityId),
+        billingLocationId: numberOrNull(editBillingLocationId),
         status: editStatus,
       })
       setMutationStatus('saved')
@@ -3940,6 +3945,15 @@ function CalendarWorkspace({
                 value={draftFacilityId}
                 onChange={(event) => setDraftFacilityId(event.target.value)}
                 aria-label="New appointment facility ID"
+              />
+            </label>
+            <label className="contact-field">
+              <span>Billing facility ID</span>
+              <input
+                type="number"
+                value={draftBillingLocationId}
+                onChange={(event) => setDraftBillingLocationId(event.target.value)}
+                aria-label="New appointment billing facility ID"
               />
             </label>
             <label className="contact-field">
@@ -4129,6 +4143,15 @@ function CalendarWorkspace({
                   />
                 </label>
                 <label className="contact-field">
+                  <span>Billing facility ID</span>
+                  <input
+                    type="number"
+                    value={editBillingLocationId}
+                    onChange={(event) => setEditBillingLocationId(event.target.value)}
+                    aria-label="Edit appointment billing facility ID"
+                  />
+                </label>
+                <label className="contact-field">
                   <span>Room</span>
                   <input value={editRoom} onChange={(event) => setEditRoom(event.target.value)} aria-label="Edit appointment room" />
                 </label>
@@ -4159,6 +4182,7 @@ function CalendarWorkspace({
               <InfoPanel title="Care Location" icon={MapPin}>
                 <Field label="Provider" value={careLocationDetail(appointmentDetail.providerName, appointmentDetail.providerId)} />
                 <Field label="Facility" value={careLocationDetail(appointmentDetail.facilityName, appointmentDetail.facilityId)} />
+                <Field label="Billing facility" value={careLocationDetail(appointmentDetail.billingLocationName, appointmentDetail.billingLocationId)} />
                 <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
                 <Field label="Appointment ID" value={appointmentDetail.id} />
               </InfoPanel>
