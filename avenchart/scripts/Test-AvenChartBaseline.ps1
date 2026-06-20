@@ -1080,6 +1080,27 @@ finally {
 }
 
 try {
+    $seriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-08-14&limit=10" -Method Get -TimeoutSec 20
+    $seriesOccurrences = @($seriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $seriesDates = @($seriesOccurrences | ForEach-Object { $_.date })
+    $expectedSeriesDates = @("2026-08-14", "2026-08-28", "2026-09-11", "2026-09-25", "2026-10-09")
+    $appointmentSeriesPassed = $seriesOccurrences.Count -eq 5 `
+        -and (($seriesDates -join ",") -eq ($expectedSeriesDates -join ",")) `
+        -and $seriesOccurrences[0].isVirtualOccurrence `
+        -and $seriesOccurrences[0].occurrenceNumber -eq 3 `
+        -and $seriesOccurrences[0].recurrenceLabel -eq "Every 2 weeks until 2026-10-09"
+
+    Add-Check -Name "appointment recurring series expansion" -Result $(if ($appointmentSeriesPassed) { "passed" } else { "failed" }) -Details @{
+        firstOccurrenceId = $seriesOccurrences[0].id
+        dates = $seriesDates
+        totalMatches = $seriesSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment recurring series expansion" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
     $encounterPassed = $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote

@@ -11,6 +11,10 @@ public sealed record AppointmentSearchResponse(
 
 public sealed record AppointmentListItem(
     string Id,
+    string SeriesRootId,
+    bool IsRecurringSeries,
+    bool IsVirtualOccurrence,
+    int? OccurrenceNumber,
     string PatientId,
     int LegacyPid,
     string Pubpid,
@@ -38,6 +42,10 @@ public sealed record AppointmentListItem(
 
 public sealed record AppointmentDetail(
     string Id,
+    string SeriesRootId,
+    bool IsRecurringSeries,
+    bool IsVirtualOccurrence,
+    int? OccurrenceNumber,
     string PatientId,
     int LegacyPid,
     string Pubpid,

@@ -8,6 +8,8 @@ namespace AvenChart.Api.Data;
 public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 100;
+    private const int MaximumExpandedOccurrencesPerAppointment = 366;
+    private const string VirtualOccurrenceSeparator = "::occurs::";
 
     public async Task<AppointmentSearchResponse> SearchAsync(
         string? patientId,
@@ -21,10 +23,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var fromDate = ParseDateOrDefault(from, metadata.BaseDate);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
+        command.CommandText = $$"""
             select
                 a.id,
                 p.canonical_id as patient_id,
@@ -56,19 +57,25 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
             left join facilities bf on bf.id = a.billing_location_id
-            where {AppointmentSearchPredicate}
+            where {{AppointmentSearchPredicate}}
             order by a.appointment_date, a.start_time, a.id
-            limit @limit;
             """;
         AddSearchParameters(command, normalizedPatientId, fromDate);
-        command.Parameters.AddWithValue("limit", safeLimit);
 
-        var appointments = new List<AppointmentListItem>();
+        var expandedAppointments = new List<AppointmentListItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            appointments.Add(ReadListItem(reader));
+            expandedAppointments.AddRange(ExpandAppointmentListItem(ReadListItem(reader), fromDate));
         }
+
+        var appointments = expandedAppointments
+            .OrderBy(appointment => DateOnly.Parse(appointment.Date))
+            .ThenBy(appointment => TimeOnly.Parse(appointment.StartTime))
+            .ThenBy(appointment => appointment.SeriesRootId)
+            .ThenBy(appointment => appointment.OccurrenceNumber.GetValueOrDefault())
+            .Take(safeLimit)
+            .ToList();
 
         return new AppointmentSearchResponse(
             DatasetId: metadata.DatasetId,
@@ -76,12 +83,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             PatientId: patientId,
             FromDate: fromDate.ToString("yyyy-MM-dd"),
             Limit: safeLimit,
-            TotalMatches: totalMatches,
+            TotalMatches: expandedAppointments.Count,
             Appointments: appointments);
     }
 
     public async Task<AppointmentDetail?> GetByIdAsync(string appointmentId, CancellationToken cancellationToken)
     {
+        var occurrenceReference = ParseOccurrenceReference(appointmentId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -121,7 +129,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join facilities bf on bf.id = a.billing_location_id
             where a.id = @appointmentId;
             """;
-        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.AddWithValue("appointmentId", occurrenceReference.RootAppointmentId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -133,9 +141,29 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
         var repeatUnit = ReadNullableInt(reader, "repeat_unit");
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
+        var appointmentDate = ReadDate(reader, "appointment_date");
+        var occurrenceDate = occurrenceReference.OccurrenceDate;
+        if (occurrenceDate is not null
+            && !IsValidOccurrenceDate(appointmentDate, recurrenceType, repeatFrequency, repeatUnit, recurrenceEndDate, occurrenceDate.Value))
+        {
+            return null;
+        }
+
+        var occurrenceNumber = recurrenceType > 0
+            ? CalculateOccurrenceNumber(appointmentDate, repeatFrequency, repeatUnit, occurrenceDate?.ToString("yyyy-MM-dd") ?? appointmentDate)
+            : null;
+        var isVirtualOccurrence = occurrenceDate is not null && occurrenceDate.Value.ToString("yyyy-MM-dd") != appointmentDate;
+        var responseDate = occurrenceDate?.ToString("yyyy-MM-dd") ?? appointmentDate;
+        var responseId = isVirtualOccurrence
+            ? BuildOccurrenceId(occurrenceReference.RootAppointmentId, occurrenceDate!.Value)
+            : occurrenceReference.RootAppointmentId;
 
         return new AppointmentDetail(
-            Id: reader.GetString(reader.GetOrdinal("id")),
+            Id: responseId,
+            SeriesRootId: occurrenceReference.RootAppointmentId,
+            IsRecurringSeries: recurrenceType > 0,
+            IsVirtualOccurrence: isVirtualOccurrence,
+            OccurrenceNumber: occurrenceNumber,
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
@@ -144,7 +172,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             LastName: reader.GetString(reader.GetOrdinal("last_name")),
             Sex: ReadNullableString(reader, "sex"),
             DateOfBirth: ReadDate(reader, "date_of_birth"),
-            Date: ReadDate(reader, "appointment_date"),
+            Date: responseDate,
             StartTime: ReadTime(reader, "start_time"),
             DurationMinutes: reader.GetInt32(reader.GetOrdinal("duration_minutes")),
             Title: ReadNullableString(reader, "title") ?? "Appointment",
@@ -255,6 +283,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         AppointmentStatusUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -264,7 +293,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             where id = @appointmentId
             returning id;
             """;
-        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
         command.Parameters.AddWithValue("status", NormalizeText(request.Status) ?? "-");
         command.Parameters.Add("title", NpgsqlDbType.Text).Value = NormalizeText(request.Title) ?? (object)DBNull.Value;
 
@@ -284,6 +313,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -306,7 +336,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             where id = @appointmentId
             returning id;
             """;
-        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
         command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
         command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
         command.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
@@ -326,10 +356,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<bool> DeleteAsync(string appointmentId, CancellationToken cancellationToken)
     {
+        var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "delete from appointments where id = @appointmentId;";
-        command.Parameters.AddWithValue("appointmentId", appointmentId);
+        command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
@@ -356,30 +387,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
     }
 
-    private static async Task<int> CountMatchesAsync(
-        NpgsqlConnection connection,
-        string? normalizedPatientId,
-        DateOnly fromDate,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            select count(*)
-            from appointments a
-            join patients p on p.legacy_pid = a.pid
-            where {AppointmentSearchPredicate};
-            """;
-        AddSearchParameters(command, normalizedPatientId, fromDate);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result);
-    }
-
     private const string AppointmentSearchPredicate = """
         (@patientId is null
          or lower(p.canonical_id) = @patientId
          or lower(p.pubpid) = @patientId
          or p.legacy_pid::text = @patientId)
-        and a.appointment_date >= @fromDate
+        and (
+            a.appointment_date >= @fromDate
+            or (
+                a.recurrence_type > 0
+                and a.recurrence_end_date is not null
+                and a.recurrence_end_date >= @fromDate
+            )
+        )
         """;
 
     private static void AddSearchParameters(NpgsqlCommand command, string? patientId, DateOnly fromDate)
@@ -398,6 +418,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         return new AppointmentListItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
+            SeriesRootId: reader.GetString(reader.GetOrdinal("id")),
+            IsRecurringSeries: recurrenceType > 0,
+            IsVirtualOccurrence: false,
+            OccurrenceNumber: recurrenceType > 0 ? 1 : null,
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
@@ -422,6 +446,162 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             RepeatUnit: repeatUnit,
             RecurrenceEndDate: recurrenceEndDate,
             RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, recurrenceEndDate));
+    }
+
+    private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate)
+    {
+        if (!DateOnly.TryParse(appointment.Date, out var anchorDate))
+        {
+            yield return appointment;
+            yield break;
+        }
+
+        if (appointment.RecurrenceType <= 0)
+        {
+            if (anchorDate >= fromDate)
+            {
+                yield return appointment;
+            }
+
+            yield break;
+        }
+
+        var repeatFrequency = Math.Max(1, appointment.RepeatFrequency.GetValueOrDefault(1));
+        var recurrenceEndDate = DateOnly.TryParse(appointment.RecurrenceEndDate, out var parsedEndDate)
+            ? parsedEndDate
+            : anchorDate;
+
+        var occurrenceDate = anchorDate;
+        for (var occurrenceNumber = 1;
+             occurrenceDate <= recurrenceEndDate && occurrenceNumber <= MaximumExpandedOccurrencesPerAppointment;
+             occurrenceNumber++)
+        {
+            if (occurrenceDate >= fromDate)
+            {
+                var isVirtualOccurrence = occurrenceDate != anchorDate;
+                yield return appointment with
+                {
+                    Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, occurrenceDate) : appointment.SeriesRootId,
+                    Date = occurrenceDate.ToString("yyyy-MM-dd"),
+                    IsRecurringSeries = true,
+                    IsVirtualOccurrence = isVirtualOccurrence,
+                    OccurrenceNumber = occurrenceNumber
+                };
+            }
+
+            var nextOccurrenceDate = GetNextOccurrenceDate(occurrenceDate, repeatFrequency, appointment.RepeatUnit);
+            if (nextOccurrenceDate <= occurrenceDate)
+            {
+                yield break;
+            }
+
+            occurrenceDate = nextOccurrenceDate;
+        }
+    }
+
+    private static AppointmentOccurrenceReference ParseOccurrenceReference(string appointmentId)
+    {
+        var separatorIndex = appointmentId.IndexOf(VirtualOccurrenceSeparator, StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return new AppointmentOccurrenceReference(appointmentId, null);
+        }
+
+        var rootAppointmentId = appointmentId[..separatorIndex];
+        var occurrenceDateText = appointmentId[(separatorIndex + VirtualOccurrenceSeparator.Length)..];
+        return DateOnly.TryParse(occurrenceDateText, out var occurrenceDate)
+            ? new AppointmentOccurrenceReference(rootAppointmentId, occurrenceDate)
+            : new AppointmentOccurrenceReference(appointmentId, null);
+    }
+
+    private static string BuildOccurrenceId(string rootAppointmentId, DateOnly occurrenceDate) =>
+        $"{rootAppointmentId}{VirtualOccurrenceSeparator}{occurrenceDate:yyyy-MM-dd}";
+
+    private static bool IsValidOccurrenceDate(
+        string anchorDateText,
+        int recurrenceType,
+        int? repeatFrequency,
+        int? repeatUnit,
+        string? recurrenceEndDateText,
+        DateOnly occurrenceDate)
+    {
+        if (recurrenceType <= 0 || !DateOnly.TryParse(anchorDateText, out var anchorDate))
+        {
+            return false;
+        }
+
+        var recurrenceEndDate = DateOnly.TryParse(recurrenceEndDateText, out var parsedEndDate)
+            ? parsedEndDate
+            : anchorDate;
+        if (occurrenceDate < anchorDate || occurrenceDate > recurrenceEndDate)
+        {
+            return false;
+        }
+
+        return CalculateOccurrenceNumber(anchorDateText, repeatFrequency, repeatUnit, occurrenceDate.ToString("yyyy-MM-dd")) is not null;
+    }
+
+    private static int? CalculateOccurrenceNumber(
+        string anchorDateText,
+        int? repeatFrequency,
+        int? repeatUnit,
+        string occurrenceDateText)
+    {
+        if (!DateOnly.TryParse(anchorDateText, out var anchorDate)
+            || !DateOnly.TryParse(occurrenceDateText, out var occurrenceDate))
+        {
+            return null;
+        }
+
+        var frequency = Math.Max(1, repeatFrequency.GetValueOrDefault(1));
+        var currentDate = anchorDate;
+        for (var occurrenceNumber = 1; occurrenceNumber <= MaximumExpandedOccurrencesPerAppointment; occurrenceNumber++)
+        {
+            if (currentDate == occurrenceDate)
+            {
+                return occurrenceNumber;
+            }
+
+            if (currentDate > occurrenceDate)
+            {
+                return null;
+            }
+
+            var nextDate = GetNextOccurrenceDate(currentDate, frequency, repeatUnit);
+            if (nextDate <= currentDate)
+            {
+                return null;
+            }
+
+            currentDate = nextDate;
+        }
+
+        return null;
+    }
+
+    private static DateOnly GetNextOccurrenceDate(DateOnly occurrenceDate, int repeatFrequency, int? repeatUnit) => repeatUnit switch
+    {
+        0 => occurrenceDate.AddDays(repeatFrequency),
+        2 => occurrenceDate.AddMonths(repeatFrequency),
+        3 => occurrenceDate.AddYears(repeatFrequency),
+        4 => AddWorkdays(occurrenceDate, repeatFrequency),
+        _ => occurrenceDate.AddDays(repeatFrequency * 7)
+    };
+
+    private static DateOnly AddWorkdays(DateOnly date, int workdays)
+    {
+        var result = date;
+        var added = 0;
+        while (added < workdays)
+        {
+            result = result.AddDays(1);
+            if (result.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
+            {
+                added++;
+            }
+        }
+
+        return result;
     }
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
@@ -520,4 +700,6 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record AppointmentOccurrenceReference(string RootAppointmentId, DateOnly? OccurrenceDate);
 }

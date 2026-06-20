@@ -119,6 +119,10 @@ export type PatientRegistrationInput = PatientDemographicsUpdate & {
 
 export type AppointmentListItem = {
   id: string
+  seriesRootId: string
+  isRecurringSeries: boolean
+  isVirtualOccurrence: boolean
+  occurrenceNumber?: number | null
   patientId: string
   legacyPid: number
   pubpid: string

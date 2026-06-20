@@ -3655,6 +3655,18 @@ function appointmentCategoryDetail(appointment: Pick<AppointmentListItem, 'categ
   return appointment.categoryId ? `${label} (${appointment.categoryId})` : label
 }
 
+function appointmentOccurrenceDetail(
+  appointment: Pick<AppointmentListItem, 'isRecurringSeries' | 'isVirtualOccurrence' | 'occurrenceNumber'>,
+) {
+  if (!appointment.isRecurringSeries) {
+    return null
+  }
+
+  return appointment.isVirtualOccurrence
+    ? `Generated occurrence ${appointment.occurrenceNumber ?? ''}`.trim()
+    : 'Series anchor'
+}
+
 function careLocationDetail(name: string | null | undefined, id: number | null | undefined) {
   return id ? `${name || 'Not recorded'} (${id})` : name
 }
@@ -3728,6 +3740,7 @@ function CalendarWorkspace({
   const [editRecurrenceEndDate, setEditRecurrenceEndDate] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const selectedOccurrenceIsVirtual = appointmentDetail?.isVirtualOccurrence ?? false
 
   useEffect(() => {
     if (!appointmentDetail) {
@@ -4100,7 +4113,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleArriveSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '@' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
+                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '@' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <Check size={15} />
                 <span>Mark arrived</span>
@@ -4109,7 +4122,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleCheckOutSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
+                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <ClipboardList size={15} />
                 <span>Mark checked out</span>
@@ -4118,7 +4131,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleNoShowSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '?' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
+                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '?' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
               >
                 <Clock size={15} />
                 <span>Mark no-show</span>
@@ -4127,7 +4140,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleCancelSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === 'x'}
+                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === 'x'}
               >
                 <Ban size={15} />
                 <span>Cancel appointment</span>
@@ -4136,7 +4149,7 @@ function CalendarWorkspace({
                 className="icon-text-button danger"
                 type="button"
                 onClick={handleDeleteSelected}
-                disabled={detailStatus === 'loading'}
+                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual}
               >
                 <Trash2 size={15} />
                 <span>Delete appointment</span>
@@ -4298,7 +4311,7 @@ function CalendarWorkspace({
                 </label>
               </div>
               <div className="contact-actions">
-                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
+                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving' || selectedOccurrenceIsVirtual}>
                   <Check size={15} />
                   <span>{mutationStatus === 'saving' ? 'Saving' : 'Save schedule'}</span>
                 </button>
@@ -4313,6 +4326,7 @@ function CalendarWorkspace({
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
+                <Field label="Occurrence" value={appointmentOccurrenceDetail(appointmentDetail)} />
               </InfoPanel>
 
               <InfoPanel title="Patient" icon={UserRound}>
@@ -4328,6 +4342,7 @@ function CalendarWorkspace({
                 <Field label="Billing facility" value={careLocationDetail(appointmentDetail.billingLocationName, appointmentDetail.billingLocationId)} />
                 <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
                 <Field label="Appointment ID" value={appointmentDetail.id} />
+                <Field label="Series root" value={appointmentDetail.isRecurringSeries ? appointmentDetail.seriesRootId : null} />
               </InfoPanel>
             </div>
           </>
@@ -11026,6 +11041,12 @@ function AppointmentResult({
         <span className="patient-name">{appointment.title}</span>
         <span className="status-tag">{appointment.status ?? 'Open'}</span>
       </div>
+      {appointment.isRecurringSeries && (
+        <div className="patient-result-sub">
+          <span>{appointmentOccurrenceDetail(appointment)}</span>
+          <span>{appointment.recurrenceLabel}</span>
+        </div>
+      )}
       <div className="patient-result-sub">
         <span>
           {appointment.date} at {appointment.startTime}
