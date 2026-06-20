@@ -348,6 +348,11 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var contentBase64 = isBinary
             ? Convert.ToBase64String(contentBytes!)
             : Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+        var fileName = ReadNullableString(reader, "file_name") ?? BuildDownloadFileName(name, mimetype);
+        var storageMethod = ReadNullableString(reader, "storage_method");
+        var url = ReadNullableString(reader, "url");
+        var pages = ReadNullableInt32(reader, "pages");
+        var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, content);
 
         return new PatientDocumentContentResponse(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
@@ -357,15 +362,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
             CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
             Name: name,
-            FileName: ReadNullableString(reader, "file_name") ?? BuildDownloadFileName(name, mimetype),
+            FileName: fileName,
             DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
             UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
             Mimetype: mimetype,
             SizeBytes: ReadNullableInt32(reader, "size_bytes"),
-            Pages: ReadNullableInt32(reader, "pages"),
+            Pages: pages,
             Encounter: ReadNullableInt32(reader, "encounter"),
-            StorageMethod: ReadNullableString(reader, "storage_method"),
-            Url: ReadNullableString(reader, "url"),
+            StorageMethod: storageMethod,
+            Url: url,
             Hash: ReadNullableString(reader, "hash"),
             DocumentationOf: ReadNullableString(reader, "documentation_of"),
             Notes: ReadNullableString(reader, "notes"),
@@ -374,7 +379,13 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
             Content: content,
             ContentBase64: contentBase64,
-            IsBinary: isBinary);
+            IsBinary: isBinary,
+            PreviewKind: previewInfo.PreviewKind,
+            PreviewStatus: previewInfo.PreviewStatus,
+            ThumbnailLabel: previewInfo.ThumbnailLabel,
+            ThumbnailText: previewInfo.ThumbnailText,
+            CanPreviewInline: previewInfo.CanPreviewInline,
+            CanDownload: previewInfo.CanDownload);
     }
 
     public async Task<PatientDocumentMutationResponse?> UpdateMetadataAsync(
@@ -703,6 +714,14 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var mimetype = ReadNullableString(reader, "mimetype");
+            var storageMethod = ReadNullableString(reader, "storage_method");
+            var fileName = ReadNullableString(reader, "file_name");
+            var url = ReadNullableString(reader, "url");
+            var pages = ReadNullableInt32(reader, "pages");
+            var contentPreview = ReadNullableString(reader, "content_preview");
+            var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
+
             items.Add(new PatientDocumentItem(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
                 DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
@@ -713,13 +732,13 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Name: reader.GetString(reader.GetOrdinal("name")),
                 DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
                 UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
-                Mimetype: ReadNullableString(reader, "mimetype"),
+                Mimetype: mimetype,
                 SizeBytes: ReadNullableInt32(reader, "size_bytes"),
-                Pages: ReadNullableInt32(reader, "pages"),
+                Pages: pages,
                 Encounter: ReadNullableInt32(reader, "encounter"),
-                StorageMethod: ReadNullableString(reader, "storage_method"),
-                FileName: ReadNullableString(reader, "file_name"),
-                Url: ReadNullableString(reader, "url"),
+                StorageMethod: storageMethod,
+                FileName: fileName,
+                Url: url,
                 Hash: ReadNullableString(reader, "hash"),
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
@@ -727,10 +746,124 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
                 ReviewedBy: ReadNullableString(reader, "reviewed_by"),
                 ReviewedAt: ReadNullableDateTimeString(reader, "reviewed_at"),
-                ContentPreview: ReadNullableString(reader, "content_preview")));
+                ContentPreview: contentPreview,
+                PreviewKind: previewInfo.PreviewKind,
+                PreviewStatus: previewInfo.PreviewStatus,
+                ThumbnailLabel: previewInfo.ThumbnailLabel,
+                ThumbnailText: previewInfo.ThumbnailText,
+                CanPreviewInline: previewInfo.CanPreviewInline,
+                CanDownload: previewInfo.CanDownload));
         }
 
         return items;
+    }
+
+    private static DocumentPreviewInfo BuildPreviewInfo(
+        string? mimetype,
+        string? storageMethod,
+        string? fileName,
+        string? url,
+        int? pages,
+        string? contentPreview)
+    {
+        var normalizedMimetype = NormalizeText(mimetype)?.ToLowerInvariant() ?? string.Empty;
+        var normalizedStorage = NormalizeText(storageMethod)?.ToLowerInvariant() ?? string.Empty;
+        var previewText = BuildPreviewText(contentPreview);
+
+        if (normalizedStorage == "web_url" && !string.IsNullOrWhiteSpace(url))
+        {
+            return new DocumentPreviewInfo(
+                PreviewKind: "external-link",
+                PreviewStatus: "External link",
+                ThumbnailLabel: "LINK",
+                ThumbnailText: TrimThumbnailText(url) ?? "External document link",
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        if (normalizedMimetype.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DocumentPreviewInfo(
+                PreviewKind: "text",
+                PreviewStatus: "Inline text preview",
+                ThumbnailLabel: "TXT",
+                ThumbnailText: previewText ?? "Text document",
+                CanPreviewInline: true,
+                CanDownload: true);
+        }
+
+        if (string.Equals(normalizedMimetype, "application/pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DocumentPreviewInfo(
+                PreviewKind: "pdf",
+                PreviewStatus: "Download preview",
+                ThumbnailLabel: "PDF",
+                ThumbnailText: pages is > 0 ? $"{pages} page PDF document" : "PDF document",
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        if (normalizedMimetype.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DocumentPreviewInfo(
+                PreviewKind: "image",
+                PreviewStatus: "Image preview pending",
+                ThumbnailLabel: "IMG",
+                ThumbnailText: TrimThumbnailText(fileName) ?? "Image document",
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        return new DocumentPreviewInfo(
+            PreviewKind: "binary",
+            PreviewStatus: "Download preview",
+            ThumbnailLabel: BuildThumbnailLabel(fileName, normalizedMimetype),
+            ThumbnailText: TrimThumbnailText(fileName) ?? "Stored document",
+            CanPreviewInline: false,
+            CanDownload: true);
+    }
+
+    private static string? BuildPreviewText(string? contentPreview)
+    {
+        var normalized = NormalizeText(contentPreview);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        var firstLine = normalized
+            .Replace("\r", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        return TrimThumbnailText(firstLine ?? normalized);
+    }
+
+    private static string BuildThumbnailLabel(string? fileName, string mimetype)
+    {
+        var extension = NormalizeText(Path.GetExtension(fileName ?? string.Empty))?.TrimStart('.');
+        if (!string.IsNullOrWhiteSpace(extension) && extension.Length <= 4)
+        {
+            return extension.ToUpperInvariant();
+        }
+
+        if (mimetype.Contains("json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "JSON";
+        }
+
+        return "FILE";
+    }
+
+    private static string? TrimThumbnailText(string? value)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return normalized.Length <= 90 ? normalized : $"{normalized[..87]}...";
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)
@@ -770,6 +903,11 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     private static object NullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    }
+
+    private static string? NormalizeText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static string BuildDownloadFileName(string name, string? mimetype)
@@ -819,4 +957,12 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string FirstName,
         string LastName,
         string DisplayName);
+
+    private sealed record DocumentPreviewInfo(
+        string PreviewKind,
+        string PreviewStatus,
+        string ThumbnailLabel,
+        string ThumbnailText,
+        bool CanPreviewInline,
+        bool CanDownload);
 }

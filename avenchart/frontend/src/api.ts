@@ -496,6 +496,12 @@ export type PatientDocumentItem = {
   reviewedBy?: string | null
   reviewedAt?: string | null
   contentPreview?: string | null
+  previewKind: string
+  previewStatus: string
+  thumbnailLabel: string
+  thumbnailText: string
+  canPreviewInline: boolean
+  canDownload: boolean
 }
 
 export type PatientDocumentsResponse = {
@@ -582,6 +588,12 @@ export type PatientDocumentContentResponse = {
   content: string
   contentBase64?: string | null
   isBinary: boolean
+  previewKind: string
+  previewStatus: string
+  thumbnailLabel: string
+  thumbnailText: string
+  canPreviewInline: boolean
+  canDownload: boolean
 }
 
 export type PatientDocumentSignInput = {

@@ -6941,6 +6941,15 @@ function DocumentItem({
           {isArchived && <span className="status-tag danger">Archived</span>}
         </div>
       </div>
+      <div className="document-preview-readiness">
+        <div className={`document-thumbnail document-thumbnail-${document.previewKind || 'file'}`} aria-label={`Document preview ${document.thumbnailLabel || 'DOC'}`}>
+          <span>{document.thumbnailLabel || 'DOC'}</span>
+        </div>
+        <div className="document-preview-summary">
+          <span>{document.previewStatus || 'Preview pending'}</span>
+          <p>{document.thumbnailText || document.contentPreview || document.fileName || 'No preview generated'}</p>
+        </div>
+      </div>
       <div className="document-meta-grid">
         <span>{document.docDate}</span>
         <span>{document.mimetype || 'No mimetype'}</span>

@@ -888,6 +888,45 @@ catch {
 
 try {
     $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" } | Select-Object -First 1
+    $advanceDirective = $documents.documents | Where-Object { $_.name -eq "Advance directive acknowledgement" } | Select-Object -First 1
+    $documentPreviewPassed = $null -ne $intakePacket `
+        -and $null -ne $advanceDirective `
+        -and $intakePacket.previewKind -eq "text" `
+        -and $intakePacket.previewStatus -eq "Inline text preview" `
+        -and $intakePacket.thumbnailLabel -eq "TXT" `
+        -and $intakePacket.thumbnailText.Contains("Gold synthetic document DOC-MOD-PAT-0001-1") `
+        -and $intakePacket.canPreviewInline `
+        -and $intakePacket.canDownload `
+        -and $advanceDirective.previewKind -eq "text" `
+        -and $advanceDirective.thumbnailLabel -eq "TXT" `
+        -and $advanceDirective.thumbnailText.Contains("Gold synthetic document DOC-MOD-PAT-0001-2")
+    Add-Check -Name "anchor patient document preview readiness" -Result $(if ($documentPreviewPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $documents.patientId
+        intakePreview = if ($null -ne $intakePacket) { @{
+            previewKind = $intakePacket.previewKind
+            previewStatus = $intakePacket.previewStatus
+            thumbnailLabel = $intakePacket.thumbnailLabel
+            thumbnailText = $intakePacket.thumbnailText
+            canPreviewInline = $intakePacket.canPreviewInline
+            canDownload = $intakePacket.canDownload
+        } } else { $null }
+        advanceDirectivePreview = if ($null -ne $advanceDirective) { @{
+            previewKind = $advanceDirective.previewKind
+            previewStatus = $advanceDirective.previewStatus
+            thumbnailLabel = $advanceDirective.thumbnailLabel
+            thumbnailText = $advanceDirective.thumbnailText
+            canPreviewInline = $advanceDirective.canPreviewInline
+            canDownload = $advanceDirective.canDownload
+        } } else { $null }
+    }
+}
+catch {
+    Add-Check -Name "anchor patient document preview readiness" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -TimeoutSec 20
     $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
     if ($null -eq $intakePacket) {
         throw "Primary care intake packet document was not found."

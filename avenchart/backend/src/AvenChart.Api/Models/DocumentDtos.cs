@@ -36,7 +36,13 @@ public sealed record PatientDocumentItem(
     string ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,
-    string? ContentPreview);
+    string? ContentPreview,
+    string PreviewKind,
+    string PreviewStatus,
+    string ThumbnailLabel,
+    string ThumbnailText,
+    bool CanPreviewInline,
+    bool CanDownload);
 
 public sealed record PatientDocumentCreateRequest(
     string PatientId,
@@ -103,7 +109,13 @@ public sealed record PatientDocumentContentResponse(
     string? ReviewedAt,
     string Content,
     string? ContentBase64,
-    bool IsBinary);
+    bool IsBinary,
+    string PreviewKind,
+    string PreviewStatus,
+    string ThumbnailLabel,
+    string ThumbnailText,
+    bool CanPreviewInline,
+    bool CanDownload);
 
 public sealed record PatientDocumentSignRequest(
     string ReviewStatus,
