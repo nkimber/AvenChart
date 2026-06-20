@@ -109,6 +109,41 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
     }
 
+    public async Task<PatientMessageMutationResponse?> UpdateAssignmentAsync(
+        string messageId,
+        PatientMessageAssignmentUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)
+            || string.IsNullOrWhiteSpace(request.AssignedTo))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update messages
+                set assigned_to = @assignedTo
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", messageId);
+            command.Parameters.AddWithValue("assignedTo", request.AssignedTo.Trim());
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
     public async Task<PatientMessageMutationResponse?> SoftDeleteAsync(string messageId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(messageId))

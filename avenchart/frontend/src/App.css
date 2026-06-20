@@ -838,6 +838,37 @@
   font-size: 12px;
 }
 
+.message-assignment-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compact-inline-field {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+  flex: 1 1 180px;
+}
+
+.compact-inline-field span {
+  color: #607280;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.compact-inline-field input {
+  width: 100%;
+  border: 1px solid #d7e3e8;
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-size: 13px;
+  color: #1f2f3a;
+  background: #ffffff;
+}
+
 .message-item-actions {
   display: flex;
   justify-content: flex-end;

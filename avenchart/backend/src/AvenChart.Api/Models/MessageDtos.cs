@@ -31,6 +31,9 @@ public sealed record PatientMessageStatusUpdateRequest(
     string Status,
     string Body);
 
+public sealed record PatientMessageAssignmentUpdateRequest(
+    string AssignedTo);
+
 public sealed record PatientMessageMutationResponse(
     string Id,
     PatientMessagesResponse Detail);

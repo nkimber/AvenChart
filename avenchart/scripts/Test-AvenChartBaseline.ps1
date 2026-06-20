@@ -1479,6 +1479,16 @@ try {
     $patientMessageMutationId = $createdMessage.id
     $createdVisible = $createdMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
 
+    $assignmentBody = @{
+        assignedTo = "billing"
+    } | ConvertTo-Json
+    $assignedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/assignment" -Method Put -ContentType "application/json" -Body $assignmentBody -TimeoutSec 20
+    $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "billing" } | Select-Object -First 1
+    Add-Check -Name "patient message assignment update" -Result $(if ($null -ne $assignedVisible) { "passed" } else { "failed" }) -Details @{
+        messageId = $patientMessageMutationId
+        assignedVisible = $assignedVisible
+    }
+
     $closeBody = @{
         status = "Done"
         body = "Closed by the smoke patient-message mutation check."
@@ -1488,7 +1498,7 @@ try {
 
     $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -TimeoutSec 20
     $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $messageTitle } | Select-Object -First 1
-    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
+    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $patientMessageMutationId = $null
@@ -1496,6 +1506,7 @@ try {
     Add-Check -Name "patient message mutation lifecycle" -Result $(if ($patientMessageMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdMessage.id
         createdVisible = $createdVisible
+        assignedVisible = $assignedVisible
         closedVisible = $closedVisible
         archivedVisible = $archivedVisible
     }

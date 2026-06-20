@@ -528,6 +528,17 @@ messages.MapPut("/{messageId}/status", async (
     })
     .WithName("UpdatePatientMessageStatus");
 
+messages.MapPut("/{messageId}/assignment", async (
+        MessageRepository repository,
+        string messageId,
+        PatientMessageAssignmentUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateAssignmentAsync(messageId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdatePatientMessageAssignment");
+
 messages.MapPut("/{messageId}/soft-delete", async (
         MessageRepository repository,
         string messageId,

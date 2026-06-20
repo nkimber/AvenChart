@@ -106,6 +106,7 @@ import {
   softDeletePatientMessage,
   restorePatientDocument,
   replacePatientDocumentContent,
+  updatePatientMessageAssignment,
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
@@ -179,6 +180,7 @@ import {
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
+  type PatientMessageAssignmentUpdateInput,
   type PatientMessageCreateInput,
   type PatientMessageItem,
   type PatientMessagesResponse,
@@ -1795,6 +1797,24 @@ function App() {
     }
   }
 
+  async function handlePatientMessageAssignment(message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      const response = await updatePatientMessageAssignment(message.id, update)
+      setPatientMessages(response.detail)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+      return response
+    } catch (assignmentError) {
+      setMessageStatus('error')
+      const messageText = assignmentError instanceof Error ? assignmentError.message : 'Patient message assignment update failed'
+      setMessageError(messageText)
+      throw assignmentError
+    }
+  }
+
   async function handlePatientMessageArchive(message: PatientMessageItem) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -2218,6 +2238,7 @@ function App() {
             onPatientIdChange={setMessagePatientId}
             onCreateMessage={handlePatientMessageCreate}
             onCloseMessage={handlePatientMessageClose}
+            onAssignMessage={handlePatientMessageAssignment}
             onArchiveMessage={handlePatientMessageArchive}
             onDeleteMessage={handlePatientMessageDelete}
           />
@@ -6080,6 +6101,7 @@ function MessagesWorkspace({
   onPatientIdChange,
   onCreateMessage,
   onCloseMessage,
+  onAssignMessage,
   onArchiveMessage,
   onDeleteMessage,
 }: {
@@ -6090,6 +6112,7 @@ function MessagesWorkspace({
   onPatientIdChange: (value: string) => void
   onCreateMessage: (input: PatientMessageCreateInput) => Promise<unknown>
   onCloseMessage: (message: PatientMessageItem) => Promise<unknown>
+  onAssignMessage: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
   onArchiveMessage: (message: PatientMessageItem) => Promise<unknown>
   onDeleteMessage: (message: PatientMessageItem) => Promise<void>
 }) {
@@ -6227,6 +6250,7 @@ function MessagesWorkspace({
                       message={message}
                       disabled={isLoading}
                       onClose={onCloseMessage}
+                      onAssign={onAssignMessage}
                       onArchive={onArchiveMessage}
                       onDelete={onDeleteMessage}
                     />
@@ -8179,15 +8203,28 @@ function MessageItem({
   message,
   disabled,
   onClose,
+  onAssign,
   onArchive,
   onDelete,
 }: {
   message: PatientMessageItem
   disabled: boolean
   onClose: (message: PatientMessageItem) => Promise<unknown>
+  onAssign: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
   onArchive: (message: PatientMessageItem) => Promise<unknown>
   onDelete: (message: PatientMessageItem) => Promise<void>
 }) {
+  const [assigneeDraft, setAssigneeDraft] = useState(message.assignedTo || '')
+
+  useEffect(() => {
+    setAssigneeDraft(message.assignedTo || '')
+  }, [message.assignedTo])
+
+  async function handleAssignSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await onAssign(message, { assignedTo: assigneeDraft.trim() })
+  }
+
   return (
     <article className="message-item">
       <div className="message-item-header">
@@ -8196,6 +8233,25 @@ function MessageItem({
       </div>
       <p>{message.body || 'No message body recorded'}</p>
       <span>{[message.date || 'No date', message.assignedTo ? `Assigned to ${message.assignedTo}` : null].filter(Boolean).join(' / ')}</span>
+      <form className="message-assignment-form" onSubmit={handleAssignSubmit}>
+        <label className="compact-inline-field">
+          <span>Assign To</span>
+          <input
+            value={assigneeDraft}
+            onChange={(event) => setAssigneeDraft(event.target.value)}
+            aria-label={`Assign ${message.title || 'message'} to`}
+            required
+          />
+        </label>
+        <button
+          className="icon-text-button secondary"
+          type="submit"
+          disabled={disabled || assigneeDraft.trim().length === 0 || assigneeDraft.trim() === (message.assignedTo || '')}
+        >
+          <UserRound size={14} />
+          Reassign
+        </button>
+      </form>
       <div className="message-item-actions">
         <button
           className="icon-text-button primary"

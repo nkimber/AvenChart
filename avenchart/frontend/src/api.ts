@@ -632,6 +632,10 @@ export type PatientMessageStatusUpdateInput = {
   body: string
 }
 
+export type PatientMessageAssignmentUpdateInput = {
+  assignedTo: string
+}
+
 export type PatientMessageMutationResponse = {
   id: string
   detail: PatientMessagesResponse
@@ -2118,6 +2122,24 @@ export async function updatePatientMessageStatus(
   })
   if (!response.ok) {
     throw new Error(`Patient message update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updatePatientMessageAssignment(
+  messageId: string,
+  update: PatientMessageAssignmentUpdateInput,
+  signal?: AbortSignal,
+): Promise<PatientMessageMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/assignment`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(update),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient message assignment update failed with ${response.status}`)
   }
 
   return response.json()
