@@ -1001,6 +1001,28 @@ function App() {
     }
   }
 
+  async function handleAppointmentNoShow(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await updateAppointmentStatus(appointment.id, {
+        status: '?',
+        title: appointment.title.endsWith('No Show') ? appointment.title : `${appointment.title} No Show`,
+      })
+      setAppointmentDetail(updated)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (noShowError) {
+      setAppointmentDetailStatus('error')
+      const message = noShowError instanceof Error ? noShowError.message : 'Appointment no-show update failed'
+      setAppointmentError(message)
+      throw noShowError
+    }
+  }
+
   async function handleAppointmentDelete(appointment: AppointmentDetail) {
     setAppointmentDetailStatus('loading')
     setAppointmentError(null)
@@ -2624,6 +2646,7 @@ function App() {
             onUpdateAppointment={handleAppointmentUpdate}
             onArriveAppointment={handleAppointmentArrive}
             onCheckOutAppointment={handleAppointmentCheckOut}
+            onNoShowAppointment={handleAppointmentNoShow}
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
           />
@@ -3625,6 +3648,7 @@ function CalendarWorkspace({
   onUpdateAppointment,
   onArriveAppointment,
   onCheckOutAppointment,
+  onNoShowAppointment,
   onCancelAppointment,
   onDeleteAppointment,
 }: {
@@ -3643,6 +3667,7 @@ function CalendarWorkspace({
   onUpdateAppointment: (appointment: AppointmentDetail, input: AppointmentUpdateInput) => Promise<AppointmentDetail>
   onArriveAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCheckOutAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
+  onNoShowAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
 }) {
@@ -3728,6 +3753,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onCheckOutAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleNoShowSelected() {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onNoShowAppointment(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -3897,7 +3936,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleArriveSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '@' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <Check size={15} />
                 <span>Mark arrived</span>
@@ -3906,10 +3945,19 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleCheckOutSelected}
-                disabled={detailStatus === 'loading' || appointmentDetail.status === '>'}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <ClipboardList size={15} />
                 <span>Mark checked out</span>
+              </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={handleNoShowSelected}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '?' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
+              >
+                <Clock size={15} />
+                <span>Mark no-show</span>
               </button>
               <button
                 className="icon-text-button"

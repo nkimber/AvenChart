@@ -580,6 +580,60 @@ finally {
     }
 }
 
+$appointmentNoShowId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Missed"
+        date = "2026-11-12"
+        startTime = "13:00"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "NoShow"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentNoShowId = $createdAppointment.id
+
+    $noShowBody = @{
+        status = "?"
+        title = "Smoke Appointment Missed No Show"
+    } | ConvertTo-Json
+    $noShowAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId/status" -Method Put -ContentType "application/json" -Body $noShowBody -TimeoutSec 20
+    $appointmentNoShowPassed = $createdAppointment.status -eq "-" `
+        -and $noShowAppointment.status -eq "?" `
+        -and $noShowAppointment.title -eq "Smoke Appointment Missed No Show" `
+        -and $noShowAppointment.date -eq "2026-11-12" `
+        -and $noShowAppointment.startTime -eq "13:00" `
+        -and $noShowAppointment.durationMinutes -eq 30 `
+        -and $noShowAppointment.room -eq "NoShow"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentNoShowId = $null
+
+    Add-Check -Name "appointment no-show lifecycle" -Result $(if ($appointmentNoShowPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        title = $noShowAppointment.title
+        date = $noShowAppointment.date
+        startTime = $noShowAppointment.startTime
+        durationMinutes = $noShowAppointment.durationMinutes
+        status = $noShowAppointment.status
+    }
+}
+catch {
+    Add-Check -Name "appointment no-show lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentNoShowId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentNoShowId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
