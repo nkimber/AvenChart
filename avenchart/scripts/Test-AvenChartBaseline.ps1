@@ -854,6 +854,89 @@ finally {
     }
 }
 
+$smokeEncounterDocumentLifecycleId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $lifecycleDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $lifecycleDocumentName = "Smoke Encounter Lifecycle Document $lifecycleDocumentSuffix"
+    $lifecycleDocumentContent = "Smoke encounter document lifecycle content $lifecycleDocumentSuffix."
+    $lifecycleDocumentBody = @{
+        categoryId = 3
+        name = $lifecycleDocumentName
+        docDate = "2026-06-18"
+        content = $lifecycleDocumentContent
+        notes = "Created by the smoke encounter document lifecycle timeline check."
+    } | ConvertTo-Json
+
+    $createdEncounterLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $lifecycleDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentLifecycleId = $createdEncounterLifecycleDocument.id
+    $createdLifecycleDocumentVisible = @($createdEncounterLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.name -eq $lifecycleDocumentName
+    } | Select-Object -First 1
+    $createdLifecycleCodes = if ($null -eq $createdLifecycleDocumentVisible) { @() } else { @($createdLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    $signLifecycleBody = @{
+        reviewStatus = "approved"
+        reviewedBy = "admin"
+    } | ConvertTo-Json
+    $signedLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/sign" -Method Put -ContentType "application/json" -Body $signLifecycleBody -TimeoutSec 20
+    $signedLifecycleDocumentVisible = @($signedLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.reviewStatus -eq "approved" -and $_.reviewedBy -eq "admin"
+    } | Select-Object -First 1
+    $signedLifecycleCodes = if ($null -eq $signedLifecycleDocumentVisible) { @() } else { @($signedLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/soft-delete" -Method Put -TimeoutSec 20 | Out-Null
+    $archivedLifecycleDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    $archivedLifecycleDocumentVisible = @($archivedLifecycleDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.deleted -eq 1
+    } | Select-Object -First 1
+    $archivedLifecycleCodes = if ($null -eq $archivedLifecycleDocumentVisible) { @() } else { @($archivedLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    $restoredLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/restore" -Method Put -TimeoutSec 20
+    $restoredLifecycleDocumentVisible = @($restoredLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.deleted -eq 0
+    } | Select-Object -First 1
+    $restoredLifecycleCodes = if ($null -eq $restoredLifecycleDocumentVisible) { @() } else { @($restoredLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentLifecycleId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterDocumentLifecycleId = $null
+
+    $encounterDocumentLifecyclePassed = $null -ne $createdLifecycleDocumentVisible `
+        -and ($createdLifecycleCodes -contains "filed") `
+        -and ($createdLifecycleCodes -contains "current-version") `
+        -and ($createdLifecycleCodes -contains "review-pending") `
+        -and ($createdLifecycleCodes -contains "active") `
+        -and $null -ne $signedLifecycleDocumentVisible `
+        -and ($signedLifecycleCodes -contains "review-approved") `
+        -and $null -ne $archivedLifecycleDocumentVisible `
+        -and ($archivedLifecycleCodes -contains "archived") `
+        -and $null -ne $restoredLifecycleDocumentVisible `
+        -and ($restoredLifecycleCodes -contains "active")
+    Add-Check -Name "encounter document lifecycle timeline" -Result $(if ($encounterDocumentLifecyclePassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterLifecycleDocument.id
+        createdCodes = $createdLifecycleCodes
+        signedCodes = $signedLifecycleCodes
+        archivedCodes = $archivedLifecycleCodes
+        restoredCodes = $restoredLifecycleCodes
+    }
+}
+catch {
+    Add-Check -Name "encounter document lifecycle timeline" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentLifecycleId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentLifecycleId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentMoveId = $null
 try {
     if ($null -eq $encounterDetail) {

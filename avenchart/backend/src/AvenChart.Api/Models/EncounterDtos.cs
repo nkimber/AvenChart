@@ -117,7 +117,15 @@ public sealed record EncounterDocumentAttachment(
     string ThumbnailLabel,
     string ThumbnailText,
     bool CanPreviewInline,
-    bool CanDownload);
+    bool CanDownload,
+    IReadOnlyList<EncounterDocumentLifecycleEvent> LifecycleEvents);
+
+public sealed record EncounterDocumentLifecycleEvent(
+    string Code,
+    string Label,
+    string? OccurredAt,
+    string? Actor,
+    string Detail);
 
 public sealed record EncounterVitals(
     int? Systolic,

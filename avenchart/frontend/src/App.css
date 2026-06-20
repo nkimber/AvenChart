@@ -1314,6 +1314,34 @@
   background: #f4f8fa;
 }
 
+.document-lifecycle-readiness {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.document-lifecycle-event {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #d9e4e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 8px;
+}
+
+.document-lifecycle-event strong {
+  color: #1d2a35;
+  font-size: 12px;
+}
+
+.document-lifecycle-event span {
+  color: #526879;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .document-meta-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2017,6 +2045,7 @@
 
   .document-meta-grid,
   .document-revision-readiness,
+  .document-lifecycle-readiness,
   .document-list-body,
   .document-footnote {
     grid-template-columns: 1fr;

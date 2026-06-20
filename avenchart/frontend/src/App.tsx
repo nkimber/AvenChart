@@ -5939,6 +5939,16 @@ function EncounterDocumentAttachmentCard({
         <span>{document.reviewedAt || 'No review time'}</span>
       </div>
 
+      <div className="document-lifecycle-readiness" aria-label={`Lifecycle for ${document.name}`}>
+        {(document.lifecycleEvents ?? []).map((event) => (
+          <div className="document-lifecycle-event" key={event.code}>
+            <strong>{event.label}</strong>
+            <span>{event.occurredAt || 'Current state'}</span>
+            <span>{event.actor ? `By ${event.actor}` : event.detail}</span>
+          </div>
+        ))}
+      </div>
+
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
       {document.notes && <p className="document-note">Notes: {document.notes}</p>}
 

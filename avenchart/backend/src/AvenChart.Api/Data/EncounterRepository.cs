@@ -1236,6 +1236,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             var pages = ReadNullableInt(reader, "pages");
             var contentPreview = ReadNullableString(reader, "content_preview");
             var preview = BuildDocumentPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
+            var uploadedAt = ReadDateTime(reader, "uploaded_at");
+            var revisionAt = uploadedAt;
+            var deleted = reader.GetInt32(reader.GetOrdinal("deleted"));
+            var reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
+            var reviewedBy = ReadNullableString(reader, "reviewed_by");
+            var reviewedAt = ReadNullableDateTime(reader, "reviewed_at");
 
             documents.Add(new EncounterDocumentAttachment(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
@@ -1244,8 +1250,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
                 Name: reader.GetString(reader.GetOrdinal("name")),
                 DocDate: ReadDate(reader, "doc_date"),
-                UploadedAt: ReadDateTime(reader, "uploaded_at"),
-                RevisionAt: ReadDateTime(reader, "uploaded_at"),
+                UploadedAt: uploadedAt,
+                RevisionAt: revisionAt,
                 CurrentVersion: 1,
                 VersionLabel: "Version 1",
                 VersionStatus: "Current version",
@@ -1260,20 +1266,95 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 Url: url,
                 Hash: hash,
                 Notes: ReadNullableString(reader, "notes"),
-                Deleted: reader.GetInt32(reader.GetOrdinal("deleted")),
-                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
-                ReviewedBy: ReadNullableString(reader, "reviewed_by"),
-                ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
+                Deleted: deleted,
+                ReviewStatus: reviewStatus,
+                ReviewedBy: reviewedBy,
+                ReviewedAt: reviewedAt,
                 ContentPreview: contentPreview,
                 PreviewKind: preview.PreviewKind,
                 PreviewStatus: preview.PreviewStatus,
                 ThumbnailLabel: preview.ThumbnailLabel,
                 ThumbnailText: preview.ThumbnailText,
                 CanPreviewInline: preview.CanPreviewInline,
-                CanDownload: preview.CanDownload));
+                CanDownload: preview.CanDownload,
+                LifecycleEvents: BuildDocumentLifecycleEvents(
+                    uploadedAt,
+                    revisionAt,
+                    reviewStatus,
+                    reviewedBy,
+                    reviewedAt,
+                    deleted,
+                    hash)));
         }
 
         return documents;
+    }
+
+    private static IReadOnlyList<EncounterDocumentLifecycleEvent> BuildDocumentLifecycleEvents(
+        string uploadedAt,
+        string revisionAt,
+        string reviewStatus,
+        string? reviewedBy,
+        string? reviewedAt,
+        int deleted,
+        string? revisionHash)
+    {
+        var normalizedReviewStatus = NormalizePreviewText(reviewStatus).ToLowerInvariant();
+        var reviewEvent = normalizedReviewStatus switch
+        {
+            "approved" => new EncounterDocumentLifecycleEvent(
+                Code: "review-approved",
+                Label: "Review approved",
+                OccurredAt: reviewedAt,
+                Actor: NormalizeText(reviewedBy),
+                Detail: "Document approved"),
+            "denied" => new EncounterDocumentLifecycleEvent(
+                Code: "review-denied",
+                Label: "Review denied",
+                OccurredAt: reviewedAt,
+                Actor: NormalizeText(reviewedBy),
+                Detail: "Document denied"),
+            _ => new EncounterDocumentLifecycleEvent(
+                Code: "review-pending",
+                Label: "Review pending",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Awaiting review")
+        };
+
+        var archiveEvent = deleted == 0
+            ? new EncounterDocumentLifecycleEvent(
+                Code: "active",
+                Label: "Active",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Visible in active encounter documents")
+            : new EncounterDocumentLifecycleEvent(
+                Code: "archived",
+                Label: "Archived",
+                OccurredAt: null,
+                Actor: null,
+                Detail: "Hidden from active encounter documents");
+
+        return
+        [
+            new EncounterDocumentLifecycleEvent(
+                Code: "filed",
+                Label: "Filed",
+                OccurredAt: uploadedAt,
+                Actor: "admin",
+                Detail: "Filed to encounter documents"),
+            new EncounterDocumentLifecycleEvent(
+                Code: "current-version",
+                Label: "Current version",
+                OccurredAt: revisionAt,
+                Actor: null,
+                Detail: NormalizeText(revisionHash) is { } hash
+                    ? $"Version 1 / {hash}"
+                    : "Version 1"),
+            reviewEvent,
+            archiveEvent
+        ];
     }
 
     private static EncounterDocumentPreviewInfo BuildDocumentPreviewInfo(

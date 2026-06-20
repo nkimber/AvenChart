@@ -246,6 +246,15 @@ export type EncounterDocumentAttachment = {
   thumbnailText: string
   canPreviewInline: boolean
   canDownload: boolean
+  lifecycleEvents: EncounterDocumentLifecycleEvent[]
+}
+
+export type EncounterDocumentLifecycleEvent = {
+  code: string
+  label: string
+  occurredAt?: string | null
+  actor?: string | null
+  detail: string
 }
 
 export type EncounterDiagnosisCode = {
