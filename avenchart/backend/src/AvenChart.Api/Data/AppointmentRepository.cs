@@ -126,6 +126,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             Status: ReadNullableString(reader, "status"),
             Room: ReadNullableString(reader, "room"),
             CategoryId: ReadNullableInt(reader, "category_id"),
+            CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
             ProviderName: ReadNullableString(reader, "provider_name"),
             FacilityName: ReadNullableString(reader, "facility_name"),
             PatientPurpose: ReadNullableString(reader, "purpose"));
@@ -341,8 +342,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         Status: ReadNullableString(reader, "status"),
         Room: ReadNullableString(reader, "room"),
         CategoryId: ReadNullableInt(reader, "category_id"),
+        CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
         ProviderName: ReadNullableString(reader, "provider_name"),
         FacilityName: ReadNullableString(reader, "facility_name"));
+
+    private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
+    {
+        9 => "Established Patient",
+        10 => "New Patient",
+        13 => "Preventive Care Services",
+        null => null,
+        _ => $"Category {categoryId.Value}"
+    };
 
     private static string? Normalize(string? value)
     {

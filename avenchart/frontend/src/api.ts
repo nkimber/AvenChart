@@ -130,6 +130,7 @@ export type AppointmentListItem = {
   status?: string | null
   room?: string | null
   categoryId?: number | null
+  categoryName?: string | null
   providerName?: string | null
   facilityName?: string | null
 }

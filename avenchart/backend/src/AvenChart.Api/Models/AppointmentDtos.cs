@@ -22,6 +22,7 @@ public sealed record AppointmentListItem(
     string? Status,
     string? Room,
     int? CategoryId,
+    string? CategoryName,
     string? ProviderName,
     string? FacilityName);
 
@@ -42,6 +43,7 @@ public sealed record AppointmentDetail(
     string? Status,
     string? Room,
     int? CategoryId,
+    string? CategoryName,
     string? ProviderName,
     string? FacilityName,
     string? PatientPurpose);

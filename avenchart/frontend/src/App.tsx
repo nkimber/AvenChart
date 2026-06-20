@@ -3632,6 +3632,21 @@ function PatientWorkspace({
   )
 }
 
+const appointmentCategoryOptions = [
+  { id: 9, label: 'Established Patient' },
+  { id: 10, label: 'New Patient' },
+  { id: 13, label: 'Preventive Care Services' },
+] as const
+
+function appointmentCategoryLabel(appointment: Pick<AppointmentListItem, 'categoryId' | 'categoryName'>) {
+  return appointment.categoryName ?? appointmentCategoryOptions.find((category) => category.id === appointment.categoryId)?.label ?? 'Category not recorded'
+}
+
+function appointmentCategoryDetail(appointment: Pick<AppointmentListItem, 'categoryId' | 'categoryName'>) {
+  const label = appointmentCategoryLabel(appointment)
+  return appointment.categoryId ? `${label} (${appointment.categoryId})` : label
+}
+
 function CalendarWorkspace({
   patientId,
   fromDate,
@@ -3676,11 +3691,13 @@ function CalendarWorkspace({
   const [draftStartTime, setDraftStartTime] = useState('10:30')
   const [draftDuration, setDraftDuration] = useState('30')
   const [draftRoom, setDraftRoom] = useState('Parity')
+  const [draftCategoryId, setDraftCategoryId] = useState('9')
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editStartTime, setEditStartTime] = useState('')
   const [editDuration, setEditDuration] = useState('')
   const [editRoom, setEditRoom] = useState('')
+  const [editCategoryId, setEditCategoryId] = useState('9')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -3694,6 +3711,7 @@ function CalendarWorkspace({
     setEditStartTime(appointmentDetail.startTime)
     setEditDuration(String(appointmentDetail.durationMinutes))
     setEditRoom(appointmentDetail.room ?? '')
+    setEditCategoryId(String(appointmentDetail.categoryId ?? 9))
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
@@ -3709,7 +3727,7 @@ function CalendarWorkspace({
         startTime: draftStartTime,
         durationMinutes: Number(draftDuration),
         room: draftRoom,
-        categoryId: 9,
+        categoryId: Number(draftCategoryId),
       })
       setMutationStatus('saved')
     } catch {
@@ -3787,7 +3805,7 @@ function CalendarWorkspace({
         startTime: editStartTime,
         durationMinutes: Number(editDuration),
         room: editRoom,
-        categoryId: appointmentDetail.categoryId,
+        categoryId: Number(editCategoryId),
         status: editStatus,
       })
       setMutationStatus('saved')
@@ -3878,6 +3896,16 @@ function CalendarWorkspace({
                 onChange={(event) => setDraftDuration(event.target.value)}
                 aria-label="New appointment duration"
               />
+            </label>
+            <label className="contact-field">
+              <span>Category</span>
+              <select value={draftCategoryId} onChange={(event) => setDraftCategoryId(event.target.value)} aria-label="New appointment category">
+                {appointmentCategoryOptions.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="contact-field">
               <span>Room</span>
@@ -4034,10 +4062,22 @@ function CalendarWorkspace({
                   </select>
                 </label>
               </div>
-              <label className="contact-field">
-                <span>Room</span>
-                <input value={editRoom} onChange={(event) => setEditRoom(event.target.value)} aria-label="Edit appointment room" />
-              </label>
+              <div className="mutation-grid two-column">
+                <label className="contact-field">
+                  <span>Category</span>
+                  <select value={editCategoryId} onChange={(event) => setEditCategoryId(event.target.value)} aria-label="Edit appointment category">
+                    {appointmentCategoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="contact-field">
+                  <span>Room</span>
+                  <input value={editRoom} onChange={(event) => setEditRoom(event.target.value)} aria-label="Edit appointment room" />
+                </label>
+              </div>
               <div className="contact-actions">
                 <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
                   <Check size={15} />
@@ -4064,7 +4104,7 @@ function CalendarWorkspace({
               <InfoPanel title="Care Location" icon={MapPin}>
                 <Field label="Provider" value={appointmentDetail.providerName} />
                 <Field label="Facility" value={appointmentDetail.facilityName} />
-                <Field label="Category" value={appointmentDetail.categoryId} />
+                <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
                 <Field label="Appointment ID" value={appointmentDetail.id} />
               </InfoPanel>
             </div>
@@ -10772,7 +10812,11 @@ function AppointmentResult({
       </div>
       <div className="patient-result-sub">
         <span>{appointment.patientDisplayName}</span>
+        <span>{appointmentCategoryLabel(appointment)}</span>
+      </div>
+      <div className="patient-result-sub">
         <span>{appointment.providerName ?? 'Provider not recorded'}</span>
+        <span>{appointment.facilityName ?? 'Facility not recorded'}</span>
       </div>
     </button>
   )

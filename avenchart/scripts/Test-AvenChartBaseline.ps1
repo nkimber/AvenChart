@@ -634,6 +634,66 @@ finally {
     }
 }
 
+$appointmentCategoryId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Category"
+        date = "2026-11-19"
+        startTime = "09:15"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 13
+        room = "Category"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentCategoryId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = $null
+        title = "Smoke Appointment Category"
+        date = "2026-11-19"
+        startTime = "09:15"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 10
+        room = "Category"
+        status = "-"
+    } | ConvertTo-Json
+    $updatedAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentCategoryPassed = $createdAppointment.categoryId -eq 13 `
+        -and $createdAppointment.categoryName -eq "Preventive Care Services" `
+        -and $updatedAppointment.categoryId -eq 10 `
+        -and $updatedAppointment.categoryName -eq "New Patient" `
+        -and $updatedAppointment.date -eq "2026-11-19" `
+        -and $updatedAppointment.startTime -eq "09:15" `
+        -and $updatedAppointment.room -eq "Category"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentCategoryId = $null
+
+    Add-Check -Name "appointment category lifecycle" -Result $(if ($appointmentCategoryPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        createdCategoryId = $createdAppointment.categoryId
+        createdCategoryName = $createdAppointment.categoryName
+        updatedCategoryId = $updatedAppointment.categoryId
+        updatedCategoryName = $updatedAppointment.categoryName
+    }
+}
+catch {
+    Add-Check -Name "appointment category lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentCategoryId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentCategoryId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
