@@ -777,6 +777,19 @@ billing.MapGet("/statements/batch", async (
     })
     .WithName("GetBillingStatementBatch");
 
+billing.MapGet("/statements/batch/package.zip", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var package = await repository.GetStatementBatchPackageAsync(limit ?? 10, cancellationToken);
+        return Results.File(
+            package.Content,
+            contentType: "application/zip",
+            fileDownloadName: package.FileName);
+    })
+    .WithName("DownloadBillingStatementBatchPackage");
+
 billing.MapGet("/{patientId}", async (
         BillingRepository repository,
         string patientId,

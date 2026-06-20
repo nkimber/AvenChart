@@ -1,6 +1,8 @@
 using System.Data.Common;
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -245,6 +247,85 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             TotalPastDueAmount: totals?.TotalPastDueAmount ?? candidates.Sum(candidate => candidate.PastDueAmount),
             TotalCurrentDueAmount: totals?.TotalCurrentDueAmount ?? candidates.Sum(candidate => candidate.CurrentDueAmount),
             Candidates: candidates);
+    }
+
+    public async Task<(byte[] Content, string FileName)> GetStatementBatchPackageAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var batch = await GetStatementBatchAsync(limit, cancellationToken);
+        var packageDate = batch.AsOfDate.Replace("-", string.Empty, StringComparison.Ordinal);
+        var packageId = $"STMT-BATCH-{packageDate}-TOP{batch.Candidates.Count}";
+        var fileName = $"statement-batch-{packageDate.ToLowerInvariant()}-top{batch.Candidates.Count}.zip";
+        var timestampDate = DateOnly.ParseExact(batch.AsOfDate, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var timestamp = new DateTimeOffset(
+            timestampDate.Year,
+            timestampDate.Month,
+            timestampDate.Day,
+            0,
+            0,
+            0,
+            TimeSpan.Zero);
+
+        var manifestEntries = new List<StatementBatchPackageEntry>();
+        using var memory = new MemoryStream();
+        using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var candidate in batch.Candidates)
+            {
+                var billing = await GetForPatientAsync(
+                    candidate.LegacyPid.ToString(CultureInfo.InvariantCulture),
+                    cancellationToken);
+                if (billing is null)
+                {
+                    continue;
+                }
+
+                var document = billing.StatementDocument;
+                var entryName = $"statements/{document.StatementNumber}.pdf";
+                AddArchiveEntry(
+                    archive,
+                    entryName,
+                    BuildStatementPdf(document),
+                    timestamp);
+                manifestEntries.Add(new StatementBatchPackageEntry(
+                    Pubpid: candidate.Pubpid,
+                    LegacyPid: candidate.LegacyPid,
+                    PatientDisplayName: candidate.PatientDisplayName,
+                    StatementNumber: document.StatementNumber,
+                    StatementStatus: candidate.StatementStatus,
+                    StatementDate: candidate.StatementDate,
+                    DueDate: candidate.DueDate,
+                    BalanceDueAmount: candidate.BalanceDueAmount,
+                    PastDueAmount: candidate.PastDueAmount,
+                    CurrentDueAmount: candidate.CurrentDueAmount,
+                    DeliveryMethod: candidate.DeliveryMethod,
+                    FileName: entryName));
+            }
+
+            var manifest = new StatementBatchPackageManifest(
+                DatasetId: batch.DatasetId,
+                DatasetVersion: batch.DatasetVersion,
+                AsOfDate: batch.AsOfDate,
+                PackageId: packageId,
+                CandidateCount: batch.CandidateCount,
+                IncludedStatementCount: manifestEntries.Count,
+                TotalBalanceAmount: batch.TotalBalanceAmount,
+                TotalPastDueAmount: batch.TotalPastDueAmount,
+                TotalCurrentDueAmount: batch.TotalCurrentDueAmount,
+                Entries: manifestEntries);
+            var manifestJson = JsonSerializer.Serialize(
+                manifest,
+                new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = true
+                });
+            AddArchiveEntry(archive, "manifest.json", Encoding.UTF8.GetBytes(manifestJson), timestamp);
+            AddArchiveEntry(archive, "summary.csv", Encoding.UTF8.GetBytes(BuildStatementBatchSummaryCsv(manifestEntries)), timestamp);
+        }
+
+        return (memory.ToArray(), fileName);
     }
 
     public async Task<BillingLineMutationResponse?> CreateLineAsync(
@@ -1456,6 +1537,58 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return Encoding.ASCII.GetBytes(pdf.ToString());
     }
 
+    private static string BuildStatementBatchSummaryCsv(IReadOnlyList<StatementBatchPackageEntry> entries)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("StatementNumber,Pubpid,PatientDisplayName,StatementStatus,StatementDate,DueDate,BalanceDueAmount,PastDueAmount,CurrentDueAmount,DeliveryMethod,FileName");
+        foreach (var entry in entries)
+        {
+            builder.AppendLine(string.Join(
+                ',',
+                new[]
+                {
+                    EscapeCsv(entry.StatementNumber),
+                    EscapeCsv(entry.Pubpid),
+                    EscapeCsv(entry.PatientDisplayName),
+                    EscapeCsv(entry.StatementStatus),
+                    EscapeCsv(entry.StatementDate),
+                    EscapeCsv(entry.DueDate),
+                    EscapeCsv(entry.BalanceDueAmount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    EscapeCsv(entry.PastDueAmount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    EscapeCsv(entry.CurrentDueAmount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    EscapeCsv(entry.DeliveryMethod),
+                    EscapeCsv(entry.FileName)
+                }));
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AddArchiveEntry(
+        ZipArchive archive,
+        string entryName,
+        byte[] content,
+        DateTimeOffset timestamp)
+    {
+        var entry = archive.CreateEntry(entryName, CompressionLevel.NoCompression);
+        entry.LastWriteTime = timestamp;
+        using var stream = entry.Open();
+        stream.Write(content, 0, content.Length);
+    }
+
+    private static string EscapeCsv(string value)
+    {
+        if (!value.Contains('"', StringComparison.Ordinal)
+            && !value.Contains(',', StringComparison.Ordinal)
+            && !value.Contains('\n', StringComparison.Ordinal)
+            && !value.Contains('\r', StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
     private static string EscapePdfText(string value)
     {
         return value
@@ -1600,6 +1733,32 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         decimal TotalBalanceAmount,
         decimal TotalPastDueAmount,
         decimal TotalCurrentDueAmount);
+
+    private sealed record StatementBatchPackageManifest(
+        string DatasetId,
+        string DatasetVersion,
+        string AsOfDate,
+        string PackageId,
+        int CandidateCount,
+        int IncludedStatementCount,
+        decimal TotalBalanceAmount,
+        decimal TotalPastDueAmount,
+        decimal TotalCurrentDueAmount,
+        IReadOnlyList<StatementBatchPackageEntry> Entries);
+
+    private sealed record StatementBatchPackageEntry(
+        string Pubpid,
+        int LegacyPid,
+        string PatientDisplayName,
+        string StatementNumber,
+        string StatementStatus,
+        string StatementDate,
+        string DueDate,
+        decimal BalanceDueAmount,
+        decimal PastDueAmount,
+        decimal CurrentDueAmount,
+        string DeliveryMethod,
+        string FileName);
 
     private sealed record BillingPatient(
         string PatientId,

@@ -2191,6 +2191,10 @@ export async function getStatementBatch(limit = 10, signal?: AbortSignal): Promi
   return response.json()
 }
 
+export function getStatementBatchPackageUrl(limit = 10) {
+  return `${apiBaseUrl}/api/billing/statements/batch/package.zip?limit=${encodeURIComponent(String(limit))}`
+}
+
 export function getBillingStatementPdfUrl(patientId: string) {
   return `${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}/statement.pdf`
 }

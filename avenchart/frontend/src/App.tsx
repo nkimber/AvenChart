@@ -40,6 +40,7 @@ import {
   getPatientBilling,
   getBillingStatementPdfUrl,
   getStatementBatch,
+  getStatementBatchPackageUrl,
   getPatientDocumentContent,
   getPatientDocumentDownloadUrl,
   getPatientDocuments,
@@ -5576,6 +5577,14 @@ function StatementBatchPanel({
       <div className="panel-heading">
         <Mail size={17} />
         <h3>Statement Batch</h3>
+        <a
+          className="icon-text-button secondary statement-batch-export"
+          href={getStatementBatchPackageUrl(5)}
+          download={batch ? `statement-batch-${batch.asOfDate.replaceAll('-', '')}-top${candidates.length}.zip` : 'statement-batch.zip'}
+        >
+          <Download size={14} />
+          Batch Export
+        </a>
       </div>
 
       <div className="statement-batch-body">

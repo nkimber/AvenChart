@@ -1051,6 +1051,16 @@
   margin-bottom: 12px;
 }
 
+.statement-batch-panel .panel-heading {
+  flex-wrap: wrap;
+  padding-block: 6px;
+}
+
+.statement-batch-export {
+  margin-left: auto;
+  min-height: 30px;
+}
+
 .statement-readiness-panel,
 .statement-document-panel,
 .billing-ledger-panel,

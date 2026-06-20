@@ -2147,6 +2147,81 @@ catch {
     Add-Check -Name "anchor statement batch candidates" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+    $statementPackagePath = Join-Path $env:TEMP "legacy-ehr-statement-batch-$([guid]::NewGuid().ToString('N')).zip"
+    $statementPackageClient = [System.Net.Http.HttpClient]::new()
+    $statementPackageClient.Timeout = [TimeSpan]::FromSeconds(20)
+    $statementPackageResponse = $statementPackageClient.GetAsync("$ApiBaseUrl/api/billing/statements/batch/package.zip?limit=5").GetAwaiter().GetResult()
+    $statementPackageResponse.EnsureSuccessStatusCode() | Out-Null
+    $statementPackageStatusCode = [int]$statementPackageResponse.StatusCode
+    $statementPackageContentType = if ($null -ne $statementPackageResponse.Content.Headers.ContentType) { $statementPackageResponse.Content.Headers.ContentType.ToString() } else { "" }
+    $statementPackageDisposition = if ($null -ne $statementPackageResponse.Content.Headers.ContentDisposition) { $statementPackageResponse.Content.Headers.ContentDisposition.ToString() } else { "" }
+    $statementPackageBytes = $statementPackageResponse.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    [System.IO.File]::WriteAllBytes($statementPackagePath, $statementPackageBytes)
+
+    $statementPackageZip = [System.IO.Compression.ZipFile]::OpenRead($statementPackagePath)
+    try {
+        $manifestEntry = $statementPackageZip.GetEntry("manifest.json")
+        $summaryEntry = $statementPackageZip.GetEntry("summary.csv")
+        $manifestReader = [System.IO.StreamReader]::new($manifestEntry.Open())
+        try {
+            $statementPackageManifest = $manifestReader.ReadToEnd() | ConvertFrom-Json
+        }
+        finally {
+            $manifestReader.Dispose()
+        }
+        $statementPdfEntries = @($statementPackageZip.Entries | Where-Object { $_.FullName -like "statements/*.pdf" })
+        $firstManifestEntry = @($statementPackageManifest.entries) | Select-Object -First 1
+        $firstStatementPdfEntry = if ($null -ne $firstManifestEntry) { $statementPackageZip.GetEntry($firstManifestEntry.fileName) } else { $null }
+        $firstStatementPdfText = ""
+        if ($null -ne $firstStatementPdfEntry) {
+            $firstPdfReader = [System.IO.StreamReader]::new($firstStatementPdfEntry.Open(), [System.Text.Encoding]::ASCII)
+            try {
+                $firstStatementPdfText = $firstPdfReader.ReadToEnd()
+            }
+            finally {
+                $firstPdfReader.Dispose()
+            }
+        }
+
+        $statementPackagePassed = $statementPackageStatusCode -eq 200 `
+            -and $statementPackageContentType -like "application/zip*" `
+            -and $statementPackageDisposition -like "*statement-batch-20260618-top5.zip*" `
+            -and $statementPackageBytes.Length -gt 0 `
+            -and $null -ne $manifestEntry `
+            -and $null -ne $summaryEntry `
+            -and $statementPackageManifest.packageId -eq "STMT-BATCH-20260618-TOP5" `
+            -and $statementPackageManifest.asOfDate -eq "2026-06-18" `
+            -and $statementPackageManifest.includedStatementCount -eq 5 `
+            -and $statementPdfEntries.Count -eq 5 `
+            -and $null -ne $firstManifestEntry `
+            -and $firstManifestEntry.statementNumber -like "STMT-MOD-PAT-*" `
+            -and $firstStatementPdfText.StartsWith("%PDF-1.4") `
+            -and $firstStatementPdfText -like "*$($firstManifestEntry.statementNumber)*"
+        Add-Check -Name "anchor statement batch package export" -Result $(if ($statementPackagePassed) { "passed" } else { "failed" }) -Details @{
+            statusCode = $statementPackageStatusCode
+            contentType = $statementPackageContentType
+            contentDisposition = $statementPackageDisposition
+            byteLength = $statementPackageBytes.Length
+            packageId = $statementPackageManifest.packageId
+            includedStatementCount = $statementPackageManifest.includedStatementCount
+            pdfEntryCount = $statementPdfEntries.Count
+            firstStatement = $firstManifestEntry
+        }
+    }
+    finally {
+        $statementPackageZip.Dispose()
+        $statementPackageResponse.Dispose()
+        $statementPackageClient.Dispose()
+        Remove-Item -LiteralPath $statementPackagePath -Force -ErrorAction SilentlyContinue
+    }
+}
+catch {
+    Add-Check -Name "anchor statement batch package export" -Result "failed" -Details $_.Exception.Message
+}
+
 $billingLineMutationId = $null
 try {
     $billingCodeText = "Smoke Billing Mutation"
