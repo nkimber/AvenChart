@@ -821,10 +821,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         {
             return new DocumentPreviewInfo(
                 PreviewKind: "pdf",
-                PreviewStatus: "Download preview",
+                PreviewStatus: "Inline PDF preview",
                 ThumbnailLabel: "PDF",
                 ThumbnailText: pages is > 0 ? $"{pages} page PDF document" : "PDF document",
-                CanPreviewInline: false,
+                CanPreviewInline: true,
                 CanDownload: true);
         }
 

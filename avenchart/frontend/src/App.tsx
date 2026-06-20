@@ -9095,6 +9095,20 @@ function DocumentsWorkspace({
                           <span>{formatBytes(viewedDocument.sizeBytes)} stored as {viewedDocument.mimetype}</span>
                         </div>
                       </div>
+                    ) : viewedDocument.previewKind === 'pdf' ? (
+                      <div className="document-pdf-preview" aria-label={`PDF preview for ${viewedDocument.name}`}>
+                        <iframe
+                          className="document-inline-pdf-preview"
+                          src={getPatientDocumentDownloadUrl(viewedDocument.id)}
+                          title={`${viewedDocument.name} PDF preview`}
+                        />
+                        <div className="document-image-caption">
+                          <strong>{viewedDocument.fileName}</strong>
+                          <span>{viewedDocument.previewStatus}</span>
+                          <span>{viewedDocument.content}</span>
+                          <span>{formatBytes(viewedDocument.sizeBytes)} stored as {viewedDocument.mimetype}</span>
+                        </div>
+                      </div>
                     ) : viewedDocument.isBinary ? (
                       <div className="document-content-block">
                         <strong>{viewedDocument.fileName}</strong>

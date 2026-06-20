@@ -1226,6 +1226,13 @@
   min-width: 0;
 }
 
+.document-pdf-preview {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  min-width: 0;
+}
+
 .document-inline-image-preview {
   background: #ffffff;
   border: 1px solid #dce7eb;
@@ -1235,6 +1242,15 @@
   max-width: 100%;
   object-fit: contain;
   padding: 8px;
+}
+
+.document-inline-pdf-preview {
+  background: #ffffff;
+  border: 1px solid #dce7eb;
+  border-radius: 7px;
+  display: block;
+  height: 320px;
+  width: 100%;
 }
 
 .document-image-caption {

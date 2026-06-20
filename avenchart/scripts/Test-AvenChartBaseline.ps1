@@ -2491,6 +2491,14 @@ try {
         -and [Convert]::ToBase64String($binaryDownloadBytes) -eq $binaryDocumentBase64 `
         -and $null -eq $archivedBinaryVisible
 
+    $patientPdfInlinePreviewPassed = $null -ne $createdBinaryVisible `
+        -and $createdBinaryVisible.previewKind -eq "pdf" `
+        -and $createdBinaryVisible.previewStatus -eq "Inline PDF preview" `
+        -and $createdBinaryVisible.canPreviewInline `
+        -and $binaryContent.previewKind -eq "pdf" `
+        -and $binaryContent.previewStatus -eq "Inline PDF preview" `
+        -and $binaryContent.canPreviewInline
+
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $patientBinaryDocumentMutationId = $null
 
@@ -2502,9 +2510,18 @@ try {
         downloadContentType = $binaryDownloadContentType
         archivedVisible = $archivedBinaryVisible
     }
+    Add-Check -Name "patient PDF inline preview readiness" -Result $(if ($patientPdfInlinePreviewPassed) { "passed" } else { "failed" }) -Details @{
+        createdPreviewKind = $createdBinaryVisible.previewKind
+        createdPreviewStatus = $createdBinaryVisible.previewStatus
+        createdCanPreviewInline = $createdBinaryVisible.canPreviewInline
+        contentPreviewKind = $binaryContent.previewKind
+        contentPreviewStatus = $binaryContent.previewStatus
+        contentCanPreviewInline = $binaryContent.canPreviewInline
+    }
 }
 catch {
     Add-Check -Name "patient binary document mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "patient PDF inline preview readiness" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $patientBinaryDocumentMutationId) {
