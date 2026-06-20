@@ -479,6 +479,20 @@
   padding: 3px 9px;
 }
 
+.claim-status-pill {
+  align-items: center;
+  background: #eef5f8;
+  border: 1px solid #c9dce4;
+  border-radius: 999px;
+  color: #214956;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
 .panel-body {
   display: flex;
   flex-direction: column;
@@ -926,11 +940,13 @@
 }
 
 .encounter-billing-panel,
+.encounter-claim-panel,
 .encounter-documents-panel {
   margin-top: 12px;
 }
 
 .encounter-billing-list,
+.encounter-claim-list,
 .encounter-documents-list {
   display: grid;
   gap: 10px;
@@ -939,6 +955,7 @@
 }
 
 .encounter-billing-card,
+.encounter-claim-card,
 .encounter-document-card {
   background: #f8fafb;
   border: 1px solid #e0e8ec;
@@ -950,6 +967,7 @@
   padding: 12px;
 }
 
+.claim-line-main,
 .billing-line-main {
   align-items: flex-start;
   display: flex;
@@ -957,6 +975,7 @@
   justify-content: space-between;
 }
 
+.claim-line-main > div:first-child,
 .billing-line-main > div:first-child {
   display: flex;
   flex-direction: column;
@@ -964,11 +983,13 @@
   min-width: 0;
 }
 
+.claim-line-main strong,
 .billing-line-main strong {
   color: #123743;
   font-size: 14px;
 }
 
+.claim-line-main > div:first-child span,
 .billing-line-main span {
   color: #52636b;
   font-size: 13px;
@@ -982,6 +1003,7 @@
 }
 
 .encounter-billing-meta,
+.encounter-claim-meta,
 .encounter-document-meta {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1735,6 +1757,7 @@
   }
 
   .encounter-billing-list,
+  .encounter-claim-list,
   .encounter-documents-list,
   .document-list-body {
     grid-template-columns: 1fr;

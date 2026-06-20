@@ -463,6 +463,30 @@ try {
         throw "Anchor encounter detail did not load."
     }
 
+    $encounterClaims = @($encounterDetail.claims | Where-Object { $null -ne $_ })
+    $linkedClaim = $encounterClaims | Where-Object { $_.id -eq "CLAIM-1000013-1" -and $_.payerName -eq "Acme Health" -and $_.statusLabel -eq "Marked as cleared" -and $_.target -eq "HCFA" } | Select-Object -First 1
+    $encounterClaimsPassed = $encounterDetail.encounter -eq 1000013 `
+        -and $encounterClaims.Count -eq 1 `
+        -and $null -ne $linkedClaim `
+        -and $linkedClaim.version -eq 1 `
+        -and $linkedClaim.payerType -eq 1 `
+        -and $linkedClaim.status -eq 3 `
+        -and $linkedClaim.billProcess -eq 0
+    Add-Check -Name "anchor encounter claim linkage" -Result $(if ($encounterClaimsPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $encounterDetail.encounter
+        claimCount = $encounterClaims.Count
+        linkedClaims = $encounterClaims | Select-Object id, version, payerName, payerType, status, statusLabel, billProcess, billTime, processFile, target
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter claim linkage" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
     $attachedDocuments = if ($null -eq $encounterDetail.documents) { @() } else { @($encounterDetail.documents) }
     $intakePacketAttachment = $attachedDocuments | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
     $advanceDirectiveAttachment = $attachedDocuments | Where-Object { $_.name -eq "Advance directive acknowledgement" -and $_.categoryName -eq "Advance Directive" } | Select-Object -First 1

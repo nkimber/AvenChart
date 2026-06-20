@@ -175,12 +175,14 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
             BillingLines: Array.Empty<BillingLineItem>(),
+            Claims: Array.Empty<BillingClaimItem>(),
             Documents: Array.Empty<EncounterDocumentAttachment>());
 
         await reader.DisposeAsync();
         var billingLines = await GetBillingLinesForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
-        return detail with { BillingLines = billingLines, Documents = documents };
+        return detail with { BillingLines = billingLines, Claims = claims, Documents = documents };
     }
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
@@ -678,6 +680,49 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return lines;
     }
 
+    private static async Task<IReadOnlyList<BillingClaimItem>> GetClaimsForEncounterAsync(
+        NpgsqlConnection connection,
+        int pid,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, encounter, version, payer_id, payer_name, payer_type, status, bill_process,
+                   bill_time, process_time, process_file, target, submitted_claim
+            from claims
+            where pid = @pid and encounter = @encounter
+            order by version;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var claims = new List<BillingClaimItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var status = ReadInt(reader, "status");
+            var billProcess = ReadInt(reader, "bill_process");
+            claims.Add(new BillingClaimItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+                Version: reader.GetInt32(reader.GetOrdinal("version")),
+                PayerId: reader.GetInt32(reader.GetOrdinal("payer_id")),
+                PayerName: ReadNullableString(reader, "payer_name"),
+                PayerType: reader.GetInt32(reader.GetOrdinal("payer_type")),
+                Status: status,
+                StatusLabel: ClaimStatusLabel(status, billProcess),
+                BillProcess: billProcess,
+                BillTime: ReadNullableDateTime(reader, "bill_time"),
+                ProcessTime: ReadNullableDateTime(reader, "process_time"),
+                ProcessFile: ReadNullableString(reader, "process_file"),
+                Target: ReadNullableString(reader, "target"),
+                SubmittedClaim: ReadNullableString(reader, "submitted_claim")));
+        }
+
+        return claims;
+    }
+
     private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
         NpgsqlConnection connection,
         int pid,
@@ -893,6 +938,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     private static string ReadDateTime(DbDataReader reader, string columnName) =>
         reader.GetFieldValue<DateTime>(reader.GetOrdinal(columnName)).ToString("yyyy-MM-dd HH:mm");
 
+    private static string? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm");
+    }
+
     private static string? ReadNullableString(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -915,6 +966,25 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
+    }
+
+    private static string ClaimStatusLabel(int status, int billProcess)
+    {
+        if (billProcess != 0)
+        {
+            return "Queued for billing";
+        }
+
+        return status switch
+        {
+            1 => "Re-opened",
+            2 or 3 => "Marked as cleared",
+            4 => "Closed",
+            5 => "Canceled",
+            6 => "Forwarded",
+            7 => "Denied",
+            _ => "Unsubmitted"
+        };
     }
 
     private sealed record EncounterDocumentPreviewInfo(

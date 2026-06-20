@@ -3604,6 +3604,7 @@ function EncounterWorkspace({
   const attachedDocuments = encounterDetail?.documents ?? []
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
+  const encounterClaims = encounterDetail?.claims ?? []
 
   return (
     <section className="scheduler-layout">
@@ -3828,6 +3829,22 @@ function EncounterWorkspace({
                 ))}
                 {encounterBillingLines.length === 0 && (
                   <div className="timeline-placeholder">No active fee-sheet lines linked to this encounter</div>
+                )}
+              </div>
+            </section>
+
+            <section className="info-panel encounter-claim-panel" aria-label="Encounter claim linkage">
+              <div className="panel-heading">
+                <FileCheck2 size={17} />
+                <h3>Claim Linkage</h3>
+                <span className="panel-count-pill">{encounterClaims.length}</span>
+              </div>
+              <div className="encounter-claim-list">
+                {encounterClaims.map((claim) => (
+                  <EncounterClaimCard key={claim.id} claim={claim} />
+                ))}
+                {encounterClaims.length === 0 && (
+                  <div className="timeline-placeholder">No claim status linked to this encounter</div>
                 )}
               </div>
             </section>
@@ -4107,6 +4124,33 @@ function EncounterWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function EncounterClaimCard({ claim }: { claim: BillingClaimItem }) {
+  const payerLabel = claim.payerName || `Payer ${claim.payerId}`
+  const processLabel = claim.processFile || 'No process file'
+
+  return (
+    <article className="encounter-claim-card">
+      <div className="claim-line-main">
+        <div>
+          <strong>{payerLabel}</strong>
+          <span>Version {claim.version} / {claim.target || 'No target'}</span>
+        </div>
+        <span className="claim-status-pill">{claim.statusLabel}</span>
+      </div>
+      <div className="document-meta-grid encounter-claim-meta">
+        <span>Bill {claim.billTime || 'Not billed'}</span>
+        <span>Process {claim.processTime || 'Not processed'}</span>
+        <span>Type {claim.payerType}</span>
+        <span>Status {claim.status}</span>
+      </div>
+      <div className="document-footnote">
+        <span>{processLabel}</span>
+        <span>{claim.submittedClaim ? 'Submitted payload recorded' : claim.id}</span>
+      </div>
+    </article>
   )
 }
 
