@@ -147,7 +147,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        return new EncounterDetail(
+        var detail = new EncounterDetail(
             Id: reader.GetInt32(reader.GetOrdinal("id")),
             Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
             PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
@@ -173,7 +173,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             BillingNote: ReadNullableString(reader, "billing_note"),
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
-            BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")));
+            BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
+            Documents: Array.Empty<EncounterDocumentAttachment>());
+
+        await reader.DisposeAsync();
+        var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        return detail with { Documents = documents };
     }
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
@@ -633,6 +638,157 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return new EncounterSoapNote(subjective, objective, assessment, plan);
     }
 
+    private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
+        NpgsqlConnection connection,
+        int pid,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, document_key, category_id, category_name, name, doc_date, uploaded_at,
+              mimetype, size_bytes, pages, storage_method, file_name, url, hash, notes,
+              case
+                when content_bytes is not null then left(coalesce(content, ''), 220)
+                else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 220)
+              end as content_preview
+            from patient_documents
+            where pid = @pid and encounter = @encounter and deleted = 0
+            order by doc_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("encounter", encounter);
+
+        var documents = new List<EncounterDocumentAttachment>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var mimetype = ReadNullableString(reader, "mimetype");
+            var storageMethod = ReadNullableString(reader, "storage_method");
+            var fileName = ReadNullableString(reader, "file_name");
+            var url = ReadNullableString(reader, "url");
+            var pages = ReadNullableInt(reader, "pages");
+            var contentPreview = ReadNullableString(reader, "content_preview");
+            var preview = BuildDocumentPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
+
+            documents.Add(new EncounterDocumentAttachment(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+                CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+                CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+                Name: reader.GetString(reader.GetOrdinal("name")),
+                DocDate: ReadDate(reader, "doc_date"),
+                UploadedAt: ReadDateTime(reader, "uploaded_at"),
+                Mimetype: mimetype,
+                SizeBytes: ReadNullableInt(reader, "size_bytes"),
+                Pages: pages,
+                StorageMethod: storageMethod,
+                FileName: fileName,
+                Url: url,
+                Hash: ReadNullableString(reader, "hash"),
+                Notes: ReadNullableString(reader, "notes"),
+                ContentPreview: contentPreview,
+                PreviewKind: preview.PreviewKind,
+                PreviewStatus: preview.PreviewStatus,
+                ThumbnailLabel: preview.ThumbnailLabel,
+                ThumbnailText: preview.ThumbnailText,
+                CanPreviewInline: preview.CanPreviewInline,
+                CanDownload: preview.CanDownload));
+        }
+
+        return documents;
+    }
+
+    private static EncounterDocumentPreviewInfo BuildDocumentPreviewInfo(
+        string? mimetype,
+        string? storageMethod,
+        string? fileName,
+        string? url,
+        int? pages,
+        string? contentPreview)
+    {
+        var normalizedMimetype = NormalizePreviewText(mimetype).ToLowerInvariant();
+        var normalizedStorageMethod = NormalizePreviewText(storageMethod).ToLowerInvariant();
+        var normalizedFileName = NormalizePreviewText(fileName);
+        var normalizedUrl = NormalizePreviewText(url);
+        var previewText = TrimPreviewText(contentPreview);
+
+        if (normalizedStorageMethod == "web_url" && normalizedUrl.Length > 0)
+        {
+            return new EncounterDocumentPreviewInfo(
+                PreviewKind: "external-link",
+                PreviewStatus: "External link",
+                ThumbnailLabel: "LINK",
+                ThumbnailText: TrimPreviewText(normalizedUrl),
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        if (normalizedMimetype.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+        {
+            return new EncounterDocumentPreviewInfo(
+                PreviewKind: "text",
+                PreviewStatus: "Inline text preview",
+                ThumbnailLabel: "TXT",
+                ThumbnailText: previewText.Length == 0 ? "Text document" : previewText,
+                CanPreviewInline: true,
+                CanDownload: true);
+        }
+
+        if (normalizedMimetype == "application/pdf")
+        {
+            return new EncounterDocumentPreviewInfo(
+                PreviewKind: "pdf",
+                PreviewStatus: "Download preview",
+                ThumbnailLabel: "PDF",
+                ThumbnailText: pages is > 0 ? $"{pages} page PDF document" : "PDF document",
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        if (normalizedMimetype.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return new EncounterDocumentPreviewInfo(
+                PreviewKind: "image",
+                PreviewStatus: "Image preview pending",
+                ThumbnailLabel: "IMG",
+                ThumbnailText: normalizedFileName.Length == 0 ? "Image document" : TrimPreviewText(normalizedFileName),
+                CanPreviewInline: false,
+                CanDownload: true);
+        }
+
+        return new EncounterDocumentPreviewInfo(
+            PreviewKind: "binary",
+            PreviewStatus: "Download preview",
+            ThumbnailLabel: BuildDocumentThumbnailLabel(normalizedFileName, normalizedMimetype),
+            ThumbnailText: normalizedFileName.Length == 0 ? "Stored document" : TrimPreviewText(normalizedFileName),
+            CanPreviewInline: false,
+            CanDownload: true);
+    }
+
+    private static string BuildDocumentThumbnailLabel(string fileName, string mimetype)
+    {
+        var extension = fileName.Contains('.', StringComparison.Ordinal)
+            ? fileName.Split('.').LastOrDefault() ?? string.Empty
+            : string.Empty;
+        if (extension.Length is > 0 and <= 4)
+        {
+            return extension.ToUpperInvariant();
+        }
+
+        return mimetype.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON" : "FILE";
+    }
+
+    private static string TrimPreviewText(string? value)
+    {
+        var normalized = NormalizePreviewText(value).Replace("\r", "\n");
+        var firstLine = normalized.Split('\n').Select(line => line.Trim()).FirstOrDefault(line => line.Length > 0);
+        var text = firstLine ?? normalized;
+        return text.Length <= 90 ? text : $"{text[..87]}...";
+    }
+
+    private static string NormalizePreviewText(string? value) => value?.Trim() ?? string.Empty;
+
     private static string? Normalize(string? value)
     {
         var trimmed = value?.Trim();
@@ -714,6 +870,14 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
     }
+
+    private sealed record EncounterDocumentPreviewInfo(
+        string PreviewKind,
+        string PreviewStatus,
+        string ThumbnailLabel,
+        string ThumbnailText,
+        bool CanPreviewInline,
+        bool CanDownload);
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 }

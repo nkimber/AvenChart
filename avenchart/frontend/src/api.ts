@@ -212,6 +212,31 @@ export type EncounterSoapNote = {
   plan?: string | null
 }
 
+export type EncounterDocumentAttachment = {
+  id: number
+  documentKey: string
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  sizeBytes?: number | null
+  pages?: number | null
+  storageMethod?: string | null
+  fileName?: string | null
+  url?: string | null
+  hash?: string | null
+  notes?: string | null
+  contentPreview?: string | null
+  previewKind: string
+  previewStatus: string
+  thumbnailLabel: string
+  thumbnailText: string
+  canPreviewInline: boolean
+  canDownload: boolean
+}
+
 export type EncounterDetail = EncounterListItem & {
   firstName: string
   lastName: string
@@ -221,6 +246,7 @@ export type EncounterDetail = EncounterListItem & {
   billingNote?: string | null
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
+  documents: EncounterDocumentAttachment[]
 }
 
 export type EncounterCreateInput = {

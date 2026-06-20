@@ -435,6 +435,34 @@ catch {
     Add-Check -Name "anchor encounter detail" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $attachedDocuments = if ($null -eq $encounterDetail.documents) { @() } else { @($encounterDetail.documents) }
+    $intakePacketAttachment = $attachedDocuments | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
+    $advanceDirectiveAttachment = $attachedDocuments | Where-Object { $_.name -eq "Advance directive acknowledgement" -and $_.categoryName -eq "Advance Directive" } | Select-Object -First 1
+    $encounterDocumentsPassed = $encounterDetail.encounter -eq 1000013 `
+        -and $attachedDocuments.Count -eq 2 `
+        -and $null -ne $intakePacketAttachment `
+        -and $intakePacketAttachment.documentKey -eq "DOC-MOD-PAT-0001-1" `
+        -and $intakePacketAttachment.previewKind -eq "text" `
+        -and $intakePacketAttachment.thumbnailLabel -eq "TXT" `
+        -and $null -ne $advanceDirectiveAttachment `
+        -and $advanceDirectiveAttachment.documentKey -eq "DOC-MOD-PAT-0001-2" `
+        -and $advanceDirectiveAttachment.previewKind -eq "text" `
+        -and $advanceDirectiveAttachment.thumbnailLabel -eq "TXT"
+    Add-Check -Name "anchor encounter document attachments" -Result $(if ($encounterDocumentsPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $encounterDetail.encounter
+        documentCount = $attachedDocuments.Count
+        documents = $attachedDocuments | Select-Object name, documentKey, categoryName, docDate, previewKind, thumbnailLabel
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter document attachments" -Result "failed" -Details $_.Exception.Message
+}
+
 $encounterMutationId = $null
 try {
     $createEncounterBody = @{

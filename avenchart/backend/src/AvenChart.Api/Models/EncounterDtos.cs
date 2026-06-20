@@ -57,7 +57,32 @@ public sealed record EncounterDetail(
     string? BillingNote,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
-    int BillingLineCount);
+    int BillingLineCount,
+    IReadOnlyList<EncounterDocumentAttachment> Documents);
+
+public sealed record EncounterDocumentAttachment(
+    int Id,
+    string DocumentKey,
+    int CategoryId,
+    string CategoryName,
+    string Name,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    int? SizeBytes,
+    int? Pages,
+    string? StorageMethod,
+    string? FileName,
+    string? Url,
+    string? Hash,
+    string? Notes,
+    string? ContentPreview,
+    string PreviewKind,
+    string PreviewStatus,
+    string ThumbnailLabel,
+    string ThumbnailText,
+    bool CanPreviewInline,
+    bool CanDownload);
 
 public sealed record EncounterVitals(
     int? Systolic,

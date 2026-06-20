@@ -159,6 +159,7 @@ import {
   type CollectionsFollowUpMutationResponse,
   type EncounterCreateInput,
   type EncounterDetail,
+  type EncounterDocumentAttachment,
   type EncounterSoapNoteCreateInput,
   type EncounterListItem,
   type EncounterSearchResponse,
@@ -3600,6 +3601,8 @@ function EncounterWorkspace({
     }
   }
 
+  const attachedDocuments = encounterDetail?.documents ?? []
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Encounter search">
@@ -3809,6 +3812,22 @@ function EncounterWorkspace({
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
               </InfoPanel>
             </div>
+
+            <section className="info-panel encounter-documents-panel" aria-label="Encounter attached documents">
+              <div className="panel-heading">
+                <FolderOpen size={17} />
+                <h3>Attached Documents</h3>
+                <span className="panel-count-pill">{attachedDocuments.length}</span>
+              </div>
+              <div className="encounter-documents-list">
+                {attachedDocuments.map((document) => (
+                  <EncounterDocumentAttachmentCard key={document.id} document={document} />
+                ))}
+                {attachedDocuments.length === 0 && (
+                  <div className="timeline-placeholder">No documents linked to this encounter</div>
+                )}
+              </div>
+            </section>
 
             <section className="soap-panel" aria-label="SOAP note">
               <div className="panel-heading">
@@ -4069,6 +4088,57 @@ function EncounterWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function EncounterDocumentAttachmentCard({ document }: { document: EncounterDocumentAttachment }) {
+  const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
+
+  return (
+    <article className="encounter-document-card">
+      <div className="document-preview-readiness">
+        <div
+          className={`document-thumbnail document-thumbnail-${document.previewKind || 'file'}`}
+          aria-label={`Document preview ${document.thumbnailLabel || 'DOC'}`}
+        >
+          <span>{document.thumbnailLabel || 'DOC'}</span>
+        </div>
+        <div className="document-preview-summary">
+          <strong>{document.name}</strong>
+          <span>{document.previewStatus || 'Preview pending'}</span>
+          <p>{document.thumbnailText || document.contentPreview || document.fileName || 'No preview generated'}</p>
+        </div>
+      </div>
+
+      <div className="document-meta-grid encounter-document-meta">
+        <span>{document.categoryName}</span>
+        <span>{document.docDate}</span>
+        <span>{document.mimetype || 'No mimetype'}</span>
+        <span>{formatBytes(document.sizeBytes)}</span>
+      </div>
+
+      <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
+
+      <div className="document-footnote">
+        <span>{document.documentKey}</span>
+        <span>{hasExternalLink ? document.url : document.fileName || document.hash || 'No document reference'}</span>
+      </div>
+
+      <div className="document-item-actions">
+        {document.canDownload && (
+          <a className="icon-text-button secondary" href={getPatientDocumentDownloadUrl(document.id)}>
+            <Download size={14} />
+            Download
+          </a>
+        )}
+        {hasExternalLink && (
+          <a className="icon-text-button secondary" href={document.url ?? '#'} target="_blank" rel="noreferrer">
+            <ExternalLink size={14} />
+            Open Link
+          </a>
+        )}
+      </div>
+    </article>
   )
 }
 
