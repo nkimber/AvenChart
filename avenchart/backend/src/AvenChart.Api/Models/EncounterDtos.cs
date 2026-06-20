@@ -58,10 +58,19 @@ public sealed record EncounterDetail(
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount,
+    IReadOnlyList<EncounterDiagnosisCode> DiagnosisCodes,
     IReadOnlyList<BillingLineItem> BillingLines,
     IReadOnlyList<BillingClaimItem> Claims,
     IReadOnlyList<ProcedureOrderItem> ProcedureOrders,
     IReadOnlyList<EncounterDocumentAttachment> Documents);
+
+public sealed record EncounterDiagnosisCode(
+    string Code,
+    string? Description,
+    IReadOnlyList<string> Sources,
+    int BillingLineCount,
+    int ProcedureOrderCount,
+    IReadOnlyList<string> SupportingBillingCodes);
 
 public sealed record EncounterDocumentAttachment(
     int Id,

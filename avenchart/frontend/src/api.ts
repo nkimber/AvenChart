@@ -237,6 +237,15 @@ export type EncounterDocumentAttachment = {
   canDownload: boolean
 }
 
+export type EncounterDiagnosisCode = {
+  code: string
+  description?: string | null
+  sources: string[]
+  billingLineCount: number
+  procedureOrderCount: number
+  supportingBillingCodes: string[]
+}
+
 export type EncounterDetail = EncounterListItem & {
   firstName: string
   lastName: string
@@ -246,6 +255,7 @@ export type EncounterDetail = EncounterListItem & {
   billingNote?: string | null
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
+  diagnosisCodes: EncounterDiagnosisCode[]
   billingLines: BillingLineItem[]
   claims: BillingClaimItem[]
   procedureOrders: ProcedureOrderItem[]

@@ -174,6 +174,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
+            DiagnosisCodes: Array.Empty<EncounterDiagnosisCode>(),
             BillingLines: Array.Empty<BillingLineItem>(),
             Claims: Array.Empty<BillingClaimItem>(),
             ProcedureOrders: Array.Empty<ProcedureOrderItem>(),
@@ -183,8 +184,16 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var billingLines = await GetBillingLinesForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var claims = await GetClaimsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
         var procedureOrders = await GetProcedureOrdersForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
+        var diagnosisCodes = BuildDiagnosisCodes(detail, billingLines, procedureOrders);
         var documents = await GetDocumentsForEncounterAsync(connection, detail.LegacyPid, detail.Encounter, cancellationToken);
-        return detail with { BillingLines = billingLines, Claims = claims, ProcedureOrders = procedureOrders, Documents = documents };
+        return detail with
+        {
+            DiagnosisCodes = diagnosisCodes,
+            BillingLines = billingLines,
+            Claims = claims,
+            ProcedureOrders = procedureOrders,
+            Documents = documents
+        };
     }
 
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
@@ -884,6 +893,162 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return rows;
     }
 
+    private static IReadOnlyList<EncounterDiagnosisCode> BuildDiagnosisCodes(
+        EncounterDetail detail,
+        IReadOnlyList<BillingLineItem> billingLines,
+        IReadOnlyList<ProcedureOrderItem> procedureOrders)
+    {
+        var codes = new Dictionary<string, DiagnosisAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var orderedCodes = new List<string>();
+
+        void AddDiagnosis(
+            string? rawCode,
+            string? description,
+            string source,
+            int billingLineCount = 0,
+            int procedureOrderCount = 0,
+            IEnumerable<string>? supportingBillingCodes = null)
+        {
+            var code = NormalizeDiagnosisCode(rawCode);
+            if (code is null)
+            {
+                return;
+            }
+
+            if (!codes.TryGetValue(code, out var accumulator))
+            {
+                accumulator = new DiagnosisAccumulator(code);
+                codes.Add(code, accumulator);
+                orderedCodes.Add(code);
+            }
+
+            accumulator.Description ??= NormalizeText(description);
+            accumulator.AddSource(source);
+            accumulator.BillingLineCount += billingLineCount;
+            accumulator.ProcedureOrderCount += procedureOrderCount;
+
+            if (supportingBillingCodes is null)
+            {
+                return;
+            }
+
+            foreach (var supportingBillingCode in supportingBillingCodes)
+            {
+                accumulator.AddSupportingBillingCode(supportingBillingCode);
+            }
+        }
+
+        AddDiagnosis(detail.DiagnosisCode, detail.DiagnosisText, "Encounter diagnosis");
+
+        foreach (var line in billingLines.Where(line => line.Activity == 1))
+        {
+            var supportingBillingCode = FormatBillingSupport(line);
+            var supportingCodes = supportingBillingCode is null
+                ? Array.Empty<string>()
+                : new[] { supportingBillingCode };
+
+            if (string.Equals(line.CodeType, "ICD10", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(line.CodeType, "ICD9", StringComparison.OrdinalIgnoreCase))
+            {
+                AddDiagnosis(
+                    line.Code,
+                    line.CodeText,
+                    "Fee sheet diagnosis line",
+                    billingLineCount: 1,
+                    supportingBillingCodes: supportingCodes);
+            }
+
+            foreach (var diagnosisCode in SplitDiagnosisCodes(line.Justify))
+            {
+                AddDiagnosis(
+                    diagnosisCode,
+                    CodesMatch(diagnosisCode, detail.DiagnosisCode) ? detail.DiagnosisText : null,
+                    "Fee sheet justification",
+                    billingLineCount: 1,
+                    supportingBillingCodes: supportingCodes);
+            }
+        }
+
+        foreach (var procedureOrder in procedureOrders)
+        {
+            AddDiagnosis(
+                procedureOrder.Diagnosis,
+                CodesMatch(procedureOrder.Diagnosis, detail.DiagnosisCode) ? detail.DiagnosisText : null,
+                "Procedure order diagnosis",
+                procedureOrderCount: 1);
+        }
+
+        return orderedCodes.Select(code =>
+        {
+            var accumulator = codes[code];
+            return new EncounterDiagnosisCode(
+                Code: accumulator.Code,
+                Description: accumulator.Description,
+                Sources: accumulator.Sources,
+                BillingLineCount: accumulator.BillingLineCount,
+                ProcedureOrderCount: accumulator.ProcedureOrderCount,
+                SupportingBillingCodes: accumulator.SupportingBillingCodes);
+        }).ToList();
+    }
+
+    private static IEnumerable<string> SplitDiagnosisCodes(string? value)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            yield break;
+        }
+
+        foreach (var candidate in normalized.Split(
+                     [',', ';', '|', ' ', '\t', '\r', '\n'],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var code = NormalizeDiagnosisCode(candidate);
+            if (code is not null)
+            {
+                yield return code;
+            }
+        }
+    }
+
+    private static bool CodesMatch(string? left, string? right) =>
+        NormalizeDiagnosisCode(left) is { } normalizedLeft
+        && NormalizeDiagnosisCode(right) is { } normalizedRight
+        && string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeDiagnosisCode(string? value)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        foreach (var prefix in new[] { "ICD10:", "ICD9:" })
+        {
+            if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[prefix.Length..].Trim();
+                break;
+            }
+        }
+
+        return normalized.Length == 0 ? null : normalized;
+    }
+
+    private static string? FormatBillingSupport(BillingLineItem line)
+    {
+        var codeType = NormalizeText(line.CodeType);
+        var code = NormalizeText(line.Code);
+        if (codeType is null || code is null)
+        {
+            return null;
+        }
+
+        var modifier = NormalizeText(line.Modifier);
+        return modifier is null ? $"{codeType} {code}" : $"{codeType} {code}-{modifier}";
+    }
+
     private static async Task<IReadOnlyList<EncounterDocumentAttachment>> GetDocumentsForEncounterAsync(
         NpgsqlConnection connection,
         int pid,
@@ -1161,6 +1326,43 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
 
     private sealed record ProcedureResultRow(int ReportId, ProcedureResultItem Result);
+
+    private sealed class DiagnosisAccumulator(string code)
+    {
+        private readonly List<string> sources = [];
+        private readonly HashSet<string> sourceSet = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> supportingBillingCodes = [];
+        private readonly HashSet<string> supportingBillingCodeSet = new(StringComparer.OrdinalIgnoreCase);
+
+        public string Code { get; } = code;
+
+        public string? Description { get; set; }
+
+        public int BillingLineCount { get; set; }
+
+        public int ProcedureOrderCount { get; set; }
+
+        public IReadOnlyList<string> Sources => sources;
+
+        public IReadOnlyList<string> SupportingBillingCodes => supportingBillingCodes;
+
+        public void AddSource(string source)
+        {
+            if (sourceSet.Add(source))
+            {
+                sources.Add(source);
+            }
+        }
+
+        public void AddSupportingBillingCode(string supportingBillingCode)
+        {
+            var normalized = NormalizeText(supportingBillingCode);
+            if (normalized is not null && supportingBillingCodeSet.Add(normalized))
+            {
+                supportingBillingCodes.Add(normalized);
+            }
+        }
+    }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 }

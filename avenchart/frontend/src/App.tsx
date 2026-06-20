@@ -158,6 +158,7 @@ import {
   type CollectionsWorkQueueResponse,
   type CollectionsFollowUpMutationResponse,
   type EncounterCreateInput,
+  type EncounterDiagnosisCode,
   type EncounterDetail,
   type EncounterDocumentAttachment,
   type EncounterSoapNoteCreateInput,
@@ -3607,6 +3608,12 @@ function EncounterWorkspace({
   const encounterClaims = encounterDetail?.claims ?? []
   const encounterProcedureOrders = encounterDetail?.procedureOrders ?? []
   const encounterProcedureResultCount = countProcedureResults(encounterProcedureOrders)
+  const encounterDiagnosisCodes = encounterDetail?.diagnosisCodes ?? []
+  const diagnosisBillingLinkCount = encounterDiagnosisCodes.reduce((sum, diagnosis) => sum + diagnosis.billingLineCount, 0)
+  const diagnosisProcedureOrderLinkCount = encounterDiagnosisCodes.reduce(
+    (sum, diagnosis) => sum + diagnosis.procedureOrderCount,
+    0,
+  )
 
   return (
     <section className="scheduler-layout">
@@ -3817,6 +3824,24 @@ function EncounterWorkspace({
                 <Field label="BMI" value={encounterDetail.vitals?.bmi} />
               </InfoPanel>
             </div>
+
+            <section className="info-panel encounter-diagnosis-panel" aria-label="Encounter diagnosis coding linkage">
+              <div className="panel-heading">
+                <ClipboardList size={17} />
+                <h3>Diagnosis Coding</h3>
+                <span className="panel-count-pill">{encounterDiagnosisCodes.length}</span>
+                <span className="panel-count-pill">{diagnosisBillingLinkCount} billing links</span>
+                <span className="panel-count-pill">{diagnosisProcedureOrderLinkCount} order links</span>
+              </div>
+              <div className="encounter-diagnosis-list">
+                {encounterDiagnosisCodes.map((diagnosis) => (
+                  <EncounterDiagnosisCodeCard key={diagnosis.code} diagnosis={diagnosis} />
+                ))}
+                {encounterDiagnosisCodes.length === 0 && (
+                  <div className="timeline-placeholder">No diagnosis coding linked to this encounter</div>
+                )}
+              </div>
+            </section>
 
             <section className="info-panel encounter-billing-panel" aria-label="Encounter billing linkage">
               <div className="panel-heading">
@@ -4143,6 +4168,30 @@ function EncounterWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function EncounterDiagnosisCodeCard({ diagnosis }: { diagnosis: EncounterDiagnosisCode }) {
+  const sources = diagnosis.sources.length > 0 ? diagnosis.sources.join(', ') : 'No source recorded'
+  const supportingCodes =
+    diagnosis.supportingBillingCodes.length > 0 ? diagnosis.supportingBillingCodes.join(', ') : 'No fee-sheet support'
+
+  return (
+    <article className="encounter-diagnosis-card">
+      <div className="diagnosis-line-main">
+        <div>
+          <strong>{diagnosis.code}</strong>
+          <span>{diagnosis.description || 'No diagnosis description recorded'}</span>
+        </div>
+        <span className="status-tag">{diagnosis.sources.length} sources</span>
+      </div>
+      <div className="document-meta-grid encounter-diagnosis-meta">
+        <span>{diagnosis.billingLineCount} billing lines</span>
+        <span>{diagnosis.procedureOrderCount} procedure orders</span>
+        <span>{supportingCodes}</span>
+        <span>{sources}</span>
+      </div>
+    </article>
   )
 }
 

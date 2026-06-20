@@ -940,6 +940,7 @@
 }
 
 .encounter-billing-panel,
+.encounter-diagnosis-panel,
 .encounter-claim-panel,
 .encounter-procedure-panel,
 .encounter-documents-panel {
@@ -947,6 +948,7 @@
 }
 
 .encounter-billing-list,
+.encounter-diagnosis-list,
 .encounter-claim-list,
 .encounter-documents-list {
   display: grid;
@@ -963,6 +965,7 @@
 }
 
 .encounter-billing-card,
+.encounter-diagnosis-card,
 .encounter-claim-card,
 .encounter-document-card {
   background: #f8fafb;
@@ -1026,6 +1029,7 @@
 }
 
 .claim-line-main,
+.diagnosis-line-main,
 .billing-line-main {
   align-items: flex-start;
   display: flex;
@@ -1034,6 +1038,7 @@
 }
 
 .claim-line-main > div:first-child,
+.diagnosis-line-main > div:first-child,
 .billing-line-main > div:first-child {
   display: flex;
   flex-direction: column;
@@ -1042,12 +1047,14 @@
 }
 
 .claim-line-main strong,
+.diagnosis-line-main strong,
 .billing-line-main strong {
   color: #123743;
   font-size: 14px;
 }
 
 .claim-line-main > div:first-child span,
+.diagnosis-line-main > div:first-child span,
 .billing-line-main span {
   color: #52636b;
   font-size: 13px;
@@ -1061,6 +1068,7 @@
 }
 
 .encounter-billing-meta,
+.encounter-diagnosis-meta,
 .encounter-claim-meta,
 .encounter-procedure-meta,
 .encounter-document-meta {
@@ -1816,6 +1824,7 @@
   }
 
   .encounter-billing-list,
+  .encounter-diagnosis-list,
   .encounter-claim-list,
   .encounter-documents-list,
   .encounter-procedure-result-list,

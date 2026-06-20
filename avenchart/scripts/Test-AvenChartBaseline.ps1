@@ -483,6 +483,45 @@ catch {
 }
 
 try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $procedureDiagnosisDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    $encounterDiagnoses = @($encounterDetail.diagnosisCodes | Where-Object { $null -ne $_ })
+    $procedureEncounterDiagnoses = @($procedureDiagnosisDetail.diagnosisCodes | Where-Object { $null -ne $_ })
+    $hyperlipidemiaDiagnosis = $encounterDiagnoses | Where-Object { $_.code -eq "E78.5" } | Select-Object -First 1
+    $diabetesDiagnosis = $procedureEncounterDiagnoses | Where-Object { $_.code -eq "E11.9" } | Select-Object -First 1
+    $hyperlipidemiaSources = if ($null -eq $hyperlipidemiaDiagnosis) { @() } else { @($hyperlipidemiaDiagnosis.sources) }
+    $hyperlipidemiaSupportingCodes = if ($null -eq $hyperlipidemiaDiagnosis) { @() } else { @($hyperlipidemiaDiagnosis.supportingBillingCodes) }
+    $diabetesSources = if ($null -eq $diabetesDiagnosis) { @() } else { @($diabetesDiagnosis.sources) }
+    $encounterDiagnosisPassed = $encounterDetail.encounter -eq 1000013 `
+        -and $null -ne $hyperlipidemiaDiagnosis `
+        -and $hyperlipidemiaDiagnosis.description -eq "Hyperlipidemia, unspecified" `
+        -and $hyperlipidemiaDiagnosis.billingLineCount -eq 2 `
+        -and $hyperlipidemiaDiagnosis.procedureOrderCount -eq 0 `
+        -and ($hyperlipidemiaSources -contains "Encounter diagnosis") `
+        -and ($hyperlipidemiaSources -contains "Fee sheet justification") `
+        -and ($hyperlipidemiaSupportingCodes -contains "CPT4 99214") `
+        -and ($hyperlipidemiaSupportingCodes -contains "CPT4 36415") `
+        -and $procedureDiagnosisDetail.encounter -eq 1000011 `
+        -and $null -ne $diabetesDiagnosis `
+        -and $diabetesDiagnosis.description -eq "Type 2 diabetes mellitus without complications" `
+        -and $diabetesDiagnosis.procedureOrderCount -eq 1 `
+        -and ($diabetesSources -contains "Encounter diagnosis") `
+        -and ($diabetesSources -contains "Procedure order diagnosis")
+    Add-Check -Name "anchor encounter diagnosis coding linkage" -Result $(if ($encounterDiagnosisPassed) { "passed" } else { "failed" }) -Details @{
+        billingEncounter = $encounterDetail.encounter
+        billingDiagnosis = $hyperlipidemiaDiagnosis
+        procedureEncounter = $procedureDiagnosisDetail.encounter
+        procedureDiagnosis = $diabetesDiagnosis
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter diagnosis coding linkage" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $procedureEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
     if ($null -eq $procedureEncounterDetail) {
         throw "Procedure-linked encounter detail did not load."
