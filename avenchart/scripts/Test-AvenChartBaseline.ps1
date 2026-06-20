@@ -694,6 +694,67 @@ finally {
     }
 }
 
+$appointmentPendingId = $null
+try {
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = $null
+        title = "Smoke Appointment Pending"
+        date = "2026-11-26"
+        startTime = "10:45"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "Pending"
+    } | ConvertTo-Json
+    $createdAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentPendingId = $createdAppointment.id
+
+    $updateBody = @{
+        providerId = $null
+        title = "Smoke Appointment Pending Status"
+        date = "2026-11-26"
+        startTime = "10:45"
+        durationMinutes = 30
+        facilityId = $null
+        categoryId = 9
+        room = "Pending"
+        status = "~"
+    } | ConvertTo-Json
+    $pendingAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $appointmentPendingPassed = $createdAppointment.status -eq "-" `
+        -and $pendingAppointment.status -eq "~" `
+        -and $pendingAppointment.title -eq "Smoke Appointment Pending Status" `
+        -and $pendingAppointment.date -eq "2026-11-26" `
+        -and $pendingAppointment.startTime -eq "10:45" `
+        -and $pendingAppointment.durationMinutes -eq 30 `
+        -and $pendingAppointment.room -eq "Pending"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentPendingId = $null
+
+    Add-Check -Name "appointment pending-status lifecycle" -Result $(if ($appointmentPendingPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdAppointment.id
+        title = $pendingAppointment.title
+        date = $pendingAppointment.date
+        startTime = $pendingAppointment.startTime
+        durationMinutes = $pendingAppointment.durationMinutes
+        status = $pendingAppointment.status
+    }
+}
+catch {
+    Add-Check -Name "appointment pending-status lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentPendingId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentPendingId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
