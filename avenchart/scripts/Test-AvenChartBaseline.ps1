@@ -622,6 +622,76 @@ finally {
     }
 }
 
+$smokeEncounterDocumentMetadataId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $metadataDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $metadataDocumentName = "Smoke Encounter Metadata Document $metadataDocumentSuffix"
+    $updatedMetadataDocumentName = "Smoke Encounter Refiled Directive $metadataDocumentSuffix"
+    $metadataDocumentBody = @{
+        categoryId = 3
+        name = $metadataDocumentName
+        docDate = "2026-06-18"
+        content = "Smoke encounter document metadata content $metadataDocumentSuffix."
+        notes = "Created by the smoke encounter document metadata check."
+    } | ConvertTo-Json
+
+    $createdEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $metadataDocumentBody -TimeoutSec 20
+    $smokeEncounterDocumentMetadataId = $createdEncounterMetadataDocument.id
+    $createdMetadataDocumentVisible = @($createdEncounterMetadataDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentMetadataId `
+            -and $_.name -eq $metadataDocumentName `
+            -and $_.categoryName -eq "Medical Record" `
+            -and $_.docDate -eq "2026-06-18"
+    } | Select-Object -First 1
+
+    $metadataUpdateBody = @{
+        categoryId = 6
+        name = $updatedMetadataDocumentName
+        docDate = "2026-06-19"
+        encounter = 1000013
+        notes = "Updated by the smoke encounter document metadata check."
+    } | ConvertTo-Json
+    $updatedEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMetadataId/metadata" -Method Put -ContentType "application/json" -Body $metadataUpdateBody -TimeoutSec 20
+    $updatedMetadataDocumentVisible = @($updatedEncounterMetadataDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterDocumentMetadataId `
+            -and $_.name -eq $updatedMetadataDocumentName `
+            -and $_.categoryName -eq "Advance Directive" `
+            -and $_.docDate -eq "2026-06-19" `
+            -and $_.notes -eq "Updated by the smoke encounter document metadata check."
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMetadataId" -Method Delete -TimeoutSec 20 | Out-Null
+    $afterDeleteMetadataDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedMetadataDocumentVisible = @($afterDeleteMetadataDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $metadataDocumentName -or $_.name -eq $updatedMetadataDocumentName
+    } | Select-Object -First 1
+
+    $encounterDocumentMetadataPassed = $null -ne $createdMetadataDocumentVisible `
+        -and $null -ne $updatedMetadataDocumentVisible `
+        -and $null -eq $deletedMetadataDocumentVisible
+    Add-Check -Name "encounter document metadata lifecycle" -Result $(if ($encounterDocumentMetadataPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterMetadataDocument.id
+        document = $updatedMetadataDocumentVisible
+    }
+}
+catch {
+    Add-Check -Name "encounter document metadata lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterDocumentMetadataId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMetadataId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentSignOffId = $null
 try {
     if ($null -eq $encounterDetail) {

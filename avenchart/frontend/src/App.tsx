@@ -122,6 +122,7 @@ import {
   updateBillingLineStatus,
   voidBillingPaymentPosting,
   updateEncounter,
+  updateEncounterDocumentMetadata,
   updatePatientDocumentMetadata,
   updatePatientInsurance,
   updatePatientMessageStatus,
@@ -1121,6 +1122,29 @@ function App() {
       const message = createError instanceof Error ? createError.message : 'Binary encounter document attach failed'
       setEncounterError(message)
       throw createError
+    }
+  }
+
+  async function handleEncounterDocumentMetadataUpdate(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentMetadataUpdateInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await updateEncounterDocumentMetadata(encounter.encounter, document.id, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (metadataError) {
+      setEncounterDetailStatus('error')
+      const message = metadataError instanceof Error ? metadataError.message : 'Encounter document metadata update failed'
+      setEncounterError(message)
+      throw metadataError
     }
   }
 
@@ -2424,6 +2448,7 @@ function App() {
             onDeleteEncounterSignature={handleEncounterSignatureDelete}
             onCreateEncounterDocument={handleEncounterDocumentCreate}
             onCreateEncounterBinaryDocument={handleEncounterBinaryDocumentCreate}
+            onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
             onSignEncounterDocument={handleEncounterDocumentSign}
             onDenyEncounterDocument={handleEncounterDocumentDeny}
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
@@ -3657,6 +3682,7 @@ function EncounterWorkspace({
   onDeleteEncounterSignature,
   onCreateEncounterDocument,
   onCreateEncounterBinaryDocument,
+  onUpdateEncounterDocumentMetadata,
   onSignEncounterDocument,
   onDenyEncounterDocument,
   onCreateFeeSheetLine,
@@ -3688,6 +3714,11 @@ function EncounterWorkspace({
   onCreateEncounterBinaryDocument: (
     encounter: EncounterDetail,
     input: EncounterBinaryDocumentCreateInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onUpdateEncounterDocumentMetadata: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentMetadataUpdateInput,
   ) => Promise<EncounterDocumentMutationResponse>
   onSignEncounterDocument: (
     encounter: EncounterDetail,
@@ -3766,6 +3797,9 @@ function EncounterWorkspace({
   const [encounterDocumentReviewStatus, setEncounterDocumentReviewStatus] = useState<
     'idle' | 'saving' | 'signed' | 'denied' | 'error'
   >('idle')
+  const [encounterDocumentMetadataStatus, setEncounterDocumentMetadataStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle')
 
   const [feeSheetCodeType, setFeeSheetCodeType] = useState<'CPT4' | 'ICD10'>('CPT4')
   const [feeSheetDate, setFeeSheetDate] = useState('2026-06-18')
@@ -3802,6 +3836,7 @@ function EncounterWorkspace({
       setSummaryPosCode('')
       setSummaryBillingNote('')
       setEncounterDocumentReviewStatus('idle')
+      setEncounterDocumentMetadataStatus('idle')
       return
     }
 
@@ -3817,6 +3852,7 @@ function EncounterWorkspace({
     setEncounterDocumentDate(encounterDetail.date)
     setEncounterBinaryDocumentDate(encounterDetail.date)
     setEncounterDocumentReviewStatus('idle')
+    setEncounterDocumentMetadataStatus('idle')
     setFeeSheetDate(encounterDetail.date)
     setEncounterProcedureDate(encounterDetail.date)
   }, [encounterDetail])
@@ -4048,6 +4084,23 @@ function EncounterWorkspace({
       setEncounterBinaryDocumentStatus('saved')
     } catch {
       setEncounterBinaryDocumentStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentMetadataUpdate(
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentMetadataUpdateInput,
+  ) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentMetadataStatus('saving')
+    try {
+      await onUpdateEncounterDocumentMetadata(encounterDetail, document, input)
+      setEncounterDocumentMetadataStatus('saved')
+    } catch {
+      setEncounterDocumentMetadataStatus('error')
     }
   }
 
@@ -4805,7 +4858,9 @@ function EncounterWorkspace({
                   <EncounterDocumentAttachmentCard
                     key={document.id}
                     document={document}
-                    disabled={encounterDocumentReviewStatus === 'saving'}
+                    encounter={encounterDetail.encounter}
+                    disabled={encounterDocumentReviewStatus === 'saving' || encounterDocumentMetadataStatus === 'saving'}
+                    onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
                     onSign={handleEncounterDocumentSign}
                     onDeny={handleEncounterDocumentDeny}
                   />
@@ -4821,8 +4876,14 @@ function EncounterWorkspace({
                     ? 'Document denied'
                   : encounterDocumentReviewStatus === 'saving'
                     ? 'Reviewing document'
-                    : encounterDocumentReviewStatus === 'error'
-                      ? 'Document review failed'
+                  : encounterDocumentReviewStatus === 'error'
+                    ? 'Document review failed'
+                  : encounterDocumentMetadataStatus === 'saved'
+                    ? 'Document metadata saved'
+                  : encounterDocumentMetadataStatus === 'saving'
+                    ? 'Saving document metadata'
+                  : encounterDocumentMetadataStatus === 'error'
+                    ? 'Document metadata update failed'
                       : ''}
               </span>
             </section>
@@ -5451,17 +5512,62 @@ function EncounterBillingLineCard({ line }: { line: BillingLineItem }) {
 
 function EncounterDocumentAttachmentCard({
   document,
+  encounter,
   disabled,
+  onUpdateMetadata,
   onSign,
   onDeny,
 }: {
   document: EncounterDocumentAttachment
+  encounter: number
   disabled: boolean
+  onUpdateMetadata: (
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentMetadataUpdateInput,
+  ) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
   onDeny: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(document.name)
+  const [editCategoryId, setEditCategoryId] = useState(String(document.categoryId || 3))
+  const [editDocDate, setEditDocDate] = useState(document.docDate)
+  const [editNotes, setEditNotes] = useState(document.notes ?? '')
+  const [editError, setEditError] = useState<string | null>(null)
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
+
+  useEffect(() => {
+    setEditName(document.name)
+    setEditCategoryId(String(document.categoryId || 3))
+    setEditDocDate(document.docDate)
+    setEditNotes(document.notes ?? '')
+    setEditError(null)
+  }, [document])
+
+  async function handleMetadataSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setEditError(null)
+
+    const categoryId = Number(editCategoryId)
+    if (!Number.isInteger(categoryId)) {
+      setEditError('Check numeric fields')
+      return
+    }
+
+    try {
+      await onUpdateMetadata(document, {
+        categoryId,
+        name: editName,
+        docDate: editDocDate,
+        encounter,
+        notes: editNotes.trim().length > 0 ? editNotes : null,
+      })
+      setIsEditing(false)
+    } catch {
+      setEditError('Metadata save failed')
+    }
+  }
 
   return (
     <article className="encounter-document-card">
@@ -5492,11 +5598,77 @@ function EncounterDocumentAttachmentCard({
       </div>
 
       <p className="document-preview">{document.contentPreview || document.notes || 'No preview available'}</p>
+      {document.notes && <p className="document-note">Notes: {document.notes}</p>}
 
       <div className="document-footnote">
         <span>{document.documentKey}</span>
         <span>{hasExternalLink ? document.url : document.fileName || document.hash || 'No document reference'}</span>
       </div>
+
+      {isEditing && (
+        <form className="document-edit-form" onSubmit={handleMetadataSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                aria-label="Encounter document metadata name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={editCategoryId}
+                  onChange={(event) => setEditCategoryId(event.target.value)}
+                  aria-label="Encounter document metadata category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={editDocDate}
+                  onChange={(event) => setEditDocDate(event.target.value)}
+                  aria-label="Encounter document metadata date"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input value={encounter} aria-label="Encounter document metadata encounter" readOnly />
+            </label>
+            <label className="filter-field">
+              <span>Notes</span>
+              <textarea
+                value={editNotes}
+                onChange={(event) => setEditNotes(event.target.value)}
+                aria-label="Encounter document metadata notes"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Metadata
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsEditing(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {editError && <span className="save-note error">{editError}</span>}
+          </div>
+        </form>
+      )}
 
       <div className="document-item-actions">
         {document.canDownload && (
@@ -5511,6 +5683,15 @@ function EncounterDocumentAttachmentCard({
             Open Link
           </a>
         )}
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsEditing((current) => !current)}
+        >
+          <Pencil size={14} />
+          Edit
+        </button>
         <button
           className="icon-text-button secondary"
           type="button"

@@ -1810,6 +1810,25 @@ export async function createEncounterBinaryDocument(
   return response.json()
 }
 
+export async function updateEncounterDocumentMetadata(
+  encounter: number,
+  documentId: number,
+  document: PatientDocumentMetadataUpdateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/metadata`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter document metadata update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function signEncounterDocument(
   encounter: number,
   documentId: number,

@@ -369,6 +369,46 @@ encounters.MapPost("/{encounter:int}/documents/binary", async (
     })
     .WithName("CreateBinaryEncounterDocument");
 
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        PatientDocumentMetadataUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!encounterDetail.Documents.Any(document => document.Id == documentId))
+        {
+            return Results.NotFound();
+        }
+
+        if (request.Encounter.HasValue && request.Encounter.Value != encounter)
+        {
+            return Results.BadRequest("Encounter document metadata must remain attached to the selected encounter.");
+        }
+
+        var mutation = await documentRepository.UpdateMetadataAsync(documentId, request with
+        {
+            Encounter = encounter
+        }, cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter document metadata could not be updated from the supplied filing details.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+    })
+    .WithName("UpdateEncounterDocumentMetadata");
+
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
