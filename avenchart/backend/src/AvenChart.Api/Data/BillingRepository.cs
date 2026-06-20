@@ -260,6 +260,153 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<BillingClaimMutationResponse?> CreateClaimAsync(
+        BillingClaimCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || request.Encounter <= 0
+            || request.PayerId <= 0
+            || request.PayerType <= 0
+            || !IsClaimStatus(request.Status)
+            || !IsBinaryStatus(request.BillProcess))
+        {
+            return null;
+        }
+
+        DateTime? billTime = TryReadOptionalDateTime(request.BillTime, out var parsedBillTime) ? parsedBillTime : null;
+        DateTime? processTime = TryReadOptionalDateTime(request.ProcessTime, out var parsedProcessTime) ? parsedProcessTime : null;
+        int version;
+        int legacyPid;
+        var id = $"CLAIM-MODERN-{Guid.NewGuid():N}";
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+            if (patient is null)
+            {
+                return null;
+            }
+
+            var encounter = await GetEncounterForPatientAsync(connection, patient.LegacyPid, request.Encounter, cancellationToken);
+            if (encounter is null)
+            {
+                return null;
+            }
+
+            legacyPid = patient.LegacyPid;
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            version = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(version), 0) + 1 from claims where pid = @pid and encounter = @encounter;",
+                cancellationToken,
+                command =>
+                {
+                    command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    command.Parameters.AddWithValue("encounter", encounter.Encounter);
+                });
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into claims
+                    (id, patient_id, pid, encounter, version, payer_id, payer_name, payer_type,
+                     status, bill_process, bill_time, process_time, process_file, target,
+                     x12_partner_id, submitted_claim)
+                values
+                    (@id, @patientId, @pid, @encounter, @version, @payerId, @payerName, @payerType,
+                     @status, @billProcess, @billTime, @processTime, @processFile, @target,
+                     @x12PartnerId, @submittedClaim);
+                """;
+            command.Parameters.AddWithValue("id", id);
+            command.Parameters.AddWithValue("patientId", patient.PatientId);
+            command.Parameters.AddWithValue("pid", patient.LegacyPid);
+            command.Parameters.AddWithValue("encounter", encounter.Encounter);
+            command.Parameters.AddWithValue("version", version);
+            command.Parameters.AddWithValue("payerId", request.PayerId);
+            command.Parameters.AddWithValue("payerName", NormalizeText(request.PayerName) ?? string.Empty);
+            command.Parameters.AddWithValue("payerType", request.PayerType);
+            command.Parameters.AddWithValue("status", request.Status);
+            command.Parameters.AddWithValue("billProcess", request.BillProcess);
+            AddNullableTimestamp(command, "billTime", billTime);
+            AddNullableTimestamp(command, "processTime", processTime);
+            command.Parameters.AddWithValue("processFile", NormalizeText(request.ProcessFile) ?? string.Empty);
+            command.Parameters.AddWithValue("target", NormalizeText(request.Target) ?? string.Empty);
+            command.Parameters.AddWithValue("x12PartnerId", request.X12PartnerId ?? 0);
+            command.Parameters.AddWithValue("submittedClaim", NormalizeText(request.SubmittedClaim) ?? string.Empty);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var billing = await GetForPatientAsync(legacyPid.ToString(), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(id, billing);
+    }
+
+    public async Task<BillingClaimMutationResponse?> UpdateClaimStatusAsync(
+        string claimId,
+        BillingClaimStatusUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId)
+            || !IsClaimStatus(request.Status)
+            || !IsBinaryStatus(request.BillProcess))
+        {
+            return null;
+        }
+
+        DateTime? processTime = TryReadOptionalDateTime(request.ProcessTime, out var parsedProcessTime) ? parsedProcessTime : null;
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update claims
+                set status = @status,
+                    bill_process = @billProcess,
+                    process_time = @processTime,
+                    process_file = @processFile,
+                    target = @target,
+                    x12_partner_id = @x12PartnerId,
+                    submitted_claim = @submittedClaim
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", claimId);
+            command.Parameters.AddWithValue("status", request.Status);
+            command.Parameters.AddWithValue("billProcess", request.BillProcess);
+            AddNullableTimestamp(command, "processTime", processTime);
+            command.Parameters.AddWithValue("processFile", NormalizeText(request.ProcessFile) ?? string.Empty);
+            command.Parameters.AddWithValue("target", NormalizeText(request.Target) ?? string.Empty);
+            command.Parameters.AddWithValue("x12PartnerId", request.X12PartnerId ?? 0);
+            command.Parameters.AddWithValue("submittedClaim", NormalizeText(request.SubmittedClaim) ?? string.Empty);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
+    }
+
+    public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "delete from claims where id = @id;";
+        command.Parameters.AddWithValue("id", claimId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<BillingPaymentMutationResponse?> CreatePaymentAsync(
         BillingPaymentCreateRequest request,
         CancellationToken cancellationToken)
@@ -664,7 +811,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select encounter, version, payer_id, payer_name, payer_type, status, bill_process,
+            select id, encounter, version, payer_id, payer_name, payer_type, status, bill_process,
                    bill_time, process_time, process_file, target, submitted_claim
             from claims
             where pid = @pid
@@ -681,6 +828,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             var status = ReadInt(reader, "status");
             var billProcess = ReadInt(reader, "bill_process");
             items.Add(new BillingClaimItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
                 Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
                 Version: reader.GetInt32(reader.GetOrdinal("version")),
                 PayerId: reader.GetInt32(reader.GetOrdinal("payer_id")),
@@ -842,6 +990,23 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         return TryReadDate(value, out date);
+    }
+
+    private static bool TryReadOptionalDateTime(string? value, out DateTime dateTime)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            dateTime = default;
+            return false;
+        }
+
+        return DateTime.TryParse(value, out dateTime);
+    }
+
+    private static void AddNullableTimestamp(NpgsqlCommand command, string name, DateTime? value)
+    {
+        var parameter = command.Parameters.Add(name, NpgsqlDbType.Timestamp);
+        parameter.Value = value.HasValue ? value.Value : DBNull.Value;
     }
 
     private static DateOnly ReadDateOnly(string value, DateOnly fallback)
@@ -1071,6 +1236,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private static bool IsBinaryStatus(int value)
     {
         return value is 0 or 1;
+    }
+
+    private static bool IsClaimStatus(int value)
+    {
+        return value is >= 0 and <= 7;
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

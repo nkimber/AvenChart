@@ -819,6 +819,37 @@ billing.MapDelete("/lines/{billingLineId}", async (
     })
     .WithName("DeleteBillingLine");
 
+billing.MapPost("/claims", async (
+        BillingRepository repository,
+        BillingClaimCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateClaimAsync(request, cancellationToken);
+        return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/claims/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBillingClaimStatus");
+
+billing.MapPut("/claims/{claimId}/status", async (
+        BillingRepository repository,
+        string claimId,
+        BillingClaimStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateClaimStatusAsync(claimId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateBillingClaimStatus");
+
+billing.MapDelete("/claims/{claimId}", async (
+        BillingRepository repository,
+        string claimId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteClaimAsync(claimId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteBillingClaimStatus");
+
 billing.MapPost("/payments", async (
         BillingRepository repository,
         BillingPaymentCreateRequest request,

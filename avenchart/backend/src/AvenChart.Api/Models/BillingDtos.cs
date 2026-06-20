@@ -106,6 +106,7 @@ public sealed record BillingLineItem(
     int Activity);
 
 public sealed record BillingClaimItem(
+    string Id,
     int Encounter,
     int Version,
     int PayerId,
@@ -169,6 +170,34 @@ public sealed record BillingLineStatusUpdateRequest(
     int Activity);
 
 public sealed record BillingLineMutationResponse(
+    string Id,
+    PatientBillingResponse Detail);
+
+public sealed record BillingClaimCreateRequest(
+    string PatientId,
+    int Encounter,
+    int PayerId,
+    string? PayerName,
+    int PayerType,
+    int Status,
+    int BillProcess,
+    string? BillTime,
+    string? ProcessTime,
+    string? ProcessFile,
+    string? Target,
+    int? X12PartnerId,
+    string? SubmittedClaim);
+
+public sealed record BillingClaimStatusUpdateRequest(
+    int Status,
+    int BillProcess,
+    string? ProcessTime,
+    string? ProcessFile,
+    string? Target,
+    int? X12PartnerId,
+    string? SubmittedClaim);
+
+public sealed record BillingClaimMutationResponse(
     string Id,
     PatientBillingResponse Detail);
 

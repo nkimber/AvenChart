@@ -10,6 +10,7 @@ import {
   Clock,
   Download,
   ExternalLink,
+  FileCheck2,
   FileText,
   FlaskConical,
   FolderOpen,
@@ -45,6 +46,7 @@ import {
   getOperationalReports,
   getOperationalReportsCsvUrl,
   createAppointment,
+  createBillingClaimStatus,
   createBillingLine,
   createBillingPaymentPosting,
   createClinicalAllergy,
@@ -69,6 +71,7 @@ import {
   deleteAppointment,
   deleteAdministrationFacility,
   deleteAdministrationUser,
+  deleteBillingClaimStatus,
   deleteBillingLine,
   deleteBillingPaymentPosting,
   deleteClinicalAllergy,
@@ -101,6 +104,7 @@ import {
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
+  updateBillingClaimStatus,
   updateBillingLine,
   updateBillingLineStatus,
   voidBillingPaymentPosting,
@@ -128,6 +132,8 @@ import {
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingClaimItem,
+  type BillingClaimCreateInput,
+  type BillingClaimStatusUpdateInput,
   type BillingLedgerEntry,
   type BillingPaymentItem,
   type BillingLineCreateInput,
@@ -1357,6 +1363,57 @@ function App() {
     }
   }
 
+  async function handleBillingClaimCreate(input: BillingClaimCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await createBillingClaimStatus(input)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing claim status create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
+  async function handleBillingClaimStatusUpdate(claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const response = await updateBillingClaimStatus(claim.id, input)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (updateError) {
+      setBillingStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Billing claim status update failed'
+      setBillingError(message)
+      throw updateError
+    }
+  }
+
+  async function handleBillingClaimDelete(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      await deleteBillingClaimStatus(claim.id)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      setPatientBilling(refreshed)
+      setBillingStatus('ready')
+    } catch (deleteError) {
+      setBillingStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Billing claim status delete failed'
+      setBillingError(message)
+      throw deleteError
+    }
+  }
+
   async function handleBillingPaymentCreate(input: BillingPaymentCreateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -2119,6 +2176,9 @@ function App() {
             onUpdateLine={handleBillingLineUpdate}
             onDeactivateLine={handleBillingLineDeactivate}
             onDeleteLine={handleBillingLineDelete}
+            onCreateClaim={handleBillingClaimCreate}
+            onUpdateClaimStatus={handleBillingClaimStatusUpdate}
+            onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onVoidPayment={handleBillingPaymentVoid}
             onDeletePayment={handleBillingPaymentDelete}
@@ -4579,6 +4639,9 @@ function FeesWorkspace({
   onUpdateLine,
   onDeactivateLine,
   onDeleteLine,
+  onCreateClaim,
+  onUpdateClaimStatus,
+  onDeleteClaim,
   onCreatePayment,
   onVoidPayment,
   onDeletePayment,
@@ -4592,6 +4655,9 @@ function FeesWorkspace({
   onUpdateLine: (lineId: string, input: BillingLineUpdateInput) => Promise<unknown>
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
+  onCreateClaim: (input: BillingClaimCreateInput) => Promise<unknown>
+  onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
   onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
@@ -4612,6 +4678,11 @@ function FeesWorkspace({
   const [correctionFee, setCorrectionFee] = useState('132.50')
   const [correctionUnits, setCorrectionUnits] = useState('2')
   const [correctionJustify, setCorrectionJustify] = useState('Z00.00')
+  const [claimPayerId, setClaimPayerId] = useState('9005')
+  const [claimPayerName, setClaimPayerName] = useState('Northstar HMO')
+  const [claimTarget, setClaimTarget] = useState('HCFA')
+  const [claimBillTime, setClaimBillTime] = useState('2026-06-18 12:15:00')
+  const [claimPayload, setClaimPayload] = useState('Parity claim status mutation')
   const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
   const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
   const [paymentPayerId, setPaymentPayerId] = useState('9005')
@@ -4709,6 +4780,27 @@ function FeesWorkspace({
     })
 
     setMutationMessage('Billing correction saved')
+  }
+
+  async function handleClaimStatusSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    await onCreateClaim({
+      patientId,
+      encounter: Number(billingEncounter),
+      payerId: Number(claimPayerId),
+      payerName: claimPayerName,
+      payerType: 1,
+      status: 1,
+      billProcess: 1,
+      billTime: claimBillTime,
+      target: claimTarget,
+      x12PartnerId: claimTarget === 'X12' ? 1 : 0,
+      submittedClaim: claimPayload,
+    })
+
+    setMutationMessage('Claim status queued')
   }
 
   async function handlePaymentPostingSubmit(event: FormEvent<HTMLFormElement>) {
@@ -4931,6 +5023,83 @@ function FeesWorkspace({
             >
               <Check size={15} />
               Save Diagnosis
+            </button>
+          </div>
+        </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleClaimStatusSubmit}>
+          <div className="panel-heading compact-heading">
+            <FileCheck2 size={16} />
+            <h3>Claim Status</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Encounter</span>
+              <input
+                value={billingEncounter}
+                onChange={(event) => setBillingEncounter(event.target.value)}
+                aria-label="New claim encounter"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Payer ID</span>
+                <input
+                  value={claimPayerId}
+                  onChange={(event) => setClaimPayerId(event.target.value)}
+                  aria-label="New claim payer ID"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>Target</span>
+                <input
+                  value={claimTarget}
+                  onChange={(event) => setClaimTarget(event.target.value)}
+                  aria-label="New claim target"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Payer</span>
+              <input
+                value={claimPayerName}
+                onChange={(event) => setClaimPayerName(event.target.value)}
+                aria-label="New claim payer name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Bill time</span>
+              <input
+                value={claimBillTime}
+                onChange={(event) => setClaimBillTime(event.target.value)}
+                aria-label="New claim bill time"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Payload</span>
+              <input
+                value={claimPayload}
+                onChange={(event) => setClaimPayload(event.target.value)}
+                aria-label="New claim payload"
+                required
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button
+              className="icon-text-button primary"
+              type="submit"
+              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+            >
+              <Check size={15} />
+              Queue Claim
             </button>
           </div>
         </form>
@@ -5247,6 +5416,8 @@ function FeesWorkspace({
                       onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
+                      onUpdateClaimStatus={onUpdateClaimStatus}
+                      onDeleteClaim={onDeleteClaim}
                       onVoidPayment={onVoidPayment}
                       onDeletePayment={onDeletePayment}
                     />
@@ -7715,6 +7886,8 @@ function BillingEncounterCard({
   onSelectCorrectionLine,
   onDeactivateLine,
   onDeleteLine,
+  onUpdateClaimStatus,
+  onDeleteClaim,
   onVoidPayment,
   onDeletePayment,
 }: {
@@ -7723,6 +7896,8 @@ function BillingEncounterCard({
   onSelectCorrectionLine: (line: BillingLineItem) => void
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
+  onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
   onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
 }) {
@@ -7757,7 +7932,13 @@ function BillingEncounterCard({
       </div>
       <div className="billing-line-list">
         {encounter.claims.map((claim) => (
-          <BillingClaimCard key={`${claim.encounter}-${claim.version}`} claim={claim} />
+          <BillingClaimCard
+            key={claim.id}
+            claim={claim}
+            disabled={disabled}
+            onUpdateStatus={onUpdateClaimStatus}
+            onDelete={onDeleteClaim}
+          />
         ))}
         {encounter.claims.length === 0 && <div className="timeline-placeholder">No claim status recorded</div>}
       </div>
@@ -7790,7 +7971,43 @@ function BillingEncounterCard({
   )
 }
 
-function BillingClaimCard({ claim }: { claim: BillingClaimItem }) {
+function BillingClaimCard({
+  claim,
+  disabled,
+  onUpdateStatus,
+  onDelete,
+}: {
+  claim: BillingClaimItem
+  disabled: boolean
+  onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onDelete: (claim: BillingClaimItem) => Promise<void>
+}) {
+  const generatedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-PARITY-837P.txt`
+
+  function handleGenerate() {
+    void onUpdateStatus(claim, {
+      status: 2,
+      billProcess: 0,
+      processTime: '2026-06-18 14:15:00',
+      processFile: generatedProcessFile,
+      target: 'X12',
+      x12PartnerId: 1,
+      submittedClaim: claim.submittedClaim || `Generated claim ${claim.encounter}`,
+    })
+  }
+
+  function handleClear() {
+    void onUpdateStatus(claim, {
+      status: 3,
+      billProcess: 0,
+      processTime: null,
+      processFile: '',
+      target: 'HCFA',
+      x12PartnerId: 0,
+      submittedClaim: claim.submittedClaim || `Cleared claim ${claim.encounter}`,
+    })
+  }
+
   return (
     <article className="billing-line-card">
       <div className="message-item-header">
@@ -7806,6 +8023,20 @@ function BillingClaimCard({ claim }: { claim: BillingClaimItem }) {
         <span>{claim.processTime ? `Processed ${claim.processTime}` : 'Not processed'}</span>
         <span>{claim.processFile ? `File ${claim.processFile}` : 'No claim file'}</span>
         <span>{claim.submittedClaim ? 'Reviewed claim data' : 'No submitted claim payload'}</span>
+      </div>
+      <div className="detail-actions compact-actions">
+        <button type="button" className="icon-text-button" disabled={disabled} onClick={handleGenerate}>
+          <Upload size={14} />
+          Generate
+        </button>
+        <button type="button" className="icon-text-button primary" disabled={disabled} onClick={handleClear}>
+          <Check size={14} />
+          Clear
+        </button>
+        <button type="button" className="icon-text-button danger" disabled={disabled} onClick={() => void onDelete(claim)}>
+          <Trash2 size={14} />
+          Delete
+        </button>
       </div>
     </article>
   )

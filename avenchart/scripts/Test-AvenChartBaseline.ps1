@@ -1683,6 +1683,90 @@ catch {
     Add-Check -Name "anchor claim status summary" -Result "failed" -Details $_.Exception.Message
 }
 
+$claimStatusMutationId = $null
+try {
+    $beforeClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforeClaimRows = @($beforeClaimMutationBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $claimStatusSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $claimStatusProcessFile = "CLAIM-1000052-SMOKE-$claimStatusSuffix-837P.txt"
+    $createClaimStatusBody = @{
+        patientId = "MOD-PAT-0005"
+        encounter = 1000052
+        payerId = 9005
+        payerName = "Northstar HMO"
+        payerType = 1
+        status = 1
+        billProcess = 1
+        billTime = "2026-06-18 12:15:00"
+        processTime = $null
+        processFile = ""
+        target = "HCFA"
+        x12PartnerId = 0
+        submittedClaim = "Smoke claim status mutation $claimStatusSuffix"
+    } | ConvertTo-Json
+    $createdClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims" -Method Post -ContentType "application/json" -Body $createClaimStatusBody -TimeoutSec 20
+    $claimStatusMutationId = $createdClaimStatus.id
+    $createdClaimRows = @($createdClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $createdClaimVisible = $createdClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Queued for billing" -and $_.billProcess -eq 1 -and $_.target -eq "HCFA" } | Select-Object -First 1
+
+    $generateClaimStatusBody = @{
+        status = 2
+        billProcess = 0
+        processTime = "2026-06-18 14:15:00"
+        processFile = $claimStatusProcessFile
+        target = "X12"
+        x12PartnerId = 1
+        submittedClaim = "Generated smoke claim status mutation $claimStatusSuffix"
+    } | ConvertTo-Json
+    $generatedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -ContentType "application/json" -Body $generateClaimStatusBody -TimeoutSec 20
+    $generatedClaimRows = @($generatedClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $generatedClaimVisible = $generatedClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Marked as cleared" -and $_.processFile -eq $claimStatusProcessFile -and $_.target -eq "X12" } | Select-Object -First 1
+
+    $clearClaimStatusBody = @{
+        status = 3
+        billProcess = 0
+        processTime = $null
+        processFile = ""
+        target = "HCFA"
+        x12PartnerId = 0
+        submittedClaim = "Cleared smoke claim status mutation $claimStatusSuffix"
+    } | ConvertTo-Json
+    $clearedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -ContentType "application/json" -Body $clearClaimStatusBody -TimeoutSec 20
+    $clearedClaimRows = @($clearedClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+    $clearedClaimVisible = $clearedClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Marked as cleared" -and [string]::IsNullOrWhiteSpace($_.processFile) -and $_.target -eq "HCFA" } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $claimStatusMutationId = $null
+    $afterClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $afterClaimRows = @($afterClaimMutationBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
+
+    $claimStatusMutationPassed = $null -ne $createdClaimVisible `
+        -and $createdClaimRows.Count -eq ($beforeClaimRows.Count + 1) `
+        -and $createdClaimVisible.version -gt 1 `
+        -and $null -ne $generatedClaimVisible `
+        -and $null -ne $clearedClaimVisible `
+        -and $afterClaimRows.Count -eq $beforeClaimRows.Count
+    Add-Check -Name "claim status mutation lifecycle" -Result $(if ($claimStatusMutationPassed) { "passed" } else { "failed" }) -Details @{
+        claimId = $createdClaimStatus.id
+        processFile = $claimStatusProcessFile
+        createdClaim = $createdClaimVisible
+        generatedClaim = $generatedClaimVisible
+        clearedClaim = $clearedClaimVisible
+    }
+}
+catch {
+    Add-Check -Name "claim status mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $claimStatusMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $paymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
     $paymentRows = @($paymentBilling.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })

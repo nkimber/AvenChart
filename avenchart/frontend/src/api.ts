@@ -760,6 +760,7 @@ export type BillingLineItem = {
 }
 
 export type BillingClaimItem = {
+  id: string
   encounter: number
   version: number
   payerId: number
@@ -926,6 +927,37 @@ export type BillingLineStatusUpdateInput = {
 }
 
 export type BillingLineMutationResponse = {
+  id: string
+  detail: PatientBillingResponse
+}
+
+export type BillingClaimCreateInput = {
+  patientId: string
+  encounter: number
+  payerId: number
+  payerName?: string | null
+  payerType: number
+  status: number
+  billProcess: number
+  billTime?: string | null
+  processTime?: string | null
+  processFile?: string | null
+  target?: string | null
+  x12PartnerId?: number | null
+  submittedClaim?: string | null
+}
+
+export type BillingClaimStatusUpdateInput = {
+  status: number
+  billProcess: number
+  processTime?: string | null
+  processFile?: string | null
+  target?: string | null
+  x12PartnerId?: number | null
+  submittedClaim?: string | null
+}
+
+export type BillingClaimMutationResponse = {
   id: string
   detail: PatientBillingResponse
 }
@@ -2139,6 +2171,51 @@ export async function deleteBillingLine(billingLineId: string, signal?: AbortSig
   })
   if (!response.ok) {
     throw new Error(`Billing line delete failed with ${response.status}`)
+  }
+}
+
+export async function createBillingClaimStatus(
+  input: BillingClaimCreateInput,
+  signal?: AbortSignal,
+): Promise<BillingClaimMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing claim status create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateBillingClaimStatus(
+  claimId: string,
+  input: BillingClaimStatusUpdateInput,
+  signal?: AbortSignal,
+): Promise<BillingClaimMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/status`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing claim status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteBillingClaimStatus(claimId: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Billing claim status delete failed with ${response.status}`)
   }
 }
 
