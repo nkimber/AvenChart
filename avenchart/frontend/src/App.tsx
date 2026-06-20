@@ -954,6 +954,28 @@ function App() {
     }
   }
 
+  async function handleAppointmentArrive(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await updateAppointmentStatus(appointment.id, {
+        status: '@',
+        title: appointment.title.endsWith('Arrived') ? appointment.title : `${appointment.title} Arrived`,
+      })
+      setAppointmentDetail(updated)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (arrivalError) {
+      setAppointmentDetailStatus('error')
+      const message = arrivalError instanceof Error ? arrivalError.message : 'Appointment arrival update failed'
+      setAppointmentError(message)
+      throw arrivalError
+    }
+  }
+
   async function handleAppointmentDelete(appointment: AppointmentDetail) {
     setAppointmentDetailStatus('loading')
     setAppointmentError(null)
@@ -2575,6 +2597,7 @@ function App() {
             onSelectAppointment={setSelectedAppointmentId}
             onCreateAppointment={handleAppointmentCreate}
             onUpdateAppointment={handleAppointmentUpdate}
+            onArriveAppointment={handleAppointmentArrive}
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
           />
@@ -3574,6 +3597,7 @@ function CalendarWorkspace({
   onSelectAppointment,
   onCreateAppointment,
   onUpdateAppointment,
+  onArriveAppointment,
   onCancelAppointment,
   onDeleteAppointment,
 }: {
@@ -3590,6 +3614,7 @@ function CalendarWorkspace({
   onSelectAppointment: (appointmentId: string) => void
   onCreateAppointment: (input: AppointmentCreateInput) => Promise<AppointmentDetail>
   onUpdateAppointment: (appointment: AppointmentDetail, input: AppointmentUpdateInput) => Promise<AppointmentDetail>
+  onArriveAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
 }) {
@@ -3647,6 +3672,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onCancelAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleArriveSelected() {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onArriveAppointment(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -3812,6 +3851,15 @@ function CalendarWorkspace({
             </div>
 
             <div className="detail-actions">
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={handleArriveSelected}
+                disabled={detailStatus === 'loading' || appointmentDetail.status === '@'}
+              >
+                <Check size={15} />
+                <span>Mark arrived</span>
+              </button>
               <button
                 className="icon-text-button"
                 type="button"
