@@ -413,8 +413,8 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || request.Encounter <= 0
-            || request.PayerId <= 0
-            || request.PayerType <= 0
+            || request.PayerId < 0
+            || request.PayerType is < 0 or > 3
             || string.IsNullOrWhiteSpace(request.Reference)
             || string.IsNullOrWhiteSpace(request.PaymentType)
             || string.IsNullOrWhiteSpace(request.PaymentMethod)

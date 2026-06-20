@@ -1858,6 +1858,75 @@ finally {
     }
 }
 
+$patientPaymentMutationId = $null
+try {
+    $beforePatientPaymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforePatientPaymentSummary = $beforePatientPaymentBilling.accountSummary
+    $patientPaymentReference = "RCPT-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    $createPatientPaymentBody = @{
+        patientId = "MOD-PAT-0005"
+        encounter = 1000052
+        payerId = 0
+        payerName = ""
+        payerType = 0
+        reference = $patientPaymentReference
+        postDate = "2026-06-18"
+        checkDate = "2026-06-18"
+        depositDate = "2026-06-18"
+        paymentType = "patient_payment"
+        paymentMethod = "credit_card"
+        codeType = "CPT4"
+        code = "99214"
+        memo = "Smoke patient payment"
+        payAmount = 35.00
+        adjustmentAmount = 0.00
+        accountCode = ""
+        reasonCode = ""
+        payerClaimNumber = ""
+    } | ConvertTo-Json
+    $createdPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -ContentType "application/json" -Body $createPatientPaymentBody -TimeoutSec 20
+    $patientPaymentMutationId = $createdPatientPayment.id
+    $createdPatientPaymentRows = @($createdPatientPayment.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
+    $createdPatientPaymentVisible = $createdPatientPaymentRows | Where-Object { $_.activityId -eq $patientPaymentMutationId -and $_.payerType -eq 0 -and $_.reference -eq $patientPaymentReference -and $_.payAmount -eq 35 -and $_.adjustmentAmount -eq 0 } | Select-Object -First 1
+    $createdPatientPaymentSummary = $createdPatientPayment.detail.accountSummary
+
+    $voidedPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId/void" -Method Put -TimeoutSec 20
+    $voidedPatientPaymentRows = @($voidedPatientPayment.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
+    $voidedPatientPaymentVisible = $voidedPatientPaymentRows | Where-Object { $_.activityId -eq $patientPaymentMutationId } | Select-Object -First 1
+    $voidedPatientPaymentSummary = $voidedPatientPayment.detail.accountSummary
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientPaymentMutationId = $null
+
+    $patientPaymentMutationPassed = $null -ne $createdPatientPaymentVisible `
+        -and [decimal]$createdPatientPaymentSummary.paymentAmount -eq ([decimal]$beforePatientPaymentSummary.paymentAmount + 35) `
+        -and [decimal]$createdPatientPaymentSummary.adjustmentAmount -eq [decimal]$beforePatientPaymentSummary.adjustmentAmount `
+        -and [decimal]$createdPatientPaymentSummary.balanceAmount -eq ([decimal]$beforePatientPaymentSummary.balanceAmount - 35) `
+        -and $null -eq $voidedPatientPaymentVisible `
+        -and [decimal]$voidedPatientPaymentSummary.paymentAmount -eq [decimal]$beforePatientPaymentSummary.paymentAmount `
+        -and [decimal]$voidedPatientPaymentSummary.adjustmentAmount -eq [decimal]$beforePatientPaymentSummary.adjustmentAmount `
+        -and [decimal]$voidedPatientPaymentSummary.balanceAmount -eq [decimal]$beforePatientPaymentSummary.balanceAmount
+    Add-Check -Name "patient payment capture lifecycle" -Result $(if ($patientPaymentMutationPassed) { "passed" } else { "failed" }) -Details @{
+        paymentId = $createdPatientPayment.id
+        reference = $patientPaymentReference
+        createdPayment = $createdPatientPaymentVisible
+        createdSummary = $createdPatientPaymentSummary
+        voidedSummary = $voidedPatientPaymentSummary
+    }
+}
+catch {
+    Add-Check -Name "patient payment capture lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientPaymentMutationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $balanceBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
     $balanceEncounter = $balanceBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1

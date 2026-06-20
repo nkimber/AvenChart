@@ -4685,8 +4685,10 @@ function FeesWorkspace({
   const [claimPayload, setClaimPayload] = useState('Parity claim status mutation')
   const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
   const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
+  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient'>('insurance')
   const [paymentPayerId, setPaymentPayerId] = useState('9005')
   const [paymentPayerName, setPaymentPayerName] = useState('Northstar HMO')
+  const [paymentMethod, setPaymentMethod] = useState('check_payment')
   const [paymentCode, setPaymentCode] = useState('99214')
   const [paymentMemo, setPaymentMemo] = useState('Parity payment posting')
   const [paymentPayAmount, setPaymentPayAmount] = useState('21.00')
@@ -4806,27 +4808,28 @@ function FeesWorkspace({
   async function handlePaymentPostingSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMutationMessage(null)
+    const isPatientPayment = paymentSource === 'patient'
 
     await onCreatePayment({
       patientId,
       encounter: Number(billingEncounter),
-      payerId: Number(paymentPayerId),
-      payerName: paymentPayerName,
-      payerType: 1,
+      payerId: isPatientPayment ? 0 : Number(paymentPayerId),
+      payerName: isPatientPayment ? '' : paymentPayerName,
+      payerType: isPatientPayment ? 0 : 1,
       reference: paymentReference,
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: 'insurance_payment',
-      paymentMethod: 'check_payment',
+      paymentType: isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
       payAmount: Number(paymentPayAmount),
-      adjustmentAmount: Number(paymentAdjustmentAmount),
-      accountCode: paymentReasonCode.replace('-', ''),
-      reasonCode: paymentReasonCode,
-      payerClaimNumber: paymentPayerClaimNumber,
+      adjustmentAmount: isPatientPayment ? 0 : Number(paymentAdjustmentAmount),
+      accountCode: isPatientPayment ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment ? '' : paymentReasonCode,
+      payerClaimNumber: isPatientPayment ? '' : paymentPayerClaimNumber,
     })
 
     setMutationMessage('Payment posting saved')
@@ -5122,6 +5125,17 @@ function FeesWorkspace({
             </label>
             <div className="mutation-grid two-column">
               <label className="filter-field">
+                <span>Source</span>
+                <select
+                  value={paymentSource}
+                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient')}
+                  aria-label="New payment source"
+                >
+                  <option value="insurance">Insurance</option>
+                  <option value="patient">Patient</option>
+                </select>
+              </label>
+              <label className="filter-field">
                 <span>Post date</span>
                 <input
                   value={paymentPostDate}
@@ -5137,7 +5151,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentPayerId(event.target.value)}
                   aria-label="New payment payer ID"
                   inputMode="numeric"
-                  required
+                  disabled={paymentSource === 'patient'}
+                  required={paymentSource !== 'patient'}
                 />
               </label>
             </div>
@@ -5147,7 +5162,8 @@ function FeesWorkspace({
                 value={paymentPayerName}
                 onChange={(event) => setPaymentPayerName(event.target.value)}
                 aria-label="New payment payer name"
-                required
+                disabled={paymentSource === 'patient'}
+                required={paymentSource !== 'patient'}
               />
             </label>
             <label className="filter-field">
@@ -5158,6 +5174,18 @@ function FeesWorkspace({
                 aria-label="New payment reference"
                 required
               />
+            </label>
+            <label className="filter-field">
+              <span>Method</span>
+              <select
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+                aria-label="New payment method"
+              >
+                <option value="check_payment">Check</option>
+                <option value="credit_card">Card</option>
+                <option value="cash_payment">Cash</option>
+              </select>
             </label>
             <div className="mutation-grid two-column">
               <label className="filter-field">
@@ -5177,7 +5205,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentAdjustmentAmount(event.target.value)}
                   aria-label="New payment adjustment amount"
                   inputMode="decimal"
-                  required
+                  disabled={paymentSource === 'patient'}
+                  required={paymentSource !== 'patient'}
                 />
               </label>
             </div>
@@ -5197,6 +5226,7 @@ function FeesWorkspace({
                   value={paymentReasonCode}
                   onChange={(event) => setPaymentReasonCode(event.target.value)}
                   aria-label="New payment reason code"
+                  disabled={paymentSource === 'patient'}
                 />
               </label>
             </div>
@@ -5206,6 +5236,7 @@ function FeesWorkspace({
                 value={paymentPayerClaimNumber}
                 onChange={(event) => setPaymentPayerClaimNumber(event.target.value)}
                 aria-label="New payment payer claim number"
+                disabled={paymentSource === 'patient'}
               />
             </label>
             <label className="filter-field">
@@ -8063,7 +8094,7 @@ function BillingPaymentCard({
         <span className="status-tag">{statusLabel}</span>
       </div>
       <p>
-        {formatPayerType(payment.payerType)} {payment.payerName || 'Payer'} / {payment.reference || 'No reference'}
+        {formatPaymentPayer(payment)} / {payment.reference || 'No reference'}
       </p>
       <div className="procedure-order-meta">
         <span>{payment.code ? `${payment.code}${payment.modifier ? `:${payment.modifier}` : ''}` : 'No code'}</span>
@@ -8816,6 +8847,14 @@ function formatPayerType(value: number) {
   if (value === 2) return 'Secondary'
   if (value === 3) return 'Tertiary'
   return 'Patient'
+}
+
+function formatPaymentPayer(payment: BillingPaymentItem) {
+  if (payment.payerType === 0) {
+    return 'Patient'
+  }
+
+  return `${formatPayerType(payment.payerType)} ${payment.payerName || 'Payer'}`
 }
 
 function countUsersByRole(users: AdministrationUserItem[] | undefined, role: string) {
