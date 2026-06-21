@@ -14020,6 +14020,10 @@ function MessageItem({
       </div>
       <p>{message.body || 'No message body recorded'}</p>
       <span>{[message.date || 'No date', message.assignedTo ? `Assigned to ${message.assignedTo}` : null].filter(Boolean).join(' / ')}</span>
+      <div className="message-metadata" aria-label={`${message.title || 'Message'} portal metadata`}>
+        <span>{message.portalRelation ? `Portal relation ${message.portalRelation}` : 'No portal relation'}</span>
+        <span>{message.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+      </div>
       <form className="message-content-form" onSubmit={handleContentSubmit}>
         <label className="compact-inline-field">
           <span>Title</span>

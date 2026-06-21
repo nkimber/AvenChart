@@ -55,9 +55,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into messages
-                (id, patient_id, pid, message_date, title, body, status, assigned_to, deleted, activity)
+                (id, patient_id, pid, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, deleted, activity)
             values
-                (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, 0, 1);
+                (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, null, false, 0, 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
@@ -339,7 +339,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, status, assigned_to, deleted
+            select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, deleted
             from messages
             where pid = @pid and deleted = 0
             order by message_date desc, id desc;
@@ -357,6 +357,8 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 Body: ReadNullableString(reader, "body"),
                 Status: ReadNullableString(reader, "status"),
                 AssignedTo: ReadNullableString(reader, "assigned_to"),
+                PortalRelation: ReadNullableString(reader, "portal_relation"),
+                IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")),
                 Deleted: reader.GetInt32(reader.GetOrdinal("deleted"))));
         }
 

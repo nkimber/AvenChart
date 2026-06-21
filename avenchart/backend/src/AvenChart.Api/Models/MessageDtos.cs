@@ -19,6 +19,8 @@ public sealed record PatientMessageItem(
     string? Body,
     string? Status,
     string? AssignedTo,
+    string? PortalRelation,
+    bool IsEncrypted,
     int Deleted);
 
 public sealed record PatientMessageCreateRequest(

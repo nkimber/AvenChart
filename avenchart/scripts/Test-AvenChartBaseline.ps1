@@ -4303,7 +4303,14 @@ try {
     $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
     $portalMessage = $messages.messages | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
-    $messagesPassed = $messages.patientId -eq "MOD-PAT-0004" -and $messages.portalEnabled -and $null -ne $careTeamMessage -and $null -ne $portalMessage
+    $messagesPassed = $messages.patientId -eq "MOD-PAT-0004" `
+        -and $messages.portalEnabled `
+        -and $null -ne $careTeamMessage `
+        -and $null -ne $portalMessage `
+        -and $careTeamMessage.portalRelation -eq $null `
+        -and -not $careTeamMessage.isEncrypted `
+        -and $portalMessage.portalRelation -eq "portal:MOD-PAT-0004" `
+        -and -not $portalMessage.isEncrypted
     Add-Check -Name "anchor patient messages" -Result $(if ($messagesPassed) { "passed" } else { "failed" }) -Details @{
         patientId = $messages.patientId
         portalEnabled = $messages.portalEnabled
