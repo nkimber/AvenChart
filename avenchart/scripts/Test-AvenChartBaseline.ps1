@@ -41,6 +41,41 @@ catch {
 }
 
 try {
+    $loginBody = @{
+        username = "admin"
+        password = "pass"
+    }
+    $login = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body ($loginBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $rejectedLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "admin"; password = "wrong-pass" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $loginPassed = $login.authenticated -eq $true `
+        -and $login.username -eq "admin" `
+        -and $login.displayName -eq "Administrator" `
+        -and $login.role -eq "administrator" `
+        -and $rejectedLogin.authenticated -eq $false
+
+    Add-Check -Name "admin login readiness" -Result $(if ($loginPassed) { "passed" } else { "failed" }) -Details @{
+        successUsername = $login.username
+        successRole = $login.role
+        rejectedReason = $rejectedLogin.failureReason
+    }
+}
+catch {
+    Add-Check -Name "admin login readiness" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $search = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" -Method Get -TimeoutSec 20
     $anchor = $search.patients | Where-Object { $_.canonicalId -eq "MOD-PAT-0001" } | Select-Object -First 1
     Add-Check -Name "anchor patient search" -Result $(if ($null -ne $anchor) { "passed" } else { "failed" }) -Details @{

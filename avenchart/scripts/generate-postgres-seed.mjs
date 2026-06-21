@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -21,6 +22,11 @@ const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'))
 fs.mkdirSync(outputDir, { recursive: true })
 
 const copyEmptyString = Symbol('copy-empty-string')
+const demoCredentialSalt = 'legacy-ehr-modernized-demo-v1'
+
+function hashDemoPassword(password) {
+  return crypto.createHash('sha256').update(`${demoCredentialSalt}:${password}`, 'utf8').digest('hex')
+}
 
 const accessGroups = [
   [10, 'users', 'Legacy EHR Users', null],
@@ -238,6 +244,7 @@ drop table if exists appointments;
 drop table if exists insurance_records;
 drop table if exists patients;
 drop table if exists access_user_memberships;
+drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
 drop table if exists access_group_permissions;
@@ -279,6 +286,16 @@ create table staff (
   email text,
   npi text,
   active boolean not null default true
+);
+
+create table auth_accounts (
+  username text primary key,
+  display_name text not null,
+  role text not null,
+  staff_id integer references staff(id),
+  active boolean not null default true,
+  password_salt text not null,
+  password_hash text not null
 );
 
 create table access_groups (
@@ -821,6 +838,10 @@ copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calenda
     staff.role === 'provider' ? `18888${staff.id}` : null,
     true,
   ]))
+
+copyRows('auth_accounts', ['username', 'display_name', 'role', 'staff_id', 'active', 'password_salt', 'password_hash'], [
+  ['admin', 'Administrator', 'administrator', null, true, demoCredentialSalt, hashDemoPassword('pass')],
+])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)
 

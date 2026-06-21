@@ -15,6 +15,7 @@ import {
   FlaskConical,
   FolderOpen,
   HeartPulse,
+  LogIn,
   Mail,
   MapPin,
   Pencil,
@@ -57,6 +58,7 @@ import {
   createAppointment,
   bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
+  login,
   createBillingClaimStatus,
   createBillingLine,
   createBillingPaymentPosting,
@@ -170,6 +172,7 @@ import {
   type AdministrationAccessUserMembershipMutationInput,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
+  type AuthLoginResponse,
   type AppointmentDetail,
   type AppointmentCreateInput,
   type AppointmentListItem,
@@ -12702,6 +12705,27 @@ function AdministrationWorkspace({
     groupValue: 'front',
   })
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [loginUsername, setLoginUsername] = useState('admin')
+  const [loginPassword, setLoginPassword] = useState('pass')
+  const [loginStatus, setLoginStatus] = useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [loginResult, setLoginResult] = useState<AuthLoginResponse | null>(null)
+  const [loginError, setLoginError] = useState<string | null>(null)
+
+  async function handleLoginCheck(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoginStatus('checking')
+    setLoginResult(null)
+    setLoginError(null)
+
+    try {
+      const result = await login({ username: loginUsername, password: loginPassword })
+      setLoginResult(result)
+      setLoginStatus(result.authenticated ? 'authenticated' : 'rejected')
+    } catch (error) {
+      setLoginStatus('error')
+      setLoginError(error instanceof Error ? error.message : 'Login readiness check failed')
+    }
+  }
 
   async function handleUserCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -12814,7 +12838,7 @@ function AdministrationWorkspace({
             <ShieldCheck size={17} />
             <h3>Access Control Status</h3>
           </div>
-          <Field label="Authentication" value="Deferred" />
+          <Field label="Authentication" value="Demo login readiness endpoint active" />
           <Field label="Authorization" value="Default ACL model mirrored" />
           <Field label="Audit logging" value="Planned" />
           <Field label="Directory mode" value="User/facility mutation and ACL read model" />
@@ -12826,6 +12850,49 @@ function AdministrationWorkspace({
             </>
           )}
         </div>
+
+        <form className="appointment-mutation-panel" aria-label="Login readiness" onSubmit={handleLoginCheck}>
+          <div className="panel-heading">
+            <LogIn size={17} />
+            <h3>Login Readiness</h3>
+          </div>
+          <label className="form-field">
+            <span>Username</span>
+            <input
+              value={loginUsername}
+              autoComplete="username"
+              onChange={(event) => setLoginUsername(event.target.value)}
+            />
+          </label>
+          <label className="form-field">
+            <span>Password</span>
+            <input
+              type="password"
+              value={loginPassword}
+              autoComplete="current-password"
+              onChange={(event) => setLoginPassword(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="icon-text-button primary" disabled={loginStatus === 'checking'}>
+            <LogIn size={16} />
+            Verify Login
+          </button>
+          {loginStatus === 'authenticated' && loginResult && (
+            <div className="status-banner success">
+              Signed in as {loginResult.displayName} ({loginResult.username})
+            </div>
+          )}
+          {loginStatus === 'rejected' && (
+            <div className="status-banner error">{loginResult?.failureReason ?? 'Invalid username or password.'}</div>
+          )}
+          {loginStatus === 'error' && <div className="status-banner error">{loginError}</div>}
+          {loginResult?.authenticated && (
+            <div className="access-scope-panel">
+              <Field label="Role" value={loginResult.role} />
+              <Field label="Staff link" value={loginResult.staffId ? String(loginResult.staffId) : 'Not linked'} />
+            </div>
+          )}
+        </form>
 
         <form className="appointment-mutation-panel" onSubmit={handleAccessGrant}>
           <div className="panel-heading">

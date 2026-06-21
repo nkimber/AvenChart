@@ -21,6 +21,7 @@ builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
+builder.Services.AddScoped<AuthRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -50,6 +51,18 @@ app.MapGet("/health", () => Results.Ok(new HealthResponse(
     Status: "healthy",
     Application: "avenchart-api",
     CheckedAtUtc: DateTimeOffset.UtcNow)));
+
+var auth = app.MapGroup("/api/auth").WithTags("Authentication");
+
+auth.MapPost("/login", async (
+        AuthRepository repository,
+        AuthLoginRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.LoginAsync(request, cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("Login");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 

@@ -1934,7 +1934,35 @@ export type OperationalReportsResponse = {
   clinicalConditions: ClinicalConditionReportItem[]
 }
 
+export type AuthLoginInput = {
+  username: string
+  password: string
+}
+
+export type AuthLoginResponse = {
+  authenticated: boolean
+  username: string
+  displayName: string
+  role: string
+  staffId?: number | null
+  failureReason?: string | null
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
+
+export async function login(input: AuthLoginInput, signal?: AbortSignal): Promise<AuthLoginResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Login readiness check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
 
 export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
   const params = new URLSearchParams()
