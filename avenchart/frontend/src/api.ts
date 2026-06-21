@@ -794,6 +794,12 @@ export type PatientDocumentContentReplaceInput = {
   content: string
 }
 
+export type PatientDocumentBinaryContentReplaceInput = {
+  fileName: string
+  mimetype: string
+  contentBase64: string
+}
+
 export type PatientDocumentContentResponse = {
   id: number
   documentKey: string
@@ -2085,6 +2091,25 @@ export async function replaceEncounterDocumentContent(
   })
   if (!response.ok) {
     throw new Error(`Encounter document content replacement failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function replaceEncounterDocumentBinaryContent(
+  encounter: number,
+  documentId: number,
+  document: PatientDocumentBinaryContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content/binary`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Encounter binary document content replacement failed with ${response.status}`)
   }
 
   return response.json()

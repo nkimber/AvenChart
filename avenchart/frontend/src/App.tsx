@@ -117,6 +117,7 @@ import {
   restoreEncounterDocument,
   restoreAppointmentOccurrence,
   restorePatientDocument,
+  replaceEncounterDocumentBinaryContent,
   replaceEncounterDocumentContent,
   replacePatientDocumentContent,
   updatePatientMessageAssignment,
@@ -198,6 +199,7 @@ import {
   type PatientInsuranceMutationInput,
   type PatientListItem,
   type PatientBillingResponse,
+  type PatientDocumentBinaryContentReplaceInput,
   type PatientDocumentBinaryCreateInput,
   type PatientContactUpdate,
   type PatientDemographicsUpdate,
@@ -1364,6 +1366,30 @@ function App() {
       setEncounterDetailStatus('error')
       const message =
         replaceError instanceof Error ? replaceError.message : 'Encounter document content replacement failed'
+      setEncounterError(message)
+      throw replaceError
+    }
+  }
+
+  async function handleEncounterDocumentBinaryContentReplace(
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentBinaryContentReplaceInput,
+  ): Promise<EncounterDocumentMutationResponse> {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await replaceEncounterDocumentBinaryContent(encounter.encounter, document.id, input)
+      setEncounterDetail(response.detail)
+      setSelectedEncounter(response.detail.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (replaceError) {
+      setEncounterDetailStatus('error')
+      const message =
+        replaceError instanceof Error ? replaceError.message : 'Encounter binary document content replacement failed'
       setEncounterError(message)
       throw replaceError
     }
@@ -2727,6 +2753,7 @@ function App() {
             onUpdateEncounterDocumentMetadata={handleEncounterDocumentMetadataUpdate}
             onMoveEncounterDocument={handleEncounterDocumentMove}
             onReplaceEncounterDocumentContent={handleEncounterDocumentContentReplace}
+            onReplaceEncounterDocumentBinaryContent={handleEncounterDocumentBinaryContentReplace}
             onArchiveEncounterDocument={handleEncounterDocumentArchive}
             onRestoreEncounterDocument={handleEncounterDocumentRestore}
             onSignEncounterDocument={handleEncounterDocumentSign}
@@ -4836,6 +4863,7 @@ function EncounterWorkspace({
   onUpdateEncounterDocumentMetadata,
   onMoveEncounterDocument,
   onReplaceEncounterDocumentContent,
+  onReplaceEncounterDocumentBinaryContent,
   onArchiveEncounterDocument,
   onRestoreEncounterDocument,
   onSignEncounterDocument,
@@ -4890,6 +4918,11 @@ function EncounterWorkspace({
     encounter: EncounterDetail,
     document: EncounterDocumentAttachment,
     input: PatientDocumentContentReplaceInput,
+  ) => Promise<EncounterDocumentMutationResponse>
+  onReplaceEncounterDocumentBinaryContent: (
+    encounter: EncounterDetail,
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentBinaryContentReplaceInput,
   ) => Promise<EncounterDocumentMutationResponse>
   onArchiveEncounterDocument: (
     encounter: EncounterDetail,
@@ -5353,6 +5386,23 @@ function EncounterWorkspace({
     setEncounterDocumentContentStatus('saving')
     try {
       await onReplaceEncounterDocumentContent(encounterDetail, document, input)
+      setEncounterDocumentContentStatus('saved')
+    } catch {
+      setEncounterDocumentContentStatus('error')
+    }
+  }
+
+  async function handleEncounterDocumentBinaryContentReplace(
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentBinaryContentReplaceInput,
+  ) {
+    if (!encounterDetail) {
+      return
+    }
+
+    setEncounterDocumentContentStatus('saving')
+    try {
+      await onReplaceEncounterDocumentBinaryContent(encounterDetail, document, input)
       setEncounterDocumentContentStatus('saved')
     } catch {
       setEncounterDocumentContentStatus('error')
@@ -6224,6 +6274,7 @@ function EncounterWorkspace({
                     onUpdateMetadata={handleEncounterDocumentMetadataUpdate}
                     onMove={handleEncounterDocumentMove}
                     onReplaceContent={handleEncounterDocumentContentReplace}
+                    onReplaceBinaryContent={handleEncounterDocumentBinaryContentReplace}
                     onArchive={handleEncounterDocumentArchive}
                     onRestore={handleEncounterDocumentRestore}
                     onSign={handleEncounterDocumentSign}
@@ -6912,6 +6963,7 @@ function EncounterDocumentAttachmentCard({
   onUpdateMetadata,
   onMove,
   onReplaceContent,
+  onReplaceBinaryContent,
   onArchive,
   onRestore,
   onSign,
@@ -6929,6 +6981,10 @@ function EncounterDocumentAttachmentCard({
     document: EncounterDocumentAttachment,
     input: PatientDocumentContentReplaceInput,
   ) => Promise<void>
+  onReplaceBinaryContent: (
+    document: EncounterDocumentAttachment,
+    input: PatientDocumentBinaryContentReplaceInput,
+  ) => Promise<void>
   onArchive: (document: EncounterDocumentAttachment) => Promise<void>
   onRestore: (document: EncounterDocumentAttachment) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
@@ -6944,8 +7000,13 @@ function EncounterDocumentAttachmentCard({
   const [moveEncounter, setMoveEncounter] = useState('')
   const [moveError, setMoveError] = useState<string | null>(null)
   const [isReplacing, setIsReplacing] = useState(false)
+  const [isReplacingBinary, setIsReplacingBinary] = useState(false)
   const [replacementFileName, setReplacementFileName] = useState(document.fileName || `${document.name}.txt`)
   const [replacementContent, setReplacementContent] = useState('')
+  const [replacementBinaryFileName, setReplacementBinaryFileName] = useState(document.fileName || document.name)
+  const [replacementBinaryMimeType, setReplacementBinaryMimeType] = useState(document.mimetype || 'application/octet-stream')
+  const [replacementBinaryContentBase64, setReplacementBinaryContentBase64] = useState('')
+  const [replacementBinaryFileMessage, setReplacementBinaryFileMessage] = useState('No file selected')
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const hasExternalLink = document.storageMethod === 'web_url' && Boolean(document.url)
   const isArchived = document.deleted !== 0
@@ -6962,8 +7023,13 @@ function EncounterDocumentAttachmentCard({
     setMoveEncounter('')
     setMoveError(null)
     setIsReplacing(false)
+    setIsReplacingBinary(false)
     setReplacementFileName(document.fileName || `${document.name}.txt`)
     setReplacementContent('')
+    setReplacementBinaryFileName(document.fileName || document.name)
+    setReplacementBinaryMimeType(document.mimetype || 'application/octet-stream')
+    setReplacementBinaryContentBase64('')
+    setReplacementBinaryFileMessage('No file selected')
     setReplaceError(null)
   }, [document])
 
@@ -7032,6 +7098,46 @@ function EncounterDocumentAttachmentCard({
       setReplacementContent('')
     } catch {
       setReplaceError('Content save failed')
+    }
+  }
+
+  async function handleBinaryReplacementFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setReplacementBinaryFileName(document.fileName || document.name)
+      setReplacementBinaryMimeType(document.mimetype || 'application/octet-stream')
+      setReplacementBinaryContentBase64('')
+      setReplacementBinaryFileMessage('No file selected')
+      return
+    }
+
+    const contentBase64 = await readFileAsBase64(file)
+    setReplacementBinaryFileName(file.name)
+    setReplacementBinaryMimeType(file.type || 'application/octet-stream')
+    setReplacementBinaryContentBase64(contentBase64)
+    setReplacementBinaryFileMessage(`${file.name} selected (${formatBytes(file.size)})`)
+  }
+
+  async function handleBinaryContentReplacementSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setReplaceError(null)
+
+    if (!replacementBinaryFileName.trim() || !replacementBinaryMimeType.trim() || !replacementBinaryContentBase64.trim()) {
+      setReplaceError('Choose a replacement file')
+      return
+    }
+
+    try {
+      await onReplaceBinaryContent(document, {
+        fileName: replacementBinaryFileName,
+        mimetype: replacementBinaryMimeType,
+        contentBase64: replacementBinaryContentBase64,
+      })
+      setIsReplacingBinary(false)
+      setReplacementBinaryContentBase64('')
+      setReplacementBinaryFileMessage('No file selected')
+    } catch {
+      setReplaceError('Binary content save failed')
     }
   }
 
@@ -7197,6 +7303,54 @@ function EncounterDocumentAttachmentCard({
         </form>
       )}
 
+      {isReplacingBinary && (
+        <form className="document-edit-form" onSubmit={handleBinaryContentReplacementSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Binary File</span>
+              <input
+                type="file"
+                onChange={handleBinaryReplacementFileChange}
+                aria-label="Encounter replacement binary document upload"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>File Name</span>
+                <input
+                  value={replacementBinaryFileName}
+                  onChange={(event) => setReplacementBinaryFileName(event.target.value)}
+                  aria-label="Encounter replacement binary document file name"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>MIME Type</span>
+                <input
+                  value={replacementBinaryMimeType}
+                  onChange={(event) => setReplacementBinaryMimeType(event.target.value)}
+                  aria-label="Encounter replacement binary document MIME type"
+                  required
+                />
+              </label>
+            </div>
+            <span className="save-note">{replacementBinaryFileMessage}</span>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Binary
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsReplacingBinary(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {replaceError && <span className="save-note error">{replaceError}</span>}
+          </div>
+        </form>
+      )}
+
       {isMoving && (
         <form className="document-edit-form" onSubmit={handleMoveSubmit}>
           <div className="mutation-grid">
@@ -7254,6 +7408,7 @@ function EncounterDocumentAttachmentCard({
           onClick={() => {
             setIsMoving(false)
             setIsReplacing(false)
+            setIsReplacingBinary(false)
             setIsEditing((current) => !current)
           }}
         >
@@ -7267,6 +7422,7 @@ function EncounterDocumentAttachmentCard({
           onClick={() => {
             setIsEditing(false)
             setIsReplacing(false)
+            setIsReplacingBinary(false)
             setIsMoving((current) => !current)
           }}
         >
@@ -7280,11 +7436,26 @@ function EncounterDocumentAttachmentCard({
           onClick={() => {
             setIsEditing(false)
             setIsMoving(false)
+            setIsReplacingBinary(false)
             setIsReplacing((current) => !current)
           }}
         >
           <FileText size={14} />
           Replace
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || !canReplaceContent}
+          onClick={() => {
+            setIsEditing(false)
+            setIsMoving(false)
+            setIsReplacing(false)
+            setIsReplacingBinary((current) => !current)
+          }}
+        >
+          <Upload size={14} />
+          Binary File
         </button>
         <button
           className="icon-text-button danger"
@@ -12865,17 +13036,16 @@ function formatBytes(value?: number | null) {
   return `${(value / 1024).toFixed(1)} KB`
 }
 
-function readFileAsBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      const [, base64] = result.split(',', 2)
-      resolve(base64 ?? '')
-    }
-    reader.onerror = () => reject(reader.error ?? new Error('File read failed'))
-    reader.readAsDataURL(file)
-  })
+async function readFileAsBase64(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  const chunkSize = 0x8000
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+
+  return btoa(binary)
 }
 
 export default App

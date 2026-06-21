@@ -568,6 +568,38 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
     })
     .WithName("ReplaceEncounterDocumentContent");
 
+encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", async (
+        EncounterRepository encounterRepository,
+        DocumentRepository documentRepository,
+        int encounter,
+        int documentId,
+        PatientDocumentBinaryContentReplaceRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        if (encounterDetail is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!encounterDetail.Documents.Any(document => document.Id == documentId))
+        {
+            return Results.NotFound();
+        }
+
+        var mutation = await documentRepository.ReplaceBinaryContentAsync(documentId, request, cancellationToken);
+        if (mutation is null)
+        {
+            return Results.BadRequest("Encounter binary document content could not be replaced from the supplied file payload.");
+        }
+
+        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+        return refreshed is null
+            ? Results.NotFound()
+            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+    })
+    .WithName("ReplaceEncounterDocumentBinaryContent");
+
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,

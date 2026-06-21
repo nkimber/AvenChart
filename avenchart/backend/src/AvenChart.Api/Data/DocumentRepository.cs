@@ -543,6 +543,79 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
+    public async Task<PatientDocumentMutationResponse?> ReplaceBinaryContentAsync(
+        int documentId,
+        PatientDocumentBinaryContentReplaceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0
+            || string.IsNullOrWhiteSpace(request.FileName)
+            || string.IsNullOrWhiteSpace(request.Mimetype)
+            || string.IsNullOrWhiteSpace(request.ContentBase64))
+        {
+            return null;
+        }
+
+        byte[] contentBytes;
+        try
+        {
+            contentBytes = Convert.FromBase64String(request.ContentBase64.Trim());
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        if (contentBytes.Length == 0)
+        {
+            return null;
+        }
+
+        var fileName = SanitizeFileName(request.FileName.Trim());
+        var mimetype = request.Mimetype.Trim();
+        var preview = $"Binary document: {fileName} ({mimetype})";
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        string? patientId = null;
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set mimetype = @mimetype,
+                    file_name = @fileName,
+                    size_bytes = @sizeBytes,
+                    pages = @pages,
+                    storage_method = 'database',
+                    hash = @hash,
+                    content = @content,
+                    content_bytes = @contentBytes,
+                    uploaded_at = @uploadedAt,
+                    url = concat('modern://documents/', document_key, '/', @fileName)
+                where id = @id and deleted = 0 and coalesce(storage_method, 'database') <> 'web_url'
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            command.Parameters.AddWithValue("mimetype", mimetype);
+            command.Parameters.AddWithValue("fileName", fileName);
+            command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+            command.Parameters.AddWithValue("pages", string.Equals(mimetype, "application/pdf", StringComparison.OrdinalIgnoreCase) ? 1 : 0);
+            command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+            command.Parameters.AddWithValue("content", preview);
+            command.Parameters.Add("contentBytes", NpgsqlTypes.NpgsqlDbType.Bytea).Value = contentBytes;
+            command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+    }
+
     public async Task<PatientDocumentMutationResponse?> SignAsync(
         int documentId,
         PatientDocumentSignRequest request,

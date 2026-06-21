@@ -2651,6 +2651,94 @@ finally {
     }
 }
 
+$smokeEncounterBinaryReplacementDocumentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $binaryReplacementSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $binaryReplacementName = "Smoke Encounter Binary Replacement $binaryReplacementSuffix"
+    $binaryReplacementOriginalFileName = "$binaryReplacementName original.pdf"
+    $binaryReplacementUpdatedFileName = "$binaryReplacementName updated.pdf"
+    $binaryReplacementOriginalPayload = "%PDF-1.4`n% Smoke original encounter binary replacement $binaryReplacementSuffix`n%%EOF`n"
+    $binaryReplacementUpdatedPayload = "%PDF-1.4`n% Smoke updated encounter binary replacement $binaryReplacementSuffix`n%%EOF`n"
+    $binaryReplacementOriginalBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($binaryReplacementOriginalPayload))
+    $binaryReplacementUpdatedBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($binaryReplacementUpdatedPayload))
+    $binaryReplacementOriginalBody = @{
+        categoryId = 3
+        name = $binaryReplacementName
+        docDate = "2026-06-18"
+        fileName = $binaryReplacementOriginalFileName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryReplacementOriginalBase64
+        notes = "Created by the smoke encounter binary document content replacement check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdBinaryReplacementDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryReplacementOriginalBody -TimeoutSec 20
+    $smokeEncounterBinaryReplacementDocumentId = $createdBinaryReplacementDocument.id
+    $binaryReplacementBody = @{
+        fileName = $binaryReplacementUpdatedFileName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryReplacementUpdatedBase64
+    } | ConvertTo-Json -Depth 5
+
+    $replacedBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterBinaryReplacementDocumentId/content/binary" -Method Put -ContentType "application/json" -Body $binaryReplacementBody -TimeoutSec 20
+    $replacedBinaryDocumentVisible = @($replacedBinaryDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterBinaryReplacementDocumentId `
+            -and $_.name -eq $binaryReplacementName `
+            -and $_.mimetype -eq "application/pdf" `
+            -and $_.fileName -eq $binaryReplacementUpdatedFileName `
+            -and $_.storageMethod -eq "database" `
+            -and $_.previewKind -eq "pdf" `
+            -and $_.thumbnailLabel -eq "PDF" `
+            -and $_.canDownload -eq $true `
+            -and $_.hash -ne $null
+    } | Select-Object -First 1
+
+    $binaryReplacementContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId/content" -Method Get -TimeoutSec 20
+    $binaryReplacementDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $binaryReplacementDownload = $binaryReplacementDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId/download").GetAwaiter().GetResult()
+        $binaryReplacementDownloadBytes = $binaryReplacementDownload.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $binaryReplacementDownloadContentType = $binaryReplacementDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $binaryReplacementDownloadClient.Dispose()
+    }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterBinaryReplacementDocumentId = $null
+
+    $encounterBinaryReplacementPassed = $null -ne $replacedBinaryDocumentVisible `
+        -and $binaryReplacementContent.contentBase64 -eq $binaryReplacementUpdatedBase64 `
+        -and $binaryReplacementContent.contentBase64 -ne $binaryReplacementOriginalBase64 `
+        -and $binaryReplacementContent.fileName -eq $binaryReplacementUpdatedFileName `
+        -and $binaryReplacementContent.revisionHash -eq $binaryReplacementContent.hash `
+        -and $binaryReplacementDownload.IsSuccessStatusCode `
+        -and $binaryReplacementDownloadContentType -eq "application/pdf" `
+        -and [Convert]::ToBase64String($binaryReplacementDownloadBytes) -eq $binaryReplacementUpdatedBase64
+    Add-Check -Name "encounter binary document content replacement lifecycle" -Result $(if ($encounterBinaryReplacementPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdBinaryReplacementDocument.id
+        fileName = $binaryReplacementContent.fileName
+        previewKind = $binaryReplacementContent.previewKind
+        downloadContentType = $binaryReplacementDownloadContentType
+    }
+}
+catch {
+    Add-Check -Name "encounter binary document content replacement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterBinaryReplacementDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryReplacementDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterScannedDocumentId = $null
 try {
     if ($null -eq $encounterDetail) {

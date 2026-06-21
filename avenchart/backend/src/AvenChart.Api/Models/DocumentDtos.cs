@@ -113,6 +113,11 @@ public sealed record PatientDocumentContentReplaceRequest(
     string FileName,
     string Content);
 
+public sealed record PatientDocumentBinaryContentReplaceRequest(
+    string FileName,
+    string Mimetype,
+    string ContentBase64);
+
 public sealed record PatientDocumentContentResponse(
     int Id,
     string DocumentKey,
