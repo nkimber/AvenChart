@@ -367,7 +367,8 @@ create table appointments (
   recurrence_type integer not null default 0,
   repeat_frequency integer,
   repeat_unit integer,
-  recurrence_end_date date
+  recurrence_end_date date,
+  recurrence_exdates text
 );
 
 create table encounters (
@@ -852,6 +853,7 @@ copyRows('appointments', [
   'repeat_frequency',
   'repeat_unit',
   'recurrence_end_date',
+  'recurrence_exdates',
 ], dataset.appointments.map((appointment) => [
   appointment.id,
   appointment.patientId,
@@ -871,6 +873,7 @@ copyRows('appointments', [
   appointment.repeatFrequency ?? null,
   appointment.repeatUnit ?? null,
   appointment.recurrenceEndDate ?? null,
+  (appointment.recurrenceExdates ?? []).join(',') || null,
 ]))
 
 copyRows('encounters', [

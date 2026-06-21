@@ -3667,6 +3667,17 @@ function appointmentOccurrenceDetail(
     : 'Series anchor'
 }
 
+function appointmentSkippedDatesDetail(
+  appointment: Pick<AppointmentListItem, 'recurrenceExdates' | 'recurrenceExceptionCount'>,
+) {
+  const dates = appointment.recurrenceExdates ?? []
+  if (dates.length > 0) {
+    return dates.join(', ')
+  }
+
+  return appointment.recurrenceExceptionCount > 0 ? `${appointment.recurrenceExceptionCount} skipped` : 'None'
+}
+
 function careLocationDetail(name: string | null | undefined, id: number | null | undefined) {
   return id ? `${name || 'Not recorded'} (${id})` : name
 }
@@ -3872,6 +3883,7 @@ function CalendarWorkspace({
         repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
         repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
         recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
+        recurrenceExdates: editRepeats ? appointmentDetail.recurrenceExdates : null,
       })
       setMutationStatus('saved')
     } catch {
@@ -4326,6 +4338,7 @@ function CalendarWorkspace({
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
+                <Field label="Skipped dates" value={appointmentSkippedDatesDetail(appointmentDetail)} />
                 <Field label="Occurrence" value={appointmentOccurrenceDetail(appointmentDetail)} />
               </InfoPanel>
 
@@ -11045,6 +11058,7 @@ function AppointmentResult({
         <div className="patient-result-sub">
           <span>{appointmentOccurrenceDetail(appointment)}</span>
           <span>{appointment.recurrenceLabel}</span>
+          {appointment.recurrenceExceptionCount > 0 && <span>{appointment.recurrenceExceptionCount} skipped</span>}
         </div>
       )}
       <div className="patient-result-sub">

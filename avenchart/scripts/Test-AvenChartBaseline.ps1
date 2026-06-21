@@ -1101,6 +1101,31 @@ catch {
 }
 
 try {
+    $exceptionSeriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $exceptionSeriesOccurrences = @($exceptionSeriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $exceptionSeriesDates = @($exceptionSeriesOccurrences | ForEach-Object { $_.date })
+    $exceptionOccurrenceNumbers = @($exceptionSeriesOccurrences | ForEach-Object { $_.occurrenceNumber })
+    $expectedExceptionSeriesDates = @("2026-12-02", "2026-12-30", "2027-01-13", "2027-01-27")
+    $appointmentExceptionSeriesPassed = $exceptionSeriesOccurrences.Count -eq 4 `
+        -and (($exceptionSeriesDates -join ",") -eq ($expectedExceptionSeriesDates -join ",")) `
+        -and (($exceptionOccurrenceNumbers -join ",") -eq "3,5,6,7") `
+        -and ($exceptionSeriesDates -notcontains "2026-12-16") `
+        -and $exceptionSeriesOccurrences[0].recurrenceExceptionCount -eq 1 `
+        -and ($exceptionSeriesOccurrences[0].recurrenceExdates -contains "2026-12-16")
+
+    Add-Check -Name "appointment recurrence exception expansion" -Result $(if ($appointmentExceptionSeriesPassed) { "passed" } else { "failed" }) -Details @{
+        skippedDate = "2026-12-16"
+        dates = $exceptionSeriesDates
+        occurrenceNumbers = $exceptionOccurrenceNumbers
+        exceptionDates = $exceptionSeriesOccurrences[0].recurrenceExdates
+        totalMatches = $exceptionSeriesSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment recurrence exception expansion" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
     $encounterPassed = $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote

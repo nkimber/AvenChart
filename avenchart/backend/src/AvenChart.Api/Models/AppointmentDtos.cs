@@ -38,6 +38,8 @@ public sealed record AppointmentListItem(
     int? RepeatFrequency,
     int? RepeatUnit,
     string? RecurrenceEndDate,
+    IReadOnlyList<string> RecurrenceExdates,
+    int RecurrenceExceptionCount,
     string RecurrenceLabel);
 
 public sealed record AppointmentDetail(
@@ -73,6 +75,8 @@ public sealed record AppointmentDetail(
     int? RepeatFrequency,
     int? RepeatUnit,
     string? RecurrenceEndDate,
+    IReadOnlyList<string> RecurrenceExdates,
+    int RecurrenceExceptionCount,
     string RecurrenceLabel,
     string? PatientPurpose);
 
@@ -91,7 +95,8 @@ public sealed record AppointmentCreateRequest(
     int? RecurrenceType,
     int? RepeatFrequency,
     int? RepeatUnit,
-    string? RecurrenceEndDate);
+    string? RecurrenceEndDate,
+    IReadOnlyList<string>? RecurrenceExdates);
 
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
@@ -108,7 +113,8 @@ public sealed record AppointmentUpdateRequest(
     int? RecurrenceType,
     int? RepeatFrequency,
     int? RepeatUnit,
-    string? RecurrenceEndDate);
+    string? RecurrenceEndDate,
+    IReadOnlyList<string>? RecurrenceExdates);
 
 public sealed record AppointmentStatusUpdateRequest(
     string Status,
