@@ -2027,12 +2027,24 @@ export async function logout(sessionId: string, signal?: AbortSignal): Promise<A
   return response.json()
 }
 
-export async function getLoginAudit(limit = 10, signal?: AbortSignal): Promise<AuthAuditResponse> {
+export async function getLoginAudit(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AuthAuditResponse> {
+  const headers: HeadersInit = {}
+  if (sessionId) {
+    headers['X-Legacy EHR-Session'] = sessionId
+  }
+
   const response = await fetch(`${apiBaseUrl}/api/auth/login-audit?limit=${encodeURIComponent(String(limit))}`, {
+    headers,
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Login audit load failed with ${response.status}`)
+    throw new Error(response.status === 401
+      ? 'Login audit requires an active admin session.'
+      : `Login audit load failed with ${response.status}`)
   }
 
   return response.json()

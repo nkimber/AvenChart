@@ -103,9 +103,16 @@ auth.MapPost("/logout", async (
 
 auth.MapGet("/login-audit", async (
         AuthRepository repository,
+        HttpContext httpContext,
         int? limit,
         CancellationToken cancellationToken) =>
     {
+        var session = await GetSessionFromHeaderAsync(repository, httpContext, cancellationToken);
+        if (!session.Authenticated)
+        {
+            return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
         var response = await repository.GetLoginAuditAsync(limit ?? 10, cancellationToken);
         return Results.Ok(response);
     })
@@ -1951,3 +1958,29 @@ reports.MapGet("/operational/export", async (
     .WithName("ExportOperationalReports");
 
 app.Run();
+
+static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
+    AuthRepository repository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken)
+{
+    var header = httpContext.Request.Headers["X-Legacy EHR-Session"].ToString();
+    if (!Guid.TryParse(header, out var sessionId))
+    {
+        return new AuthSessionResponse(
+            Authenticated: false,
+            SessionId: null,
+            Username: string.Empty,
+            DisplayName: string.Empty,
+            Role: string.Empty,
+            StaffId: null,
+            CreatedAt: null,
+            LastSeenAt: null,
+            ExpiresAt: null,
+            EndedAt: null,
+            FailureReason: "A valid admin session is required.",
+            SessionSource: "avenchart");
+    }
+
+    return await repository.GetCurrentSessionAsync(sessionId, cancellationToken);
+}

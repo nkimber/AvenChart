@@ -65,6 +65,33 @@ try {
         -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
         -TimeoutSec 20
 
+    $unauthenticatedAuditStatus = 0
+    try {
+        $unauthenticatedAudit = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedAuditStatus = [int]$unauthenticatedAudit.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedAuditStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $loginAudit = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -TimeoutSec 20
+
+    $auditSuccess = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $true } | Select-Object -First 1
+    $auditFailure = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $false } | Select-Object -First 1
+
     $logout = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/logout" `
         -Method Post `
@@ -78,14 +105,6 @@ try {
         -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
         -TimeoutSec 20
 
-    $loginAudit = Invoke-RestMethod `
-        -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
-        -Method Get `
-        -TimeoutSec 20
-
-    $auditSuccess = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $true } | Select-Object -First 1
-    $auditFailure = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $false } | Select-Object -First 1
-
     $loginPassed = $login.authenticated -eq $true `
         -and $login.username -eq "admin" `
         -and $login.displayName -eq "Administrator" `
@@ -93,6 +112,7 @@ try {
         -and -not [string]::IsNullOrWhiteSpace($login.sessionId) `
         -and $session.authenticated -eq $true `
         -and $session.username -eq "admin" `
+        -and $unauthenticatedAuditStatus -eq 401 `
         -and $logout.authenticated -eq $false `
         -and $null -ne $logout.endedAt `
         -and $sessionAfterLogout.authenticated -eq $false `
@@ -108,6 +128,7 @@ try {
         successRole = $login.role
         sessionIssued = -not [string]::IsNullOrWhiteSpace($login.sessionId)
         sessionValidated = $session.authenticated
+        unauthenticatedAuditStatus = $unauthenticatedAuditStatus
         sessionEnded = $null -ne $logout.endedAt
         sessionAfterLogout = $sessionAfterLogout.authenticated
         rejectedReason = $rejectedLogin.failureReason

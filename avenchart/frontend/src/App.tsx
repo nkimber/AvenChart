@@ -12723,17 +12723,28 @@ function AdministrationWorkspace({
   const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
 
   useEffect(() => {
-    const controller = new AbortController()
-    void refreshLoginAudit(controller.signal)
-    return () => controller.abort()
-  }, [])
+    if (!authSession?.authenticated || !authSession.sessionId) {
+      return
+    }
 
-  async function refreshLoginAudit(signal?: AbortSignal) {
+    const controller = new AbortController()
+    void refreshLoginAudit(authSession.sessionId, controller.signal)
+    return () => controller.abort()
+  }, [authSession?.authenticated, authSession?.sessionId])
+
+  async function refreshLoginAudit(sessionId?: string | null, signal?: AbortSignal) {
+    if (!sessionId) {
+      setLoginAudit(null)
+      setLoginAuditStatus('idle')
+      setLoginAuditError(null)
+      return
+    }
+
     setLoginAuditStatus('loading')
     setLoginAuditError(null)
 
     try {
-      const audit = await getLoginAudit(8, signal)
+      const audit = await getLoginAudit(8, sessionId, signal)
       setLoginAudit(audit)
       setLoginAuditStatus('ready')
     } catch (error) {
@@ -12778,8 +12789,6 @@ function AdministrationWorkspace({
     } catch (error) {
       setLoginStatus('error')
       setLoginError(error instanceof Error ? error.message : 'Login readiness check failed')
-    } finally {
-      await refreshLoginAudit()
     }
   }
 
@@ -12822,6 +12831,9 @@ function AdministrationWorkspace({
       const session = await logout(sessionId)
       setAuthSession(session)
       setSessionStatus('ended')
+      setLoginAudit(null)
+      setLoginAuditStatus('idle')
+      setLoginAuditError(null)
     } catch (error) {
       setSessionStatus('error')
       setSessionError(error instanceof Error ? error.message : 'Session logout failed')
@@ -13055,6 +13067,7 @@ function AdministrationWorkspace({
           </div>
           {loginAuditStatus === 'loading' && <div className="timeline-placeholder">Loading login audit</div>}
           {loginAuditStatus === 'error' && <div className="status-banner error">{loginAuditError}</div>}
+          {loginAuditStatus === 'idle' && <div className="empty-state">Sign in to view login audit events</div>}
           {loginAudit && (
             <>
               <div className="list-counts">
