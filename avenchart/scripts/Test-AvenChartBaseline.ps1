@@ -1079,6 +1079,99 @@ finally {
     }
 }
 
+$appointmentMonthlyRecurrenceId = $null
+try {
+    $monthlyTitle = "Smoke Monthly Recurrence $([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = $monthlyTitle
+        date = "2026-12-15"
+        startTime = "11:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Monthly"
+        comments = "Smoke monthly recurrence create."
+        recurrenceType = 1
+        repeatFrequency = 1
+        repeatUnit = 2
+        recurrenceEndDate = "2027-04-15"
+        recurrenceExdates = @()
+    } | ConvertTo-Json -Depth 5
+    $createdMonthly = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentMonthlyRecurrenceId = $createdMonthly.id
+
+    $monthlySearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=10" -Method Get -TimeoutSec 20
+    $monthlyBefore = @($monthlySearch.appointments | Where-Object { $_.title -eq $monthlyTitle })
+    $monthlyBeforeDates = @($monthlyBefore | ForEach-Object { $_.date })
+    $monthlyBeforeNumbers = @($monthlyBefore | ForEach-Object { $_.occurrenceNumber })
+
+    $encodedMonthlyId = [System.Uri]::EscapeDataString($appointmentMonthlyRecurrenceId)
+    $updateBody = @{
+        providerId = $createdMonthly.providerId
+        title = "$monthlyTitle Updated"
+        date = $createdMonthly.date
+        startTime = $createdMonthly.startTime
+        durationMinutes = $createdMonthly.durationMinutes
+        facilityId = $createdMonthly.facilityId
+        billingLocationId = $createdMonthly.billingLocationId
+        categoryId = $createdMonthly.categoryId
+        room = $createdMonthly.room
+        status = $createdMonthly.status
+        comments = "Smoke monthly recurrence update."
+        recurrenceType = 1
+        repeatFrequency = 2
+        repeatUnit = 2
+        recurrenceEndDate = "2027-08-15"
+        recurrenceExdates = @()
+    } | ConvertTo-Json -Depth 5
+    $updatedMonthly = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+
+    $monthlyAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-15&limit=10" -Method Get -TimeoutSec 20
+    $monthlyAfter = @($monthlyAfterSearch.appointments | Where-Object { $_.title -eq "$monthlyTitle Updated" })
+    $monthlyAfterDates = @($monthlyAfter | ForEach-Object { $_.date })
+    $monthlyAfterNumbers = @($monthlyAfter | ForEach-Object { $_.occurrenceNumber })
+    $monthlyGenerated = $monthlyAfter | Where-Object { $_.date -eq "2027-02-15" } | Select-Object -First 1
+    $appointmentMonthlyRecurrencePassed = $createdMonthly.repeatUnit -eq 2 `
+        -and $createdMonthly.recurrenceLabel -eq "Every month until 2027-04-15" `
+        -and (($monthlyBeforeDates -join ",") -eq "2026-12-15,2027-01-15,2027-02-15,2027-03-15,2027-04-15") `
+        -and (($monthlyBeforeNumbers -join ",") -eq "1,2,3,4,5") `
+        -and $updatedMonthly.repeatFrequency -eq 2 `
+        -and $updatedMonthly.repeatUnit -eq 2 `
+        -and $updatedMonthly.recurrenceLabel -eq "Every 2 months until 2027-08-15" `
+        -and (($monthlyAfterDates -join ",") -eq "2026-12-15,2027-02-15,2027-04-15,2027-06-15,2027-08-15") `
+        -and (($monthlyAfterNumbers -join ",") -eq "1,2,3,4,5") `
+        -and $null -ne $monthlyGenerated `
+        -and $monthlyGenerated.isVirtualOccurrence
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentMonthlyRecurrenceId = $null
+
+    Add-Check -Name "appointment monthly recurrence lifecycle" -Result $(if ($appointmentMonthlyRecurrencePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdMonthly.id
+        createdLabel = $createdMonthly.recurrenceLabel
+        createdDates = $monthlyBeforeDates
+        updatedLabel = $updatedMonthly.recurrenceLabel
+        updatedDates = $monthlyAfterDates
+        generatedOccurrenceId = $monthlyGenerated.id
+    }
+}
+catch {
+    Add-Check -Name "appointment monthly recurrence lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentMonthlyRecurrenceId) {
+        try {
+            $encodedMonthlyId = [System.Uri]::EscapeDataString($appointmentMonthlyRecurrenceId)
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedMonthlyId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $seriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-08-14&limit=10" -Method Get -TimeoutSec 20
     $seriesOccurrences = @($seriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
