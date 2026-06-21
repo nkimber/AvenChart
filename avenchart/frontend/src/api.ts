@@ -932,11 +932,21 @@ export type ProcedureReportReviewQueueResponse = {
   datasetId: string
   datasetVersion: string
   statusFilter: string
+  patientFilter?: string | null
+  fromDate?: string | null
+  toDate?: string | null
   limit: number
   totalReports: number
   reviewedReports: number
   unreviewedReports: number
   reports: ProcedureReportReviewQueueItem[]
+}
+
+export type ProcedureReportReviewQueueFilters = {
+  patientId?: string
+  fromDate?: string
+  toDate?: string
+  limit?: number
 }
 
 export type ProcedureSpecimenItem = {
@@ -2864,9 +2874,22 @@ export async function getProcedureResults(patientId: string, signal?: AbortSigna
 
 export async function getProcedureReportReviewQueue(
   status = 'unreviewed',
+  filters: ProcedureReportReviewQueueFilters = {},
   signal?: AbortSignal,
 ): Promise<ProcedureReportReviewQueueResponse> {
   const params = new URLSearchParams({ status })
+  if (filters.patientId?.trim()) {
+    params.set('patientId', filters.patientId.trim())
+  }
+  if (filters.fromDate?.trim()) {
+    params.set('fromDate', filters.fromDate.trim())
+  }
+  if (filters.toDate?.trim()) {
+    params.set('toDate', filters.toDate.trim())
+  }
+  if (filters.limit) {
+    params.set('limit', String(filters.limit))
+  }
   const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure report review queue load failed with ${response.status}`)

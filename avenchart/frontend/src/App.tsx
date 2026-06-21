@@ -355,6 +355,9 @@ function App() {
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [procedureReportReviewQueueError, setProcedureReportReviewQueueError] = useState<string | null>(null)
   const [procedureReportReviewQueueFilter, setProcedureReportReviewQueueFilter] = useState('unreviewed')
+  const [procedureReportReviewQueuePatientFilter, setProcedureReportReviewQueuePatientFilter] = useState('')
+  const [procedureReportReviewQueueFromDate, setProcedureReportReviewQueueFromDate] = useState('')
+  const [procedureReportReviewQueueToDate, setProcedureReportReviewQueueToDate] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -753,7 +756,15 @@ function App() {
       setProcedureReportReviewQueueError(null)
 
       try {
-        const result = await getProcedureReportReviewQueue(procedureReportReviewQueueFilter, controller.signal)
+        const result = await getProcedureReportReviewQueue(
+          procedureReportReviewQueueFilter,
+          {
+            patientId: procedureReportReviewQueuePatientFilter,
+            fromDate: procedureReportReviewQueueFromDate,
+            toDate: procedureReportReviewQueueToDate,
+          },
+          controller.signal,
+        )
         setProcedureReportReviewQueue(result)
         setProcedureReportReviewQueueStatus('ready')
       } catch (loadError) {
@@ -768,7 +779,13 @@ function App() {
 
     loadProcedureReportReviewQueue()
     return () => controller.abort()
-  }, [activeModule, procedureReportReviewQueueFilter])
+  }, [
+    activeModule,
+    procedureReportReviewQueueFilter,
+    procedureReportReviewQueuePatientFilter,
+    procedureReportReviewQueueFromDate,
+    procedureReportReviewQueueToDate,
+  ])
 
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
@@ -3057,7 +3074,13 @@ function App() {
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
             reviewQueueFilter={procedureReportReviewQueueFilter}
+            reviewQueuePatientFilter={procedureReportReviewQueuePatientFilter}
+            reviewQueueFromDate={procedureReportReviewQueueFromDate}
+            reviewQueueToDate={procedureReportReviewQueueToDate}
             onReviewQueueFilterChange={setProcedureReportReviewQueueFilter}
+            onReviewQueuePatientFilterChange={setProcedureReportReviewQueuePatientFilter}
+            onReviewQueueFromDateChange={setProcedureReportReviewQueueFromDate}
+            onReviewQueueToDateChange={setProcedureReportReviewQueueToDate}
           />
         )}
         {activeModule === 'admin' && (
@@ -10788,7 +10811,13 @@ function ReportsWorkspace({
   reviewQueueStatus,
   reviewQueueError,
   reviewQueueFilter,
+  reviewQueuePatientFilter,
+  reviewQueueFromDate,
+  reviewQueueToDate,
   onReviewQueueFilterChange,
+  onReviewQueuePatientFilterChange,
+  onReviewQueueFromDateChange,
+  onReviewQueueToDateChange,
 }: {
   reports: OperationalReportsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -10797,7 +10826,13 @@ function ReportsWorkspace({
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
   reviewQueueFilter: string
+  reviewQueuePatientFilter: string
+  reviewQueueFromDate: string
+  reviewQueueToDate: string
   onReviewQueueFilterChange: (filter: string) => void
+  onReviewQueuePatientFilterChange: (patientId: string) => void
+  onReviewQueueFromDateChange: (fromDate: string) => void
+  onReviewQueueToDateChange: (toDate: string) => void
 }) {
   return (
     <section className="scheduler-layout">
@@ -10899,7 +10934,13 @@ function ReportsWorkspace({
               status={reviewQueueStatus}
               error={reviewQueueError}
               activeFilter={reviewQueueFilter}
+              patientFilter={reviewQueuePatientFilter}
+              fromDate={reviewQueueFromDate}
+              toDate={reviewQueueToDate}
               onFilterChange={onReviewQueueFilterChange}
+              onPatientFilterChange={onReviewQueuePatientFilterChange}
+              onFromDateChange={onReviewQueueFromDateChange}
+              onToDateChange={onReviewQueueToDateChange}
             />
 
             <section className="info-panel report-conditions-panel">
@@ -10935,13 +10976,25 @@ function ProcedureReportReviewQueuePanel({
   status,
   error,
   activeFilter,
+  patientFilter,
+  fromDate,
+  toDate,
   onFilterChange,
+  onPatientFilterChange,
+  onFromDateChange,
+  onToDateChange,
 }: {
   queue: ProcedureReportReviewQueueResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   activeFilter: string
+  patientFilter: string
+  fromDate: string
+  toDate: string
   onFilterChange: (filter: string) => void
+  onPatientFilterChange: (patientId: string) => void
+  onFromDateChange: (fromDate: string) => void
+  onToDateChange: (toDate: string) => void
 }) {
   const reports = queue?.reports ?? []
 
@@ -10971,6 +11024,26 @@ function ProcedureReportReviewQueuePanel({
           <span>{queue?.reviewedReports ?? 0} reviewed</span>
           <span>{queue?.totalReports ?? 0} total</span>
         </div>
+      </div>
+
+      <div className="review-queue-filter-grid">
+        <label>
+          Patient
+          <input
+            type="search"
+            value={patientFilter}
+            placeholder="MOD-PAT-0009"
+            onChange={(event) => onPatientFilterChange(event.target.value)}
+          />
+        </label>
+        <label>
+          From
+          <input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} />
+        </label>
+        <label>
+          To
+          <input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} />
+        </label>
       </div>
 
       {status === 'error' && <div className="status-banner error">{error}</div>}

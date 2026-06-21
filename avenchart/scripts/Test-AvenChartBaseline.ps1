@@ -5510,6 +5510,10 @@ try {
             -and $_.procedureName -eq $correctedProcedureName `
             -and $_.reviewStatus -eq "received"
     } | Select-Object -First 1
+    $filteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $filteredQueuedProcedureReportBeforeSign = $filteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
+    $outsideDateUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-18&toDate=2026-06-18&limit=100" -TimeoutSec 20
+    $outsideDateQueuedProcedureReport = $outsideDateUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
     $signProcedureReportBody = @{
         reviewedBy = "admin"
@@ -5532,11 +5536,13 @@ try {
             -and $_.reviewedBy -eq "admin" `
             -and $_.reviewedAt -eq "2026-06-19 14:15"
     } | Select-Object -First 1
+    $filteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $filteredQueuedProcedureReportAfterSign = $filteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
     $unreviewedProcedureReportQueueAfterSign = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
     $queuedProcedureReportStillUnreviewed = $unreviewedProcedureReportQueueAfterSign.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $queuedProcedureReportBeforeSign -and $null -ne $signedReport -and $null -ne $createdResultVisible -and $null -ne $queuedProcedureReportAfterSign -and $null -eq $queuedProcedureReportStillUnreviewed
+    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $queuedProcedureReportBeforeSign -and $null -ne $filteredQueuedProcedureReportBeforeSign -and $null -eq $outsideDateQueuedProcedureReport -and $null -ne $signedReport -and $null -ne $createdResultVisible -and $null -ne $queuedProcedureReportAfterSign -and $null -ne $filteredQueuedProcedureReportAfterSign -and $null -eq $queuedProcedureReportStillUnreviewed
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5551,8 +5557,11 @@ try {
         reportId = $procedureReportId
         correctedReportVisible = $correctedProcedureReportRow
         queuedReportBeforeSign = $queuedProcedureReportBeforeSign
+        filteredQueuedReportBeforeSign = $filteredQueuedProcedureReportBeforeSign
+        outsideDateQueuedReport = $outsideDateQueuedProcedureReport
         signedReportVisible = $signedReport
         queuedReportAfterSign = $queuedProcedureReportAfterSign
+        filteredQueuedReportAfterSign = $filteredQueuedProcedureReportAfterSign
         resultVisible = $createdResultVisible
     }
 }

@@ -1778,6 +1778,33 @@
   font-weight: 800;
 }
 
+.review-queue-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(140px, 0.35fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-queue-filter-grid label {
+  color: #536678;
+  display: grid;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 5px;
+  text-transform: uppercase;
+}
+
+.review-queue-filter-grid input {
+  background: #ffffff;
+  border: 1px solid #d9e4e9;
+  border-radius: 7px;
+  color: #172b3a;
+  font: inherit;
+  min-width: 0;
+  padding: 9px 10px;
+  text-transform: none;
+}
+
 .review-queue-list {
   display: flex;
   flex-direction: column;
@@ -2313,6 +2340,7 @@
   .document-meta-grid,
   .document-revision-readiness,
   .document-scan-readiness,
+  .review-queue-filter-grid,
   .document-lifecycle-readiness,
   .document-list-body,
   .document-footnote {

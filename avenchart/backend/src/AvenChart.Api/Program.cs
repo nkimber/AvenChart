@@ -1166,10 +1166,19 @@ var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
         string? status,
+        string? patientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
         int? limit,
         CancellationToken cancellationToken) =>
     {
-        var queue = await repository.GetReportReviewQueueAsync(status, limit ?? 25, cancellationToken);
+        var queue = await repository.GetReportReviewQueueAsync(
+            status,
+            patientId,
+            fromDate,
+            toDate,
+            limit ?? 25,
+            cancellationToken);
         return Results.Ok(queue);
     })
     .WithName("GetProcedureReportReviewQueue");

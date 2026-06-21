@@ -59,11 +59,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
     public async Task<ProcedureReportReviewQueueResponse> GetReportReviewQueueAsync(
         string? status,
+        string? patientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
         int limit,
         CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
         var normalizedStatus = NormalizeReviewQueueStatus(status);
+        var normalizedPatient = NormalizeText(patientId)?.ToLowerInvariant();
         var safeLimit = Math.Clamp(limit, 1, MaximumReviewQueueLimit);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -76,10 +80,19 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             countCommand.CommandText = """
                 select
                     count(*) as total_reports,
-                    coalesce(sum(case when coalesce(review_status, '') = 'reviewed' then 1 else 0 end), 0) as reviewed_reports,
-                    coalesce(sum(case when coalesce(review_status, '') <> 'reviewed' then 1 else 0 end), 0) as unreviewed_reports
-                from lab_reports;
+                    coalesce(sum(case when coalesce(lr.review_status, '') = 'reviewed' then 1 else 0 end), 0) as reviewed_reports,
+                    coalesce(sum(case when coalesce(lr.review_status, '') <> 'reviewed' then 1 else 0 end), 0) as unreviewed_reports
+                from lab_reports lr
+                inner join lab_orders lo on lo.id = lr.order_id
+                inner join patients p on p.legacy_pid = lo.pid
+                where (@patientFilter is null
+                       or lower(p.canonical_id) = @patientFilter
+                       or lower(p.pubpid) = @patientFilter
+                       or p.legacy_pid::text = @patientFilter)
+                  and (@fromDate is null or lo.order_date >= @fromDate)
+                  and (@toDate is null or lo.order_date <= @toDate);
                 """;
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, fromDate, toDate);
 
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -112,12 +125,19 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
             left join staff s on s.id = lo.provider_id
-            where (@statusFilter = 'all')
+            where (@patientFilter is null
+                   or lower(p.canonical_id) = @patientFilter
+                   or lower(p.pubpid) = @patientFilter
+                   or p.legacy_pid::text = @patientFilter)
+              and (@fromDate is null or lo.order_date >= @fromDate)
+              and (@toDate is null or lo.order_date <= @toDate)
+              and ((@statusFilter = 'all')
                or (@statusFilter = 'reviewed' and coalesce(lr.review_status, '') = 'reviewed')
-               or (@statusFilter = 'unreviewed' and coalesce(lr.review_status, '') <> 'reviewed')
+               or (@statusFilter = 'unreviewed' and coalesce(lr.review_status, '') <> 'reviewed'))
             order by lr.report_date desc, lr.id desc, p.last_name, p.first_name, p.legacy_pid, lo.id
             limit @limit;
             """;
+        AddReviewQueueFilterParameters(command, normalizedPatient, fromDate, toDate);
         command.Parameters.AddWithValue("statusFilter", normalizedStatus);
         command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
 
@@ -151,6 +171,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
             StatusFilter: normalizedStatus,
+            PatientFilter: normalizedPatient,
+            FromDate: fromDate?.ToString("yyyy-MM-dd"),
+            ToDate: toDate?.ToString("yyyy-MM-dd"),
             Limit: safeLimit,
             TotalReports: totalReports,
             ReviewedReports: reviewedReports,
@@ -1046,6 +1069,17 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             "received" or "received-unreviewed" or "pending" or "unreviewed" => "unreviewed",
             _ => "unreviewed"
         };
+    }
+
+    private static void AddReviewQueueFilterParameters(
+        NpgsqlCommand command,
+        string? patientFilter,
+        DateOnly? fromDate,
+        DateOnly? toDate)
+    {
+        command.Parameters.Add("patientFilter", NpgsqlDbType.Text).Value = patientFilter is null ? DBNull.Value : patientFilter;
+        command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate is null ? DBNull.Value : fromDate;
+        command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate;
     }
 
     private static ProcedureOrderCounts BuildCounts(IReadOnlyList<ProcedureOrderItem> orders, DateOnly baseDate)
