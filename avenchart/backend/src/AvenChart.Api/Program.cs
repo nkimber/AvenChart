@@ -1372,6 +1372,19 @@ procedures.MapPut("/orders/{orderId:int}/status", async (
     })
     .WithName("UpdateProcedureOrderStatus");
 
+procedures.MapPost("/orders/{orderId:int}/transmit", async (
+        ProcedureRepository repository,
+        int orderId,
+        ProcedureOrderTransmitRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.TransmitOrderAsync(orderId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure order could not be marked transmitted from the supplied order state.")
+            : Results.Ok(mutation);
+    })
+    .WithName("TransmitProcedureOrder");
+
 procedures.MapPut("/orders/{orderId:int}", async (
         ProcedureRepository repository,
         int orderId,

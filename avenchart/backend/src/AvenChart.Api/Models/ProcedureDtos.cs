@@ -325,6 +325,9 @@ public sealed record ProcedureOrderCreateRequest(
 public sealed record ProcedureOrderStatusUpdateRequest(
     string Status);
 
+public sealed record ProcedureOrderTransmitRequest(
+    string? TransmittedAt);
+
 public sealed record ProcedureOrderUpdateRequest(
     string DateOrdered,
     string Priority,

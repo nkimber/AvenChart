@@ -596,7 +596,8 @@ create table lab_orders (
   procedure_type text,
   diagnosis text,
   instructions text,
-  order_status text
+  order_status text,
+  date_transmitted timestamp
 );
 
 create table lab_provider_address_book (
@@ -1392,6 +1393,7 @@ copyRows('lab_orders', [
   'diagnosis',
   'instructions',
   'order_status',
+  'date_transmitted',
 ], dataset.labOrders.map((order) => [
   order.id,
   order.patientId,
@@ -1407,6 +1409,7 @@ copyRows('lab_orders', [
   order.diagnosis,
   order.instructions ?? 'Gold dataset lab order',
   order.orderStatus,
+  order.dateTransmitted ?? null,
 ]))
 
 copyRows('lab_reports', [

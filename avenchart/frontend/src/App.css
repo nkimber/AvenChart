@@ -703,6 +703,12 @@
   color: #9f312c;
 }
 
+.icon-text-button.compact {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
 .icon-text-button:disabled {
   opacity: 0.55;
   cursor: default;
@@ -1993,6 +1999,12 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  margin-top: 10px;
+}
+
+.queue-card-actions {
+  display: flex;
+  justify-content: flex-end;
   margin-top: 10px;
 }
 

@@ -126,6 +126,7 @@ import {
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
+  transmitProcedureOrder,
   rescheduleAppointmentOccurrence,
   restoreEncounterDocument,
   restoreAppointmentOccurrence,
@@ -242,6 +243,7 @@ import {
   type ClinicalConditionReportItem,
   type ProcedureOrderCreateInput,
   type ProcedureOrderItem,
+  type ProcedureOrderQueueItem,
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
@@ -389,6 +391,7 @@ function App() {
   const [procedureOrderQueueLabFilter, setProcedureOrderQueueLabFilter] = useState('')
   const [procedureOrderQueueFromDate, setProcedureOrderQueueFromDate] = useState('')
   const [procedureOrderQueueToDate, setProcedureOrderQueueToDate] = useState('')
+  const [procedureOrderQueueRefreshKey, setProcedureOrderQueueRefreshKey] = useState(0)
   const [procedureReportReviewQueue, setProcedureReportReviewQueue] =
     useState<ProcedureReportReviewQueueResponse | null>(null)
   const [procedureReportReviewQueueStatus, setProcedureReportReviewQueueStatus] =
@@ -887,6 +890,7 @@ function App() {
     procedureOrderQueueLabFilter,
     procedureOrderQueueFromDate,
     procedureOrderQueueToDate,
+    procedureOrderQueueRefreshKey,
   ])
 
   useEffect(() => {
@@ -2321,6 +2325,22 @@ function App() {
     }
   }
 
+  async function handleProcedureOrderTransmit(order: ProcedureOrderQueueItem) {
+    setProcedureOrderQueueStatus('loading')
+    setProcedureOrderQueueError(null)
+
+    try {
+      await transmitProcedureOrder(order.orderId, { transmittedAt: new Date().toISOString() })
+      setProcedureOrderQueueFilter('transmitted-pending')
+      setProcedureOrderQueueRefreshKey((current) => current + 1)
+    } catch (transmitError) {
+      setProcedureOrderQueueStatus('error')
+      const message = transmitError instanceof Error ? transmitError.message : 'Procedure order transmit failed'
+      setProcedureOrderQueueError(message)
+      throw transmitError
+    }
+  }
+
   async function handleProcedureReportCreate(input: ProcedureReportCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -3379,6 +3399,7 @@ function App() {
             onOrderQueueLabFilterChange={setProcedureOrderQueueLabFilter}
             onOrderQueueFromDateChange={setProcedureOrderQueueFromDate}
             onOrderQueueToDateChange={setProcedureOrderQueueToDate}
+            onOrderQueueTransmit={handleProcedureOrderTransmit}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -11181,6 +11202,7 @@ function ReportsWorkspace({
   onOrderQueueLabFilterChange,
   onOrderQueueFromDateChange,
   onOrderQueueToDateChange,
+  onOrderQueueTransmit,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -11238,6 +11260,7 @@ function ReportsWorkspace({
   onOrderQueueLabFilterChange: (labId: string) => void
   onOrderQueueFromDateChange: (fromDate: string) => void
   onOrderQueueToDateChange: (toDate: string) => void
+  onOrderQueueTransmit: (order: ProcedureOrderQueueItem) => Promise<void>
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -11386,6 +11409,7 @@ function ReportsWorkspace({
               onLabFilterChange={onOrderQueueLabFilterChange}
               onFromDateChange={onOrderQueueFromDateChange}
               onToDateChange={onOrderQueueToDateChange}
+              onTransmitOrder={onOrderQueueTransmit}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -12196,6 +12220,7 @@ function ProcedureOrderQueuePanel({
   onLabFilterChange,
   onFromDateChange,
   onToDateChange,
+  onTransmitOrder,
 }: {
   queue: ProcedureOrderQueueResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -12212,6 +12237,7 @@ function ProcedureOrderQueuePanel({
   onLabFilterChange: (labId: string) => void
   onFromDateChange: (fromDate: string) => void
   onToDateChange: (toDate: string) => void
+  onTransmitOrder: (order: ProcedureOrderQueueItem) => Promise<void>
 }) {
   const orders = queue?.orders ?? []
 
@@ -12313,6 +12339,20 @@ function ProcedureOrderQueuePanel({
               <Field label="Specimens" value={order.specimenCount} />
               <Field label="Transmit" value={order.canTransmit ? 'Ready' : order.dateTransmitted || 'Not needed'} />
             </div>
+            {order.canTransmit && (
+              <div className="queue-card-actions">
+                <button
+                  type="button"
+                  className="icon-text-button secondary compact"
+                  onClick={() => {
+                    void onTransmitOrder(order)
+                  }}
+                >
+                  <Check size={14} />
+                  Mark sent
+                </button>
+              </div>
+            )}
             {order.instructions && <p className="review-queue-notes">{order.instructions}</p>}
           </article>
         ))}

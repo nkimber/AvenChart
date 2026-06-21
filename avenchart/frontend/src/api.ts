@@ -1244,6 +1244,10 @@ export type ProcedureOrderStatusUpdateInput = {
   status: string
 }
 
+export type ProcedureOrderTransmitInput = {
+  transmittedAt?: string | null
+}
+
 export type ProcedureOrderUpdateInput = {
   dateOrdered: string
   priority: string
@@ -3360,6 +3364,24 @@ export async function updateProcedureOrderStatus(
   })
   if (!response.ok) {
     throw new Error(`Procedure order status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function transmitProcedureOrder(
+  orderId: number,
+  input: ProcedureOrderTransmitInput = {},
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/transmit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order transmit failed with ${response.status}`)
   }
 
   return response.json()

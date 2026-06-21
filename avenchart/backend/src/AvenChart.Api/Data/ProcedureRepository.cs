@@ -227,7 +227,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                         lo.id,
                         lo.order_date,
                         coalesce(lo.order_status, '') as order_status,
-                        null::timestamp as date_transmitted,
+                        lo.date_transmitted,
                         (
                             select count(*)
                             from lab_reports lr
@@ -285,7 +285,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     lo.procedure_type,
                     lo.order_priority,
                     lo.order_status,
-                    null::timestamp as date_transmitted,
+                    lo.date_transmitted,
                     coalesce((
                         select count(*)
                         from lab_reports lr
@@ -1108,6 +1108,58 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.AddWithValue("id", orderId);
             command.Parameters.AddWithValue("status", request.Status.Trim());
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            patientId = result as string;
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(orderId, detail);
+    }
+
+    public async Task<ProcedureMutationResponse?> TransmitOrderAsync(
+        int orderId,
+        ProcedureOrderTransmitRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (orderId <= 0)
+        {
+            return null;
+        }
+
+        var transmittedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        if (!string.IsNullOrWhiteSpace(request.TransmittedAt))
+        {
+            if (!TryReadDateTime(request.TransmittedAt, out transmittedAt))
+            {
+                return null;
+            }
+
+            transmittedAt = DateTime.SpecifyKind(transmittedAt, DateTimeKind.Unspecified);
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update lab_orders lo
+                set date_transmitted = @transmittedAt
+                where lo.id = @id
+                  and lo.date_transmitted is null
+                  and not exists (
+                      select 1
+                      from lab_reports lr
+                      where lr.order_id = lo.id
+                  )
+                returning lo.patient_id;
+                """;
+            command.Parameters.AddWithValue("id", orderId);
+            command.Parameters.Add("transmittedAt", NpgsqlDbType.Timestamp).Value = transmittedAt;
             var result = await command.ExecuteScalarAsync(cancellationToken);
             patientId = result as string;
         }
