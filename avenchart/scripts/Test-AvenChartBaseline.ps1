@@ -1172,6 +1172,122 @@ finally {
     }
 }
 
+$appointmentRecurrenceUnitMatrixIds = @()
+try {
+    $unitSuffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
+    $unitScenarios = @(
+        @{
+            key = "daily"
+            title = "Smoke Daily Recurrence $unitSuffix"
+            date = "2026-12-07"
+            startTime = "08:00"
+            room = "Daily"
+            repeatFrequency = 2
+            repeatUnit = 0
+            endDate = "2026-12-13"
+            expectedLabel = "Every 2 days until 2026-12-13"
+            expectedDates = @("2026-12-07", "2026-12-09", "2026-12-11", "2026-12-13")
+        },
+        @{
+            key = "workday"
+            title = "Smoke Workday Recurrence $unitSuffix"
+            date = "2026-12-11"
+            startTime = "09:00"
+            room = "Workday"
+            repeatFrequency = 1
+            repeatUnit = 4
+            endDate = "2026-12-16"
+            expectedLabel = "Every workday until 2026-12-16"
+            expectedDates = @("2026-12-11", "2026-12-14", "2026-12-15", "2026-12-16")
+        },
+        @{
+            key = "yearly"
+            title = "Smoke Yearly Recurrence $unitSuffix"
+            date = "2026-06-30"
+            startTime = "10:00"
+            room = "Yearly"
+            repeatFrequency = 1
+            repeatUnit = 3
+            endDate = "2028-06-30"
+            expectedLabel = "Every year until 2028-06-30"
+            expectedDates = @("2026-06-30", "2027-06-30", "2028-06-30")
+        }
+    )
+    $unitResults = @()
+
+    foreach ($scenario in $unitScenarios) {
+        $createBody = @{
+            patientId = "MOD-PAT-0003"
+            providerId = 101
+            title = $scenario.title
+            date = $scenario.date
+            startTime = $scenario.startTime
+            durationMinutes = 30
+            facilityId = 10
+            billingLocationId = 10
+            categoryId = 9
+            room = $scenario.room
+            comments = "Smoke recurrence unit matrix create."
+            recurrenceType = 1
+            repeatFrequency = $scenario.repeatFrequency
+            repeatUnit = $scenario.repeatUnit
+            recurrenceEndDate = $scenario.endDate
+            recurrenceExdates = @()
+        } | ConvertTo-Json -Depth 5
+        $createdUnit = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+        $appointmentRecurrenceUnitMatrixIds += $createdUnit.id
+
+        $unitSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=$($scenario.date)&limit=100" -Method Get -TimeoutSec 20
+        $unitMatches = @($unitSearch.appointments | Where-Object { $_.title -eq $scenario.title })
+        $unitDates = @($unitMatches | ForEach-Object { $_.date })
+        $unitNumbers = @($unitMatches | ForEach-Object { $_.occurrenceNumber })
+        $unitGenerated = $unitMatches | Where-Object { $_.isVirtualOccurrence } | Select-Object -First 1
+        $unitResults += [pscustomobject]@{
+            key = $scenario.key
+            createdId = $createdUnit.id
+            createdLabel = $createdUnit.recurrenceLabel
+            dates = $unitDates
+            numbers = $unitNumbers
+            generatedOccurrenceId = $unitGenerated.id
+            expectedLabel = $scenario.expectedLabel
+            expectedDates = $scenario.expectedDates
+        }
+    }
+
+    $appointmentRecurrenceUnitMatrixPassed = $true
+    foreach ($result in $unitResults) {
+        $expectedNumbers = 1..(@($result.expectedDates).Count)
+        $appointmentRecurrenceUnitMatrixPassed = $appointmentRecurrenceUnitMatrixPassed `
+            -and $result.createdLabel -eq $result.expectedLabel `
+            -and (($result.dates -join ",") -eq ($result.expectedDates -join ",")) `
+            -and (($result.numbers -join ",") -eq ($expectedNumbers -join ",")) `
+            -and $null -ne $result.generatedOccurrenceId
+    }
+
+    foreach ($appointmentId in $appointmentRecurrenceUnitMatrixIds) {
+        $encodedUnitId = [System.Uri]::EscapeDataString($appointmentId)
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedUnitId" -Method Delete -TimeoutSec 20 | Out-Null
+    }
+    $appointmentRecurrenceUnitMatrixIds = @()
+
+    Add-Check -Name "appointment recurrence unit matrix lifecycle" -Result $(if ($appointmentRecurrenceUnitMatrixPassed) { "passed" } else { "failed" }) -Details @{
+        units = $unitResults
+    }
+}
+catch {
+    Add-Check -Name "appointment recurrence unit matrix lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    foreach ($appointmentId in $appointmentRecurrenceUnitMatrixIds) {
+        try {
+            $encodedUnitId = [System.Uri]::EscapeDataString($appointmentId)
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedUnitId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $seriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-08-14&limit=10" -Method Get -TimeoutSec 20
     $seriesOccurrences = @($seriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
