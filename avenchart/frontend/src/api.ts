@@ -916,6 +916,7 @@ export type ProcedureReportReviewQueueItem = {
   pubpid: string
   patientDisplayName: string
   orderDate: string
+  providerId?: number | null
   providerName?: string | null
   procedureCode?: string | null
   procedureName?: string | null
@@ -933,6 +934,7 @@ export type ProcedureReportReviewQueueResponse = {
   datasetVersion: string
   statusFilter: string
   patientFilter?: string | null
+  providerFilter?: number | null
   fromDate?: string | null
   toDate?: string | null
   limit: number
@@ -944,6 +946,7 @@ export type ProcedureReportReviewQueueResponse = {
 
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
+  providerId?: string | number
   fromDate?: string
   toDate?: string
   limit?: number
@@ -2880,6 +2883,9 @@ export async function getProcedureReportReviewQueue(
   const params = new URLSearchParams({ status })
   if (filters.patientId?.trim()) {
     params.set('patientId', filters.patientId.trim())
+  }
+  if (filters.providerId !== undefined && filters.providerId !== null && String(filters.providerId).trim()) {
+    params.set('providerId', String(filters.providerId).trim())
   }
   if (filters.fromDate?.trim()) {
     params.set('fromDate', filters.fromDate.trim())

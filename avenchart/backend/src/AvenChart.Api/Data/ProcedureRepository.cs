@@ -60,6 +60,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     public async Task<ProcedureReportReviewQueueResponse> GetReportReviewQueueAsync(
         string? status,
         string? patientId,
+        int? providerId,
         DateOnly? fromDate,
         DateOnly? toDate,
         int limit,
@@ -90,9 +91,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                        or lower(p.pubpid) = @patientFilter
                        or p.legacy_pid::text = @patientFilter)
                   and (@fromDate is null or lo.order_date >= @fromDate)
-                  and (@toDate is null or lo.order_date <= @toDate);
+                  and (@toDate is null or lo.order_date <= @toDate)
+                  and (@providerFilter is null or lo.provider_id = @providerFilter);
                 """;
-            AddReviewQueueFilterParameters(countCommand, normalizedPatient, fromDate, toDate);
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, fromDate, toDate);
 
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -111,6 +113,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 p.pubpid,
                 trim(concat(p.last_name, ', ', p.first_name)) as patient_display_name,
                 lo.order_date,
+                lo.provider_id,
                 nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
                 lo.code as procedure_code,
                 lo.name as procedure_name,
@@ -131,13 +134,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                    or p.legacy_pid::text = @patientFilter)
               and (@fromDate is null or lo.order_date >= @fromDate)
               and (@toDate is null or lo.order_date <= @toDate)
+              and (@providerFilter is null or lo.provider_id = @providerFilter)
               and ((@statusFilter = 'all')
                or (@statusFilter = 'reviewed' and coalesce(lr.review_status, '') = 'reviewed')
                or (@statusFilter = 'unreviewed' and coalesce(lr.review_status, '') <> 'reviewed'))
             order by lr.report_date desc, lr.id desc, p.last_name, p.first_name, p.legacy_pid, lo.id
             limit @limit;
             """;
-        AddReviewQueueFilterParameters(command, normalizedPatient, fromDate, toDate);
+        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, fromDate, toDate);
         command.Parameters.AddWithValue("statusFilter", normalizedStatus);
         command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
 
@@ -154,6 +158,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
                     PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
                     OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
+                    ProviderId: ReadNullableInt(reader, "provider_id"),
                     ProviderName: ReadNullableString(reader, "provider_name"),
                     ProcedureCode: ReadNullableString(reader, "procedure_code"),
                     ProcedureName: ReadNullableString(reader, "procedure_name"),
@@ -172,6 +177,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             DatasetVersion: metadata.DatasetVersion,
             StatusFilter: normalizedStatus,
             PatientFilter: normalizedPatient,
+            ProviderFilter: providerId,
             FromDate: fromDate?.ToString("yyyy-MM-dd"),
             ToDate: toDate?.ToString("yyyy-MM-dd"),
             Limit: safeLimit,
@@ -1074,10 +1080,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static void AddReviewQueueFilterParameters(
         NpgsqlCommand command,
         string? patientFilter,
+        int? providerFilter,
         DateOnly? fromDate,
         DateOnly? toDate)
     {
         command.Parameters.Add("patientFilter", NpgsqlDbType.Text).Value = patientFilter is null ? DBNull.Value : patientFilter;
+        command.Parameters.Add("providerFilter", NpgsqlDbType.Integer).Value = providerFilter is null ? DBNull.Value : providerFilter.Value;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate is null ? DBNull.Value : fromDate;
         command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate;
     }

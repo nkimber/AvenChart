@@ -1167,6 +1167,7 @@ procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
         string? status,
         string? patientId,
+        int? providerId,
         DateOnly? fromDate,
         DateOnly? toDate,
         int? limit,
@@ -1175,6 +1176,7 @@ procedures.MapGet("/report-review-queue", async (
         var queue = await repository.GetReportReviewQueueAsync(
             status,
             patientId,
+            providerId,
             fromDate,
             toDate,
             limit ?? 25,
