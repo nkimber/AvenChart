@@ -2444,6 +2444,78 @@ finally {
     }
 }
 
+$smokeEncounterCoSignatureIds = @()
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $coSignatureSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $primarySignatureNote = "Smoke primary encounter attestation $coSignatureSuffix"
+    $coSignatureNote = "Smoke co-signature review $coSignatureSuffix"
+    $primarySignatureBody = @{
+        signerUsername = "admin"
+        signedAt = "2026-06-18 10:30:00"
+        isLock = $false
+        amendment = $primarySignatureNote
+    } | ConvertTo-Json -Depth 5
+    $coSignatureBody = @{
+        signerUsername = "gold-provider-02"
+        signedAt = "2026-06-18 10:35:00"
+        isLock = $true
+        amendment = $coSignatureNote
+    } | ConvertTo-Json -Depth 5
+
+    $createdPrimarySignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $primarySignatureBody -TimeoutSec 20
+    $smokeEncounterCoSignatureIds += $createdPrimarySignature.id
+    $createdCoSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $coSignatureBody -TimeoutSec 20
+    $smokeEncounterCoSignatureIds += $createdCoSignature.id
+
+    $primarySignatureVisible = @($createdCoSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdPrimarySignature.id `
+            -and $_.signerUsername -eq "admin" `
+            -and $_.signedAt -eq "2026-06-18 10:30" `
+            -and $_.isLock -eq $false `
+            -and $_.amendment -eq $primarySignatureNote
+    } | Select-Object -First 1
+    $coSignatureVisible = @($createdCoSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $createdCoSignature.id `
+            -and $_.signerUsername -eq "gold-provider-02" `
+            -and $_.signedAt -eq "2026-06-18 10:35" `
+            -and $_.isLock -eq $true `
+            -and $_.amendment -eq $coSignatureNote
+    } | Select-Object -First 1
+
+    foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -TimeoutSec 20 | Out-Null
+    }
+    $smokeEncounterCoSignatureIds = @()
+    $afterCoSignatureDeleteDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedCoSignaturesVisible = @($afterCoSignatureDeleteDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
+    }
+
+    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and @($deletedCoSignaturesVisible).Count -eq 0
+    Add-Check -Name "encounter co-signature lifecycle" -Result $(if ($encounterCoSignaturePassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        primarySignature = $primarySignatureVisible
+        coSignature = $coSignatureVisible
+        deletedVisibleCount = @($deletedCoSignaturesVisible).Count
+    }
+}
+catch {
+    Add-Check -Name "encounter co-signature lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterDocumentId = $null
 try {
     if ($null -eq $encounterDetail) {

@@ -3814,6 +3814,10 @@ function appointmentReminderLeadDetail(appointment: Pick<AppointmentListItem, 'r
   return `${appointment.reminderLeadDays} ${suffix}`
 }
 
+function formatSignatureCount(count: number) {
+  return `${count} ${count === 1 ? 'signature' : 'signatures'}`
+}
+
 function appointmentOverlapDetail(count: number, appointmentIds: string[]) {
   if (count <= 0) {
     return 'None'
@@ -5693,7 +5697,7 @@ function EncounterWorkspace({
               <div className="panel-heading">
                 <ShieldCheck size={17} />
                 <h3>Sign-Off</h3>
-                <span className="panel-count-pill">{encounterSignatures.length}</span>
+                <span className="panel-count-pill">{formatSignatureCount(encounterSignatures.length)}</span>
                 {encounterSignatures.length > 0 && <span className="panel-count-pill">Signed</span>}
               </div>
               <form className="encounter-signature-form" onSubmit={handleSignatureSubmit}>
