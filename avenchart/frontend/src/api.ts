@@ -968,6 +968,18 @@ export type ProcedureLabProviderDirectoryResponse = {
   providers: ProcedureLabProviderItem[]
 }
 
+export type ProcedureLabProviderMutationInput = {
+  name: string
+  npi?: string | null
+  protocol?: string | null
+  active: boolean
+}
+
+export type ProcedureLabProviderMutationResponse = {
+  id: number
+  directory: ProcedureLabProviderDirectoryResponse
+}
+
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
@@ -2950,6 +2962,51 @@ export async function getProcedureLabProviders(
   }
 
   return response.json()
+}
+
+export async function createProcedureLabProvider(
+  input: ProcedureLabProviderMutationInput,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureLabProvider(
+  providerId: number,
+  input: ProcedureLabProviderMutationInput,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteProcedureLabProvider(providerId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider delete failed with ${response.status}`)
+  }
 }
 
 export async function createProcedureOrder(

@@ -68,6 +68,16 @@ public sealed record ProcedureLabProviderItem(
     int ReportCount,
     int FutureOrderCount);
 
+public sealed record ProcedureLabProviderMutationRequest(
+    string Name,
+    string? Npi,
+    string? Protocol,
+    bool Active);
+
+public sealed record ProcedureLabProviderMutationResponse(
+    int Id,
+    ProcedureLabProviderDirectoryResponse Directory);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

@@ -229,7 +229,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 lp.id,
                 lp.name,
                 lp.npi,
-                'DL' as protocol,
+                coalesce(nullif(trim(lp.protocol), ''), 'DL') as protocol,
                 lp.active,
                 count(distinct lo.id)::int as order_count,
                 count(distinct lr.id)::int as report_count,
@@ -238,7 +238,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             left join lab_orders lo on lo.lab_id = lp.id
             left join lab_reports lr on lr.order_id = lo.id
             where (@includeInactive or lp.active)
-            group by lp.id, lp.name, lp.npi, lp.active
+            group by lp.id, lp.name, lp.npi, lp.protocol, lp.active
             order by lp.name, lp.id;
             """;
         command.Parameters.Add("includeInactive", NpgsqlDbType.Boolean).Value = includeInactive;
@@ -269,6 +269,96 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             ActiveProviders: activeProviders,
             InactiveProviders: inactiveProviders,
             Providers: providers);
+    }
+
+    public async Task<ProcedureLabProviderMutationResponse?> CreateLabProviderAsync(
+        ProcedureLabProviderMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var name = NormalizeText(request.Name);
+        if (name is null)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var id = await GetNextIntIdAsync(connection, "lab_providers", "id", cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into lab_providers (id, name, npi, protocol, active)
+            values (@id, @name, @npi, @protocol, @active);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
+        command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
+        command.Parameters.AddWithValue("active", request.Active);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return new ProcedureLabProviderMutationResponse(
+            Id: id,
+            Directory: await GetLabProvidersAsync(includeInactive: true, cancellationToken));
+    }
+
+    public async Task<ProcedureLabProviderMutationResponse?> UpdateLabProviderAsync(
+        int id,
+        ProcedureLabProviderMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var name = NormalizeText(request.Name);
+        if (id <= 0 || name is null)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_providers
+            set name = @name,
+                npi = @npi,
+                protocol = @protocol,
+                active = @active
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
+        command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
+        command.Parameters.AddWithValue("active", request.Active);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected == 0)
+        {
+            return null;
+        }
+
+        return new ProcedureLabProviderMutationResponse(
+            Id: id,
+            Directory: await GetLabProvidersAsync(includeInactive: true, cancellationToken));
+    }
+
+    public async Task<bool> DeleteLabProviderAsync(int id, CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            delete from lab_providers lp
+            where lp.id = @id
+              and not exists (
+                  select 1
+                  from lab_orders lo
+                  where lo.lab_id = lp.id
+              );
+            """;
+        command.Parameters.AddWithValue("id", id);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
@@ -1115,7 +1205,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string columnName,
         CancellationToken cancellationToken)
     {
-        if (tableName is not ("lab_orders" or "lab_reports" or "lab_results" or "lab_specimens") || columnName != "id")
+        if (tableName is not ("lab_orders" or "lab_reports" or "lab_results" or "lab_specimens" or "lab_providers")
+            || columnName != "id")
         {
             throw new ArgumentException("Unsupported procedure id source.");
         }
@@ -1149,6 +1240,11 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeLabProviderProtocol(string? protocol)
+    {
+        return NormalizeText(protocol)?.ToUpperInvariant() ?? "DL";
     }
 
     private static string NormalizeReviewQueueStatus(string? status)

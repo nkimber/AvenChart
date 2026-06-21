@@ -1173,6 +1173,39 @@ procedures.MapGet("/lab-providers", async (
     })
     .WithName("GetProcedureLabProviders");
 
+procedures.MapPost("/lab-providers", async (
+        ProcedureRepository repository,
+        ProcedureLabProviderMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateLabProviderAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest(new { error = "Procedure lab provider name is required." })
+            : Results.Created($"/api/procedures/lab-providers/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureLabProvider");
+
+procedures.MapPut("/lab-providers/{providerId:int}", async (
+        ProcedureRepository repository,
+        int providerId,
+        ProcedureLabProviderMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateLabProviderAsync(providerId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureLabProvider");
+
+procedures.MapDelete("/lab-providers/{providerId:int}", async (
+        ProcedureRepository repository,
+        int providerId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteLabProviderAsync(providerId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteProcedureLabProvider");
+
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
         string? status,

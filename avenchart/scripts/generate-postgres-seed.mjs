@@ -599,6 +599,7 @@ create table lab_providers (
   id integer primary key,
   name text not null,
   npi text,
+  protocol text not null default 'DL',
   active boolean not null default true
 );
 
@@ -1273,11 +1274,13 @@ copyRows('lab_providers', [
   'id',
   'name',
   'npi',
+  'protocol',
   'active',
 ], (dataset.labProviders ?? []).map((provider) => [
   provider.id,
   provider.name,
   provider.npi ?? null,
+  provider.protocol ?? 'DL',
   provider.active ?? true,
 ]))
 

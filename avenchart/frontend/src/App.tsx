@@ -75,6 +75,7 @@ import {
   createEncounterVitals,
   createPatientMessage,
   createProcedureOrder,
+  createProcedureLabProvider,
   createProcedureReport,
   createProcedureSpecimen,
   createProcedureResult,
@@ -99,6 +100,7 @@ import {
   deletePatientDocument,
   deletePatientMessage,
   deleteProcedureOrder,
+  deleteProcedureLabProvider,
   deactivateClinicalAllergy,
   deactivateClinicalMedication,
   deactivateClinicalProblem,
@@ -145,6 +147,7 @@ import {
   updatePatientContact,
   updatePatientDemographics,
   updateProcedureOrder,
+  updateProcedureLabProvider,
   updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -237,6 +240,8 @@ import {
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
   type ProcedureLabProviderDirectoryResponse,
+  type ProcedureLabProviderItem,
+  type ProcedureLabProviderMutationInput,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
@@ -2341,6 +2346,62 @@ function App() {
     }
   }
 
+  async function handleProcedureLabProviderCreate(input: ProcedureLabProviderMutationInput) {
+    setProcedureLabProvidersStatus('loading')
+    setProcedureLabProvidersError(null)
+
+    try {
+      const response = await createProcedureLabProvider(input)
+      setProcedureLabProviders(response.directory)
+      setProcedureLabProvidersIncludeInactive(response.directory.includeInactive)
+      setProcedureLabProvidersStatus('ready')
+      return response
+    } catch (createError) {
+      setProcedureLabProvidersStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure lab provider create failed'
+      setProcedureLabProvidersError(message)
+      throw createError
+    }
+  }
+
+  async function handleProcedureLabProviderUpdate(
+    provider: ProcedureLabProviderItem,
+    input: ProcedureLabProviderMutationInput,
+  ) {
+    setProcedureLabProvidersStatus('loading')
+    setProcedureLabProvidersError(null)
+
+    try {
+      const response = await updateProcedureLabProvider(provider.id, input)
+      setProcedureLabProviders(response.directory)
+      setProcedureLabProvidersIncludeInactive(response.directory.includeInactive)
+      setProcedureLabProvidersStatus('ready')
+      return response
+    } catch (updateError) {
+      setProcedureLabProvidersStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Procedure lab provider update failed'
+      setProcedureLabProvidersError(message)
+      throw updateError
+    }
+  }
+
+  async function handleProcedureLabProviderDelete(provider: ProcedureLabProviderItem) {
+    setProcedureLabProvidersStatus('loading')
+    setProcedureLabProvidersError(null)
+
+    try {
+      await deleteProcedureLabProvider(provider.id)
+      const refreshed = await getProcedureLabProviders(procedureLabProvidersIncludeInactive)
+      setProcedureLabProviders(refreshed)
+      setProcedureLabProvidersStatus('ready')
+    } catch (deleteError) {
+      setProcedureLabProvidersStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Procedure lab provider delete failed'
+      setProcedureLabProvidersError(message)
+      throw deleteError
+    }
+  }
+
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
     setAdministrationStatus('loading')
     setAdministrationError(null)
@@ -3118,6 +3179,9 @@ function App() {
             labProvidersError={procedureLabProvidersError}
             labProvidersIncludeInactive={procedureLabProvidersIncludeInactive}
             onLabProvidersIncludeInactiveChange={setProcedureLabProvidersIncludeInactive}
+            onCreateLabProvider={handleProcedureLabProviderCreate}
+            onUpdateLabProvider={handleProcedureLabProviderUpdate}
+            onDeleteLabProvider={handleProcedureLabProviderDelete}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -10864,6 +10928,9 @@ function ReportsWorkspace({
   labProvidersError,
   labProvidersIncludeInactive,
   onLabProvidersIncludeInactiveChange,
+  onCreateLabProvider,
+  onUpdateLabProvider,
+  onDeleteLabProvider,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -10888,6 +10955,12 @@ function ReportsWorkspace({
   labProvidersError: string | null
   labProvidersIncludeInactive: boolean
   onLabProvidersIncludeInactiveChange: (includeInactive: boolean) => void
+  onCreateLabProvider: (input: ProcedureLabProviderMutationInput) => Promise<unknown>
+  onUpdateLabProvider: (
+    provider: ProcedureLabProviderItem,
+    input: ProcedureLabProviderMutationInput,
+  ) => Promise<unknown>
+  onDeleteLabProvider: (provider: ProcedureLabProviderItem) => Promise<void>
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -11005,6 +11078,9 @@ function ReportsWorkspace({
               error={labProvidersError}
               includeInactive={labProvidersIncludeInactive}
               onIncludeInactiveChange={onLabProvidersIncludeInactiveChange}
+              onCreateProvider={onCreateLabProvider}
+              onUpdateProvider={onUpdateLabProvider}
+              onDeleteProvider={onDeleteLabProvider}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -11053,14 +11129,70 @@ function ProcedureLabProvidersPanel({
   error,
   includeInactive,
   onIncludeInactiveChange,
+  onCreateProvider,
+  onUpdateProvider,
+  onDeleteProvider,
 }: {
   directory: ProcedureLabProviderDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeInactive: boolean
   onIncludeInactiveChange: (includeInactive: boolean) => void
+  onCreateProvider: (input: ProcedureLabProviderMutationInput) => Promise<unknown>
+  onUpdateProvider: (
+    provider: ProcedureLabProviderItem,
+    input: ProcedureLabProviderMutationInput,
+  ) => Promise<unknown>
+  onDeleteProvider: (provider: ProcedureLabProviderItem) => Promise<void>
 }) {
   const providers = directory?.providers ?? []
+  const [providerDraft, setProviderDraft] = useState<ProcedureLabProviderMutationInput>({
+    name: 'Slice 141 Temporary Lab',
+    npi: '1720123499',
+    protocol: 'DL',
+    active: true,
+  })
+  const [pendingProviderId, setPendingProviderId] = useState<number | 'new' | null>(null)
+  const isBusy = status === 'loading'
+
+  async function handleCreateProvider(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPendingProviderId('new')
+    try {
+      await onCreateProvider(providerDraft)
+      setProviderDraft({
+        name: 'Slice 141 Temporary Lab',
+        npi: '1720123499',
+        protocol: 'DL',
+        active: true,
+      })
+    } finally {
+      setPendingProviderId(null)
+    }
+  }
+
+  async function handleProviderStatusToggle(provider: ProcedureLabProviderItem) {
+    setPendingProviderId(provider.id)
+    try {
+      await onUpdateProvider(provider, {
+        name: provider.name,
+        npi: provider.npi,
+        protocol: provider.protocol ?? 'DL',
+        active: !provider.active,
+      })
+    } finally {
+      setPendingProviderId(null)
+    }
+  }
+
+  async function handleProviderDelete(provider: ProcedureLabProviderItem) {
+    setPendingProviderId(provider.id)
+    try {
+      await onDeleteProvider(provider)
+    } finally {
+      setPendingProviderId(null)
+    }
+  }
 
   return (
     <section className="info-panel procedure-lab-provider-directory-panel" aria-label="Procedure lab provider directory">
@@ -11087,6 +11219,47 @@ function ProcedureLabProvidersPanel({
 
       {status === 'error' && <div className="status-banner error">{error}</div>}
 
+      <form className="appointment-mutation-panel procedure-lab-provider-form" onSubmit={handleCreateProvider}>
+        <div className="mutation-grid two-column">
+          <label className="contact-field">
+            Lab provider name
+            <input
+              required
+              value={providerDraft.name}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            NPI
+            <input
+              value={providerDraft.npi ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, npi: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Protocol
+            <input
+              value={providerDraft.protocol ?? 'DL'}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, protocol: event.target.value }))}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={providerDraft.active}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, active: event.target.checked }))}
+            />
+            Active
+          </label>
+        </div>
+        <div className="detail-actions">
+          <button className="icon-text-button primary" type="submit" disabled={isBusy || pendingProviderId === 'new'}>
+            <UserPlus size={15} />
+            Add Provider
+          </button>
+        </div>
+      </form>
+
       <div className="review-queue-list procedure-lab-provider-list">
         {providers.map((provider) => (
           <article key={provider.id} className="review-queue-card procedure-lab-provider-card">
@@ -11096,7 +11269,27 @@ function ProcedureLabProvidersPanel({
                 <h4>{provider.name}</h4>
                 <p>{provider.npi ? `NPI ${provider.npi}` : 'NPI not recorded'}</p>
               </div>
-              <span className="status-pill">{provider.active ? 'Active' : 'Inactive'}</span>
+              <div className="statement-batch-actions">
+                <span className="status-pill">{provider.active ? 'Active' : 'Inactive'}</span>
+                <button
+                  className="icon-text-button secondary"
+                  type="button"
+                  disabled={isBusy || pendingProviderId === provider.id}
+                  onClick={() => void handleProviderStatusToggle(provider)}
+                >
+                  {provider.active ? <Ban size={14} /> : <RotateCcw size={14} />}
+                  {provider.active ? 'Deactivate' : 'Activate'}
+                </button>
+                <button
+                  className="icon-text-button danger"
+                  type="button"
+                  disabled={isBusy || pendingProviderId === provider.id}
+                  onClick={() => void handleProviderDelete(provider)}
+                >
+                  <Trash2 size={14} />
+                  Delete
+                </button>
+              </div>
             </div>
             <div className="review-queue-card-grid">
               <Field label="Protocol" value={provider.protocol} />
