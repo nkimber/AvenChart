@@ -55,6 +55,7 @@ import {
   getProcedureResults,
   getOperationalReports,
   getOperationalReportsCsvUrl,
+  getLoginAudit,
   createAppointment,
   bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
@@ -172,6 +173,7 @@ import {
   type AdministrationAccessUserMembershipMutationInput,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
+  type AuthAuditResponse,
   type AuthLoginResponse,
   type AppointmentDetail,
   type AppointmentCreateInput,
@@ -12710,6 +12712,32 @@ function AdministrationWorkspace({
   const [loginStatus, setLoginStatus] = useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [loginResult, setLoginResult] = useState<AuthLoginResponse | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
+  const [loginAudit, setLoginAudit] = useState<AuthAuditResponse | null>(null)
+  const [loginAuditStatus, setLoginAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void refreshLoginAudit(controller.signal)
+    return () => controller.abort()
+  }, [])
+
+  async function refreshLoginAudit(signal?: AbortSignal) {
+    setLoginAuditStatus('loading')
+    setLoginAuditError(null)
+
+    try {
+      const audit = await getLoginAudit(8, signal)
+      setLoginAudit(audit)
+      setLoginAuditStatus('ready')
+    } catch (error) {
+      if (signal?.aborted) {
+        return
+      }
+      setLoginAuditStatus('error')
+      setLoginAuditError(error instanceof Error ? error.message : 'Login audit load failed')
+    }
+  }
 
   async function handleLoginCheck(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -12724,6 +12752,8 @@ function AdministrationWorkspace({
     } catch (error) {
       setLoginStatus('error')
       setLoginError(error instanceof Error ? error.message : 'Login readiness check failed')
+    } finally {
+      await refreshLoginAudit()
     }
   }
 
@@ -12840,7 +12870,10 @@ function AdministrationWorkspace({
           </div>
           <Field label="Authentication" value="Demo login readiness endpoint active" />
           <Field label="Authorization" value="Default ACL model mirrored" />
-          <Field label="Audit logging" value="Planned" />
+          <Field
+            label="Audit logging"
+            value={loginAudit ? `${loginAudit.totalEvents} login events captured` : 'Login audit endpoint active'}
+          />
           <Field label="Directory mode" value="User/facility mutation and ACL read model" />
           {directory && (
             <>
@@ -12893,6 +12926,44 @@ function AdministrationWorkspace({
             </div>
           )}
         </form>
+
+        <div className="access-scope-panel" aria-label="Login audit events">
+          <div className="panel-heading">
+            <ShieldCheck size={17} />
+            <h3>Login Audit</h3>
+          </div>
+          {loginAuditStatus === 'loading' && <div className="timeline-placeholder">Loading login audit</div>}
+          {loginAuditStatus === 'error' && <div className="status-banner error">{loginAuditError}</div>}
+          {loginAudit && (
+            <>
+              <div className="list-counts">
+                <MetricRow label="Events" value={loginAudit.totalEvents} />
+                <MetricRow label="Successes" value={loginAudit.successfulLogins} />
+                <MetricRow label="Failures" value={loginAudit.failedLogins} />
+              </div>
+              <div className="review-queue-list">
+                {loginAudit.events.map((auditEvent) => (
+                  <article key={auditEvent.id} className="review-queue-card">
+                    <div className="review-queue-card-main">
+                      <div>
+                        <p className="eyebrow">{auditEvent.event}</p>
+                        <h4>{auditEvent.username}</h4>
+                        <p>{auditEvent.comment}</p>
+                      </div>
+                      <span className="status-pill">{auditEvent.success ? 'Success' : 'Failure'}</span>
+                    </div>
+                    <div className="review-queue-card-grid">
+                      <Field label="Occurred" value={formatAuditDateTime(auditEvent.occurredAt)} />
+                      <Field label="Source" value={auditEvent.sourceIp ?? 'Unknown'} />
+                      <Field label="Log source" value={auditEvent.logSource} />
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {loginAudit.events.length === 0 && <div className="empty-state">No login audit events captured yet</div>}
+            </>
+          )}
+        </div>
 
         <form className="appointment-mutation-panel" onSubmit={handleAccessGrant}>
           <div className="panel-heading">
@@ -15682,6 +15753,15 @@ function Field({ label, value }: { label: string; value?: string | number | null
 
 function formatPercent(value?: number | null) {
   return value === null || value === undefined ? null : `${value}%`
+}
+
+function formatAuditDateTime(value?: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 function formatEncounterSensitivity(value?: string | null) {

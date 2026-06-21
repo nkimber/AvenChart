@@ -59,16 +59,32 @@ try {
         -Body (@{ username = "admin"; password = "wrong-pass" } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
+    $loginAudit = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
+        -Method Get `
+        -TimeoutSec 20
+
+    $auditSuccess = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $true } | Select-Object -First 1
+    $auditFailure = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $false } | Select-Object -First 1
+
     $loginPassed = $login.authenticated -eq $true `
         -and $login.username -eq "admin" `
         -and $login.displayName -eq "Administrator" `
         -and $login.role -eq "administrator" `
-        -and $rejectedLogin.authenticated -eq $false
+        -and $rejectedLogin.authenticated -eq $false `
+        -and $loginAudit.totalEvents -ge 2 `
+        -and $loginAudit.successfulLogins -ge 1 `
+        -and $loginAudit.failedLogins -ge 1 `
+        -and $null -ne $auditSuccess `
+        -and $null -ne $auditFailure
 
     Add-Check -Name "admin login readiness" -Result $(if ($loginPassed) { "passed" } else { "failed" }) -Details @{
         successUsername = $login.username
         successRole = $login.role
         rejectedReason = $rejectedLogin.failureReason
+        auditEvents = $loginAudit.totalEvents
+        auditSuccesses = $loginAudit.successfulLogins
+        auditFailures = $loginAudit.failedLogins
     }
 }
 catch {

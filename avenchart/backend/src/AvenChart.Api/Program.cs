@@ -57,12 +57,24 @@ var auth = app.MapGroup("/api/auth").WithTags("Authentication");
 auth.MapPost("/login", async (
         AuthRepository repository,
         AuthLoginRequest request,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.LoginAsync(request, cancellationToken);
+        var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        var response = await repository.LoginAsync(request, sourceIp, cancellationToken);
         return Results.Ok(response);
     })
     .WithName("Login");
+
+auth.MapGet("/login-audit", async (
+        AuthRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.GetLoginAuditAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("GetLoginAudit");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 

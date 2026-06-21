@@ -1948,6 +1948,25 @@ export type AuthLoginResponse = {
   failureReason?: string | null
 }
 
+export type AuthAuditEventItem = {
+  id: number
+  occurredAt: string
+  event: string
+  username: string
+  success: boolean
+  sourceIp?: string | null
+  comment: string
+  failureReason?: string | null
+  logSource: string
+}
+
+export type AuthAuditResponse = {
+  totalEvents: number
+  successfulLogins: number
+  failedLogins: number
+  events: AuthAuditEventItem[]
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
 export async function login(input: AuthLoginInput, signal?: AbortSignal): Promise<AuthLoginResponse> {
@@ -1959,6 +1978,17 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
   })
   if (!response.ok) {
     throw new Error(`Login readiness check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getLoginAudit(limit = 10, signal?: AbortSignal): Promise<AuthAuditResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/login-audit?limit=${encodeURIComponent(String(limit))}`, {
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Login audit load failed with ${response.status}`)
   }
 
   return response.json()

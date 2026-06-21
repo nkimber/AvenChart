@@ -244,6 +244,7 @@ drop table if exists appointments;
 drop table if exists insurance_records;
 drop table if exists patients;
 drop table if exists access_user_memberships;
+drop table if exists auth_audit_events;
 drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
@@ -296,6 +297,18 @@ create table auth_accounts (
   active boolean not null default true,
   password_salt text not null,
   password_hash text not null
+);
+
+create table auth_audit_events (
+  id bigserial primary key,
+  occurred_at timestamptz not null default now(),
+  event text not null,
+  username text not null,
+  success boolean not null,
+  source_ip text,
+  comment text not null,
+  failure_reason text,
+  log_source text not null default 'avenchart'
 );
 
 create table access_groups (
