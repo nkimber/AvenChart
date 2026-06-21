@@ -151,6 +151,23 @@ public sealed record ProcedureOrderCatalogItem(
     bool Active,
     int ChildCount);
 
+public sealed record ProcedureOrderCatalogMutationRequest(
+    int? ParentId,
+    int? LabId,
+    string Name,
+    string? Code,
+    string? ItemType,
+    string? ProcedureTypeName,
+    string? Description,
+    string? Specimen,
+    string? StandardCode,
+    int? Sequence,
+    bool Active);
+
+public sealed record ProcedureOrderCatalogMutationResponse(
+    int Id,
+    ProcedureOrderCatalogResponse Catalog);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

@@ -1814,6 +1814,10 @@
   margin: 12px;
 }
 
+.procedure-order-catalog-form {
+  margin: 12px 12px 0;
+}
+
 .procedure-lab-provider-list {
   padding: 0 12px 12px;
 }
@@ -1862,15 +1866,32 @@
 }
 
 .procedure-order-catalog-row {
-  display: grid;
-  grid-template-columns: minmax(64px, 0.25fr) minmax(0, 1fr) minmax(72px, 0.35fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 9px;
   align-items: center;
+  justify-content: space-between;
   border-top: 1px solid #dfe8ed;
   color: #536678;
   font-size: 12px;
   min-width: 0;
   padding-top: 8px;
+}
+
+.procedure-order-catalog-row > div:first-child {
+  display: grid;
+  grid-template-columns: minmax(64px, 0.25fr) minmax(0, 1fr) minmax(72px, 0.35fr);
+  flex: 1 1 360px;
+  gap: 9px;
+  min-width: 0;
+}
+
+.procedure-order-catalog-row-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .procedure-order-catalog-row span,

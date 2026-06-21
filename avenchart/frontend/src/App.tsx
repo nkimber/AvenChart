@@ -77,6 +77,7 @@ import {
   createPatientMessage,
   createProcedureOrder,
   createProcedureLabProvider,
+  createProcedureOrderCatalogItem,
   createProcedureReport,
   createProcedureSpecimen,
   createProcedureResult,
@@ -102,6 +103,7 @@ import {
   deletePatientMessage,
   deleteProcedureOrder,
   deleteProcedureLabProvider,
+  deleteProcedureOrderCatalogItem,
   deactivateClinicalAllergy,
   deactivateClinicalMedication,
   deactivateClinicalProblem,
@@ -149,6 +151,7 @@ import {
   updatePatientDemographics,
   updateProcedureOrder,
   updateProcedureLabProvider,
+  updateProcedureOrderCatalogItem,
   updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -244,6 +247,7 @@ import {
   type ProcedureLabProviderItem,
   type ProcedureLabProviderMutationInput,
   type ProcedureOrderCatalogItem,
+  type ProcedureOrderCatalogMutationInput,
   type ProcedureOrderCatalogResponse,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
@@ -2438,6 +2442,60 @@ function App() {
     }
   }
 
+  async function handleProcedureOrderCatalogCreate(input: ProcedureOrderCatalogMutationInput) {
+    setProcedureOrderCatalogStatus('loading')
+    setProcedureOrderCatalogError(null)
+
+    try {
+      const response = await createProcedureOrderCatalogItem(input)
+      setProcedureOrderCatalog(response.catalog)
+      setProcedureOrderCatalogStatus('ready')
+      return response
+    } catch (createError) {
+      setProcedureOrderCatalogStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure order catalog create failed'
+      setProcedureOrderCatalogError(message)
+      throw createError
+    }
+  }
+
+  async function handleProcedureOrderCatalogUpdate(
+    item: ProcedureOrderCatalogItem,
+    input: ProcedureOrderCatalogMutationInput,
+  ) {
+    setProcedureOrderCatalogStatus('loading')
+    setProcedureOrderCatalogError(null)
+
+    try {
+      const response = await updateProcedureOrderCatalogItem(item.id, input)
+      setProcedureOrderCatalog(response.catalog)
+      setProcedureOrderCatalogStatus('ready')
+      return response
+    } catch (updateError) {
+      setProcedureOrderCatalogStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Procedure order catalog update failed'
+      setProcedureOrderCatalogError(message)
+      throw updateError
+    }
+  }
+
+  async function handleProcedureOrderCatalogDelete(item: ProcedureOrderCatalogItem) {
+    setProcedureOrderCatalogStatus('loading')
+    setProcedureOrderCatalogError(null)
+
+    try {
+      await deleteProcedureOrderCatalogItem(item.id)
+      const refreshed = await getProcedureOrderCatalog()
+      setProcedureOrderCatalog(refreshed)
+      setProcedureOrderCatalogStatus('ready')
+    } catch (deleteError) {
+      setProcedureOrderCatalogStatus('error')
+      const message = deleteError instanceof Error ? deleteError.message : 'Procedure order catalog delete failed'
+      setProcedureOrderCatalogError(message)
+      throw deleteError
+    }
+  }
+
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
     setAdministrationStatus('loading')
     setAdministrationError(null)
@@ -3224,6 +3282,9 @@ function App() {
             onCreateLabProvider={handleProcedureLabProviderCreate}
             onUpdateLabProvider={handleProcedureLabProviderUpdate}
             onDeleteLabProvider={handleProcedureLabProviderDelete}
+            onCreateOrderCatalogItem={handleProcedureOrderCatalogCreate}
+            onUpdateOrderCatalogItem={handleProcedureOrderCatalogUpdate}
+            onDeleteOrderCatalogItem={handleProcedureOrderCatalogDelete}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -11007,6 +11068,9 @@ function ReportsWorkspace({
   onCreateLabProvider,
   onUpdateLabProvider,
   onDeleteLabProvider,
+  onCreateOrderCatalogItem,
+  onUpdateOrderCatalogItem,
+  onDeleteOrderCatalogItem,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -11040,6 +11104,12 @@ function ReportsWorkspace({
     input: ProcedureLabProviderMutationInput,
   ) => Promise<unknown>
   onDeleteLabProvider: (provider: ProcedureLabProviderItem) => Promise<void>
+  onCreateOrderCatalogItem: (input: ProcedureOrderCatalogMutationInput) => Promise<unknown>
+  onUpdateOrderCatalogItem: (
+    item: ProcedureOrderCatalogItem,
+    input: ProcedureOrderCatalogMutationInput,
+  ) => Promise<unknown>
+  onDeleteOrderCatalogItem: (item: ProcedureOrderCatalogItem) => Promise<void>
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -11166,6 +11236,9 @@ function ReportsWorkspace({
               catalog={orderCatalog}
               status={orderCatalogStatus}
               error={orderCatalogError}
+              onCreateItem={onCreateOrderCatalogItem}
+              onUpdateItem={onUpdateOrderCatalogItem}
+              onDeleteItem={onDeleteOrderCatalogItem}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -11212,11 +11285,31 @@ function ProcedureOrderCatalogPanel({
   catalog,
   status,
   error,
+  onCreateItem,
+  onUpdateItem,
+  onDeleteItem,
 }: {
   catalog: ProcedureOrderCatalogResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  onCreateItem: (input: ProcedureOrderCatalogMutationInput) => Promise<unknown>
+  onUpdateItem: (item: ProcedureOrderCatalogItem, input: ProcedureOrderCatalogMutationInput) => Promise<unknown>
+  onDeleteItem: (item: ProcedureOrderCatalogItem) => Promise<void>
 }) {
+  const [catalogDraft, setCatalogDraft] = useState<ProcedureOrderCatalogMutationInput>({
+    parentId: 9040,
+    labId: 504,
+    name: '',
+    code: '',
+    itemType: 'ord',
+    procedureTypeName: 'laboratory',
+    description: '',
+    specimen: 'blood',
+    standardCode: '',
+    sequence: 99,
+    active: true,
+  })
+  const [pendingItemId, setPendingItemId] = useState<number | 'new' | null>(null)
   const providerGroups = useMemo(
     () => (catalog?.items ?? []).filter((item) => item.itemType === 'grp' && item.parentId),
     [catalog],
@@ -11231,6 +11324,52 @@ function ProcedureOrderCatalogPanel({
     }
     return grouped
   }, [catalog])
+  const isBusy = status === 'loading' || pendingItemId !== null
+
+  function handleCatalogGroupChange(parentId: number) {
+    const group = providerGroups.find((item) => item.id === parentId)
+    setCatalogDraft((current) => ({
+      ...current,
+      parentId,
+      labId: group?.labId ?? current.labId,
+    }))
+  }
+
+  async function handleCatalogCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPendingItemId('new')
+    try {
+      await onCreateItem(catalogDraft)
+      setCatalogDraft((current) => ({
+        ...current,
+        name: '',
+        code: '',
+        description: '',
+        standardCode: '',
+        active: true,
+      }))
+    } finally {
+      setPendingItemId(null)
+    }
+  }
+
+  async function handleCatalogActiveToggle(item: ProcedureOrderCatalogItem) {
+    setPendingItemId(item.id)
+    try {
+      await onUpdateItem(item, catalogMutationFromItem(item, { active: !item.active }))
+    } finally {
+      setPendingItemId(null)
+    }
+  }
+
+  async function handleCatalogDelete(item: ProcedureOrderCatalogItem) {
+    setPendingItemId(item.id)
+    try {
+      await onDeleteItem(item)
+    } finally {
+      setPendingItemId(null)
+    }
+  }
 
   return (
     <section className="info-panel procedure-order-catalog-panel" aria-label="Procedure order catalog">
@@ -11249,6 +11388,89 @@ function ProcedureOrderCatalogPanel({
       {status === 'error' && <div className="status-banner error">{error}</div>}
       {status === 'loading' && <div className="timeline-placeholder">Loading procedure order catalog</div>}
 
+      <form className="appointment-mutation-panel procedure-order-catalog-form" onSubmit={handleCatalogCreate}>
+        <div className="mutation-grid two-column">
+          <label className="contact-field">
+            Provider group
+            <select
+              value={catalogDraft.parentId ?? ''}
+              onChange={(event) => handleCatalogGroupChange(Number(event.target.value))}
+            >
+              {providerGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="contact-field">
+            Code
+            <input
+              required
+              value={catalogDraft.code ?? ''}
+              onChange={(event) =>
+                setCatalogDraft((current) => ({
+                  ...current,
+                  code: event.target.value,
+                  standardCode: event.target.value ? `CPT4:${event.target.value}` : current.standardCode,
+                }))
+              }
+            />
+          </label>
+          <label className="contact-field">
+            Name
+            <input
+              required
+              value={catalogDraft.name}
+              onChange={(event) => setCatalogDraft((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Specimen
+            <input
+              value={catalogDraft.specimen ?? ''}
+              onChange={(event) => setCatalogDraft((current) => ({ ...current, specimen: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Standard code
+            <input
+              value={catalogDraft.standardCode ?? ''}
+              onChange={(event) => setCatalogDraft((current) => ({ ...current, standardCode: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Sequence
+            <input
+              type="number"
+              value={catalogDraft.sequence ?? 0}
+              onChange={(event) => setCatalogDraft((current) => ({ ...current, sequence: Number(event.target.value) }))}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={catalogDraft.active}
+              onChange={(event) => setCatalogDraft((current) => ({ ...current, active: event.target.checked }))}
+            />
+            Active
+          </label>
+        </div>
+        <label className="contact-field">
+          Description
+          <input
+            value={catalogDraft.description ?? ''}
+            onChange={(event) => setCatalogDraft((current) => ({ ...current, description: event.target.value }))}
+          />
+        </label>
+        <div className="detail-actions">
+          <button className="icon-text-button primary" type="submit" disabled={isBusy || providerGroups.length === 0}>
+            <ClipboardList size={15} />
+            Add Catalog Item
+          </button>
+        </div>
+      </form>
+
       <div className="procedure-order-catalog-list">
         {providerGroups.map((group) => {
           const orders = ordersByParent.get(group.id) ?? []
@@ -11266,9 +11488,32 @@ function ProcedureOrderCatalogPanel({
               <div className="procedure-order-catalog-orders">
                 {orders.map((order) => (
                   <div key={order.id} className="procedure-order-catalog-row">
-                    <span>{order.code}</span>
-                    <strong>{order.name}</strong>
-                    <em>{order.specimen || 'specimen pending'}</em>
+                    <div>
+                      <span>{order.code}</span>
+                      <strong>{order.name}</strong>
+                      <em>{order.specimen || 'specimen pending'}</em>
+                    </div>
+                    <div className="procedure-order-catalog-row-actions">
+                      <span className="portal-pill compact">{order.active ? 'Active' : 'Inactive'}</span>
+                      <button
+                        className="icon-text-button secondary"
+                        type="button"
+                        disabled={isBusy || pendingItemId === order.id}
+                        onClick={() => void handleCatalogActiveToggle(order)}
+                      >
+                        {order.active ? <Ban size={14} /> : <RotateCcw size={14} />}
+                        {order.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        className="icon-text-button danger"
+                        type="button"
+                        disabled={isBusy || pendingItemId === order.id}
+                        onClick={() => void handleCatalogDelete(order)}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -11282,6 +11527,26 @@ function ProcedureOrderCatalogPanel({
       </div>
     </section>
   )
+}
+
+function catalogMutationFromItem(
+  item: ProcedureOrderCatalogItem,
+  updates: Partial<ProcedureOrderCatalogMutationInput> = {},
+): ProcedureOrderCatalogMutationInput {
+  return {
+    parentId: item.parentId,
+    labId: item.labId,
+    name: item.name,
+    code: item.code,
+    itemType: item.itemType,
+    procedureTypeName: item.procedureTypeName,
+    description: item.description,
+    specimen: item.specimen,
+    standardCode: item.standardCode,
+    sequence: item.sequence,
+    active: item.active,
+    ...updates,
+  }
 }
 
 function ProcedureLabProvidersPanel({

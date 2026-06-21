@@ -1246,6 +1246,39 @@ procedures.MapGet("/order-catalog", async (
     })
     .WithName("GetProcedureOrderCatalog");
 
+procedures.MapPost("/order-catalog", async (
+        ProcedureRepository repository,
+        ProcedureOrderCatalogMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateOrderCatalogItemAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest(new { error = "Procedure order catalog item requires a valid name, type, parent, lab, and code." })
+            : Results.Created($"/api/procedures/order-catalog/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureOrderCatalogItem");
+
+procedures.MapPut("/order-catalog/{itemId:int}", async (
+        ProcedureRepository repository,
+        int itemId,
+        ProcedureOrderCatalogMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateOrderCatalogItemAsync(itemId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureOrderCatalogItem");
+
+procedures.MapDelete("/order-catalog/{itemId:int}", async (
+        ProcedureRepository repository,
+        int itemId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteOrderCatalogItemAsync(itemId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteProcedureOrderCatalogItem");
+
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
         string? status,

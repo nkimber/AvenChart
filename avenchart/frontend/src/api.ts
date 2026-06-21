@@ -1059,6 +1059,25 @@ export type ProcedureOrderCatalogResponse = {
   items: ProcedureOrderCatalogItem[]
 }
 
+export type ProcedureOrderCatalogMutationInput = {
+  parentId?: number | null
+  labId?: number | null
+  name: string
+  code?: string | null
+  itemType?: string | null
+  procedureTypeName?: string | null
+  description?: string | null
+  specimen?: string | null
+  standardCode?: string | null
+  sequence?: number | null
+  active: boolean
+}
+
+export type ProcedureOrderCatalogMutationResponse = {
+  id: number
+  catalog: ProcedureOrderCatalogResponse
+}
+
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
@@ -3061,6 +3080,51 @@ export async function getProcedureOrderCatalog(signal?: AbortSignal): Promise<Pr
   }
 
   return response.json()
+}
+
+export async function createProcedureOrderCatalogItem(
+  input: ProcedureOrderCatalogMutationInput,
+  signal?: AbortSignal,
+): Promise<ProcedureOrderCatalogMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order catalog create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureOrderCatalogItem(
+  itemId: number,
+  input: ProcedureOrderCatalogMutationInput,
+  signal?: AbortSignal,
+): Promise<ProcedureOrderCatalogMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order catalog update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteProcedureOrderCatalogItem(itemId: number, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order catalog delete failed with ${response.status}`)
+  }
 }
 
 export async function createProcedureLabProviderAddressBookOrganization(
