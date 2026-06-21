@@ -126,6 +126,31 @@ public sealed record ProcedureLabProviderAddressBookMutationResponse(
     int Id,
     ProcedureLabProviderAddressBookResponse AddressBook);
 
+public sealed record ProcedureOrderCatalogResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int TotalItems,
+    int GroupCount,
+    int OrderCount,
+    int LabProviderCount,
+    IReadOnlyList<ProcedureOrderCatalogItem> Items);
+
+public sealed record ProcedureOrderCatalogItem(
+    int Id,
+    int? ParentId,
+    int? LabId,
+    string? LabName,
+    string Name,
+    string? Code,
+    string ItemType,
+    string? ProcedureTypeName,
+    string? Description,
+    string? Specimen,
+    string? StandardCode,
+    int Sequence,
+    bool Active,
+    int ChildCount);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

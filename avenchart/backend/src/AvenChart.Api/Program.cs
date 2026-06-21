@@ -1237,6 +1237,15 @@ procedures.MapDelete("/lab-providers/{providerId:int}", async (
     })
     .WithName("DeleteProcedureLabProvider");
 
+procedures.MapGet("/order-catalog", async (
+        ProcedureRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var catalog = await repository.GetOrderCatalogAsync(cancellationToken);
+        return Results.Ok(catalog);
+    })
+    .WithName("GetProcedureOrderCatalog");
+
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
         string? status,

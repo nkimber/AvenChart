@@ -1032,6 +1032,33 @@ export type ProcedureLabProviderAddressBookMutationResponse = {
   addressBook: ProcedureLabProviderAddressBookResponse
 }
 
+export type ProcedureOrderCatalogItem = {
+  id: number
+  parentId?: number | null
+  labId?: number | null
+  labName?: string | null
+  name: string
+  code?: string | null
+  itemType: string
+  procedureTypeName?: string | null
+  description?: string | null
+  specimen?: string | null
+  standardCode?: string | null
+  sequence: number
+  active: boolean
+  childCount: number
+}
+
+export type ProcedureOrderCatalogResponse = {
+  datasetId: string
+  datasetVersion: string
+  totalItems: number
+  groupCount: number
+  orderCount: number
+  labProviderCount: number
+  items: ProcedureOrderCatalogItem[]
+}
+
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
@@ -3022,6 +3049,15 @@ export async function getProcedureLabProviderAddressBook(
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure lab provider address book load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getProcedureOrderCatalog(signal?: AbortSignal): Promise<ProcedureOrderCatalogResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure order catalog load failed with ${response.status}`)
   }
 
   return response.json()

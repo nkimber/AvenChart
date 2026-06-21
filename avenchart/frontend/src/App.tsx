@@ -47,6 +47,7 @@ import {
   getPatientDocuments,
   getPatientMessages,
   getProcedureLabProviders,
+  getProcedureOrderCatalog,
   getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
@@ -242,6 +243,8 @@ import {
   type ProcedureLabProviderDirectoryResponse,
   type ProcedureLabProviderItem,
   type ProcedureLabProviderMutationInput,
+  type ProcedureOrderCatalogItem,
+  type ProcedureOrderCatalogResponse,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
@@ -362,6 +365,10 @@ function App() {
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [procedureLabProvidersError, setProcedureLabProvidersError] = useState<string | null>(null)
   const [procedureLabProvidersIncludeInactive, setProcedureLabProvidersIncludeInactive] = useState(false)
+  const [procedureOrderCatalog, setProcedureOrderCatalog] = useState<ProcedureOrderCatalogResponse | null>(null)
+  const [procedureOrderCatalogStatus, setProcedureOrderCatalogStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [procedureOrderCatalogError, setProcedureOrderCatalogError] = useState<string | null>(null)
   const [procedureReportReviewQueue, setProcedureReportReviewQueue] =
     useState<ProcedureReportReviewQueueResponse | null>(null)
   const [procedureReportReviewQueueStatus, setProcedureReportReviewQueueStatus] =
@@ -787,6 +794,35 @@ function App() {
     loadProcedureLabProviders()
     return () => controller.abort()
   }, [activeModule, procedureLabProvidersIncludeInactive])
+
+  useEffect(() => {
+    if (activeModule !== 'reports' && activeModule !== 'procedures') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadProcedureOrderCatalog() {
+      setProcedureOrderCatalogStatus('loading')
+      setProcedureOrderCatalogError(null)
+
+      try {
+        const result = await getProcedureOrderCatalog(controller.signal)
+        setProcedureOrderCatalog(result)
+        setProcedureOrderCatalogStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setProcedureOrderCatalogStatus('error')
+          setProcedureOrderCatalogError(
+            loadError instanceof Error ? loadError.message : 'Procedure order catalog failed',
+          )
+        }
+      }
+    }
+
+    loadProcedureOrderCatalog()
+    return () => controller.abort()
+  }, [activeModule])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -3119,6 +3155,9 @@ function App() {
             procedureResults={procedureResults}
             status={procedureStatus}
             error={procedureError}
+            orderCatalog={procedureOrderCatalog}
+            orderCatalogStatus={procedureOrderCatalogStatus}
+            orderCatalogError={procedureOrderCatalogError}
             onPatientIdChange={setProcedurePatientId}
             onCreateOrder={handleProcedureOrderCreate}
             onCompleteOrder={handleProcedureOrderComplete}
@@ -3178,6 +3217,9 @@ function App() {
             labProvidersStatus={procedureLabProvidersStatus}
             labProvidersError={procedureLabProvidersError}
             labProvidersIncludeInactive={procedureLabProvidersIncludeInactive}
+            orderCatalog={procedureOrderCatalog}
+            orderCatalogStatus={procedureOrderCatalogStatus}
+            orderCatalogError={procedureOrderCatalogError}
             onLabProvidersIncludeInactiveChange={setProcedureLabProvidersIncludeInactive}
             onCreateLabProvider={handleProcedureLabProviderCreate}
             onUpdateLabProvider={handleProcedureLabProviderUpdate}
@@ -9776,6 +9818,9 @@ function ProceduresWorkspace({
   procedureResults,
   status,
   error,
+  orderCatalog,
+  orderCatalogStatus,
+  orderCatalogError,
   onPatientIdChange,
   onCreateOrder,
   onCompleteOrder,
@@ -9792,6 +9837,9 @@ function ProceduresWorkspace({
   procedureResults: ProcedureResultsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  orderCatalog: ProcedureOrderCatalogResponse | null
+  orderCatalogStatus: 'idle' | 'loading' | 'ready' | 'error'
+  orderCatalogError: string | null
   onPatientIdChange: (value: string) => void
   onCreateOrder: (input: ProcedureOrderCreateInput) => Promise<unknown>
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
@@ -9821,6 +9869,13 @@ function ProceduresWorkspace({
   const scheduledCount = procedureCounts?.scheduledOrders ?? scheduledOrders.length
   const reportlessCount = procedureCounts?.reportlessOrders ?? reportlessOrders.length
   const futureScheduledCount = procedureCounts?.futureScheduledOrders ?? scheduledOrders.length
+  const catalogOrders = useMemo(
+    () =>
+      (orderCatalog?.items ?? [])
+        .filter((item) => item.active && item.itemType === 'ord' && item.code)
+        .slice(0, 6),
+    [orderCatalog],
+  )
   const isLoading = status === 'loading'
 
   useEffect(() => {
@@ -9942,6 +9997,24 @@ function ProceduresWorkspace({
                 required
               />
             </label>
+            <div className="procedure-order-catalog-picks" aria-label="Procedure order catalog picks">
+              <span>Catalog</span>
+              {orderCatalogStatus === 'error' && <em>{orderCatalogError}</em>}
+              {orderCatalogStatus === 'loading' && <em>Loading catalog</em>}
+              {catalogOrders.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="catalog-pick-button"
+                  onClick={() => {
+                    setProcedureCode(item.code ?? '')
+                    setProcedureName(item.name)
+                  }}
+                >
+                  {item.code} {item.name}
+                </button>
+              ))}
+            </div>
             <label className="filter-field">
               <span>Diagnosis</span>
               <input
@@ -10927,6 +11000,9 @@ function ReportsWorkspace({
   labProvidersStatus,
   labProvidersError,
   labProvidersIncludeInactive,
+  orderCatalog,
+  orderCatalogStatus,
+  orderCatalogError,
   onLabProvidersIncludeInactiveChange,
   onCreateLabProvider,
   onUpdateLabProvider,
@@ -10954,6 +11030,9 @@ function ReportsWorkspace({
   labProvidersStatus: 'idle' | 'loading' | 'ready' | 'error'
   labProvidersError: string | null
   labProvidersIncludeInactive: boolean
+  orderCatalog: ProcedureOrderCatalogResponse | null
+  orderCatalogStatus: 'idle' | 'loading' | 'ready' | 'error'
+  orderCatalogError: string | null
   onLabProvidersIncludeInactiveChange: (includeInactive: boolean) => void
   onCreateLabProvider: (input: ProcedureLabProviderMutationInput) => Promise<unknown>
   onUpdateLabProvider: (
@@ -11083,6 +11162,12 @@ function ReportsWorkspace({
               onDeleteProvider={onDeleteLabProvider}
             />
 
+            <ProcedureOrderCatalogPanel
+              catalog={orderCatalog}
+              status={orderCatalogStatus}
+              error={orderCatalogError}
+            />
+
             <ProcedureReportReviewQueuePanel
               queue={reviewQueue}
               status={reviewQueueStatus}
@@ -11119,6 +11204,82 @@ function ReportsWorkspace({
           <div className="empty-chart">Open Reports to load the operational report dashboard</div>
         )}
       </section>
+    </section>
+  )
+}
+
+function ProcedureOrderCatalogPanel({
+  catalog,
+  status,
+  error,
+}: {
+  catalog: ProcedureOrderCatalogResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+}) {
+  const providerGroups = useMemo(
+    () => (catalog?.items ?? []).filter((item) => item.itemType === 'grp' && item.parentId),
+    [catalog],
+  )
+  const ordersByParent = useMemo(() => {
+    const grouped = new Map<number, ProcedureOrderCatalogItem[]>()
+    for (const item of catalog?.items ?? []) {
+      if (item.itemType !== 'ord' || !item.parentId) {
+        continue
+      }
+      grouped.set(item.parentId, [...(grouped.get(item.parentId) ?? []), item])
+    }
+    return grouped
+  }, [catalog])
+
+  return (
+    <section className="info-panel procedure-order-catalog-panel" aria-label="Procedure order catalog">
+      <div className="panel-heading">
+        <ClipboardList size={17} />
+        <h3>Procedure Order Catalog</h3>
+        <span className="panel-count-pill">{catalog?.orderCount ?? 0}</span>
+      </div>
+
+      <div className="review-queue-metrics procedure-order-catalog-metrics" aria-label="Procedure order catalog counts">
+        <span>{catalog?.labProviderCount ?? 0} labs</span>
+        <span>{catalog?.groupCount ?? 0} groups</span>
+        <span>{catalog?.orderCount ?? 0} orders</span>
+      </div>
+
+      {status === 'error' && <div className="status-banner error">{error}</div>}
+      {status === 'loading' && <div className="timeline-placeholder">Loading procedure order catalog</div>}
+
+      <div className="procedure-order-catalog-list">
+        {providerGroups.map((group) => {
+          const orders = ordersByParent.get(group.id) ?? []
+          return (
+            <article key={group.id} className="procedure-order-catalog-card">
+              <div className="review-queue-card-main">
+                <div>
+                  <h4>{group.name}</h4>
+                  <p>
+                    #{group.labId} / {orders.length} orderable panels
+                  </p>
+                </div>
+                <span className="portal-pill compact">{group.active ? 'Active' : 'Inactive'}</span>
+              </div>
+              <div className="procedure-order-catalog-orders">
+                {orders.map((order) => (
+                  <div key={order.id} className="procedure-order-catalog-row">
+                    <span>{order.code}</span>
+                    <strong>{order.name}</strong>
+                    <em>{order.specimen || 'specimen pending'}</em>
+                  </div>
+                ))}
+              </div>
+            </article>
+          )
+        })}
+
+        {status === 'ready' && providerGroups.length === 0 && (
+          <div className="timeline-placeholder">No procedure order catalog rows loaded</div>
+        )}
+      </div>
     </section>
   )
 }

@@ -134,6 +134,12 @@
   white-space: nowrap;
 }
 
+.portal-pill.compact {
+  min-height: 28px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+
 .split-layout {
   display: grid;
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
@@ -740,6 +746,44 @@
 
 .mutation-grid.two-column {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.procedure-order-catalog-picks {
+  display: grid;
+  gap: 7px;
+}
+
+.procedure-order-catalog-picks > span,
+.procedure-order-catalog-picks > em {
+  color: #536678;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.catalog-pick-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 34px;
+  border: 1px solid #cfdce2;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #172b3a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.catalog-pick-button:hover,
+.catalog-pick-button:focus-visible {
+  border-color: #16605b;
 }
 
 .form-field select {
@@ -1772,6 +1816,77 @@
 
 .procedure-lab-provider-list {
   padding: 0 12px 12px;
+}
+
+.procedure-order-catalog-panel {
+  margin-top: 12px;
+}
+
+.procedure-order-catalog-metrics {
+  padding: 10px 12px 0;
+}
+
+.procedure-order-catalog-list,
+.procedure-order-catalog-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.procedure-order-catalog-list {
+  padding: 12px;
+}
+
+.procedure-order-catalog-card {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  min-width: 0;
+  padding: 12px;
+}
+
+.procedure-order-catalog-card h4 {
+  margin: 0;
+  color: #172b3a;
+  font-size: 15px;
+}
+
+.procedure-order-catalog-card p {
+  margin: 3px 0 0;
+  color: #536678;
+  font-size: 12px;
+}
+
+.procedure-order-catalog-orders {
+  margin-top: 10px;
+}
+
+.procedure-order-catalog-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 0.25fr) minmax(0, 1fr) minmax(72px, 0.35fr);
+  gap: 9px;
+  align-items: center;
+  border-top: 1px solid #dfe8ed;
+  color: #536678;
+  font-size: 12px;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.procedure-order-catalog-row span,
+.procedure-order-catalog-row strong,
+.procedure-order-catalog-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.procedure-order-catalog-row strong {
+  color: #172b3a;
+  font-size: 13px;
+}
+
+.procedure-order-catalog-row em {
+  font-style: normal;
 }
 
 .report-review-queue-toolbar,

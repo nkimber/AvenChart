@@ -304,6 +304,86 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Providers: providers);
     }
 
+    public async Task<ProcedureOrderCatalogResponse> GetOrderCatalogAsync(CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                loc.id,
+                loc.parent_id,
+                loc.lab_id,
+                lp.name as lab_name,
+                loc.name,
+                loc.code,
+                loc.item_type,
+                loc.procedure_type_name,
+                loc.description,
+                loc.specimen,
+                loc.standard_code,
+                loc.seq,
+                loc.active,
+                (
+                    select count(*)::int
+                    from lab_order_catalog child
+                    where child.parent_id = loc.id
+                ) as child_count
+            from lab_order_catalog loc
+            left join lab_providers lp on lp.id = loc.lab_id
+            order by
+                case
+                    when loc.parent_id is null then 0
+                    when loc.item_type = 'grp' then 1
+                    else 2
+                end,
+                loc.parent_id nulls first,
+                loc.seq,
+                loc.name,
+                loc.id;
+            """;
+
+        var items = new List<ProcedureOrderCatalogItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                items.Add(new ProcedureOrderCatalogItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    ParentId: ReadNullableInt(reader, "parent_id"),
+                    LabId: ReadNullableInt(reader, "lab_id"),
+                    LabName: ReadNullableString(reader, "lab_name"),
+                    Name: reader.GetString(reader.GetOrdinal("name")),
+                    Code: ReadNullableString(reader, "code"),
+                    ItemType: reader.GetString(reader.GetOrdinal("item_type")),
+                    ProcedureTypeName: ReadNullableString(reader, "procedure_type_name"),
+                    Description: ReadNullableString(reader, "description"),
+                    Specimen: ReadNullableString(reader, "specimen"),
+                    StandardCode: ReadNullableString(reader, "standard_code"),
+                    Sequence: reader.GetInt32(reader.GetOrdinal("seq")),
+                    Active: reader.GetBoolean(reader.GetOrdinal("active")),
+                    ChildCount: reader.GetInt32(reader.GetOrdinal("child_count"))));
+            }
+        }
+
+        var groupCount = items.Count(item => string.Equals(item.ItemType, "grp", StringComparison.OrdinalIgnoreCase));
+        var orderCount = items.Count(item => string.Equals(item.ItemType, "ord", StringComparison.OrdinalIgnoreCase));
+        var labProviderCount = items
+            .Where(item => item.LabId is not null && string.Equals(item.ItemType, "ord", StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.LabId!.Value)
+            .Distinct()
+            .Count();
+
+        return new ProcedureOrderCatalogResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            TotalItems: items.Count,
+            GroupCount: groupCount,
+            OrderCount: orderCount,
+            LabProviderCount: labProviderCount,
+            Items: items);
+    }
+
     public async Task<ProcedureLabProviderMutationResponse?> CreateLabProviderAsync(
         ProcedureLabProviderMutationRequest request,
         CancellationToken cancellationToken)

@@ -221,6 +221,7 @@ drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_specimens;
 drop table if exists lab_orders;
+drop table if exists lab_order_catalog;
 drop table if exists lab_providers;
 drop table if exists lab_provider_address_book;
 drop table if exists encounter_signatures;
@@ -623,6 +624,21 @@ create table lab_providers (
   orders_path text not null default '',
   results_path text not null default '',
   notes text,
+  active boolean not null default true
+);
+
+create table lab_order_catalog (
+  id integer primary key,
+  parent_id integer,
+  lab_id integer references lab_providers(id),
+  code text,
+  name text not null,
+  item_type text not null,
+  procedure_type_name text,
+  description text,
+  specimen text,
+  standard_code text,
+  seq integer not null,
   active boolean not null default true
 );
 
@@ -1333,6 +1349,34 @@ copyRows('lab_providers', [
   provider.active ?? true,
 ]))
 
+copyRows('lab_order_catalog', [
+  'id',
+  'parent_id',
+  'lab_id',
+  'code',
+  'name',
+  'item_type',
+  'procedure_type_name',
+  'description',
+  'specimen',
+  'standard_code',
+  'seq',
+  'active',
+], (dataset.procedureOrderCatalog ?? []).map((item) => [
+  item.id,
+  item.parentId ? item.parentId : null,
+  item.labId ? item.labId : null,
+  postgresTextDefault(item.code),
+  item.name,
+  item.itemType,
+  postgresTextDefault(item.procedureTypeName),
+  postgresTextDefault(item.description),
+  postgresTextDefault(item.specimen),
+  postgresTextDefault(item.standardCode),
+  item.seq,
+  item.active ?? true,
+]))
+
 copyRows('lab_orders', [
   'id',
   'patient_id',
@@ -1544,6 +1588,8 @@ create index idx_payment_sessions_pid on payment_sessions (pid);
 create index idx_payment_activities_pid_encounter on payment_activities (pid, encounter);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
+create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
+create index idx_lab_order_catalog_lab_id on lab_order_catalog (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);
