@@ -1269,6 +1269,18 @@ copyRows('payment_activities', [
   activity.payerClaimNumber,
 ]))
 
+copyRows('lab_providers', [
+  'id',
+  'name',
+  'npi',
+  'active',
+], (dataset.labProviders ?? []).map((provider) => [
+  provider.id,
+  provider.name,
+  provider.npi ?? null,
+  provider.active ?? true,
+]))
+
 copyRows('lab_orders', [
   'id',
   'patient_id',
