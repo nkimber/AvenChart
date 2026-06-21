@@ -159,6 +159,11 @@ export type AppointmentListItem = {
   patientOverlapAppointmentIds: string[]
   roomOverlapCount: number
   roomOverlapAppointmentIds: string[]
+  reminderDue: boolean
+  reminderStatus: string
+  reminderChannel: string
+  reminderContact?: string | null
+  reminderLeadDays?: number | null
 }
 
 export type AppointmentDetail = AppointmentListItem & {

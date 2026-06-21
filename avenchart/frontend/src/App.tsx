@@ -3805,6 +3805,15 @@ function appointmentRoomOverlapDetail(
   return appointmentOverlapDetail(appointment.roomOverlapCount, appointment.roomOverlapAppointmentIds)
 }
 
+function appointmentReminderLeadDetail(appointment: Pick<AppointmentListItem, 'reminderLeadDays'>) {
+  if (appointment.reminderLeadDays === null || appointment.reminderLeadDays === undefined) {
+    return null
+  }
+
+  const suffix = appointment.reminderLeadDays === 1 ? 'day' : 'days'
+  return `${appointment.reminderLeadDays} ${suffix}`
+}
+
 function appointmentOverlapDetail(count: number, appointmentIds: string[]) {
   if (count <= 0) {
     return 'None'
@@ -4733,6 +4742,10 @@ function CalendarWorkspace({
                 <Field label="Duration" value={`${appointmentDetail.durationMinutes} minutes`} />
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
+                <Field label="Reminder status" value={appointmentDetail.reminderStatus} />
+                <Field label="Reminder channel" value={appointmentDetail.reminderChannel} />
+                <Field label="Reminder contact" value={appointmentDetail.reminderContact} />
+                <Field label="Reminder lead" value={appointmentReminderLeadDetail(appointmentDetail)} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
                 <Field label="Repeat on" value={appointmentDetail.recurrenceType === 2 ? appointmentRepeatOnLabel(appointmentDetail) : null} />
                 <Field label="Weekdays" value={appointmentDetail.recurrenceType === 3 ? appointmentWeekdayLabels(appointmentDetail.recurrenceDays) : null} />
@@ -11497,6 +11510,7 @@ function AppointmentResult({
       <div className="patient-result-sub">
         <span>{appointment.providerName ?? 'Provider not recorded'}</span>
         <span>{appointment.facilityName ?? 'Facility not recorded'}</span>
+        {appointment.reminderDue && <span>Reminder due</span>}
         {appointment.providerOverlapCount > 0 && <span>{appointment.providerOverlapCount} provider overlap</span>}
         {appointment.patientOverlapCount > 0 && <span>{appointment.patientOverlapCount} patient overlap</span>}
         {appointment.roomOverlapCount > 0 && <span>{appointment.roomOverlapCount} room overlap</span>}

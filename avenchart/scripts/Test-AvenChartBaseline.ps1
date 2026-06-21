@@ -358,6 +358,36 @@ catch {
     Add-Check -Name "anchor appointment detail" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $reminderAppointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0191&from=2026-06-18&limit=5" -Method Get -TimeoutSec 20
+    $reminderAppointment = $reminderAppointments.appointments | Where-Object { $_.id -eq "APPT-MOD-PAT-0191-3" } | Select-Object -First 1
+    if ($null -eq $reminderAppointment) {
+        throw "Expected reminder anchor appointment APPT-MOD-PAT-0191-3 was not returned."
+    }
+
+    $reminderDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$($reminderAppointment.id)" -Method Get -TimeoutSec 20
+    $appointmentReminderPassed = $reminderDetail.patientId -eq "MOD-PAT-0191" `
+        -and $reminderDetail.date -eq "2026-06-25" `
+        -and $reminderDetail.reminderDue -eq $true `
+        -and $reminderDetail.reminderStatus -eq "Due now" `
+        -and $reminderDetail.reminderChannel -eq "SMS + Email" `
+        -and $reminderDetail.reminderContact -eq "(619) 555-1191 / mod-pat-0191@example.test" `
+        -and $reminderDetail.reminderLeadDays -eq 7
+    Add-Check -Name "appointment reminder readiness" -Result $(if ($appointmentReminderPassed) { "passed" } else { "failed" }) -Details @{
+        id = $reminderDetail.id
+        patientId = $reminderDetail.patientId
+        date = $reminderDetail.date
+        reminderDue = $reminderDetail.reminderDue
+        reminderStatus = $reminderDetail.reminderStatus
+        reminderChannel = $reminderDetail.reminderChannel
+        reminderContact = $reminderDetail.reminderContact
+        reminderLeadDays = $reminderDetail.reminderLeadDays
+    }
+}
+catch {
+    Add-Check -Name "appointment reminder readiness" -Result "failed" -Details $_.Exception.Message
+}
+
 $appointmentMutationId = $null
 try {
     $createBody = @{

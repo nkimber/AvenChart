@@ -50,7 +50,12 @@ public sealed record AppointmentListItem(
     int PatientOverlapCount,
     IReadOnlyList<string> PatientOverlapAppointmentIds,
     int RoomOverlapCount,
-    IReadOnlyList<string> RoomOverlapAppointmentIds);
+    IReadOnlyList<string> RoomOverlapAppointmentIds,
+    bool ReminderDue,
+    string ReminderStatus,
+    string ReminderChannel,
+    string? ReminderContact,
+    int? ReminderLeadDays);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -98,7 +103,12 @@ public sealed record AppointmentDetail(
     int PatientOverlapCount,
     IReadOnlyList<string> PatientOverlapAppointmentIds,
     int RoomOverlapCount,
-    IReadOnlyList<string> RoomOverlapAppointmentIds);
+    IReadOnlyList<string> RoomOverlapAppointmentIds,
+    bool ReminderDue,
+    string ReminderStatus,
+    string ReminderChannel,
+    string? ReminderContact,
+    int? ReminderLeadDays);
 
 public sealed record AppointmentCreateRequest(
     string PatientId,

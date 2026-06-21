@@ -13,6 +13,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private const int RepeatOnRecurrenceType = 2;
     private const int SpecificWeekdaysRecurrenceType = 3;
     private const int SpecificWeekdaysRepeatUnit = 6;
+    private const int ReminderWindowDays = 7;
 
     public async Task<AppointmentSearchResponse> SearchAsync(
         string? patientId,
@@ -37,6 +38,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 p.first_name,
                 p.last_name,
                 p.preferred_name,
+                p.email,
+                p.phone,
+                p.phone_home,
+                p.phone_cell,
+                p.hipaa_allow_sms,
+                p.hipaa_allow_email,
                 a.appointment_date,
                 a.start_time,
                 a.duration_minutes,
@@ -74,7 +81,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            expandedAppointments.AddRange(ExpandAppointmentListItem(ReadListItem(reader), fromDate));
+            expandedAppointments.AddRange(ExpandAppointmentListItem(ReadListItem(reader, metadata.BaseDate), fromDate, metadata.BaseDate));
         }
 
         var appointments = AnnotateAppointmentOverlaps(expandedAppointments)
@@ -97,6 +104,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<AppointmentDetail?> GetByIdAsync(string appointmentId, CancellationToken cancellationToken)
     {
+        var metadata = await GetMetadataAsync(cancellationToken);
         var occurrenceReference = ParseOccurrenceReference(appointmentId);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -112,6 +120,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 p.sex,
                 p.date_of_birth,
                 p.purpose,
+                p.email,
+                p.phone,
+                p.phone_home,
+                p.phone_cell,
+                p.hipaa_allow_sms,
+                p.hipaa_allow_email,
                 a.appointment_date,
                 a.start_time,
                 a.duration_minutes,
@@ -197,6 +211,16 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var responseId = isVirtualOccurrence
             ? BuildOccurrenceId(occurrenceReference.RootAppointmentId, occurrenceDate!.Value)
             : occurrenceReference.RootAppointmentId;
+        var reminder = BuildAppointmentReminder(
+            responseDate,
+            ReadNullableString(reader, "status"),
+            ReadNullableString(reader, "email"),
+            ReadNullableString(reader, "phone"),
+            ReadNullableString(reader, "phone_home"),
+            ReadNullableString(reader, "phone_cell"),
+            ReadNullableString(reader, "hipaa_allow_sms"),
+            ReadNullableString(reader, "hipaa_allow_email"),
+            metadata.BaseDate);
 
         var detail = new AppointmentDetail(
             Id: responseId,
@@ -244,7 +268,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             PatientOverlapCount: 0,
             PatientOverlapAppointmentIds: Array.Empty<string>(),
             RoomOverlapCount: 0,
-            RoomOverlapAppointmentIds: Array.Empty<string>());
+            RoomOverlapAppointmentIds: Array.Empty<string>(),
+            ReminderDue: reminder.Due,
+            ReminderStatus: reminder.Status,
+            ReminderChannel: reminder.Channel,
+            ReminderContact: reminder.Contact,
+            ReminderLeadDays: reminder.LeadDays);
 
         var providerOverlapSummary = await GetProviderOverlapSummaryAsync(detail, cancellationToken);
         var patientOverlapSummary = await GetPatientOverlapSummaryAsync(detail, cancellationToken);
@@ -901,7 +930,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
     }
 
-    private static AppointmentListItem ReadListItem(DbDataReader reader)
+    private static AppointmentListItem ReadListItem(DbDataReader reader, DateOnly baseDate)
     {
         var categoryId = ReadNullableInt(reader, "category_id");
         var recurrenceType = ReadRecurrenceType(reader);
@@ -913,6 +942,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
         var recurrenceDays = ReadIntList(reader, "recurrence_days");
         var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
+        var appointmentDate = ReadDate(reader, "appointment_date");
+        var status = ReadNullableString(reader, "status");
+        var reminder = BuildAppointmentReminder(
+            appointmentDate,
+            status,
+            ReadNullableString(reader, "email"),
+            ReadNullableString(reader, "phone"),
+            ReadNullableString(reader, "phone_home"),
+            ReadNullableString(reader, "phone_cell"),
+            ReadNullableString(reader, "hipaa_allow_sms"),
+            ReadNullableString(reader, "hipaa_allow_email"),
+            baseDate);
 
         return new AppointmentListItem(
             Id: reader.GetString(reader.GetOrdinal("id")),
@@ -924,11 +965,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
             Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
             PatientDisplayName: BuildDisplayName(reader),
-            Date: ReadDate(reader, "appointment_date"),
+            Date: appointmentDate,
             StartTime: ReadTime(reader, "start_time"),
             DurationMinutes: reader.GetInt32(reader.GetOrdinal("duration_minutes")),
             Title: ReadNullableString(reader, "title") ?? "Appointment",
-            Status: ReadNullableString(reader, "status"),
+            Status: status,
             Room: ReadNullableString(reader, "room"),
             CategoryId: categoryId,
             CategoryName: GetAppointmentCategoryName(categoryId),
@@ -955,10 +996,15 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             PatientOverlapCount: 0,
             PatientOverlapAppointmentIds: Array.Empty<string>(),
             RoomOverlapCount: 0,
-            RoomOverlapAppointmentIds: Array.Empty<string>());
+            RoomOverlapAppointmentIds: Array.Empty<string>(),
+            ReminderDue: reminder.Due,
+            ReminderStatus: reminder.Status,
+            ReminderChannel: reminder.Channel,
+            ReminderContact: reminder.Contact,
+            ReminderLeadDays: reminder.LeadDays);
     }
 
-    private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate)
+    private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate, DateOnly baseDate)
     {
         if (!DateOnly.TryParse(appointment.Date, out var anchorDate))
         {
@@ -1019,19 +1065,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     yield break;
                 }
 
-                if (repeatOnDate.Value >= fromDate && !recurrenceExdates.Contains(repeatOnDate.Value))
-                {
-                    var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
-                    yield return appointment with
+                    if (repeatOnDate.Value >= fromDate && !recurrenceExdates.Contains(repeatOnDate.Value))
                     {
-                        Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, repeatOnDate.Value) : appointment.SeriesRootId,
-                        Date = repeatOnDate.Value.ToString("yyyy-MM-dd"),
-                        IsRecurringSeries = true,
-                        IsVirtualOccurrence = isVirtualOccurrence,
-                        OccurrenceNumber = occurrenceNumber
-                    };
+                        var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
+                        yield return WithReminder(appointment with
+                        {
+                            Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, repeatOnDate.Value) : appointment.SeriesRootId,
+                            Date = repeatOnDate.Value.ToString("yyyy-MM-dd"),
+                            IsRecurringSeries = true,
+                            IsVirtualOccurrence = isVirtualOccurrence,
+                            OccurrenceNumber = occurrenceNumber
+                        }, baseDate);
+                    }
                 }
-            }
 
             yield break;
         }
@@ -1054,14 +1100,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     if (currentDate >= fromDate && !recurrenceExdates.Contains(currentDate))
                     {
                         var isVirtualOccurrence = currentDate != anchorDate;
-                        yield return appointment with
+                        yield return WithReminder(appointment with
                         {
                             Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, currentDate) : appointment.SeriesRootId,
                             Date = currentDate.ToString("yyyy-MM-dd"),
                             IsRecurringSeries = true,
                             IsVirtualOccurrence = isVirtualOccurrence,
                             OccurrenceNumber = occurrenceNumber
-                        };
+                        }, baseDate);
                     }
                 }
 
@@ -1079,14 +1125,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             if (occurrenceDate >= fromDate && !recurrenceExdates.Contains(occurrenceDate))
             {
                 var isVirtualOccurrence = occurrenceDate != anchorDate;
-                yield return appointment with
+                yield return WithReminder(appointment with
                 {
                     Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, occurrenceDate) : appointment.SeriesRootId,
                     Date = occurrenceDate.ToString("yyyy-MM-dd"),
                     IsRecurringSeries = true,
                     IsVirtualOccurrence = isVirtualOccurrence,
                     OccurrenceNumber = occurrenceNumber
-                };
+                }, baseDate);
             }
 
             var nextOccurrenceDate = GetNextOccurrenceDate(occurrenceDate, repeatFrequency, appointment.RepeatUnit);
@@ -1098,6 +1144,138 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             occurrenceDate = nextOccurrenceDate;
         }
     }
+
+    private static AppointmentListItem WithReminder(AppointmentListItem appointment, DateOnly baseDate)
+    {
+        var reminder = BuildAppointmentReminderForExistingChannel(appointment, baseDate);
+        return appointment with
+        {
+            ReminderDue = reminder.Due,
+            ReminderStatus = reminder.Status,
+            ReminderChannel = reminder.Channel,
+            ReminderContact = reminder.Contact,
+            ReminderLeadDays = reminder.LeadDays
+        };
+    }
+
+    private static AppointmentReminder BuildAppointmentReminderForExistingChannel(
+        AppointmentListItem appointment,
+        DateOnly baseDate)
+    {
+        if (!DateOnly.TryParse(appointment.Date, out var appointmentDate))
+        {
+            return new AppointmentReminder(false, "No reminder - date unavailable", "None", null, null);
+        }
+
+        if (!IsActiveAppointmentStatus(appointment.Status))
+        {
+            return new AppointmentReminder(false, "No reminder - inactive appointment", "None", null, null);
+        }
+
+        var leadDays = appointmentDate.DayNumber - baseDate.DayNumber;
+        if (leadDays <= 0)
+        {
+            return new AppointmentReminder(
+                false,
+                "No reminder - appointment is not future",
+                appointment.ReminderChannel,
+                appointment.ReminderContact,
+                leadDays);
+        }
+
+        if (leadDays > ReminderWindowDays)
+        {
+            return new AppointmentReminder(
+                false,
+                $"Not due - {leadDays} days out",
+                appointment.ReminderChannel,
+                appointment.ReminderContact,
+                leadDays);
+        }
+
+        return new AppointmentReminder(true, "Due now", appointment.ReminderChannel, appointment.ReminderContact, leadDays);
+    }
+
+    private static AppointmentReminder BuildAppointmentReminder(
+        string appointmentDateText,
+        string? status,
+        string? email,
+        string? phone,
+        string? phoneHome,
+        string? phoneCell,
+        string? hipaaAllowSms,
+        string? hipaaAllowEmail,
+        DateOnly baseDate)
+    {
+        if (!DateOnly.TryParse(appointmentDateText, out var appointmentDate))
+        {
+            return new AppointmentReminder(false, "No reminder - date unavailable", "None", null, null);
+        }
+
+        if (!IsActiveAppointmentStatus(status))
+        {
+            return new AppointmentReminder(false, "No reminder - inactive appointment", "None", null, null);
+        }
+
+        var leadDays = appointmentDate.DayNumber - baseDate.DayNumber;
+        if (leadDays <= 0)
+        {
+            return new AppointmentReminder(false, "No reminder - appointment is not future", "None", null, leadDays);
+        }
+
+        var smsContact = AllowsContact(hipaaAllowSms)
+            ? FirstNonEmpty(phoneCell, phone, phoneHome)
+            : null;
+        var emailContact = AllowsContact(hipaaAllowEmail)
+            ? NormalizeText(email)
+            : null;
+        var phoneContact = FirstNonEmpty(phoneHome, phone, phoneCell);
+        var channel = GetReminderChannel(smsContact, emailContact, phoneContact);
+        var contact = GetReminderContact(smsContact, emailContact, phoneContact);
+
+        if (leadDays > ReminderWindowDays)
+        {
+            return new AppointmentReminder(false, $"Not due - {leadDays} days out", channel, contact, leadDays);
+        }
+
+        return new AppointmentReminder(true, "Due now", channel, contact, leadDays);
+    }
+
+    private static string GetReminderChannel(string? smsContact, string? emailContact, string? phoneContact)
+    {
+        if (smsContact is not null && emailContact is not null)
+        {
+            return "SMS + Email";
+        }
+
+        if (smsContact is not null)
+        {
+            return "SMS";
+        }
+
+        if (emailContact is not null)
+        {
+            return "Email";
+        }
+
+        return phoneContact is not null ? "Phone" : "Print";
+    }
+
+    private static string? GetReminderContact(string? smsContact, string? emailContact, string? phoneContact)
+    {
+        if (smsContact is not null && emailContact is not null)
+        {
+            return $"{smsContact} / {emailContact}";
+        }
+
+        return smsContact ?? emailContact ?? phoneContact;
+    }
+
+    private static bool AllowsContact(string? value) =>
+        string.Equals(NormalizeText(value), "YES", StringComparison.OrdinalIgnoreCase);
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.Select(NormalizeText).FirstOrDefault(value => value is not null);
 
     private static IReadOnlyList<AppointmentListItem> AnnotateAppointmentOverlaps(IReadOnlyList<AppointmentListItem> appointments)
     {
@@ -1886,6 +2064,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private sealed record ProviderOverlapSummary(int Count, IReadOnlyList<string> AppointmentIds);
 
     private sealed record AppointmentOverlapSummary(int Count, IReadOnlyList<string> AppointmentIds);
+
+    private sealed record AppointmentReminder(
+        bool Due,
+        string Status,
+        string Channel,
+        string? Contact,
+        int? LeadDays);
 
     private sealed record AppointmentRescheduleSource(
         string PatientId,
