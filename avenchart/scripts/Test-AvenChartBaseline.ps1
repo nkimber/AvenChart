@@ -5383,6 +5383,29 @@ try {
     $procedureOrderMutationId = $createdProcedureOrder.id
     $createdProcedureVisible = $createdProcedureOrder.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId -and $_.name -eq $procedureName -and $_.orderStatus -eq "pending" } | Select-Object -First 1
 
+    $correctedProcedureName = "Smoke Corrected Procedure Order"
+    $correctProcedureOrderBody = @{
+        dateOrdered = "2026-06-19"
+        priority = "urgent"
+        status = "pending"
+        procedureCode = "85025"
+        procedureName = $correctedProcedureName
+        procedureType = "hematology"
+        diagnosis = "R53.83"
+        instructions = "Corrected by the smoke procedure mutation check."
+    } | ConvertTo-Json
+    $correctedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Put -ContentType "application/json" -Body $correctProcedureOrderBody -TimeoutSec 20
+    $correctedProcedureVisible = $correctedProcedureOrder.detail.orders | Where-Object {
+        $_.id -eq $procedureOrderMutationId `
+            -and $_.name -eq $correctedProcedureName `
+            -and $_.code -eq "85025" `
+            -and $_.orderDate -eq "2026-06-19" `
+            -and $_.orderPriority -eq "urgent" `
+            -and $_.procedureType -eq "hematology" `
+            -and $_.diagnosis -eq "R53.83" `
+            -and $_.instructions -eq "Corrected by the smoke procedure mutation check."
+    } | Select-Object -First 1
+
     $completeProcedureBody = @{
         status = "complete"
     } | ConvertTo-Json
@@ -5456,7 +5479,7 @@ try {
             -and $_.reviewStatus -eq "reviewed"
     } | Select-Object -First 1
     $createdResultVisible = $resultReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $createdResultVisible
+    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $createdResultVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5464,6 +5487,7 @@ try {
     Add-Check -Name "procedure mutation lifecycle" -Result $(if ($procedureMutationPassed) { "passed" } else { "failed" }) -Details @{
         createdId = $createdProcedureOrder.id
         createdVisible = $createdProcedureVisible
+        correctedVisible = $correctedProcedureVisible
         completedVisible = $completedProcedureVisible
         specimenId = $procedureSpecimenId
         specimenVisible = $resultSpecimen

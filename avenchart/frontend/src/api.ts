@@ -983,6 +983,17 @@ export type ProcedureOrderStatusUpdateInput = {
   status: string
 }
 
+export type ProcedureOrderUpdateInput = {
+  dateOrdered: string
+  priority: string
+  status: string
+  procedureCode: string
+  procedureName: string
+  procedureType: string
+  diagnosis: string
+  instructions: string
+}
+
 export type ProcedureReportCreateInput = {
   orderId: number
   dateCollected: string
@@ -2834,6 +2845,24 @@ export async function updateProcedureOrderStatus(
   })
   if (!response.ok) {
     throw new Error(`Procedure order status update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureOrder(
+  orderId: number,
+  input: ProcedureOrderUpdateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order update failed with ${response.status}`)
   }
 
   return response.json()

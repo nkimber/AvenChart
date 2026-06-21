@@ -140,6 +140,7 @@ import {
   updatePatientMessageStatus,
   updatePatientContact,
   updatePatientDemographics,
+  updateProcedureOrder,
   updateProcedureOrderStatus,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -228,6 +229,7 @@ import {
   type ClinicalConditionReportItem,
   type ProcedureOrderCreateInput,
   type ProcedureOrderItem,
+  type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
   type ProcedureSpecimenCreateInput,
@@ -2094,6 +2096,24 @@ function App() {
     }
   }
 
+  async function handleProcedureOrderUpdate(order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await updateProcedureOrder(order.id, input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setProcedureStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Procedure order update failed'
+      setProcedureError(message)
+      throw updateError
+    }
+  }
+
   async function handleProcedureReportCreate(input: ProcedureReportCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2904,6 +2924,7 @@ function App() {
             onPatientIdChange={setProcedurePatientId}
             onCreateOrder={handleProcedureOrderCreate}
             onCompleteOrder={handleProcedureOrderComplete}
+            onUpdateOrder={handleProcedureOrderUpdate}
             onCreateReport={handleProcedureReportCreate}
             onCreateSpecimen={handleProcedureSpecimenCreate}
             onCreateResult={handleProcedureResultCreate}
@@ -9533,6 +9554,7 @@ function ProceduresWorkspace({
   onPatientIdChange,
   onCreateOrder,
   onCompleteOrder,
+  onUpdateOrder,
   onCreateReport,
   onCreateSpecimen,
   onCreateResult,
@@ -9546,6 +9568,7 @@ function ProceduresWorkspace({
   onPatientIdChange: (value: string) => void
   onCreateOrder: (input: ProcedureOrderCreateInput) => Promise<unknown>
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
+  onUpdateOrder: (order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
@@ -9760,6 +9783,7 @@ function ProceduresWorkspace({
                       order={order}
                       disabled={isLoading}
                       onComplete={onCompleteOrder}
+                      onUpdate={onUpdateOrder}
                       onCreateReport={onCreateReport}
                       onCreateSpecimen={onCreateSpecimen}
                       onDelete={onDeleteOrder}
@@ -12601,6 +12625,7 @@ function ProcedureOrderCard({
   order,
   disabled,
   onComplete,
+  onUpdate,
   onCreateReport,
   onCreateSpecimen,
   onDelete,
@@ -12608,10 +12633,56 @@ function ProcedureOrderCard({
   order: ProcedureOrderItem
   disabled: boolean
   onComplete: (order: ProcedureOrderItem) => Promise<unknown>
+  onUpdate: (order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onDelete: (order: ProcedureOrderItem) => Promise<void>
 }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [orderDate, setOrderDate] = useState(order.orderDate)
+  const [orderCode, setOrderCode] = useState(order.code ?? '')
+  const [orderName, setOrderName] = useState(order.name ?? '')
+  const [orderType, setOrderType] = useState(order.procedureType ?? '')
+  const [orderDiagnosis, setOrderDiagnosis] = useState(order.diagnosis ?? '')
+  const [orderPriority, setOrderPriority] = useState(order.orderPriority ?? 'routine')
+  const [orderStatus, setOrderStatus] = useState(order.orderStatus ?? 'pending')
+  const [orderInstructions, setOrderInstructions] = useState(order.instructions ?? '')
+  const [editStatus, setEditStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setOrderDate(order.orderDate)
+    setOrderCode(order.code ?? '')
+    setOrderName(order.name ?? '')
+    setOrderType(order.procedureType ?? '')
+    setOrderDiagnosis(order.diagnosis ?? '')
+    setOrderPriority(order.orderPriority ?? 'routine')
+    setOrderStatus(order.orderStatus ?? 'pending')
+    setOrderInstructions(order.instructions ?? '')
+    setEditStatus('idle')
+  }, [order])
+
+  async function handleOrderCorrectionSubmit(event: FormEvent) {
+    event.preventDefault()
+    setEditStatus('saving')
+
+    try {
+      await onUpdate(order, {
+        dateOrdered: orderDate,
+        priority: orderPriority,
+        status: orderStatus,
+        procedureCode: orderCode,
+        procedureName: orderName,
+        procedureType: orderType,
+        diagnosis: orderDiagnosis,
+        instructions: orderInstructions,
+      })
+      setEditStatus('saved')
+      setIsEditing(false)
+    } catch {
+      setEditStatus('error')
+    }
+  }
+
   async function handleCreateSpecimen() {
     await onCreateSpecimen({
       orderId: order.id,
@@ -12662,6 +12733,10 @@ function ProcedureOrderCard({
         <span>{order.orderPriority || 'No priority'}</span>
         <span>{order.procedureType || 'No procedure type'}</span>
       </div>
+      <div className="procedure-order-meta">
+        <span>{order.diagnosis || 'No diagnosis'}</span>
+        <span>{order.instructions || 'No instructions'}</span>
+      </div>
       <ProcedureSpecimenList specimens={order.specimens} />
       <div className="detail-actions compact-actions">
         <button
@@ -12672,6 +12747,15 @@ function ProcedureOrderCard({
         >
           <Check size={15} />
           Complete
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsEditing((current) => !current)}
+        >
+          <Pencil size={15} />
+          Correct Order
         </button>
         <button className="icon-text-button secondary" type="button" disabled={disabled} onClick={handleCreateSpecimen}>
           <FlaskConical size={15} />
@@ -12685,7 +12769,102 @@ function ProcedureOrderCard({
           <Trash2 size={15} />
           Delete
         </button>
+        {editStatus === 'saved' && <span className="save-note">Saved</span>}
+        {editStatus === 'error' && <span className="save-note error">Action failed</span>}
       </div>
+      {isEditing && (
+        <form
+          className="appointment-mutation-panel encounter-procedure-result-entry-panel"
+          aria-label={`Procedure order correction ${order.id}`}
+          onSubmit={handleOrderCorrectionSubmit}
+        >
+          <div className="mutation-grid encounter-procedure-result-entry-grid">
+            <label className="filter-field">
+              <span>Date</span>
+              <input
+                value={orderDate}
+                onChange={(event) => setOrderDate(event.target.value)}
+                aria-label="Procedure corrected order date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Code</span>
+              <input
+                value={orderCode}
+                onChange={(event) => setOrderCode(event.target.value)}
+                aria-label="Procedure corrected order code"
+                required
+              />
+            </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Name</span>
+              <input
+                value={orderName}
+                onChange={(event) => setOrderName(event.target.value)}
+                aria-label="Procedure corrected order name"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Type</span>
+              <input
+                value={orderType}
+                onChange={(event) => setOrderType(event.target.value)}
+                aria-label="Procedure corrected order type"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Priority</span>
+              <select
+                value={orderPriority}
+                onChange={(event) => setOrderPriority(event.target.value)}
+                aria-label="Procedure corrected order priority"
+              >
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+                <option value="stat">Stat</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Status</span>
+              <select
+                value={orderStatus}
+                onChange={(event) => setOrderStatus(event.target.value)}
+                aria-label="Procedure corrected order status"
+              >
+                <option value="pending">Pending</option>
+                <option value="complete">Complete</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Diagnosis</span>
+              <input
+                value={orderDiagnosis}
+                onChange={(event) => setOrderDiagnosis(event.target.value)}
+                aria-label="Procedure corrected order diagnosis"
+                required
+              />
+            </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Instructions</span>
+              <input
+                value={orderInstructions}
+                onChange={(event) => setOrderInstructions(event.target.value)}
+                aria-label="Procedure corrected order instructions"
+              />
+            </label>
+          </div>
+          <div className="detail-actions compact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={editStatus === 'saving'}>
+              <Check size={15} />
+              <span>{editStatus === 'saving' ? 'Saving' : 'Save Order Correction'}</span>
+            </button>
+          </div>
+        </form>
+      )}
     </article>
   )
 }

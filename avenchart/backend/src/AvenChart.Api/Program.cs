@@ -1196,6 +1196,19 @@ procedures.MapPut("/orders/{orderId:int}/status", async (
     })
     .WithName("UpdateProcedureOrderStatus");
 
+procedures.MapPut("/orders/{orderId:int}", async (
+        ProcedureRepository repository,
+        int orderId,
+        ProcedureOrderUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateOrderAsync(orderId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure order could not be updated from the supplied order details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureOrder");
+
 procedures.MapPost("/reports", async (
         ProcedureRepository repository,
         ProcedureReportCreateRequest request,

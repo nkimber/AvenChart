@@ -150,6 +150,62 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(orderId, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> UpdateOrderAsync(
+        int orderId,
+        ProcedureOrderUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (orderId <= 0
+            || string.IsNullOrWhiteSpace(request.Priority)
+            || string.IsNullOrWhiteSpace(request.Status)
+            || string.IsNullOrWhiteSpace(request.ProcedureCode)
+            || string.IsNullOrWhiteSpace(request.ProcedureName)
+            || string.IsNullOrWhiteSpace(request.ProcedureType)
+            || string.IsNullOrWhiteSpace(request.Diagnosis)
+            || !TryReadDate(request.DateOrdered, out var orderDate))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update lab_orders
+                set order_date = @orderDate,
+                    code = @code,
+                    name = @name,
+                    diagnosis = @diagnosis,
+                    order_priority = @priority,
+                    procedure_type = @procedureType,
+                    instructions = @instructions,
+                    order_status = @status
+                where id = @id
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", orderId);
+            command.Parameters.Add("orderDate", NpgsqlDbType.Date).Value = orderDate;
+            command.Parameters.AddWithValue("code", request.ProcedureCode.Trim());
+            command.Parameters.AddWithValue("name", request.ProcedureName.Trim());
+            command.Parameters.AddWithValue("diagnosis", request.Diagnosis.Trim());
+            command.Parameters.AddWithValue("priority", request.Priority.Trim());
+            command.Parameters.AddWithValue("procedureType", request.ProcedureType.Trim());
+            command.Parameters.AddWithValue("instructions", request.Instructions?.Trim() ?? string.Empty);
+            command.Parameters.AddWithValue("status", request.Status.Trim());
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            patientId = result as string;
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(orderId, detail);
+    }
+
     public async Task<ProcedureMutationResponse?> CreateReportAsync(
         ProcedureReportCreateRequest request,
         CancellationToken cancellationToken)

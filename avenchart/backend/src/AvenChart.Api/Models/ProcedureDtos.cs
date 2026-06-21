@@ -92,6 +92,16 @@ public sealed record ProcedureOrderCreateRequest(
 public sealed record ProcedureOrderStatusUpdateRequest(
     string Status);
 
+public sealed record ProcedureOrderUpdateRequest(
+    string DateOrdered,
+    string Priority,
+    string Status,
+    string ProcedureCode,
+    string ProcedureName,
+    string ProcedureType,
+    string Diagnosis,
+    string Instructions);
+
 public sealed record ProcedureReportCreateRequest(
     int OrderId,
     string DateCollected,
