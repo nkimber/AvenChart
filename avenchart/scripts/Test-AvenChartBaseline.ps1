@@ -1541,6 +1541,126 @@ finally {
     }
 }
 
+$appointmentSeriesRootMetadataRootId = $null
+$appointmentSeriesRootMetadataOriginalRoot = $null
+try {
+    $seriesRootMetadataSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-11-04&limit=10" -Method Get -TimeoutSec 20
+    $seriesRootMetadataBefore = @($seriesRootMetadataSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $seriesRootMetadataRoot = $seriesRootMetadataBefore | Where-Object { $_.date -eq "2026-11-04" } | Select-Object -First 1
+    if ($null -eq $seriesRootMetadataRoot) {
+        throw "Expected recurring appointment root for MOD-PAT-0013 on 2026-11-04."
+    }
+
+    $appointmentSeriesRootMetadataRootId = $seriesRootMetadataRoot.seriesRootId
+    $encodedSeriesRootMetadataRootId = [System.Uri]::EscapeDataString($appointmentSeriesRootMetadataRootId)
+    $appointmentSeriesRootMetadataOriginalRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Get -TimeoutSec 20
+
+    $seriesRootMetadataBody = @{
+        providerId = 101
+        title = $appointmentSeriesRootMetadataOriginalRoot.title
+        date = $appointmentSeriesRootMetadataOriginalRoot.date
+        startTime = $appointmentSeriesRootMetadataOriginalRoot.startTime
+        durationMinutes = $appointmentSeriesRootMetadataOriginalRoot.durationMinutes
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 10
+        room = "Series Meta"
+        status = "~"
+        comments = "Slice 111 recurring root metadata propagation check."
+        recurrenceType = $appointmentSeriesRootMetadataOriginalRoot.recurrenceType
+        repeatFrequency = $appointmentSeriesRootMetadataOriginalRoot.repeatFrequency
+        repeatUnit = $appointmentSeriesRootMetadataOriginalRoot.repeatUnit
+        recurrenceEndDate = $appointmentSeriesRootMetadataOriginalRoot.recurrenceEndDate
+        recurrenceExdates = @($appointmentSeriesRootMetadataOriginalRoot.recurrenceExdates)
+    } | ConvertTo-Json -Depth 5
+
+    $rootAfterSeriesRootMetadata = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Put -ContentType "application/json" -Body $seriesRootMetadataBody -TimeoutSec 20
+    $seriesRootMetadataAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-11-04&limit=10" -Method Get -TimeoutSec 20
+    $seriesRootMetadataAfter = @($seriesRootMetadataAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $seriesRootMetadataAfterDates = @($seriesRootMetadataAfter | ForEach-Object { $_.date })
+    $seriesRootMetadataAfterNumbers = @($seriesRootMetadataAfter | ForEach-Object { $_.occurrenceNumber })
+    $seriesRootMetadataAfterProviderIds = @($seriesRootMetadataAfter | ForEach-Object { $_.providerId })
+    $seriesRootMetadataAfterFacilityIds = @($seriesRootMetadataAfter | ForEach-Object { $_.facilityId })
+    $seriesRootMetadataAfterBillingLocationIds = @($seriesRootMetadataAfter | ForEach-Object { $_.billingLocationId })
+    $seriesRootMetadataAfterCategoryIds = @($seriesRootMetadataAfter | ForEach-Object { $_.categoryId })
+    $seriesRootMetadataAfterStatuses = @($seriesRootMetadataAfter | ForEach-Object { $_.status })
+    $seriesRootMetadataAfterRooms = @($seriesRootMetadataAfter | ForEach-Object { $_.room })
+    $seriesRootMetadataAfterComments = @($seriesRootMetadataAfter | ForEach-Object { $_.comments })
+    $seriesRootMetadataGeneratedOccurrence = $seriesRootMetadataAfter | Where-Object { $_.date -eq "2026-11-18" } | Select-Object -First 1
+    $seriesRootMetadataMismatchedRooms = @($seriesRootMetadataAfter | Where-Object { $_.room -ne "Series Meta" })
+    $seriesRootMetadataMismatchedComments = @($seriesRootMetadataAfter | Where-Object { $_.comments -ne "Slice 111 recurring root metadata propagation check." })
+    $appointmentSeriesRootMetadataPassed = $rootAfterSeriesRootMetadata.providerId -eq 101 `
+        -and $rootAfterSeriesRootMetadata.facilityId -eq 10 `
+        -and $rootAfterSeriesRootMetadata.billingLocationId -eq 10 `
+        -and $rootAfterSeriesRootMetadata.categoryId -eq 10 `
+        -and $rootAfterSeriesRootMetadata.status -eq "~" `
+        -and $rootAfterSeriesRootMetadata.room -eq "Series Meta" `
+        -and $rootAfterSeriesRootMetadata.comments -eq "Slice 111 recurring root metadata propagation check." `
+        -and $rootAfterSeriesRootMetadata.recurrenceExceptionCount -eq 1 `
+        -and ($rootAfterSeriesRootMetadata.recurrenceExdates -contains "2026-12-16") `
+        -and $seriesRootMetadataAfter.Count -eq 6 `
+        -and (($seriesRootMetadataAfterDates -join ",") -eq "2026-11-04,2026-11-18,2026-12-02,2026-12-30,2027-01-13,2027-01-27") `
+        -and (($seriesRootMetadataAfterNumbers -join ",") -eq "1,2,3,5,6,7") `
+        -and (($seriesRootMetadataAfterProviderIds -join ",") -eq "101,101,101,101,101,101") `
+        -and (($seriesRootMetadataAfterFacilityIds -join ",") -eq "10,10,10,10,10,10") `
+        -and (($seriesRootMetadataAfterBillingLocationIds -join ",") -eq "10,10,10,10,10,10") `
+        -and (($seriesRootMetadataAfterCategoryIds -join ",") -eq "10,10,10,10,10,10") `
+        -and (($seriesRootMetadataAfterStatuses -join ",") -eq "~,~,~,~,~,~") `
+        -and $seriesRootMetadataMismatchedRooms.Count -eq 0 `
+        -and $seriesRootMetadataMismatchedComments.Count -eq 0 `
+        -and $null -ne $seriesRootMetadataGeneratedOccurrence `
+        -and $seriesRootMetadataGeneratedOccurrence.isVirtualOccurrence
+
+    Add-Check -Name "appointment series root metadata propagation" -Result $(if ($appointmentSeriesRootMetadataPassed) { "passed" } else { "failed" }) -Details @{
+        providerIds = $seriesRootMetadataAfterProviderIds
+        facilityIds = $seriesRootMetadataAfterFacilityIds
+        billingLocationIds = $seriesRootMetadataAfterBillingLocationIds
+        categoryIds = $seriesRootMetadataAfterCategoryIds
+        statuses = $seriesRootMetadataAfterStatuses
+        rooms = $seriesRootMetadataAfterRooms
+        comments = $seriesRootMetadataAfterComments
+        dates = $seriesRootMetadataAfterDates
+        occurrenceNumbers = $seriesRootMetadataAfterNumbers
+        exceptionDates = $rootAfterSeriesRootMetadata.recurrenceExdates
+        totalMatches = $seriesRootMetadataAfterSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment series root metadata propagation" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentSeriesRootMetadataRootId) {
+        try {
+            $encodedSeriesRootMetadataRootId = [System.Uri]::EscapeDataString($appointmentSeriesRootMetadataRootId)
+            if ($null -eq $appointmentSeriesRootMetadataOriginalRoot) {
+                $appointmentSeriesRootMetadataOriginalRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Get -TimeoutSec 20
+            }
+
+            $seriesRootMetadataRestoreBody = @{
+                providerId = $appointmentSeriesRootMetadataOriginalRoot.providerId
+                title = $appointmentSeriesRootMetadataOriginalRoot.title
+                date = $appointmentSeriesRootMetadataOriginalRoot.date
+                startTime = $appointmentSeriesRootMetadataOriginalRoot.startTime
+                durationMinutes = $appointmentSeriesRootMetadataOriginalRoot.durationMinutes
+                facilityId = $appointmentSeriesRootMetadataOriginalRoot.facilityId
+                billingLocationId = $appointmentSeriesRootMetadataOriginalRoot.billingLocationId
+                categoryId = $appointmentSeriesRootMetadataOriginalRoot.categoryId
+                room = $appointmentSeriesRootMetadataOriginalRoot.room
+                status = $appointmentSeriesRootMetadataOriginalRoot.status
+                comments = $appointmentSeriesRootMetadataOriginalRoot.comments
+                recurrenceType = $appointmentSeriesRootMetadataOriginalRoot.recurrenceType
+                repeatFrequency = $appointmentSeriesRootMetadataOriginalRoot.repeatFrequency
+                repeatUnit = $appointmentSeriesRootMetadataOriginalRoot.repeatUnit
+                recurrenceEndDate = $appointmentSeriesRootMetadataOriginalRoot.recurrenceEndDate
+                recurrenceExdates = @($appointmentSeriesRootMetadataOriginalRoot.recurrenceExdates)
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootMetadataRootId" -Method Put -ContentType "application/json" -Body $seriesRootMetadataRestoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
