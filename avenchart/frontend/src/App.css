@@ -2183,6 +2183,19 @@
   gap: 10px;
 }
 
+.procedure-order-queue-panel {
+  margin-top: 12px;
+}
+
+.procedure-order-queue-segments {
+  flex-wrap: wrap;
+}
+
+.procedure-order-queue-segments button {
+  min-height: 36px;
+  white-space: normal;
+}
+
 .admin-detail-grid {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1.3fr) minmax(0, 1fr);

@@ -49,6 +49,49 @@ public sealed record ProcedureReportReviewQueueItem(
     string? SpecimenNumber,
     string? Notes);
 
+public sealed record ProcedureOrderQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string StatusFilter,
+    string? PatientFilter,
+    int? ProviderFilter,
+    int? LabFilter,
+    string? FromDate,
+    string? ToDate,
+    int Limit,
+    int TotalOrders,
+    int ReadyToSendOrders,
+    int TransmittedPendingOrders,
+    int ReportedOrders,
+    int ScheduledOrders,
+    int CompletedOrders,
+    IReadOnlyList<ProcedureOrderQueueItem> Orders);
+
+public sealed record ProcedureOrderQueueItem(
+    int OrderId,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    int? EncounterId,
+    string OrderDate,
+    int? ProviderId,
+    string? ProviderName,
+    int? LabId,
+    string? LabName,
+    string? ProcedureCode,
+    string? ProcedureName,
+    string? ProcedureType,
+    string? OrderPriority,
+    string? OrderStatus,
+    string? DateTransmitted,
+    int ReportCount,
+    int ResultCount,
+    int SpecimenCount,
+    bool CanTransmit,
+    string QueueState,
+    string? Instructions);
+
 public sealed record ProcedureLabProviderDirectoryResponse(
     string DatasetId,
     string DatasetVersion,

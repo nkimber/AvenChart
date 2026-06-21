@@ -947,6 +947,51 @@ export type ProcedureReportReviewQueueResponse = {
   reports: ProcedureReportReviewQueueItem[]
 }
 
+export type ProcedureOrderQueueItem = {
+  orderId: number
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  encounterId?: number | null
+  orderDate: string
+  providerId?: number | null
+  providerName?: string | null
+  labId?: number | null
+  labName?: string | null
+  procedureCode?: string | null
+  procedureName?: string | null
+  procedureType?: string | null
+  orderPriority?: string | null
+  orderStatus?: string | null
+  dateTransmitted?: string | null
+  reportCount: number
+  resultCount: number
+  specimenCount: number
+  canTransmit: boolean
+  queueState: string
+  instructions?: string | null
+}
+
+export type ProcedureOrderQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  statusFilter: string
+  patientFilter?: string | null
+  providerFilter?: number | null
+  labFilter?: number | null
+  fromDate?: string | null
+  toDate?: string | null
+  limit: number
+  totalOrders: number
+  readyToSendOrders: number
+  transmittedPendingOrders: number
+  reportedOrders: number
+  scheduledOrders: number
+  completedOrders: number
+  orders: ProcedureOrderQueueItem[]
+}
+
 export type ProcedureLabProviderItem = {
   id: number
   name: string
@@ -3072,6 +3117,38 @@ export async function getProcedureReportReviewQueue(
   const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure report review queue load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getProcedureOrderQueue(
+  status = 'ready-to-send',
+  filters: ProcedureReportReviewQueueFilters = {},
+  signal?: AbortSignal,
+): Promise<ProcedureOrderQueueResponse> {
+  const params = new URLSearchParams({ status })
+  if (filters.patientId?.trim()) {
+    params.set('patientId', filters.patientId.trim())
+  }
+  if (filters.providerId !== undefined && filters.providerId !== null && String(filters.providerId).trim()) {
+    params.set('providerId', String(filters.providerId).trim())
+  }
+  if (filters.labId !== undefined && filters.labId !== null && String(filters.labId).trim()) {
+    params.set('labId', String(filters.labId).trim())
+  }
+  if (filters.fromDate?.trim()) {
+    params.set('fromDate', filters.fromDate.trim())
+  }
+  if (filters.toDate?.trim()) {
+    params.set('toDate', filters.toDate.trim())
+  }
+  if (filters.limit) {
+    params.set('limit', String(filters.limit))
+  }
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-queue?${params}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure order queue load failed with ${response.status}`)
   }
 
   return response.json()

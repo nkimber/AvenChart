@@ -196,6 +196,200 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Reports: reports);
     }
 
+    public async Task<ProcedureOrderQueueResponse> GetOrderQueueAsync(
+        string? status,
+        string? patientId,
+        int? providerId,
+        int? labId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var normalizedStatus = NormalizeOrderQueueStatus(status);
+        var normalizedPatient = NormalizeText(patientId)?.ToLowerInvariant();
+        var safeLimit = Math.Clamp(limit, 1, MaximumReviewQueueLimit);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        int totalOrders;
+        int readyToSendOrders;
+        int transmittedPendingOrders;
+        int reportedOrders;
+        int scheduledOrders;
+        int completedOrders;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = """
+                with order_queue as (
+                    select
+                        lo.id,
+                        lo.order_date,
+                        coalesce(lo.order_status, '') as order_status,
+                        null::timestamp as date_transmitted,
+                        (
+                            select count(*)
+                            from lab_reports lr
+                            where lr.order_id = lo.id
+                        ) as report_count
+                    from lab_orders lo
+                    inner join patients p on p.legacy_pid = lo.pid
+                    where (@patientFilter is null
+                           or lower(p.canonical_id) = @patientFilter
+                           or lower(p.pubpid) = @patientFilter
+                           or p.legacy_pid::text = @patientFilter)
+                      and (@fromDate is null or lo.order_date >= @fromDate)
+                      and (@toDate is null or lo.order_date <= @toDate)
+                      and (@providerFilter is null or lo.provider_id = @providerFilter)
+                      and (@labFilter is null or lo.lab_id = @labFilter)
+                )
+                select
+                    count(*)::int as total_orders,
+                    coalesce(sum(case when report_count = 0 and date_transmitted is null then 1 else 0 end), 0)::int as ready_to_send_orders,
+                    coalesce(sum(case when report_count = 0 and date_transmitted is not null then 1 else 0 end), 0)::int as transmitted_pending_orders,
+                    coalesce(sum(case when report_count > 0 then 1 else 0 end), 0)::int as reported_orders,
+                    coalesce(sum(case when order_status = 'scheduled' then 1 else 0 end), 0)::int as scheduled_orders,
+                    coalesce(sum(case when order_status = 'complete' then 1 else 0 end), 0)::int as completed_orders
+                from order_queue;
+                """;
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate);
+
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            totalOrders = reader.GetInt32(reader.GetOrdinal("total_orders"));
+            readyToSendOrders = reader.GetInt32(reader.GetOrdinal("ready_to_send_orders"));
+            transmittedPendingOrders = reader.GetInt32(reader.GetOrdinal("transmitted_pending_orders"));
+            reportedOrders = reader.GetInt32(reader.GetOrdinal("reported_orders"));
+            scheduledOrders = reader.GetInt32(reader.GetOrdinal("scheduled_orders"));
+            completedOrders = reader.GetInt32(reader.GetOrdinal("completed_orders"));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with order_queue as (
+                select
+                    lo.id as order_id,
+                    p.canonical_id as patient_id,
+                    p.legacy_pid,
+                    p.pubpid,
+                    trim(concat(p.last_name, ', ', p.first_name)) as patient_display_name,
+                    lo.encounter,
+                    lo.order_date,
+                    lo.provider_id,
+                    nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                    lo.lab_id,
+                    lp.name as lab_name,
+                    lo.code as procedure_code,
+                    lo.name as procedure_name,
+                    lo.procedure_type,
+                    lo.order_priority,
+                    lo.order_status,
+                    null::timestamp as date_transmitted,
+                    coalesce((
+                        select count(*)
+                        from lab_reports lr
+                        where lr.order_id = lo.id
+                    ), 0)::int as report_count,
+                    coalesce((
+                        select count(*)
+                        from lab_reports lr
+                        inner join lab_results lres on lres.report_id = lr.id
+                        where lr.order_id = lo.id
+                    ), 0)::int as result_count,
+                    coalesce((
+                        select count(*)
+                        from lab_specimens ls
+                        where ls.order_id = lo.id
+                    ), 0)::int as specimen_count,
+                    lo.instructions
+                from lab_orders lo
+                inner join patients p on p.legacy_pid = lo.pid
+                left join staff s on s.id = lo.provider_id
+                left join lab_providers lp on lp.id = lo.lab_id
+                where (@patientFilter is null
+                       or lower(p.canonical_id) = @patientFilter
+                       or lower(p.pubpid) = @patientFilter
+                       or p.legacy_pid::text = @patientFilter)
+                  and (@fromDate is null or lo.order_date >= @fromDate)
+                  and (@toDate is null or lo.order_date <= @toDate)
+                  and (@providerFilter is null or lo.provider_id = @providerFilter)
+                  and (@labFilter is null or lo.lab_id = @labFilter)
+            )
+            select *
+            from order_queue
+            where ((@statusFilter = 'all')
+               or (@statusFilter = 'ready-to-send' and report_count = 0 and date_transmitted is null)
+               or (@statusFilter = 'transmitted-pending' and report_count = 0 and date_transmitted is not null)
+               or (@statusFilter = 'reported' and report_count > 0)
+               or (@statusFilter = 'scheduled' and coalesce(order_status, '') = 'scheduled')
+               or (@statusFilter = 'completed' and coalesce(order_status, '') = 'complete'))
+            order by order_date desc, order_id desc, patient_display_name, legacy_pid
+            limit @limit;
+            """;
+        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate);
+        command.Parameters.AddWithValue("statusFilter", normalizedStatus);
+        command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
+
+        var orders = new List<ProcedureOrderQueueItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var reportCount = reader.GetInt32(reader.GetOrdinal("report_count"));
+                var transmittedAt = ReadNullableDateTime(reader, "date_transmitted");
+                var queueState = reportCount > 0
+                    ? "reported"
+                    : transmittedAt is null
+                        ? "ready-to-send"
+                        : "transmitted-pending";
+
+                orders.Add(new ProcedureOrderQueueItem(
+                    OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                    Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                    PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                    EncounterId: ReadNullableInt(reader, "encounter"),
+                    OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
+                    ProviderId: ReadNullableInt(reader, "provider_id"),
+                    ProviderName: ReadNullableString(reader, "provider_name"),
+                    LabId: ReadNullableInt(reader, "lab_id"),
+                    LabName: ReadNullableString(reader, "lab_name"),
+                    ProcedureCode: ReadNullableString(reader, "procedure_code"),
+                    ProcedureName: ReadNullableString(reader, "procedure_name"),
+                    ProcedureType: ReadNullableString(reader, "procedure_type"),
+                    OrderPriority: ReadNullableString(reader, "order_priority"),
+                    OrderStatus: ReadNullableString(reader, "order_status"),
+                    DateTransmitted: transmittedAt,
+                    ReportCount: reportCount,
+                    ResultCount: reader.GetInt32(reader.GetOrdinal("result_count")),
+                    SpecimenCount: reader.GetInt32(reader.GetOrdinal("specimen_count")),
+                    CanTransmit: reportCount == 0 && transmittedAt is null,
+                    QueueState: queueState,
+                    Instructions: ReadNullableString(reader, "instructions")));
+            }
+        }
+
+        return new ProcedureOrderQueueResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            StatusFilter: normalizedStatus,
+            PatientFilter: normalizedPatient,
+            ProviderFilter: providerId,
+            LabFilter: labId,
+            FromDate: fromDate?.ToString("yyyy-MM-dd"),
+            ToDate: toDate?.ToString("yyyy-MM-dd"),
+            Limit: safeLimit,
+            TotalOrders: totalOrders,
+            ReadyToSendOrders: readyToSendOrders,
+            TransmittedPendingOrders: transmittedPendingOrders,
+            ReportedOrders: reportedOrders,
+            ScheduledOrders: scheduledOrders,
+            CompletedOrders: completedOrders,
+            Orders: orders);
+    }
+
     public async Task<ProcedureLabProviderDirectoryResponse> GetLabProvidersAsync(
         bool includeInactive,
         CancellationToken cancellationToken)
@@ -2192,6 +2386,21 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             "reviewed" => "reviewed",
             "received" or "received-unreviewed" or "pending" or "unreviewed" => "unreviewed",
             _ => "unreviewed"
+        };
+    }
+
+    private static string NormalizeOrderQueueStatus(string? status)
+    {
+        var normalized = NormalizeText(status)?.ToLowerInvariant();
+        return normalized switch
+        {
+            "all" => "all",
+            "reported" or "with-reports" or "reports" => "reported",
+            "transmitted" or "sent" or "sent-pending" or "transmitted-pending" => "transmitted-pending",
+            "scheduled" => "scheduled",
+            "complete" or "completed" => "completed",
+            "ready" or "ready-to-send" or "unsent" or "untransmitted" or "pending" or "reportless" => "ready-to-send",
+            _ => "ready-to-send"
         };
     }
 

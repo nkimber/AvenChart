@@ -48,6 +48,7 @@ import {
   getPatientMessages,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
+  getProcedureOrderQueue,
   getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
@@ -252,6 +253,7 @@ import {
   type ProcedureOrderCatalogImportResponse,
   type ProcedureOrderCatalogMutationInput,
   type ProcedureOrderCatalogResponse,
+  type ProcedureOrderQueueResponse,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
@@ -376,6 +378,17 @@ function App() {
   const [procedureOrderCatalogStatus, setProcedureOrderCatalogStatus] =
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [procedureOrderCatalogError, setProcedureOrderCatalogError] = useState<string | null>(null)
+  const [procedureOrderQueue, setProcedureOrderQueue] = useState<ProcedureOrderQueueResponse | null>(null)
+  const [procedureOrderQueueStatus, setProcedureOrderQueueStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    'idle',
+  )
+  const [procedureOrderQueueError, setProcedureOrderQueueError] = useState<string | null>(null)
+  const [procedureOrderQueueFilter, setProcedureOrderQueueFilter] = useState('ready-to-send')
+  const [procedureOrderQueuePatientFilter, setProcedureOrderQueuePatientFilter] = useState('')
+  const [procedureOrderQueueProviderFilter, setProcedureOrderQueueProviderFilter] = useState('')
+  const [procedureOrderQueueLabFilter, setProcedureOrderQueueLabFilter] = useState('')
+  const [procedureOrderQueueFromDate, setProcedureOrderQueueFromDate] = useState('')
+  const [procedureOrderQueueToDate, setProcedureOrderQueueToDate] = useState('')
   const [procedureReportReviewQueue, setProcedureReportReviewQueue] =
     useState<ProcedureReportReviewQueueResponse | null>(null)
   const [procedureReportReviewQueueStatus, setProcedureReportReviewQueueStatus] =
@@ -830,6 +843,51 @@ function App() {
     loadProcedureOrderCatalog()
     return () => controller.abort()
   }, [activeModule])
+
+  useEffect(() => {
+    if (activeModule !== 'reports') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadProcedureOrderQueue() {
+      setProcedureOrderQueueStatus('loading')
+      setProcedureOrderQueueError(null)
+
+      try {
+        const result = await getProcedureOrderQueue(
+          procedureOrderQueueFilter,
+          {
+            patientId: procedureOrderQueuePatientFilter,
+            providerId: procedureOrderQueueProviderFilter,
+            labId: procedureOrderQueueLabFilter,
+            fromDate: procedureOrderQueueFromDate,
+            toDate: procedureOrderQueueToDate,
+          },
+          controller.signal,
+        )
+        setProcedureOrderQueue(result)
+        setProcedureOrderQueueStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setProcedureOrderQueueStatus('error')
+          setProcedureOrderQueueError(loadError instanceof Error ? loadError.message : 'Procedure order queue failed')
+        }
+      }
+    }
+
+    loadProcedureOrderQueue()
+    return () => controller.abort()
+  }, [
+    activeModule,
+    procedureOrderQueueFilter,
+    procedureOrderQueuePatientFilter,
+    procedureOrderQueueProviderFilter,
+    procedureOrderQueueLabFilter,
+    procedureOrderQueueFromDate,
+    procedureOrderQueueToDate,
+  ])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -3306,6 +3364,21 @@ function App() {
             onUpdateOrderCatalogItem={handleProcedureOrderCatalogUpdate}
             onDeleteOrderCatalogItem={handleProcedureOrderCatalogDelete}
             onImportOrderCatalogCompendium={handleProcedureOrderCatalogImport}
+            orderQueue={procedureOrderQueue}
+            orderQueueStatus={procedureOrderQueueStatus}
+            orderQueueError={procedureOrderQueueError}
+            orderQueueFilter={procedureOrderQueueFilter}
+            orderQueuePatientFilter={procedureOrderQueuePatientFilter}
+            orderQueueProviderFilter={procedureOrderQueueProviderFilter}
+            orderQueueLabFilter={procedureOrderQueueLabFilter}
+            orderQueueFromDate={procedureOrderQueueFromDate}
+            orderQueueToDate={procedureOrderQueueToDate}
+            onOrderQueueFilterChange={setProcedureOrderQueueFilter}
+            onOrderQueuePatientFilterChange={setProcedureOrderQueuePatientFilter}
+            onOrderQueueProviderFilterChange={setProcedureOrderQueueProviderFilter}
+            onOrderQueueLabFilterChange={setProcedureOrderQueueLabFilter}
+            onOrderQueueFromDateChange={setProcedureOrderQueueFromDate}
+            onOrderQueueToDateChange={setProcedureOrderQueueToDate}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -11093,6 +11166,21 @@ function ReportsWorkspace({
   onUpdateOrderCatalogItem,
   onDeleteOrderCatalogItem,
   onImportOrderCatalogCompendium,
+  orderQueue,
+  orderQueueStatus,
+  orderQueueError,
+  orderQueueFilter,
+  orderQueuePatientFilter,
+  orderQueueProviderFilter,
+  orderQueueLabFilter,
+  orderQueueFromDate,
+  orderQueueToDate,
+  onOrderQueueFilterChange,
+  onOrderQueuePatientFilterChange,
+  onOrderQueueProviderFilterChange,
+  onOrderQueueLabFilterChange,
+  onOrderQueueFromDateChange,
+  onOrderQueueToDateChange,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -11135,6 +11223,21 @@ function ReportsWorkspace({
   onImportOrderCatalogCompendium: (
     input: ProcedureOrderCatalogImportInput,
   ) => Promise<ProcedureOrderCatalogImportResponse>
+  orderQueue: ProcedureOrderQueueResponse | null
+  orderQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
+  orderQueueError: string | null
+  orderQueueFilter: string
+  orderQueuePatientFilter: string
+  orderQueueProviderFilter: string
+  orderQueueLabFilter: string
+  orderQueueFromDate: string
+  orderQueueToDate: string
+  onOrderQueueFilterChange: (filter: string) => void
+  onOrderQueuePatientFilterChange: (patientId: string) => void
+  onOrderQueueProviderFilterChange: (providerId: string) => void
+  onOrderQueueLabFilterChange: (labId: string) => void
+  onOrderQueueFromDateChange: (fromDate: string) => void
+  onOrderQueueToDateChange: (toDate: string) => void
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -11265,6 +11368,24 @@ function ReportsWorkspace({
               onUpdateItem={onUpdateOrderCatalogItem}
               onDeleteItem={onDeleteOrderCatalogItem}
               onImportCompendium={onImportOrderCatalogCompendium}
+            />
+
+            <ProcedureOrderQueuePanel
+              queue={orderQueue}
+              status={orderQueueStatus}
+              error={orderQueueError}
+              activeFilter={orderQueueFilter}
+              patientFilter={orderQueuePatientFilter}
+              providerFilter={orderQueueProviderFilter}
+              labFilter={orderQueueLabFilter}
+              fromDate={orderQueueFromDate}
+              toDate={orderQueueToDate}
+              onFilterChange={onOrderQueueFilterChange}
+              onPatientFilterChange={onOrderQueuePatientFilterChange}
+              onProviderFilterChange={onOrderQueueProviderFilterChange}
+              onLabFilterChange={onOrderQueueLabFilterChange}
+              onFromDateChange={onOrderQueueFromDateChange}
+              onToDateChange={onOrderQueueToDateChange}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -12035,6 +12156,171 @@ function formatLabProviderDirection(direction?: string | null) {
 function formatLabProviderPair(first?: string | null, second?: string | null) {
   const parts = [first, second].filter((part): part is string => Boolean(part))
   return parts.length > 0 ? parts.join(' / ') : 'Not set'
+}
+
+function formatProcedureOrderQueueState(value?: string | null) {
+  switch ((value ?? '').toLowerCase()) {
+    case 'reported':
+      return 'Reported'
+    case 'transmitted-pending':
+      return 'Sent, awaiting results'
+    case 'ready-to-send':
+      return 'Ready to send'
+    default:
+      return value || 'Queued'
+  }
+}
+
+const procedureOrderQueueFilters = [
+  { id: 'ready-to-send', label: 'Ready to send' },
+  { id: 'transmitted-pending', label: 'Sent, awaiting results' },
+  { id: 'reported', label: 'Reported' },
+  { id: 'scheduled', label: 'Scheduled' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'all', label: 'All' },
+]
+
+function ProcedureOrderQueuePanel({
+  queue,
+  status,
+  error,
+  activeFilter,
+  patientFilter,
+  providerFilter,
+  labFilter,
+  fromDate,
+  toDate,
+  onFilterChange,
+  onPatientFilterChange,
+  onProviderFilterChange,
+  onLabFilterChange,
+  onFromDateChange,
+  onToDateChange,
+}: {
+  queue: ProcedureOrderQueueResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  activeFilter: string
+  patientFilter: string
+  providerFilter: string
+  labFilter: string
+  fromDate: string
+  toDate: string
+  onFilterChange: (filter: string) => void
+  onPatientFilterChange: (patientId: string) => void
+  onProviderFilterChange: (providerId: string) => void
+  onLabFilterChange: (labId: string) => void
+  onFromDateChange: (fromDate: string) => void
+  onToDateChange: (toDate: string) => void
+}) {
+  const orders = queue?.orders ?? []
+
+  return (
+    <section className="info-panel procedure-order-queue-panel" aria-label="Procedure order queue">
+      <div className="panel-heading">
+        <FlaskConical size={17} />
+        <h3>Procedure Order Queue</h3>
+      </div>
+
+      <div className="report-review-queue-toolbar">
+        <div className="segmented-control procedure-order-queue-segments" aria-label="Procedure order queue filter">
+          {procedureOrderQueueFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={filter.id === activeFilter ? 'active' : ''}
+              aria-pressed={filter.id === activeFilter}
+              onClick={() => onFilterChange(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="review-queue-metrics" aria-label="Procedure order queue counts">
+          <span>{queue?.readyToSendOrders ?? 0} ready</span>
+          <span>{queue?.reportedOrders ?? 0} reported</span>
+          <span>{queue?.totalOrders ?? 0} total</span>
+        </div>
+      </div>
+
+      <div className="review-queue-filter-grid">
+        <label>
+          Patient
+          <input
+            type="search"
+            value={patientFilter}
+            placeholder="MOD-PAT-0009"
+            onChange={(event) => onPatientFilterChange(event.target.value)}
+          />
+        </label>
+        <label>
+          Provider
+          <input
+            type="number"
+            min="1"
+            value={providerFilter}
+            placeholder="101"
+            onChange={(event) => onProviderFilterChange(event.target.value)}
+          />
+        </label>
+        <label>
+          Lab
+          <input
+            type="number"
+            min="1"
+            value={labFilter}
+            placeholder="501"
+            onChange={(event) => onLabFilterChange(event.target.value)}
+          />
+        </label>
+        <label>
+          From
+          <input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} />
+        </label>
+        <label>
+          To
+          <input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} />
+        </label>
+      </div>
+
+      {status === 'error' && <div className="status-banner error">{error}</div>}
+
+      <div className="review-queue-list">
+        {orders.map((order) => (
+          <article key={order.orderId} className="review-queue-card">
+            <div className="review-queue-card-main">
+              <div>
+                <p className="eyebrow">Order #{order.orderId}</p>
+                <h4>{order.procedureName || 'Unnamed procedure'}</h4>
+                <p>
+                  {order.patientDisplayName} / {order.pubpid} / {order.encounterId ? `Encounter #${order.encounterId}` : 'No encounter'}
+                </p>
+              </div>
+              <span className="status-pill">{formatProcedureOrderQueueState(order.queueState)}</span>
+            </div>
+            <div className="review-queue-card-grid">
+              <Field label="Order date" value={order.orderDate} />
+              <Field label="Code" value={order.procedureCode} />
+              <Field label="Order status" value={order.orderStatus} />
+              <Field label="Priority" value={order.orderPriority} />
+              <Field
+                label="Provider"
+                value={order.providerId ? `${order.providerName || 'Provider'} #${order.providerId}` : order.providerName}
+              />
+              <Field label="Lab" value={order.labId ? `${order.labName || 'Lab'} #${order.labId}` : order.labName} />
+              <Field label="Reports" value={order.reportCount} />
+              <Field label="Results" value={order.resultCount} />
+              <Field label="Specimens" value={order.specimenCount} />
+              <Field label="Transmit" value={order.canTransmit ? 'Ready' : order.dateTransmitted || 'Not needed'} />
+            </div>
+            {order.instructions && <p className="review-queue-notes">{order.instructions}</p>}
+          </article>
+        ))}
+        {status === 'loading' && <div className="timeline-placeholder">Loading procedure order queue</div>}
+        {status !== 'loading' && orders.length === 0 && <div className="timeline-placeholder">No matching orders</div>}
+      </div>
+    </section>
+  )
 }
 
 const procedureReportReviewQueueFilters = [

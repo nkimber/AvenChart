@@ -1315,6 +1315,30 @@ procedures.MapGet("/report-review-queue", async (
     })
     .WithName("GetProcedureReportReviewQueue");
 
+procedures.MapGet("/order-queue", async (
+        ProcedureRepository repository,
+        string? status,
+        string? patientId,
+        int? providerId,
+        int? labId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var queue = await repository.GetOrderQueueAsync(
+            status,
+            patientId,
+            providerId,
+            labId,
+            fromDate,
+            toDate,
+            limit.GetValueOrDefault(50),
+            cancellationToken);
+        return Results.Ok(queue);
+    })
+    .WithName("GetProcedureOrderQueue");
+
 procedures.MapGet("/{patientId}", async (
         ProcedureRepository repository,
         string patientId,
