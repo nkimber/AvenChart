@@ -145,6 +145,9 @@ export type AppointmentListItem = {
   recurrenceType: number
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  repeatOnNum?: number | null
+  repeatOnDay?: number | null
+  repeatOnFrequency?: number | null
   recurrenceDays: number[]
   recurrenceEndDate?: string | null
   recurrenceExdates: string[]
@@ -175,6 +178,9 @@ export type AppointmentCreateInput = {
   recurrenceType?: number | null
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  repeatOnNum?: number | null
+  repeatOnDay?: number | null
+  repeatOnFrequency?: number | null
   recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null
@@ -195,6 +201,9 @@ export type AppointmentUpdateInput = {
   recurrenceType?: number | null
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  repeatOnNum?: number | null
+  repeatOnDay?: number | null
+  repeatOnFrequency?: number | null
   recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null

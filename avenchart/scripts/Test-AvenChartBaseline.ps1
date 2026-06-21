@@ -1172,6 +1172,74 @@ finally {
     }
 }
 
+$appointmentMonthlyRepeatOnId = $null
+try {
+    $repeatOnTitle = "Smoke Monthly Repeat-On $([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = $repeatOnTitle
+        date = "2026-12-08"
+        startTime = "09:10"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "RepeatNth"
+        comments = "Smoke monthly repeat-on recurrence create."
+        recurrenceType = 2
+        repeatOnNum = 2
+        repeatOnDay = 2
+        repeatOnFrequency = 1
+        recurrenceEndDate = "2027-04-30"
+        recurrenceExdates = @()
+    } | ConvertTo-Json -Depth 5
+    $createdRepeatOn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentMonthlyRepeatOnId = $createdRepeatOn.id
+
+    $repeatOnSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-08&limit=10" -Method Get -TimeoutSec 20
+    $repeatOnOccurrences = @($repeatOnSearch.appointments | Where-Object { $_.title -eq $repeatOnTitle })
+    $repeatOnDates = @($repeatOnOccurrences | ForEach-Object { $_.date })
+    $repeatOnNumbers = @($repeatOnOccurrences | ForEach-Object { $_.occurrenceNumber })
+    $repeatOnGenerated = $repeatOnOccurrences | Where-Object { $_.date -eq "2027-01-12" } | Select-Object -First 1
+
+    $appointmentMonthlyRepeatOnPassed = $createdRepeatOn.recurrenceType -eq 2 `
+        -and $null -eq $createdRepeatOn.repeatFrequency `
+        -and $null -eq $createdRepeatOn.repeatUnit `
+        -and $createdRepeatOn.repeatOnNum -eq 2 `
+        -and $createdRepeatOn.repeatOnDay -eq 2 `
+        -and $createdRepeatOn.repeatOnFrequency -eq 1 `
+        -and $createdRepeatOn.recurrenceLabel -eq "Every month on the 2nd Tue until 2027-04-30" `
+        -and (($repeatOnDates -join ",") -eq "2026-12-08,2027-01-12,2027-02-09,2027-03-09,2027-04-13") `
+        -and (($repeatOnNumbers -join ",") -eq "1,2,3,4,5") `
+        -and $null -ne $repeatOnGenerated `
+        -and $repeatOnGenerated.isVirtualOccurrence
+
+    $encodedRepeatOnId = [System.Uri]::EscapeDataString($appointmentMonthlyRepeatOnId)
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRepeatOnId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentMonthlyRepeatOnId = $null
+
+    Add-Check -Name "appointment monthly repeat-on recurrence lifecycle" -Result $(if ($appointmentMonthlyRepeatOnPassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdRepeatOn.id
+        createdLabel = $createdRepeatOn.recurrenceLabel
+        dates = $repeatOnDates
+        generatedOccurrenceId = $repeatOnGenerated.id
+    }
+}
+catch {
+    Add-Check -Name "appointment monthly repeat-on recurrence lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentMonthlyRepeatOnId) {
+        try {
+            $encodedRepeatOnId = [System.Uri]::EscapeDataString($appointmentMonthlyRepeatOnId)
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRepeatOnId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $appointmentRecurrenceUnitMatrixIds = @()
 try {
     $unitSuffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)

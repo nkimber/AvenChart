@@ -10,6 +10,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private const int MaximumSearchLimit = 100;
     private const int MaximumExpandedOccurrencesPerAppointment = 366;
     private const string VirtualOccurrenceSeparator = "::occurs::";
+    private const int RepeatOnRecurrenceType = 2;
     private const int SpecificWeekdaysRecurrenceType = 3;
     private const int SpecificWeekdaysRepeatUnit = 6;
 
@@ -47,6 +48,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_type,
                 a.repeat_frequency,
                 a.repeat_unit,
+                a.repeat_on_num,
+                a.repeat_on_day,
+                a.repeat_on_frequency,
                 a.recurrence_end_date,
                 a.recurrence_days,
                 a.recurrence_exdates,
@@ -119,6 +123,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_type,
                 a.repeat_frequency,
                 a.repeat_unit,
+                a.repeat_on_num,
+                a.repeat_on_day,
+                a.repeat_on_frequency,
                 a.recurrence_end_date,
                 a.recurrence_days,
                 a.recurrence_exdates,
@@ -146,6 +153,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
         var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var repeatOnNum = ReadNullableInt(reader, "repeat_on_num");
+        var repeatOnDay = ReadNullableInt(reader, "repeat_on_day");
+        var repeatOnFrequency = ReadNullableInt(reader, "repeat_on_frequency");
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
         var recurrenceDays = ReadIntList(reader, "recurrence_days");
         var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
@@ -153,13 +163,34 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var appointmentDate = ReadDate(reader, "appointment_date");
         var occurrenceDate = occurrenceReference.OccurrenceDate;
         if (occurrenceDate is not null
-            && !IsValidOccurrenceDate(appointmentDate, recurrenceType, repeatFrequency, repeatUnit, recurrenceDays, recurrenceEndDate, recurrenceExdateSet, occurrenceDate.Value))
+            && !IsValidOccurrenceDate(
+                appointmentDate,
+                recurrenceType,
+                repeatFrequency,
+                repeatUnit,
+                repeatOnNum,
+                repeatOnDay,
+                repeatOnFrequency,
+                recurrenceDays,
+                recurrenceEndDate,
+                recurrenceExdateSet,
+                occurrenceDate.Value))
         {
             return null;
         }
 
         var occurrenceNumber = recurrenceType > 0
-            ? CalculateOccurrenceNumber(appointmentDate, recurrenceType, repeatFrequency, repeatUnit, recurrenceDays, recurrenceEndDate, occurrenceDate?.ToString("yyyy-MM-dd") ?? appointmentDate)
+            ? CalculateOccurrenceNumber(
+                appointmentDate,
+                recurrenceType,
+                repeatFrequency,
+                repeatUnit,
+                repeatOnNum,
+                repeatOnDay,
+                repeatOnFrequency,
+                recurrenceDays,
+                recurrenceEndDate,
+                occurrenceDate?.ToString("yyyy-MM-dd") ?? appointmentDate)
             : null;
         var isVirtualOccurrence = occurrenceDate is not null && occurrenceDate.Value.ToString("yyyy-MM-dd") != appointmentDate;
         var responseDate = occurrenceDate?.ToString("yyyy-MM-dd") ?? appointmentDate;
@@ -199,11 +230,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             RecurrenceType: recurrenceType,
             RepeatFrequency: repeatFrequency,
             RepeatUnit: repeatUnit,
+            RepeatOnNum: repeatOnNum,
+            RepeatOnDay: repeatOnDay,
+            RepeatOnFrequency: repeatOnFrequency,
             RecurrenceDays: recurrenceDays,
             RecurrenceEndDate: recurrenceEndDate,
             RecurrenceExdates: recurrenceExdates,
             RecurrenceExceptionCount: recurrenceExdates.Count,
-            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, recurrenceDays, recurrenceEndDate),
+            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, repeatOnNum, repeatOnDay, repeatOnFrequency, recurrenceDays, recurrenceEndDate),
             PatientPurpose: ReadNullableString(reader, "purpose"));
     }
 
@@ -247,6 +281,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
+                repeat_on_num,
+                repeat_on_day,
+                repeat_on_frequency,
                 recurrence_end_date,
                 recurrence_days,
                 recurrence_exdates
@@ -269,6 +306,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 @recurrenceType,
                 @repeatFrequency,
                 @repeatUnit,
+                @repeatOnNum,
+                @repeatOnDay,
+                @repeatOnFrequency,
                 @recurrenceEndDate,
                 @recurrenceDays,
                 @recurrenceExdates
@@ -288,7 +328,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("title", NormalizeText(request.Title) ?? "Appointment");
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
         command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
-        AddRecurrenceParameters(command, request.RecurrenceType, request.RepeatFrequency, request.RepeatUnit, request.RecurrenceDays, request.RecurrenceEndDate, request.RecurrenceExdates);
+        AddRecurrenceParameters(
+            command,
+            request.RecurrenceType,
+            request.RepeatFrequency,
+            request.RepeatUnit,
+            request.RepeatOnNum,
+            request.RepeatOnDay,
+            request.RepeatOnFrequency,
+            request.RecurrenceDays,
+            request.RecurrenceEndDate,
+            request.RecurrenceExdates);
 
         var insertedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
@@ -348,6 +398,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type = @recurrenceType,
                 repeat_frequency = @repeatFrequency,
                 repeat_unit = @repeatUnit,
+                repeat_on_num = @repeatOnNum,
+                repeat_on_day = @repeatOnDay,
+                repeat_on_frequency = @repeatOnFrequency,
                 recurrence_end_date = @recurrenceEndDate,
                 recurrence_days = @recurrenceDays,
                 recurrence_exdates = @recurrenceExdates
@@ -366,7 +419,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("status", NpgsqlDbType.Text).Value = NormalizeText(request.Status) ?? (object)DBNull.Value;
         command.Parameters.Add("room", NpgsqlDbType.Text).Value = NormalizeText(request.Room) ?? (object)DBNull.Value;
         command.Parameters.Add("comments", NpgsqlDbType.Text).Value = NormalizeText(request.Comments) ?? (object)DBNull.Value;
-        AddRecurrenceParameters(command, request.RecurrenceType, request.RepeatFrequency, request.RepeatUnit, request.RecurrenceDays, request.RecurrenceEndDate, request.RecurrenceExdates);
+        AddRecurrenceParameters(
+            command,
+            request.RecurrenceType,
+            request.RepeatFrequency,
+            request.RepeatUnit,
+            request.RepeatOnNum,
+            request.RepeatOnDay,
+            request.RepeatOnFrequency,
+            request.RecurrenceDays,
+            request.RecurrenceEndDate,
+            request.RecurrenceExdates);
 
         var updatedId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return updatedId is null ? null : await GetByIdAsync(updatedId, cancellationToken);
@@ -411,6 +474,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
+                repeat_on_num,
+                repeat_on_day,
+                repeat_on_frequency,
                 recurrence_end_date,
                 recurrence_days,
                 recurrence_exdates
@@ -430,6 +496,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
         var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var repeatOnNum = ReadNullableInt(reader, "repeat_on_num");
+        var repeatOnDay = ReadNullableInt(reader, "repeat_on_day");
+        var repeatOnFrequency = ReadNullableInt(reader, "repeat_on_frequency");
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
         var recurrenceDays = ReadIntList(reader, "recurrence_days");
         var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
@@ -448,6 +517,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrenceType,
                 repeatFrequency,
                 repeatUnit,
+                repeatOnNum,
+                repeatOnDay,
+                repeatOnFrequency,
                 recurrenceDays,
                 recurrenceEndDate,
                 updatedExdateSet,
@@ -512,6 +584,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
+                repeat_on_num,
+                repeat_on_day,
+                repeat_on_frequency,
                 recurrence_end_date,
                 recurrence_days,
                 recurrence_exdates
@@ -533,6 +608,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             var recurrenceType = ReadRecurrenceType(reader);
             var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
             var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+            var repeatOnNum = ReadNullableInt(reader, "repeat_on_num");
+            var repeatOnDay = ReadNullableInt(reader, "repeat_on_day");
+            var repeatOnFrequency = ReadNullableInt(reader, "repeat_on_frequency");
             var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
             var recurrenceDays = ReadIntList(reader, "recurrence_days");
             var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
@@ -542,6 +620,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     recurrenceType,
                     repeatFrequency,
                     repeatUnit,
+                    repeatOnNum,
+                    repeatOnDay,
+                    repeatOnFrequency,
                     recurrenceDays,
                     recurrenceEndDate,
                     recurrenceExdateSet,
@@ -618,6 +699,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
+                repeat_on_num,
+                repeat_on_day,
+                repeat_on_frequency,
                 recurrence_end_date,
                 recurrence_days,
                 recurrence_exdates
@@ -638,6 +722,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 @room,
                 @comments,
                 0,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -687,6 +774,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrence_type,
                 repeat_frequency,
                 repeat_unit,
+                repeat_on_num,
+                repeat_on_day,
+                repeat_on_frequency,
                 recurrence_end_date,
                 recurrence_days,
                 recurrence_exdates
@@ -706,6 +796,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
         var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var repeatOnNum = ReadNullableInt(reader, "repeat_on_num");
+        var repeatOnDay = ReadNullableInt(reader, "repeat_on_day");
+        var repeatOnFrequency = ReadNullableInt(reader, "repeat_on_frequency");
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
         var recurrenceDays = ReadIntList(reader, "recurrence_days");
         var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
@@ -715,6 +808,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 recurrenceType,
                 repeatFrequency,
                 repeatUnit,
+                repeatOnNum,
+                repeatOnDay,
+                repeatOnFrequency,
                 recurrenceDays,
                 recurrenceEndDate,
                 recurrenceExdateSet,
@@ -792,6 +888,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceType = ReadRecurrenceType(reader);
         var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
         var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var repeatOnNum = ReadNullableInt(reader, "repeat_on_num");
+        var repeatOnDay = ReadNullableInt(reader, "repeat_on_day");
+        var repeatOnFrequency = ReadNullableInt(reader, "repeat_on_frequency");
         var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
         var recurrenceDays = ReadIntList(reader, "recurrence_days");
         var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
@@ -824,11 +923,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             RecurrenceType: recurrenceType,
             RepeatFrequency: repeatFrequency,
             RepeatUnit: repeatUnit,
+            RepeatOnNum: repeatOnNum,
+            RepeatOnDay: repeatOnDay,
+            RepeatOnFrequency: repeatOnFrequency,
             RecurrenceDays: recurrenceDays,
             RecurrenceEndDate: recurrenceEndDate,
             RecurrenceExdates: recurrenceExdates,
             RecurrenceExceptionCount: recurrenceExdates.Count,
-            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, recurrenceDays, recurrenceEndDate));
+            RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, repeatOnNum, repeatOnDay, repeatOnFrequency, recurrenceDays, recurrenceEndDate));
     }
 
     private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate)
@@ -854,6 +956,60 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var recurrenceEndDate = DateOnly.TryParse(appointment.RecurrenceEndDate, out var parsedEndDate)
             ? parsedEndDate
             : anchorDate;
+
+        if (appointment.RecurrenceType == RepeatOnRecurrenceType)
+        {
+            var repeatOnNum = appointment.RepeatOnNum.GetValueOrDefault();
+            var repeatOnDay = appointment.RepeatOnDay.GetValueOrDefault(-1);
+            var repeatOnFrequency = Math.Max(1, appointment.RepeatOnFrequency.GetValueOrDefault(1));
+            if (repeatOnNum is < 1 or > 5 || repeatOnDay is < 0 or > 6)
+            {
+                yield break;
+            }
+
+            var anchorMonth = new DateOnly(anchorDate.Year, anchorDate.Month, 1);
+            var occurrenceNumber = 0;
+            for (var monthOffset = 0; occurrenceNumber < MaximumExpandedOccurrencesPerAppointment; monthOffset += repeatOnFrequency)
+            {
+                var occurrenceMonth = anchorMonth.AddMonths(monthOffset);
+                if (occurrenceMonth > recurrenceEndDate)
+                {
+                    yield break;
+                }
+
+                var repeatOnDate = GetRepeatOnOccurrenceDate(occurrenceMonth.Year, occurrenceMonth.Month, repeatOnNum, repeatOnDay);
+                if (repeatOnDate is null)
+                {
+                    continue;
+                }
+
+                if (repeatOnDate.Value < anchorDate)
+                {
+                    continue;
+                }
+
+                occurrenceNumber++;
+                if (repeatOnDate.Value > recurrenceEndDate)
+                {
+                    yield break;
+                }
+
+                if (repeatOnDate.Value >= fromDate && !recurrenceExdates.Contains(repeatOnDate.Value))
+                {
+                    var isVirtualOccurrence = repeatOnDate.Value != anchorDate;
+                    yield return appointment with
+                    {
+                        Id = isVirtualOccurrence ? BuildOccurrenceId(appointment.SeriesRootId, repeatOnDate.Value) : appointment.SeriesRootId,
+                        Date = repeatOnDate.Value.ToString("yyyy-MM-dd"),
+                        IsRecurringSeries = true,
+                        IsVirtualOccurrence = isVirtualOccurrence,
+                        OccurrenceNumber = occurrenceNumber
+                    };
+                }
+            }
+
+            yield break;
+        }
 
         if (appointment.RecurrenceType == SpecificWeekdaysRecurrenceType)
         {
@@ -941,6 +1097,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         int recurrenceType,
         int? repeatFrequency,
         int? repeatUnit,
+        int? repeatOnNum,
+        int? repeatOnDay,
+        int? repeatOnFrequency,
         IReadOnlyList<int> recurrenceDays,
         string? recurrenceEndDateText,
         IReadOnlySet<DateOnly> recurrenceExdates,
@@ -963,7 +1122,17 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return false;
         }
 
-        return CalculateOccurrenceNumber(anchorDateText, recurrenceType, repeatFrequency, repeatUnit, recurrenceDays, recurrenceEndDateText, occurrenceDate.ToString("yyyy-MM-dd")) is not null;
+        return CalculateOccurrenceNumber(
+            anchorDateText,
+            recurrenceType,
+            repeatFrequency,
+            repeatUnit,
+            repeatOnNum,
+            repeatOnDay,
+            repeatOnFrequency,
+            recurrenceDays,
+            recurrenceEndDateText,
+            occurrenceDate.ToString("yyyy-MM-dd")) is not null;
     }
 
     private static int? CalculateOccurrenceNumber(
@@ -971,6 +1140,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         int recurrenceType,
         int? repeatFrequency,
         int? repeatUnit,
+        int? repeatOnNum,
+        int? repeatOnDay,
+        int? repeatOnFrequency,
         IReadOnlyList<int> recurrenceDays,
         string? recurrenceEndDateText,
         string occurrenceDateText)
@@ -978,6 +1150,55 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         if (!DateOnly.TryParse(anchorDateText, out var anchorDate)
             || !DateOnly.TryParse(occurrenceDateText, out var occurrenceDate))
         {
+            return null;
+        }
+
+        if (recurrenceType == RepeatOnRecurrenceType)
+        {
+            var normalizedRepeatOnNum = repeatOnNum.GetValueOrDefault();
+            var normalizedRepeatOnDay = repeatOnDay.GetValueOrDefault(-1);
+            var normalizedRepeatOnFrequency = Math.Max(1, repeatOnFrequency.GetValueOrDefault(1));
+            if (normalizedRepeatOnNum is < 1 or > 5 || normalizedRepeatOnDay is < 0 or > 6)
+            {
+                return null;
+            }
+
+            var recurrenceEndDate = DateOnly.TryParse(recurrenceEndDateText, out var parsedEndDate)
+                ? parsedEndDate
+                : anchorDate;
+            if (occurrenceDate < anchorDate || occurrenceDate > recurrenceEndDate)
+            {
+                return null;
+            }
+
+            var anchorMonth = new DateOnly(anchorDate.Year, anchorDate.Month, 1);
+            var occurrenceNumber = 0;
+            for (var monthOffset = 0; occurrenceNumber < MaximumExpandedOccurrencesPerAppointment; monthOffset += normalizedRepeatOnFrequency)
+            {
+                var occurrenceMonth = anchorMonth.AddMonths(monthOffset);
+                if (occurrenceMonth > recurrenceEndDate)
+                {
+                    return null;
+                }
+
+                var candidate = GetRepeatOnOccurrenceDate(occurrenceMonth.Year, occurrenceMonth.Month, normalizedRepeatOnNum, normalizedRepeatOnDay);
+                if (candidate is null || candidate.Value < anchorDate)
+                {
+                    continue;
+                }
+
+                occurrenceNumber++;
+                if (candidate.Value == occurrenceDate)
+                {
+                    return occurrenceNumber;
+                }
+
+                if (candidate.Value > occurrenceDate)
+                {
+                    return null;
+                }
+            }
+
             return null;
         }
 
@@ -1042,6 +1263,34 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return null;
     }
 
+    private static DateOnly? GetRepeatOnOccurrenceDate(int year, int month, int repeatOnNum, int repeatOnDay)
+    {
+        if (repeatOnNum is < 1 or > 5 || repeatOnDay is < 0 or > 6)
+        {
+            return null;
+        }
+
+        if (repeatOnNum == 5)
+        {
+            var lastDate = new DateOnly(year, month, DateTime.DaysInMonth(year, month));
+            while ((int)lastDate.DayOfWeek != repeatOnDay)
+            {
+                lastDate = lastDate.AddDays(-1);
+            }
+
+            return lastDate;
+        }
+
+        var firstDate = new DateOnly(year, month, 1);
+        while ((int)firstDate.DayOfWeek != repeatOnDay)
+        {
+            firstDate = firstDate.AddDays(1);
+        }
+
+        var candidate = firstDate.AddDays((repeatOnNum - 1) * 7);
+        return candidate.Month == month ? candidate : null;
+    }
+
     private static DateOnly GetNextOccurrenceDate(DateOnly occurrenceDate, int repeatFrequency, int? repeatUnit) => repeatUnit switch
     {
         0 => occurrenceDate.AddDays(repeatFrequency),
@@ -1083,11 +1332,15 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         int? recurrenceType,
         int? repeatFrequency,
         int? repeatUnit,
+        int? repeatOnNum,
+        int? repeatOnDay,
+        int? repeatOnFrequency,
         IReadOnlyList<int>? recurrenceDays,
         string? recurrenceEndDate,
         IReadOnlyList<string>? recurrenceExdates)
     {
         var normalizedType = recurrenceType.GetValueOrDefault();
+        var isRepeatOn = normalizedType == RepeatOnRecurrenceType;
         var isSpecificWeekdays = normalizedType == SpecificWeekdaysRecurrenceType;
         DateOnly? parsedEndDate = null;
         if (normalizedType > 0 && DateOnly.TryParse(recurrenceEndDate, out var endDate))
@@ -1102,16 +1355,31 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             : null;
 
         command.Parameters.AddWithValue("recurrenceType", Math.Max(0, normalizedType));
-        command.Parameters.Add("repeatFrequency", NpgsqlDbType.Integer).Value = normalizedType > 0 && !isSpecificWeekdays
+        command.Parameters.Add("repeatFrequency", NpgsqlDbType.Integer).Value = normalizedType > 0 && !isSpecificWeekdays && !isRepeatOn
             ? repeatFrequency.GetValueOrDefault(1)
             : (object)DBNull.Value;
         command.Parameters.Add("repeatUnit", NpgsqlDbType.Integer).Value = isSpecificWeekdays
             ? (object)SpecificWeekdaysRepeatUnit
-            : normalizedType > 0 ? (object)repeatUnit.GetValueOrDefault(1) : DBNull.Value;
+            : normalizedType > 0 && !isRepeatOn ? (object)repeatUnit.GetValueOrDefault(1) : DBNull.Value;
+        command.Parameters.Add("repeatOnNum", NpgsqlDbType.Integer).Value = isRepeatOn
+            ? (object)NormalizeRepeatOnNum(repeatOnNum)
+            : DBNull.Value;
+        command.Parameters.Add("repeatOnDay", NpgsqlDbType.Integer).Value = isRepeatOn
+            ? (object)NormalizeRepeatOnDay(repeatOnDay)
+            : DBNull.Value;
+        command.Parameters.Add("repeatOnFrequency", NpgsqlDbType.Integer).Value = isRepeatOn
+            ? (object)Math.Max(1, repeatOnFrequency.GetValueOrDefault(1))
+            : DBNull.Value;
         command.Parameters.Add("recurrenceEndDate", NpgsqlDbType.Date).Value = parsedEndDate is null ? DBNull.Value : (object)parsedEndDate.Value;
         command.Parameters.Add("recurrenceDays", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(normalizedDays) ? DBNull.Value : normalizedDays;
         command.Parameters.Add("recurrenceExdates", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(normalizedExdates) ? DBNull.Value : normalizedExdates;
     }
+
+    private static int NormalizeRepeatOnNum(int? repeatOnNum) =>
+        repeatOnNum is >= 1 and <= 5 ? repeatOnNum.Value : 1;
+
+    private static int NormalizeRepeatOnDay(int? repeatOnDay) =>
+        repeatOnDay is >= 0 and <= 6 ? repeatOnDay.Value : 0;
 
     private static int ReadRecurrenceType(DbDataReader reader) => ReadNullableInt(reader, "recurrence_type").GetValueOrDefault();
 
@@ -1192,11 +1460,29 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return normalized.Count == 0 ? null : string.Join(",", normalized);
     }
 
-    private static string BuildRecurrenceLabel(int recurrenceType, int? repeatFrequency, int? repeatUnit, IReadOnlyList<int> recurrenceDays, string? recurrenceEndDate)
+    private static string BuildRecurrenceLabel(
+        int recurrenceType,
+        int? repeatFrequency,
+        int? repeatUnit,
+        int? repeatOnNum,
+        int? repeatOnDay,
+        int? repeatOnFrequency,
+        IReadOnlyList<int> recurrenceDays,
+        string? recurrenceEndDate)
     {
         if (recurrenceType <= 0)
         {
             return "Does not repeat";
+        }
+
+        if (recurrenceType == RepeatOnRecurrenceType)
+        {
+            var repeatOnMonthFrequency = Math.Max(1, repeatOnFrequency.GetValueOrDefault(1));
+            var repeatOnCadencePrefix = repeatOnMonthFrequency == 1 ? "Every month" : $"Every {repeatOnMonthFrequency} months";
+            var ordinal = GetRepeatOnOrdinalLabel(repeatOnNum.GetValueOrDefault());
+            var weekday = GetRepeatOnWeekdayLabel(repeatOnDay.GetValueOrDefault(-1));
+            var repeatOnCadence = $"{repeatOnCadencePrefix} on the {ordinal} {weekday}";
+            return string.IsNullOrWhiteSpace(recurrenceEndDate) ? repeatOnCadence : $"{repeatOnCadence} until {recurrenceEndDate}";
         }
 
         if (recurrenceType == SpecificWeekdaysRecurrenceType)
@@ -1225,6 +1511,28 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         var cadence = frequency == 1 ? $"Every {unit}" : $"Every {frequency} {unit}";
         return string.IsNullOrWhiteSpace(recurrenceEndDate) ? cadence : $"{cadence} until {recurrenceEndDate}";
     }
+
+    private static string GetRepeatOnOrdinalLabel(int value) => value switch
+    {
+        1 => "1st",
+        2 => "2nd",
+        3 => "3rd",
+        4 => "4th",
+        5 => "Last",
+        _ => $"#{value}"
+    };
+
+    private static string GetRepeatOnWeekdayLabel(int value) => value switch
+    {
+        0 => "Sun",
+        1 => "Mon",
+        2 => "Tue",
+        3 => "Wed",
+        4 => "Thu",
+        5 => "Fri",
+        6 => "Sat",
+        _ => $"Day {value}"
+    };
 
     private static string GetLegacyEhrWeekdayLabel(int value) => value switch
     {
