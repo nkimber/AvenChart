@@ -492,6 +492,150 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<ProcedureOrderCatalogImportResponse?> ImportOrderCatalogCompendiumAsync(
+        ProcedureOrderCatalogImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        var import = NormalizeOrderCatalogImport(request);
+        if (import is null || import.Rows.Count == 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        if (!await IsValidOrderCatalogImportContextAsync(
+                connection,
+                transaction,
+                import.ParentId,
+                import.LabId,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        var deactivatedOrderCount = await DeactivateOrderCatalogChildrenAsync(
+            connection,
+            transaction,
+            import.ParentId,
+            "ord",
+            cancellationToken);
+
+        var importedItems = new List<ProcedureOrderCatalogImportItem>();
+        var createdOrderCount = 0;
+        var updatedOrderCount = 0;
+        var reactivatedOrderCount = 0;
+        var createdResultCount = 0;
+        var updatedResultCount = 0;
+        var reactivatedResultCount = 0;
+        var resultCount = 0;
+        var resultParentsCleared = new HashSet<int>();
+
+        foreach (var row in import.Rows)
+        {
+            var orderMutation = await UpsertImportedOrderCatalogItemAsync(
+                connection,
+                transaction,
+                import.ParentId,
+                import.LabId,
+                row.OrderCode,
+                row.OrderName,
+                "ord",
+                cancellationToken);
+
+            if (orderMutation.Created)
+            {
+                createdOrderCount += 1;
+            }
+            else
+            {
+                updatedOrderCount += 1;
+            }
+
+            if (orderMutation.Reactivated)
+            {
+                reactivatedOrderCount += 1;
+            }
+
+            importedItems.Add(new ProcedureOrderCatalogImportItem(
+                Id: orderMutation.Id,
+                ParentId: import.ParentId,
+                Code: row.OrderCode,
+                Name: row.OrderName,
+                ItemType: "ord",
+                Created: orderMutation.Created,
+                Reactivated: orderMutation.Reactivated));
+
+            if (resultParentsCleared.Add(orderMutation.Id))
+            {
+                await DeactivateOrderCatalogChildrenAsync(
+                    connection,
+                    transaction,
+                    orderMutation.Id,
+                    "res",
+                    cancellationToken);
+            }
+
+            if (import.VendorFormat != "pathgroup" || row.ResultCode is null || row.ResultName is null)
+            {
+                continue;
+            }
+
+            var resultMutation = await UpsertImportedOrderCatalogItemAsync(
+                connection,
+                transaction,
+                orderMutation.Id,
+                import.LabId,
+                row.ResultCode,
+                row.ResultName,
+                "res",
+                cancellationToken);
+            resultCount += 1;
+
+            if (resultMutation.Created)
+            {
+                createdResultCount += 1;
+            }
+            else
+            {
+                updatedResultCount += 1;
+            }
+
+            if (resultMutation.Reactivated)
+            {
+                reactivatedResultCount += 1;
+            }
+
+            importedItems.Add(new ProcedureOrderCatalogImportItem(
+                Id: resultMutation.Id,
+                ParentId: orderMutation.Id,
+                Code: row.ResultCode,
+                Name: row.ResultName,
+                ItemType: "res",
+                Created: resultMutation.Created,
+                Reactivated: resultMutation.Reactivated));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ProcedureOrderCatalogImportResponse(
+            VendorFormat: import.VendorFormat,
+            ParentId: import.ParentId,
+            LabId: import.LabId,
+            ImportedOrderCount: import.Rows.Count,
+            CreatedOrderCount: createdOrderCount,
+            UpdatedOrderCount: updatedOrderCount,
+            ReactivatedOrderCount: reactivatedOrderCount,
+            DeactivatedOrderCount: deactivatedOrderCount,
+            ImportedResultCount: resultCount,
+            CreatedResultCount: createdResultCount,
+            UpdatedResultCount: updatedResultCount,
+            ReactivatedResultCount: reactivatedResultCount,
+            ImportedItems: importedItems,
+            Catalog: await GetOrderCatalogAsync(cancellationToken));
+    }
+
     public async Task<ProcedureLabProviderMutationResponse?> CreateLabProviderAsync(
         ProcedureLabProviderMutationRequest request,
         CancellationToken cancellationToken)
@@ -1530,6 +1674,16 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string columnName,
         CancellationToken cancellationToken)
     {
+        return await GetNextIntIdAsync(connection, tableName, columnName, null, cancellationToken);
+    }
+
+    private static async Task<int> GetNextIntIdAsync(
+        NpgsqlConnection connection,
+        string tableName,
+        string columnName,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         if (tableName is not ("lab_orders" or "lab_reports" or "lab_results" or "lab_specimens" or "lab_providers" or "lab_provider_address_book" or "lab_order_catalog")
             || columnName != "id")
         {
@@ -1537,6 +1691,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = $"select coalesce(max({columnName}), 0) + 1 from {tableName};";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
@@ -1689,6 +1844,302 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             values.StandardCode is { } standardCode ? standardCode : DBNull.Value;
         command.Parameters.AddWithValue("sequence", values.Sequence);
         command.Parameters.AddWithValue("active", values.Active);
+    }
+
+    private static OrderCatalogImportValues? NormalizeOrderCatalogImport(ProcedureOrderCatalogImportRequest request)
+    {
+        var vendorFormat = NormalizeText(request.VendorFormat)?.ToLowerInvariant() switch
+        {
+            "pathgroup" or "pathgroup-labs" => "pathgroup",
+            "ympg-dpmg" or "ypmg" or "dpmg" or "yosemite" or "diagnostic-pathology" => "ympg-dpmg",
+            _ => null
+        };
+        if (vendorFormat is null || request.ParentId <= 0 || request.LabId <= 0)
+        {
+            return null;
+        }
+
+        var rows = ParseOrderCatalogCsv(request.CsvText, vendorFormat);
+        return new OrderCatalogImportValues(
+            VendorFormat: vendorFormat,
+            ParentId: request.ParentId,
+            LabId: request.LabId,
+            Rows: rows);
+    }
+
+    private static IReadOnlyList<OrderCatalogCompendiumRow> ParseOrderCatalogCsv(string? csvText, string vendorFormat)
+    {
+        if (string.IsNullOrWhiteSpace(csvText))
+        {
+            return [];
+        }
+
+        var rows = new List<OrderCatalogCompendiumRow>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var columns in ParseCsv(csvText))
+        {
+            if (columns.Length == 0)
+            {
+                continue;
+            }
+
+            var orderCode = NormalizeText(columns.ElementAtOrDefault(0));
+            if (orderCode is null || string.Equals(orderCode, "Order Code", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var orderName = NormalizeText(columns.ElementAtOrDefault(1));
+            if (orderName is null)
+            {
+                continue;
+            }
+
+            var resultCode = vendorFormat == "pathgroup" ? NormalizeText(columns.ElementAtOrDefault(2)) : null;
+            var resultName = vendorFormat == "pathgroup" ? NormalizeText(columns.ElementAtOrDefault(3)) : null;
+            if (vendorFormat == "pathgroup" && columns.Length < 4)
+            {
+                continue;
+            }
+
+            var dedupeKey = $"{orderCode}|{resultCode ?? string.Empty}";
+            if (!seen.Add(dedupeKey))
+            {
+                continue;
+            }
+
+            rows.Add(new OrderCatalogCompendiumRow(
+                OrderCode: orderCode,
+                OrderName: orderName,
+                ResultCode: resultCode,
+                ResultName: resultName));
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyList<string[]> ParseCsv(string csvText)
+    {
+        var rows = new List<string[]>();
+        var row = new List<string>();
+        var field = new System.Text.StringBuilder();
+        var inQuotes = false;
+
+        for (var index = 0; index < csvText.Length; index += 1)
+        {
+            var current = csvText[index];
+            if (inQuotes)
+            {
+                if (current == '"')
+                {
+                    if (index + 1 < csvText.Length && csvText[index + 1] == '"')
+                    {
+                        field.Append('"');
+                        index += 1;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+                else
+                {
+                    field.Append(current);
+                }
+
+                continue;
+            }
+
+            if (current == '"')
+            {
+                inQuotes = true;
+                continue;
+            }
+
+            if (current == ',')
+            {
+                row.Add(field.ToString());
+                field.Clear();
+                continue;
+            }
+
+            if (current is '\r' or '\n')
+            {
+                row.Add(field.ToString());
+                field.Clear();
+                if (row.Any(value => !string.IsNullOrWhiteSpace(value)))
+                {
+                    rows.Add(row.ToArray());
+                }
+
+                row.Clear();
+                if (current == '\r' && index + 1 < csvText.Length && csvText[index + 1] == '\n')
+                {
+                    index += 1;
+                }
+
+                continue;
+            }
+
+            field.Append(current);
+        }
+
+        row.Add(field.ToString());
+        if (row.Any(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            rows.Add(row.ToArray());
+        }
+
+        return rows;
+    }
+
+    private static async Task<bool> IsValidOrderCatalogImportContextAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int parentId,
+        int labId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select
+                exists (
+                    select 1
+                    from lab_order_catalog
+                    where id = @parentId
+                      and item_type = 'grp'
+                ) as has_parent,
+                exists (
+                    select 1
+                    from lab_providers
+                    where id = @labId
+                ) as has_lab;
+            """;
+        command.Parameters.AddWithValue("parentId", parentId);
+        command.Parameters.AddWithValue("labId", labId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return reader.GetBoolean(reader.GetOrdinal("has_parent"))
+            && reader.GetBoolean(reader.GetOrdinal("has_lab"));
+    }
+
+    private static async Task<int> DeactivateOrderCatalogChildrenAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int parentId,
+        string itemType,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            update lab_order_catalog
+            set active = false
+            where parent_id = @parentId
+              and item_type = @itemType
+              and active = true;
+            """;
+        command.Parameters.AddWithValue("parentId", parentId);
+        command.Parameters.AddWithValue("itemType", itemType);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<OrderCatalogImportMutation> UpsertImportedOrderCatalogItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int parentId,
+        int labId,
+        string code,
+        string name,
+        string itemType,
+        CancellationToken cancellationToken)
+    {
+        var existing = await GetImportedOrderCatalogItemAsync(
+            connection,
+            transaction,
+            parentId,
+            code,
+            itemType,
+            cancellationToken);
+        if (existing is null)
+        {
+            var id = await GetNextIntIdAsync(connection, "lab_order_catalog", "id", transaction, cancellationToken);
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                insert into lab_order_catalog
+                    (id, parent_id, lab_id, code, name, item_type, procedure_type_name, description, specimen, standard_code, seq, active)
+                values
+                    (@id, @parentId, @labId, @code, @name, @itemType, @procedureTypeName, null, null, null, 0, true);
+                """;
+            insert.Parameters.AddWithValue("id", id);
+            insert.Parameters.AddWithValue("parentId", parentId);
+            insert.Parameters.AddWithValue("labId", labId);
+            insert.Parameters.AddWithValue("code", code);
+            insert.Parameters.AddWithValue("name", name);
+            insert.Parameters.AddWithValue("itemType", itemType);
+            insert.Parameters.Add("procedureTypeName", NpgsqlDbType.Text).Value = itemType == "ord" ? "laboratory" : DBNull.Value;
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+            return new OrderCatalogImportMutation(id, Created: true, Reactivated: false);
+        }
+
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = """
+            update lab_order_catalog
+            set parent_id = @parentId,
+                lab_id = @labId,
+                code = @code,
+                name = @name,
+                item_type = @itemType,
+                active = true
+            where id = @id;
+            """;
+        update.Parameters.AddWithValue("id", existing.Id);
+        update.Parameters.AddWithValue("parentId", parentId);
+        update.Parameters.AddWithValue("labId", labId);
+        update.Parameters.AddWithValue("code", code);
+        update.Parameters.AddWithValue("name", name);
+        update.Parameters.AddWithValue("itemType", itemType);
+        await update.ExecuteNonQueryAsync(cancellationToken);
+
+        return new OrderCatalogImportMutation(existing.Id, Created: false, Reactivated: !existing.Active);
+    }
+
+    private static async Task<ExistingCatalogImportItem?> GetImportedOrderCatalogItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int parentId,
+        string code,
+        string itemType,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select id, active
+            from lab_order_catalog
+            where parent_id = @parentId
+              and code = @code
+              and item_type = @itemType
+            order by id desc
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("parentId", parentId);
+        command.Parameters.AddWithValue("code", code);
+        command.Parameters.AddWithValue("itemType", itemType);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ExistingCatalogImportItem(
+            Id: reader.GetInt32(reader.GetOrdinal("id")),
+            Active: reader.GetBoolean(reader.GetOrdinal("active")));
     }
 
     private static async Task<(string Name, int? LabDirectorId)?> ResolveLabProviderNameAsync(
@@ -1845,4 +2296,20 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string? StandardCode,
         int Sequence,
         bool Active);
+
+    private sealed record OrderCatalogImportValues(
+        string VendorFormat,
+        int ParentId,
+        int LabId,
+        IReadOnlyList<OrderCatalogCompendiumRow> Rows);
+
+    private sealed record OrderCatalogCompendiumRow(
+        string OrderCode,
+        string OrderName,
+        string? ResultCode,
+        string? ResultName);
+
+    private sealed record ExistingCatalogImportItem(int Id, bool Active);
+
+    private sealed record OrderCatalogImportMutation(int Id, bool Created, bool Reactivated);
 }

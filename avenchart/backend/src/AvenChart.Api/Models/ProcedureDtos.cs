@@ -168,6 +168,37 @@ public sealed record ProcedureOrderCatalogMutationResponse(
     int Id,
     ProcedureOrderCatalogResponse Catalog);
 
+public sealed record ProcedureOrderCatalogImportRequest(
+    string VendorFormat,
+    int ParentId,
+    int LabId,
+    string CsvText);
+
+public sealed record ProcedureOrderCatalogImportItem(
+    int Id,
+    int? ParentId,
+    string Code,
+    string Name,
+    string ItemType,
+    bool Created,
+    bool Reactivated);
+
+public sealed record ProcedureOrderCatalogImportResponse(
+    string VendorFormat,
+    int ParentId,
+    int LabId,
+    int ImportedOrderCount,
+    int CreatedOrderCount,
+    int UpdatedOrderCount,
+    int ReactivatedOrderCount,
+    int DeactivatedOrderCount,
+    int ImportedResultCount,
+    int CreatedResultCount,
+    int UpdatedResultCount,
+    int ReactivatedResultCount,
+    IReadOnlyList<ProcedureOrderCatalogImportItem> ImportedItems,
+    ProcedureOrderCatalogResponse Catalog);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

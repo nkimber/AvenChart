@@ -1258,6 +1258,18 @@ procedures.MapPost("/order-catalog", async (
     })
     .WithName("CreateProcedureOrderCatalogItem");
 
+procedures.MapPost("/order-catalog/import-compendium", async (
+        ProcedureRepository repository,
+        ProcedureOrderCatalogImportRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var import = await repository.ImportOrderCatalogCompendiumAsync(request, cancellationToken);
+        return import is null
+            ? Results.BadRequest(new { error = "Procedure order catalog compendium import requires a valid vendor format, group, lab, and CSV payload." })
+            : Results.Ok(import);
+    })
+    .WithName("ImportProcedureOrderCatalogCompendium");
+
 procedures.MapPut("/order-catalog/{itemId:int}", async (
         ProcedureRepository repository,
         int itemId,

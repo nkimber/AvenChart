@@ -53,6 +53,7 @@ import {
   getOperationalReports,
   getOperationalReportsCsvUrl,
   createAppointment,
+  importProcedureOrderCatalogCompendium,
   createBillingClaimStatus,
   createBillingLine,
   createBillingPaymentPosting,
@@ -247,6 +248,8 @@ import {
   type ProcedureLabProviderItem,
   type ProcedureLabProviderMutationInput,
   type ProcedureOrderCatalogItem,
+  type ProcedureOrderCatalogImportInput,
+  type ProcedureOrderCatalogImportResponse,
   type ProcedureOrderCatalogMutationInput,
   type ProcedureOrderCatalogResponse,
   type ProcedureReportReviewQueueResponse,
@@ -2496,6 +2499,23 @@ function App() {
     }
   }
 
+  async function handleProcedureOrderCatalogImport(input: ProcedureOrderCatalogImportInput) {
+    setProcedureOrderCatalogStatus('loading')
+    setProcedureOrderCatalogError(null)
+
+    try {
+      const response = await importProcedureOrderCatalogCompendium(input)
+      setProcedureOrderCatalog(response.catalog)
+      setProcedureOrderCatalogStatus('ready')
+      return response
+    } catch (importError) {
+      setProcedureOrderCatalogStatus('error')
+      const message = importError instanceof Error ? importError.message : 'Procedure order catalog compendium import failed'
+      setProcedureOrderCatalogError(message)
+      throw importError
+    }
+  }
+
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
     setAdministrationStatus('loading')
     setAdministrationError(null)
@@ -3285,6 +3305,7 @@ function App() {
             onCreateOrderCatalogItem={handleProcedureOrderCatalogCreate}
             onUpdateOrderCatalogItem={handleProcedureOrderCatalogUpdate}
             onDeleteOrderCatalogItem={handleProcedureOrderCatalogDelete}
+            onImportOrderCatalogCompendium={handleProcedureOrderCatalogImport}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -11071,6 +11092,7 @@ function ReportsWorkspace({
   onCreateOrderCatalogItem,
   onUpdateOrderCatalogItem,
   onDeleteOrderCatalogItem,
+  onImportOrderCatalogCompendium,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -11110,6 +11132,9 @@ function ReportsWorkspace({
     input: ProcedureOrderCatalogMutationInput,
   ) => Promise<unknown>
   onDeleteOrderCatalogItem: (item: ProcedureOrderCatalogItem) => Promise<void>
+  onImportOrderCatalogCompendium: (
+    input: ProcedureOrderCatalogImportInput,
+  ) => Promise<ProcedureOrderCatalogImportResponse>
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -11239,6 +11264,7 @@ function ReportsWorkspace({
               onCreateItem={onCreateOrderCatalogItem}
               onUpdateItem={onUpdateOrderCatalogItem}
               onDeleteItem={onDeleteOrderCatalogItem}
+              onImportCompendium={onImportOrderCatalogCompendium}
             />
 
             <ProcedureReportReviewQueuePanel
@@ -11288,6 +11314,7 @@ function ProcedureOrderCatalogPanel({
   onCreateItem,
   onUpdateItem,
   onDeleteItem,
+  onImportCompendium,
 }: {
   catalog: ProcedureOrderCatalogResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -11295,6 +11322,7 @@ function ProcedureOrderCatalogPanel({
   onCreateItem: (input: ProcedureOrderCatalogMutationInput) => Promise<unknown>
   onUpdateItem: (item: ProcedureOrderCatalogItem, input: ProcedureOrderCatalogMutationInput) => Promise<unknown>
   onDeleteItem: (item: ProcedureOrderCatalogItem) => Promise<void>
+  onImportCompendium: (input: ProcedureOrderCatalogImportInput) => Promise<ProcedureOrderCatalogImportResponse>
 }) {
   const [catalogDraft, setCatalogDraft] = useState<ProcedureOrderCatalogMutationInput>({
     parentId: 9040,
@@ -11309,7 +11337,14 @@ function ProcedureOrderCatalogPanel({
     sequence: 99,
     active: true,
   })
-  const [pendingItemId, setPendingItemId] = useState<number | 'new' | null>(null)
+  const [importDraft, setImportDraft] = useState<ProcedureOrderCatalogImportInput>({
+    vendorFormat: 'pathgroup',
+    parentId: 9040,
+    labId: 504,
+    csvText: '',
+  })
+  const [lastImport, setLastImport] = useState<ProcedureOrderCatalogImportResponse | null>(null)
+  const [pendingItemId, setPendingItemId] = useState<number | 'new' | 'import' | null>(null)
   const providerGroups = useMemo(
     () => (catalog?.items ?? []).filter((item) => item.itemType === 'grp' && item.parentId),
     [catalog],
@@ -11329,6 +11364,15 @@ function ProcedureOrderCatalogPanel({
   function handleCatalogGroupChange(parentId: number) {
     const group = providerGroups.find((item) => item.id === parentId)
     setCatalogDraft((current) => ({
+      ...current,
+      parentId,
+      labId: group?.labId ?? current.labId,
+    }))
+  }
+
+  function handleImportGroupChange(parentId: number) {
+    const group = providerGroups.find((item) => item.id === parentId)
+    setImportDraft((current) => ({
       ...current,
       parentId,
       labId: group?.labId ?? current.labId,
@@ -11357,6 +11401,18 @@ function ProcedureOrderCatalogPanel({
     setPendingItemId(item.id)
     try {
       await onUpdateItem(item, catalogMutationFromItem(item, { active: !item.active }))
+    } finally {
+      setPendingItemId(null)
+    }
+  }
+
+  async function handleCompendiumImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPendingItemId('import')
+    try {
+      const response = await onImportCompendium(importDraft)
+      setLastImport(response)
+      setImportDraft((current) => ({ ...current, csvText: '' }))
     } finally {
       setPendingItemId(null)
     }
@@ -11468,6 +11524,52 @@ function ProcedureOrderCatalogPanel({
             <ClipboardList size={15} />
             Add Catalog Item
           </button>
+        </div>
+      </form>
+
+      <form className="appointment-mutation-panel procedure-order-catalog-form" onSubmit={handleCompendiumImport}>
+        <div className="mutation-grid two-column">
+          <label className="contact-field">
+            Vendor
+            <select
+              value={importDraft.vendorFormat}
+              onChange={(event) => setImportDraft((current) => ({ ...current, vendorFormat: event.target.value }))}
+            >
+              <option value="pathgroup">PathGroup</option>
+              <option value="ympg-dpmg">YPMG / DPMG</option>
+            </select>
+          </label>
+          <label className="contact-field">
+            Provider group
+            <select value={importDraft.parentId} onChange={(event) => handleImportGroupChange(Number(event.target.value))}>
+              {providerGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="contact-field">
+          CSV
+          <textarea
+            rows={5}
+            value={importDraft.csvText}
+            onChange={(event) => setImportDraft((current) => ({ ...current, csvText: event.target.value }))}
+            placeholder="Order Code,Order Name,Result Code,Result Name"
+            required
+          />
+        </label>
+        <div className="detail-actions">
+          <button className="icon-text-button primary" type="submit" disabled={isBusy || providerGroups.length === 0}>
+            <Upload size={15} />
+            Import Compendium
+          </button>
+          {lastImport && (
+            <span className="save-note">
+              Imported {lastImport.importedOrderCount} orders / {lastImport.importedResultCount} results
+            </span>
+          )}
         </div>
       </form>
 

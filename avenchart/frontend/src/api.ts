@@ -1078,6 +1078,40 @@ export type ProcedureOrderCatalogMutationResponse = {
   catalog: ProcedureOrderCatalogResponse
 }
 
+export type ProcedureOrderCatalogImportInput = {
+  vendorFormat: string
+  parentId: number
+  labId: number
+  csvText: string
+}
+
+export type ProcedureOrderCatalogImportItem = {
+  id: number
+  parentId?: number | null
+  code: string
+  name: string
+  itemType: string
+  created: boolean
+  reactivated: boolean
+}
+
+export type ProcedureOrderCatalogImportResponse = {
+  vendorFormat: string
+  parentId: number
+  labId: number
+  importedOrderCount: number
+  createdOrderCount: number
+  updatedOrderCount: number
+  reactivatedOrderCount: number
+  deactivatedOrderCount: number
+  importedResultCount: number
+  createdResultCount: number
+  updatedResultCount: number
+  reactivatedResultCount: number
+  importedItems: ProcedureOrderCatalogImportItem[]
+  catalog: ProcedureOrderCatalogResponse
+}
+
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
@@ -3125,6 +3159,23 @@ export async function deleteProcedureOrderCatalogItem(itemId: number, signal?: A
   if (!response.ok) {
     throw new Error(`Procedure order catalog delete failed with ${response.status}`)
   }
+}
+
+export async function importProcedureOrderCatalogCompendium(
+  input: ProcedureOrderCatalogImportInput,
+  signal?: AbortSignal,
+): Promise<ProcedureOrderCatalogImportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/import-compendium`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure order catalog compendium import failed with ${response.status}`)
+  }
+
+  return response.json()
 }
 
 export async function createProcedureLabProviderAddressBookOrganization(
