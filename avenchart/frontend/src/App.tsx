@@ -123,6 +123,7 @@ import {
   signEncounter,
   signEncounterDocument,
   signProcedureReport,
+  reopenProcedureReportReview,
   softDeleteEncounterDocument,
   signPatientDocument,
   softDeletePatientDocument,
@@ -2421,6 +2422,25 @@ function App() {
     }
   }
 
+  async function handleProcedureReportReviewReopen(report: ProcedureReportItem) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await reopenProcedureReportReview(report.id)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      setProcedureReportReviewQueueRefreshKey((current) => current + 1)
+      return response
+    } catch (reopenError) {
+      setProcedureStatus('error')
+      const message = reopenError instanceof Error ? reopenError.message : 'Procedure report review reopen failed'
+      setProcedureError(message)
+      throw reopenError
+    }
+  }
+
   async function handleProcedureSpecimenCreate(input: ProcedureSpecimenCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -3347,6 +3367,7 @@ function App() {
             onCreateReport={handleProcedureReportCreate}
             onUpdateReport={handleProcedureReportUpdate}
             onSignReport={handleProcedureReportSign}
+            onReopenReportReview={handleProcedureReportReviewReopen}
             onCreateSpecimen={handleProcedureSpecimenCreate}
             onCreateResult={handleProcedureResultCreate}
             onUpdateResult={handleProcedureResultUpdate}
@@ -10031,6 +10052,7 @@ function ProceduresWorkspace({
   onCreateReport,
   onUpdateReport,
   onSignReport,
+  onReopenReportReview,
   onCreateSpecimen,
   onCreateResult,
   onUpdateResult,
@@ -10050,6 +10072,7 @@ function ProceduresWorkspace({
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
+  onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
@@ -10330,6 +10353,7 @@ function ProceduresWorkspace({
                     onCreateResult={onCreateResult}
                     onUpdateReport={onUpdateReport}
                     onSignReport={onSignReport}
+                    onReopenReportReview={onReopenReportReview}
                     onUpdateResult={onUpdateResult}
                   />
                 ))}
@@ -14698,6 +14722,7 @@ function ProcedureReportGroup({
   onCreateResult,
   onUpdateReport,
   onSignReport,
+  onReopenReportReview,
   onUpdateResult,
 }: {
   order: ProcedureOrderItem
@@ -14705,6 +14730,7 @@ function ProcedureReportGroup({
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
+  onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   return (
@@ -14726,6 +14752,7 @@ function ProcedureReportGroup({
           onCreateResult={onCreateResult}
           onUpdateReport={onUpdateReport}
           onSignReport={onSignReport}
+          onReopenReportReview={onReopenReportReview}
           onUpdateResult={onUpdateResult}
         />
       ))}
@@ -14740,6 +14767,7 @@ function ProcedureReportCard({
   onCreateResult,
   onUpdateReport,
   onSignReport,
+  onReopenReportReview,
   onUpdateResult,
 }: {
   report: ProcedureReportItem
@@ -14747,6 +14775,7 @@ function ProcedureReportCard({
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
+  onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   const [isCorrecting, setIsCorrecting] = useState(false)
@@ -14758,6 +14787,8 @@ function ProcedureReportCard({
   const [notes, setNotes] = useState(report.notes ?? '')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [signStatus, setSignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [reopenStatus, setReopenStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const isReviewed = (report.reviewStatus ?? '').toLowerCase() === 'reviewed'
 
   useEffect(() => {
     setDateCollected(report.dateCollected)
@@ -14768,6 +14799,7 @@ function ProcedureReportCard({
     setNotes(report.notes ?? '')
     setCorrectionStatus('idle')
     setSignStatus('idle')
+    setReopenStatus('idle')
   }, [report])
 
   async function handleCreateResult() {
@@ -14820,6 +14852,17 @@ function ProcedureReportCard({
     }
   }
 
+  async function handleReportReviewReopen() {
+    setReopenStatus('saving')
+
+    try {
+      await onReopenReportReview(report)
+      setReopenStatus('saved')
+    } catch {
+      setReopenStatus('error')
+    }
+  }
+
   return (
     <section className="procedure-report-card">
       <div className="procedure-report-title">
@@ -14865,10 +14908,22 @@ function ProcedureReportCard({
           <ShieldCheck size={15} />
           Sign Report
         </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || !isReviewed || reopenStatus === 'saving'}
+          onClick={handleReportReviewReopen}
+          aria-label={`Reopen procedure report review ${report.id}`}
+        >
+          <RotateCcw size={15} />
+          Reopen Review
+        </button>
         {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
         {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
         {signStatus === 'saved' && <span className="save-note">Signed</span>}
         {signStatus === 'error' && <span className="save-note error">Sign failed</span>}
+        {reopenStatus === 'saved' && <span className="save-note">Reopened</span>}
+        {reopenStatus === 'error' && <span className="save-note error">Reopen failed</span>}
       </div>
       {isCorrecting && (
         <form
@@ -14924,6 +14979,7 @@ function ProcedureReportCard({
                 aria-label="Procedure corrected report review status"
               >
                 <option value="pending">Pending</option>
+                <option value="received">Received</option>
                 <option value="reviewed">Reviewed</option>
                 <option value="approved">Approved</option>
               </select>

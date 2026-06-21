@@ -1356,6 +1356,37 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> ReopenReportReviewAsync(
+        int reportId,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_reports
+            set review_status = 'received',
+                reviewed_by = null,
+                reviewed_at = null
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", report.Id);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+    }
+
     public async Task<ProcedureReportBulkSignResponse?> BulkSignReportsAsync(
         ProcedureReportBulkSignRequest request,
         CancellationToken cancellationToken)

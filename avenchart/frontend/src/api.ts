@@ -3470,6 +3470,21 @@ export async function signProcedureReport(
   return response.json()
 }
 
+export async function reopenProcedureReportReview(
+  reportId: number,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/reopen-review`, {
+    method: 'PUT',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure report review reopen failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function bulkSignProcedureReports(
   input: ProcedureReportBulkSignInput,
   signal?: AbortSignal,

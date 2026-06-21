@@ -1436,6 +1436,18 @@ procedures.MapPut("/reports/{reportId:int}/sign", async (
     })
     .WithName("SignProcedureReport");
 
+procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
+        ProcedureRepository repository,
+        int reportId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ReopenReportReviewAsync(reportId, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure report review could not be reopened.")
+            : Results.Ok(mutation);
+    })
+    .WithName("ReopenProcedureReportReview");
+
 procedures.MapPut("/reports/bulk-sign", async (
         ProcedureRepository repository,
         ProcedureReportBulkSignRequest request,
