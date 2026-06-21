@@ -59,6 +59,25 @@ try {
         -Body (@{ username = "admin"; password = "wrong-pass" } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
+    $session = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/session" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -TimeoutSec 20
+
+    $logout = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/logout" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ sessionId = $login.sessionId } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $sessionAfterLogout = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/session" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -TimeoutSec 20
+
     $loginAudit = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/login-audit?limit=5" `
         -Method Get `
@@ -71,6 +90,12 @@ try {
         -and $login.username -eq "admin" `
         -and $login.displayName -eq "Administrator" `
         -and $login.role -eq "administrator" `
+        -and -not [string]::IsNullOrWhiteSpace($login.sessionId) `
+        -and $session.authenticated -eq $true `
+        -and $session.username -eq "admin" `
+        -and $logout.authenticated -eq $false `
+        -and $null -ne $logout.endedAt `
+        -and $sessionAfterLogout.authenticated -eq $false `
         -and $rejectedLogin.authenticated -eq $false `
         -and $loginAudit.totalEvents -ge 2 `
         -and $loginAudit.successfulLogins -ge 1 `
@@ -81,6 +106,10 @@ try {
     Add-Check -Name "admin login readiness" -Result $(if ($loginPassed) { "passed" } else { "failed" }) -Details @{
         successUsername = $login.username
         successRole = $login.role
+        sessionIssued = -not [string]::IsNullOrWhiteSpace($login.sessionId)
+        sessionValidated = $session.authenticated
+        sessionEnded = $null -ne $logout.endedAt
+        sessionAfterLogout = $sessionAfterLogout.authenticated
         rejectedReason = $rejectedLogin.failureReason
         auditEvents = $loginAudit.totalEvents
         auditSuccesses = $loginAudit.successfulLogins

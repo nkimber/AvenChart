@@ -244,6 +244,7 @@ drop table if exists appointments;
 drop table if exists insurance_records;
 drop table if exists patients;
 drop table if exists access_user_memberships;
+drop table if exists auth_sessions;
 drop table if exists auth_audit_events;
 drop table if exists auth_accounts;
 drop table if exists staff;
@@ -309,6 +310,21 @@ create table auth_audit_events (
   comment text not null,
   failure_reason text,
   log_source text not null default 'avenchart'
+);
+
+create table auth_sessions (
+  id uuid primary key,
+  username text not null references auth_accounts(username),
+  display_name text not null,
+  role text not null,
+  staff_id integer references staff(id),
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  ended_at timestamptz,
+  source_ip text,
+  user_agent text,
+  session_source text not null default 'avenchart'
 );
 
 create table access_groups (

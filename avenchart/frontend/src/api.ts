@@ -1946,6 +1946,24 @@ export type AuthLoginResponse = {
   role: string
   staffId?: number | null
   failureReason?: string | null
+  sessionId?: string | null
+  sessionCreatedAt?: string | null
+  sessionExpiresAt?: string | null
+}
+
+export type AuthSessionResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  displayName: string
+  role: string
+  staffId?: number | null
+  createdAt?: string | null
+  lastSeenAt?: string | null
+  expiresAt?: string | null
+  endedAt?: string | null
+  failureReason?: string | null
+  sessionSource: string
 }
 
 export type AuthAuditEventItem = {
@@ -1978,6 +1996,32 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
   })
   if (!response.ok) {
     throw new Error(`Login readiness check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getCurrentSession(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/session`, {
+    headers: { 'X-Legacy EHR-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Session readiness check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function logout(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Session logout failed with ${response.status}`)
   }
 
   return response.json()

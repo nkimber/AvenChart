@@ -10,7 +10,27 @@ public sealed record AuthLoginResponse(
     string DisplayName,
     string Role,
     int? StaffId,
-    string? FailureReason);
+    string? FailureReason,
+    Guid? SessionId,
+    DateTimeOffset? SessionCreatedAt,
+    DateTimeOffset? SessionExpiresAt);
+
+public sealed record AuthSessionRequest(
+    Guid SessionId);
+
+public sealed record AuthSessionResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string DisplayName,
+    string Role,
+    int? StaffId,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? LastSeenAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? EndedAt,
+    string? FailureReason,
+    string SessionSource);
 
 public sealed record AuthAuditEventItem(
     long Id,

@@ -61,10 +61,45 @@ auth.MapPost("/login", async (
         CancellationToken cancellationToken) =>
     {
         var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
-        var response = await repository.LoginAsync(request, sourceIp, cancellationToken);
+        var userAgent = httpContext.Request.Headers.UserAgent.ToString();
+        var response = await repository.LoginAsync(request, sourceIp, userAgent, cancellationToken);
         return Results.Ok(response);
     })
     .WithName("Login");
+
+auth.MapGet("/session", async (
+        AuthRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetCurrentSessionAsync(sessionId, cancellationToken))
+            : Results.Ok(new AuthSessionResponse(
+                Authenticated: false,
+                SessionId: null,
+                Username: string.Empty,
+                DisplayName: string.Empty,
+                Role: string.Empty,
+                StaffId: null,
+                CreatedAt: null,
+                LastSeenAt: null,
+                ExpiresAt: null,
+                EndedAt: null,
+                FailureReason: "Session header was not supplied.",
+                SessionSource: "avenchart"));
+    })
+    .WithName("GetCurrentSession");
+
+auth.MapPost("/logout", async (
+        AuthRepository repository,
+        AuthSessionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.LogoutAsync(request.SessionId, cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("Logout");
 
 auth.MapGet("/login-audit", async (
         AuthRepository repository,

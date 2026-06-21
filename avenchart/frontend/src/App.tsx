@@ -56,10 +56,12 @@ import {
   getOperationalReports,
   getOperationalReportsCsvUrl,
   getLoginAudit,
+  getCurrentSession,
   createAppointment,
   bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
   login,
+  logout,
   createBillingClaimStatus,
   createBillingLine,
   createBillingPaymentPosting,
@@ -175,6 +177,7 @@ import {
   type AdministrationUserMutationInput,
   type AuthAuditResponse,
   type AuthLoginResponse,
+  type AuthSessionResponse,
   type AppointmentDetail,
   type AppointmentCreateInput,
   type AppointmentListItem,
@@ -12712,6 +12715,9 @@ function AdministrationWorkspace({
   const [loginStatus, setLoginStatus] = useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [loginResult, setLoginResult] = useState<AuthLoginResponse | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
+  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null)
+  const [sessionStatus, setSessionStatus] = useState<'idle' | 'checking' | 'active' | 'ended' | 'error'>('idle')
+  const [sessionError, setSessionError] = useState<string | null>(null)
   const [loginAudit, setLoginAudit] = useState<AuthAuditResponse | null>(null)
   const [loginAuditStatus, setLoginAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
@@ -12744,16 +12750,81 @@ function AdministrationWorkspace({
     setLoginStatus('checking')
     setLoginResult(null)
     setLoginError(null)
+    setAuthSession(null)
+    setSessionStatus('idle')
+    setSessionError(null)
 
     try {
       const result = await login({ username: loginUsername, password: loginPassword })
       setLoginResult(result)
       setLoginStatus(result.authenticated ? 'authenticated' : 'rejected')
+      if (result.authenticated && result.sessionId) {
+        setAuthSession({
+          authenticated: true,
+          sessionId: result.sessionId,
+          username: result.username,
+          displayName: result.displayName,
+          role: result.role,
+          staffId: result.staffId ?? null,
+          createdAt: result.sessionCreatedAt,
+          lastSeenAt: result.sessionCreatedAt,
+          expiresAt: result.sessionExpiresAt,
+          endedAt: null,
+          failureReason: null,
+          sessionSource: 'avenchart',
+        })
+        setSessionStatus('active')
+      }
     } catch (error) {
       setLoginStatus('error')
       setLoginError(error instanceof Error ? error.message : 'Login readiness check failed')
     } finally {
       await refreshLoginAudit()
+    }
+  }
+
+  async function handleSessionValidate() {
+    const sessionId = authSession?.sessionId ?? loginResult?.sessionId
+    if (!sessionId) {
+      setSessionStatus('error')
+      setSessionError('No session has been issued yet.')
+      return
+    }
+
+    setSessionStatus('checking')
+    setSessionError(null)
+
+    try {
+      const session = await getCurrentSession(sessionId)
+      setAuthSession(session)
+      setSessionStatus(session.authenticated ? 'active' : 'ended')
+      if (!session.authenticated) {
+        setSessionError(session.failureReason ?? 'Session is not active.')
+      }
+    } catch (error) {
+      setSessionStatus('error')
+      setSessionError(error instanceof Error ? error.message : 'Session readiness check failed')
+    }
+  }
+
+  async function handleSessionLogout() {
+    const sessionId = authSession?.sessionId ?? loginResult?.sessionId
+    if (!sessionId) {
+      setSessionStatus('error')
+      setSessionError('No session has been issued yet.')
+      return
+    }
+
+    setSessionStatus('checking')
+    setSessionError(null)
+
+    try {
+      const session = await logout(sessionId)
+      setAuthSession(session)
+      setSessionStatus('ended')
+    } catch (error) {
+      setSessionStatus('error')
+      setSessionError(error instanceof Error ? error.message : 'Session logout failed')
     }
   }
 
@@ -12868,7 +12939,11 @@ function AdministrationWorkspace({
             <ShieldCheck size={17} />
             <h3>Access Control Status</h3>
           </div>
-          <Field label="Authentication" value="Demo login readiness endpoint active" />
+          <Field label="Authentication" value="Demo login and session readiness active" />
+          <Field
+            label="Session"
+            value={authSession?.authenticated ? `Active for ${authSession.username}` : 'No active session'}
+          />
           <Field label="Authorization" value="Default ACL model mirrored" />
           <Field
             label="Audit logging"
@@ -12923,9 +12998,55 @@ function AdministrationWorkspace({
             <div className="access-scope-panel">
               <Field label="Role" value={loginResult.role} />
               <Field label="Staff link" value={loginResult.staffId ? String(loginResult.staffId) : 'Not linked'} />
+              <Field label="Session" value={loginResult.sessionId ? 'Issued' : 'Not issued'} />
             </div>
           )}
         </form>
+
+        <div className="access-scope-panel" aria-label="Session readiness">
+          <div className="panel-heading">
+            <ShieldCheck size={17} />
+            <h3>Session Readiness</h3>
+          </div>
+          <div className="access-scope-panel">
+            <Field label="State" value={authSession?.authenticated ? 'Active' : sessionStatus === 'ended' ? 'Ended' : 'Not started'} />
+            <Field label="Source" value={authSession?.sessionSource ?? 'avenchart'} />
+          </div>
+          {authSession?.authenticated && (
+            <div className="status-banner success">Active session for {authSession.displayName} ({authSession.username})</div>
+          )}
+          {sessionStatus === 'ended' && (
+            <div className="status-banner">Session ended for {authSession?.username || loginResult?.username || 'admin'}</div>
+          )}
+          {sessionStatus === 'error' && <div className="status-banner error">{sessionError}</div>}
+          <div className="access-scope-panel">
+            <Field label="Session ID" value={authSession?.sessionId ?? loginResult?.sessionId ?? 'None'} />
+            <Field label="Created" value={formatAuditDateTime(authSession?.createdAt ?? loginResult?.sessionCreatedAt)} />
+            <Field label="Last seen" value={formatAuditDateTime(authSession?.lastSeenAt)} />
+            <Field label="Expires" value={formatAuditDateTime(authSession?.expiresAt ?? loginResult?.sessionExpiresAt)} />
+            <Field label="Ended" value={formatAuditDateTime(authSession?.endedAt)} />
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="icon-text-button"
+              onClick={handleSessionValidate}
+              disabled={sessionStatus === 'checking' || !(authSession?.sessionId ?? loginResult?.sessionId)}
+            >
+              <ShieldCheck size={16} />
+              Validate Session
+            </button>
+            <button
+              type="button"
+              className="icon-text-button danger"
+              onClick={handleSessionLogout}
+              disabled={sessionStatus === 'checking' || !(authSession?.sessionId ?? loginResult?.sessionId)}
+            >
+              <X size={16} />
+              End Session
+            </button>
+          </div>
+        </div>
 
         <div className="access-scope-panel" aria-label="Login audit events">
           <div className="panel-heading">
