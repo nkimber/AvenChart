@@ -3801,6 +3801,7 @@ function CalendarWorkspace({
   const [editRepeatFrequency, setEditRepeatFrequency] = useState('1')
   const [editRepeatUnit, setEditRepeatUnit] = useState('1')
   const [editRecurrenceEndDate, setEditRecurrenceEndDate] = useState('')
+  const [editRecurrenceExdates, setEditRecurrenceExdates] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const selectedOccurrenceIsVirtual = appointmentDetail?.isVirtualOccurrence ?? false
@@ -3824,6 +3825,7 @@ function CalendarWorkspace({
     setEditRepeatFrequency(String(appointmentDetail.repeatFrequency ?? 1))
     setEditRepeatUnit(String(appointmentDetail.repeatUnit ?? 1))
     setEditRecurrenceEndDate(appointmentDetail.recurrenceEndDate ?? appointmentDetail.date)
+    setEditRecurrenceExdates(appointmentDetail.recurrenceExdates.join(', '))
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
@@ -3942,7 +3944,7 @@ function CalendarWorkspace({
           repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
           repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
           recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
-          recurrenceExdates: editRepeats ? appointmentDetail.recurrenceExdates : null,
+          recurrenceExdates: editRepeats ? parseDateList(editRecurrenceExdates) : null,
         })
       }
       setMutationStatus('saved')
@@ -4397,6 +4399,16 @@ function CalendarWorkspace({
                     value={editRecurrenceEndDate}
                     onChange={(event) => setEditRecurrenceEndDate(event.target.value)}
                     aria-label="Edit appointment recurrence end date"
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
+                  />
+                </label>
+                <label className="contact-field">
+                  <span>Skipped dates</span>
+                  <textarea
+                    rows={2}
+                    value={editRecurrenceExdates}
+                    onChange={(event) => setEditRecurrenceExdates(event.target.value)}
+                    aria-label="Edit appointment skipped dates"
                     disabled={selectedOccurrenceIsVirtual || !editRepeats}
                   />
                 </label>
@@ -12485,6 +12497,17 @@ function numberOrNull(value: string) {
 
   const parsed = Number(trimmed)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDateList(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/)
+        .map((item) => item.trim())
+        .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item)),
+    ),
+  ).sort()
 }
 
 function formatCurrency(value?: number | null) {
