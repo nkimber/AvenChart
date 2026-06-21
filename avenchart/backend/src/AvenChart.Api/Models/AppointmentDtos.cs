@@ -48,7 +48,9 @@ public sealed record AppointmentListItem(
     int ProviderOverlapCount,
     IReadOnlyList<string> ProviderOverlapAppointmentIds,
     int PatientOverlapCount,
-    IReadOnlyList<string> PatientOverlapAppointmentIds);
+    IReadOnlyList<string> PatientOverlapAppointmentIds,
+    int RoomOverlapCount,
+    IReadOnlyList<string> RoomOverlapAppointmentIds);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -94,7 +96,9 @@ public sealed record AppointmentDetail(
     int ProviderOverlapCount,
     IReadOnlyList<string> ProviderOverlapAppointmentIds,
     int PatientOverlapCount,
-    IReadOnlyList<string> PatientOverlapAppointmentIds);
+    IReadOnlyList<string> PatientOverlapAppointmentIds,
+    int RoomOverlapCount,
+    IReadOnlyList<string> RoomOverlapAppointmentIds);
 
 public sealed record AppointmentCreateRequest(
     string PatientId,

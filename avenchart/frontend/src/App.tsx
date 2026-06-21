@@ -3799,6 +3799,12 @@ function appointmentPatientOverlapDetail(
   return appointmentOverlapDetail(appointment.patientOverlapCount, appointment.patientOverlapAppointmentIds)
 }
 
+function appointmentRoomOverlapDetail(
+  appointment: Pick<AppointmentListItem, 'roomOverlapCount' | 'roomOverlapAppointmentIds'>,
+) {
+  return appointmentOverlapDetail(appointment.roomOverlapCount, appointment.roomOverlapAppointmentIds)
+}
+
 function appointmentOverlapDetail(count: number, appointmentIds: string[]) {
   if (count <= 0) {
     return 'None'
@@ -4767,6 +4773,7 @@ function CalendarWorkspace({
                 <Field label="Provider" value={careLocationDetail(appointmentDetail.providerName, appointmentDetail.providerId)} />
                 <Field label="Provider overlaps" value={appointmentProviderOverlapDetail(appointmentDetail)} />
                 <Field label="Patient overlaps" value={appointmentPatientOverlapDetail(appointmentDetail)} />
+                <Field label="Room overlaps" value={appointmentRoomOverlapDetail(appointmentDetail)} />
                 <Field label="Facility" value={careLocationDetail(appointmentDetail.facilityName, appointmentDetail.facilityId)} />
                 <Field label="Billing facility" value={careLocationDetail(appointmentDetail.billingLocationName, appointmentDetail.billingLocationId)} />
                 <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
@@ -11492,6 +11499,7 @@ function AppointmentResult({
         <span>{appointment.facilityName ?? 'Facility not recorded'}</span>
         {appointment.providerOverlapCount > 0 && <span>{appointment.providerOverlapCount} provider overlap</span>}
         {appointment.patientOverlapCount > 0 && <span>{appointment.patientOverlapCount} patient overlap</span>}
+        {appointment.roomOverlapCount > 0 && <span>{appointment.roomOverlapCount} room overlap</span>}
       </div>
     </button>
   )

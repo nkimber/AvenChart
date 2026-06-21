@@ -616,6 +616,82 @@ finally {
     }
 }
 
+$appointmentRoomOverlapPrimaryId = $null
+$appointmentRoomOverlapSecondaryId = $null
+try {
+    $primaryRoomOverlapBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Smoke Appointment Room Overlap A"
+        date = "2026-12-06"
+        startTime = "09:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Smoke Room Overlap"
+        comments = "Smoke room overlap primary appointment"
+    } | ConvertTo-Json
+    $secondaryRoomOverlapBody = @{
+        patientId = "MOD-PAT-0004"
+        providerId = 102
+        title = "Smoke Appointment Room Overlap B"
+        date = "2026-12-06"
+        startTime = "09:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Smoke Room Overlap"
+        comments = "Smoke room overlap secondary appointment"
+    } | ConvertTo-Json
+
+    $primaryRoomOverlapAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $primaryRoomOverlapBody -TimeoutSec 20
+    $appointmentRoomOverlapPrimaryId = $primaryRoomOverlapAppointment.id
+    $secondaryRoomOverlapAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $secondaryRoomOverlapBody -TimeoutSec 20
+    $appointmentRoomOverlapSecondaryId = $secondaryRoomOverlapAppointment.id
+
+    $primaryRoomOverlapDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId" -Method Get -TimeoutSec 20
+    $secondaryRoomOverlapDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId" -Method Get -TimeoutSec 20
+    $appointmentRoomOverlapPassed = $primaryRoomOverlapDetail.roomOverlapCount -eq 1 `
+        -and $secondaryRoomOverlapDetail.roomOverlapCount -eq 1 `
+        -and ($primaryRoomOverlapDetail.roomOverlapAppointmentIds -contains $appointmentRoomOverlapSecondaryId) `
+        -and ($secondaryRoomOverlapDetail.roomOverlapAppointmentIds -contains $appointmentRoomOverlapPrimaryId)
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentRoomOverlapSecondaryId = $null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentRoomOverlapPrimaryId = $null
+
+    Add-Check -Name "appointment room overlap tolerance" -Result $(if ($appointmentRoomOverlapPassed) { "passed" } else { "failed" }) -Details @{
+        primaryId = $primaryRoomOverlapAppointment.id
+        secondaryId = $secondaryRoomOverlapAppointment.id
+        primaryRoomOverlapCount = $primaryRoomOverlapDetail.roomOverlapCount
+        secondaryRoomOverlapCount = $secondaryRoomOverlapDetail.roomOverlapCount
+        primaryRoomOverlapAppointmentIds = $primaryRoomOverlapDetail.roomOverlapAppointmentIds
+        secondaryRoomOverlapAppointmentIds = $secondaryRoomOverlapDetail.roomOverlapAppointmentIds
+    }
+}
+catch {
+    Add-Check -Name "appointment room overlap tolerance" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentRoomOverlapSecondaryId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapSecondaryId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    if ($null -ne $appointmentRoomOverlapPrimaryId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentRoomOverlapPrimaryId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $appointmentArrivalId = $null
 try {
     $createBody = @{

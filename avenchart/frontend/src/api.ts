@@ -157,6 +157,8 @@ export type AppointmentListItem = {
   providerOverlapAppointmentIds: string[]
   patientOverlapCount: number
   patientOverlapAppointmentIds: string[]
+  roomOverlapCount: number
+  roomOverlapAppointmentIds: string[]
 }
 
 export type AppointmentDetail = AppointmentListItem & {
