@@ -1163,6 +1163,37 @@ documents.MapDelete("/{documentId:int}", async (
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 
+procedures.MapGet("/lab-provider-address-book", async (
+        ProcedureRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var addressBook = await repository.GetLabProviderAddressBookAsync(cancellationToken);
+        return Results.Ok(addressBook);
+    })
+    .WithName("GetProcedureLabProviderAddressBook");
+
+procedures.MapPost("/lab-provider-address-book", async (
+        ProcedureRepository repository,
+        ProcedureLabProviderAddressBookMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateLabProviderAddressBookOrganizationAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest(new { error = "Procedure lab provider address-book organization is required." })
+            : Results.Created($"/api/procedures/lab-provider-address-book/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureLabProviderAddressBookOrganization");
+
+procedures.MapDelete("/lab-provider-address-book/{organizationId:int}", async (
+        ProcedureRepository repository,
+        int organizationId,
+        CancellationToken cancellationToken) =>
+    {
+        var deleted = await repository.DeleteLabProviderAddressBookOrganizationAsync(organizationId, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
+    })
+    .WithName("DeleteProcedureLabProviderAddressBookOrganization");
+
 procedures.MapGet("/lab-providers", async (
         ProcedureRepository repository,
         bool? includeInactive,
@@ -1180,7 +1211,7 @@ procedures.MapPost("/lab-providers", async (
     {
         var mutation = await repository.CreateLabProviderAsync(request, cancellationToken);
         return mutation is null
-            ? Results.BadRequest(new { error = "Procedure lab provider name is required." })
+            ? Results.BadRequest(new { error = "Procedure lab provider name or valid address-book organization is required." })
             : Results.Created($"/api/procedures/lab-providers/{mutation.Id}", mutation);
     })
     .WithName("CreateProcedureLabProvider");

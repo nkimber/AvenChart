@@ -950,6 +950,9 @@ export type ProcedureReportReviewQueueResponse = {
 export type ProcedureLabProviderItem = {
   id: number
   name: string
+  labDirectorId?: number | null
+  labDirectorName?: string | null
+  labDirectorType?: string | null
   npi?: string | null
   protocol?: string | null
   usage?: string | null
@@ -982,6 +985,7 @@ export type ProcedureLabProviderDirectoryResponse = {
 
 export type ProcedureLabProviderMutationInput = {
   name: string
+  labDirectorId?: number | null
   npi?: string | null
   protocol?: string | null
   usage?: string | null
@@ -1002,6 +1006,30 @@ export type ProcedureLabProviderMutationInput = {
 export type ProcedureLabProviderMutationResponse = {
   id: number
   directory: ProcedureLabProviderDirectoryResponse
+}
+
+export type ProcedureLabProviderAddressBookItem = {
+  id: number
+  organization: string
+  type: string
+  active: boolean
+}
+
+export type ProcedureLabProviderAddressBookResponse = {
+  datasetId: string
+  datasetVersion: string
+  organizations: ProcedureLabProviderAddressBookItem[]
+}
+
+export type ProcedureLabProviderAddressBookMutationInput = {
+  organization: string
+  type?: string | null
+  active: boolean
+}
+
+export type ProcedureLabProviderAddressBookMutationResponse = {
+  id: number
+  addressBook: ProcedureLabProviderAddressBookResponse
 }
 
 export type ProcedureReportReviewQueueFilters = {
@@ -2986,6 +3014,47 @@ export async function getProcedureLabProviders(
   }
 
   return response.json()
+}
+
+export async function getProcedureLabProviderAddressBook(
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderAddressBookResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider address book load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createProcedureLabProviderAddressBookOrganization(
+  input: ProcedureLabProviderAddressBookMutationInput,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderAddressBookMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider address book create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deleteProcedureLabProviderAddressBookOrganization(
+  organizationId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book/${organizationId}`, {
+    method: 'DELETE',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider address book delete failed with ${response.status}`)
+  }
 }
 
 export async function createProcedureLabProvider(

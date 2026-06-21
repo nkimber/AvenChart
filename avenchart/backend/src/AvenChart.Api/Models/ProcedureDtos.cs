@@ -61,6 +61,9 @@ public sealed record ProcedureLabProviderDirectoryResponse(
 public sealed record ProcedureLabProviderItem(
     int Id,
     string Name,
+    int? LabDirectorId,
+    string? LabDirectorName,
+    string? LabDirectorType,
     string? Npi,
     string? Protocol,
     string? Usage,
@@ -82,6 +85,7 @@ public sealed record ProcedureLabProviderItem(
 
 public sealed record ProcedureLabProviderMutationRequest(
     string Name,
+    int? LabDirectorId,
     string? Npi,
     string? Protocol,
     string? Usage,
@@ -101,6 +105,26 @@ public sealed record ProcedureLabProviderMutationRequest(
 public sealed record ProcedureLabProviderMutationResponse(
     int Id,
     ProcedureLabProviderDirectoryResponse Directory);
+
+public sealed record ProcedureLabProviderAddressBookResponse(
+    string DatasetId,
+    string DatasetVersion,
+    IReadOnlyList<ProcedureLabProviderAddressBookItem> Organizations);
+
+public sealed record ProcedureLabProviderAddressBookItem(
+    int Id,
+    string Organization,
+    string Type,
+    bool Active);
+
+public sealed record ProcedureLabProviderAddressBookMutationRequest(
+    string Organization,
+    string? Type,
+    bool Active);
+
+public sealed record ProcedureLabProviderAddressBookMutationResponse(
+    int Id,
+    ProcedureLabProviderAddressBookResponse AddressBook);
 
 public sealed record ProcedureOrderCounts(
     int Orders,

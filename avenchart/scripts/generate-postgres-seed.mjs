@@ -222,6 +222,7 @@ drop table if exists lab_reports;
 drop table if exists lab_specimens;
 drop table if exists lab_orders;
 drop table if exists lab_providers;
+drop table if exists lab_provider_address_book;
 drop table if exists encounter_signatures;
 drop table if exists payment_activities;
 drop table if exists payment_sessions;
@@ -597,9 +598,17 @@ create table lab_orders (
   order_status text
 );
 
+create table lab_provider_address_book (
+  id integer primary key,
+  organization text not null,
+  type text not null default 'ord_lab',
+  active boolean not null default true
+);
+
 create table lab_providers (
   id integer primary key,
   name text not null,
+  lab_director_id integer references lab_provider_address_book(id),
   npi text,
   protocol text not null default 'DL',
   usage text not null default 'D',
@@ -1287,6 +1296,7 @@ copyRows('payment_activities', [
 copyRows('lab_providers', [
   'id',
   'name',
+  'lab_director_id',
   'npi',
   'protocol',
   'usage',
@@ -1305,6 +1315,7 @@ copyRows('lab_providers', [
 ], (dataset.labProviders ?? []).map((provider) => [
   provider.id,
   provider.name,
+  provider.labDirectorId ?? null,
   provider.npi ?? null,
   provider.protocol ?? 'DL',
   provider.usage ?? 'D',

@@ -11147,7 +11147,8 @@ function ProcedureLabProvidersPanel({
 }) {
   const providers = directory?.providers ?? []
   const [providerDraft, setProviderDraft] = useState<ProcedureLabProviderMutationInput>({
-    name: 'Slice 142 Temporary Lab',
+    name: 'Slice 144 Temporary Lab',
+    labDirectorId: null,
     npi: '1720123499',
     protocol: 'DL',
     usage: 'D',
@@ -11173,7 +11174,8 @@ function ProcedureLabProvidersPanel({
     try {
       await onCreateProvider(providerDraft)
       setProviderDraft({
-        name: 'Slice 142 Temporary Lab',
+        name: 'Slice 144 Temporary Lab',
+        labDirectorId: null,
         npi: '1720123499',
         protocol: 'DL',
         usage: 'D',
@@ -11256,6 +11258,21 @@ function ProcedureLabProvidersPanel({
             <input
               value={providerDraft.npi ?? ''}
               onChange={(event) => setProviderDraft((current) => ({ ...current, npi: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Address book ID
+            <input
+              type="number"
+              min="1"
+              value={providerDraft.labDirectorId ?? ''}
+              onChange={(event) => {
+                const value = event.target.value.trim()
+                setProviderDraft((current) => ({
+                  ...current,
+                  labDirectorId: value ? Number(value) : null,
+                }))
+              }}
             />
           </label>
           <label className="contact-field">
@@ -11419,6 +11436,8 @@ function ProcedureLabProvidersPanel({
               </div>
             </div>
             <div className="review-queue-card-grid">
+              <Field label="Address book organization" value={provider.labDirectorName || 'Not linked'} />
+              <Field label="Address book type" value={provider.labDirectorType || 'Not linked'} />
               <Field label="Protocol" value={provider.protocol} />
               <Field label="Usage" value={formatLabProviderUsage(provider.usage)} />
               <Field label="Direction" value={formatLabProviderDirection(provider.direction)} />
@@ -11427,11 +11446,11 @@ function ProcedureLabProvidersPanel({
                 label="Receiver"
                 value={formatLabProviderPair(provider.receiveApplicationId, provider.receiveFacilityId)}
               />
-              <Field label="Remote host" value={provider.remoteHost || 'Not set' } />
-              <Field label="Login" value={provider.login || 'Not set' } />
+              <Field label="Remote host" value={provider.remoteHost || 'Not set'} />
+              <Field label="Login" value={provider.login || 'Not set'} />
               <Field label="Password" value={provider.password ? 'Stored' : 'Not set'} />
-              <Field label="Orders path" value={provider.ordersPath || 'Not set' } />
-              <Field label="Results path" value={provider.resultsPath || 'Not set' } />
+              <Field label="Orders path" value={provider.ordersPath || 'Not set'} />
+              <Field label="Results path" value={provider.resultsPath || 'Not set'} />
               <Field label="Orders" value={provider.orderCount} />
               <Field label="Reports" value={provider.reportCount} />
               <Field label="Future orders" value={provider.futureOrderCount} />
@@ -11449,6 +11468,7 @@ function ProcedureLabProvidersPanel({
 function labProviderMutationFromProvider(provider: ProcedureLabProviderItem): ProcedureLabProviderMutationInput {
   return {
     name: provider.name,
+    labDirectorId: provider.labDirectorId,
     npi: provider.npi,
     protocol: provider.protocol ?? 'DL',
     usage: provider.usage ?? 'D',
