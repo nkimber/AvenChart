@@ -21,6 +21,8 @@ public sealed record PatientMessageItem(
     string? AssignedTo,
     string? PortalRelation,
     bool IsEncrypted,
+    int? UpdatedBy,
+    string? UpdatedAt,
     int Deleted);
 
 public sealed record PatientMessageCreateRequest(

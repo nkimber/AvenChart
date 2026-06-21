@@ -55,9 +55,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into messages
-                (id, patient_id, pid, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, deleted, activity)
+                (id, patient_id, pid, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, updated_by, updated_at, deleted, activity)
             values
-                (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, null, false, 0, 1);
+                (@id, @patientId, @pid, @messageDate, @title, @body, 'New', @assignedTo, null, false, null, null, 0, 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
@@ -91,7 +91,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 update messages
                 set status = @status,
-                    body = @body
+                    body = @body,
+                    updated_by = 1,
+                    updated_at = now()
                 where id = @id and deleted = 0
                 returning patient_id;
                 """;
@@ -129,7 +131,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 update messages
                 set title = @title,
-                    body = @body
+                    body = @body,
+                    updated_by = 1,
+                    updated_at = now()
                 where id = @id and deleted = 0
                 returning patient_id;
                 """;
@@ -165,7 +169,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         {
             command.CommandText = """
                 update messages
-                set assigned_to = @assignedTo
+                set assigned_to = @assignedTo,
+                    updated_by = 1,
+                    updated_at = now()
                 where id = @id and deleted = 0
                 returning patient_id;
                 """;
@@ -204,7 +210,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 update messages
                 set body = concat(coalesce(body, ''), E'\n', @replyLine),
-                    assigned_to = @assignedTo
+                    assigned_to = @assignedTo,
+                    updated_by = 1,
+                    updated_at = now()
                 where id = @id and deleted = 0
                 returning patient_id;
                 """;
@@ -237,7 +245,9 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 update messages
                 set deleted = 1,
-                    activity = 0
+                    activity = 0,
+                    updated_by = 1,
+                    updated_at = now()
                 where id = @id
                 returning patient_id;
                 """;
@@ -339,7 +349,8 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, deleted
+            select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted,
+                updated_by, updated_at, deleted
             from messages
             where pid = @pid and deleted = 0
             order by message_date desc, id desc;
@@ -359,6 +370,8 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 AssignedTo: ReadNullableString(reader, "assigned_to"),
                 PortalRelation: ReadNullableString(reader, "portal_relation"),
                 IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")),
+                UpdatedBy: ReadNullableInt32(reader, "updated_by"),
+                UpdatedAt: ReadNullableTimestamp(reader, "updated_at"),
                 Deleted: reader.GetInt32(reader.GetOrdinal("deleted"))));
         }
 
@@ -375,6 +388,22 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static int? ReadNullableInt32(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToInt32(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+    }
+
+    private static string? ReadNullableTimestamp(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : reader.GetFieldValue<DateTime>(ordinal).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     }
 
     private static object NullableText(string? value)

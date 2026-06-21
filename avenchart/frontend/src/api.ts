@@ -667,6 +667,8 @@ export type PatientMessageItem = {
   assignedTo?: string | null
   portalRelation?: string | null
   isEncrypted: boolean
+  updatedBy?: number | null
+  updatedAt?: string | null
   deleted: number
 }
 

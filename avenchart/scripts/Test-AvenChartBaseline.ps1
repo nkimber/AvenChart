@@ -5272,9 +5272,22 @@ try {
     } | ConvertTo-Json
     $editedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content" -Method Put -ContentType "application/json" -Body $contentBody -TimeoutSec 20
     $editedVisible = $editedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.body -eq $editedMessageBody -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
+    $createdUpdateMetadataBlank = $null -ne $createdVisible `
+        -and $null -eq $createdVisible.updatedBy `
+        -and [string]::IsNullOrWhiteSpace([string]$createdVisible.updatedAt)
+    $editedUpdateMetadataStamped = $null -ne $editedVisible `
+        -and $editedVisible.updatedBy -eq 1 `
+        -and -not [string]::IsNullOrWhiteSpace([string]$editedVisible.updatedAt)
     Add-Check -Name "patient message content update" -Result $(if ($null -ne $editedVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
         editedVisible = $editedVisible
+    }
+    Add-Check -Name "patient message update metadata" -Result $(if ($createdUpdateMetadataBlank -and $editedUpdateMetadataStamped) { "passed" } else { "failed" }) -Details @{
+        messageId = $patientMessageMutationId
+        createdUpdatedBy = $createdVisible.updatedBy
+        createdUpdatedAt = $createdVisible.updatedAt
+        editedUpdatedBy = $editedVisible.updatedBy
+        editedUpdatedAt = $editedVisible.updatedAt
     }
 
     $replyMessageBody = "Replied by the smoke patient-message reply check."

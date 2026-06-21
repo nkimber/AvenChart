@@ -699,6 +699,8 @@ create table messages (
   assigned_to text,
   portal_relation text,
   is_encrypted boolean not null default false,
+  updated_by integer,
+  updated_at timestamp,
   deleted integer not null default 0,
   activity integer not null default 1
 );
@@ -1465,7 +1467,22 @@ copyRows('lab_results', [
   result.resultStatus,
 ]))
 
-copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body', 'status', 'assigned_to', 'portal_relation', 'is_encrypted', 'deleted', 'activity'],
+copyRows('messages', [
+  'id',
+  'patient_id',
+  'pid',
+  'message_date',
+  'title',
+  'body',
+  'status',
+  'assigned_to',
+  'portal_relation',
+  'is_encrypted',
+  'updated_by',
+  'updated_at',
+  'deleted',
+  'activity',
+],
   dataset.messages.map((message) => [
     message.id,
     message.patientId,
@@ -1477,6 +1494,8 @@ copyRows('messages', ['id', 'patient_id', 'pid', 'message_date', 'title', 'body'
     message.assignedTo,
     message.portalRelation,
     Boolean(message.isEncrypted),
+    message.updatedBy ?? null,
+    message.updatedAt ?? null,
     0,
     1,
   ]))
