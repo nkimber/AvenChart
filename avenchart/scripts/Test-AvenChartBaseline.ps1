@@ -5270,6 +5270,18 @@ try {
         editedVisible = $editedVisible
     }
 
+    $replyMessageBody = "Replied by the smoke patient-message reply check."
+    $replyBody = @{
+        body = $replyMessageBody
+        assignedTo = "admin"
+    } | ConvertTo-Json
+    $repliedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/reply" -Method Put -ContentType "application/json" -Body $replyBody -TimeoutSec 20
+    $replyVisible = $repliedMessage.detail.messages | Where-Object { $_.id -eq $patientMessageMutationId -and $_.body -like "*$replyMessageBody*" -and $_.body -like "*admin to admin*" -and $_.status -eq "New" } | Select-Object -First 1
+    Add-Check -Name "patient message reply update" -Result $(if ($null -ne $replyVisible) { "passed" } else { "failed" }) -Details @{
+        messageId = $patientMessageMutationId
+        replyFound = $null -ne $replyVisible
+    }
+
     $assignmentBody = @{
         assignedTo = "billing"
     } | ConvertTo-Json
@@ -5289,7 +5301,7 @@ try {
 
     $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -TimeoutSec 20
     $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle } | Select-Object -First 1
-    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
+    $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $replyVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $patientMessageMutationId = $null
@@ -5298,6 +5310,7 @@ try {
         createdId = $createdMessage.id
         createdVisible = $createdVisible
         editedVisible = $editedVisible
+        replyVisible = $replyVisible
         assignedVisible = $assignedVisible
         closedVisible = $closedVisible
         archivedVisible = $archivedVisible

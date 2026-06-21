@@ -1011,14 +1011,16 @@
 }
 
 .message-content-form,
-.message-assignment-form {
+.message-assignment-form,
+.message-reply-form {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.message-content-form {
+.message-content-form,
+.message-reply-form {
   align-items: stretch;
 }
 

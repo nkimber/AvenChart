@@ -38,6 +38,10 @@ public sealed record PatientMessageContentUpdateRequest(
 public sealed record PatientMessageAssignmentUpdateRequest(
     string AssignedTo);
 
+public sealed record PatientMessageReplyRequest(
+    string Body,
+    string AssignedTo);
+
 public sealed record PatientMessageMutationResponse(
     string Id,
     PatientMessagesResponse Detail);

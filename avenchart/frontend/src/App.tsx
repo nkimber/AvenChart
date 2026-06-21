@@ -18,6 +18,7 @@ import {
   Mail,
   MapPin,
   Pencil,
+  Reply,
   Search,
   ShieldCheck,
   Stethoscope,
@@ -124,6 +125,7 @@ import {
   signEncounterDocument,
   signProcedureReport,
   reopenProcedureReportReview,
+  replyToPatientMessage,
   softDeleteEncounterDocument,
   signPatientDocument,
   softDeletePatientDocument,
@@ -234,6 +236,7 @@ import {
   type PatientMessageContentUpdateInput,
   type PatientMessageCreateInput,
   type PatientMessageItem,
+  type PatientMessageReplyInput,
   type PatientMessagesResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
@@ -2904,6 +2907,24 @@ function App() {
     }
   }
 
+  async function handlePatientMessageReply(message: PatientMessageItem, reply: PatientMessageReplyInput) {
+    setMessageStatus('loading')
+    setMessageError(null)
+
+    try {
+      const response = await replyToPatientMessage(message.id, reply)
+      setPatientMessages(response.detail)
+      setMessageStatus('ready')
+      setMessageRefreshKey((current) => current + 1)
+      return response
+    } catch (replyError) {
+      setMessageStatus('error')
+      const messageText = replyError instanceof Error ? replyError.message : 'Patient message reply failed'
+      setMessageError(messageText)
+      throw replyError
+    }
+  }
+
   async function handlePatientMessageArchive(message: PatientMessageItem) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -3385,6 +3406,7 @@ function App() {
             onCloseMessage={handlePatientMessageClose}
             onUpdateMessageContent={handlePatientMessageContent}
             onAssignMessage={handlePatientMessageAssignment}
+            onReplyMessage={handlePatientMessageReply}
             onArchiveMessage={handlePatientMessageArchive}
             onDeleteMessage={handlePatientMessageDelete}
           />
@@ -10383,6 +10405,7 @@ function MessagesWorkspace({
   onCloseMessage,
   onUpdateMessageContent,
   onAssignMessage,
+  onReplyMessage,
   onArchiveMessage,
   onDeleteMessage,
 }: {
@@ -10395,6 +10418,7 @@ function MessagesWorkspace({
   onCloseMessage: (message: PatientMessageItem) => Promise<unknown>
   onUpdateMessageContent: (message: PatientMessageItem, update: PatientMessageContentUpdateInput) => Promise<unknown>
   onAssignMessage: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
+  onReplyMessage: (message: PatientMessageItem, reply: PatientMessageReplyInput) => Promise<unknown>
   onArchiveMessage: (message: PatientMessageItem) => Promise<unknown>
   onDeleteMessage: (message: PatientMessageItem) => Promise<void>
 }) {
@@ -10534,6 +10558,7 @@ function MessagesWorkspace({
                       onClose={onCloseMessage}
                       onUpdateContent={onUpdateMessageContent}
                       onAssign={onAssignMessage}
+                      onReply={onReplyMessage}
                       onArchive={onArchiveMessage}
                       onDelete={onDeleteMessage}
                     />
@@ -13944,6 +13969,7 @@ function MessageItem({
   onClose,
   onUpdateContent,
   onAssign,
+  onReply,
   onArchive,
   onDelete,
 }: {
@@ -13952,17 +13978,20 @@ function MessageItem({
   onClose: (message: PatientMessageItem) => Promise<unknown>
   onUpdateContent: (message: PatientMessageItem, update: PatientMessageContentUpdateInput) => Promise<unknown>
   onAssign: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
+  onReply: (message: PatientMessageItem, reply: PatientMessageReplyInput) => Promise<unknown>
   onArchive: (message: PatientMessageItem) => Promise<unknown>
   onDelete: (message: PatientMessageItem) => Promise<void>
 }) {
   const [titleDraft, setTitleDraft] = useState(message.title || '')
   const [bodyDraft, setBodyDraft] = useState(message.body || '')
   const [assigneeDraft, setAssigneeDraft] = useState(message.assignedTo || '')
+  const [replyDraft, setReplyDraft] = useState('')
 
   useEffect(() => {
     setTitleDraft(message.title || '')
     setBodyDraft(message.body || '')
     setAssigneeDraft(message.assignedTo || '')
+    setReplyDraft('')
   }, [message.title, message.body, message.assignedTo])
 
   async function handleContentSubmit(event: FormEvent<HTMLFormElement>) {
@@ -13973,6 +14002,12 @@ function MessageItem({
   async function handleAssignSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await onAssign(message, { assignedTo: assigneeDraft.trim() })
+  }
+
+  async function handleReplySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await onReply(message, { body: replyDraft.trim(), assignedTo: assigneeDraft.trim() || message.assignedTo || 'admin' })
+    setReplyDraft('')
   }
 
   const contentUnchanged = titleDraft.trim() === (message.title || '') && bodyDraft.trim() === (message.body || '')
@@ -14031,6 +14066,26 @@ function MessageItem({
         >
           <UserRound size={14} />
           Reassign
+        </button>
+      </form>
+      <form className="message-reply-form" onSubmit={handleReplySubmit}>
+        <label className="compact-inline-field message-body-field">
+          <span>Reply</span>
+          <textarea
+            value={replyDraft}
+            onChange={(event) => setReplyDraft(event.target.value)}
+            aria-label={`Reply to ${message.title || 'message'}`}
+            rows={2}
+            required
+          />
+        </label>
+        <button
+          className="icon-text-button secondary"
+          type="submit"
+          disabled={disabled || replyDraft.trim().length === 0 || (assigneeDraft.trim() || message.assignedTo || '').length === 0}
+        >
+          <Reply size={14} />
+          Reply
         </button>
       </form>
       <div className="message-item-actions">

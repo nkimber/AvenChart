@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -170,6 +171,46 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
                 """;
             command.Parameters.AddWithValue("id", messageId);
             command.Parameters.AddWithValue("assignedTo", request.AssignedTo.Trim());
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<PatientMessageMutationResponse?> ReplyAsync(
+        string messageId,
+        PatientMessageReplyRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(messageId)
+            || string.IsNullOrWhiteSpace(request.Body)
+            || string.IsNullOrWhiteSpace(request.AssignedTo))
+        {
+            return null;
+        }
+
+        var assignedTo = request.AssignedTo.Trim();
+        var replyLine = $"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} (admin to {assignedTo}) {request.Body.Trim()}";
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update messages
+                set body = concat(coalesce(body, ''), E'\n', @replyLine),
+                    assigned_to = @assignedTo
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", messageId);
+            command.Parameters.AddWithValue("replyLine", replyLine);
+            command.Parameters.AddWithValue("assignedTo", assignedTo);
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         }
 
