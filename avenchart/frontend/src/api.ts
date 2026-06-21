@@ -985,6 +985,17 @@ export type ProcedureResultCreateInput = {
   status: string
 }
 
+export type ProcedureResultUpdateInput = {
+  resultCode: string
+  resultText: string
+  dateTime: string
+  units: string
+  result: string
+  range: string
+  abnormal: string
+  status: string
+}
+
 export type ProcedureMutationResponse = {
   id: number
   detail: ProcedureResultsResponse
@@ -2817,6 +2828,24 @@ export async function createProcedureResult(
   })
   if (!response.ok) {
     throw new Error(`Procedure result create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureResult(
+  resultId: number,
+  input: ProcedureResultUpdateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure result update failed with ${response.status}`)
   }
 
   return response.json()

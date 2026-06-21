@@ -229,6 +229,56 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> UpdateResultAsync(
+        int resultId,
+        ProcedureResultUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (resultId <= 0
+            || string.IsNullOrWhiteSpace(request.ResultCode)
+            || string.IsNullOrWhiteSpace(request.ResultText)
+            || string.IsNullOrWhiteSpace(request.Result)
+            || string.IsNullOrWhiteSpace(request.Status)
+            || !TryReadDateTime(request.DateTime, out var resultDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var result = await GetResultMutationContextAsync(connection, resultId, cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_results
+            set code = @code,
+                text = @text,
+                units = @units,
+                result = @result,
+                range = @range,
+                abnormal = @abnormal,
+                result_date = @resultDate,
+                result_status = @status
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", result.Id);
+        command.Parameters.AddWithValue("code", request.ResultCode.Trim());
+        command.Parameters.AddWithValue("text", request.ResultText.Trim());
+        command.Parameters.AddWithValue("units", request.Units?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("result", request.Result.Trim());
+        command.Parameters.AddWithValue("range", request.Range?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("abnormal", request.Abnormal?.Trim() ?? string.Empty);
+        command.Parameters.Add("resultDate", NpgsqlDbType.Timestamp).Value = resultDate;
+        command.Parameters.AddWithValue("status", request.Status.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(result.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(result.Id, detail);
+    }
+
     public async Task<bool> DeleteOrderCascadeAsync(int orderId, CancellationToken cancellationToken)
     {
         if (orderId <= 0)
@@ -550,6 +600,34 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
     }
 
+    private static async Task<ProcedureResultMutationContext?> GetResultMutationContextAsync(
+        NpgsqlConnection connection,
+        int resultId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select lrs.id, lo.patient_id, lo.pid
+            from lab_results lrs
+            inner join lab_reports lr on lr.id = lrs.report_id
+            inner join lab_orders lo on lo.id = lr.order_id
+            where lrs.id = @id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("id", resultId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ProcedureResultMutationContext(
+            Id: reader.GetInt32(reader.GetOrdinal("id")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
+    }
+
     private static async Task<int> GetNextIntIdAsync(
         NpgsqlConnection connection,
         string tableName,
@@ -642,4 +720,6 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private sealed record ProcedureOrderMutationContext(int Id, string PatientId, int LegacyPid);
 
     private sealed record ProcedureReportMutationContext(int Id, string PatientId, int LegacyPid);
+
+    private sealed record ProcedureResultMutationContext(int Id, string PatientId, int LegacyPid);
 }

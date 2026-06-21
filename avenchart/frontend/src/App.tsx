@@ -76,6 +76,7 @@ import {
   createProcedureReport,
   createProcedureResult,
   createPatient,
+  updateProcedureResult,
   deleteAppointment,
   deleteAdministrationFacility,
   deleteAdministrationUser,
@@ -230,6 +231,7 @@ import {
   type ProcedureReportItem,
   type ProcedureResultCreateInput,
   type ProcedureResultItem,
+  type ProcedureResultUpdateInput,
   type ProcedureResultsResponse,
   type PrescriptionListItem,
   type ProblemListItem,
@@ -1568,6 +1570,30 @@ function App() {
     }
   }
 
+  async function handleEncounterProcedureResultUpdate(
+    encounter: EncounterDetail,
+    result: ProcedureResultItem,
+    input: ProcedureResultUpdateInput,
+  ) {
+    setEncounterDetailStatus('loading')
+    setEncounterError(null)
+
+    try {
+      const response = await updateProcedureResult(result.id, input)
+      const refreshed = await getEncounterDetail(encounter.encounter)
+      setEncounterDetail(refreshed)
+      setSelectedEncounter(refreshed.encounter)
+      setEncounterDetailStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setEncounterDetailStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Encounter procedure result update failed'
+      setEncounterError(message)
+      throw updateError
+    }
+  }
+
   async function handleClinicalAllergyCreate(input: ClinicalAllergyCreateInput) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -2098,6 +2124,24 @@ function App() {
       const message = createError instanceof Error ? createError.message : 'Procedure result create failed'
       setProcedureError(message)
       throw createError
+    }
+  }
+
+  async function handleProcedureResultUpdate(result: ProcedureResultItem, input: ProcedureResultUpdateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await updateProcedureResult(result.id, input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setProcedureStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Procedure result update failed'
+      setProcedureError(message)
+      throw updateError
     }
   }
 
@@ -2784,6 +2828,7 @@ function App() {
             onCreateFeeSheetLine={handleEncounterFeeSheetLineCreate}
             onCreateProcedureOrder={handleEncounterProcedureOrderCreate}
             onCreateProcedureResultSet={handleEncounterProcedureResultSetCreate}
+            onUpdateProcedureResult={handleEncounterProcedureResultUpdate}
           />
         )}
         {activeModule === 'lists' && (
@@ -2840,6 +2885,7 @@ function App() {
             onCompleteOrder={handleProcedureOrderComplete}
             onCreateReport={handleProcedureReportCreate}
             onCreateResult={handleProcedureResultCreate}
+            onUpdateResult={handleProcedureResultUpdate}
             onDeleteOrder={handleProcedureOrderDelete}
           />
         )}
@@ -4895,6 +4941,7 @@ function EncounterWorkspace({
   onCreateFeeSheetLine,
   onCreateProcedureOrder,
   onCreateProcedureResultSet,
+  onUpdateProcedureResult,
 }: {
   patientId: string
   fromDate: string
@@ -4969,6 +5016,11 @@ function EncounterWorkspace({
   onCreateProcedureResultSet: (
     encounter: EncounterDetail,
     input: EncounterProcedureResultSetInput,
+  ) => Promise<unknown>
+  onUpdateProcedureResult: (
+    encounter: EncounterDetail,
+    result: ProcedureResultItem,
+    input: ProcedureResultUpdateInput,
   ) => Promise<unknown>
 }) {
   const [createPatientId, setCreatePatientId] = useState(patientId)
@@ -5994,6 +6046,7 @@ function EncounterWorkspace({
                     key={order.id}
                     order={order}
                     onCreateResultSet={(input) => onCreateProcedureResultSet(encounterDetail, input)}
+                    onUpdateResult={(result, input) => onUpdateProcedureResult(encounterDetail, result, input)}
                   />
                 ))}
                 {encounterProcedureOrders.length === 0 && (
@@ -6704,9 +6757,11 @@ function EncounterClaimCard({ claim }: { claim: BillingClaimItem }) {
 function EncounterProcedureOrderCard({
   order,
   onCreateResultSet,
+  onUpdateResult,
 }: {
   order: ProcedureOrderItem
   onCreateResultSet: (input: EncounterProcedureResultSetInput) => Promise<unknown>
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   const reportCount = order.reports.length
   const resultCount = countReportResults(order.reports)
@@ -6781,7 +6836,7 @@ function EncounterProcedureOrderCard({
 
       <div className="encounter-procedure-report-list">
         {order.reports.map((report) => (
-          <EncounterProcedureReportCard key={report.id} report={report} />
+          <EncounterProcedureReportCard key={report.id} report={report} onUpdateResult={onUpdateResult} />
         ))}
         {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
       </div>
@@ -6913,7 +6968,13 @@ function EncounterProcedureOrderCard({
   )
 }
 
-function EncounterProcedureReportCard({ report }: { report: ProcedureReportItem }) {
+function EncounterProcedureReportCard({
+  report,
+  onUpdateResult,
+}: {
+  report: ProcedureReportItem
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
+}) {
   return (
     <section className="encounter-procedure-report-card">
       <div className="procedure-report-title">
@@ -6925,7 +6986,7 @@ function EncounterProcedureReportCard({ report }: { report: ProcedureReportItem 
       </div>
       <div className="encounter-procedure-result-list">
         {report.results.map((result) => (
-          <EncounterProcedureResultCard key={result.id} result={result} />
+          <EncounterProcedureResultCard key={result.id} result={result} onUpdateResult={onUpdateResult} />
         ))}
         {report.results.length === 0 && <div className="timeline-placeholder">No result rows recorded</div>}
       </div>
@@ -6933,7 +6994,58 @@ function EncounterProcedureReportCard({ report }: { report: ProcedureReportItem 
   )
 }
 
-function EncounterProcedureResultCard({ result }: { result: ProcedureResultItem }) {
+function EncounterProcedureResultCard({
+  result,
+  onUpdateResult,
+}: {
+  result: ProcedureResultItem
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
+}) {
+  const [isCorrecting, setIsCorrecting] = useState(false)
+  const [resultCode, setResultCode] = useState(result.code ?? '')
+  const [resultText, setResultText] = useState(result.text ?? '')
+  const [resultDate, setResultDate] = useState(result.resultDate)
+  const [resultValue, setResultValue] = useState(result.result ?? '')
+  const [resultUnits, setResultUnits] = useState(result.units ?? '')
+  const [resultRange, setResultRange] = useState(result.range ?? '')
+  const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
+  const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
+  const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setResultCode(result.code ?? '')
+    setResultText(result.text ?? '')
+    setResultDate(result.resultDate)
+    setResultValue(result.result ?? '')
+    setResultUnits(result.units ?? '')
+    setResultRange(result.range ?? '')
+    setAbnormalFlag(result.abnormal ?? '')
+    setResultStatus(result.resultStatus ?? 'corrected')
+    setCorrectionStatus('idle')
+  }, [result])
+
+  async function handleCorrectionSubmit(event: FormEvent) {
+    event.preventDefault()
+    setCorrectionStatus('saving')
+
+    try {
+      await onUpdateResult(result, {
+        resultCode,
+        resultText,
+        dateTime: resultDate,
+        units: resultUnits,
+        result: resultValue,
+        range: resultRange,
+        abnormal: abnormalFlag,
+        status: resultStatus,
+      })
+      setCorrectionStatus('saved')
+      setIsCorrecting(false)
+    } catch {
+      setCorrectionStatus('error')
+    }
+  }
+
   return (
     <article className="encounter-procedure-result-card">
       <div>
@@ -6948,6 +7060,102 @@ function EncounterProcedureResultCard({ result }: { result: ProcedureResultItem 
         <span>{result.code || 'No code'}</span>
         <span>{result.range || 'No range'}</span>
       </div>
+      <div className="detail-actions compact-actions">
+        <button className="icon-text-button secondary" type="button" onClick={() => setIsCorrecting((current) => !current)}>
+          <Pencil size={15} />
+          Correct
+        </button>
+        {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
+        {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
+      </div>
+      {isCorrecting && (
+        <form
+          className="appointment-mutation-panel encounter-procedure-result-entry-panel"
+          aria-label={`Encounter procedure result correction ${result.id}`}
+          onSubmit={handleCorrectionSubmit}
+        >
+          <div className="mutation-grid encounter-procedure-result-entry-grid">
+            <label className="filter-field">
+              <span>Code</span>
+              <input
+                value={resultCode}
+                onChange={(event) => setResultCode(event.target.value)}
+                aria-label="Encounter procedure corrected result code"
+                required
+              />
+            </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Result</span>
+              <input
+                value={resultText}
+                onChange={(event) => setResultText(event.target.value)}
+                aria-label="Encounter procedure corrected result text"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Date</span>
+              <input
+                value={resultDate}
+                onChange={(event) => setResultDate(event.target.value)}
+                aria-label="Encounter procedure corrected result date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Status</span>
+              <select
+                value={resultStatus}
+                onChange={(event) => setResultStatus(event.target.value)}
+                aria-label="Encounter procedure corrected result status"
+              >
+                <option value="final">Final</option>
+                <option value="preliminary">Preliminary</option>
+                <option value="corrected">Corrected</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Value</span>
+              <input
+                value={resultValue}
+                onChange={(event) => setResultValue(event.target.value)}
+                aria-label="Encounter procedure corrected result value"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Units</span>
+              <input
+                value={resultUnits}
+                onChange={(event) => setResultUnits(event.target.value)}
+                aria-label="Encounter procedure corrected result units"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Range</span>
+              <input
+                value={resultRange}
+                onChange={(event) => setResultRange(event.target.value)}
+                aria-label="Encounter procedure corrected result range"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Flag</span>
+              <input
+                value={abnormalFlag}
+                onChange={(event) => setAbnormalFlag(event.target.value)}
+                aria-label="Encounter procedure corrected result abnormal flag"
+              />
+            </label>
+          </div>
+          <div className="detail-actions compact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
+              <Check size={15} />
+              <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
+            </button>
+          </div>
+        </form>
+      )}
     </article>
   )
 }
@@ -9292,6 +9500,7 @@ function ProceduresWorkspace({
   onCompleteOrder,
   onCreateReport,
   onCreateResult,
+  onUpdateResult,
   onDeleteOrder,
 }: {
   patientId: string
@@ -9303,6 +9512,7 @@ function ProceduresWorkspace({
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
   onDeleteOrder: (order: ProcedureOrderItem) => Promise<void>
 }) {
   const [procedureEncounter, setProcedureEncounter] = useState('')
@@ -9548,6 +9758,7 @@ function ProceduresWorkspace({
                     order={order}
                     disabled={isLoading}
                     onCreateResult={onCreateResult}
+                    onUpdateResult={onUpdateResult}
                   />
                 ))}
                 {procedureResults.orders.length === 0 && (
@@ -12443,10 +12654,12 @@ function ProcedureReportGroup({
   order,
   disabled,
   onCreateResult,
+  onUpdateResult,
 }: {
   order: ProcedureOrderItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   return (
     <article className="procedure-report-group">
@@ -12459,7 +12672,13 @@ function ProcedureReportGroup({
       </div>
 
       {order.reports.map((report) => (
-        <ProcedureReportCard key={report.id} report={report} disabled={disabled} onCreateResult={onCreateResult} />
+        <ProcedureReportCard
+          key={report.id}
+          report={report}
+          disabled={disabled}
+          onCreateResult={onCreateResult}
+          onUpdateResult={onUpdateResult}
+        />
       ))}
       {order.reports.length === 0 && <div className="timeline-placeholder">No reports recorded for this order</div>}
     </article>
@@ -12470,10 +12689,12 @@ function ProcedureReportCard({
   report,
   disabled,
   onCreateResult,
+  onUpdateResult,
 }: {
   report: ProcedureReportItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   async function handleCreateResult() {
     await onCreateResult({
@@ -12508,7 +12729,7 @@ function ProcedureReportCard({
       </div>
       <div className="procedure-result-grid">
         {report.results.map((result) => (
-          <ProcedureResultCard key={result.id} result={result} />
+          <ProcedureResultCard key={result.id} result={result} disabled={disabled} onUpdateResult={onUpdateResult} />
         ))}
         {report.results.length === 0 && <div className="timeline-placeholder">No result rows recorded</div>}
       </div>
@@ -12516,7 +12737,60 @@ function ProcedureReportCard({
   )
 }
 
-function ProcedureResultCard({ result }: { result: ProcedureResultItem }) {
+function ProcedureResultCard({
+  result,
+  disabled,
+  onUpdateResult,
+}: {
+  result: ProcedureResultItem
+  disabled: boolean
+  onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
+}) {
+  const [isCorrecting, setIsCorrecting] = useState(false)
+  const [resultCode, setResultCode] = useState(result.code ?? '')
+  const [resultText, setResultText] = useState(result.text ?? '')
+  const [resultDate, setResultDate] = useState(result.resultDate)
+  const [resultValue, setResultValue] = useState(result.result ?? '')
+  const [resultUnits, setResultUnits] = useState(result.units ?? '')
+  const [resultRange, setResultRange] = useState(result.range ?? '')
+  const [abnormalFlag, setAbnormalFlag] = useState(result.abnormal ?? '')
+  const [resultStatus, setResultStatus] = useState(result.resultStatus ?? 'corrected')
+  const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setResultCode(result.code ?? '')
+    setResultText(result.text ?? '')
+    setResultDate(result.resultDate)
+    setResultValue(result.result ?? '')
+    setResultUnits(result.units ?? '')
+    setResultRange(result.range ?? '')
+    setAbnormalFlag(result.abnormal ?? '')
+    setResultStatus(result.resultStatus ?? 'corrected')
+    setCorrectionStatus('idle')
+  }, [result])
+
+  async function handleCorrectionSubmit(event: FormEvent) {
+    event.preventDefault()
+    setCorrectionStatus('saving')
+
+    try {
+      await onUpdateResult(result, {
+        resultCode,
+        resultText,
+        dateTime: resultDate,
+        units: resultUnits,
+        result: resultValue,
+        range: resultRange,
+        abnormal: abnormalFlag,
+        status: resultStatus,
+      })
+      setCorrectionStatus('saved')
+      setIsCorrecting(false)
+    } catch {
+      setCorrectionStatus('error')
+    }
+  }
+
   return (
     <article className="procedure-result-card">
       <div>
@@ -12535,6 +12809,107 @@ function ProcedureResultCard({ result }: { result: ProcedureResultItem }) {
         <span>{result.abnormal || 'No flag'}</span>
         <span>{result.resultDate}</span>
       </div>
+      <div className="detail-actions compact-actions">
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsCorrecting((current) => !current)}
+        >
+          <Pencil size={15} />
+          Correct
+        </button>
+        {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
+        {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
+      </div>
+      {isCorrecting && (
+        <form
+          className="appointment-mutation-panel encounter-procedure-result-entry-panel"
+          aria-label={`Procedure result correction ${result.id}`}
+          onSubmit={handleCorrectionSubmit}
+        >
+          <div className="mutation-grid encounter-procedure-result-entry-grid">
+            <label className="filter-field">
+              <span>Code</span>
+              <input
+                value={resultCode}
+                onChange={(event) => setResultCode(event.target.value)}
+                aria-label="Procedure corrected result code"
+                required
+              />
+            </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Result</span>
+              <input
+                value={resultText}
+                onChange={(event) => setResultText(event.target.value)}
+                aria-label="Procedure corrected result text"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Date</span>
+              <input
+                value={resultDate}
+                onChange={(event) => setResultDate(event.target.value)}
+                aria-label="Procedure corrected result date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Status</span>
+              <select
+                value={resultStatus}
+                onChange={(event) => setResultStatus(event.target.value)}
+                aria-label="Procedure corrected result status"
+              >
+                <option value="final">Final</option>
+                <option value="preliminary">Preliminary</option>
+                <option value="corrected">Corrected</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Value</span>
+              <input
+                value={resultValue}
+                onChange={(event) => setResultValue(event.target.value)}
+                aria-label="Procedure corrected result value"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Units</span>
+              <input
+                value={resultUnits}
+                onChange={(event) => setResultUnits(event.target.value)}
+                aria-label="Procedure corrected result units"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Range</span>
+              <input
+                value={resultRange}
+                onChange={(event) => setResultRange(event.target.value)}
+                aria-label="Procedure corrected result range"
+              />
+            </label>
+            <label className="filter-field">
+              <span>Flag</span>
+              <input
+                value={abnormalFlag}
+                onChange={(event) => setAbnormalFlag(event.target.value)}
+                aria-label="Procedure corrected result abnormal flag"
+              />
+            </label>
+          </div>
+          <div className="detail-actions compact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
+              <Check size={15} />
+              <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Correction'}</span>
+            </button>
+          </div>
+        </form>
+      )}
     </article>
   )
 }

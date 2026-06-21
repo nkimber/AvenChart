@@ -1220,6 +1220,17 @@ procedures.MapPost("/results", async (
     })
     .WithName("CreateProcedureResult");
 
+procedures.MapPut("/results/{resultId:int}", async (
+        ProcedureRepository repository,
+        int resultId,
+        ProcedureResultUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateResultAsync(resultId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureResult");
+
 procedures.MapDelete("/orders/{orderId:int}", async (
         ProcedureRepository repository,
         int orderId,

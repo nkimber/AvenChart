@@ -3700,6 +3700,126 @@ finally {
     }
 }
 
+$smokeProcedureResultCorrectionOrderId = $null
+try {
+    $procedureCorrectionSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $procedureCorrectionOrderName = "Smoke Procedure Result Correction $procedureCorrectionSuffix"
+    $procedureCorrectionInitialText = "Smoke Initial Glucose $procedureCorrectionSuffix"
+    $procedureCorrectionText = "Smoke Corrected Glucose $procedureCorrectionSuffix"
+    $procedureCorrectionOrderBody = @{
+        patientId = "MOD-PAT-0001"
+        providerId = $null
+        encounterId = 1000013
+        dateOrdered = "2026-06-18"
+        priority = "routine"
+        status = "complete"
+        procedureCode = "80053"
+        procedureName = $procedureCorrectionOrderName
+        procedureType = "laboratory"
+        diagnosis = "E78.5"
+        instructions = "Created by the smoke procedure result correction check."
+    } | ConvertTo-Json -Depth 5
+
+    $createdProcedureCorrectionOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureCorrectionOrderBody -TimeoutSec 20
+    $smokeProcedureResultCorrectionOrderId = $createdProcedureCorrectionOrder.id
+
+    $procedureCorrectionReportBody = @{
+        orderId = $smokeProcedureResultCorrectionOrderId
+        dateCollected = "2026-06-18 12:30:00"
+        dateReport = "2026-06-18 13:00:00"
+        specimenNumber = "SMOKE-PROC-CORR"
+        reportStatus = "final"
+        reviewStatus = "reviewed"
+        notes = "Created by the smoke procedure result correction check."
+    } | ConvertTo-Json -Depth 5
+    $createdProcedureCorrectionReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $procedureCorrectionReportBody -TimeoutSec 20
+
+    $procedureCorrectionInitialBody = @{
+        reportId = $createdProcedureCorrectionReport.id
+        resultCode = "2345-7"
+        resultText = $procedureCorrectionInitialText
+        dateTime = "2026-06-18 13:05:00"
+        facility = "Legacy EHR Modernization Clinic"
+        units = "mg/dL"
+        result = "104"
+        range = "70-99"
+        abnormal = "high"
+        comments = "Initial smoke procedure result before correction."
+        status = "final"
+    } | ConvertTo-Json -Depth 5
+    $createdProcedureCorrectionResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $procedureCorrectionInitialBody -TimeoutSec 20
+
+    $procedureCorrectionBody = @{
+        resultCode = "2345-7"
+        resultText = $procedureCorrectionText
+        dateTime = "2026-06-18 13:35:00"
+        units = "mg/dL"
+        result = "118"
+        range = "70-110"
+        abnormal = "borderline"
+        status = "corrected"
+    } | ConvertTo-Json -Depth 5
+    $correctedProcedureResultResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$($createdProcedureCorrectionResult.id)" -Method Put -ContentType "application/json" -Body $procedureCorrectionBody -TimeoutSec 20
+
+    $procedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $procedureCorrectionOrderRow = @($procedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeProcedureResultCorrectionOrderId -and $_.name -eq $procedureCorrectionOrderName
+    } | Select-Object -First 1
+    $procedureCorrectionReportRow = if ($null -ne $procedureCorrectionOrderRow) {
+        @($procedureCorrectionOrderRow.reports | Where-Object { $null -ne $_ }) | Where-Object {
+            $_.id -eq $createdProcedureCorrectionReport.id
+        } | Select-Object -First 1
+    } else {
+        $null
+    }
+    $procedureCorrectionResultRow = if ($null -ne $procedureCorrectionReportRow) {
+        @($procedureCorrectionReportRow.results | Where-Object { $null -ne $_ }) | Where-Object {
+            $_.id -eq $createdProcedureCorrectionResult.id `
+                -and $_.text -eq $procedureCorrectionText `
+                -and $_.result -eq "118" `
+                -and $_.units -eq "mg/dL" `
+                -and $_.range -eq "70-110" `
+                -and $_.abnormal -eq "borderline" `
+                -and $_.resultStatus -eq "corrected"
+        } | Select-Object -First 1
+    } else {
+        $null
+    }
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeProcedureResultCorrectionOrderId = $null
+    $afterDeleteProcedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $deletedProcedureCorrectionOrderRow = @($afterDeleteProcedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $procedureCorrectionOrderName
+    } | Select-Object -First 1
+
+    $procedureResultCorrectionPassed = $correctedProcedureResultResponse.id -eq $createdProcedureCorrectionResult.id `
+        -and $null -ne $procedureCorrectionOrderRow `
+        -and $null -ne $procedureCorrectionReportRow `
+        -and $null -ne $procedureCorrectionResultRow `
+        -and $null -eq $deletedProcedureCorrectionOrderRow
+    Add-Check -Name "procedure result correction lifecycle" -Result $(if ($procedureResultCorrectionPassed) { "passed" } else { "failed" }) -Details @{
+        createdOrderId = $createdProcedureCorrectionOrder.id
+        reportId = $createdProcedureCorrectionReport.id
+        resultId = $createdProcedureCorrectionResult.id
+        order = $procedureCorrectionOrderRow
+        report = $procedureCorrectionReportRow
+        result = $procedureCorrectionResultRow
+    }
+}
+catch {
+    Add-Check -Name "procedure result correction lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeProcedureResultCorrectionOrderId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     if ($null -eq $encounterDetail) {
         throw "Anchor encounter detail did not load."

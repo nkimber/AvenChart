@@ -93,6 +93,16 @@ public sealed record ProcedureResultCreateRequest(
     string Comments,
     string Status);
 
+public sealed record ProcedureResultUpdateRequest(
+    string ResultCode,
+    string ResultText,
+    string DateTime,
+    string Units,
+    string Result,
+    string Range,
+    string Abnormal,
+    string Status);
+
 public sealed record ProcedureMutationResponse(
     int Id,
     ProcedureResultsResponse Detail);
