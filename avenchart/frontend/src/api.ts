@@ -145,6 +145,7 @@ export type AppointmentListItem = {
   recurrenceType: number
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  recurrenceDays: number[]
   recurrenceEndDate?: string | null
   recurrenceExdates: string[]
   recurrenceExceptionCount: number
@@ -174,6 +175,7 @@ export type AppointmentCreateInput = {
   recurrenceType?: number | null
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null
 }
@@ -193,6 +195,7 @@ export type AppointmentUpdateInput = {
   recurrenceType?: number | null
   repeatFrequency?: number | null
   repeatUnit?: number | null
+  recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null
 }

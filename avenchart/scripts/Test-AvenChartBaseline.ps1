@@ -1288,6 +1288,74 @@ finally {
     }
 }
 
+$appointmentDaysOfWeekRecurrenceId = $null
+try {
+    $daysTitle = "Smoke Days-of-Week Recurrence $([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+    $createBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = $daysTitle
+        date = "2026-12-07"
+        startTime = "08:45"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "DaysWeek"
+        comments = "Smoke days-of-week recurrence create."
+        recurrenceType = 3
+        repeatFrequency = $null
+        repeatUnit = 6
+        recurrenceDays = @(2, 4, 6)
+        recurrenceEndDate = "2026-12-18"
+        recurrenceExdates = @()
+    } | ConvertTo-Json -Depth 5
+    $createdDays = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $createBody -TimeoutSec 20
+    $appointmentDaysOfWeekRecurrenceId = $createdDays.id
+
+    $daysSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-12-07&limit=100" -Method Get -TimeoutSec 20
+    $daysMatches = @($daysSearch.appointments | Where-Object { $_.title -eq $daysTitle })
+    $daysDates = @($daysMatches | ForEach-Object { $_.date })
+    $daysNumbers = @($daysMatches | ForEach-Object { $_.occurrenceNumber })
+    $daysGenerated = $daysMatches | Where-Object { $_.date -eq "2026-12-09" } | Select-Object -First 1
+    $appointmentDaysOfWeekRecurrencePassed = $createdDays.recurrenceType -eq 3 `
+        -and $createdDays.repeatFrequency -eq $null `
+        -and $createdDays.repeatUnit -eq 6 `
+        -and (($createdDays.recurrenceDays -join ",") -eq "2,4,6") `
+        -and $createdDays.recurrenceLabel -eq "Every week on Mon, Wed, Fri until 2026-12-18" `
+        -and (($daysDates -join ",") -eq "2026-12-07,2026-12-09,2026-12-11,2026-12-14,2026-12-16,2026-12-18") `
+        -and (($daysNumbers -join ",") -eq "1,2,3,4,5,6") `
+        -and $null -ne $daysGenerated `
+        -and $daysGenerated.isVirtualOccurrence `
+        -and (($daysGenerated.recurrenceDays -join ",") -eq "2,4,6")
+
+    $encodedDaysId = [System.Uri]::EscapeDataString($appointmentDaysOfWeekRecurrenceId)
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedDaysId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentDaysOfWeekRecurrenceId = $null
+
+    Add-Check -Name "appointment days-of-week recurrence lifecycle" -Result $(if ($appointmentDaysOfWeekRecurrencePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdDays.id
+        createdLabel = $createdDays.recurrenceLabel
+        recurrenceDays = $createdDays.recurrenceDays
+        dates = $daysDates
+        occurrenceNumbers = $daysNumbers
+        generatedOccurrenceId = $daysGenerated.id
+    }
+}
+catch {
+    Add-Check -Name "appointment days-of-week recurrence lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentDaysOfWeekRecurrenceId) {
+        try {
+            $encodedDaysId = [System.Uri]::EscapeDataString($appointmentDaysOfWeekRecurrenceId)
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedDaysId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $seriesSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-08-14&limit=10" -Method Get -TimeoutSec 20
     $seriesOccurrences = @($seriesSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })

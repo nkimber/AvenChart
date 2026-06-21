@@ -3694,6 +3694,16 @@ const appointmentRepeatUnitOptions = [
   { id: 3, label: 'Year' },
 ] as const
 
+const appointmentWeekdayOptions = [
+  { id: 1, shortLabel: 'Sun', label: 'Sunday' },
+  { id: 2, shortLabel: 'Mon', label: 'Monday' },
+  { id: 3, shortLabel: 'Tue', label: 'Tuesday' },
+  { id: 4, shortLabel: 'Wed', label: 'Wednesday' },
+  { id: 5, shortLabel: 'Thu', label: 'Thursday' },
+  { id: 6, shortLabel: 'Fri', label: 'Friday' },
+  { id: 7, shortLabel: 'Sat', label: 'Saturday' },
+] as const
+
 function appointmentCategoryLabel(appointment: Pick<AppointmentListItem, 'categoryId' | 'categoryName'>) {
   return appointment.categoryName ?? appointmentCategoryOptions.find((category) => category.id === appointment.categoryId)?.label ?? 'Category not recorded'
 }
@@ -3701,6 +3711,28 @@ function appointmentCategoryLabel(appointment: Pick<AppointmentListItem, 'catego
 function appointmentCategoryDetail(appointment: Pick<AppointmentListItem, 'categoryId' | 'categoryName'>) {
   const label = appointmentCategoryLabel(appointment)
   return appointment.categoryId ? `${label} (${appointment.categoryId})` : label
+}
+
+function appointmentWeekdayLabels(recurrenceDays?: number[] | null) {
+  const labels = new Map<number, string>(appointmentWeekdayOptions.map((day) => [day.id, day.shortLabel]))
+  const values = Array.from(new Set(recurrenceDays ?? []))
+    .filter((day) => day >= 1 && day <= 7)
+    .sort((left, right) => left - right)
+    .map((day) => labels.get(day) ?? `Day ${day}`)
+  return values.length === 0 ? 'None' : values.join(', ')
+}
+
+function toggleAppointmentWeekday(days: number[], day: number, checked: boolean) {
+  const next = new Set(days)
+  if (checked) {
+    next.add(day)
+  } else {
+    next.delete(day)
+  }
+
+  return Array.from(next)
+    .filter((value) => value >= 1 && value <= 7)
+    .sort((left, right) => left - right)
 }
 
 function appointmentOccurrenceDetail(
@@ -3786,6 +3818,8 @@ function CalendarWorkspace({
   const [draftRepeats, setDraftRepeats] = useState(false)
   const [draftRepeatFrequency, setDraftRepeatFrequency] = useState('1')
   const [draftRepeatUnit, setDraftRepeatUnit] = useState('1')
+  const [draftSpecificWeekdays, setDraftSpecificWeekdays] = useState(false)
+  const [draftRecurrenceDays, setDraftRecurrenceDays] = useState<number[]>([2, 4, 6])
   const [draftRecurrenceEndDate, setDraftRecurrenceEndDate] = useState('2026-12-31')
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
@@ -3800,6 +3834,8 @@ function CalendarWorkspace({
   const [editRepeats, setEditRepeats] = useState(false)
   const [editRepeatFrequency, setEditRepeatFrequency] = useState('1')
   const [editRepeatUnit, setEditRepeatUnit] = useState('1')
+  const [editSpecificWeekdays, setEditSpecificWeekdays] = useState(false)
+  const [editRecurrenceDays, setEditRecurrenceDays] = useState<number[]>([])
   const [editRecurrenceEndDate, setEditRecurrenceEndDate] = useState('')
   const [editRecurrenceExdates, setEditRecurrenceExdates] = useState('')
   const [editStatus, setEditStatus] = useState('-')
@@ -3821,9 +3857,12 @@ function CalendarWorkspace({
     setEditFacilityId(appointmentDetail.facilityId ? String(appointmentDetail.facilityId) : '')
     setEditBillingLocationId(appointmentDetail.billingLocationId ? String(appointmentDetail.billingLocationId) : '')
     setEditComments(appointmentDetail.comments ?? '')
+    const usesSpecificWeekdays = appointmentDetail.recurrenceType === 3
     setEditRepeats(appointmentDetail.recurrenceType > 0)
-    setEditRepeatFrequency(String(appointmentDetail.repeatFrequency ?? 1))
-    setEditRepeatUnit(String(appointmentDetail.repeatUnit ?? 1))
+    setEditRepeatFrequency(String(usesSpecificWeekdays ? 1 : appointmentDetail.repeatFrequency ?? 1))
+    setEditRepeatUnit(String(usesSpecificWeekdays ? 1 : appointmentDetail.repeatUnit ?? 1))
+    setEditSpecificWeekdays(usesSpecificWeekdays)
+    setEditRecurrenceDays(appointmentDetail.recurrenceDays ?? [])
     setEditRecurrenceEndDate(appointmentDetail.recurrenceEndDate ?? appointmentDetail.date)
     setEditRecurrenceExdates(appointmentDetail.recurrenceExdates.join(', '))
     setEditStatus(appointmentDetail.status ?? '-')
@@ -3834,6 +3873,7 @@ function CalendarWorkspace({
     setMutationStatus('saving')
 
     try {
+      const usesSpecificWeekdays = draftRepeats && draftSpecificWeekdays
       await onCreateAppointment({
         patientId,
         title: draftTitle,
@@ -3846,9 +3886,10 @@ function CalendarWorkspace({
         facilityId: numberOrNull(draftFacilityId),
         billingLocationId: numberOrNull(draftBillingLocationId),
         comments: draftComments,
-        recurrenceType: draftRepeats ? 1 : 0,
-        repeatFrequency: draftRepeats ? Number(draftRepeatFrequency) : null,
-        repeatUnit: draftRepeats ? Number(draftRepeatUnit) : null,
+        recurrenceType: usesSpecificWeekdays ? 3 : draftRepeats ? 1 : 0,
+        repeatFrequency: usesSpecificWeekdays ? null : draftRepeats ? Number(draftRepeatFrequency) : null,
+        repeatUnit: usesSpecificWeekdays ? 6 : draftRepeats ? Number(draftRepeatUnit) : null,
+        recurrenceDays: usesSpecificWeekdays ? draftRecurrenceDays : null,
         recurrenceEndDate: draftRepeats ? draftRecurrenceEndDate : null,
       })
       setMutationStatus('saved')
@@ -3921,6 +3962,7 @@ function CalendarWorkspace({
 
     setMutationStatus('saving')
     try {
+      const usesSpecificWeekdays = editRepeats && editSpecificWeekdays
       const scheduleInput = {
         title: editTitle,
         date: editDate,
@@ -3940,9 +3982,10 @@ function CalendarWorkspace({
       } else {
         await onUpdateAppointment(appointmentDetail, {
           ...scheduleInput,
-          recurrenceType: editRepeats ? 1 : 0,
-          repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
-          repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
+          recurrenceType: usesSpecificWeekdays ? 3 : editRepeats ? 1 : 0,
+          repeatFrequency: usesSpecificWeekdays ? null : editRepeats ? Number(editRepeatFrequency) : null,
+          repeatUnit: usesSpecificWeekdays ? 6 : editRepeats ? Number(editRepeatUnit) : null,
+          recurrenceDays: usesSpecificWeekdays ? editRecurrenceDays : null,
           recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
           recurrenceExdates: editRepeats ? parseDateList(editRecurrenceExdates) : null,
         })
@@ -4107,11 +4150,40 @@ function CalendarWorkspace({
               <input
                 type="checkbox"
                 checked={draftRepeats}
-                onChange={(event) => setDraftRepeats(event.target.checked)}
+                onChange={(event) => {
+                  setDraftRepeats(event.target.checked)
+                  if (!event.target.checked) {
+                    setDraftSpecificWeekdays(false)
+                  }
+                }}
                 aria-label="New appointment repeats"
               />
               <span>Repeats</span>
             </label>
+            <label className="contact-field checkbox-field">
+              <input
+                type="checkbox"
+                checked={draftSpecificWeekdays}
+                onChange={(event) => setDraftSpecificWeekdays(event.target.checked)}
+                aria-label="New appointment specific weekdays"
+                disabled={!draftRepeats}
+              />
+              <span>Specific weekdays</span>
+            </label>
+            <div className="weekday-toggle-row" aria-label="New appointment recurrence weekdays">
+              {appointmentWeekdayOptions.map((day) => (
+                <label className="weekday-toggle" key={day.id}>
+                  <input
+                    type="checkbox"
+                    checked={draftRecurrenceDays.includes(day.id)}
+                    onChange={(event) => setDraftRecurrenceDays((current) => toggleAppointmentWeekday(current, day.id, event.target.checked))}
+                    aria-label={`New appointment weekday ${day.label}`}
+                    disabled={!draftRepeats || !draftSpecificWeekdays}
+                  />
+                  <span>{day.shortLabel}</span>
+                </label>
+              ))}
+            </div>
             <label className="contact-field">
               <span>Every</span>
               <input
@@ -4120,7 +4192,7 @@ function CalendarWorkspace({
                 value={draftRepeatFrequency}
                 onChange={(event) => setDraftRepeatFrequency(event.target.value)}
                 aria-label="New appointment repeat frequency"
-                disabled={!draftRepeats}
+                disabled={!draftRepeats || draftSpecificWeekdays}
               />
             </label>
             <label className="contact-field">
@@ -4129,7 +4201,7 @@ function CalendarWorkspace({
                 value={draftRepeatUnit}
                 onChange={(event) => setDraftRepeatUnit(event.target.value)}
                 aria-label="New appointment repeat unit"
-                disabled={!draftRepeats}
+                disabled={!draftRepeats || draftSpecificWeekdays}
               >
                 {appointmentRepeatUnitOptions.map((unit) => (
                   <option key={unit.id} value={unit.id}>
@@ -4360,12 +4432,41 @@ function CalendarWorkspace({
                   <input
                     type="checkbox"
                     checked={editRepeats}
-                    onChange={(event) => setEditRepeats(event.target.checked)}
+                    onChange={(event) => {
+                      setEditRepeats(event.target.checked)
+                      if (!event.target.checked) {
+                        setEditSpecificWeekdays(false)
+                      }
+                    }}
                     aria-label="Edit appointment repeats"
                     disabled={selectedOccurrenceIsVirtual}
                   />
                   <span>Repeats</span>
                 </label>
+                <label className="contact-field checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={editSpecificWeekdays}
+                    onChange={(event) => setEditSpecificWeekdays(event.target.checked)}
+                    aria-label="Edit appointment specific weekdays"
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
+                  />
+                  <span>Specific weekdays</span>
+                </label>
+                <div className="weekday-toggle-row" aria-label="Edit appointment recurrence weekdays">
+                  {appointmentWeekdayOptions.map((day) => (
+                    <label className="weekday-toggle" key={day.id}>
+                      <input
+                        type="checkbox"
+                        checked={editRecurrenceDays.includes(day.id)}
+                        onChange={(event) => setEditRecurrenceDays((current) => toggleAppointmentWeekday(current, day.id, event.target.checked))}
+                        aria-label={`Edit appointment weekday ${day.label}`}
+                        disabled={selectedOccurrenceIsVirtual || !editRepeats || !editSpecificWeekdays}
+                      />
+                      <span>{day.shortLabel}</span>
+                    </label>
+                  ))}
+                </div>
                 <label className="contact-field">
                   <span>Every</span>
                   <input
@@ -4374,7 +4475,7 @@ function CalendarWorkspace({
                     value={editRepeatFrequency}
                     onChange={(event) => setEditRepeatFrequency(event.target.value)}
                     aria-label="Edit appointment repeat frequency"
-                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats || editSpecificWeekdays}
                   />
                 </label>
                 <label className="contact-field">
@@ -4383,7 +4484,7 @@ function CalendarWorkspace({
                     value={editRepeatUnit}
                     onChange={(event) => setEditRepeatUnit(event.target.value)}
                     aria-label="Edit appointment repeat unit"
-                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats || editSpecificWeekdays}
                   >
                     {appointmentRepeatUnitOptions.map((unit) => (
                       <option key={unit.id} value={unit.id}>
@@ -4429,6 +4530,7 @@ function CalendarWorkspace({
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
+                <Field label="Weekdays" value={appointmentDetail.recurrenceType === 3 ? appointmentWeekdayLabels(appointmentDetail.recurrenceDays) : null} />
                 <div className="field-row skipped-dates-field">
                   <span>Skipped dates</span>
                   <div className="skipped-date-actions">
