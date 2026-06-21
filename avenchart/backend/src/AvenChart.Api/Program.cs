@@ -1234,6 +1234,19 @@ procedures.MapPut("/reports/{reportId:int}", async (
     })
     .WithName("UpdateProcedureReport");
 
+procedures.MapPut("/reports/{reportId:int}/sign", async (
+        ProcedureRepository repository,
+        int reportId,
+        ProcedureReportSignRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.SignReportAsync(reportId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure report could not be signed from the supplied review details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("SignProcedureReport");
+
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
         ProcedureSpecimenCreateRequest request,

@@ -62,6 +62,8 @@ public sealed record ProcedureReportItem(
     string? SpecimenNumber,
     string? Status,
     string? ReviewStatus,
+    string? ReviewedBy,
+    string? ReviewedAt,
     string? Notes,
     IReadOnlyList<ProcedureResultItem> Results);
 
@@ -118,6 +120,10 @@ public sealed record ProcedureReportUpdateRequest(
     string ReportStatus,
     string ReviewStatus,
     string Notes);
+
+public sealed record ProcedureReportSignRequest(
+    string ReviewedBy,
+    string ReviewedAt);
 
 public sealed record ProcedureSpecimenCreateRequest(
     int OrderId,

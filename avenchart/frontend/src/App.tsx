@@ -112,6 +112,7 @@ import {
   searchPatients,
   signEncounter,
   signEncounterDocument,
+  signProcedureReport,
   softDeleteEncounterDocument,
   signPatientDocument,
   softDeletePatientDocument,
@@ -233,6 +234,7 @@ import {
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
   type ProcedureSpecimenCreateInput,
   type ProcedureSpecimenItem,
@@ -2152,6 +2154,24 @@ function App() {
     }
   }
 
+  async function handleProcedureReportSign(report: ProcedureReportItem, input: ProcedureReportSignInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await signProcedureReport(report.id, input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (signError) {
+      setProcedureStatus('error')
+      const message = signError instanceof Error ? signError.message : 'Procedure report sign-off failed'
+      setProcedureError(message)
+      throw signError
+    }
+  }
+
   async function handleProcedureSpecimenCreate(input: ProcedureSpecimenCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2947,6 +2967,7 @@ function App() {
             onUpdateOrder={handleProcedureOrderUpdate}
             onCreateReport={handleProcedureReportCreate}
             onUpdateReport={handleProcedureReportUpdate}
+            onSignReport={handleProcedureReportSign}
             onCreateSpecimen={handleProcedureSpecimenCreate}
             onCreateResult={handleProcedureResultCreate}
             onUpdateResult={handleProcedureResultUpdate}
@@ -7053,6 +7074,8 @@ function EncounterProcedureReportCard({
               report.dateCollected ? `Collected ${report.dateCollected}` : '',
               report.specimenNumber ? `Specimen ${report.specimenNumber}` : '',
               report.reviewStatus,
+              report.reviewedBy ? `Signed by ${report.reviewedBy}` : '',
+              report.reviewedAt ? `Signed ${report.reviewedAt}` : '',
               report.notes,
             ]
               .filter(Boolean)
@@ -9578,6 +9601,7 @@ function ProceduresWorkspace({
   onUpdateOrder,
   onCreateReport,
   onUpdateReport,
+  onSignReport,
   onCreateSpecimen,
   onCreateResult,
   onUpdateResult,
@@ -9593,6 +9617,7 @@ function ProceduresWorkspace({
   onUpdateOrder: (order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
@@ -9847,6 +9872,7 @@ function ProceduresWorkspace({
                     disabled={isLoading}
                     onCreateResult={onCreateResult}
                     onUpdateReport={onUpdateReport}
+                    onSignReport={onSignReport}
                     onUpdateResult={onUpdateResult}
                   />
                 ))}
@@ -12960,12 +12986,14 @@ function ProcedureReportGroup({
   disabled,
   onCreateResult,
   onUpdateReport,
+  onSignReport,
   onUpdateResult,
 }: {
   order: ProcedureOrderItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   return (
@@ -12986,6 +13014,7 @@ function ProcedureReportGroup({
           disabled={disabled}
           onCreateResult={onCreateResult}
           onUpdateReport={onUpdateReport}
+          onSignReport={onSignReport}
           onUpdateResult={onUpdateResult}
         />
       ))}
@@ -12999,12 +13028,14 @@ function ProcedureReportCard({
   disabled,
   onCreateResult,
   onUpdateReport,
+  onSignReport,
   onUpdateResult,
 }: {
   report: ProcedureReportItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   const [isCorrecting, setIsCorrecting] = useState(false)
@@ -13015,6 +13046,7 @@ function ProcedureReportCard({
   const [reviewStatus, setReviewStatus] = useState(report.reviewStatus ?? 'reviewed')
   const [notes, setNotes] = useState(report.notes ?? '')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [signStatus, setSignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     setDateCollected(report.dateCollected)
@@ -13024,6 +13056,7 @@ function ProcedureReportCard({
     setReviewStatus(report.reviewStatus ?? 'reviewed')
     setNotes(report.notes ?? '')
     setCorrectionStatus('idle')
+    setSignStatus('idle')
   }, [report])
 
   async function handleCreateResult() {
@@ -13062,6 +13095,20 @@ function ProcedureReportCard({
     }
   }
 
+  async function handleReportSign() {
+    setSignStatus('saving')
+
+    try {
+      await onSignReport(report, {
+        reviewedBy: 'admin',
+        reviewedAt: '2026-06-19 14:15:00',
+      })
+      setSignStatus('saved')
+    } catch {
+      setSignStatus('error')
+    }
+  }
+
   return (
     <section className="procedure-report-card">
       <div className="procedure-report-title">
@@ -13073,6 +13120,8 @@ function ProcedureReportCard({
               report.dateCollected ? `Collected ${report.dateCollected}` : '',
               report.specimenNumber ? `Specimen ${report.specimenNumber}` : '',
               report.reviewStatus,
+              report.reviewedBy ? `Signed by ${report.reviewedBy}` : '',
+              report.reviewedAt ? `Signed ${report.reviewedAt}` : '',
               report.notes,
             ]
               .filter(Boolean)
@@ -13095,8 +13144,20 @@ function ProcedureReportCard({
           <Pencil size={15} />
           Correct Report
         </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || signStatus === 'saving'}
+          onClick={handleReportSign}
+          aria-label={`Sign procedure report ${report.id}`}
+        >
+          <ShieldCheck size={15} />
+          Sign Report
+        </button>
         {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
         {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
+        {signStatus === 'saved' && <span className="save-note">Signed</span>}
+        {signStatus === 'error' && <span className="save-note error">Sign failed</span>}
       </div>
       {isCorrecting && (
         <form

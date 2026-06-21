@@ -231,9 +231,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into lab_reports
-                (id, order_id, date_collected, report_date, specimen_number, status, review_status, notes)
+                (id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes)
             values
-                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, @reviewStatus, @notes);
+                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, @reviewStatus, null, null, @notes);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("orderId", order.Id);
@@ -279,6 +279,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 specimen_number = @specimenNumber,
                 status = @status,
                 review_status = @reviewStatus,
+                reviewed_by = case when @reviewStatus = 'reviewed' then reviewed_by else null end,
+                reviewed_at = case when @reviewStatus = 'reviewed' then reviewed_at else null end,
                 notes = @notes
             where id = @id;
             """;
@@ -289,6 +291,42 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("reviewStatus", request.ReviewStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+    }
+
+    public async Task<ProcedureMutationResponse?> SignReportAsync(
+        int reportId,
+        ProcedureReportSignRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0
+            || string.IsNullOrWhiteSpace(request.ReviewedBy)
+            || !TryReadDateTime(request.ReviewedAt, out var reviewedAt))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_reports
+            set review_status = 'reviewed',
+                reviewed_by = @reviewedBy,
+                reviewed_at = @reviewedAt
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", report.Id);
+        command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
+        command.Parameters.Add("reviewedAt", NpgsqlDbType.Timestamp).Value = reviewedAt;
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
@@ -674,7 +712,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, notes
+            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes
             from lab_reports
             where order_id = any(@orderIds)
             order by report_date desc, id desc;
@@ -696,6 +734,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Status: ReadNullableString(reader, "status"),
                     ReviewStatus: ReadNullableString(reader, "review_status"),
+                    ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+                    ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
                     Notes: ReadNullableString(reader, "notes"),
                     Results: [])));
         }
@@ -921,6 +961,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static string? ReadNullableDateTime(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm");
     }
 
     private static int? ReadNullableInt(DbDataReader reader, string columnName)

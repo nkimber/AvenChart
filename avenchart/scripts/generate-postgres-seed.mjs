@@ -601,6 +601,8 @@ create table lab_reports (
   specimen_number text,
   status text,
   review_status text,
+  reviewed_by text,
+  reviewed_at timestamp,
   notes text
 );
 
@@ -1296,17 +1298,24 @@ copyRows('lab_reports', [
   'specimen_number',
   'status',
   'review_status',
+  'reviewed_by',
+  'reviewed_at',
   'notes',
-], dataset.labReports.map((report) => [
-  report.id,
-  report.orderId,
-  report.date,
-  report.date,
-  `SP-${report.id}`,
-  report.status,
-  report.reviewStatus ?? (report.status === 'complete' ? 'reviewed' : 'pending'),
-  report.notes ?? 'Gold dataset result',
-]))
+], dataset.labReports.map((report) => {
+  const reviewStatus = report.reviewStatus ?? (report.status === 'complete' ? 'reviewed' : 'pending')
+  return [
+    report.id,
+    report.orderId,
+    report.date,
+    report.date,
+    `SP-${report.id}`,
+    report.status,
+    reviewStatus,
+    reviewStatus === 'reviewed' ? 'admin' : null,
+    reviewStatus === 'reviewed' ? report.date : null,
+    report.notes ?? 'Gold dataset result',
+  ]
+}))
 
 copyRows('lab_results', [
   'id',

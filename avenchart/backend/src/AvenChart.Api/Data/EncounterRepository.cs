@@ -983,7 +983,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, date_collected, report_date, specimen_number, status, review_status, notes
+            select id, order_id, date_collected, report_date, specimen_number, status, review_status, reviewed_by, reviewed_at, notes
             from lab_reports
             where order_id = any(@orderIds)
             order by report_date desc, id desc;
@@ -1005,6 +1005,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                     SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Status: ReadNullableString(reader, "status"),
                     ReviewStatus: ReadNullableString(reader, "review_status"),
+                    ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+                    ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
                     Notes: ReadNullableString(reader, "notes"),
                     Results: [])));
         }

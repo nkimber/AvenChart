@@ -5501,8 +5501,21 @@ try {
             -and $_.reviewStatus -eq "reviewed" `
             -and $_.notes -eq "Corrected smoke procedure report."
     } | Select-Object -First 1
-    $createdResultVisible = $resultReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $createdResultVisible
+
+    $signProcedureReportBody = @{
+        reviewedBy = "admin"
+        reviewedAt = "2026-06-19 14:15:00"
+    } | ConvertTo-Json
+    $signedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId/sign" -Method Put -ContentType "application/json" -Body $signProcedureReportBody -TimeoutSec 20
+    $signedOrder = $signedProcedureReport.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
+    $signedReport = $signedOrder.reports | Where-Object {
+        $_.id -eq $procedureReportId `
+            -and $_.reviewStatus -eq "reviewed" `
+            -and $_.reviewedBy -eq "admin" `
+            -and $_.reviewedAt -eq "2026-06-19 14:15"
+    } | Select-Object -First 1
+    $createdResultVisible = $signedReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
+    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $signedReport -and $null -ne $createdResultVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5516,6 +5529,7 @@ try {
         specimenVisible = $resultSpecimen
         reportId = $procedureReportId
         correctedReportVisible = $correctedProcedureReportRow
+        signedReportVisible = $signedReport
         resultVisible = $createdResultVisible
     }
 }

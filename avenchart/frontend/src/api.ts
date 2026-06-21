@@ -902,6 +902,8 @@ export type ProcedureReportItem = {
   specimenNumber?: string | null
   status?: string | null
   reviewStatus?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   notes?: string | null
   results: ProcedureResultItem[]
 }
@@ -1011,6 +1013,11 @@ export type ProcedureReportUpdateInput = {
   reportStatus: string
   reviewStatus: string
   notes: string
+}
+
+export type ProcedureReportSignInput = {
+  reviewedBy: string
+  reviewedAt: string
 }
 
 export type ProcedureSpecimenCreateInput = {
@@ -2907,6 +2914,24 @@ export async function updateProcedureReport(
   })
   if (!response.ok) {
     throw new Error(`Procedure report update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function signProcedureReport(
+  reportId: number,
+  input: ProcedureReportSignInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure report sign-off failed with ${response.status}`)
   }
 
   return response.json()
