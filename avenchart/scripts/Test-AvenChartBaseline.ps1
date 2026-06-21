@@ -3565,6 +3565,39 @@ catch {
     Add-Check -Name "anchor encounter document attachments" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $attachedDocuments = if ($null -eq $encounterDetail.documents) { @() } else { @($encounterDetail.documents) }
+    $intakePacketAttachment = $attachedDocuments | Where-Object { $_.documentKey -eq "DOC-MOD-PAT-0001-1" } | Select-Object -First 1
+    $advanceDirectiveAttachment = $attachedDocuments | Where-Object { $_.documentKey -eq "DOC-MOD-PAT-0001-2" } | Select-Object -First 1
+    $encounterDocumentRevisionPassed = $encounterDetail.encounter -eq 1000013 `
+        -and $attachedDocuments.Count -eq 2 `
+        -and $null -ne $intakePacketAttachment `
+        -and $intakePacketAttachment.versionLabel -eq "Version 1" `
+        -and $intakePacketAttachment.versionStatus -eq "Current version" `
+        -and $intakePacketAttachment.versionHistoryCount -eq 1 `
+        -and $intakePacketAttachment.hasPriorVersions -eq $false `
+        -and $intakePacketAttachment.revisionAt -eq "2026-06-10 14:30" `
+        -and $intakePacketAttachment.revisionHash -eq $intakePacketAttachment.hash `
+        -and $null -ne $advanceDirectiveAttachment `
+        -and $advanceDirectiveAttachment.versionLabel -eq "Version 1" `
+        -and $advanceDirectiveAttachment.versionStatus -eq "Current version" `
+        -and $advanceDirectiveAttachment.versionHistoryCount -eq 1 `
+        -and $advanceDirectiveAttachment.hasPriorVersions -eq $false `
+        -and $advanceDirectiveAttachment.revisionAt -eq "2026-06-12 15:00" `
+        -and $advanceDirectiveAttachment.revisionHash -eq $advanceDirectiveAttachment.hash
+    Add-Check -Name "anchor encounter document revision readiness" -Result $(if ($encounterDocumentRevisionPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = $encounterDetail.encounter
+        documents = $attachedDocuments | Select-Object name, documentKey, versionLabel, versionStatus, versionHistoryCount, hasPriorVersions, revisionAt, revisionHash, hash
+    }
+}
+catch {
+    Add-Check -Name "anchor encounter document revision readiness" -Result "failed" -Details $_.Exception.Message
+}
+
 $encounterMutationId = $null
 try {
     $createEncounterBody = @{
