@@ -3787,6 +3787,20 @@ function appointmentSkippedDatesDetail(
   return appointment.recurrenceExceptionCount > 0 ? `${appointment.recurrenceExceptionCount} skipped` : 'None'
 }
 
+function appointmentProviderOverlapDetail(
+  appointment: Pick<AppointmentListItem, 'providerOverlapCount' | 'providerOverlapAppointmentIds'>,
+) {
+  if (appointment.providerOverlapCount <= 0) {
+    return 'None'
+  }
+
+  const suffix = appointment.providerOverlapCount === 1 ? 'appointment' : 'appointments'
+  const ids = appointment.providerOverlapAppointmentIds.length > 0
+    ? ` (${appointment.providerOverlapAppointmentIds.join(', ')})`
+    : ''
+  return `${appointment.providerOverlapCount} overlapping ${suffix}${ids}`
+}
+
 function careLocationDetail(name: string | null | undefined, id: number | null | undefined) {
   return id ? `${name || 'Not recorded'} (${id})` : name
 }
@@ -4741,6 +4755,7 @@ function CalendarWorkspace({
 
               <InfoPanel title="Care Location" icon={MapPin}>
                 <Field label="Provider" value={careLocationDetail(appointmentDetail.providerName, appointmentDetail.providerId)} />
+                <Field label="Provider overlaps" value={appointmentProviderOverlapDetail(appointmentDetail)} />
                 <Field label="Facility" value={careLocationDetail(appointmentDetail.facilityName, appointmentDetail.facilityId)} />
                 <Field label="Billing facility" value={careLocationDetail(appointmentDetail.billingLocationName, appointmentDetail.billingLocationId)} />
                 <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
@@ -11464,6 +11479,7 @@ function AppointmentResult({
       <div className="patient-result-sub">
         <span>{appointment.providerName ?? 'Provider not recorded'}</span>
         <span>{appointment.facilityName ?? 'Facility not recorded'}</span>
+        {appointment.providerOverlapCount > 0 && <span>{appointment.providerOverlapCount} provider overlap</span>}
       </div>
     </button>
   )

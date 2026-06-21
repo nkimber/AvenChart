@@ -44,7 +44,9 @@ public sealed record AppointmentListItem(
     string? RecurrenceEndDate,
     IReadOnlyList<string> RecurrenceExdates,
     int RecurrenceExceptionCount,
-    string RecurrenceLabel);
+    string RecurrenceLabel,
+    int ProviderOverlapCount,
+    IReadOnlyList<string> ProviderOverlapAppointmentIds);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -86,7 +88,9 @@ public sealed record AppointmentDetail(
     IReadOnlyList<string> RecurrenceExdates,
     int RecurrenceExceptionCount,
     string RecurrenceLabel,
-    string? PatientPurpose);
+    string? PatientPurpose,
+    int ProviderOverlapCount,
+    IReadOnlyList<string> ProviderOverlapAppointmentIds);
 
 public sealed record AppointmentCreateRequest(
     string PatientId,

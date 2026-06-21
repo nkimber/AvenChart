@@ -404,6 +404,82 @@ finally {
     }
 }
 
+$appointmentOverlapPrimaryId = $null
+$appointmentOverlapSecondaryId = $null
+try {
+    $primaryOverlapBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 102
+        title = "Smoke Appointment Provider Overlap A"
+        date = "2026-12-04"
+        startTime = "09:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Overlap"
+        comments = "Smoke overlap primary appointment"
+    } | ConvertTo-Json
+    $secondaryOverlapBody = @{
+        patientId = "MOD-PAT-0004"
+        providerId = 102
+        title = "Smoke Appointment Provider Overlap B"
+        date = "2026-12-04"
+        startTime = "09:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Overlap"
+        comments = "Smoke overlap secondary appointment"
+    } | ConvertTo-Json
+
+    $primaryOverlapAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $primaryOverlapBody -TimeoutSec 20
+    $appointmentOverlapPrimaryId = $primaryOverlapAppointment.id
+    $secondaryOverlapAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments" -Method Post -ContentType "application/json" -Body $secondaryOverlapBody -TimeoutSec 20
+    $appointmentOverlapSecondaryId = $secondaryOverlapAppointment.id
+
+    $primaryOverlapDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId" -Method Get -TimeoutSec 20
+    $secondaryOverlapDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId" -Method Get -TimeoutSec 20
+    $appointmentProviderOverlapPassed = $primaryOverlapDetail.providerOverlapCount -eq 1 `
+        -and $secondaryOverlapDetail.providerOverlapCount -eq 1 `
+        -and ($primaryOverlapDetail.providerOverlapAppointmentIds -contains $appointmentOverlapSecondaryId) `
+        -and ($secondaryOverlapDetail.providerOverlapAppointmentIds -contains $appointmentOverlapPrimaryId)
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentOverlapSecondaryId = $null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId" -Method Delete -TimeoutSec 20 | Out-Null
+    $appointmentOverlapPrimaryId = $null
+
+    Add-Check -Name "appointment provider overlap tolerance" -Result $(if ($appointmentProviderOverlapPassed) { "passed" } else { "failed" }) -Details @{
+        primaryId = $primaryOverlapAppointment.id
+        secondaryId = $secondaryOverlapAppointment.id
+        primaryOverlapCount = $primaryOverlapDetail.providerOverlapCount
+        secondaryOverlapCount = $secondaryOverlapDetail.providerOverlapCount
+        primaryOverlapAppointmentIds = $primaryOverlapDetail.providerOverlapAppointmentIds
+        secondaryOverlapAppointmentIds = $secondaryOverlapDetail.providerOverlapAppointmentIds
+    }
+}
+catch {
+    Add-Check -Name "appointment provider overlap tolerance" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentOverlapSecondaryId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapSecondaryId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    if ($null -ne $appointmentOverlapPrimaryId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOverlapPrimaryId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $appointmentRescheduleId = $null
 try {
     $createBody = @{
