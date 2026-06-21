@@ -61,6 +61,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string? status,
         string? patientId,
         int? providerId,
+        int? labId,
         DateOnly? fromDate,
         DateOnly? toDate,
         int limit,
@@ -92,9 +93,10 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                        or p.legacy_pid::text = @patientFilter)
                   and (@fromDate is null or lo.order_date >= @fromDate)
                   and (@toDate is null or lo.order_date <= @toDate)
-                  and (@providerFilter is null or lo.provider_id = @providerFilter);
+                  and (@providerFilter is null or lo.provider_id = @providerFilter)
+                  and (@labFilter is null or lo.lab_id = @labFilter);
                 """;
-            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, fromDate, toDate);
+            AddReviewQueueFilterParameters(countCommand, normalizedPatient, providerId, labId, fromDate, toDate);
 
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -115,6 +117,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 lo.order_date,
                 lo.provider_id,
                 nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                lo.lab_id,
+                lp.name as lab_name,
                 lo.code as procedure_code,
                 lo.name as procedure_name,
                 lr.report_date,
@@ -128,6 +132,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             inner join lab_orders lo on lo.id = lr.order_id
             inner join patients p on p.legacy_pid = lo.pid
             left join staff s on s.id = lo.provider_id
+            left join lab_providers lp on lp.id = lo.lab_id
             where (@patientFilter is null
                    or lower(p.canonical_id) = @patientFilter
                    or lower(p.pubpid) = @patientFilter
@@ -135,13 +140,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
               and (@fromDate is null or lo.order_date >= @fromDate)
               and (@toDate is null or lo.order_date <= @toDate)
               and (@providerFilter is null or lo.provider_id = @providerFilter)
+              and (@labFilter is null or lo.lab_id = @labFilter)
               and ((@statusFilter = 'all')
                or (@statusFilter = 'reviewed' and coalesce(lr.review_status, '') = 'reviewed')
                or (@statusFilter = 'unreviewed' and coalesce(lr.review_status, '') <> 'reviewed'))
             order by lr.report_date desc, lr.id desc, p.last_name, p.first_name, p.legacy_pid, lo.id
             limit @limit;
             """;
-        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, fromDate, toDate);
+        AddReviewQueueFilterParameters(command, normalizedPatient, providerId, labId, fromDate, toDate);
         command.Parameters.AddWithValue("statusFilter", normalizedStatus);
         command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
 
@@ -160,6 +166,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
                     ProviderId: ReadNullableInt(reader, "provider_id"),
                     ProviderName: ReadNullableString(reader, "provider_name"),
+                    LabId: ReadNullableInt(reader, "lab_id"),
+                    LabName: ReadNullableString(reader, "lab_name"),
                     ProcedureCode: ReadNullableString(reader, "procedure_code"),
                     ProcedureName: ReadNullableString(reader, "procedure_name"),
                     ReportDate: reader.GetDateTime(reader.GetOrdinal("report_date")).ToString("yyyy-MM-dd HH:mm"),
@@ -178,6 +186,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             StatusFilter: normalizedStatus,
             PatientFilter: normalizedPatient,
             ProviderFilter: providerId,
+            LabFilter: labId,
             FromDate: fromDate?.ToString("yyyy-MM-dd"),
             ToDate: toDate?.ToString("yyyy-MM-dd"),
             Limit: safeLimit,
@@ -218,21 +227,23 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         var id = await GetNextIntIdAsync(connection, "lab_orders", "id", cancellationToken);
-        var providerId = (object?)request.ProviderId ?? (object?)encounter.ProviderId ?? DBNull.Value;
+        var providerId = request.ProviderId ?? encounter.ProviderId;
+        var labId = request.LabId;
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into lab_orders
-                (id, patient_id, pid, encounter, provider_id, order_date, code, name,
+                (id, patient_id, pid, encounter, provider_id, lab_id, order_date, code, name,
                  diagnosis, order_priority, procedure_type, instructions, order_status)
             values
-                (@id, @patientId, @pid, @encounter, @providerId, @orderDate, @code, @name,
+                (@id, @patientId, @pid, @encounter, @providerId, @labId, @orderDate, @code, @name,
                  @diagnosis, @priority, @procedureType, @instructions, @status);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
         command.Parameters.AddWithValue("pid", patient.LegacyPid);
         command.Parameters.AddWithValue("encounter", encounter.Encounter);
-        command.Parameters.AddWithValue("providerId", providerId);
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = providerId is null ? DBNull.Value : providerId.Value;
+        command.Parameters.Add("labId", NpgsqlDbType.Integer).Value = labId is null ? DBNull.Value : labId.Value;
         command.Parameters.Add("orderDate", NpgsqlDbType.Date).Value = orderDate;
         command.Parameters.AddWithValue("code", request.ProcedureCode.Trim());
         command.Parameters.AddWithValue("name", request.ProcedureName.Trim());
@@ -1081,11 +1092,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         NpgsqlCommand command,
         string? patientFilter,
         int? providerFilter,
+        int? labFilter,
         DateOnly? fromDate,
         DateOnly? toDate)
     {
         command.Parameters.Add("patientFilter", NpgsqlDbType.Text).Value = patientFilter is null ? DBNull.Value : patientFilter;
         command.Parameters.Add("providerFilter", NpgsqlDbType.Integer).Value = providerFilter is null ? DBNull.Value : providerFilter.Value;
+        command.Parameters.Add("labFilter", NpgsqlDbType.Integer).Value = labFilter is null ? DBNull.Value : labFilter.Value;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate is null ? DBNull.Value : fromDate;
         command.Parameters.Add("toDate", NpgsqlDbType.Date).Value = toDate is null ? DBNull.Value : toDate;
     }

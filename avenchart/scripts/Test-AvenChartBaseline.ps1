@@ -5369,6 +5369,7 @@ try {
     $createProcedureBody = @{
         patientId = "MOD-PAT-0009"
         providerId = 101
+        labId = 501
         encounterId = $completedOrder.encounter
         dateOrdered = "2026-06-18"
         priority = "routine"
@@ -5516,6 +5517,10 @@ try {
     $providerFilteredQueuedProcedureReportBeforeSign = $providerFilteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.providerId -eq 101 } | Select-Object -First 1
     $outsideProviderUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&providerId=102&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
     $outsideProviderQueuedProcedureReport = $outsideProviderUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
+    $labFilteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $labFilteredQueuedProcedureReportBeforeSign = $labFilteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.labId -eq 501 } | Select-Object -First 1
+    $outsideLabUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=502&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $outsideLabQueuedProcedureReport = $outsideLabUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
     $outsideDateUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-18&toDate=2026-06-18&limit=100" -TimeoutSec 20
     $outsideDateQueuedProcedureReport = $outsideDateUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
@@ -5544,11 +5549,32 @@ try {
     $filteredQueuedProcedureReportAfterSign = $filteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
     $providerFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&providerId=101&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
     $providerFilteredQueuedProcedureReportAfterSign = $providerFilteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.providerId -eq 101 } | Select-Object -First 1
+    $labFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $labFilteredQueuedProcedureReportAfterSign = $labFilteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.labId -eq 501 } | Select-Object -First 1
 
     $unreviewedProcedureReportQueueAfterSign = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
     $queuedProcedureReportStillUnreviewed = $unreviewedProcedureReportQueueAfterSign.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $queuedProcedureReportBeforeSign -and $null -ne $filteredQueuedProcedureReportBeforeSign -and $null -ne $providerFilteredQueuedProcedureReportBeforeSign -and $null -eq $outsideProviderQueuedProcedureReport -and $null -eq $outsideDateQueuedProcedureReport -and $null -ne $signedReport -and $null -ne $createdResultVisible -and $null -ne $queuedProcedureReportAfterSign -and $null -ne $filteredQueuedProcedureReportAfterSign -and $null -ne $providerFilteredQueuedProcedureReportAfterSign -and $null -eq $queuedProcedureReportStillUnreviewed
+    $procedureMutationPassed = $null -ne $createdProcedureVisible `
+        -and $null -ne $correctedProcedureVisible `
+        -and $null -ne $completedProcedureVisible `
+        -and $null -ne $correctedProcedureReportRow `
+        -and $null -ne $resultSpecimen `
+        -and $null -ne $resultReport `
+        -and $null -ne $queuedProcedureReportBeforeSign `
+        -and $null -ne $filteredQueuedProcedureReportBeforeSign `
+        -and $null -ne $providerFilteredQueuedProcedureReportBeforeSign `
+        -and $null -eq $outsideProviderQueuedProcedureReport `
+        -and $null -ne $labFilteredQueuedProcedureReportBeforeSign `
+        -and $null -eq $outsideLabQueuedProcedureReport `
+        -and $null -eq $outsideDateQueuedProcedureReport `
+        -and $null -ne $signedReport `
+        -and $null -ne $createdResultVisible `
+        -and $null -ne $queuedProcedureReportAfterSign `
+        -and $null -ne $filteredQueuedProcedureReportAfterSign `
+        -and $null -ne $providerFilteredQueuedProcedureReportAfterSign `
+        -and $null -ne $labFilteredQueuedProcedureReportAfterSign `
+        -and $null -eq $queuedProcedureReportStillUnreviewed
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5566,11 +5592,14 @@ try {
         filteredQueuedReportBeforeSign = $filteredQueuedProcedureReportBeforeSign
         providerFilteredQueuedReportBeforeSign = $providerFilteredQueuedProcedureReportBeforeSign
         outsideProviderQueuedReport = $outsideProviderQueuedProcedureReport
+        labFilteredQueuedReportBeforeSign = $labFilteredQueuedProcedureReportBeforeSign
+        outsideLabQueuedReport = $outsideLabQueuedProcedureReport
         outsideDateQueuedReport = $outsideDateQueuedProcedureReport
         signedReportVisible = $signedReport
         queuedReportAfterSign = $queuedProcedureReportAfterSign
         filteredQueuedReportAfterSign = $filteredQueuedProcedureReportAfterSign
         providerFilteredQueuedReportAfterSign = $providerFilteredQueuedProcedureReportAfterSign
+        labFilteredQueuedReportAfterSign = $labFilteredQueuedProcedureReportAfterSign
         resultVisible = $createdResultVisible
     }
 }

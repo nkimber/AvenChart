@@ -219,6 +219,7 @@ drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_specimens;
 drop table if exists lab_orders;
+drop table if exists lab_providers;
 drop table if exists encounter_signatures;
 drop table if exists payment_activities;
 drop table if exists payment_sessions;
@@ -583,6 +584,7 @@ create table lab_orders (
   pid integer not null,
   encounter integer,
   provider_id integer references staff(id),
+  lab_id integer,
   order_date date not null,
   order_priority text,
   code text,
@@ -591,6 +593,13 @@ create table lab_orders (
   diagnosis text,
   instructions text,
   order_status text
+);
+
+create table lab_providers (
+  id integer primary key,
+  name text not null,
+  npi text,
+  active boolean not null default true
 );
 
 create table lab_reports (
@@ -1266,6 +1275,7 @@ copyRows('lab_orders', [
   'pid',
   'encounter',
   'provider_id',
+  'lab_id',
   'order_date',
   'order_priority',
   'code',
@@ -1280,6 +1290,7 @@ copyRows('lab_orders', [
   order.pid,
   order.encounter,
   order.providerId,
+  order.labId ?? null,
   order.date,
   order.orderPriority ?? 'routine',
   order.code,
@@ -1468,6 +1479,7 @@ create index idx_billing_pid on billing (pid);
 create index idx_payment_sessions_pid on payment_sessions (pid);
 create index idx_payment_activities_pid_encounter on payment_activities (pid, encounter);
 create index idx_lab_orders_pid on lab_orders (pid);
+create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);

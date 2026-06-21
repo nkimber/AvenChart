@@ -918,6 +918,8 @@ export type ProcedureReportReviewQueueItem = {
   orderDate: string
   providerId?: number | null
   providerName?: string | null
+  labId?: number | null
+  labName?: string | null
   procedureCode?: string | null
   procedureName?: string | null
   reportDate: string
@@ -935,6 +937,7 @@ export type ProcedureReportReviewQueueResponse = {
   statusFilter: string
   patientFilter?: string | null
   providerFilter?: number | null
+  labFilter?: number | null
   fromDate?: string | null
   toDate?: string | null
   limit: number
@@ -947,6 +950,7 @@ export type ProcedureReportReviewQueueResponse = {
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
+  labId?: string | number
   fromDate?: string
   toDate?: string
   limit?: number
@@ -1014,6 +1018,7 @@ export type ProcedureResultsResponse = {
 export type ProcedureOrderCreateInput = {
   patientId: string
   providerId?: number | null
+  labId?: number | null
   encounterId: number
   dateOrdered: string
   priority: string
@@ -2886,6 +2891,9 @@ export async function getProcedureReportReviewQueue(
   }
   if (filters.providerId !== undefined && filters.providerId !== null && String(filters.providerId).trim()) {
     params.set('providerId', String(filters.providerId).trim())
+  }
+  if (filters.labId !== undefined && filters.labId !== null && String(filters.labId).trim()) {
+    params.set('labId', String(filters.labId).trim())
   }
   if (filters.fromDate?.trim()) {
     params.set('fromDate', filters.fromDate.trim())

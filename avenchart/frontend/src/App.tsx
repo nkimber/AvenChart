@@ -357,6 +357,7 @@ function App() {
   const [procedureReportReviewQueueFilter, setProcedureReportReviewQueueFilter] = useState('unreviewed')
   const [procedureReportReviewQueuePatientFilter, setProcedureReportReviewQueuePatientFilter] = useState('')
   const [procedureReportReviewQueueProviderFilter, setProcedureReportReviewQueueProviderFilter] = useState('')
+  const [procedureReportReviewQueueLabFilter, setProcedureReportReviewQueueLabFilter] = useState('')
   const [procedureReportReviewQueueFromDate, setProcedureReportReviewQueueFromDate] = useState('')
   const [procedureReportReviewQueueToDate, setProcedureReportReviewQueueToDate] = useState('')
 
@@ -762,6 +763,7 @@ function App() {
           {
             patientId: procedureReportReviewQueuePatientFilter,
             providerId: procedureReportReviewQueueProviderFilter,
+            labId: procedureReportReviewQueueLabFilter,
             fromDate: procedureReportReviewQueueFromDate,
             toDate: procedureReportReviewQueueToDate,
           },
@@ -786,6 +788,7 @@ function App() {
     procedureReportReviewQueueFilter,
     procedureReportReviewQueuePatientFilter,
     procedureReportReviewQueueProviderFilter,
+    procedureReportReviewQueueLabFilter,
     procedureReportReviewQueueFromDate,
     procedureReportReviewQueueToDate,
   ])
@@ -3079,11 +3082,13 @@ function App() {
             reviewQueueFilter={procedureReportReviewQueueFilter}
             reviewQueuePatientFilter={procedureReportReviewQueuePatientFilter}
             reviewQueueProviderFilter={procedureReportReviewQueueProviderFilter}
+            reviewQueueLabFilter={procedureReportReviewQueueLabFilter}
             reviewQueueFromDate={procedureReportReviewQueueFromDate}
             reviewQueueToDate={procedureReportReviewQueueToDate}
             onReviewQueueFilterChange={setProcedureReportReviewQueueFilter}
             onReviewQueuePatientFilterChange={setProcedureReportReviewQueuePatientFilter}
             onReviewQueueProviderFilterChange={setProcedureReportReviewQueueProviderFilter}
+            onReviewQueueLabFilterChange={setProcedureReportReviewQueueLabFilter}
             onReviewQueueFromDateChange={setProcedureReportReviewQueueFromDate}
             onReviewQueueToDateChange={setProcedureReportReviewQueueToDate}
           />
@@ -10818,11 +10823,13 @@ function ReportsWorkspace({
   reviewQueueFilter,
   reviewQueuePatientFilter,
   reviewQueueProviderFilter,
+  reviewQueueLabFilter,
   reviewQueueFromDate,
   reviewQueueToDate,
   onReviewQueueFilterChange,
   onReviewQueuePatientFilterChange,
   onReviewQueueProviderFilterChange,
+  onReviewQueueLabFilterChange,
   onReviewQueueFromDateChange,
   onReviewQueueToDateChange,
 }: {
@@ -10835,11 +10842,13 @@ function ReportsWorkspace({
   reviewQueueFilter: string
   reviewQueuePatientFilter: string
   reviewQueueProviderFilter: string
+  reviewQueueLabFilter: string
   reviewQueueFromDate: string
   reviewQueueToDate: string
   onReviewQueueFilterChange: (filter: string) => void
   onReviewQueuePatientFilterChange: (patientId: string) => void
   onReviewQueueProviderFilterChange: (providerId: string) => void
+  onReviewQueueLabFilterChange: (labId: string) => void
   onReviewQueueFromDateChange: (fromDate: string) => void
   onReviewQueueToDateChange: (toDate: string) => void
 }) {
@@ -10945,11 +10954,13 @@ function ReportsWorkspace({
               activeFilter={reviewQueueFilter}
               patientFilter={reviewQueuePatientFilter}
               providerFilter={reviewQueueProviderFilter}
+              labFilter={reviewQueueLabFilter}
               fromDate={reviewQueueFromDate}
               toDate={reviewQueueToDate}
               onFilterChange={onReviewQueueFilterChange}
               onPatientFilterChange={onReviewQueuePatientFilterChange}
               onProviderFilterChange={onReviewQueueProviderFilterChange}
+              onLabFilterChange={onReviewQueueLabFilterChange}
               onFromDateChange={onReviewQueueFromDateChange}
               onToDateChange={onReviewQueueToDateChange}
             />
@@ -10989,11 +11000,13 @@ function ProcedureReportReviewQueuePanel({
   activeFilter,
   patientFilter,
   providerFilter,
+  labFilter,
   fromDate,
   toDate,
   onFilterChange,
   onPatientFilterChange,
   onProviderFilterChange,
+  onLabFilterChange,
   onFromDateChange,
   onToDateChange,
 }: {
@@ -11003,11 +11016,13 @@ function ProcedureReportReviewQueuePanel({
   activeFilter: string
   patientFilter: string
   providerFilter: string
+  labFilter: string
   fromDate: string
   toDate: string
   onFilterChange: (filter: string) => void
   onPatientFilterChange: (patientId: string) => void
   onProviderFilterChange: (providerId: string) => void
+  onLabFilterChange: (labId: string) => void
   onFromDateChange: (fromDate: string) => void
   onToDateChange: (toDate: string) => void
 }) {
@@ -11062,6 +11077,16 @@ function ProcedureReportReviewQueuePanel({
           />
         </label>
         <label>
+          Lab
+          <input
+            type="number"
+            min="1"
+            value={labFilter}
+            placeholder="501"
+            onChange={(event) => onLabFilterChange(event.target.value)}
+          />
+        </label>
+        <label>
           From
           <input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} />
         </label>
@@ -11096,6 +11121,7 @@ function ProcedureReportReviewQueuePanel({
                 label="Provider"
                 value={report.providerId ? `${report.providerName || 'Provider'} #${report.providerId}` : report.providerName}
               />
+              <Field label="Lab" value={report.labId ? `${report.labName || 'Lab'} #${report.labId}` : report.labName} />
               <Field label="Reviewed by" value={report.reviewedBy || 'Not reviewed'} />
               <Field label="Reviewed at" value={report.reviewedAt || 'No review time'} />
             </div>

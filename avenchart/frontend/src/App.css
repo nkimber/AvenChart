@@ -1780,7 +1780,7 @@
 
 .review-queue-filter-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 0.35fr));
+  grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(110px, 0.35fr));
   gap: 10px;
   margin-top: 12px;
 }
