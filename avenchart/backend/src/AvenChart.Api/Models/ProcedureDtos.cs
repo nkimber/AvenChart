@@ -111,6 +111,14 @@ public sealed record ProcedureReportCreateRequest(
     string ReviewStatus,
     string Notes);
 
+public sealed record ProcedureReportUpdateRequest(
+    string DateCollected,
+    string DateReport,
+    string SpecimenNumber,
+    string ReportStatus,
+    string ReviewStatus,
+    string Notes);
+
 public sealed record ProcedureSpecimenCreateRequest(
     int OrderId,
     string SpecimenIdentifier,

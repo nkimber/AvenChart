@@ -1004,6 +1004,15 @@ export type ProcedureReportCreateInput = {
   notes: string
 }
 
+export type ProcedureReportUpdateInput = {
+  dateCollected: string
+  dateReport: string
+  specimenNumber: string
+  reportStatus: string
+  reviewStatus: string
+  notes: string
+}
+
 export type ProcedureSpecimenCreateInput = {
   orderId: number
   specimenIdentifier: string
@@ -2880,6 +2889,24 @@ export async function createProcedureReport(
   })
   if (!response.ok) {
     throw new Error(`Procedure report create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function updateProcedureReport(
+  reportId: number,
+  input: ProcedureReportUpdateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure report update failed with ${response.status}`)
   }
 
   return response.json()

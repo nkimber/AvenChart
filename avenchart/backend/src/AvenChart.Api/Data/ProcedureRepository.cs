@@ -249,6 +249,52 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> UpdateReportAsync(
+        int reportId,
+        ProcedureReportUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0
+            || string.IsNullOrWhiteSpace(request.ReportStatus)
+            || string.IsNullOrWhiteSpace(request.ReviewStatus)
+            || string.IsNullOrWhiteSpace(request.SpecimenNumber)
+            || !TryReadDateTime(request.DateCollected, out var collectedDate)
+            || !TryReadDateTime(request.DateReport, out var reportDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_reports
+            set date_collected = @dateCollected,
+                report_date = @reportDate,
+                specimen_number = @specimenNumber,
+                status = @status,
+                review_status = @reviewStatus,
+                notes = @notes
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", report.Id);
+        command.Parameters.Add("dateCollected", NpgsqlDbType.Timestamp).Value = collectedDate;
+        command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
+        command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
+        command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
+        command.Parameters.AddWithValue("reviewStatus", request.ReviewStatus.Trim());
+        command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+    }
+
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
         ProcedureSpecimenCreateRequest request,
         CancellationToken cancellationToken)

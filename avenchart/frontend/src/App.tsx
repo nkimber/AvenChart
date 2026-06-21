@@ -77,6 +77,7 @@ import {
   createProcedureSpecimen,
   createProcedureResult,
   createPatient,
+  updateProcedureReport,
   updateProcedureResult,
   deleteAppointment,
   deleteAdministrationFacility,
@@ -232,6 +233,7 @@ import {
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureReportUpdateInput,
   type ProcedureSpecimenCreateInput,
   type ProcedureSpecimenItem,
   type ProcedureResultCreateInput,
@@ -2132,6 +2134,24 @@ function App() {
     }
   }
 
+  async function handleProcedureReportUpdate(report: ProcedureReportItem, input: ProcedureReportUpdateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await updateProcedureReport(report.id, input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (updateError) {
+      setProcedureStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Procedure report update failed'
+      setProcedureError(message)
+      throw updateError
+    }
+  }
+
   async function handleProcedureSpecimenCreate(input: ProcedureSpecimenCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2926,6 +2946,7 @@ function App() {
             onCompleteOrder={handleProcedureOrderComplete}
             onUpdateOrder={handleProcedureOrderUpdate}
             onCreateReport={handleProcedureReportCreate}
+            onUpdateReport={handleProcedureReportUpdate}
             onCreateSpecimen={handleProcedureSpecimenCreate}
             onCreateResult={handleProcedureResultCreate}
             onUpdateResult={handleProcedureResultUpdate}
@@ -9556,6 +9577,7 @@ function ProceduresWorkspace({
   onCompleteOrder,
   onUpdateOrder,
   onCreateReport,
+  onUpdateReport,
   onCreateSpecimen,
   onCreateResult,
   onUpdateResult,
@@ -9570,6 +9592,7 @@ function ProceduresWorkspace({
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
   onUpdateOrder: (order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
+  onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
@@ -9823,6 +9846,7 @@ function ProceduresWorkspace({
                     order={order}
                     disabled={isLoading}
                     onCreateResult={onCreateResult}
+                    onUpdateReport={onUpdateReport}
                     onUpdateResult={onUpdateResult}
                   />
                 ))}
@@ -12935,11 +12959,13 @@ function ProcedureReportGroup({
   order,
   disabled,
   onCreateResult,
+  onUpdateReport,
   onUpdateResult,
 }: {
   order: ProcedureOrderItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
   return (
@@ -12959,6 +12985,7 @@ function ProcedureReportGroup({
           report={report}
           disabled={disabled}
           onCreateResult={onCreateResult}
+          onUpdateReport={onUpdateReport}
           onUpdateResult={onUpdateResult}
         />
       ))}
@@ -12971,13 +12998,34 @@ function ProcedureReportCard({
   report,
   disabled,
   onCreateResult,
+  onUpdateReport,
   onUpdateResult,
 }: {
   report: ProcedureReportItem
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
+  onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
 }) {
+  const [isCorrecting, setIsCorrecting] = useState(false)
+  const [dateCollected, setDateCollected] = useState(report.dateCollected)
+  const [dateReport, setDateReport] = useState(report.reportDate)
+  const [specimenNumber, setSpecimenNumber] = useState(report.specimenNumber ?? '')
+  const [reportStatus, setReportStatus] = useState(report.status ?? 'final')
+  const [reviewStatus, setReviewStatus] = useState(report.reviewStatus ?? 'reviewed')
+  const [notes, setNotes] = useState(report.notes ?? '')
+  const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    setDateCollected(report.dateCollected)
+    setDateReport(report.reportDate)
+    setSpecimenNumber(report.specimenNumber ?? '')
+    setReportStatus(report.status ?? 'final')
+    setReviewStatus(report.reviewStatus ?? 'reviewed')
+    setNotes(report.notes ?? '')
+    setCorrectionStatus('idle')
+  }, [report])
+
   async function handleCreateResult() {
     await onCreateResult({
       reportId: report.id,
@@ -12992,6 +13040,26 @@ function ProcedureReportCard({
       comments: 'Created from the modernized Procedures workspace.',
       status: 'final',
     })
+  }
+
+  async function handleReportCorrectionSubmit(event: FormEvent) {
+    event.preventDefault()
+    setCorrectionStatus('saving')
+
+    try {
+      await onUpdateReport(report, {
+        dateCollected,
+        dateReport,
+        specimenNumber,
+        reportStatus,
+        reviewStatus,
+        notes,
+      })
+      setCorrectionStatus('saved')
+      setIsCorrecting(false)
+    } catch {
+      setCorrectionStatus('error')
+    }
   }
 
   return (
@@ -13018,7 +13086,93 @@ function ProcedureReportCard({
           <Activity size={15} />
           Add Result
         </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsCorrecting((current) => !current)}
+        >
+          <Pencil size={15} />
+          Correct Report
+        </button>
+        {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
+        {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
       </div>
+      {isCorrecting && (
+        <form
+          className="appointment-mutation-panel encounter-procedure-result-entry-panel"
+          aria-label={`Procedure report correction ${report.id}`}
+          onSubmit={handleReportCorrectionSubmit}
+        >
+          <div className="mutation-grid encounter-procedure-result-entry-grid">
+            <label className="filter-field">
+              <span>Collected</span>
+              <input
+                value={dateCollected}
+                onChange={(event) => setDateCollected(event.target.value)}
+                aria-label="Procedure corrected report collected date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Reported</span>
+              <input
+                value={dateReport}
+                onChange={(event) => setDateReport(event.target.value)}
+                aria-label="Procedure corrected report date"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Specimen</span>
+              <input
+                value={specimenNumber}
+                onChange={(event) => setSpecimenNumber(event.target.value)}
+                aria-label="Procedure corrected report specimen number"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Status</span>
+              <select
+                value={reportStatus}
+                onChange={(event) => setReportStatus(event.target.value)}
+                aria-label="Procedure corrected report status"
+              >
+                <option value="final">Final</option>
+                <option value="preliminary">Preliminary</option>
+                <option value="corrected">Corrected</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Review</span>
+              <select
+                value={reviewStatus}
+                onChange={(event) => setReviewStatus(event.target.value)}
+                aria-label="Procedure corrected report review status"
+              >
+                <option value="pending">Pending</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="approved">Approved</option>
+              </select>
+            </label>
+            <label className="filter-field procedure-order-name-field">
+              <span>Notes</span>
+              <input
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                aria-label="Procedure corrected report notes"
+              />
+            </label>
+          </div>
+          <div className="detail-actions compact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={correctionStatus === 'saving'}>
+              <Check size={15} />
+              <span>{correctionStatus === 'saving' ? 'Saving' : 'Save Report Correction'}</span>
+            </button>
+          </div>
+        </form>
+      )}
       <div className="procedure-result-grid">
         {report.results.map((result) => (
           <ProcedureResultCard key={result.id} result={result} disabled={disabled} onUpdateResult={onUpdateResult} />

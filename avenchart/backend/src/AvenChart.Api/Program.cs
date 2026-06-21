@@ -1221,6 +1221,19 @@ procedures.MapPost("/reports", async (
     })
     .WithName("CreateProcedureReport");
 
+procedures.MapPut("/reports/{reportId:int}", async (
+        ProcedureRepository repository,
+        int reportId,
+        ProcedureReportUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.UpdateReportAsync(reportId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure report could not be updated from the supplied report details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("UpdateProcedureReport");
+
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
         ProcedureSpecimenCreateRequest request,
