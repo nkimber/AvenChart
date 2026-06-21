@@ -38,7 +38,9 @@ public sealed record ProcedureOrderItem(
 
 public sealed record ProcedureReportItem(
     int Id,
+    string DateCollected,
     string ReportDate,
+    string? SpecimenNumber,
     string? Status,
     string? ReviewStatus,
     string? Notes,

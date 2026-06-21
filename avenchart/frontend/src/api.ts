@@ -897,7 +897,9 @@ export type ProcedureResultItem = {
 
 export type ProcedureReportItem = {
   id: number
+  dateCollected: string
   reportDate: string
+  specimenNumber?: string | null
   status?: string | null
   reviewStatus?: string | null
   notes?: string | null

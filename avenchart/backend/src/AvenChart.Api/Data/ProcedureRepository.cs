@@ -152,6 +152,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         if (request.OrderId <= 0
             || string.IsNullOrWhiteSpace(request.ReportStatus)
             || string.IsNullOrWhiteSpace(request.ReviewStatus)
+            || string.IsNullOrWhiteSpace(request.SpecimenNumber)
+            || !TryReadDateTime(request.DateCollected, out var collectedDate)
             || !TryReadDateTime(request.DateReport, out var reportDate))
         {
             return null;
@@ -168,13 +170,15 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into lab_reports
-                (id, order_id, report_date, status, review_status, notes)
+                (id, order_id, date_collected, report_date, specimen_number, status, review_status, notes)
             values
-                (@id, @orderId, @reportDate, @status, @reviewStatus, @notes);
+                (@id, @orderId, @dateCollected, @reportDate, @specimenNumber, @status, @reviewStatus, @notes);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("orderId", order.Id);
+        command.Parameters.Add("dateCollected", NpgsqlDbType.Timestamp).Value = collectedDate;
         command.Parameters.Add("reportDate", NpgsqlDbType.Timestamp).Value = reportDate;
+        command.Parameters.AddWithValue("specimenNumber", request.SpecimenNumber.Trim());
         command.Parameters.AddWithValue("status", request.ReportStatus.Trim());
         command.Parameters.AddWithValue("reviewStatus", request.ReviewStatus.Trim());
         command.Parameters.AddWithValue("notes", request.Notes?.Trim() ?? string.Empty);
@@ -453,7 +457,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, order_id, report_date, status, review_status, notes
+            select id, order_id, date_collected, report_date, specimen_number, status, review_status, notes
             from lab_reports
             where order_id = any(@orderIds)
             order by report_date desc, id desc;
@@ -470,7 +474,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
                 Report: new ProcedureReportItem(
                     Id: id,
+                    DateCollected: reader.GetDateTime(reader.GetOrdinal("date_collected")).ToString("yyyy-MM-dd HH:mm"),
                     ReportDate: reader.GetDateTime(reader.GetOrdinal("report_date")).ToString("yyyy-MM-dd HH:mm"),
+                    SpecimenNumber: ReadNullableString(reader, "specimen_number"),
                     Status: ReadNullableString(reader, "status"),
                     ReviewStatus: ReadNullableString(reader, "review_status"),
                     Notes: ReadNullableString(reader, "notes"),

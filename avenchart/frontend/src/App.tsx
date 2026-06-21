@@ -6980,7 +6980,17 @@ function EncounterProcedureReportCard({
       <div className="procedure-report-title">
         <div>
           <strong>Report {report.id}</strong>
-          <span>{[report.reportDate, report.reviewStatus, report.notes].filter(Boolean).join(' / ')}</span>
+          <span>
+            {[
+              report.reportDate,
+              report.dateCollected ? `Collected ${report.dateCollected}` : '',
+              report.specimenNumber ? `Specimen ${report.specimenNumber}` : '',
+              report.reviewStatus,
+              report.notes,
+            ]
+              .filter(Boolean)
+              .join(' / ')}
+          </span>
         </div>
         <span className="status-tag">{report.status || 'Status pending'}</span>
       </div>
@@ -12717,7 +12727,17 @@ function ProcedureReportCard({
       <div className="procedure-report-title">
         <div>
           <strong>Report {report.id}</strong>
-          <span>{[report.reportDate, report.reviewStatus, report.notes].filter(Boolean).join(' / ')}</span>
+          <span>
+            {[
+              report.reportDate,
+              report.dateCollected ? `Collected ${report.dateCollected}` : '',
+              report.specimenNumber ? `Specimen ${report.specimenNumber}` : '',
+              report.reviewStatus,
+              report.notes,
+            ]
+              .filter(Boolean)
+              .join(' / ')}
+          </span>
         </div>
         <span className="status-tag">{report.status || 'Status pending'}</span>
       </div>

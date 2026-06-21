@@ -595,7 +595,9 @@ create table lab_orders (
 create table lab_reports (
   id integer primary key,
   order_id integer not null references lab_orders(id),
+  date_collected timestamp not null,
   report_date timestamp not null,
+  specimen_number text,
   status text,
   review_status text,
   notes text
@@ -1269,7 +1271,9 @@ copyRows('lab_orders', [
 copyRows('lab_reports', [
   'id',
   'order_id',
+  'date_collected',
   'report_date',
+  'specimen_number',
   'status',
   'review_status',
   'notes',
@@ -1277,6 +1281,8 @@ copyRows('lab_reports', [
   report.id,
   report.orderId,
   report.date,
+  report.date,
+  `SP-${report.id}`,
   report.status,
   report.reviewStatus ?? (report.status === 'complete' ? 'reviewed' : 'pending'),
   report.notes ?? 'Gold dataset result',

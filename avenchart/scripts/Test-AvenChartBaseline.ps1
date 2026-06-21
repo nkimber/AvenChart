@@ -3648,7 +3648,11 @@ try {
     } | Select-Object -First 1
     $createdEncounterProcedureResultReportRow = if ($null -ne $createdEncounterProcedureResultOrderRow) {
         @($createdEncounterProcedureResultOrderRow.reports | Where-Object { $null -ne $_ }) | Where-Object {
-            $_.id -eq $createdEncounterProcedureResultReport.id -and $_.status -eq "final" -and $_.reviewStatus -eq "reviewed"
+            $_.id -eq $createdEncounterProcedureResultReport.id `
+                -and $_.dateCollected -eq "2026-06-18 12:30" `
+                -and $_.specimenNumber -eq "SMOKE-ENC-PROC" `
+                -and $_.status -eq "final" `
+                -and $_.reviewStatus -eq "reviewed"
         } | Select-Object -First 1
     } else {
         $null
@@ -5413,7 +5417,12 @@ try {
     $createdProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $createProcedureResultBody -TimeoutSec 20
     $procedureResultId = $createdProcedureResult.id
     $resultOrder = $createdProcedureResult.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
-    $resultReport = $resultOrder.reports | Where-Object { $_.id -eq $procedureReportId -and $_.reviewStatus -eq "reviewed" } | Select-Object -First 1
+    $resultReport = $resultOrder.reports | Where-Object {
+        $_.id -eq $procedureReportId `
+            -and $_.dateCollected -eq "2026-06-18 12:30" `
+            -and $_.specimenNumber -eq "SMOKE-PROC" `
+            -and $_.reviewStatus -eq "reviewed"
+    } | Select-Object -First 1
     $createdResultVisible = $resultReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
     $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $resultReport -and $null -ne $createdResultVisible
 
