@@ -74,6 +74,7 @@ import {
   createPatientMessage,
   createProcedureOrder,
   createProcedureReport,
+  createProcedureSpecimen,
   createProcedureResult,
   createPatient,
   updateProcedureResult,
@@ -229,6 +230,8 @@ import {
   type ProcedureOrderItem,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureSpecimenCreateInput,
+  type ProcedureSpecimenItem,
   type ProcedureResultCreateInput,
   type ProcedureResultItem,
   type ProcedureResultUpdateInput,
@@ -2109,6 +2112,24 @@ function App() {
     }
   }
 
+  async function handleProcedureSpecimenCreate(input: ProcedureSpecimenCreateInput) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const response = await createProcedureSpecimen(input)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setProcedureStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Procedure specimen create failed'
+      setProcedureError(message)
+      throw createError
+    }
+  }
+
   async function handleProcedureResultCreate(input: ProcedureResultCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2884,6 +2905,7 @@ function App() {
             onCreateOrder={handleProcedureOrderCreate}
             onCompleteOrder={handleProcedureOrderComplete}
             onCreateReport={handleProcedureReportCreate}
+            onCreateSpecimen={handleProcedureSpecimenCreate}
             onCreateResult={handleProcedureResultCreate}
             onUpdateResult={handleProcedureResultUpdate}
             onDeleteOrder={handleProcedureOrderDelete}
@@ -6765,6 +6787,7 @@ function EncounterProcedureOrderCard({
 }) {
   const reportCount = order.reports.length
   const resultCount = countReportResults(order.reports)
+  const specimenCount = order.specimens.length
   const defaultResultDate = order.orderDate || '2026-06-18'
   const [reportDate, setReportDate] = useState(defaultResultDate)
   const [specimenNumber, setSpecimenNumber] = useState('ENCOUNTER-SPECIMEN')
@@ -6830,9 +6853,11 @@ function EncounterProcedureOrderCard({
         <span>
           {reportCount} reports / {resultCount} results
         </span>
+        <span>{specimenCount} specimens</span>
       </div>
 
       {order.instructions && <p className="procedure-scheduled-note">{order.instructions}</p>}
+      <ProcedureSpecimenList specimens={order.specimens} />
 
       <div className="encounter-procedure-report-list">
         {order.reports.map((report) => (
@@ -9509,6 +9534,7 @@ function ProceduresWorkspace({
   onCreateOrder,
   onCompleteOrder,
   onCreateReport,
+  onCreateSpecimen,
   onCreateResult,
   onUpdateResult,
   onDeleteOrder,
@@ -9521,6 +9547,7 @@ function ProceduresWorkspace({
   onCreateOrder: (input: ProcedureOrderCreateInput) => Promise<unknown>
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
+  onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
   onDeleteOrder: (order: ProcedureOrderItem) => Promise<void>
@@ -9536,6 +9563,7 @@ function ProceduresWorkspace({
   const scheduledOrders = procedureResults?.orders.filter(isScheduledProcedureOrder) ?? []
   const reportlessOrders = procedureResults?.orders.filter((order) => order.reports.length === 0) ?? []
   const reportCount = procedureCounts?.reports ?? countProcedureReports(procedureResults?.orders)
+  const specimenCount = procedureCounts?.specimens ?? countProcedureSpecimens(procedureResults?.orders)
   const resultCount = procedureCounts?.results ?? countProcedureResults(procedureResults?.orders)
   const finalCount = procedureCounts?.finalResults ?? countProcedureResultsByStatus(procedureResults?.orders, 'final')
   const scheduledCount = procedureCounts?.scheduledOrders ?? scheduledOrders.length
@@ -9608,6 +9636,7 @@ function ProceduresWorkspace({
             <MetricRow label="Orders" value={procedureCounts?.orders ?? procedureResults.orders.length} />
             <MetricRow label="Scheduled" value={scheduledCount} />
             <MetricRow label="Reportless" value={reportlessCount} />
+            <MetricRow label="Specimens" value={specimenCount} />
             <MetricRow label="Reports" value={reportCount} />
             <MetricRow label="Results" value={resultCount} />
             <MetricRow label="Final" value={finalCount} />
@@ -9714,6 +9743,7 @@ function ProceduresWorkspace({
                 <Field label="Completed orders" value={procedureCounts?.completedOrders ?? '-'} />
                 <Field label="Scheduled orders" value={scheduledCount} />
                 <Field label="Future scheduled" value={futureScheduledCount} />
+                <Field label="Specimens" value={specimenCount} />
                 <Field label="Reports" value={reportCount} />
                 <Field label="Final results" value={finalCount} />
               </InfoPanel>
@@ -9731,6 +9761,7 @@ function ProceduresWorkspace({
                       disabled={isLoading}
                       onComplete={onCompleteOrder}
                       onCreateReport={onCreateReport}
+                      onCreateSpecimen={onCreateSpecimen}
                       onDelete={onDeleteOrder}
                     />
                   ))}
@@ -12571,14 +12602,36 @@ function ProcedureOrderCard({
   disabled,
   onComplete,
   onCreateReport,
+  onCreateSpecimen,
   onDelete,
 }: {
   order: ProcedureOrderItem
   disabled: boolean
   onComplete: (order: ProcedureOrderItem) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
+  onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
   onDelete: (order: ProcedureOrderItem) => Promise<void>
 }) {
+  async function handleCreateSpecimen() {
+    await onCreateSpecimen({
+      orderId: order.id,
+      specimenIdentifier: `SID-${order.id}`,
+      accessionIdentifier: `ACC-${order.id}`,
+      specimenTypeCode: 'BLD',
+      specimenType: 'Blood',
+      collectionMethodCode: 'VP',
+      collectionMethod: 'Venipuncture',
+      specimenLocationCode: 'LAC',
+      specimenLocation: 'Left antecubital',
+      collectedDate: '2026-06-18 12:20:00',
+      volumeValue: 4.5,
+      volumeUnit: 'mL',
+      conditionCode: 'OK',
+      specimenCondition: 'Acceptable',
+      comments: 'Created from the modernized Procedures workspace.',
+    })
+  }
+
   async function handleCreateReport() {
     await onCreateReport({
       orderId: order.id,
@@ -12609,6 +12662,7 @@ function ProcedureOrderCard({
         <span>{order.orderPriority || 'No priority'}</span>
         <span>{order.procedureType || 'No procedure type'}</span>
       </div>
+      <ProcedureSpecimenList specimens={order.specimens} />
       <div className="detail-actions compact-actions">
         <button
           className="icon-text-button secondary"
@@ -12618,6 +12672,10 @@ function ProcedureOrderCard({
         >
           <Check size={15} />
           Complete
+        </button>
+        <button className="icon-text-button secondary" type="button" disabled={disabled} onClick={handleCreateSpecimen}>
+          <FlaskConical size={15} />
+          Add Specimen
         </button>
         <button className="icon-text-button secondary" type="button" disabled={disabled} onClick={handleCreateReport}>
           <FileText size={15} />
@@ -12655,8 +12713,42 @@ function ProcedureScheduledOrderCard({ order }: { order: ProcedureOrderItem }) {
         <span>{order.diagnosis || 'No diagnosis'}</span>
         <span>{order.reports.length === 0 ? 'No report has been filed' : `${order.reports.length} reports recorded`}</span>
       </div>
+      <ProcedureSpecimenList specimens={order.specimens} />
       {order.instructions && <p className="procedure-scheduled-note">{order.instructions}</p>}
     </article>
+  )
+}
+
+function ProcedureSpecimenList({ specimens }: { specimens: ProcedureSpecimenItem[] }) {
+  if (specimens.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="procedure-specimen-list" aria-label="Procedure specimens">
+      {specimens.map((specimen) => {
+        const title =
+          specimen.specimenIdentifier || specimen.accessionIdentifier || `Specimen ${specimen.id}`
+        const volume = formatSpecimenVolume(specimen)
+        return (
+          <article className="procedure-specimen-card" key={specimen.id}>
+            <div className="message-item-header">
+              <strong>{title}</strong>
+              <span className="status-tag">{specimen.specimenCondition || specimen.specimenType || 'Specimen'}</span>
+            </div>
+            <div className="procedure-specimen-meta">
+              <span>{specimen.accessionIdentifier ? `Accession ${specimen.accessionIdentifier}` : 'No accession'}</span>
+              <span>{specimen.specimenType || specimen.specimenTypeCode || 'No specimen type'}</span>
+              <span>{specimen.collectionMethod || specimen.collectionMethodCode || 'No collection method'}</span>
+              <span>{specimen.specimenLocation || specimen.specimenLocationCode || 'No location'}</span>
+              <span>{specimen.collectedDate ? `Collected ${specimen.collectedDate}` : 'No collection date'}</span>
+              <span>{volume || 'No volume'}</span>
+            </div>
+            {specimen.comments && <p className="procedure-scheduled-note">{specimen.comments}</p>}
+          </article>
+        )
+      })}
+    </div>
   )
 }
 
@@ -12680,6 +12772,7 @@ function ProcedureReportGroup({
         </div>
         <span className="status-tag">{order.orderStatus || 'Status pending'}</span>
       </div>
+      <ProcedureSpecimenList specimens={order.specimens} />
 
       {order.reports.map((report) => (
         <ProcedureReportCard
@@ -13384,6 +13477,18 @@ function countUsersByRole(users: AdministrationUserItem[] | undefined, role: str
 
 function countProcedureReports(orders: ProcedureOrderItem[] | undefined) {
   return orders?.reduce((count, order) => count + order.reports.length, 0) ?? 0
+}
+
+function countProcedureSpecimens(orders: ProcedureOrderItem[] | undefined) {
+  return orders?.reduce((count, order) => count + order.specimens.length, 0) ?? 0
+}
+
+function formatSpecimenVolume(specimen: ProcedureSpecimenItem) {
+  if (specimen.volumeValue === null || specimen.volumeValue === undefined) {
+    return null
+  }
+
+  return `${specimen.volumeValue} ${specimen.volumeUnit || ''}`.trim()
 }
 
 function isScheduledProcedureOrder(order: ProcedureOrderItem) {

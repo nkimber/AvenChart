@@ -5401,6 +5401,26 @@ try {
     $createdProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $createProcedureReportBody -TimeoutSec 20
     $procedureReportId = $createdProcedureReport.id
 
+    $createProcedureSpecimenBody = @{
+        orderId = $procedureOrderMutationId
+        specimenIdentifier = "SMOKE-SID"
+        accessionIdentifier = "SMOKE-ACC"
+        specimenTypeCode = "BLD"
+        specimenType = "Blood"
+        collectionMethodCode = "VP"
+        collectionMethod = "Venipuncture"
+        specimenLocationCode = "LAC"
+        specimenLocation = "Left antecubital"
+        collectedDate = "2026-06-18 12:20:00"
+        volumeValue = 4.5
+        volumeUnit = "mL"
+        conditionCode = "OK"
+        specimenCondition = "Acceptable"
+        comments = "Created by the smoke procedure mutation check."
+    } | ConvertTo-Json
+    $createdProcedureSpecimen = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens" -Method Post -ContentType "application/json" -Body $createProcedureSpecimenBody -TimeoutSec 20
+    $procedureSpecimenId = $createdProcedureSpecimen.id
+
     $createProcedureResultBody = @{
         reportId = $procedureReportId
         resultCode = "2345-7"
@@ -5417,6 +5437,18 @@ try {
     $createdProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $createProcedureResultBody -TimeoutSec 20
     $procedureResultId = $createdProcedureResult.id
     $resultOrder = $createdProcedureResult.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
+    $resultSpecimen = $resultOrder.specimens | Where-Object {
+        $_.id -eq $procedureSpecimenId `
+            -and $_.specimenIdentifier -eq "SMOKE-SID" `
+            -and $_.accessionIdentifier -eq "SMOKE-ACC" `
+            -and $_.specimenType -eq "Blood" `
+            -and $_.collectionMethod -eq "Venipuncture" `
+            -and $_.specimenLocation -eq "Left antecubital" `
+            -and $_.collectedDate -eq "2026-06-18 12:20" `
+            -and $_.volumeValue -eq 4.5 `
+            -and $_.volumeUnit -eq "mL" `
+            -and $_.specimenCondition -eq "Acceptable"
+    } | Select-Object -First 1
     $resultReport = $resultOrder.reports | Where-Object {
         $_.id -eq $procedureReportId `
             -and $_.dateCollected -eq "2026-06-18 12:30" `
@@ -5424,7 +5456,7 @@ try {
             -and $_.reviewStatus -eq "reviewed"
     } | Select-Object -First 1
     $createdResultVisible = $resultReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $resultReport -and $null -ne $createdResultVisible
+    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $createdResultVisible
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5433,6 +5465,8 @@ try {
         createdId = $createdProcedureOrder.id
         createdVisible = $createdProcedureVisible
         completedVisible = $completedProcedureVisible
+        specimenId = $procedureSpecimenId
+        specimenVisible = $resultSpecimen
         reportId = $procedureReportId
         resultVisible = $createdResultVisible
     }

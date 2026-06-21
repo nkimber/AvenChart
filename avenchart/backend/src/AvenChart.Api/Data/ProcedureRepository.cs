@@ -19,9 +19,13 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         var orders = await GetOrdersAsync(connection, patient.LegacyPid, cancellationToken);
+        var specimens = await GetSpecimensAsync(connection, orders.Select(order => order.Id).ToArray(), cancellationToken);
         var reports = await GetReportsAsync(connection, orders.Select(order => order.Id).ToArray(), cancellationToken);
         var results = await GetResultsAsync(connection, reports.Select(report => report.Id).ToArray(), cancellationToken);
 
+        var specimensByOrder = specimens
+            .GroupBy(specimen => specimen.OrderId)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Specimen).ToList());
         var resultsByReport = results.GroupBy(result => result.ReportId).ToDictionary(group => group.Key, group => group.Select(item => item.Result).ToList());
         var reportsByOrder = reports
             .GroupBy(report => report.OrderId)
@@ -34,6 +38,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         var procedureOrders = orders.Select(order => order.Order with
         {
+            Specimens = specimensByOrder.GetValueOrDefault(order.Id, []),
             Reports = reportsByOrder.GetValueOrDefault(order.Id, [])
         }).ToList();
 
@@ -188,6 +193,59 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(id, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
+        ProcedureSpecimenCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.OrderId <= 0
+            || (string.IsNullOrWhiteSpace(request.SpecimenIdentifier) && string.IsNullOrWhiteSpace(request.AccessionIdentifier))
+            || !TryReadDateTime(request.CollectedDate, out var collectedDate)
+            || request.VolumeValue < 0)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var order = await GetOrderMutationContextAsync(connection, request.OrderId, cancellationToken);
+        if (order is null)
+        {
+            return null;
+        }
+
+        var id = await GetNextIntIdAsync(connection, "lab_specimens", "id", cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into lab_specimens
+                (id, order_id, specimen_identifier, accession_identifier, specimen_type_code, specimen_type,
+                 collection_method_code, collection_method, specimen_location_code, specimen_location,
+                 collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments)
+            values
+                (@id, @orderId, @specimenIdentifier, @accessionIdentifier, @specimenTypeCode, @specimenType,
+                 @collectionMethodCode, @collectionMethod, @specimenLocationCode, @specimenLocation,
+                 @collectedDate, @volumeValue, @volumeUnit, @conditionCode, @specimenCondition, @comments);
+            """;
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("orderId", order.Id);
+        command.Parameters.AddWithValue("specimenIdentifier", NormalizeText(request.SpecimenIdentifier) ?? string.Empty);
+        command.Parameters.AddWithValue("accessionIdentifier", NormalizeText(request.AccessionIdentifier) ?? string.Empty);
+        command.Parameters.AddWithValue("specimenTypeCode", NormalizeText(request.SpecimenTypeCode) ?? string.Empty);
+        command.Parameters.AddWithValue("specimenType", NormalizeText(request.SpecimenType) ?? string.Empty);
+        command.Parameters.AddWithValue("collectionMethodCode", NormalizeText(request.CollectionMethodCode) ?? string.Empty);
+        command.Parameters.AddWithValue("collectionMethod", NormalizeText(request.CollectionMethod) ?? string.Empty);
+        command.Parameters.AddWithValue("specimenLocationCode", NormalizeText(request.SpecimenLocationCode) ?? string.Empty);
+        command.Parameters.AddWithValue("specimenLocation", NormalizeText(request.SpecimenLocation) ?? string.Empty);
+        command.Parameters.Add("collectedDate", NpgsqlDbType.Timestamp).Value = collectedDate;
+        command.Parameters.Add("volumeValue", NpgsqlDbType.Numeric).Value = request.VolumeValue is null ? DBNull.Value : request.VolumeValue.Value;
+        command.Parameters.AddWithValue("volumeUnit", NormalizeText(request.VolumeUnit) ?? string.Empty);
+        command.Parameters.AddWithValue("conditionCode", NormalizeText(request.ConditionCode) ?? string.Empty);
+        command.Parameters.AddWithValue("specimenCondition", NormalizeText(request.SpecimenCondition) ?? string.Empty);
+        command.Parameters.AddWithValue("comments", NormalizeText(request.Comments) ?? string.Empty);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(order.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(id, detail);
+    }
+
     public async Task<ProcedureMutationResponse?> CreateResultAsync(
         ProcedureResultCreateRequest request,
         CancellationToken cancellationToken)
@@ -298,6 +356,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var specimenCommand = connection.CreateCommand())
+        {
+            specimenCommand.Transaction = transaction;
+            specimenCommand.CommandText = "delete from lab_specimens where order_id = @orderId;";
+            specimenCommand.Parameters.AddWithValue("orderId", order.Id);
+            await specimenCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         await using (var resultCommand = connection.CreateCommand())
         {
@@ -439,7 +505,56 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     Diagnosis: ReadNullableString(reader, "diagnosis"),
                     Instructions: ReadNullableString(reader, "instructions"),
                     OrderStatus: ReadNullableString(reader, "order_status"),
+                    Specimens: [],
                     Reports: [])));
+        }
+
+        return rows;
+    }
+
+    private static async Task<IReadOnlyList<ProcedureSpecimenRow>> GetSpecimensAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken)
+    {
+        if (orderIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, order_id, specimen_identifier, accession_identifier, specimen_type_code, specimen_type,
+                   collection_method_code, collection_method, specimen_location_code, specimen_location,
+                   collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments
+            from lab_specimens
+            where order_id = any(@orderIds)
+            order by collected_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("orderIds", orderIds.ToArray());
+
+        var rows = new List<ProcedureSpecimenRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ProcedureSpecimenRow(
+                OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                Specimen: new ProcedureSpecimenItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier"),
+                    AccessionIdentifier: ReadNullableString(reader, "accession_identifier"),
+                    SpecimenTypeCode: ReadNullableString(reader, "specimen_type_code"),
+                    SpecimenType: ReadNullableString(reader, "specimen_type"),
+                    CollectionMethodCode: ReadNullableString(reader, "collection_method_code"),
+                    CollectionMethod: ReadNullableString(reader, "collection_method"),
+                    SpecimenLocationCode: ReadNullableString(reader, "specimen_location_code"),
+                    SpecimenLocation: ReadNullableString(reader, "specimen_location"),
+                    CollectedDate: reader.GetDateTime(reader.GetOrdinal("collected_date")).ToString("yyyy-MM-dd HH:mm"),
+                    VolumeValue: ReadNullableDecimal(reader, "volume_value"),
+                    VolumeUnit: ReadNullableString(reader, "volume_unit"),
+                    ConditionCode: ReadNullableString(reader, "condition_code"),
+                    SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
+                    Comments: ReadNullableString(reader, "comments"))));
         }
 
         return rows;
@@ -640,7 +755,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string columnName,
         CancellationToken cancellationToken)
     {
-        if (tableName is not ("lab_orders" or "lab_reports" or "lab_results") || columnName != "id")
+        if (tableName is not ("lab_orders" or "lab_reports" or "lab_results" or "lab_specimens") || columnName != "id")
         {
             throw new ArgumentException("Unsupported procedure id source.");
         }
@@ -671,8 +786,14 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return DateTime.TryParse(value, out dateTime);
     }
 
+    private static string? NormalizeText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static ProcedureOrderCounts BuildCounts(IReadOnlyList<ProcedureOrderItem> orders, DateOnly baseDate)
     {
+        var specimens = orders.Sum(order => order.Specimens.Count);
         var reports = orders.Sum(order => order.Reports.Count);
         var results = orders.Sum(order => order.Reports.Sum(report => report.Results.Count));
         var finalResults = orders.Sum(order =>
@@ -688,6 +809,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 string.Equals(order.OrderStatus, "scheduled", StringComparison.OrdinalIgnoreCase)
                 && DateOnly.TryParse(order.OrderDate, out var orderDate)
                 && orderDate > baseDate),
+            Specimens: specimens,
             Reports: reports,
             Results: results,
             FinalResults: finalResults);
@@ -705,6 +827,12 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
     }
 
+    private static decimal? ReadNullableDecimal(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
+    }
+
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record ProcedurePatient(
@@ -716,6 +844,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         string DisplayName);
 
     private sealed record ProcedureOrderRow(int Id, ProcedureOrderItem Order);
+
+    private sealed record ProcedureSpecimenRow(int OrderId, ProcedureSpecimenItem Specimen);
 
     private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
 

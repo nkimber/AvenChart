@@ -18,6 +18,7 @@ public sealed record ProcedureOrderCounts(
     int ScheduledOrders,
     int ReportlessOrders,
     int FutureScheduledOrders,
+    int Specimens,
     int Reports,
     int Results,
     int FinalResults);
@@ -34,7 +35,25 @@ public sealed record ProcedureOrderItem(
     string? Diagnosis,
     string? Instructions,
     string? OrderStatus,
+    IReadOnlyList<ProcedureSpecimenItem> Specimens,
     IReadOnlyList<ProcedureReportItem> Reports);
+
+public sealed record ProcedureSpecimenItem(
+    int Id,
+    string? SpecimenIdentifier,
+    string? AccessionIdentifier,
+    string? SpecimenTypeCode,
+    string? SpecimenType,
+    string? CollectionMethodCode,
+    string? CollectionMethod,
+    string? SpecimenLocationCode,
+    string? SpecimenLocation,
+    string CollectedDate,
+    decimal? VolumeValue,
+    string? VolumeUnit,
+    string? ConditionCode,
+    string? SpecimenCondition,
+    string? Comments);
 
 public sealed record ProcedureReportItem(
     int Id,
@@ -81,6 +100,23 @@ public sealed record ProcedureReportCreateRequest(
     string ReportStatus,
     string ReviewStatus,
     string Notes);
+
+public sealed record ProcedureSpecimenCreateRequest(
+    int OrderId,
+    string SpecimenIdentifier,
+    string AccessionIdentifier,
+    string SpecimenTypeCode,
+    string SpecimenType,
+    string CollectionMethodCode,
+    string CollectionMethod,
+    string SpecimenLocationCode,
+    string SpecimenLocation,
+    string CollectedDate,
+    decimal? VolumeValue,
+    string VolumeUnit,
+    string ConditionCode,
+    string SpecimenCondition,
+    string Comments);
 
 public sealed record ProcedureResultCreateRequest(
     int ReportId,

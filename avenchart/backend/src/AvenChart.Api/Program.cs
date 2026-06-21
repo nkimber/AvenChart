@@ -1208,6 +1208,18 @@ procedures.MapPost("/reports", async (
     })
     .WithName("CreateProcedureReport");
 
+procedures.MapPost("/specimens", async (
+        ProcedureRepository repository,
+        ProcedureSpecimenCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateSpecimenAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure specimen could not be created from the supplied order and specimen details.")
+            : Results.Created($"/api/procedures/specimens/{mutation.Id}", mutation);
+    })
+    .WithName("CreateProcedureSpecimen");
+
 procedures.MapPost("/results", async (
         ProcedureRepository repository,
         ProcedureResultCreateRequest request,

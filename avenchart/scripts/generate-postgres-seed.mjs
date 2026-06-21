@@ -217,6 +217,7 @@ drop table if exists patient_documents;
 drop table if exists messages;
 drop table if exists lab_results;
 drop table if exists lab_reports;
+drop table if exists lab_specimens;
 drop table if exists lab_orders;
 drop table if exists encounter_signatures;
 drop table if exists payment_activities;
@@ -601,6 +602,25 @@ create table lab_reports (
   status text,
   review_status text,
   notes text
+);
+
+create table lab_specimens (
+  id integer primary key,
+  order_id integer not null references lab_orders(id),
+  specimen_identifier text,
+  accession_identifier text,
+  specimen_type_code text,
+  specimen_type text,
+  collection_method_code text,
+  collection_method text,
+  specimen_location_code text,
+  specimen_location text,
+  collected_date timestamp not null,
+  volume_value numeric(10,3),
+  volume_unit text,
+  condition_code text,
+  specimen_condition text,
+  comments text
 );
 
 create table lab_results (

@@ -900,6 +900,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                         Diagnosis: ReadNullableString(reader, "diagnosis"),
                         Instructions: ReadNullableString(reader, "instructions"),
                         OrderStatus: ReadNullableString(reader, "order_status"),
+                        Specimens: [],
                         Reports: [])));
             }
         }
@@ -910,10 +911,14 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         }
 
         var orderIds = orderRows.Select(row => row.Id).ToArray();
+        var specimenRows = await GetProcedureSpecimensForOrdersAsync(connection, orderIds, cancellationToken);
         var reportRows = await GetProcedureReportsForOrdersAsync(connection, orderIds, cancellationToken);
         var reportIds = reportRows.Select(row => row.Id).ToArray();
         var resultRows = await GetProcedureResultsForReportsAsync(connection, reportIds, cancellationToken);
 
+        var specimensByOrder = specimenRows
+            .GroupBy(row => row.OrderId)
+            .ToDictionary(group => group.Key, group => group.Select(row => row.Specimen).ToList());
         var resultsByReport = resultRows
             .GroupBy(row => row.ReportId)
             .ToDictionary(group => group.Key, group => group.Select(row => row.Result).ToList());
@@ -928,6 +933,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
         return orderRows.Select(row => row.Order with
         {
+            Specimens = specimensByOrder.GetValueOrDefault(row.Id, []),
             Reports = reportsByOrder.GetValueOrDefault(row.Id, [])
         }).ToList();
     }
@@ -1001,6 +1007,54 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                     ReviewStatus: ReadNullableString(reader, "review_status"),
                     Notes: ReadNullableString(reader, "notes"),
                     Results: [])));
+        }
+
+        return rows;
+    }
+
+    private static async Task<IReadOnlyList<ProcedureSpecimenRow>> GetProcedureSpecimensForOrdersAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken)
+    {
+        if (orderIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, order_id, specimen_identifier, accession_identifier, specimen_type_code, specimen_type,
+                   collection_method_code, collection_method, specimen_location_code, specimen_location,
+                   collected_date, volume_value, volume_unit, condition_code, specimen_condition, comments
+            from lab_specimens
+            where order_id = any(@orderIds)
+            order by collected_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("orderIds", orderIds.ToArray());
+
+        var rows = new List<ProcedureSpecimenRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ProcedureSpecimenRow(
+                OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                Specimen: new ProcedureSpecimenItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    SpecimenIdentifier: ReadNullableString(reader, "specimen_identifier"),
+                    AccessionIdentifier: ReadNullableString(reader, "accession_identifier"),
+                    SpecimenTypeCode: ReadNullableString(reader, "specimen_type_code"),
+                    SpecimenType: ReadNullableString(reader, "specimen_type"),
+                    CollectionMethodCode: ReadNullableString(reader, "collection_method_code"),
+                    CollectionMethod: ReadNullableString(reader, "collection_method"),
+                    SpecimenLocationCode: ReadNullableString(reader, "specimen_location_code"),
+                    SpecimenLocation: ReadNullableString(reader, "specimen_location"),
+                    CollectedDate: ReadDateTime(reader, "collected_date"),
+                    VolumeValue: ReadNullableDecimal(reader, "volume_value"),
+                    VolumeUnit: ReadNullableString(reader, "volume_unit"),
+                    ConditionCode: ReadNullableString(reader, "condition_code"),
+                    SpecimenCondition: ReadNullableString(reader, "specimen_condition"),
+                    Comments: ReadNullableString(reader, "comments"))));
         }
 
         return rows;
@@ -1666,6 +1720,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         string OcrStatus);
 
     private sealed record ProcedureOrderRow(int Id, ProcedureOrderItem Order);
+
+    private sealed record ProcedureSpecimenRow(int OrderId, ProcedureSpecimenItem Specimen);
 
     private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
 

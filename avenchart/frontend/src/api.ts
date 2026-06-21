@@ -906,6 +906,24 @@ export type ProcedureReportItem = {
   results: ProcedureResultItem[]
 }
 
+export type ProcedureSpecimenItem = {
+  id: number
+  specimenIdentifier?: string | null
+  accessionIdentifier?: string | null
+  specimenTypeCode?: string | null
+  specimenType?: string | null
+  collectionMethodCode?: string | null
+  collectionMethod?: string | null
+  specimenLocationCode?: string | null
+  specimenLocation?: string | null
+  collectedDate: string
+  volumeValue?: number | null
+  volumeUnit?: string | null
+  conditionCode?: string | null
+  specimenCondition?: string | null
+  comments?: string | null
+}
+
 export type ProcedureOrderItem = {
   id: number
   encounter?: number | null
@@ -918,6 +936,7 @@ export type ProcedureOrderItem = {
   diagnosis?: string | null
   instructions?: string | null
   orderStatus?: string | null
+  specimens: ProcedureSpecimenItem[]
   reports: ProcedureReportItem[]
 }
 
@@ -927,6 +946,7 @@ export type ProcedureOrderCounts = {
   scheduledOrders: number
   reportlessOrders: number
   futureScheduledOrders: number
+  specimens: number
   reports: number
   results: number
   finalResults: number
@@ -971,6 +991,24 @@ export type ProcedureReportCreateInput = {
   reportStatus: string
   reviewStatus: string
   notes: string
+}
+
+export type ProcedureSpecimenCreateInput = {
+  orderId: number
+  specimenIdentifier: string
+  accessionIdentifier: string
+  specimenTypeCode: string
+  specimenType: string
+  collectionMethodCode: string
+  collectionMethod: string
+  specimenLocationCode: string
+  specimenLocation: string
+  collectedDate: string
+  volumeValue?: number | null
+  volumeUnit: string
+  conditionCode: string
+  specimenCondition: string
+  comments: string
 }
 
 export type ProcedureResultCreateInput = {
@@ -2813,6 +2851,23 @@ export async function createProcedureReport(
   })
   if (!response.ok) {
     throw new Error(`Procedure report create failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function createProcedureSpecimen(
+  input: ProcedureSpecimenCreateInput,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/specimens`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure specimen create failed with ${response.status}`)
   }
 
   return response.json()

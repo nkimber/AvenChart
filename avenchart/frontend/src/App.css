@@ -1865,6 +1865,28 @@
   line-height: 1.4;
 }
 
+.procedure-specimen-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.procedure-specimen-card {
+  border: 1px solid #dbe7ee;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.procedure-specimen-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin-top: 8px;
+  color: #607280;
+  font-size: 12px;
+}
+
 .procedure-report-title strong,
 .procedure-result-card strong {
   color: #1d2a35;
@@ -2159,6 +2181,7 @@
   .condition-report-grid,
   .admin-detail-grid,
   .procedure-result-grid,
+  .procedure-specimen-meta,
   .soap-grid {
     grid-template-columns: 1fr;
   }
