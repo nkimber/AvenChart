@@ -196,6 +196,81 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             Reports: reports);
     }
 
+    public async Task<ProcedureLabProviderDirectoryResponse> GetLabProvidersAsync(
+        bool includeInactive,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        int totalProviders;
+        int activeProviders;
+        int inactiveProviders;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = """
+                select
+                    count(*) as total_providers,
+                    coalesce(sum(case when active then 1 else 0 end), 0) as active_providers,
+                    coalesce(sum(case when not active then 1 else 0 end), 0) as inactive_providers
+                from lab_providers;
+                """;
+
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            totalProviders = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("total_providers")));
+            activeProviders = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("active_providers")));
+            inactiveProviders = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("inactive_providers")));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                lp.id,
+                lp.name,
+                lp.npi,
+                'DL' as protocol,
+                lp.active,
+                count(distinct lo.id)::int as order_count,
+                count(distinct lr.id)::int as report_count,
+                count(distinct case when lo.order_date > @baseDate then lo.id end)::int as future_order_count
+            from lab_providers lp
+            left join lab_orders lo on lo.lab_id = lp.id
+            left join lab_reports lr on lr.order_id = lo.id
+            where (@includeInactive or lp.active)
+            group by lp.id, lp.name, lp.npi, lp.active
+            order by lp.name, lp.id;
+            """;
+        command.Parameters.Add("includeInactive", NpgsqlDbType.Boolean).Value = includeInactive;
+        command.Parameters.Add("baseDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
+
+        var providers = new List<ProcedureLabProviderItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                providers.Add(new ProcedureLabProviderItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    Name: reader.GetString(reader.GetOrdinal("name")),
+                    Npi: ReadNullableString(reader, "npi"),
+                    Protocol: ReadNullableString(reader, "protocol"),
+                    Active: reader.GetBoolean(reader.GetOrdinal("active")),
+                    OrderCount: reader.GetInt32(reader.GetOrdinal("order_count")),
+                    ReportCount: reader.GetInt32(reader.GetOrdinal("report_count")),
+                    FutureOrderCount: reader.GetInt32(reader.GetOrdinal("future_order_count"))));
+            }
+        }
+
+        return new ProcedureLabProviderDirectoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            IncludeInactive: includeInactive,
+            TotalProviders: totalProviders,
+            ActiveProviders: activeProviders,
+            InactiveProviders: inactiveProviders,
+            Providers: providers);
+    }
+
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
         ProcedureOrderCreateRequest request,
         CancellationToken cancellationToken)

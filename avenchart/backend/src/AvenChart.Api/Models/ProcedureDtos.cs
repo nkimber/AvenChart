@@ -49,6 +49,25 @@ public sealed record ProcedureReportReviewQueueItem(
     string? SpecimenNumber,
     string? Notes);
 
+public sealed record ProcedureLabProviderDirectoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    bool IncludeInactive,
+    int TotalProviders,
+    int ActiveProviders,
+    int InactiveProviders,
+    IReadOnlyList<ProcedureLabProviderItem> Providers);
+
+public sealed record ProcedureLabProviderItem(
+    int Id,
+    string Name,
+    string? Npi,
+    string? Protocol,
+    bool Active,
+    int OrderCount,
+    int ReportCount,
+    int FutureOrderCount);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

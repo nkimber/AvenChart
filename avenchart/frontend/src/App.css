@@ -1758,6 +1758,18 @@
   margin-top: 12px;
 }
 
+.procedure-lab-provider-directory-panel {
+  margin-top: 12px;
+}
+
+.procedure-lab-provider-metrics {
+  padding: 10px 12px 0;
+}
+
+.procedure-lab-provider-list {
+  padding: 0 12px 12px;
+}
+
 .report-review-queue-toolbar,
 .review-queue-card-main,
 .review-queue-metrics {

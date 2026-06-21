@@ -46,6 +46,7 @@ import {
   getPatientDocumentDownloadUrl,
   getPatientDocuments,
   getPatientMessages,
+  getProcedureLabProviders,
   getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
@@ -235,6 +236,7 @@ import {
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureLabProviderDirectoryResponse,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
@@ -349,6 +351,12 @@ function App() {
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [reportsError, setReportsError] = useState<string | null>(null)
+  const [procedureLabProviders, setProcedureLabProviders] =
+    useState<ProcedureLabProviderDirectoryResponse | null>(null)
+  const [procedureLabProvidersStatus, setProcedureLabProvidersStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [procedureLabProvidersError, setProcedureLabProvidersError] = useState<string | null>(null)
+  const [procedureLabProvidersIncludeInactive, setProcedureLabProvidersIncludeInactive] = useState(false)
   const [procedureReportReviewQueue, setProcedureReportReviewQueue] =
     useState<ProcedureReportReviewQueueResponse | null>(null)
   const [procedureReportReviewQueueStatus, setProcedureReportReviewQueueStatus] =
@@ -745,6 +753,35 @@ function App() {
     loadOperationalReports()
     return () => controller.abort()
   }, [activeModule])
+
+  useEffect(() => {
+    if (activeModule !== 'reports') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadProcedureLabProviders() {
+      setProcedureLabProvidersStatus('loading')
+      setProcedureLabProvidersError(null)
+
+      try {
+        const result = await getProcedureLabProviders(procedureLabProvidersIncludeInactive, controller.signal)
+        setProcedureLabProviders(result)
+        setProcedureLabProvidersStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setProcedureLabProvidersStatus('error')
+          setProcedureLabProvidersError(
+            loadError instanceof Error ? loadError.message : 'Procedure lab provider directory failed',
+          )
+        }
+      }
+    }
+
+    loadProcedureLabProviders()
+    return () => controller.abort()
+  }, [activeModule, procedureLabProvidersIncludeInactive])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -3076,6 +3113,11 @@ function App() {
             reports={operationalReports}
             status={reportsStatus}
             error={reportsError}
+            labProviders={procedureLabProviders}
+            labProvidersStatus={procedureLabProvidersStatus}
+            labProvidersError={procedureLabProvidersError}
+            labProvidersIncludeInactive={procedureLabProvidersIncludeInactive}
+            onLabProvidersIncludeInactiveChange={setProcedureLabProvidersIncludeInactive}
             reviewQueue={procedureReportReviewQueue}
             reviewQueueStatus={procedureReportReviewQueueStatus}
             reviewQueueError={procedureReportReviewQueueError}
@@ -10817,6 +10859,11 @@ function ReportsWorkspace({
   reports,
   status,
   error,
+  labProviders,
+  labProvidersStatus,
+  labProvidersError,
+  labProvidersIncludeInactive,
+  onLabProvidersIncludeInactiveChange,
   reviewQueue,
   reviewQueueStatus,
   reviewQueueError,
@@ -10836,6 +10883,11 @@ function ReportsWorkspace({
   reports: OperationalReportsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  labProviders: ProcedureLabProviderDirectoryResponse | null
+  labProvidersStatus: 'idle' | 'loading' | 'ready' | 'error'
+  labProvidersError: string | null
+  labProvidersIncludeInactive: boolean
+  onLabProvidersIncludeInactiveChange: (includeInactive: boolean) => void
   reviewQueue: ProcedureReportReviewQueueResponse | null
   reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
   reviewQueueError: string | null
@@ -10947,6 +10999,14 @@ function ReportsWorkspace({
               </section>
             </div>
 
+            <ProcedureLabProvidersPanel
+              directory={labProviders}
+              status={labProvidersStatus}
+              error={labProvidersError}
+              includeInactive={labProvidersIncludeInactive}
+              onIncludeInactiveChange={onLabProvidersIncludeInactiveChange}
+            />
+
             <ProcedureReportReviewQueuePanel
               queue={reviewQueue}
               status={reviewQueueStatus}
@@ -10983,6 +11043,72 @@ function ReportsWorkspace({
           <div className="empty-chart">Open Reports to load the operational report dashboard</div>
         )}
       </section>
+    </section>
+  )
+}
+
+function ProcedureLabProvidersPanel({
+  directory,
+  status,
+  error,
+  includeInactive,
+  onIncludeInactiveChange,
+}: {
+  directory: ProcedureLabProviderDirectoryResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  includeInactive: boolean
+  onIncludeInactiveChange: (includeInactive: boolean) => void
+}) {
+  const providers = directory?.providers ?? []
+
+  return (
+    <section className="info-panel procedure-lab-provider-directory-panel" aria-label="Procedure lab provider directory">
+      <div className="panel-heading">
+        <FlaskConical size={17} />
+        <h3>Procedure Lab Providers</h3>
+        <span className="panel-count-pill">{providers.length}</span>
+      </div>
+
+      <label className="inline-toggle">
+        <input
+          type="checkbox"
+          checked={includeInactive}
+          onChange={(event) => onIncludeInactiveChange(event.target.checked)}
+        />
+        Include inactive providers
+      </label>
+
+      <div className="review-queue-metrics procedure-lab-provider-metrics" aria-label="Procedure lab provider counts">
+        <span>{directory?.activeProviders ?? 0} active</span>
+        <span>{directory?.inactiveProviders ?? 0} inactive</span>
+        <span>{directory?.totalProviders ?? 0} total</span>
+      </div>
+
+      {status === 'error' && <div className="status-banner error">{error}</div>}
+
+      <div className="review-queue-list procedure-lab-provider-list">
+        {providers.map((provider) => (
+          <article key={provider.id} className="review-queue-card procedure-lab-provider-card">
+            <div className="review-queue-card-main">
+              <div>
+                <p className="eyebrow">Provider #{provider.id}</p>
+                <h4>{provider.name}</h4>
+                <p>{provider.npi ? `NPI ${provider.npi}` : 'NPI not recorded'}</p>
+              </div>
+              <span className="status-pill">{provider.active ? 'Active' : 'Inactive'}</span>
+            </div>
+            <div className="review-queue-card-grid">
+              <Field label="Protocol" value={provider.protocol} />
+              <Field label="Orders" value={provider.orderCount} />
+              <Field label="Reports" value={provider.reportCount} />
+              <Field label="Future orders" value={provider.futureOrderCount} />
+            </div>
+          </article>
+        ))}
+        {status === 'loading' && <div className="timeline-placeholder">Loading procedure lab providers</div>}
+        {status !== 'loading' && providers.length === 0 && <div className="timeline-placeholder">No procedure lab providers</div>}
+      </div>
     </section>
   )
 }

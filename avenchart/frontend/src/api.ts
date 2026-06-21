@@ -947,6 +947,27 @@ export type ProcedureReportReviewQueueResponse = {
   reports: ProcedureReportReviewQueueItem[]
 }
 
+export type ProcedureLabProviderItem = {
+  id: number
+  name: string
+  npi?: string | null
+  protocol?: string | null
+  active: boolean
+  orderCount: number
+  reportCount: number
+  futureOrderCount: number
+}
+
+export type ProcedureLabProviderDirectoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  includeInactive: boolean
+  totalProviders: number
+  activeProviders: number
+  inactiveProviders: number
+  providers: ProcedureLabProviderItem[]
+}
+
 export type ProcedureReportReviewQueueFilters = {
   patientId?: string
   providerId?: string | number
@@ -2907,6 +2928,25 @@ export async function getProcedureReportReviewQueue(
   const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure report review queue load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getProcedureLabProviders(
+  includeInactive = false,
+  signal?: AbortSignal,
+): Promise<ProcedureLabProviderDirectoryResponse> {
+  const params = new URLSearchParams()
+  if (includeInactive) {
+    params.set('includeInactive', 'true')
+  }
+
+  const query = params.toString()
+  const suffix = query ? `?${query}` : ''
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers${suffix}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure lab provider directory load failed with ${response.status}`)
   }
 
   return response.json()
