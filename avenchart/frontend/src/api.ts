@@ -1283,6 +1283,18 @@ export type ProcedureReportSignInput = {
   reviewedAt: string
 }
 
+export type ProcedureReportBulkSignInput = ProcedureReportSignInput & {
+  reportIds: number[]
+}
+
+export type ProcedureReportBulkSignResponse = {
+  requestedCount: number
+  signedCount: number
+  signedReportIds: number[]
+  reviewedBy: string
+  reviewedAt: string
+}
+
 export type ProcedureSpecimenCreateInput = {
   orderId: number
   specimenIdentifier: string
@@ -3453,6 +3465,23 @@ export async function signProcedureReport(
   })
   if (!response.ok) {
     throw new Error(`Procedure report sign-off failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function bulkSignProcedureReports(
+  input: ProcedureReportBulkSignInput,
+  signal?: AbortSignal,
+): Promise<ProcedureReportBulkSignResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports/bulk-sign`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Procedure report bulk sign-off failed with ${response.status}`)
   }
 
   return response.json()

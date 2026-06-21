@@ -1934,6 +1934,10 @@
   justify-content: space-between;
 }
 
+.report-review-queue-toolbar {
+  flex-wrap: wrap;
+}
+
 .review-queue-metrics {
   flex-wrap: wrap;
   color: #536678;

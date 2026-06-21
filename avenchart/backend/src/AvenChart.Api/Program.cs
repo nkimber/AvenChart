@@ -1436,6 +1436,18 @@ procedures.MapPut("/reports/{reportId:int}/sign", async (
     })
     .WithName("SignProcedureReport");
 
+procedures.MapPut("/reports/bulk-sign", async (
+        ProcedureRepository repository,
+        ProcedureReportBulkSignRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.BulkSignReportsAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure reports could not be bulk signed from the supplied review details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("BulkSignProcedureReports");
+
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
         ProcedureSpecimenCreateRequest request,

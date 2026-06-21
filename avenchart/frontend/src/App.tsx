@@ -54,6 +54,7 @@ import {
   getOperationalReports,
   getOperationalReportsCsvUrl,
   createAppointment,
+  bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
   createBillingClaimStatus,
   createBillingLine,
@@ -256,6 +257,7 @@ import {
   type ProcedureOrderCatalogMutationInput,
   type ProcedureOrderCatalogResponse,
   type ProcedureOrderQueueResponse,
+  type ProcedureReportBulkSignResponse,
   type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
@@ -403,6 +405,7 @@ function App() {
   const [procedureReportReviewQueueLabFilter, setProcedureReportReviewQueueLabFilter] = useState('')
   const [procedureReportReviewQueueFromDate, setProcedureReportReviewQueueFromDate] = useState('')
   const [procedureReportReviewQueueToDate, setProcedureReportReviewQueueToDate] = useState('')
+  const [procedureReportReviewQueueRefreshKey, setProcedureReportReviewQueueRefreshKey] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -938,6 +941,7 @@ function App() {
     procedureReportReviewQueueLabFilter,
     procedureReportReviewQueueFromDate,
     procedureReportReviewQueueToDate,
+    procedureReportReviewQueueRefreshKey,
   ])
 
   const selectedFromList = useMemo(
@@ -2341,6 +2345,27 @@ function App() {
     }
   }
 
+  async function handleProcedureReportBulkSign(reportIds: number[]): Promise<ProcedureReportBulkSignResponse> {
+    setProcedureReportReviewQueueStatus('loading')
+    setProcedureReportReviewQueueError(null)
+
+    try {
+      const response = await bulkSignProcedureReports({
+        reportIds,
+        reviewedBy: 'admin',
+        reviewedAt: '2026-06-21 11:25:00',
+      })
+      setProcedureReportReviewQueueFilter('reviewed')
+      setProcedureReportReviewQueueRefreshKey((current) => current + 1)
+      return response
+    } catch (bulkSignError) {
+      setProcedureReportReviewQueueStatus('error')
+      const message = bulkSignError instanceof Error ? bulkSignError.message : 'Procedure report bulk sign-off failed'
+      setProcedureReportReviewQueueError(message)
+      throw bulkSignError
+    }
+  }
+
   async function handleProcedureReportCreate(input: ProcedureReportCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -2386,6 +2411,7 @@ function App() {
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
+      setProcedureReportReviewQueueRefreshKey((current) => current + 1)
       return response
     } catch (signError) {
       setProcedureStatus('error')
@@ -3415,6 +3441,7 @@ function App() {
             onReviewQueueLabFilterChange={setProcedureReportReviewQueueLabFilter}
             onReviewQueueFromDateChange={setProcedureReportReviewQueueFromDate}
             onReviewQueueToDateChange={setProcedureReportReviewQueueToDate}
+            onReviewQueueBulkSign={handleProcedureReportBulkSign}
           />
         )}
         {activeModule === 'admin' && (
@@ -11218,6 +11245,7 @@ function ReportsWorkspace({
   onReviewQueueLabFilterChange,
   onReviewQueueFromDateChange,
   onReviewQueueToDateChange,
+  onReviewQueueBulkSign,
 }: {
   reports: OperationalReportsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -11276,6 +11304,7 @@ function ReportsWorkspace({
   onReviewQueueLabFilterChange: (labId: string) => void
   onReviewQueueFromDateChange: (fromDate: string) => void
   onReviewQueueToDateChange: (toDate: string) => void
+  onReviewQueueBulkSign: (reportIds: number[]) => Promise<ProcedureReportBulkSignResponse>
 }) {
   return (
     <section className="scheduler-layout">
@@ -11428,6 +11457,7 @@ function ReportsWorkspace({
               onLabFilterChange={onReviewQueueLabFilterChange}
               onFromDateChange={onReviewQueueFromDateChange}
               onToDateChange={onReviewQueueToDateChange}
+              onBulkSignReports={onReviewQueueBulkSign}
             />
 
             <section className="info-panel report-conditions-panel">
@@ -12385,6 +12415,7 @@ function ProcedureReportReviewQueuePanel({
   onLabFilterChange,
   onFromDateChange,
   onToDateChange,
+  onBulkSignReports,
 }: {
   queue: ProcedureReportReviewQueueResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -12401,8 +12432,28 @@ function ProcedureReportReviewQueuePanel({
   onLabFilterChange: (labId: string) => void
   onFromDateChange: (fromDate: string) => void
   onToDateChange: (toDate: string) => void
+  onBulkSignReports: (reportIds: number[]) => Promise<ProcedureReportBulkSignResponse>
 }) {
   const reports = queue?.reports ?? []
+  const unreviewedReports = reports.filter((report) => (report.reviewStatus ?? '').toLowerCase() !== 'reviewed')
+  const canBulkSign = activeFilter === 'unreviewed' && unreviewedReports.length > 0
+  const [bulkSignStatus, setBulkSignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [bulkSignCount, setBulkSignCount] = useState(0)
+
+  async function handleBulkSign() {
+    if (!canBulkSign) {
+      return
+    }
+
+    setBulkSignStatus('saving')
+    try {
+      const response = await onBulkSignReports(unreviewedReports.map((report) => report.reportId))
+      setBulkSignCount(response.signedCount)
+      setBulkSignStatus('saved')
+    } catch {
+      setBulkSignStatus('error')
+    }
+  }
 
   return (
     <section className="info-panel report-review-queue-panel" aria-label="Procedure report review queue">
@@ -12430,6 +12481,19 @@ function ProcedureReportReviewQueuePanel({
           <span>{queue?.reviewedReports ?? 0} reviewed</span>
           <span>{queue?.totalReports ?? 0} total</span>
         </div>
+        <button
+          type="button"
+          className="icon-text-button secondary compact"
+          disabled={!canBulkSign || bulkSignStatus === 'saving'}
+          onClick={() => {
+            void handleBulkSign()
+          }}
+        >
+          <ShieldCheck size={14} />
+          Sign visible
+        </button>
+        {bulkSignStatus === 'saved' && <span className="save-note">Signed {bulkSignCount}</span>}
+        {bulkSignStatus === 'error' && <span className="save-note error">Sign failed</span>}
       </div>
 
       <div className="review-queue-filter-grid">

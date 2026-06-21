@@ -1356,6 +1356,55 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
     }
 
+    public async Task<ProcedureReportBulkSignResponse?> BulkSignReportsAsync(
+        ProcedureReportBulkSignRequest request,
+        CancellationToken cancellationToken)
+    {
+        var reportIds = (request.ReportIds ?? Array.Empty<int>())
+            .Where(id => id > 0)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+
+        if (reportIds.Length == 0
+            || string.IsNullOrWhiteSpace(request.ReviewedBy)
+            || !TryReadDateTime(request.ReviewedAt, out var reviewedAt))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_reports
+            set review_status = 'reviewed',
+                reviewed_by = @reviewedBy,
+                reviewed_at = @reviewedAt
+            where id = any(@reportIds)
+              and coalesce(review_status, '') <> 'reviewed'
+            returning id;
+            """;
+        command.Parameters.Add("reportIds", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = reportIds;
+        command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
+        command.Parameters.Add("reviewedAt", NpgsqlDbType.Timestamp).Value = reviewedAt;
+
+        var signedReportIds = new List<int>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                signedReportIds.Add(reader.GetInt32(0));
+            }
+        }
+
+        return new ProcedureReportBulkSignResponse(
+            RequestedCount: reportIds.Length,
+            SignedCount: signedReportIds.Count,
+            SignedReportIds: signedReportIds.Order().ToArray(),
+            ReviewedBy: request.ReviewedBy.Trim(),
+            ReviewedAt: reviewedAt.ToString("yyyy-MM-dd HH:mm"));
+    }
+
     public async Task<ProcedureMutationResponse?> CreateSpecimenAsync(
         ProcedureSpecimenCreateRequest request,
         CancellationToken cancellationToken)

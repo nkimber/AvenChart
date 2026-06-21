@@ -359,6 +359,18 @@ public sealed record ProcedureReportSignRequest(
     string ReviewedBy,
     string ReviewedAt);
 
+public sealed record ProcedureReportBulkSignRequest(
+    IReadOnlyList<int> ReportIds,
+    string ReviewedBy,
+    string ReviewedAt);
+
+public sealed record ProcedureReportBulkSignResponse(
+    int RequestedCount,
+    int SignedCount,
+    IReadOnlyList<int> SignedReportIds,
+    string ReviewedBy,
+    string ReviewedAt);
+
 public sealed record ProcedureSpecimenCreateRequest(
     int OrderId,
     string SpecimenIdentifier,
