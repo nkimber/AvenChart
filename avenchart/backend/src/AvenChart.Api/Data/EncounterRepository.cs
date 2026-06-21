@@ -1234,8 +1234,11 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             var url = ReadNullableString(reader, "url");
             var hash = ReadNullableString(reader, "hash");
             var pages = ReadNullableInt(reader, "pages");
+            var name = reader.GetString(reader.GetOrdinal("name"));
+            var notes = ReadNullableString(reader, "notes");
             var contentPreview = ReadNullableString(reader, "content_preview");
             var preview = BuildDocumentPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
+            var scanReadiness = BuildScanReadiness(name, fileName, mimetype, pages, storageMethod, notes, contentPreview);
             var uploadedAt = ReadDateTime(reader, "uploaded_at");
             var revisionAt = uploadedAt;
             var deleted = reader.GetInt32(reader.GetOrdinal("deleted"));
@@ -1248,7 +1251,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
                 CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
                 CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
-                Name: reader.GetString(reader.GetOrdinal("name")),
+                Name: name,
                 DocDate: ReadDate(reader, "doc_date"),
                 UploadedAt: uploadedAt,
                 RevisionAt: revisionAt,
@@ -1265,7 +1268,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 FileName: fileName,
                 Url: url,
                 Hash: hash,
-                Notes: ReadNullableString(reader, "notes"),
+                Notes: notes,
                 Deleted: deleted,
                 ReviewStatus: reviewStatus,
                 ReviewedBy: reviewedBy,
@@ -1277,6 +1280,11 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 ThumbnailText: preview.ThumbnailText,
                 CanPreviewInline: preview.CanPreviewInline,
                 CanDownload: preview.CanDownload,
+                IsScannedAttachment: scanReadiness.IsScannedAttachment,
+                ScanStatus: scanReadiness.ScanStatus,
+                CaptureSource: scanReadiness.CaptureSource,
+                ScanPageCount: scanReadiness.ScanPageCount,
+                OcrStatus: scanReadiness.OcrStatus,
                 LifecycleEvents: BuildDocumentLifecycleEvents(
                     uploadedAt,
                     revisionAt,
@@ -1437,6 +1445,80 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return mimetype.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON" : "FILE";
     }
 
+    private static EncounterDocumentScanReadiness BuildScanReadiness(
+        string? name,
+        string? fileName,
+        string? mimetype,
+        int? pages,
+        string? storageMethod,
+        string? notes,
+        string? previewText)
+    {
+        var evidence = string.Join(
+            " ",
+            new[]
+            {
+                NormalizeText(name),
+                NormalizeText(fileName),
+                NormalizeText(mimetype),
+                NormalizeText(storageMethod),
+                NormalizeText(notes),
+                NormalizeText(previewText)
+            }.Where(value => value is not null));
+        var normalizedEvidence = evidence.ToLowerInvariant();
+        var isScanned = normalizedEvidence.Contains("scan", StringComparison.Ordinal)
+            || normalizedEvidence.Contains("scanner", StringComparison.Ordinal);
+        var scanPageCount = Math.Max(pages ?? 0, isScanned ? 1 : 0);
+
+        return new EncounterDocumentScanReadiness(
+            IsScannedAttachment: isScanned,
+            ScanStatus: isScanned ? "Scanned attachment" : "Not scanned",
+            CaptureSource: isScanned ? ExtractCaptureSource(notes) ?? "Document scanner" : "Not captured by scanner",
+            ScanPageCount: scanPageCount,
+            OcrStatus: isScanned ? ExtractOcrStatus(notes, previewText) : "Not applicable");
+    }
+
+    private static string? ExtractCaptureSource(string? notes)
+    {
+        var normalized = NormalizeText(notes);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        const string marker = "scan source:";
+        var markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var sourceStart = markerIndex + marker.Length;
+        var sourceEnd = normalized.IndexOf(';', sourceStart);
+        var source = sourceEnd < 0
+            ? normalized[sourceStart..]
+            : normalized[sourceStart..sourceEnd];
+        return NormalizeText(source);
+    }
+
+    private static string ExtractOcrStatus(string? notes, string? previewText)
+    {
+        var evidence = string.Join(" ", NormalizeText(notes), NormalizeText(previewText)).ToLowerInvariant();
+        if (evidence.Contains("ocr complete", StringComparison.Ordinal))
+        {
+            return "OCR complete";
+        }
+
+        if (evidence.Contains("ocr failed", StringComparison.Ordinal))
+        {
+            return "OCR failed";
+        }
+
+        return evidence.Contains("ocr pending", StringComparison.Ordinal)
+            ? "OCR pending"
+            : "OCR not started";
+    }
+
     private static string TrimPreviewText(string? value)
     {
         var normalized = NormalizePreviewText(value).Replace("\r", "\n");
@@ -1573,6 +1655,13 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         string ThumbnailText,
         bool CanPreviewInline,
         bool CanDownload);
+
+    private sealed record EncounterDocumentScanReadiness(
+        bool IsScannedAttachment,
+        string ScanStatus,
+        string CaptureSource,
+        int ScanPageCount,
+        string OcrStatus);
 
     private sealed record ProcedureOrderRow(int Id, ProcedureOrderItem Order);
 

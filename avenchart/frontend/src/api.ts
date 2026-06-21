@@ -326,6 +326,11 @@ export type EncounterDocumentAttachment = {
   thumbnailText: string
   canPreviewInline: boolean
   canDownload: boolean
+  isScannedAttachment: boolean
+  scanStatus: string
+  captureSource: string
+  scanPageCount: number
+  ocrStatus: string
   lifecycleEvents: EncounterDocumentLifecycleEvent[]
 }
 

@@ -2651,6 +2651,81 @@ finally {
     }
 }
 
+$smokeEncounterScannedDocumentId = $null
+try {
+    if ($null -eq $encounterDetail) {
+        throw "Anchor encounter detail did not load."
+    }
+
+    $scanDocumentSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $scanDocumentName = "Smoke Encounter Scanned Attachment $scanDocumentSuffix.pdf"
+    $scanNotes = "Scan source: front-desk scanner; OCR pending; Created by the smoke encounter scanned attachment readiness check."
+    $scanPdfText = "%PDF-1.4`n% Smoke encounter scanned attachment readiness PDF`n1 0 obj << /Type /Catalog >> endobj`n%%EOF"
+    $scanPdfBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($scanPdfText))
+    $scanDocumentBody = @{
+        categoryId = 3
+        name = $scanDocumentName
+        docDate = "2026-06-20"
+        fileName = $scanDocumentName
+        mimetype = "application/pdf"
+        contentBase64 = $scanPdfBase64
+        notes = $scanNotes
+    } | ConvertTo-Json -Depth 5
+
+    $createdEncounterScannedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $scanDocumentBody -TimeoutSec 20
+    $smokeEncounterScannedDocumentId = $createdEncounterScannedDocument.id
+    $createdEncounterScannedDocumentVisible = @($createdEncounterScannedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterScannedDocumentId `
+            -and $_.name -eq $scanDocumentName `
+            -and $_.isScannedAttachment -eq $true `
+            -and $_.scanStatus -eq "Scanned attachment" `
+            -and $_.captureSource -eq "front-desk scanner" `
+            -and $_.scanPageCount -eq 1 `
+            -and $_.ocrStatus -eq "OCR pending"
+    } | Select-Object -First 1
+
+    $afterCreateScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $reloadedEncounterScannedDocumentVisible = @($afterCreateScannedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.id -eq $smokeEncounterScannedDocumentId `
+            -and $_.isScannedAttachment -eq $true `
+            -and $_.scanStatus -eq "Scanned attachment" `
+            -and $_.captureSource -eq "front-desk scanner" `
+            -and $_.scanPageCount -eq 1 `
+            -and $_.ocrStatus -eq "OCR pending"
+    } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterScannedDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+    $smokeEncounterScannedDocumentId = $null
+    $afterDeleteScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $deletedEncounterScannedDocumentVisible = @($afterDeleteScannedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.name -eq $scanDocumentName
+    } | Select-Object -First 1
+
+    $encounterScannedAttachmentPassed = $null -ne $createdEncounterScannedDocumentVisible `
+        -and $null -ne $reloadedEncounterScannedDocumentVisible `
+        -and $null -eq $deletedEncounterScannedDocumentVisible
+    Add-Check -Name "encounter scanned attachment readiness" -Result $(if ($encounterScannedAttachmentPassed) { "passed" } else { "failed" }) -Details @{
+        encounter = 1000013
+        documentId = $createdEncounterScannedDocument.id
+        scanStatus = $reloadedEncounterScannedDocumentVisible.scanStatus
+        captureSource = $reloadedEncounterScannedDocumentVisible.captureSource
+        scanPageCount = $reloadedEncounterScannedDocumentVisible.scanPageCount
+        ocrStatus = $reloadedEncounterScannedDocumentVisible.ocrStatus
+    }
+}
+catch {
+    Add-Check -Name "encounter scanned attachment readiness" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $smokeEncounterScannedDocumentId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterScannedDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $smokeEncounterExternalLinkDocumentId = $null
 try {
     if ($null -eq $encounterDetail) {

@@ -7063,6 +7063,14 @@ function EncounterDocumentAttachmentCard({
         <span>{document.revisionAt || document.uploadedAt}</span>
         <span>{document.hasPriorVersions ? `${document.versionHistoryCount} versions` : 'No prior versions'}</span>
       </div>
+      {document.isScannedAttachment && (
+        <div className="document-scan-readiness" aria-label={`Scan readiness for ${document.name}`}>
+          <span>{document.scanStatus}</span>
+          <span>{document.captureSource}</span>
+          <span>{document.scanPageCount} scanned page{document.scanPageCount === 1 ? '' : 's'}</span>
+          <span>{document.ocrStatus}</span>
+        </div>
+      )}
       <div className="procedure-order-meta">
         <span>{document.reviewStatus === 'approved' ? 'approved' : document.reviewStatus || 'pending'}</span>
         <span>{document.reviewedBy ? `Reviewed by ${document.reviewedBy}` : 'Not reviewed'}</span>

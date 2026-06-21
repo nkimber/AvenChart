@@ -118,6 +118,11 @@ public sealed record EncounterDocumentAttachment(
     string ThumbnailText,
     bool CanPreviewInline,
     bool CanDownload,
+    bool IsScannedAttachment,
+    string ScanStatus,
+    string CaptureSource,
+    int ScanPageCount,
+    string OcrStatus,
     IReadOnlyList<EncounterDocumentLifecycleEvent> LifecycleEvents);
 
 public sealed record EncounterDocumentLifecycleEvent(
