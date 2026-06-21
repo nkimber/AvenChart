@@ -12,6 +12,35 @@ public sealed record ProcedureResultsResponse(
     ProcedureOrderCounts Counts,
     IReadOnlyList<ProcedureOrderItem> Orders);
 
+public sealed record ProcedureReportReviewQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string StatusFilter,
+    int Limit,
+    int TotalReports,
+    int ReviewedReports,
+    int UnreviewedReports,
+    IReadOnlyList<ProcedureReportReviewQueueItem> Reports);
+
+public sealed record ProcedureReportReviewQueueItem(
+    int ReportId,
+    int OrderId,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string OrderDate,
+    string? ProviderName,
+    string? ProcedureCode,
+    string? ProcedureName,
+    string ReportDate,
+    string? ReportStatus,
+    string? ReviewStatus,
+    string? ReviewedBy,
+    string? ReviewedAt,
+    string? SpecimenNumber,
+    string? Notes);
+
 public sealed record ProcedureOrderCounts(
     int Orders,
     int CompletedOrders,

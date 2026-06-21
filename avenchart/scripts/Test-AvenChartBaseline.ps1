@@ -5418,7 +5418,7 @@ try {
         dateReport = "2026-06-18 13:00:00"
         specimenNumber = "SMOKE-PROC"
         reportStatus = "final"
-        reviewStatus = "reviewed"
+        reviewStatus = "received"
         notes = "Smoke procedure report."
     } | ConvertTo-Json
     $createdProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $createProcedureReportBody -TimeoutSec 20
@@ -5429,7 +5429,7 @@ try {
         dateReport = "2026-06-19 11:00:00"
         specimenNumber = "SMOKE-PROC-CORR"
         reportStatus = "corrected"
-        reviewStatus = "reviewed"
+        reviewStatus = "received"
         notes = "Corrected smoke procedure report."
     } | ConvertTo-Json
     $correctedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId" -Method Put -ContentType "application/json" -Body $correctProcedureReportBody -TimeoutSec 20
@@ -5440,7 +5440,7 @@ try {
             -and $_.reportDate -eq "2026-06-19 11:00" `
             -and $_.specimenNumber -eq "SMOKE-PROC-CORR" `
             -and $_.status -eq "corrected" `
-            -and $_.reviewStatus -eq "reviewed" `
+            -and $_.reviewStatus -eq "received" `
             -and $_.notes -eq "Corrected smoke procedure report."
     } | Select-Object -First 1
 
@@ -5498,8 +5498,17 @@ try {
             -and $_.reportDate -eq "2026-06-19 11:00" `
             -and $_.specimenNumber -eq "SMOKE-PROC-CORR" `
             -and $_.status -eq "corrected" `
-            -and $_.reviewStatus -eq "reviewed" `
+            -and $_.reviewStatus -eq "received" `
             -and $_.notes -eq "Corrected smoke procedure report."
+    } | Select-Object -First 1
+
+    $unreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
+    $queuedProcedureReportBeforeSign = $unreviewedProcedureReportQueue.reports | Where-Object {
+        $_.reportId -eq $procedureReportId `
+            -and $_.orderId -eq $procedureOrderMutationId `
+            -and $_.patientId -eq "MOD-PAT-0009" `
+            -and $_.procedureName -eq $correctedProcedureName `
+            -and $_.reviewStatus -eq "received"
     } | Select-Object -First 1
 
     $signProcedureReportBody = @{
@@ -5515,7 +5524,19 @@ try {
             -and $_.reviewedAt -eq "2026-06-19 14:15"
     } | Select-Object -First 1
     $createdResultVisible = $signedReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $signedReport -and $null -ne $createdResultVisible
+
+    $reviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&limit=100" -TimeoutSec 20
+    $queuedProcedureReportAfterSign = $reviewedProcedureReportQueue.reports | Where-Object {
+        $_.reportId -eq $procedureReportId `
+            -and $_.reviewStatus -eq "reviewed" `
+            -and $_.reviewedBy -eq "admin" `
+            -and $_.reviewedAt -eq "2026-06-19 14:15"
+    } | Select-Object -First 1
+
+    $unreviewedProcedureReportQueueAfterSign = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
+    $queuedProcedureReportStillUnreviewed = $unreviewedProcedureReportQueueAfterSign.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
+
+    $procedureMutationPassed = $null -ne $createdProcedureVisible -and $null -ne $correctedProcedureVisible -and $null -ne $completedProcedureVisible -and $null -ne $correctedProcedureReportRow -and $null -ne $resultSpecimen -and $null -ne $resultReport -and $null -ne $queuedProcedureReportBeforeSign -and $null -ne $signedReport -and $null -ne $createdResultVisible -and $null -ne $queuedProcedureReportAfterSign -and $null -eq $queuedProcedureReportStillUnreviewed
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
@@ -5529,7 +5550,9 @@ try {
         specimenVisible = $resultSpecimen
         reportId = $procedureReportId
         correctedReportVisible = $correctedProcedureReportRow
+        queuedReportBeforeSign = $queuedProcedureReportBeforeSign
         signedReportVisible = $signedReport
+        queuedReportAfterSign = $queuedProcedureReportAfterSign
         resultVisible = $createdResultVisible
     }
 }

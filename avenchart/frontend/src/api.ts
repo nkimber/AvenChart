@@ -908,6 +908,37 @@ export type ProcedureReportItem = {
   results: ProcedureResultItem[]
 }
 
+export type ProcedureReportReviewQueueItem = {
+  reportId: number
+  orderId: number
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  orderDate: string
+  providerName?: string | null
+  procedureCode?: string | null
+  procedureName?: string | null
+  reportDate: string
+  reportStatus?: string | null
+  reviewStatus?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  specimenNumber?: string | null
+  notes?: string | null
+}
+
+export type ProcedureReportReviewQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  statusFilter: string
+  limit: number
+  totalReports: number
+  reviewedReports: number
+  unreviewedReports: number
+  reports: ProcedureReportReviewQueueItem[]
+}
+
 export type ProcedureSpecimenItem = {
   id: number
   specimenIdentifier?: string | null
@@ -2826,6 +2857,19 @@ export async function getProcedureResults(patientId: string, signal?: AbortSigna
   const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, { signal })
   if (!response.ok) {
     throw new Error(`Procedure results load failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getProcedureReportReviewQueue(
+  status = 'unreviewed',
+  signal?: AbortSignal,
+): Promise<ProcedureReportReviewQueueResponse> {
+  const params = new URLSearchParams({ status })
+  const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, { signal })
+  if (!response.ok) {
+    throw new Error(`Procedure report review queue load failed with ${response.status}`)
   }
 
   return response.json()

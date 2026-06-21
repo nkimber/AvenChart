@@ -1723,6 +1723,100 @@
   padding: 4px 9px;
 }
 
+.segmented-control {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid #c7d4db;
+  border-radius: 7px;
+  background: #f8fafb;
+  overflow: hidden;
+}
+
+.segmented-control button {
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid #c7d4db;
+  background: transparent;
+  color: #465b69;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 11px;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.active {
+  background: #16605b;
+  color: #ffffff;
+}
+
+.report-review-queue-panel {
+  margin-top: 12px;
+}
+
+.report-review-queue-toolbar,
+.review-queue-card-main,
+.review-queue-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-review-queue-toolbar,
+.review-queue-card-main {
+  justify-content: space-between;
+}
+
+.review-queue-metrics {
+  flex-wrap: wrap;
+  color: #536678;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.review-queue-card {
+  border: 1px solid #e0e8ec;
+  border-radius: 7px;
+  background: #f8fafb;
+  padding: 12px;
+  min-width: 0;
+}
+
+.review-queue-card h4 {
+  margin: 0;
+  color: #172b3a;
+  font-size: 15px;
+}
+
+.review-queue-card p {
+  margin: 3px 0 0;
+  color: #536678;
+  font-size: 12px;
+}
+
+.review-queue-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.review-queue-notes {
+  border-top: 1px solid #dfe8ed;
+  padding-top: 8px;
+}
+
 .statement-readiness-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2104,6 +2198,10 @@
   .admin-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .review-queue-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 920px) {
@@ -2181,6 +2279,7 @@
   .condition-report-grid,
   .admin-detail-grid,
   .procedure-result-grid,
+  .review-queue-card-grid,
   .procedure-specimen-meta,
   .soap-grid {
     grid-template-columns: 1fr;
@@ -2203,6 +2302,8 @@
   .ledger-entry-main,
   .procedure-order-meta,
   .procedure-report-title,
+  .report-review-queue-toolbar,
+  .review-queue-card-main,
   .procedure-result-card > div,
   .encounter-procedure-result-card > div,
   .condition-report-card {

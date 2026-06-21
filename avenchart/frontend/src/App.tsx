@@ -46,6 +46,7 @@ import {
   getPatientDocumentDownloadUrl,
   getPatientDocuments,
   getPatientMessages,
+  getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
   getOperationalReportsCsvUrl,
@@ -234,6 +235,7 @@ import {
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureReportReviewQueueResponse,
   type ProcedureReportSignInput,
   type ProcedureReportUpdateInput,
   type ProcedureSpecimenCreateInput,
@@ -347,6 +349,12 @@ function App() {
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [reportsError, setReportsError] = useState<string | null>(null)
+  const [procedureReportReviewQueue, setProcedureReportReviewQueue] =
+    useState<ProcedureReportReviewQueueResponse | null>(null)
+  const [procedureReportReviewQueueStatus, setProcedureReportReviewQueueStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [procedureReportReviewQueueError, setProcedureReportReviewQueueError] = useState<string | null>(null)
+  const [procedureReportReviewQueueFilter, setProcedureReportReviewQueueFilter] = useState('unreviewed')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -732,6 +740,35 @@ function App() {
     loadOperationalReports()
     return () => controller.abort()
   }, [activeModule])
+
+  useEffect(() => {
+    if (activeModule !== 'reports') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function loadProcedureReportReviewQueue() {
+      setProcedureReportReviewQueueStatus('loading')
+      setProcedureReportReviewQueueError(null)
+
+      try {
+        const result = await getProcedureReportReviewQueue(procedureReportReviewQueueFilter, controller.signal)
+        setProcedureReportReviewQueue(result)
+        setProcedureReportReviewQueueStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setProcedureReportReviewQueueStatus('error')
+          setProcedureReportReviewQueueError(
+            loadError instanceof Error ? loadError.message : 'Procedure report review queue failed',
+          )
+        }
+      }
+    }
+
+    loadProcedureReportReviewQueue()
+    return () => controller.abort()
+  }, [activeModule, procedureReportReviewQueueFilter])
 
   const selectedFromList = useMemo(
     () => searchResult?.patients.find((patient) => patient.canonicalId === selectedPatientId) ?? null,
@@ -3016,6 +3053,11 @@ function App() {
             reports={operationalReports}
             status={reportsStatus}
             error={reportsError}
+            reviewQueue={procedureReportReviewQueue}
+            reviewQueueStatus={procedureReportReviewQueueStatus}
+            reviewQueueError={procedureReportReviewQueueError}
+            reviewQueueFilter={procedureReportReviewQueueFilter}
+            onReviewQueueFilterChange={setProcedureReportReviewQueueFilter}
           />
         )}
         {activeModule === 'admin' && (
@@ -10742,10 +10784,20 @@ function ReportsWorkspace({
   reports,
   status,
   error,
+  reviewQueue,
+  reviewQueueStatus,
+  reviewQueueError,
+  reviewQueueFilter,
+  onReviewQueueFilterChange,
 }: {
   reports: OperationalReportsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  reviewQueue: ProcedureReportReviewQueueResponse | null
+  reviewQueueStatus: 'idle' | 'loading' | 'ready' | 'error'
+  reviewQueueError: string | null
+  reviewQueueFilter: string
+  onReviewQueueFilterChange: (filter: string) => void
 }) {
   return (
     <section className="scheduler-layout">
@@ -10842,6 +10894,14 @@ function ReportsWorkspace({
               </section>
             </div>
 
+            <ProcedureReportReviewQueuePanel
+              queue={reviewQueue}
+              status={reviewQueueStatus}
+              error={reviewQueueError}
+              activeFilter={reviewQueueFilter}
+              onFilterChange={onReviewQueueFilterChange}
+            />
+
             <section className="info-panel report-conditions-panel">
               <div className="panel-heading">
                 <HeartPulse size={17} />
@@ -10860,6 +10920,90 @@ function ReportsWorkspace({
           <div className="empty-chart">Open Reports to load the operational report dashboard</div>
         )}
       </section>
+    </section>
+  )
+}
+
+const procedureReportReviewQueueFilters = [
+  { id: 'unreviewed', label: 'Received, unreviewed' },
+  { id: 'reviewed', label: 'Reviewed' },
+  { id: 'all', label: 'All' },
+]
+
+function ProcedureReportReviewQueuePanel({
+  queue,
+  status,
+  error,
+  activeFilter,
+  onFilterChange,
+}: {
+  queue: ProcedureReportReviewQueueResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  activeFilter: string
+  onFilterChange: (filter: string) => void
+}) {
+  const reports = queue?.reports ?? []
+
+  return (
+    <section className="info-panel report-review-queue-panel" aria-label="Procedure report review queue">
+      <div className="panel-heading">
+        <FileCheck2 size={17} />
+        <h3>Procedure Report Review Queue</h3>
+      </div>
+
+      <div className="report-review-queue-toolbar">
+        <div className="segmented-control" aria-label="Procedure report review queue filter">
+          {procedureReportReviewQueueFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={filter.id === activeFilter ? 'active' : ''}
+              aria-pressed={filter.id === activeFilter}
+              onClick={() => onFilterChange(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="review-queue-metrics" aria-label="Procedure report review queue counts">
+          <span>{queue?.unreviewedReports ?? 0} unreviewed</span>
+          <span>{queue?.reviewedReports ?? 0} reviewed</span>
+          <span>{queue?.totalReports ?? 0} total</span>
+        </div>
+      </div>
+
+      {status === 'error' && <div className="status-banner error">{error}</div>}
+
+      <div className="review-queue-list">
+        {reports.map((report) => (
+          <article key={report.reportId} className="review-queue-card">
+            <div className="review-queue-card-main">
+              <div>
+                <p className="eyebrow">Report #{report.reportId}</p>
+                <h4>{report.procedureName || 'Unnamed procedure'}</h4>
+                <p>
+                  {report.patientDisplayName} / {report.pubpid} / Order #{report.orderId}
+                </p>
+              </div>
+              <span className="status-pill">{report.reviewStatus || 'received'}</span>
+            </div>
+            <div className="review-queue-card-grid">
+              <Field label="Order date" value={report.orderDate} />
+              <Field label="Report date" value={report.reportDate} />
+              <Field label="Code" value={report.procedureCode} />
+              <Field label="Report status" value={report.reportStatus} />
+              <Field label="Specimen" value={report.specimenNumber} />
+              <Field label="Provider" value={report.providerName} />
+              <Field label="Reviewed by" value={report.reviewedBy || 'Not reviewed'} />
+              <Field label="Reviewed at" value={report.reviewedAt || 'No review time'} />
+            </div>
+            {report.notes && <p className="review-queue-notes">{report.notes}</p>}
+          </article>
+        ))}
+        {status === 'loading' && <div className="timeline-placeholder">Loading procedure report review queue</div>}
+        {status !== 'loading' && reports.length === 0 && <div className="timeline-placeholder">No matching reports</div>}
+      </div>
     </section>
   )
 }

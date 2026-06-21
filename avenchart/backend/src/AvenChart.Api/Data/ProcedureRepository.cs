@@ -7,6 +7,8 @@ namespace AvenChart.Api.Data;
 
 public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 {
+    private const int MaximumReviewQueueLimit = 100;
+
     public async Task<ProcedureResultsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -53,6 +55,107 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             LastName: patient.LastName,
             Counts: BuildCounts(procedureOrders, metadata.BaseDate),
             Orders: procedureOrders);
+    }
+
+    public async Task<ProcedureReportReviewQueueResponse> GetReportReviewQueueAsync(
+        string? status,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var normalizedStatus = NormalizeReviewQueueStatus(status);
+        var safeLimit = Math.Clamp(limit, 1, MaximumReviewQueueLimit);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        int totalReports;
+        int reviewedReports;
+        int unreviewedReports;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = """
+                select
+                    count(*) as total_reports,
+                    coalesce(sum(case when coalesce(review_status, '') = 'reviewed' then 1 else 0 end), 0) as reviewed_reports,
+                    coalesce(sum(case when coalesce(review_status, '') <> 'reviewed' then 1 else 0 end), 0) as unreviewed_reports
+                from lab_reports;
+                """;
+
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            totalReports = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("total_reports")));
+            reviewedReports = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("reviewed_reports")));
+            unreviewedReports = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("unreviewed_reports")));
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                lr.id as report_id,
+                lo.id as order_id,
+                p.canonical_id as patient_id,
+                p.legacy_pid,
+                p.pubpid,
+                trim(concat(p.last_name, ', ', p.first_name)) as patient_display_name,
+                lo.order_date,
+                nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                lo.code as procedure_code,
+                lo.name as procedure_name,
+                lr.report_date,
+                lr.status as report_status,
+                coalesce(lr.review_status, '') as review_status,
+                lr.reviewed_by,
+                lr.reviewed_at,
+                lr.specimen_number,
+                lr.notes
+            from lab_reports lr
+            inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients p on p.legacy_pid = lo.pid
+            left join staff s on s.id = lo.provider_id
+            where (@statusFilter = 'all')
+               or (@statusFilter = 'reviewed' and coalesce(lr.review_status, '') = 'reviewed')
+               or (@statusFilter = 'unreviewed' and coalesce(lr.review_status, '') <> 'reviewed')
+            order by lr.report_date desc, lr.id desc, p.last_name, p.first_name, p.legacy_pid, lo.id
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("statusFilter", normalizedStatus);
+        command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = safeLimit;
+
+        var reports = new List<ProcedureReportReviewQueueItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                reports.Add(new ProcedureReportReviewQueueItem(
+                    ReportId: reader.GetInt32(reader.GetOrdinal("report_id")),
+                    OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                    Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                    PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                    OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
+                    ProviderName: ReadNullableString(reader, "provider_name"),
+                    ProcedureCode: ReadNullableString(reader, "procedure_code"),
+                    ProcedureName: ReadNullableString(reader, "procedure_name"),
+                    ReportDate: reader.GetDateTime(reader.GetOrdinal("report_date")).ToString("yyyy-MM-dd HH:mm"),
+                    ReportStatus: ReadNullableString(reader, "report_status"),
+                    ReviewStatus: ReadNullableString(reader, "review_status"),
+                    ReviewedBy: ReadNullableString(reader, "reviewed_by"),
+                    ReviewedAt: ReadNullableDateTime(reader, "reviewed_at"),
+                    SpecimenNumber: ReadNullableString(reader, "specimen_number"),
+                    Notes: ReadNullableString(reader, "notes")));
+            }
+        }
+
+        return new ProcedureReportReviewQueueResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            StatusFilter: normalizedStatus,
+            Limit: safeLimit,
+            TotalReports: totalReports,
+            ReviewedReports: reviewedReports,
+            UnreviewedReports: unreviewedReports,
+            Reports: reports);
     }
 
     public async Task<ProcedureMutationResponse?> CreateOrderAsync(
@@ -931,6 +1034,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeReviewQueueStatus(string? status)
+    {
+        var normalized = NormalizeText(status)?.ToLowerInvariant();
+        return normalized switch
+        {
+            "all" => "all",
+            "reviewed" => "reviewed",
+            "received" or "received-unreviewed" or "pending" or "unreviewed" => "unreviewed",
+            _ => "unreviewed"
+        };
     }
 
     private static ProcedureOrderCounts BuildCounts(IReadOnlyList<ProcedureOrderItem> orders, DateOnly baseDate)

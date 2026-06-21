@@ -1163,6 +1163,17 @@ documents.MapDelete("/{documentId:int}", async (
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 
+procedures.MapGet("/report-review-queue", async (
+        ProcedureRepository repository,
+        string? status,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var queue = await repository.GetReportReviewQueueAsync(status, limit ?? 25, cancellationToken);
+        return Results.Ok(queue);
+    })
+    .WithName("GetProcedureReportReviewQueue");
+
 procedures.MapGet("/{patientId}", async (
         ProcedureRepository repository,
         string patientId,
