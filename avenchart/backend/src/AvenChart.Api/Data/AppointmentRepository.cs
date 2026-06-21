@@ -77,7 +77,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             expandedAppointments.AddRange(ExpandAppointmentListItem(ReadListItem(reader), fromDate));
         }
 
-        var appointments = AnnotateProviderOverlaps(expandedAppointments)
+        var appointments = AnnotateAppointmentOverlaps(expandedAppointments)
             .OrderBy(appointment => DateOnly.Parse(appointment.Date))
             .ThenBy(appointment => TimeOnly.Parse(appointment.StartTime))
             .ThenBy(appointment => appointment.SeriesRootId)
@@ -240,13 +240,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, repeatOnNum, repeatOnDay, repeatOnFrequency, recurrenceDays, recurrenceEndDate),
             PatientPurpose: ReadNullableString(reader, "purpose"),
             ProviderOverlapCount: 0,
-            ProviderOverlapAppointmentIds: Array.Empty<string>());
+            ProviderOverlapAppointmentIds: Array.Empty<string>(),
+            PatientOverlapCount: 0,
+            PatientOverlapAppointmentIds: Array.Empty<string>());
 
-        var overlapSummary = await GetProviderOverlapSummaryAsync(detail, cancellationToken);
+        var providerOverlapSummary = await GetProviderOverlapSummaryAsync(detail, cancellationToken);
+        var patientOverlapSummary = await GetPatientOverlapSummaryAsync(detail, cancellationToken);
         return detail with
         {
-            ProviderOverlapCount = overlapSummary.Count,
-            ProviderOverlapAppointmentIds = overlapSummary.AppointmentIds
+            ProviderOverlapCount = providerOverlapSummary.Count,
+            ProviderOverlapAppointmentIds = providerOverlapSummary.AppointmentIds,
+            PatientOverlapCount = patientOverlapSummary.Count,
+            PatientOverlapAppointmentIds = patientOverlapSummary.AppointmentIds
         };
     }
 
@@ -941,7 +946,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             RecurrenceExceptionCount: recurrenceExdates.Count,
             RecurrenceLabel: BuildRecurrenceLabel(recurrenceType, repeatFrequency, repeatUnit, repeatOnNum, repeatOnDay, repeatOnFrequency, recurrenceDays, recurrenceEndDate),
             ProviderOverlapCount: 0,
-            ProviderOverlapAppointmentIds: Array.Empty<string>());
+            ProviderOverlapAppointmentIds: Array.Empty<string>(),
+            PatientOverlapCount: 0,
+            PatientOverlapAppointmentIds: Array.Empty<string>());
     }
 
     private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate)
@@ -1085,16 +1092,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
     }
 
-    private static IReadOnlyList<AppointmentListItem> AnnotateProviderOverlaps(IReadOnlyList<AppointmentListItem> appointments)
+    private static IReadOnlyList<AppointmentListItem> AnnotateAppointmentOverlaps(IReadOnlyList<AppointmentListItem> appointments)
     {
         return appointments
             .Select(appointment =>
             {
-                var overlapIds = GetProviderOverlapIds(appointment, appointments);
+                var providerOverlapIds = GetProviderOverlapIds(appointment, appointments);
+                var patientOverlapIds = GetPatientOverlapIds(appointment, appointments);
                 return appointment with
                 {
-                    ProviderOverlapCount = overlapIds.Count,
-                    ProviderOverlapAppointmentIds = overlapIds
+                    ProviderOverlapCount = providerOverlapIds.Count,
+                    ProviderOverlapAppointmentIds = providerOverlapIds,
+                    PatientOverlapCount = patientOverlapIds.Count,
+                    PatientOverlapAppointmentIds = patientOverlapIds
                 };
             })
             .ToList();
@@ -1117,6 +1127,38 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return appointments
             .Where(candidate => candidate.Id != appointment.Id
                 && candidate.ProviderId == appointment.ProviderId
+                && IsActiveAppointmentStatus(candidate.Status)
+                && DateOnly.TryParse(candidate.Date, out var candidateDate)
+                && candidateDate == appointmentDate
+                && TimeOnly.TryParse(candidate.StartTime, out var candidateStart)
+                && candidate.DurationMinutes > 0
+                && TimeWindowsOverlap(
+                    appointmentStart,
+                    appointmentEnd,
+                    candidateStart,
+                    candidateStart.AddMinutes(candidate.DurationMinutes)))
+            .OrderBy(candidate => candidate.StartTime)
+            .ThenBy(candidate => candidate.Id)
+            .Select(candidate => candidate.Id)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> GetPatientOverlapIds(
+        AppointmentListItem appointment,
+        IReadOnlyList<AppointmentListItem> appointments)
+    {
+        if (!DateOnly.TryParse(appointment.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(appointment.StartTime, out var appointmentStart)
+            || appointment.DurationMinutes <= 0
+            || !IsActiveAppointmentStatus(appointment.Status))
+        {
+            return Array.Empty<string>();
+        }
+
+        var appointmentEnd = appointmentStart.AddMinutes(appointment.DurationMinutes);
+        return appointments
+            .Where(candidate => candidate.Id != appointment.Id
+                && candidate.LegacyPid == appointment.LegacyPid
                 && IsActiveAppointmentStatus(candidate.Status)
                 && DateOnly.TryParse(candidate.Date, out var candidateDate)
                 && candidateDate == appointmentDate
@@ -1174,6 +1216,48 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         return new ProviderOverlapSummary(overlapIds.Count, overlapIds);
+    }
+
+    private async Task<AppointmentOverlapSummary> GetPatientOverlapSummaryAsync(
+        AppointmentDetail appointment,
+        CancellationToken cancellationToken)
+    {
+        if (!DateOnly.TryParse(appointment.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(appointment.StartTime, out var appointmentStart)
+            || appointment.DurationMinutes <= 0
+            || !IsActiveAppointmentStatus(appointment.Status))
+        {
+            return new AppointmentOverlapSummary(0, Array.Empty<string>());
+        }
+
+        var appointmentEnd = appointmentStart.AddMinutes(appointment.DurationMinutes);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id
+            from appointments
+            where pid = @patientPid
+              and appointment_date = @appointmentDate
+              and id <> @appointmentId
+              and coalesce(status, '-') <> 'x'
+              and start_time < @appointmentEnd
+              and (start_time + make_interval(mins => duration_minutes))::time > @appointmentStart
+            order by start_time, id;
+            """;
+        command.Parameters.Add("patientPid", NpgsqlDbType.Integer).Value = appointment.LegacyPid;
+        command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
+        command.Parameters.AddWithValue("appointmentId", appointment.SeriesRootId);
+        command.Parameters.Add("appointmentStart", NpgsqlDbType.Time).Value = appointmentStart;
+        command.Parameters.Add("appointmentEnd", NpgsqlDbType.Time).Value = appointmentEnd;
+
+        var overlapIds = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            overlapIds.Add(reader.GetString(reader.GetOrdinal("id")));
+        }
+
+        return new AppointmentOverlapSummary(overlapIds.Count, overlapIds);
     }
 
     private static bool TimeWindowsOverlap(
@@ -1712,6 +1796,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private sealed record AppointmentOccurrenceReference(string RootAppointmentId, DateOnly? OccurrenceDate);
 
     private sealed record ProviderOverlapSummary(int Count, IReadOnlyList<string> AppointmentIds);
+
+    private sealed record AppointmentOverlapSummary(int Count, IReadOnlyList<string> AppointmentIds);
 
     private sealed record AppointmentRescheduleSource(
         string PatientId,

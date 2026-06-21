@@ -3790,15 +3790,25 @@ function appointmentSkippedDatesDetail(
 function appointmentProviderOverlapDetail(
   appointment: Pick<AppointmentListItem, 'providerOverlapCount' | 'providerOverlapAppointmentIds'>,
 ) {
-  if (appointment.providerOverlapCount <= 0) {
+  return appointmentOverlapDetail(appointment.providerOverlapCount, appointment.providerOverlapAppointmentIds)
+}
+
+function appointmentPatientOverlapDetail(
+  appointment: Pick<AppointmentListItem, 'patientOverlapCount' | 'patientOverlapAppointmentIds'>,
+) {
+  return appointmentOverlapDetail(appointment.patientOverlapCount, appointment.patientOverlapAppointmentIds)
+}
+
+function appointmentOverlapDetail(count: number, appointmentIds: string[]) {
+  if (count <= 0) {
     return 'None'
   }
 
-  const suffix = appointment.providerOverlapCount === 1 ? 'appointment' : 'appointments'
-  const ids = appointment.providerOverlapAppointmentIds.length > 0
-    ? ` (${appointment.providerOverlapAppointmentIds.join(', ')})`
+  const suffix = count === 1 ? 'appointment' : 'appointments'
+  const ids = appointmentIds.length > 0
+    ? ` (${appointmentIds.join(', ')})`
     : ''
-  return `${appointment.providerOverlapCount} overlapping ${suffix}${ids}`
+  return `${count} overlapping ${suffix}${ids}`
 }
 
 function careLocationDetail(name: string | null | undefined, id: number | null | undefined) {
@@ -4756,6 +4766,7 @@ function CalendarWorkspace({
               <InfoPanel title="Care Location" icon={MapPin}>
                 <Field label="Provider" value={careLocationDetail(appointmentDetail.providerName, appointmentDetail.providerId)} />
                 <Field label="Provider overlaps" value={appointmentProviderOverlapDetail(appointmentDetail)} />
+                <Field label="Patient overlaps" value={appointmentPatientOverlapDetail(appointmentDetail)} />
                 <Field label="Facility" value={careLocationDetail(appointmentDetail.facilityName, appointmentDetail.facilityId)} />
                 <Field label="Billing facility" value={careLocationDetail(appointmentDetail.billingLocationName, appointmentDetail.billingLocationId)} />
                 <Field label="Category" value={appointmentCategoryDetail(appointmentDetail)} />
@@ -11480,6 +11491,7 @@ function AppointmentResult({
         <span>{appointment.providerName ?? 'Provider not recorded'}</span>
         <span>{appointment.facilityName ?? 'Facility not recorded'}</span>
         {appointment.providerOverlapCount > 0 && <span>{appointment.providerOverlapCount} provider overlap</span>}
+        {appointment.patientOverlapCount > 0 && <span>{appointment.patientOverlapCount} patient overlap</span>}
       </div>
     </button>
   )

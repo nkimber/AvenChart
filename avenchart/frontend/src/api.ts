@@ -155,6 +155,8 @@ export type AppointmentListItem = {
   recurrenceLabel: string
   providerOverlapCount: number
   providerOverlapAppointmentIds: string[]
+  patientOverlapCount: number
+  patientOverlapAppointmentIds: string[]
 }
 
 export type AppointmentDetail = AppointmentListItem & {
