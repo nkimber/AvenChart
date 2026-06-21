@@ -230,6 +230,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                 lp.name,
                 lp.npi,
                 coalesce(nullif(trim(lp.protocol), ''), 'DL') as protocol,
+                coalesce(nullif(trim(lp.usage), ''), 'D') as usage,
+                coalesce(nullif(trim(lp.direction), ''), 'B') as direction,
+                lp.send_app_id,
+                lp.send_fac_id,
+                lp.recv_app_id,
+                lp.recv_fac_id,
+                lp.remote_host,
+                lp.login,
+                lp.password,
+                lp.orders_path,
+                lp.results_path,
+                lp.notes,
                 lp.active,
                 count(distinct lo.id)::int as order_count,
                 count(distinct lr.id)::int as report_count,
@@ -238,7 +250,9 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             left join lab_orders lo on lo.lab_id = lp.id
             left join lab_reports lr on lr.order_id = lo.id
             where (@includeInactive or lp.active)
-            group by lp.id, lp.name, lp.npi, lp.protocol, lp.active
+            group by lp.id, lp.name, lp.npi, lp.protocol, lp.usage, lp.direction, lp.send_app_id, lp.send_fac_id,
+                lp.recv_app_id, lp.recv_fac_id, lp.remote_host, lp.login, lp.password, lp.orders_path, lp.results_path,
+                lp.notes, lp.active
             order by lp.name, lp.id;
             """;
         command.Parameters.Add("includeInactive", NpgsqlDbType.Boolean).Value = includeInactive;
@@ -254,6 +268,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
                     Name: reader.GetString(reader.GetOrdinal("name")),
                     Npi: ReadNullableString(reader, "npi"),
                     Protocol: ReadNullableString(reader, "protocol"),
+                    Usage: ReadNullableString(reader, "usage"),
+                    Direction: ReadNullableString(reader, "direction"),
+                    SendApplicationId: ReadNullableString(reader, "send_app_id"),
+                    SendFacilityId: ReadNullableString(reader, "send_fac_id"),
+                    ReceiveApplicationId: ReadNullableString(reader, "recv_app_id"),
+                    ReceiveFacilityId: ReadNullableString(reader, "recv_fac_id"),
+                    RemoteHost: ReadNullableString(reader, "remote_host"),
+                    Login: ReadNullableString(reader, "login"),
+                    Password: ReadNullableString(reader, "password"),
+                    OrdersPath: ReadNullableString(reader, "orders_path"),
+                    ResultsPath: ReadNullableString(reader, "results_path"),
+                    Notes: ReadNullableString(reader, "notes"),
                     Active: reader.GetBoolean(reader.GetOrdinal("active")),
                     OrderCount: reader.GetInt32(reader.GetOrdinal("order_count")),
                     ReportCount: reader.GetInt32(reader.GetOrdinal("report_count")),
@@ -286,13 +312,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            insert into lab_providers (id, name, npi, protocol, active)
-            values (@id, @name, @npi, @protocol, @active);
+            insert into lab_providers
+                (id, name, npi, protocol, usage, direction, send_app_id, send_fac_id, recv_app_id, recv_fac_id,
+                 remote_host, login, password, orders_path, results_path, notes, active)
+            values
+                (@id, @name, @npi, @protocol, @usage, @direction, @sendAppId, @sendFacId, @recvAppId, @recvFacId,
+                 @remoteHost, @login, @password, @ordersPath, @resultsPath, @notes, @active);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("name", name);
         command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
         command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
+        AddLabProviderConfigurationParameters(command, request);
         command.Parameters.AddWithValue("active", request.Active);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -319,6 +350,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
             set name = @name,
                 npi = @npi,
                 protocol = @protocol,
+                usage = @usage,
+                direction = @direction,
+                send_app_id = @sendAppId,
+                send_fac_id = @sendFacId,
+                recv_app_id = @recvAppId,
+                recv_fac_id = @recvFacId,
+                remote_host = @remoteHost,
+                login = @login,
+                password = @password,
+                orders_path = @ordersPath,
+                results_path = @resultsPath,
+                notes = @notes,
                 active = @active
             where id = @id;
             """;
@@ -326,6 +369,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("name", name);
         command.Parameters.Add("npi", NpgsqlDbType.Text).Value = NormalizeText(request.Npi) is { } npi ? npi : DBNull.Value;
         command.Parameters.AddWithValue("protocol", NormalizeLabProviderProtocol(request.Protocol));
+        AddLabProviderConfigurationParameters(command, request);
         command.Parameters.AddWithValue("active", request.Active);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1245,6 +1289,40 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private static string NormalizeLabProviderProtocol(string? protocol)
     {
         return NormalizeText(protocol)?.ToUpperInvariant() ?? "DL";
+    }
+
+    private static string NormalizeLabProviderUsage(string? usage)
+    {
+        return NormalizeText(usage)?.ToUpperInvariant() switch
+        {
+            "P" => "P",
+            "T" => "T",
+            "Q" => "Q",
+            _ => "D"
+        };
+    }
+
+    private static string NormalizeLabProviderDirection(string? direction)
+    {
+        return NormalizeText(direction)?.ToUpperInvariant() == "R" ? "R" : "B";
+    }
+
+    private static void AddLabProviderConfigurationParameters(
+        NpgsqlCommand command,
+        ProcedureLabProviderMutationRequest request)
+    {
+        command.Parameters.AddWithValue("usage", NormalizeLabProviderUsage(request.Usage));
+        command.Parameters.AddWithValue("direction", NormalizeLabProviderDirection(request.Direction));
+        command.Parameters.AddWithValue("sendAppId", NormalizeText(request.SendApplicationId) ?? string.Empty);
+        command.Parameters.AddWithValue("sendFacId", NormalizeText(request.SendFacilityId) ?? string.Empty);
+        command.Parameters.AddWithValue("recvAppId", NormalizeText(request.ReceiveApplicationId) ?? string.Empty);
+        command.Parameters.AddWithValue("recvFacId", NormalizeText(request.ReceiveFacilityId) ?? string.Empty);
+        command.Parameters.AddWithValue("remoteHost", NormalizeText(request.RemoteHost) ?? string.Empty);
+        command.Parameters.AddWithValue("login", NormalizeText(request.Login) ?? string.Empty);
+        command.Parameters.AddWithValue("password", NormalizeText(request.Password) ?? string.Empty);
+        command.Parameters.AddWithValue("ordersPath", NormalizeText(request.OrdersPath) ?? string.Empty);
+        command.Parameters.AddWithValue("resultsPath", NormalizeText(request.ResultsPath) ?? string.Empty);
+        command.Parameters.Add("notes", NpgsqlDbType.Text).Value = NormalizeText(request.Notes) is { } notes ? notes : DBNull.Value;
     }
 
     private static string NormalizeReviewQueueStatus(string? status)

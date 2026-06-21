@@ -952,6 +952,18 @@ export type ProcedureLabProviderItem = {
   name: string
   npi?: string | null
   protocol?: string | null
+  usage?: string | null
+  direction?: string | null
+  sendApplicationId?: string | null
+  sendFacilityId?: string | null
+  receiveApplicationId?: string | null
+  receiveFacilityId?: string | null
+  remoteHost?: string | null
+  login?: string | null
+  password?: string | null
+  ordersPath?: string | null
+  resultsPath?: string | null
+  notes?: string | null
   active: boolean
   orderCount: number
   reportCount: number
@@ -972,6 +984,18 @@ export type ProcedureLabProviderMutationInput = {
   name: string
   npi?: string | null
   protocol?: string | null
+  usage?: string | null
+  direction?: string | null
+  sendApplicationId?: string | null
+  sendFacilityId?: string | null
+  receiveApplicationId?: string | null
+  receiveFacilityId?: string | null
+  remoteHost?: string | null
+  login?: string | null
+  password?: string | null
+  ordersPath?: string | null
+  resultsPath?: string | null
+  notes?: string | null
   active: boolean
 }
 

@@ -11147,9 +11147,21 @@ function ProcedureLabProvidersPanel({
 }) {
   const providers = directory?.providers ?? []
   const [providerDraft, setProviderDraft] = useState<ProcedureLabProviderMutationInput>({
-    name: 'Slice 141 Temporary Lab',
+    name: 'Slice 142 Temporary Lab',
     npi: '1720123499',
     protocol: 'DL',
+    usage: 'D',
+    direction: 'B',
+    sendApplicationId: '',
+    sendFacilityId: '',
+    receiveApplicationId: '',
+    receiveFacilityId: '',
+    remoteHost: '',
+    login: '',
+    password: '',
+    ordersPath: '',
+    resultsPath: '',
+    notes: '',
     active: true,
   })
   const [pendingProviderId, setPendingProviderId] = useState<number | 'new' | null>(null)
@@ -11161,9 +11173,21 @@ function ProcedureLabProvidersPanel({
     try {
       await onCreateProvider(providerDraft)
       setProviderDraft({
-        name: 'Slice 141 Temporary Lab',
+        name: 'Slice 142 Temporary Lab',
         npi: '1720123499',
         protocol: 'DL',
+        usage: 'D',
+        direction: 'B',
+        sendApplicationId: '',
+        sendFacilityId: '',
+        receiveApplicationId: '',
+        receiveFacilityId: '',
+        remoteHost: '',
+        login: '',
+        password: '',
+        ordersPath: '',
+        resultsPath: '',
+        notes: '',
         active: true,
       })
     } finally {
@@ -11175,9 +11199,7 @@ function ProcedureLabProvidersPanel({
     setPendingProviderId(provider.id)
     try {
       await onUpdateProvider(provider, {
-        name: provider.name,
-        npi: provider.npi,
-        protocol: provider.protocol ?? 'DL',
+        ...labProviderMutationFromProvider(provider),
         active: !provider.active,
       })
     } finally {
@@ -11238,10 +11260,16 @@ function ProcedureLabProvidersPanel({
           </label>
           <label className="contact-field">
             Protocol
-            <input
+            <select
               value={providerDraft.protocol ?? 'DL'}
               onChange={(event) => setProviderDraft((current) => ({ ...current, protocol: event.target.value }))}
-            />
+            >
+              <option value="DL">Download</option>
+              <option value="SFTP">SFTP</option>
+              <option value="FS">Local Filesystem</option>
+              <option value="WS">Web Service</option>
+              <option value="DORN">Dorn</option>
+            </select>
           </label>
           <label className="checkbox-row">
             <input
@@ -11250,6 +11278,105 @@ function ProcedureLabProvidersPanel({
               onChange={(event) => setProviderDraft((current) => ({ ...current, active: event.target.checked }))}
             />
             Active
+          </label>
+        </div>
+        <div className="mutation-grid two-column">
+          <label className="contact-field">
+            Usage
+            <select
+              value={providerDraft.usage ?? 'D'}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, usage: event.target.value }))}
+            >
+              <option value="D">Debugging</option>
+              <option value="P">Production</option>
+              <option value="T">Quest Cert Testing</option>
+              <option value="Q">Quest Cert Debug</option>
+            </select>
+          </label>
+          <label className="contact-field">
+            Direction
+            <select
+              value={providerDraft.direction ?? 'B'}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, direction: event.target.value }))}
+            >
+              <option value="B">Bidirectional</option>
+              <option value="R">Results Only</option>
+            </select>
+          </label>
+          <label className="contact-field">
+            Sender application
+            <input
+              value={providerDraft.sendApplicationId ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, sendApplicationId: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Sender facility
+            <input
+              value={providerDraft.sendFacilityId ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, sendFacilityId: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Receiver application
+            <input
+              value={providerDraft.receiveApplicationId ?? ''}
+              onChange={(event) =>
+                setProviderDraft((current) => ({ ...current, receiveApplicationId: event.target.value }))
+              }
+            />
+          </label>
+          <label className="contact-field">
+            Receiver facility
+            <input
+              value={providerDraft.receiveFacilityId ?? ''}
+              onChange={(event) =>
+                setProviderDraft((current) => ({ ...current, receiveFacilityId: event.target.value }))
+              }
+            />
+          </label>
+          <label className="contact-field">
+            Remote host
+            <input
+              value={providerDraft.remoteHost ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, remoteHost: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Login
+            <input
+              value={providerDraft.login ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, login: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Password
+            <input
+              type="password"
+              value={providerDraft.password ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, password: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Orders path
+            <input
+              value={providerDraft.ordersPath ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, ordersPath: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Results path
+            <input
+              value={providerDraft.resultsPath ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, resultsPath: event.target.value }))}
+            />
+          </label>
+          <label className="contact-field">
+            Notes
+            <input
+              value={providerDraft.notes ?? ''}
+              onChange={(event) => setProviderDraft((current) => ({ ...current, notes: event.target.value }))}
+            />
           </label>
         </div>
         <div className="detail-actions">
@@ -11293,10 +11420,23 @@ function ProcedureLabProvidersPanel({
             </div>
             <div className="review-queue-card-grid">
               <Field label="Protocol" value={provider.protocol} />
+              <Field label="Usage" value={formatLabProviderUsage(provider.usage)} />
+              <Field label="Direction" value={formatLabProviderDirection(provider.direction)} />
+              <Field label="Sender" value={formatLabProviderPair(provider.sendApplicationId, provider.sendFacilityId)} />
+              <Field
+                label="Receiver"
+                value={formatLabProviderPair(provider.receiveApplicationId, provider.receiveFacilityId)}
+              />
+              <Field label="Remote host" value={provider.remoteHost || 'Not set' } />
+              <Field label="Login" value={provider.login || 'Not set' } />
+              <Field label="Password" value={provider.password ? 'Stored' : 'Not set'} />
+              <Field label="Orders path" value={provider.ordersPath || 'Not set' } />
+              <Field label="Results path" value={provider.resultsPath || 'Not set' } />
               <Field label="Orders" value={provider.orderCount} />
               <Field label="Reports" value={provider.reportCount} />
               <Field label="Future orders" value={provider.futureOrderCount} />
             </div>
+            {provider.notes && <p className="review-queue-notes">{provider.notes}</p>}
           </article>
         ))}
         {status === 'loading' && <div className="timeline-placeholder">Loading procedure lab providers</div>}
@@ -11304,6 +11444,49 @@ function ProcedureLabProvidersPanel({
       </div>
     </section>
   )
+}
+
+function labProviderMutationFromProvider(provider: ProcedureLabProviderItem): ProcedureLabProviderMutationInput {
+  return {
+    name: provider.name,
+    npi: provider.npi,
+    protocol: provider.protocol ?? 'DL',
+    usage: provider.usage ?? 'D',
+    direction: provider.direction ?? 'B',
+    sendApplicationId: provider.sendApplicationId,
+    sendFacilityId: provider.sendFacilityId,
+    receiveApplicationId: provider.receiveApplicationId,
+    receiveFacilityId: provider.receiveFacilityId,
+    remoteHost: provider.remoteHost,
+    login: provider.login,
+    password: provider.password,
+    ordersPath: provider.ordersPath,
+    resultsPath: provider.resultsPath,
+    notes: provider.notes,
+    active: provider.active,
+  }
+}
+
+function formatLabProviderUsage(usage?: string | null) {
+  switch ((usage ?? 'D').toUpperCase()) {
+    case 'P':
+      return 'Production'
+    case 'T':
+      return 'Quest Cert Testing'
+    case 'Q':
+      return 'Quest Cert Debug'
+    default:
+      return 'Debugging'
+  }
+}
+
+function formatLabProviderDirection(direction?: string | null) {
+  return (direction ?? 'B').toUpperCase() === 'R' ? 'Results Only' : 'Bidirectional'
+}
+
+function formatLabProviderPair(first?: string | null, second?: string | null) {
+  const parts = [first, second].filter((part): part is string => Boolean(part))
+  return parts.length > 0 ? parts.join(' / ') : 'Not set'
 }
 
 const procedureReportReviewQueueFilters = [

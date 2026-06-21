@@ -20,6 +20,8 @@ const outputPath = path.join(outputDir, 'seed-gold.sql')
 const dataset = JSON.parse(fs.readFileSync(datasetPath, 'utf8'))
 fs.mkdirSync(outputDir, { recursive: true })
 
+const copyEmptyString = Symbol('copy-empty-string')
+
 const accessGroups = [
   [10, 'users', 'Legacy EHR Users', null],
   [11, 'admin', 'Administrators', 10],
@@ -600,6 +602,18 @@ create table lab_providers (
   name text not null,
   npi text,
   protocol text not null default 'DL',
+  usage text not null default 'D',
+  direction text not null default 'B',
+  send_app_id text not null default '',
+  send_fac_id text not null default '',
+  recv_app_id text not null default '',
+  recv_fac_id text not null default '',
+  remote_host text not null default '',
+  login text not null default '',
+  password text not null default '',
+  orders_path text not null default '',
+  results_path text not null default '',
+  notes text,
   active boolean not null default true
 );
 
@@ -1275,12 +1289,36 @@ copyRows('lab_providers', [
   'name',
   'npi',
   'protocol',
+  'usage',
+  'direction',
+  'send_app_id',
+  'send_fac_id',
+  'recv_app_id',
+  'recv_fac_id',
+  'remote_host',
+  'login',
+  'password',
+  'orders_path',
+  'results_path',
+  'notes',
   'active',
 ], (dataset.labProviders ?? []).map((provider) => [
   provider.id,
   provider.name,
   provider.npi ?? null,
   provider.protocol ?? 'DL',
+  provider.usage ?? 'D',
+  provider.direction ?? 'B',
+  postgresTextDefault(provider.sendApplicationId),
+  postgresTextDefault(provider.sendFacilityId),
+  postgresTextDefault(provider.receiveApplicationId),
+  postgresTextDefault(provider.receiveFacilityId),
+  postgresTextDefault(provider.remoteHost),
+  postgresTextDefault(provider.login),
+  postgresTextDefault(provider.password),
+  postgresTextDefault(provider.ordersPath),
+  postgresTextDefault(provider.resultsPath),
+  provider.notes ?? null,
   provider.active ?? true,
 ]))
 
@@ -1557,6 +1595,10 @@ function copyRows(table, columns, rows) {
 }
 
 function copyValue(value) {
+  if (value === copyEmptyString) {
+    return ''
+  }
+
   if (value === null || value === undefined || value === '') {
     return '\\N'
   }
@@ -1570,4 +1612,8 @@ function copyValue(value) {
     .replaceAll('\t', '\\t')
     .replaceAll('\r', '\\r')
     .replaceAll('\n', '\\n')
+}
+
+function postgresTextDefault(value) {
+  return value === null || value === undefined || value === '' ? copyEmptyString : value
 }
