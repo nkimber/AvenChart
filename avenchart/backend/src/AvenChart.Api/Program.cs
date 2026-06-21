@@ -225,6 +225,20 @@ appointments.MapPost("/{appointmentId}/recurrence-exceptions/{occurrenceDate}/re
     })
     .WithName("RestoreAppointmentOccurrence");
 
+appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        string occurrenceDate,
+        AppointmentOccurrenceRescheduleRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var appointment = await repository.RescheduleOccurrenceAsync(appointmentId, occurrenceDate, request, cancellationToken);
+        return appointment is null
+            ? Results.BadRequest("Appointment occurrence could not be rescheduled from the supplied date, time, and duration.")
+            : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+    })
+    .WithName("RescheduleAppointmentOccurrence");
+
 appointments.MapDelete("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,

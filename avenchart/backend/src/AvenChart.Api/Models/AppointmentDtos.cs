@@ -116,6 +116,19 @@ public sealed record AppointmentUpdateRequest(
     string? RecurrenceEndDate,
     IReadOnlyList<string>? RecurrenceExdates);
 
+public sealed record AppointmentOccurrenceRescheduleRequest(
+    int? ProviderId,
+    string Title,
+    string Date,
+    string StartTime,
+    int DurationMinutes,
+    int? FacilityId,
+    int? BillingLocationId,
+    int? CategoryId,
+    string? Room,
+    string? Status,
+    string? Comments);
+
 public sealed record AppointmentStatusUpdateRequest(
     string Status,
     string? Title);

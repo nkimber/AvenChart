@@ -113,6 +113,7 @@ import {
   signPatientDocument,
   softDeletePatientDocument,
   softDeletePatientMessage,
+  rescheduleAppointmentOccurrence,
   restoreEncounterDocument,
   restoreAppointmentOccurrence,
   restorePatientDocument,
@@ -149,6 +150,7 @@ import {
   type AppointmentDetail,
   type AppointmentCreateInput,
   type AppointmentListItem,
+  type AppointmentOccurrenceRescheduleInput,
   type AppointmentSearchResponse,
   type AppointmentUpdateInput,
   type AllergyListItem,
@@ -928,6 +930,30 @@ function App() {
     } catch (updateError) {
       setAppointmentDetailStatus('error')
       const message = updateError instanceof Error ? updateError.message : 'Appointment update failed'
+      setAppointmentError(message)
+      throw updateError
+    }
+  }
+
+  async function handleAppointmentOccurrenceReschedule(
+    appointment: AppointmentDetail,
+    input: AppointmentOccurrenceRescheduleInput,
+  ) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await rescheduleAppointmentOccurrence(appointment.seriesRootId, appointment.date, input)
+      setAppointmentPatientId(updated.patientId)
+      setAppointmentFromDate(updated.date)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetail(updated)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (updateError) {
+      setAppointmentDetailStatus('error')
+      const message = updateError instanceof Error ? updateError.message : 'Appointment occurrence reschedule failed'
       setAppointmentError(message)
       throw updateError
     }
@@ -2664,6 +2690,7 @@ function App() {
             onSelectAppointment={setSelectedAppointmentId}
             onCreateAppointment={handleAppointmentCreate}
             onUpdateAppointment={handleAppointmentUpdate}
+            onRescheduleAppointmentOccurrence={handleAppointmentOccurrenceReschedule}
             onArriveAppointment={handleAppointmentArrive}
             onCheckOutAppointment={handleAppointmentCheckOut}
             onNoShowAppointment={handleAppointmentNoShow}
@@ -3717,6 +3744,7 @@ function CalendarWorkspace({
   onSelectAppointment,
   onCreateAppointment,
   onUpdateAppointment,
+  onRescheduleAppointmentOccurrence,
   onArriveAppointment,
   onCheckOutAppointment,
   onNoShowAppointment,
@@ -3737,6 +3765,7 @@ function CalendarWorkspace({
   onSelectAppointment: (appointmentId: string) => void
   onCreateAppointment: (input: AppointmentCreateInput) => Promise<AppointmentDetail>
   onUpdateAppointment: (appointment: AppointmentDetail, input: AppointmentUpdateInput) => Promise<AppointmentDetail>
+  onRescheduleAppointmentOccurrence: (appointment: AppointmentDetail, input: AppointmentOccurrenceRescheduleInput) => Promise<AppointmentDetail>
   onArriveAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCheckOutAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onNoShowAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
@@ -3890,7 +3919,7 @@ function CalendarWorkspace({
 
     setMutationStatus('saving')
     try {
-      await onUpdateAppointment(appointmentDetail, {
+      const scheduleInput = {
         title: editTitle,
         date: editDate,
         startTime: editStartTime,
@@ -3902,12 +3931,20 @@ function CalendarWorkspace({
         billingLocationId: numberOrNull(editBillingLocationId),
         status: editStatus,
         comments: editComments,
-        recurrenceType: editRepeats ? 1 : 0,
-        repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
-        repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
-        recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
-        recurrenceExdates: editRepeats ? appointmentDetail.recurrenceExdates : null,
-      })
+      }
+
+      if (selectedOccurrenceIsVirtual) {
+        await onRescheduleAppointmentOccurrence(appointmentDetail, scheduleInput)
+      } else {
+        await onUpdateAppointment(appointmentDetail, {
+          ...scheduleInput,
+          recurrenceType: editRepeats ? 1 : 0,
+          repeatFrequency: editRepeats ? Number(editRepeatFrequency) : null,
+          repeatUnit: editRepeats ? Number(editRepeatUnit) : null,
+          recurrenceEndDate: editRepeats ? editRecurrenceEndDate : null,
+          recurrenceExdates: editRepeats ? appointmentDetail.recurrenceExdates : null,
+        })
+      }
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -4205,10 +4242,14 @@ function CalendarWorkspace({
               </button>
             </div>
 
-            <form className="appointment-mutation-panel appointment-edit-panel" onSubmit={handleUpdateSubmit} aria-label="Reschedule appointment">
+            <form
+              className="appointment-mutation-panel appointment-edit-panel"
+              onSubmit={handleUpdateSubmit}
+              aria-label={selectedOccurrenceIsVirtual ? 'Reschedule occurrence' : 'Reschedule appointment'}
+            >
               <div className="panel-heading compact-heading">
                 <Pencil size={16} />
-                <h3>Reschedule Appointment</h3>
+                <h3>{selectedOccurrenceIsVirtual ? 'Reschedule Occurrence' : 'Reschedule Appointment'}</h3>
               </div>
               <label className="contact-field">
                 <span>Title</span>
@@ -4319,6 +4360,7 @@ function CalendarWorkspace({
                     checked={editRepeats}
                     onChange={(event) => setEditRepeats(event.target.checked)}
                     aria-label="Edit appointment repeats"
+                    disabled={selectedOccurrenceIsVirtual}
                   />
                   <span>Repeats</span>
                 </label>
@@ -4330,7 +4372,7 @@ function CalendarWorkspace({
                     value={editRepeatFrequency}
                     onChange={(event) => setEditRepeatFrequency(event.target.value)}
                     aria-label="Edit appointment repeat frequency"
-                    disabled={!editRepeats}
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
                   />
                 </label>
                 <label className="contact-field">
@@ -4339,7 +4381,7 @@ function CalendarWorkspace({
                     value={editRepeatUnit}
                     onChange={(event) => setEditRepeatUnit(event.target.value)}
                     aria-label="Edit appointment repeat unit"
-                    disabled={!editRepeats}
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
                   >
                     {appointmentRepeatUnitOptions.map((unit) => (
                       <option key={unit.id} value={unit.id}>
@@ -4355,14 +4397,14 @@ function CalendarWorkspace({
                     value={editRecurrenceEndDate}
                     onChange={(event) => setEditRecurrenceEndDate(event.target.value)}
                     aria-label="Edit appointment recurrence end date"
-                    disabled={!editRepeats}
+                    disabled={selectedOccurrenceIsVirtual || !editRepeats}
                   />
                 </label>
               </div>
               <div className="contact-actions">
-                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving' || selectedOccurrenceIsVirtual}>
+                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
                   <Check size={15} />
-                  <span>{mutationStatus === 'saving' ? 'Saving' : 'Save schedule'}</span>
+                  <span>{mutationStatus === 'saving' ? 'Saving' : selectedOccurrenceIsVirtual ? 'Reschedule occurrence' : 'Save schedule'}</span>
                 </button>
               </div>
             </form>

@@ -1262,6 +1262,105 @@ finally {
     }
 }
 
+$appointmentOccurrenceRescheduleRootId = $null
+$appointmentOccurrenceRescheduleStandaloneId = $null
+try {
+    $occurrenceRescheduleSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $occurrenceRescheduleBefore = @($occurrenceRescheduleSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceToReschedule = $occurrenceRescheduleBefore | Where-Object { $_.date -eq "2026-12-30" } | Select-Object -First 1
+    if ($null -eq $occurrenceToReschedule) {
+        throw "Expected generated occurrence on 2026-12-30 before reschedule smoke check."
+    }
+
+    $appointmentOccurrenceRescheduleRootId = $occurrenceToReschedule.seriesRootId
+    $rescheduleRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRescheduleRootId" -Method Get -TimeoutSec 20
+    $encodedRescheduleRootId = [System.Uri]::EscapeDataString($appointmentOccurrenceRescheduleRootId)
+    $rescheduleBody = @{
+        providerId = $rescheduleRoot.providerId
+        title = $rescheduleRoot.title
+        date = "2027-01-06"
+        startTime = "14:00"
+        durationMinutes = 45
+        facilityId = $rescheduleRoot.facilityId
+        billingLocationId = $rescheduleRoot.billingLocationId
+        categoryId = $rescheduleRoot.categoryId
+        room = $rescheduleRoot.room
+        status = $rescheduleRoot.status
+        comments = $rescheduleRoot.comments
+    } | ConvertTo-Json -Depth 5
+
+    $rescheduledAppointment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRescheduleRootId/occurrences/2026-12-30/reschedule" -Method Post -ContentType "application/json" -Body $rescheduleBody -TimeoutSec 20
+    $appointmentOccurrenceRescheduleStandaloneId = $rescheduledAppointment.id
+
+    $occurrenceRescheduleAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=20" -Method Get -TimeoutSec 20
+    $occurrenceRescheduleAfter = @($occurrenceRescheduleAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceRescheduleAfterDates = @($occurrenceRescheduleAfter | ForEach-Object { $_.date })
+    $occurrenceRescheduleAfterNumbers = @($occurrenceRescheduleAfter | ForEach-Object { $_.occurrenceNumber })
+    $standaloneRescheduledAppointment = $occurrenceRescheduleAfterSearch.appointments | Where-Object { $_.id -eq $appointmentOccurrenceRescheduleStandaloneId } | Select-Object -First 1
+    $rootAfterOccurrenceReschedule = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRescheduleRootId" -Method Get -TimeoutSec 20
+    $appointmentOccurrenceReschedulePassed = $rootAfterOccurrenceReschedule.recurrenceExceptionCount -eq 2 `
+        -and ($rootAfterOccurrenceReschedule.recurrenceExdates -contains "2026-12-16") `
+        -and ($rootAfterOccurrenceReschedule.recurrenceExdates -contains "2026-12-30") `
+        -and $occurrenceRescheduleAfter.Count -eq 3 `
+        -and (($occurrenceRescheduleAfterDates -join ",") -eq "2026-12-02,2027-01-13,2027-01-27") `
+        -and (($occurrenceRescheduleAfterNumbers -join ",") -eq "3,6,7") `
+        -and $null -ne $standaloneRescheduledAppointment `
+        -and $standaloneRescheduledAppointment.date -eq "2027-01-06" `
+        -and $standaloneRescheduledAppointment.startTime -eq "14:00" `
+        -and -not $standaloneRescheduledAppointment.isRecurringSeries
+
+    Add-Check -Name "appointment occurrence reschedule exception" -Result $(if ($appointmentOccurrenceReschedulePassed) { "passed" } else { "failed" }) -Details @{
+        originalDate = "2026-12-30"
+        rescheduledDate = "2027-01-06"
+        rescheduledStartTime = "14:00"
+        standaloneId = $appointmentOccurrenceRescheduleStandaloneId
+        dates = $occurrenceRescheduleAfterDates
+        occurrenceNumbers = $occurrenceRescheduleAfterNumbers
+        exceptionDates = $rootAfterOccurrenceReschedule.recurrenceExdates
+        totalMatches = $occurrenceRescheduleAfterSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment occurrence reschedule exception" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentOccurrenceRescheduleStandaloneId) {
+        try {
+            $encodedStandaloneAppointmentId = [System.Uri]::EscapeDataString($appointmentOccurrenceRescheduleStandaloneId)
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedStandaloneAppointmentId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+
+    if ($null -ne $appointmentOccurrenceRescheduleRootId) {
+        try {
+            $rootToRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRescheduleRootId" -Method Get -TimeoutSec 20
+            $restoreBody = @{
+                providerId = $rootToRestore.providerId
+                title = $rootToRestore.title
+                date = $rootToRestore.date
+                startTime = $rootToRestore.startTime
+                durationMinutes = $rootToRestore.durationMinutes
+                facilityId = $rootToRestore.facilityId
+                billingLocationId = $rootToRestore.billingLocationId
+                categoryId = $rootToRestore.categoryId
+                room = $rootToRestore.room
+                status = $rootToRestore.status
+                comments = $rootToRestore.comments
+                recurrenceType = $rootToRestore.recurrenceType
+                repeatFrequency = $rootToRestore.repeatFrequency
+                repeatUnit = $rootToRestore.repeatUnit
+                recurrenceEndDate = $rootToRestore.recurrenceEndDate
+                recurrenceExdates = @("2026-12-16")
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRescheduleRootId" -Method Put -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

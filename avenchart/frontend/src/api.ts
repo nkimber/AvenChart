@@ -197,6 +197,20 @@ export type AppointmentUpdateInput = {
   recurrenceExdates?: string[] | null
 }
 
+export type AppointmentOccurrenceRescheduleInput = {
+  providerId?: number | null
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  billingLocationId?: number | null
+  categoryId?: number | null
+  room?: string | null
+  status?: string | null
+  comments?: string | null
+}
+
 export type AppointmentStatusUpdate = {
   status: string
   title?: string | null
@@ -1746,6 +1760,28 @@ export async function updateAppointment(
   })
   if (!response.ok) {
     throw new Error(`Appointment update failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function rescheduleAppointmentOccurrence(
+  appointmentId: string,
+  occurrenceDate: string,
+  update: AppointmentOccurrenceRescheduleInput,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(update),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Appointment occurrence reschedule failed with ${response.status}`)
   }
 
   return response.json()

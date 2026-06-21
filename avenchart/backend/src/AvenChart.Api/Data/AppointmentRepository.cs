@@ -463,6 +463,201 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             : null;
     }
 
+    public async Task<AppointmentDetail?> RescheduleOccurrenceAsync(
+        string appointmentId,
+        string occurrenceDateText,
+        AppointmentOccurrenceRescheduleRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DateOnly.TryParse(occurrenceDateText, out var occurrenceDate)
+            || !DateOnly.TryParse(request.Date, out var rescheduledDate)
+            || !TimeOnly.TryParse(request.StartTime, out var rescheduledStartTime)
+            || request.DurationMinutes <= 0)
+        {
+            return null;
+        }
+
+        var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var readCommand = connection.CreateCommand();
+        readCommand.Transaction = transaction;
+        readCommand.CommandText = """
+            select id,
+                patient_id,
+                pid,
+                provider_id,
+                facility_id,
+                billing_location_id,
+                appointment_date,
+                duration_minutes,
+                category_id,
+                title,
+                status,
+                room,
+                comments,
+                recurrence_type,
+                repeat_frequency,
+                repeat_unit,
+                recurrence_end_date,
+                recurrence_exdates
+            from appointments
+            where id = @appointmentId
+            limit 1;
+            """;
+        readCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
+
+        AppointmentRescheduleSource source;
+        await using (var reader = await readCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            var appointmentDate = ReadDate(reader, "appointment_date");
+            var recurrenceType = ReadRecurrenceType(reader);
+            var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
+            var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+            var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
+            var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
+            var recurrenceExdateSet = ParseRecurrenceExdateSet(recurrenceExdates);
+            if (!IsValidOccurrenceDate(
+                    appointmentDate,
+                    recurrenceType,
+                    repeatFrequency,
+                    repeatUnit,
+                    recurrenceEndDate,
+                    recurrenceExdateSet,
+                    occurrenceDate))
+            {
+                return null;
+            }
+
+            source = new AppointmentRescheduleSource(
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                Pid: reader.GetInt32(reader.GetOrdinal("pid")),
+                ProviderId: ReadNullableInt(reader, "provider_id"),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
+                BillingLocationId: ReadNullableInt(reader, "billing_location_id"),
+                AppointmentDate: appointmentDate,
+                CategoryId: ReadNullableInt(reader, "category_id"),
+                Title: ReadNullableString(reader, "title"),
+                Status: ReadNullableString(reader, "status"),
+                Room: ReadNullableString(reader, "room"),
+                Comments: ReadNullableString(reader, "comments"),
+                RecurrenceType: recurrenceType,
+                RepeatFrequency: repeatFrequency,
+                RepeatUnit: repeatUnit,
+                RecurrenceEndDate: recurrenceEndDate,
+                RecurrenceExdates: recurrenceExdates);
+        }
+
+        var updatedExdates = source.RecurrenceExdates
+            .Concat(new[] { occurrenceDate.ToString("yyyy-MM-dd") })
+            .ToList();
+        var normalizedExdates = NormalizeRecurrenceExdates(updatedExdates);
+
+        await using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText = """
+            update appointments
+            set recurrence_exdates = @recurrenceExdates
+            where id = @appointmentId;
+            """;
+        updateCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
+        updateCommand.Parameters.Add("recurrenceExdates", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(normalizedExdates)
+            ? DBNull.Value
+            : (object)normalizedExdates;
+
+        if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
+        {
+            return null;
+        }
+
+        var rescheduledAppointmentId = $"APPT-MODERN-OCCURRENCE-{Guid.NewGuid():N}";
+        var rescheduledTitle = NormalizeText(request.Title) ?? source.Title ?? "Appointment";
+        var rescheduledStatus = NormalizeText(request.Status) ?? source.Status ?? "-";
+        var rescheduledRoom = request.Room is null ? source.Room : NormalizeText(request.Room);
+        var rescheduledComments = request.Comments is null ? source.Comments : NormalizeText(request.Comments);
+
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText = """
+            insert into appointments (
+                id,
+                patient_id,
+                pid,
+                provider_id,
+                facility_id,
+                billing_location_id,
+                appointment_date,
+                start_time,
+                duration_minutes,
+                category_id,
+                title,
+                status,
+                room,
+                comments,
+                recurrence_type,
+                repeat_frequency,
+                repeat_unit,
+                recurrence_end_date,
+                recurrence_exdates
+            )
+            values (
+                @id,
+                @patientId,
+                @pid,
+                coalesce((select id from staff where id = @providerId), @sourceProviderId),
+                coalesce((select id from facilities where id = @facilityId), @sourceFacilityId),
+                coalesce((select id from facilities where id = @billingLocationId), @sourceBillingLocationId),
+                @appointmentDate,
+                @startTime,
+                @durationMinutes,
+                coalesce(@categoryId, @sourceCategoryId),
+                @title,
+                @status,
+                @room,
+                @comments,
+                0,
+                null,
+                null,
+                null,
+                null
+            )
+            returning id;
+            """;
+        insertCommand.Parameters.AddWithValue("id", rescheduledAppointmentId);
+        insertCommand.Parameters.AddWithValue("patientId", source.PatientId);
+        insertCommand.Parameters.AddWithValue("pid", source.Pid);
+        insertCommand.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        insertCommand.Parameters.Add("sourceProviderId", NpgsqlDbType.Integer).Value = source.ProviderId is null ? DBNull.Value : source.ProviderId.Value;
+        insertCommand.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        insertCommand.Parameters.Add("sourceFacilityId", NpgsqlDbType.Integer).Value = source.FacilityId is null ? DBNull.Value : source.FacilityId.Value;
+        insertCommand.Parameters.Add("billingLocationId", NpgsqlDbType.Integer).Value = request.BillingLocationId is null ? DBNull.Value : request.BillingLocationId.Value;
+        insertCommand.Parameters.Add("sourceBillingLocationId", NpgsqlDbType.Integer).Value = source.BillingLocationId is null ? DBNull.Value : source.BillingLocationId.Value;
+        insertCommand.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = rescheduledDate;
+        insertCommand.Parameters.Add("startTime", NpgsqlDbType.Time).Value = rescheduledStartTime;
+        insertCommand.Parameters.AddWithValue("durationMinutes", request.DurationMinutes);
+        insertCommand.Parameters.Add("categoryId", NpgsqlDbType.Integer).Value = request.CategoryId is null ? DBNull.Value : request.CategoryId.Value;
+        insertCommand.Parameters.Add("sourceCategoryId", NpgsqlDbType.Integer).Value = source.CategoryId is null ? DBNull.Value : source.CategoryId.Value;
+        insertCommand.Parameters.AddWithValue("title", rescheduledTitle);
+        insertCommand.Parameters.AddWithValue("status", rescheduledStatus);
+        insertCommand.Parameters.Add("room", NpgsqlDbType.Text).Value = rescheduledRoom is null ? DBNull.Value : rescheduledRoom;
+        insertCommand.Parameters.Add("comments", NpgsqlDbType.Text).Value = rescheduledComments is null ? DBNull.Value : rescheduledComments;
+
+        var insertedId = (string?)await insertCommand.ExecuteScalarAsync(cancellationToken);
+        if (insertedId is null)
+        {
+            return null;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetByIdAsync(insertedId, cancellationToken);
+    }
+
     private async Task<bool> AddRecurrenceExceptionAsync(
         string rootAppointmentId,
         DateOnly occurrenceDate,
@@ -923,4 +1118,22 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record AppointmentOccurrenceReference(string RootAppointmentId, DateOnly? OccurrenceDate);
+
+    private sealed record AppointmentRescheduleSource(
+        string PatientId,
+        int Pid,
+        int? ProviderId,
+        int? FacilityId,
+        int? BillingLocationId,
+        string AppointmentDate,
+        int? CategoryId,
+        string? Title,
+        string? Status,
+        string? Room,
+        string? Comments,
+        int RecurrenceType,
+        int? RepeatFrequency,
+        int? RepeatUnit,
+        string? RecurrenceEndDate,
+        IReadOnlyList<string> RecurrenceExdates);
 }
