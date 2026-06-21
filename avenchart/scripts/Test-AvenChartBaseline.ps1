@@ -1445,6 +1445,102 @@ finally {
     }
 }
 
+$appointmentSeriesRootUpdateRootId = $null
+$appointmentSeriesRootUpdateOriginalRoot = $null
+try {
+    $seriesRootUpdateSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-11-04&limit=10" -Method Get -TimeoutSec 20
+    $seriesRootUpdateBefore = @($seriesRootUpdateSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $seriesRootUpdateRoot = $seriesRootUpdateBefore | Where-Object { $_.date -eq "2026-11-04" } | Select-Object -First 1
+    if ($null -eq $seriesRootUpdateRoot) {
+        throw "Expected recurring appointment root on 2026-11-04 before series root update smoke check."
+    }
+
+    $appointmentSeriesRootUpdateRootId = $seriesRootUpdateRoot.seriesRootId
+    $encodedSeriesRootUpdateRootId = [System.Uri]::EscapeDataString($appointmentSeriesRootUpdateRootId)
+    $appointmentSeriesRootUpdateOriginalRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Get -TimeoutSec 20
+    $seriesRootUpdateBody = @{
+        providerId = $appointmentSeriesRootUpdateOriginalRoot.providerId
+        title = "Preventive Care Root Update"
+        date = $appointmentSeriesRootUpdateOriginalRoot.date
+        startTime = "16:15"
+        durationMinutes = $appointmentSeriesRootUpdateOriginalRoot.durationMinutes
+        facilityId = $appointmentSeriesRootUpdateOriginalRoot.facilityId
+        billingLocationId = $appointmentSeriesRootUpdateOriginalRoot.billingLocationId
+        categoryId = $appointmentSeriesRootUpdateOriginalRoot.categoryId
+        room = $appointmentSeriesRootUpdateOriginalRoot.room
+        status = $appointmentSeriesRootUpdateOriginalRoot.status
+        comments = $appointmentSeriesRootUpdateOriginalRoot.comments
+        recurrenceType = $appointmentSeriesRootUpdateOriginalRoot.recurrenceType
+        repeatFrequency = $appointmentSeriesRootUpdateOriginalRoot.repeatFrequency
+        repeatUnit = $appointmentSeriesRootUpdateOriginalRoot.repeatUnit
+        recurrenceEndDate = $appointmentSeriesRootUpdateOriginalRoot.recurrenceEndDate
+        recurrenceExdates = @($appointmentSeriesRootUpdateOriginalRoot.recurrenceExdates)
+    } | ConvertTo-Json -Depth 5
+
+    $rootAfterSeriesRootUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Put -ContentType "application/json" -Body $seriesRootUpdateBody -TimeoutSec 20
+    $seriesRootUpdateAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-11-04&limit=10" -Method Get -TimeoutSec 20
+    $seriesRootUpdateAfter = @($seriesRootUpdateAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care Root Update" -and $_.isRecurringSeries })
+    $seriesRootUpdateAfterDates = @($seriesRootUpdateAfter | ForEach-Object { $_.date })
+    $seriesRootUpdateAfterNumbers = @($seriesRootUpdateAfter | ForEach-Object { $_.occurrenceNumber })
+    $seriesRootUpdateAfterStartTimes = @($seriesRootUpdateAfter | ForEach-Object { $_.startTime })
+    $seriesRootUpdateGeneratedOccurrence = $seriesRootUpdateAfter | Where-Object { $_.date -eq "2026-11-18" } | Select-Object -First 1
+    $appointmentSeriesRootUpdatePassed = $rootAfterSeriesRootUpdate.title -eq "Preventive Care Root Update" `
+        -and $rootAfterSeriesRootUpdate.startTime -eq "16:15" `
+        -and $rootAfterSeriesRootUpdate.recurrenceExceptionCount -eq 1 `
+        -and ($rootAfterSeriesRootUpdate.recurrenceExdates -contains "2026-12-16") `
+        -and $seriesRootUpdateAfter.Count -eq 6 `
+        -and (($seriesRootUpdateAfterDates -join ",") -eq "2026-11-04,2026-11-18,2026-12-02,2026-12-30,2027-01-13,2027-01-27") `
+        -and (($seriesRootUpdateAfterNumbers -join ",") -eq "1,2,3,5,6,7") `
+        -and (($seriesRootUpdateAfterStartTimes -join ",") -eq "16:15,16:15,16:15,16:15,16:15,16:15") `
+        -and $null -ne $seriesRootUpdateGeneratedOccurrence `
+        -and $seriesRootUpdateGeneratedOccurrence.isVirtualOccurrence
+
+    Add-Check -Name "appointment series root update propagation" -Result $(if ($appointmentSeriesRootUpdatePassed) { "passed" } else { "failed" }) -Details @{
+        updatedTitle = $rootAfterSeriesRootUpdate.title
+        updatedStartTime = $rootAfterSeriesRootUpdate.startTime
+        dates = $seriesRootUpdateAfterDates
+        occurrenceNumbers = $seriesRootUpdateAfterNumbers
+        startTimes = $seriesRootUpdateAfterStartTimes
+        exceptionDates = $rootAfterSeriesRootUpdate.recurrenceExdates
+        totalMatches = $seriesRootUpdateAfterSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment series root update propagation" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentSeriesRootUpdateRootId) {
+        try {
+            $encodedSeriesRootUpdateRootId = [System.Uri]::EscapeDataString($appointmentSeriesRootUpdateRootId)
+            if ($null -eq $appointmentSeriesRootUpdateOriginalRoot) {
+                $appointmentSeriesRootUpdateOriginalRoot = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Get -TimeoutSec 20
+            }
+
+            $restoreBody = @{
+                providerId = $appointmentSeriesRootUpdateOriginalRoot.providerId
+                title = $appointmentSeriesRootUpdateOriginalRoot.title
+                date = $appointmentSeriesRootUpdateOriginalRoot.date
+                startTime = $appointmentSeriesRootUpdateOriginalRoot.startTime
+                durationMinutes = $appointmentSeriesRootUpdateOriginalRoot.durationMinutes
+                facilityId = $appointmentSeriesRootUpdateOriginalRoot.facilityId
+                billingLocationId = $appointmentSeriesRootUpdateOriginalRoot.billingLocationId
+                categoryId = $appointmentSeriesRootUpdateOriginalRoot.categoryId
+                room = $appointmentSeriesRootUpdateOriginalRoot.room
+                status = $appointmentSeriesRootUpdateOriginalRoot.status
+                comments = $appointmentSeriesRootUpdateOriginalRoot.comments
+                recurrenceType = $appointmentSeriesRootUpdateOriginalRoot.recurrenceType
+                repeatFrequency = $appointmentSeriesRootUpdateOriginalRoot.repeatFrequency
+                repeatUnit = $appointmentSeriesRootUpdateOriginalRoot.repeatUnit
+                recurrenceEndDate = $appointmentSeriesRootUpdateOriginalRoot.recurrenceEndDate
+                recurrenceExdates = @($appointmentSeriesRootUpdateOriginalRoot.recurrenceExdates)
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedSeriesRootUpdateRootId" -Method Put -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
