@@ -1107,6 +1107,19 @@ documents.MapPut("/{documentId:int}/content", async (
     })
     .WithName("ReplacePatientDocumentContent");
 
+documents.MapPut("/{documentId:int}/content/binary", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentBinaryContentReplaceRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ReplaceBinaryContentAsync(documentId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Binary patient document content could not be replaced from the supplied file payload.")
+            : Results.Ok(mutation);
+    })
+    .WithName("ReplaceBinaryPatientDocumentContent");
+
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
         int documentId,

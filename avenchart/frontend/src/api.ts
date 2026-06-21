@@ -2572,6 +2572,24 @@ export async function replacePatientDocumentContent(
   return response.json()
 }
 
+export async function replacePatientDocumentBinaryContent(
+  documentId: number,
+  document: PatientDocumentBinaryContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content/binary`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Binary patient document content replacement failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function softDeletePatientDocument(
   documentId: number,
   signal?: AbortSignal,

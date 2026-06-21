@@ -119,6 +119,7 @@ import {
   restorePatientDocument,
   replaceEncounterDocumentBinaryContent,
   replaceEncounterDocumentContent,
+  replacePatientDocumentBinaryContent,
   replacePatientDocumentContent,
   updatePatientMessageAssignment,
   updatePatientMessageContent,
@@ -2518,6 +2519,28 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentBinaryContentReplace(
+    document: PatientDocumentItem,
+    input: PatientDocumentBinaryContentReplaceInput,
+  ) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const response = await replacePatientDocumentBinaryContent(document.id, input)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (replaceError) {
+      setDocumentStatus('error')
+      const message =
+        replaceError instanceof Error ? replaceError.message : 'Binary patient document content replacement failed'
+      setDocumentError(message)
+      throw replaceError
+    }
+  }
+
   async function handlePatientDocumentArchive(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -2849,6 +2872,7 @@ function App() {
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onUpdateDocumentMetadata={handlePatientDocumentMetadataUpdate}
             onReplaceDocumentContent={handlePatientDocumentContentReplace}
+            onReplaceDocumentBinaryContent={handlePatientDocumentBinaryContentReplace}
             onArchiveDocument={handlePatientDocumentArchive}
             onRestoreDocument={handlePatientDocumentRestore}
             onSignDocument={handlePatientDocumentSign}
@@ -9737,6 +9761,7 @@ function DocumentsWorkspace({
   onCreateExternalLinkDocument,
   onUpdateDocumentMetadata,
   onReplaceDocumentContent,
+  onReplaceDocumentBinaryContent,
   onArchiveDocument,
   onRestoreDocument,
   onSignDocument,
@@ -9760,6 +9785,10 @@ function DocumentsWorkspace({
   onReplaceDocumentContent: (
     document: PatientDocumentItem,
     input: PatientDocumentContentReplaceInput,
+  ) => Promise<unknown>
+  onReplaceDocumentBinaryContent: (
+    document: PatientDocumentItem,
+    input: PatientDocumentBinaryContentReplaceInput,
   ) => Promise<unknown>
   onArchiveDocument: (document: PatientDocumentItem) => Promise<unknown>
   onRestoreDocument: (document: PatientDocumentItem) => Promise<unknown>
@@ -10360,6 +10389,7 @@ function DocumentsWorkspace({
                       onView={handleDocumentView}
                       onUpdateMetadata={onUpdateDocumentMetadata}
                       onReplaceContent={onReplaceDocumentContent}
+                      onReplaceBinaryContent={onReplaceDocumentBinaryContent}
                       onArchive={onArchiveDocument}
                       onRestore={onRestoreDocument}
                       onSign={onSignDocument}
@@ -11120,6 +11150,7 @@ function DocumentItem({
   onView,
   onUpdateMetadata,
   onReplaceContent,
+  onReplaceBinaryContent,
   onArchive,
   onRestore,
   onSign,
@@ -11131,6 +11162,10 @@ function DocumentItem({
   onView: (document: PatientDocumentItem) => Promise<void>
   onUpdateMetadata: (document: PatientDocumentItem, input: PatientDocumentMetadataUpdateInput) => Promise<unknown>
   onReplaceContent: (document: PatientDocumentItem, input: PatientDocumentContentReplaceInput) => Promise<unknown>
+  onReplaceBinaryContent: (
+    document: PatientDocumentItem,
+    input: PatientDocumentBinaryContentReplaceInput,
+  ) => Promise<unknown>
   onArchive: (document: PatientDocumentItem) => Promise<unknown>
   onRestore: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
@@ -11145,8 +11180,13 @@ function DocumentItem({
   const [editNotes, setEditNotes] = useState(document.notes ?? document.documentationOf ?? '')
   const [editError, setEditError] = useState<string | null>(null)
   const [isReplacing, setIsReplacing] = useState(false)
+  const [isReplacingBinary, setIsReplacingBinary] = useState(false)
   const [replacementFileName, setReplacementFileName] = useState(document.fileName || `${document.name}.txt`)
   const [replacementContent, setReplacementContent] = useState('')
+  const [replacementBinaryFileName, setReplacementBinaryFileName] = useState(document.fileName || document.name)
+  const [replacementBinaryMimeType, setReplacementBinaryMimeType] = useState(document.mimetype || 'application/octet-stream')
+  const [replacementBinaryContentBase64, setReplacementBinaryContentBase64] = useState('')
+  const [replacementBinaryFileMessage, setReplacementBinaryFileMessage] = useState('No file selected')
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const isApproved = document.reviewStatus === 'approved'
   const isReviewed = document.reviewStatus === 'approved' || document.reviewStatus === 'denied'
@@ -11163,6 +11203,10 @@ function DocumentItem({
     setEditError(null)
     setReplacementFileName(document.fileName || `${document.name}.txt`)
     setReplacementContent('')
+    setReplacementBinaryFileName(document.fileName || document.name)
+    setReplacementBinaryMimeType(document.mimetype || 'application/octet-stream')
+    setReplacementBinaryContentBase64('')
+    setReplacementBinaryFileMessage('No file selected')
     setReplaceError(null)
   }, [document])
 
@@ -11202,6 +11246,40 @@ function DocumentItem({
     })
     setIsReplacing(false)
     setReplacementContent('')
+  }
+
+  async function handleBinaryReplacementFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setReplacementBinaryContentBase64('')
+      setReplacementBinaryFileMessage('No file selected')
+      return
+    }
+
+    const contentBase64 = await readFileAsBase64(file)
+    setReplacementBinaryFileName(file.name)
+    setReplacementBinaryMimeType(file.type || 'application/octet-stream')
+    setReplacementBinaryContentBase64(contentBase64)
+    setReplacementBinaryFileMessage(`${file.name} selected (${formatBytes(file.size)})`)
+  }
+
+  async function handleBinaryContentReplacementSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setReplaceError(null)
+
+    if (!replacementBinaryFileName.trim() || !replacementBinaryMimeType.trim() || !replacementBinaryContentBase64) {
+      setReplaceError('Choose a replacement file')
+      return
+    }
+
+    await onReplaceBinaryContent(document, {
+      fileName: replacementBinaryFileName,
+      mimetype: replacementBinaryMimeType,
+      contentBase64: replacementBinaryContentBase64,
+    })
+    setIsReplacingBinary(false)
+    setReplacementBinaryContentBase64('')
+    setReplacementBinaryFileMessage('No file selected')
   }
 
   return (
@@ -11377,6 +11455,53 @@ function DocumentItem({
           </div>
         </form>
       )}
+      {isReplacingBinary && (
+        <form className="document-edit-form" onSubmit={handleBinaryContentReplacementSubmit}>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Binary File</span>
+              <input
+                type="file"
+                onChange={handleBinaryReplacementFileChange}
+                aria-label="Patient replacement binary document upload"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>File Name</span>
+                <input
+                  value={replacementBinaryFileName}
+                  onChange={(event) => setReplacementBinaryFileName(event.target.value)}
+                  aria-label="Patient replacement binary document file name"
+                  required
+                />
+              </label>
+              <label className="filter-field">
+                <span>MIME Type</span>
+                <input
+                  value={replacementBinaryMimeType}
+                  onChange={(event) => setReplacementBinaryMimeType(event.target.value)}
+                  aria-label="Patient replacement binary document MIME type"
+                  required
+                />
+              </label>
+            </div>
+            <span className="save-note">{replacementBinaryFileMessage}</span>
+          </div>
+          <div className="document-item-actions">
+            <button className="icon-text-button primary" type="submit" disabled={disabled}>
+              <Check size={14} />
+              Save Binary
+            </button>
+            <button className="icon-text-button secondary" type="button" onClick={() => setIsReplacingBinary(false)}>
+              <X size={14} />
+              Cancel
+            </button>
+            {replaceError && <span className="save-note error">{replaceError}</span>}
+          </div>
+        </form>
+      )}
       <div className="document-item-actions">
         <button
           className="icon-text-button secondary"
@@ -11411,7 +11536,11 @@ function DocumentItem({
           className="icon-text-button secondary"
           type="button"
           disabled={disabled || isArchived}
-          onClick={() => setIsEditing((current) => !current)}
+          onClick={() => {
+            setIsReplacing(false)
+            setIsReplacingBinary(false)
+            setIsEditing((current) => !current)
+          }}
         >
           <Pencil size={14} />
           Edit
@@ -11420,10 +11549,27 @@ function DocumentItem({
           className="icon-text-button secondary"
           type="button"
           disabled={disabled || !canReplaceContent}
-          onClick={() => setIsReplacing((current) => !current)}
+          onClick={() => {
+            setIsEditing(false)
+            setIsReplacingBinary(false)
+            setIsReplacing((current) => !current)
+          }}
         >
           <FileText size={14} />
           Replace
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
+          disabled={disabled || !canReplaceContent}
+          onClick={() => {
+            setIsEditing(false)
+            setIsReplacing(false)
+            setIsReplacingBinary((current) => !current)
+          }}
+        >
+          <Upload size={14} />
+          Binary File
         </button>
         <button
           className="icon-text-button danger"

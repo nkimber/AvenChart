@@ -4893,6 +4893,100 @@ finally {
     }
 }
 
+$patientBinaryDocumentReplaceId = $null
+try {
+    $binaryReplaceName = "Smoke Binary Replace Patient Document"
+    $binaryReplaceOriginalFileName = "smoke-binary-replace-original.pdf"
+    $binaryReplaceUpdatedFileName = "smoke-binary-replace-updated.pdf"
+    $binaryReplaceOriginalBody = "%PDF-1.4`n1 0 obj`n<< /Type /Catalog >>`nendobj`n% Smoke patient binary replacement original.`n%%EOF`n"
+    $binaryReplaceUpdatedBody = "%PDF-1.4`n1 0 obj`n<< /Type /Catalog >>`nendobj`n% Smoke patient binary replacement updated.`n%%EOF`n"
+    $binaryReplaceOriginalBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($binaryReplaceOriginalBody))
+    $binaryReplaceUpdatedBase64 = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($binaryReplaceUpdatedBody))
+    $createBinaryReplaceBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = $binaryReplaceName
+        docDate = "2026-06-18"
+        encounter = 1000013
+        fileName = $binaryReplaceOriginalFileName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryReplaceOriginalBase64
+        notes = "Created by the smoke patient binary-document content replacement check."
+    } | ConvertTo-Json
+    $createdBinaryReplace = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/binary" -Method Post -ContentType "application/json" -Body $createBinaryReplaceBody -TimeoutSec 20
+    $patientBinaryDocumentReplaceId = $createdBinaryReplace.id
+    $createdBinaryReplaceVisible = $createdBinaryReplace.detail.documents | Where-Object { $_.id -eq $patientBinaryDocumentReplaceId -and $_.fileName -eq $binaryReplaceOriginalFileName } | Select-Object -First 1
+    $createdBinaryReplaceContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId/content" -Method Get -TimeoutSec 20
+    Start-Sleep -Seconds 1
+
+    $replaceBinaryBody = @{
+        fileName = $binaryReplaceUpdatedFileName
+        mimetype = "application/pdf"
+        contentBase64 = $binaryReplaceUpdatedBase64
+    } | ConvertTo-Json
+    $replacedBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId/content/binary" -Method Put -ContentType "application/json" -Body $replaceBinaryBody -TimeoutSec 20
+    $replacedBinaryVisible = $replacedBinaryDocument.detail.documents | Where-Object { $_.id -eq $patientBinaryDocumentReplaceId -and $_.fileName -eq $binaryReplaceUpdatedFileName } | Select-Object -First 1
+    $replacedBinaryContent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId/content" -Method Get -TimeoutSec 20
+
+    $binaryReplaceDownloadClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $binaryReplaceDownload = $binaryReplaceDownloadClient.GetAsync("$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId/download").GetAwaiter().GetResult()
+        $binaryReplaceDownloadBytes = $binaryReplaceDownload.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        $binaryReplaceDownloadContentType = $binaryReplaceDownload.Content.Headers.ContentType.ToString()
+    }
+    finally {
+        $binaryReplaceDownloadClient.Dispose()
+    }
+
+    $patientBinaryDocumentReplacePassed = $null -ne $createdBinaryReplaceVisible `
+        -and $null -ne $replacedBinaryVisible `
+        -and $createdBinaryReplaceContent.contentBase64 -eq $binaryReplaceOriginalBase64 `
+        -and $replacedBinaryContent.id -eq $patientBinaryDocumentReplaceId `
+        -and $replacedBinaryContent.name -eq $binaryReplaceName `
+        -and $replacedBinaryContent.fileName -eq $binaryReplaceUpdatedFileName `
+        -and $replacedBinaryContent.mimetype -eq "application/pdf" `
+        -and $replacedBinaryContent.isBinary `
+        -and $replacedBinaryContent.contentBase64 -eq $binaryReplaceUpdatedBase64 `
+        -and $replacedBinaryContent.contentBase64 -ne $binaryReplaceOriginalBase64 `
+        -and $replacedBinaryContent.previewKind -eq "pdf" `
+        -and $replacedBinaryContent.previewStatus -eq "Inline PDF preview" `
+        -and $replacedBinaryContent.versionLabel -eq "Version 1" `
+        -and $replacedBinaryContent.versionStatus -eq "Current version" `
+        -and $replacedBinaryContent.versionHistoryCount -eq 1 `
+        -and -not $replacedBinaryContent.hasPriorVersions `
+        -and $replacedBinaryContent.revisionHash -eq $replacedBinaryContent.hash `
+        -and $replacedBinaryContent.hash -ne $createdBinaryReplaceContent.hash `
+        -and $replacedBinaryContent.revisionAt -ne $createdBinaryReplaceContent.revisionAt `
+        -and $binaryReplaceDownload.IsSuccessStatusCode `
+        -and $binaryReplaceDownloadContentType -eq "application/pdf" `
+        -and [Convert]::ToBase64String($binaryReplaceDownloadBytes) -eq $binaryReplaceUpdatedBase64
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId" -Method Delete -TimeoutSec 20 | Out-Null
+    $patientBinaryDocumentReplaceId = $null
+
+    Add-Check -Name "patient binary document content replacement lifecycle" -Result $(if ($patientBinaryDocumentReplacePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $createdBinaryReplace.id
+        originalFileName = $createdBinaryReplaceContent.fileName
+        replacementFileName = $replacedBinaryContent.fileName
+        replacementPreviewKind = $replacedBinaryContent.previewKind
+        replacementRevisionHash = $replacedBinaryContent.revisionHash
+        downloadStatus = [int]$binaryReplaceDownload.StatusCode
+        downloadContentType = $binaryReplaceDownloadContentType
+    }
+}
+catch {
+    Add-Check -Name "patient binary document content replacement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientBinaryDocumentReplaceId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$patientBinaryDocumentReplaceId" -Method Delete -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $patientImageDocumentPreviewId = $null
 try {
     $imageDocumentName = "Smoke Image Patient Document.svg"
