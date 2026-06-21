@@ -4161,10 +4161,10 @@ function CalendarWorkspace({
                 className="icon-text-button danger"
                 type="button"
                 onClick={handleDeleteSelected}
-                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual}
+                disabled={detailStatus === 'loading'}
               >
-                <Trash2 size={15} />
-                <span>Delete appointment</span>
+                {selectedOccurrenceIsVirtual ? <Ban size={15} /> : <Trash2 size={15} />}
+                <span>{selectedOccurrenceIsVirtual ? 'Skip occurrence' : 'Delete appointment'}</span>
               </button>
             </div>
 

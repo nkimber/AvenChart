@@ -365,12 +365,85 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<bool> DeleteAsync(string appointmentId, CancellationToken cancellationToken)
     {
-        var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
+        var occurrenceReference = ParseOccurrenceReference(appointmentId);
+        if (occurrenceReference.OccurrenceDate is not null)
+        {
+            return await AddRecurrenceExceptionAsync(
+                occurrenceReference.RootAppointmentId,
+                occurrenceReference.OccurrenceDate.Value,
+                cancellationToken);
+        }
+
+        var rootAppointmentId = occurrenceReference.RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "delete from appointments where id = @appointmentId;";
         command.Parameters.AddWithValue("appointmentId", rootAppointmentId);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    private async Task<bool> AddRecurrenceExceptionAsync(
+        string rootAppointmentId,
+        DateOnly occurrenceDate,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var readCommand = connection.CreateCommand();
+        readCommand.CommandText = """
+            select appointment_date,
+                recurrence_type,
+                repeat_frequency,
+                repeat_unit,
+                recurrence_end_date,
+                recurrence_exdates
+            from appointments
+            where id = @appointmentId
+            limit 1;
+            """;
+        readCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
+
+        await using var reader = await readCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return false;
+        }
+
+        var appointmentDate = ReadDate(reader, "appointment_date");
+        var recurrenceType = ReadRecurrenceType(reader);
+        var repeatFrequency = ReadNullableInt(reader, "repeat_frequency");
+        var repeatUnit = ReadNullableInt(reader, "repeat_unit");
+        var recurrenceEndDate = ReadNullableDate(reader, "recurrence_end_date");
+        var recurrenceExdates = ReadDateList(reader, "recurrence_exdates");
+        var recurrenceExdateSet = ParseRecurrenceExdateSet(recurrenceExdates);
+        if (!IsValidOccurrenceDate(
+                appointmentDate,
+                recurrenceType,
+                repeatFrequency,
+                repeatUnit,
+                recurrenceEndDate,
+                recurrenceExdateSet,
+                occurrenceDate))
+        {
+            return false;
+        }
+
+        var updatedExdates = recurrenceExdates
+            .Concat(new[] { occurrenceDate.ToString("yyyy-MM-dd") })
+            .ToList();
+        var normalizedExdates = NormalizeRecurrenceExdates(updatedExdates);
+
+        await reader.DisposeAsync();
+        await using var updateCommand = connection.CreateCommand();
+        updateCommand.CommandText = """
+            update appointments
+            set recurrence_exdates = @recurrenceExdates
+            where id = @appointmentId;
+            """;
+        updateCommand.Parameters.AddWithValue("appointmentId", rootAppointmentId);
+        updateCommand.Parameters.Add("recurrenceExdates", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(normalizedExdates)
+            ? DBNull.Value
+            : (object)normalizedExdates;
+        return await updateCommand.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)

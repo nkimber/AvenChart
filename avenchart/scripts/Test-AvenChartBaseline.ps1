@@ -1125,6 +1125,72 @@ catch {
     Add-Check -Name "appointment recurrence exception expansion" -Result "failed" -Details $_.Exception.Message
 }
 
+$appointmentOccurrenceCancelRootId = $null
+try {
+    $occurrenceCancelSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $occurrenceCancelBefore = @($occurrenceCancelSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceToCancel = $occurrenceCancelBefore | Where-Object { $_.date -eq "2026-12-30" } | Select-Object -First 1
+    if ($null -eq $occurrenceToCancel) {
+        throw "Expected generated occurrence on 2026-12-30 before cancellation."
+    }
+
+    $appointmentOccurrenceCancelRootId = $occurrenceToCancel.seriesRootId
+    $encodedOccurrenceId = [System.Uri]::EscapeDataString($occurrenceToCancel.id)
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedOccurrenceId" -Method Delete -TimeoutSec 20 | Out-Null
+
+    $occurrenceCancelAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $occurrenceCancelAfter = @($occurrenceCancelAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceCancelAfterDates = @($occurrenceCancelAfter | ForEach-Object { $_.date })
+    $occurrenceCancelAfterNumbers = @($occurrenceCancelAfter | ForEach-Object { $_.occurrenceNumber })
+    $rootAfterOccurrenceCancel = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceCancelRootId" -Method Get -TimeoutSec 20
+    $appointmentOccurrenceCancelPassed = $occurrenceCancelAfter.Count -eq 3 `
+        -and (($occurrenceCancelAfterDates -join ",") -eq "2026-12-02,2027-01-13,2027-01-27") `
+        -and (($occurrenceCancelAfterNumbers -join ",") -eq "3,6,7") `
+        -and ($occurrenceCancelAfterDates -notcontains "2026-12-30") `
+        -and $rootAfterOccurrenceCancel.recurrenceExceptionCount -eq 2 `
+        -and ($rootAfterOccurrenceCancel.recurrenceExdates -contains "2026-12-16") `
+        -and ($rootAfterOccurrenceCancel.recurrenceExdates -contains "2026-12-30")
+
+    Add-Check -Name "appointment occurrence cancellation exception" -Result $(if ($appointmentOccurrenceCancelPassed) { "passed" } else { "failed" }) -Details @{
+        cancelledDate = "2026-12-30"
+        dates = $occurrenceCancelAfterDates
+        occurrenceNumbers = $occurrenceCancelAfterNumbers
+        exceptionDates = $rootAfterOccurrenceCancel.recurrenceExdates
+        totalMatches = $occurrenceCancelAfterSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment occurrence cancellation exception" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentOccurrenceCancelRootId) {
+        try {
+            $rootToRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceCancelRootId" -Method Get -TimeoutSec 20
+            $restoreBody = @{
+                providerId = $rootToRestore.providerId
+                title = $rootToRestore.title
+                date = $rootToRestore.date
+                startTime = $rootToRestore.startTime
+                durationMinutes = $rootToRestore.durationMinutes
+                facilityId = $rootToRestore.facilityId
+                billingLocationId = $rootToRestore.billingLocationId
+                categoryId = $rootToRestore.categoryId
+                room = $rootToRestore.room
+                status = $rootToRestore.status
+                comments = $rootToRestore.comments
+                recurrenceType = $rootToRestore.recurrenceType
+                repeatFrequency = $rootToRestore.repeatFrequency
+                repeatUnit = $rootToRestore.repeatUnit
+                recurrenceEndDate = $rootToRestore.recurrenceEndDate
+                recurrenceExdates = @("2026-12-16")
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceCancelRootId" -Method Put -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
