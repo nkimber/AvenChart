@@ -1191,6 +1191,77 @@ finally {
     }
 }
 
+$appointmentOccurrenceRestoreRootId = $null
+try {
+    $occurrenceRestoreSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $occurrenceRestoreBefore = @($occurrenceRestoreSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceToRestore = $occurrenceRestoreBefore | Where-Object { $_.date -eq "2026-12-30" } | Select-Object -First 1
+    if ($null -eq $occurrenceToRestore) {
+        throw "Expected generated occurrence on 2026-12-30 before restore smoke check."
+    }
+
+    $appointmentOccurrenceRestoreRootId = $occurrenceToRestore.seriesRootId
+    $encodedOccurrenceToSkipId = [System.Uri]::EscapeDataString($occurrenceToRestore.id)
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedOccurrenceToSkipId" -Method Delete -TimeoutSec 20 | Out-Null
+
+    $rootAfterSkipForRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRestoreRootId" -Method Get -TimeoutSec 20
+    $encodedRestoreRootId = [System.Uri]::EscapeDataString($appointmentOccurrenceRestoreRootId)
+    $rootAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$encodedRestoreRootId/recurrence-exceptions/2026-12-30/restore" -Method Post -TimeoutSec 20
+
+    $occurrenceRestoreAfterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0013&from=2026-12-02&limit=10" -Method Get -TimeoutSec 20
+    $occurrenceRestoreAfter = @($occurrenceRestoreAfterSearch.appointments | Where-Object { $_.title -eq "Preventive Care" -and $_.isRecurringSeries })
+    $occurrenceRestoreAfterDates = @($occurrenceRestoreAfter | ForEach-Object { $_.date })
+    $occurrenceRestoreAfterNumbers = @($occurrenceRestoreAfter | ForEach-Object { $_.occurrenceNumber })
+    $appointmentOccurrenceRestorePassed = $rootAfterSkipForRestore.recurrenceExceptionCount -eq 2 `
+        -and ($rootAfterSkipForRestore.recurrenceExdates -contains "2026-12-30") `
+        -and $rootAfterRestore.recurrenceExceptionCount -eq 1 `
+        -and ($rootAfterRestore.recurrenceExdates -contains "2026-12-16") `
+        -and ($rootAfterRestore.recurrenceExdates -notcontains "2026-12-30") `
+        -and $occurrenceRestoreAfter.Count -eq 4 `
+        -and (($occurrenceRestoreAfterDates -join ",") -eq "2026-12-02,2026-12-30,2027-01-13,2027-01-27") `
+        -and (($occurrenceRestoreAfterNumbers -join ",") -eq "3,5,6,7")
+
+    Add-Check -Name "appointment occurrence restore exception" -Result $(if ($appointmentOccurrenceRestorePassed) { "passed" } else { "failed" }) -Details @{
+        restoredDate = "2026-12-30"
+        dates = $occurrenceRestoreAfterDates
+        occurrenceNumbers = $occurrenceRestoreAfterNumbers
+        skippedExceptionDates = $rootAfterSkipForRestore.recurrenceExdates
+        restoredExceptionDates = $rootAfterRestore.recurrenceExdates
+        totalMatches = $occurrenceRestoreAfterSearch.totalMatches
+    }
+}
+catch {
+    Add-Check -Name "appointment occurrence restore exception" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentOccurrenceRestoreRootId) {
+        try {
+            $rootToRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRestoreRootId" -Method Get -TimeoutSec 20
+            $restoreBody = @{
+                providerId = $rootToRestore.providerId
+                title = $rootToRestore.title
+                date = $rootToRestore.date
+                startTime = $rootToRestore.startTime
+                durationMinutes = $rootToRestore.durationMinutes
+                facilityId = $rootToRestore.facilityId
+                billingLocationId = $rootToRestore.billingLocationId
+                categoryId = $rootToRestore.categoryId
+                room = $rootToRestore.room
+                status = $rootToRestore.status
+                comments = $rootToRestore.comments
+                recurrenceType = $rootToRestore.recurrenceType
+                repeatFrequency = $rootToRestore.repeatFrequency
+                repeatUnit = $rootToRestore.repeatUnit
+                recurrenceEndDate = $rootToRestore.recurrenceEndDate
+                recurrenceExdates = @("2026-12-16")
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/$appointmentOccurrenceRestoreRootId" -Method Put -ContentType "application/json" -Body $restoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1

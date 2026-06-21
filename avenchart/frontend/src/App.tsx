@@ -114,6 +114,7 @@ import {
   softDeletePatientDocument,
   softDeletePatientMessage,
   restoreEncounterDocument,
+  restoreAppointmentOccurrence,
   restorePatientDocument,
   replaceEncounterDocumentContent,
   replacePatientDocumentContent,
@@ -1038,6 +1039,25 @@ function App() {
       const message = deleteError instanceof Error ? deleteError.message : 'Appointment delete failed'
       setAppointmentError(message)
       throw deleteError
+    }
+  }
+
+  async function handleAppointmentOccurrenceRestore(appointment: AppointmentDetail, occurrenceDate: string) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const updated = await restoreAppointmentOccurrence(appointment.seriesRootId, occurrenceDate)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetail(updated)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (restoreError) {
+      setAppointmentDetailStatus('error')
+      const message = restoreError instanceof Error ? restoreError.message : 'Appointment occurrence restore failed'
+      setAppointmentError(message)
+      throw restoreError
     }
   }
 
@@ -2649,6 +2669,7 @@ function App() {
             onNoShowAppointment={handleAppointmentNoShow}
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
+            onRestoreAppointmentOccurrence={handleAppointmentOccurrenceRestore}
           />
         )}
         {activeModule === 'encounters' && (
@@ -3701,6 +3722,7 @@ function CalendarWorkspace({
   onNoShowAppointment,
   onCancelAppointment,
   onDeleteAppointment,
+  onRestoreAppointmentOccurrence,
 }: {
   patientId: string
   fromDate: string
@@ -3720,6 +3742,7 @@ function CalendarWorkspace({
   onNoShowAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
+  onRestoreAppointmentOccurrence: (appointment: AppointmentDetail, occurrenceDate: string) => Promise<AppointmentDetail>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -3899,6 +3922,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onDeleteAppointment(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleRestoreSkippedDate(occurrenceDate: string) {
+    if (!appointmentDetail) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onRestoreAppointmentOccurrence(appointmentDetail, occurrenceDate)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -4338,7 +4375,29 @@ function CalendarWorkspace({
                 <Field label="Room" value={appointmentDetail.room} />
                 <Field label="Comments" value={appointmentDetail.comments} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
-                <Field label="Skipped dates" value={appointmentSkippedDatesDetail(appointmentDetail)} />
+                <div className="field-row skipped-dates-field">
+                  <span>Skipped dates</span>
+                  <div className="skipped-date-actions">
+                    <strong>{appointmentSkippedDatesDetail(appointmentDetail)}</strong>
+                    {appointmentDetail.recurrenceExdates.length > 0 && (
+                      <div className="skipped-date-list">
+                        {appointmentDetail.recurrenceExdates.map((skippedDate) => (
+                          <button
+                            className="icon-text-button secondary"
+                            type="button"
+                            key={skippedDate}
+                            onClick={() => void handleRestoreSkippedDate(skippedDate)}
+                            disabled={detailStatus === 'loading' || mutationStatus === 'saving'}
+                            aria-label={`Restore occurrence ${skippedDate}`}
+                          >
+                            <RotateCcw size={14} />
+                            <span>Restore {skippedDate}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <Field label="Occurrence" value={appointmentOccurrenceDetail(appointmentDetail)} />
               </InfoPanel>
 

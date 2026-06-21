@@ -775,6 +775,25 @@
   text-align: right;
 }
 
+.skipped-dates-field {
+  align-items: flex-start;
+}
+
+.skipped-date-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.skipped-date-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
 .metric-row strong {
   min-width: 34px;
   display: inline-flex;

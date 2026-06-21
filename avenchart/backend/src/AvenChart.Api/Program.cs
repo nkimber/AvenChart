@@ -214,6 +214,17 @@ appointments.MapPut("/{appointmentId}/status", async (
     })
     .WithName("UpdateAppointmentStatus");
 
+appointments.MapPost("/{appointmentId}/recurrence-exceptions/{occurrenceDate}/restore", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        string occurrenceDate,
+        CancellationToken cancellationToken) =>
+    {
+        var appointment = await repository.RestoreRecurrenceExceptionAsync(appointmentId, occurrenceDate, cancellationToken);
+        return appointment is null ? Results.NotFound() : Results.Ok(appointment);
+    })
+    .WithName("RestoreAppointmentOccurrence");
+
 appointments.MapDelete("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,

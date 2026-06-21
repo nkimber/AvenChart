@@ -1761,6 +1761,25 @@ export async function deleteAppointment(appointmentId: string, signal?: AbortSig
   }
 }
 
+export async function restoreAppointmentOccurrence(
+  appointmentId: string,
+  occurrenceDate: string,
+  signal?: AbortSignal,
+): Promise<AppointmentDetail> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
+    {
+      method: 'POST',
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Appointment occurrence restore failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function searchEncounters(
   patientId: string,
   fromDate: string,
