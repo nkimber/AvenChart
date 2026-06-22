@@ -804,6 +804,79 @@ finally {
     }
 }
 
+$appointmentViewDowngradeActive = $false
+try {
+    $appointmentViewDowngradeBody = @{
+        groupValue = "clin"
+        sectionValue = "patients"
+        permissionValue = "appt"
+        returnValue = "view"
+    } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $appointmentViewDowngradeBody -TimeoutSec 20 | Out-Null
+    $appointmentViewDowngradeActive = $true
+    $script:ClinicianHeaders = $null
+
+    $clinicianAppointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" -Method Get -Headers (Get-ClinicianHeaders) -TimeoutSec 20
+    $clinicianAppointmentMutationStatus = 0
+    $clinicianAppointmentMutationBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Blocked Appointment Mutation Authorization"
+        date = "2026-11-17"
+        startTime = "09:00"
+        durationMinutes = 30
+        facilityId = 10
+        billingLocationId = 10
+        categoryId = 9
+        room = "Blocked"
+        comments = "Blocked by the smoke appointment mutation authorization check."
+    } | ConvertTo-Json
+    try {
+        $clinicianAppointmentMutation = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/appointments" `
+            -Method Post `
+            -Headers (Get-ClinicianHeaders) `
+            -ContentType "application/json" `
+            -Body $clinicianAppointmentMutationBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianAppointmentMutationStatus = [int]$clinicianAppointmentMutation.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianAppointmentMutationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $appointmentMutationAuthorizationPassed = $clinicianAppointments.totalMatches -gt 0 -and $clinicianAppointmentMutationStatus -eq 403
+    Add-Check -Name "appointment mutation authorization" -Result $(if ($appointmentMutationAuthorizationPassed) { "passed" } else { "failed" }) -Details @{
+        clinicianAppointmentMatches = $clinicianAppointments.totalMatches
+        clinicianMutationStatus = $clinicianAppointmentMutationStatus
+    }
+}
+catch {
+    Add-Check -Name "appointment mutation authorization" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($appointmentViewDowngradeActive) {
+        try {
+            $appointmentWriteRestoreBody = @{
+                groupValue = "clin"
+                sectionValue = "patients"
+                permissionValue = "appt"
+                returnValue = "write"
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $appointmentWriteRestoreBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    $script:ClinicianHeaders = $null
+}
+
 $appointmentOverlapPrimaryId = $null
 $appointmentOverlapSecondaryId = $null
 try {

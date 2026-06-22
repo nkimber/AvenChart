@@ -264,7 +264,8 @@ appointments.MapPost("/", async (
             ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")
             : Results.Created($"/api/appointments/{appointment.Id}", appointment);
     })
-    .WithName("CreateAppointment");
+    .WithName("CreateAppointment")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 appointments.MapPut("/{appointmentId}", async (
         AppointmentRepository repository,
@@ -277,7 +278,8 @@ appointments.MapPut("/{appointmentId}", async (
             ? Results.BadRequest("Appointment could not be updated from the supplied date, time, and duration.")
             : Results.Ok(appointment);
     })
-    .WithName("UpdateAppointment");
+    .WithName("UpdateAppointment")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 appointments.MapPut("/{appointmentId}/status", async (
         AppointmentRepository repository,
@@ -288,7 +290,8 @@ appointments.MapPut("/{appointmentId}/status", async (
         var appointment = await repository.UpdateStatusAsync(appointmentId, request, cancellationToken);
         return appointment is null ? Results.NotFound() : Results.Ok(appointment);
     })
-    .WithName("UpdateAppointmentStatus");
+    .WithName("UpdateAppointmentStatus")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 appointments.MapPost("/{appointmentId}/recurrence-exceptions/{occurrenceDate}/restore", async (
         AppointmentRepository repository,
@@ -299,7 +302,8 @@ appointments.MapPost("/{appointmentId}/recurrence-exceptions/{occurrenceDate}/re
         var appointment = await repository.RestoreRecurrenceExceptionAsync(appointmentId, occurrenceDate, cancellationToken);
         return appointment is null ? Results.NotFound() : Results.Ok(appointment);
     })
-    .WithName("RestoreAppointmentOccurrence");
+    .WithName("RestoreAppointmentOccurrence")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule", async (
         AppointmentRepository repository,
@@ -313,7 +317,8 @@ appointments.MapPost("/{appointmentId}/occurrences/{occurrenceDate}/reschedule",
             ? Results.BadRequest("Appointment occurrence could not be rescheduled from the supplied date, time, and duration.")
             : Results.Created($"/api/appointments/{appointment.Id}", appointment);
     })
-    .WithName("RescheduleAppointmentOccurrence");
+    .WithName("RescheduleAppointmentOccurrence")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 appointments.MapDelete("/{appointmentId}", async (
         AppointmentRepository repository,
@@ -323,7 +328,8 @@ appointments.MapDelete("/{appointmentId}", async (
         var deleted = await repository.DeleteAsync(appointmentId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteAppointment");
+    .WithName("DeleteAppointment")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
 var encounters = app.MapGroup("/api/encounters").WithTags("Encounters");
 RequireAccessPermission(encounters, "encounters", "auth_a", "view");
