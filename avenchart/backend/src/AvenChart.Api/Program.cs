@@ -364,7 +364,8 @@ encounters.MapPost("/", async (
             ? Results.BadRequest("Encounter could not be created from the supplied patient and visit details.")
             : Results.Created($"/api/encounters/{encounterDetail.Encounter}", encounterDetail);
     })
-    .WithName("CreateEncounter");
+    .WithName("CreateEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapPut("/{encounter:int}", async (
         EncounterRepository repository,
@@ -375,7 +376,8 @@ encounters.MapPut("/{encounter:int}", async (
         var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, cancellationToken);
         return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
     })
-    .WithName("UpdateEncounter");
+    .WithName("UpdateEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapPost("/{encounter:int}/vitals", async (
         EncounterRepository repository,
@@ -388,7 +390,8 @@ encounters.MapPost("/{encounter:int}/vitals", async (
             ? Results.BadRequest("Vitals could not be recorded for the supplied encounter.")
             : Results.Created($"/api/encounters/{encounter}/vitals/{response.Id}", response);
     })
-    .WithName("CreateEncounterVitals");
+    .WithName("CreateEncounterVitals")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapPost("/{encounter:int}/soap-notes", async (
         EncounterRepository repository,
@@ -401,7 +404,8 @@ encounters.MapPost("/{encounter:int}/soap-notes", async (
             ? Results.BadRequest("SOAP note could not be recorded for the supplied encounter.")
             : Results.Created($"/api/encounters/{encounter}/soap-notes/{response.Id}", response);
     })
-    .WithName("CreateEncounterSoapNote");
+    .WithName("CreateEncounterSoapNote")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapPut("/{encounter:int}/sign", async (
         EncounterRepository repository,
@@ -414,7 +418,8 @@ encounters.MapPut("/{encounter:int}/sign", async (
             ? Results.BadRequest("Encounter could not be signed from the supplied encounter and signer details.")
             : Results.Ok(response);
     })
-    .WithName("SignEncounter");
+    .WithName("SignEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapPost("/{encounter:int}/documents", async (
         EncounterRepository encounterRepository,
@@ -789,7 +794,8 @@ encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
         var deleted = await repository.DeleteSignatureAsync(encounter, signatureId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteEncounterSignature");
+    .WithName("DeleteEncounterSignature")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapDelete("/{encounter:int}/vitals/{vitalsId:int}", async (
         EncounterRepository repository,
@@ -800,7 +806,8 @@ encounters.MapDelete("/{encounter:int}/vitals/{vitalsId:int}", async (
         var deleted = await repository.DeleteVitalsAsync(encounter, vitalsId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteEncounterVitals");
+    .WithName("DeleteEncounterVitals")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapDelete("/{encounter:int}/soap-notes/{soapNoteId:int}", async (
         EncounterRepository repository,
@@ -811,7 +818,8 @@ encounters.MapDelete("/{encounter:int}/soap-notes/{soapNoteId:int}", async (
         var deleted = await repository.DeleteSoapNoteAsync(encounter, soapNoteId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteEncounterSoapNote");
+    .WithName("DeleteEncounterSoapNote")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapDelete("/{encounter:int}", async (
         EncounterRepository repository,
@@ -821,7 +829,8 @@ encounters.MapDelete("/{encounter:int}", async (
         var deleted = await repository.DeleteAsync(encounter, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteEncounter");
+    .WithName("DeleteEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
 RequireAccessPermission(clinicalLists, "patients", "med", "view");
