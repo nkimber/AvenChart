@@ -285,6 +285,16 @@ patients.MapPut("/{patientId}/care-team", async (
     .WithName("UpdatePatientCareTeam")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapGet("/{patientId}/care-team-options", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var options = await repository.GetCareTeamOptionsAsync(patientId, cancellationToken);
+        return options is null ? Results.NotFound() : Results.Ok(options);
+    })
+    .WithName("GetPatientCareTeamOptions");
+
 patients.MapDelete("/{patientId}", async (
         PatientRepository repository,
         string patientId,

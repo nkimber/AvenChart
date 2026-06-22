@@ -246,6 +246,7 @@ drop table if exists appointments;
 drop table if exists insurance_records;
 drop table if exists patient_care_team_members;
 drop table if exists patient_care_teams;
+drop table if exists patient_related_contacts;
 drop table if exists patient_employers;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -427,6 +428,18 @@ create table patient_employers (
   recorded_date date
 );
 
+create table patient_related_contacts (
+  contact_id bigint primary key,
+  person_id bigint not null,
+  patient_id text not null references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  display_name text not null,
+  relationship text,
+  phone text,
+  email text,
+  active boolean not null default true
+);
+
 create table patient_care_teams (
   patient_id text primary key references patients(canonical_id) on delete cascade,
   pid integer not null,
@@ -440,6 +453,7 @@ create table patient_care_team_members (
   id bigserial primary key,
   patient_id text not null references patient_care_teams(patient_id) on delete cascade,
   user_id integer references staff(id),
+  contact_id bigint references patient_related_contacts(contact_id),
   role text not null,
   facility_id integer references facilities(id),
   provider_since date,
@@ -1066,6 +1080,28 @@ copyRows('patient_employers', [
   patient.employerPostalCode,
   patient.employerCountry,
   patient.registrationDate,
+]))
+
+copyRows('patient_related_contacts', [
+  'contact_id',
+  'person_id',
+  'patient_id',
+  'pid',
+  'display_name',
+  'relationship',
+  'phone',
+  'email',
+  'active',
+], dataset.patients.map((patient) => [
+  3200000 + (patient.pid - 100000),
+  3100000 + (patient.pid - 100000),
+  patient.canonicalId,
+  patient.pid,
+  patient.guardianName,
+  patient.guardianRelationship,
+  patient.guardianPhone,
+  patient.guardianEmail,
+  true,
 ]))
 
 copyRows('insurance_records', [
@@ -1776,6 +1812,7 @@ lines.push(`
 create index idx_patients_name on patients (last_name, first_name);
 create index idx_patients_legacy_pid on patients (legacy_pid);
 create index idx_patient_employers_pid on patient_employers (pid);
+create index idx_patient_related_contacts_patient on patient_related_contacts (patient_id);
 create index idx_patient_care_team_members_patient on patient_care_team_members (patient_id);
 create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);

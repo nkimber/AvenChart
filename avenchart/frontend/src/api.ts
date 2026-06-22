@@ -57,6 +57,8 @@ export type PatientInsuranceItem = {
 export type PatientCareTeamMember = {
   id: number
   userId?: number | null
+  contactId?: number | null
+  memberType: string
   memberName?: string | null
   role: string
   roleDisplay: string
@@ -238,12 +240,28 @@ export type PatientProviderAssignmentOptionsResponse = {
   providers: PatientProviderAssignmentOption[]
 }
 
+export type PatientCareTeamContactOption = {
+  id: number
+  displayName: string
+  relationship?: string | null
+  phone?: string | null
+  email?: string | null
+}
+
+export type PatientCareTeamOptionsResponse = {
+  datasetId: string
+  datasetVersion: string
+  providers: PatientProviderAssignmentOption[]
+  contacts: PatientCareTeamContactOption[]
+}
+
 export type PatientProviderAssignmentUpdate = {
   providerId: number | null
 }
 
 export type PatientCareTeamMemberUpdate = {
   userId: number | null
+  contactId: number | null
   role: string
   facilityId: number | null
   providerSince: string
@@ -2343,6 +2361,22 @@ export async function getPatientProviderAssignmentOptions(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient provider options load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getPatientCareTeamOptions(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientCareTeamOptionsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/care-team-options`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient care team options load', response.status))
   }
 
   return response.json()

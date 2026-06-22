@@ -1004,6 +1004,115 @@ finally {
     }
 }
 
+$careTeamContactOriginal = $null
+try {
+    $careTeamContactOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalCareTeamMembers = @()
+    if ($null -ne $careTeamContactOriginal.careTeam) {
+        $originalCareTeamMembers = @($careTeamContactOriginal.careTeam.members) | ForEach-Object {
+            @{
+                userId = $_.userId
+                contactId = $_.contactId
+                role = $_.role
+                facilityId = $_.facilityId
+                providerSince = $_.providerSince
+                status = $_.status
+                note = $_.note
+            }
+        }
+    }
+    $originalCareTeamContactBody = @{
+        teamName = $(if ($null -ne $careTeamContactOriginal.careTeam) { $careTeamContactOriginal.careTeam.teamName } else { "Care Team" })
+        teamStatus = $(if ($null -ne $careTeamContactOriginal.careTeam) { $careTeamContactOriginal.careTeam.teamStatus } else { "active" })
+        members = $originalCareTeamMembers
+    }
+    $careTeamContactBody = @{
+        teamName = "Family Care Team"
+        teamStatus = "active"
+        members = @(
+            @{
+                userId = 103
+                contactId = $null
+                role = "primary_care_provider"
+                facilityId = 12
+                providerSince = "2026-06-18"
+                status = "active"
+                note = "Slice 201 clinical lead"
+            },
+            @{
+                userId = $null
+                contactId = 3200010
+                role = "caregiver"
+                facilityId = $null
+                providerSince = "2026-06-20"
+                status = "active"
+                note = "Slice 201 family caregiver"
+            }
+        )
+    }
+
+    $updatedCareTeamContact = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($careTeamContactBody | ConvertTo-Json -Depth 8) `
+        -TimeoutSec 20
+
+    $reloadedCareTeamContact = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredCareTeamContact = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalCareTeamContactBody | ConvertTo-Json -Depth 8) `
+        -TimeoutSec 20
+    $careTeamContactOriginal = $null
+
+    $contactMember = @($updatedCareTeamContact.careTeam.members) | Where-Object { $_.contactId -eq 3200010 } | Select-Object -First 1
+    $providerMember = @($updatedCareTeamContact.careTeam.members) | Where-Object { $_.userId -eq 103 } | Select-Object -First 1
+    $reloadedContactMember = @($reloadedCareTeamContact.careTeam.members) | Where-Object { $_.contactId -eq 3200010 } | Select-Object -First 1
+    $mutationPassed = $updatedCareTeamContact.careTeam.teamName -eq "Family Care Team" `
+        -and $null -ne $providerMember `
+        -and $providerMember.memberName -eq "Alex Chen" `
+        -and $null -ne $contactMember `
+        -and $contactMember.memberType -eq "contact" `
+        -and $contactMember.memberName -eq "Casey Brooks" `
+        -and $contactMember.roleDisplay -eq "Caregiver" `
+        -and $contactMember.note -eq "Slice 201 family caregiver" `
+        -and $null -ne $reloadedContactMember `
+        -and $reloadedContactMember.memberName -eq "Casey Brooks"
+
+    $restoredMembers = if ($null -ne $restoredCareTeamContact.careTeam) { @($restoredCareTeamContact.careTeam.members) } else { @() }
+    $restorePassed = $restoredMembers.Count -eq $originalCareTeamMembers.Count
+
+    Add-Check -Name "patient care team contact lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedTeam = $updatedCareTeamContact.careTeam.teamName
+        contactMember = $contactMember
+        restored = $restorePassed
+    }
+}
+catch {
+    Add-Check -Name "patient care team contact lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $careTeamContactOriginal) {
+        try {
+            $careTeamContactRestoreBody = if ($null -ne $originalCareTeamContactBody) { $originalCareTeamContactBody } else { @{ members = @() } }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($careTeamContactRestoreBody | ConvertTo-Json -Depth 8) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()

@@ -355,6 +355,82 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Providers: providers);
     }
 
+    public async Task<PatientCareTeamOptionsResponse?> GetCareTeamOptionsAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var providers = new List<PatientProviderAssignmentOption>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    s.id,
+                    trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                    s.facility_id,
+                    f.name as facility_name
+                from staff s
+                left join facilities f on f.id = s.facility_id
+                where s.active = true
+                  and lower(s.role) = 'provider'
+                order by s.last_name, s.first_name, s.id;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                providers.Add(new PatientProviderAssignmentOption(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    DisplayName: reader.GetString(reader.GetOrdinal("provider_name")),
+                    FacilityId: ReadNullableInt(reader, "facility_id"),
+                    FacilityName: ReadNullableString(reader, "facility_name")));
+            }
+        }
+
+        var contacts = new List<PatientCareTeamContactOption>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    contact_id,
+                    display_name,
+                    relationship,
+                    phone,
+                    email
+                from patient_related_contacts
+                where patient_id = @patientId
+                  and active = true
+                order by display_name, contact_id;
+                """;
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                contacts.Add(new PatientCareTeamContactOption(
+                    Id: reader.GetInt64(reader.GetOrdinal("contact_id")),
+                    DisplayName: reader.GetString(reader.GetOrdinal("display_name")),
+                    Relationship: ReadNullableString(reader, "relationship"),
+                    Phone: ReadNullableString(reader, "phone"),
+                    Email: ReadNullableString(reader, "email")));
+            }
+        }
+
+        return new PatientCareTeamOptionsResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Providers: providers,
+            Contacts: contacts);
+    }
+
     private static async Task<PatientCareTeamSummary?> GetCareTeamForPatientAsync(
         NpgsqlConnection connection,
         string patientId,
@@ -367,7 +443,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 ct.team_status,
                 ctm.id,
                 ctm.user_id,
-                trim(concat(s.first_name, ' ', s.last_name)) as member_name,
+                ctm.contact_id,
+                coalesce(nullif(trim(concat(s.first_name, ' ', s.last_name)), ''), prc.display_name) as member_name,
                 ctm.role,
                 ctm.facility_id,
                 f.name as facility_name,
@@ -377,6 +454,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             from patient_care_teams ct
             left join patient_care_team_members ctm on ctm.patient_id = ct.patient_id
             left join staff s on s.id = ctm.user_id
+            left join patient_related_contacts prc on prc.contact_id = ctm.contact_id
             left join facilities f on f.id = ctm.facility_id
             where ct.patient_id = @patientId
             order by ctm.id;
@@ -398,9 +476,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
             var role = reader.GetString(reader.GetOrdinal("role"));
             var status = reader.GetString(reader.GetOrdinal("status"));
+            var contactId = ReadNullableLong(reader, "contact_id");
             members.Add(new PatientCareTeamMember(
                 Id: reader.GetInt64(reader.GetOrdinal("id")),
                 UserId: ReadNullableInt(reader, "user_id"),
+                ContactId: contactId,
+                MemberType: contactId is null ? "provider" : "contact",
                 MemberName: ReadNullableString(reader, "member_name"),
                 Role: role,
                 RoleDisplay: CareTeamRoleDisplay(role),
@@ -964,9 +1045,19 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         foreach (var member in normalized.Members)
         {
-            if (!await CareTeamUserExistsAsync(connection, transaction, member.UserId, cancellationToken)
-                || (member.FacilityId is not null
-                    && !await CareTeamFacilityExistsAsync(connection, transaction, member.FacilityId.Value, cancellationToken)))
+            var providerMemberInvalid = member.UserId is not null
+                && (!await CareTeamUserExistsAsync(connection, transaction, member.UserId.Value, cancellationToken)
+                    || (member.FacilityId is not null
+                        && !await CareTeamFacilityExistsAsync(connection, transaction, member.FacilityId.Value, cancellationToken)));
+            var contactMemberInvalid = member.ContactId is not null
+                && !await CareTeamContactExistsAsync(
+                    connection,
+                    transaction,
+                    patient.CanonicalId,
+                    member.ContactId.Value,
+                    cancellationToken);
+
+            if (providerMemberInvalid || contactMemberInvalid)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return null;
@@ -1011,6 +1102,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 insert into patient_care_team_members (
                     patient_id,
                     user_id,
+                    contact_id,
                     role,
                     facility_id,
                     provider_since,
@@ -1020,6 +1112,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 values (
                     @patientId,
                     @userId,
+                    @contactId,
                     @role,
                     @facilityId,
                     @providerSince,
@@ -1028,7 +1121,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 );
                 """;
             command.Parameters.AddWithValue("patientId", patient.CanonicalId);
-            command.Parameters.AddWithValue("userId", member.UserId);
+            command.Parameters.Add("userId", NpgsqlDbType.Integer).Value = member.UserId is null
+                ? DBNull.Value
+                : member.UserId.Value;
+            command.Parameters.Add("contactId", NpgsqlDbType.Bigint).Value = member.ContactId is null
+                ? DBNull.Value
+                : member.ContactId.Value;
             command.Parameters.AddWithValue("role", member.Role);
             command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = member.FacilityId is null
                 ? DBNull.Value
@@ -1426,6 +1524,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             [
                 new PatientCareTeamMemberUpdateRequest(
                     UserId: request.UserId,
+                    ContactId: null,
                     Role: request.Role,
                     FacilityId: request.FacilityId,
                     ProviderSince: request.ProviderSince,
@@ -1443,10 +1542,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 return NormalizedPatientCareTeam.InvalidValue;
             }
 
-            if (normalizedMember.UserId is not null)
+            if (normalizedMember.UserId is not null || normalizedMember.ContactId is not null)
             {
                 members.Add(new NormalizedPatientCareTeamMember(
-                    UserId: normalizedMember.UserId.Value,
+                    UserId: normalizedMember.UserId,
+                    ContactId: normalizedMember.ContactId,
                     Role: normalizedMember.Role,
                     FacilityId: normalizedMember.FacilityId,
                     ProviderSince: normalizedMember.ProviderSince,
@@ -1466,10 +1566,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private static NormalizedPatientCareTeamMemberCandidate NormalizeCareTeamMember(
         PatientCareTeamMemberUpdateRequest request)
     {
-        if (request.UserId is null)
+        if (request.UserId is null && request.ContactId is null)
         {
             return new NormalizedPatientCareTeamMemberCandidate(
                 UserId: null,
+                ContactId: null,
                 Role: "primary_care_provider",
                 FacilityId: null,
                 ProviderSince: null,
@@ -1478,7 +1579,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 Invalid: false);
         }
 
-        if (request.UserId <= 0 || request.FacilityId <= 0)
+        if ((request.UserId is not null && request.UserId <= 0)
+            || (request.ContactId is not null && request.ContactId <= 0)
+            || (request.UserId is not null && request.ContactId is not null)
+            || (request.UserId is not null && request.FacilityId <= 0))
         {
             return NormalizedPatientCareTeamMemberCandidate.InvalidValue;
         }
@@ -1494,9 +1598,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         }
 
         return new NormalizedPatientCareTeamMemberCandidate(
-            UserId: request.UserId.Value,
+            UserId: request.UserId,
+            ContactId: request.ContactId,
             Role: role ?? "primary_care_provider",
-            FacilityId: request.FacilityId,
+            FacilityId: request.UserId is null ? null : request.FacilityId,
             ProviderSince: providerSince.Value,
             Status: status ?? "active",
             Note: NormalizeString(request.Note),
@@ -1614,6 +1719,29 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             );
             """;
         command.Parameters.AddWithValue("facilityId", facilityId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> CareTeamContactExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string patientId,
+        long contactId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists (
+                select 1
+                from patient_related_contacts
+                where contact_id = @contactId
+                  and patient_id = @patientId
+                  and active = true
+            );
+            """;
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("patientId", patientId);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
@@ -1993,6 +2121,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
     }
 
+    private static long? ReadNullableLong(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
+    }
+
     private static string? ReadNullableIntAsString(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
@@ -2067,7 +2201,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record NormalizedPatientCareTeamMember(
-        int UserId,
+        int? UserId,
+        long? ContactId,
         string Role,
         int? FacilityId,
         DateOnly? ProviderSince,
@@ -2076,6 +2211,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private sealed record NormalizedPatientCareTeamMemberCandidate(
         int? UserId,
+        long? ContactId,
         string Role,
         int? FacilityId,
         DateOnly? ProviderSince,
@@ -2084,7 +2220,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         bool Invalid)
     {
         public static NormalizedPatientCareTeamMemberCandidate InvalidValue { get; } =
-            new(null, "", null, null, "", null, true);
+            new(null, null, "", null, null, "", null, true);
     }
 
     private sealed record NormalizedPatientRegistration(

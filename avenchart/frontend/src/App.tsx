@@ -40,6 +40,7 @@ import {
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
+  getPatientCareTeamOptions,
   getPatientProviderAssignmentOptions,
   getPatientBilling,
   getCollectionsWorkQueue,
@@ -243,6 +244,8 @@ import {
   type PatientBillingResponse,
   type PatientCareTeamMember,
   type PatientCareTeamMemberUpdate,
+  type PatientCareTeamContactOption,
+  type PatientCareTeamOptionsResponse,
   type PatientCareTeamUpdate,
   type PatientDocumentBinaryContentReplaceInput,
   type PatientDocumentBinaryCreateInput,
@@ -348,6 +351,8 @@ function App() {
     useState<PatientProviderAssignmentOptionsResponse | null>(null)
   const [providerAssignmentOptionsStatus, setProviderAssignmentOptionsStatus] =
     useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [careTeamOptions, setCareTeamOptions] = useState<PatientCareTeamOptionsResponse | null>(null)
+  const [careTeamOptionsStatus, setCareTeamOptionsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [patientError, setPatientError] = useState<string | null>(null)
 
   const [appointmentPatientId, setAppointmentPatientId] = useState('MOD-PAT-0003')
@@ -454,6 +459,8 @@ function App() {
       setChartStatus('idle')
       setProviderAssignmentOptions(null)
       setProviderAssignmentOptionsStatus('idle')
+      setCareTeamOptions(null)
+      setCareTeamOptionsStatus('idle')
       setPatientError(null)
       return
     }
@@ -521,6 +528,8 @@ function App() {
     if (!selectedPatientId || !openEmrSessionId) {
       setChartStatus('idle')
       setChart(null)
+      setCareTeamOptions(null)
+      setCareTeamOptionsStatus('idle')
       return
     }
 
@@ -540,6 +549,33 @@ function App() {
     }
 
     loadChart()
+    return () => controller.abort()
+  }, [selectedPatientId, openEmrSessionId])
+
+  useEffect(() => {
+    if (!selectedPatientId || !openEmrSessionId) {
+      setCareTeamOptions(null)
+      setCareTeamOptionsStatus('idle')
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadCareTeamOptions() {
+      setCareTeamOptionsStatus('loading')
+      try {
+        const options = await getPatientCareTeamOptions(selectedPatientId!, openEmrSessionId, controller.signal)
+        setCareTeamOptions(options)
+        setCareTeamOptionsStatus('ready')
+      } catch (optionsError) {
+        if (!controller.signal.aborted) {
+          setCareTeamOptions(null)
+          setCareTeamOptionsStatus('error')
+          setPatientError(optionsError instanceof Error ? optionsError.message : 'Patient care team options failed')
+        }
+      }
+    }
+
+    loadCareTeamOptions()
     return () => controller.abort()
   }, [selectedPatientId, openEmrSessionId])
 
@@ -3729,6 +3765,8 @@ function App() {
             chartStatus={chartStatus}
             providerOptions={providerAssignmentOptions?.providers ?? []}
             providerOptionsStatus={providerAssignmentOptionsStatus}
+            careTeamContactOptions={careTeamOptions?.contacts ?? []}
+            careTeamOptionsStatus={careTeamOptionsStatus}
             error={patientError}
             sessionId={openEmrSessionId}
             onPatientSessionActive={setLegacyEhrSessionId}
@@ -4105,6 +4143,8 @@ function PatientWorkspace({
   chartStatus,
   providerOptions,
   providerOptionsStatus,
+  careTeamContactOptions,
+  careTeamOptionsStatus,
   error,
   sessionId,
   onPatientSessionActive,
@@ -4131,6 +4171,8 @@ function PatientWorkspace({
   chartStatus: 'idle' | 'loading' | 'ready' | 'error'
   providerOptions: PatientProviderAssignmentOption[]
   providerOptionsStatus: 'idle' | 'loading' | 'ready' | 'error'
+  careTeamContactOptions: PatientCareTeamContactOption[]
+  careTeamOptionsStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   sessionId: string | null
   onPatientSessionActive: (sessionId: string) => void
@@ -4261,12 +4303,32 @@ function PatientWorkspace({
         memberIndex === index
           ? {
               ...member,
-              [field]: field === 'facilityId' || field === 'userId' ? (value ? Number(value) : null) : value,
+              [field]:
+                field === 'facilityId' || field === 'userId' || field === 'contactId'
+                  ? value ? Number(value) : null
+                  : value,
             }
           : member,
       )
       return { ...current, members }
     })
+  }
+
+  function updateCareTeamMemberType(index: number, memberType: 'provider' | 'contact') {
+    setCareTeamDraft((current) => ({
+      ...current,
+      members: current.members.map((member, memberIndex) =>
+        memberIndex === index
+          ? {
+              ...member,
+              userId: null,
+              contactId: null,
+              facilityId: null,
+              role: memberType === 'contact' ? 'caregiver' : 'primary_care_provider',
+            }
+          : member,
+      ),
+    }))
   }
 
   function updateCareTeamProvider(index: number, providerId: string) {
@@ -4278,7 +4340,24 @@ function PatientWorkspace({
           ? {
               ...member,
               userId: providerId ? Number(providerId) : null,
+              contactId: null,
               facilityId: provider?.facilityId ?? null,
+            }
+          : member,
+      ),
+    }))
+  }
+
+  function updateCareTeamContact(index: number, contactId: string) {
+    setCareTeamDraft((current) => ({
+      ...current,
+      members: current.members.map((member, memberIndex) =>
+        memberIndex === index
+          ? {
+              ...member,
+              userId: null,
+              contactId: contactId ? Number(contactId) : null,
+              facilityId: null,
             }
           : member,
       ),
@@ -5741,7 +5820,9 @@ function PatientWorkspace({
                       </select>
                     </label>
                     {careTeamDraft.members.map((member, index) => {
+                      const memberType = member.contactId ? 'contact' : 'provider'
                       const selectedProvider = providerOptions.find((provider) => provider.id === member.userId)
+                      const selectedContact = careTeamContactOptions.find((contact) => contact.id === member.contactId)
                       const facilityName = selectedProvider?.facilityName ?? ''
 
                       return (
@@ -5759,21 +5840,57 @@ function PatientWorkspace({
                             </button>
                           </div>
                           <label className="contact-field">
-                            <span>Member</span>
+                            <span>Member type</span>
                             <select
-                              value={member.userId ?? ''}
-                              onChange={(event) => updateCareTeamProvider(index, event.target.value)}
-                              aria-label={`Care team member ${index + 1}`}
+                              value={memberType}
+                              onChange={(event) => updateCareTeamMemberType(index, event.target.value as 'provider' | 'contact')}
+                              aria-label={`Care team member ${index + 1} type`}
                             >
-                              <option value="">Unassigned</option>
-                              {providerOptions.map((provider) => (
-                                <option key={provider.id} value={provider.id}>
-                                  {provider.displayName}
-                                  {provider.facilityName ? ` - ${provider.facilityName}` : ''}
-                                </option>
-                              ))}
+                              <option value="provider">Provider</option>
+                              <option value="contact">Patient contact</option>
                             </select>
                           </label>
+                          {memberType === 'contact' ? (
+                            <>
+                              <label className="contact-field">
+                                <span>Contact</span>
+                                <select
+                                  value={member.contactId ?? ''}
+                                  onChange={(event) => updateCareTeamContact(index, event.target.value)}
+                                  aria-label={`Care team contact member ${index + 1}`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {careTeamContactOptions.map((contact) => (
+                                    <option key={contact.id} value={contact.id}>
+                                      {contact.displayName}
+                                      {contact.relationship ? ` - ${formatGuardianRelationship(contact.relationship)}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <Field label="Relationship" value={formatGuardianRelationship(selectedContact?.relationship)} />
+                            </>
+                          ) : (
+                            <>
+                              <label className="contact-field">
+                                <span>Provider</span>
+                                <select
+                                  value={member.userId ?? ''}
+                                  onChange={(event) => updateCareTeamProvider(index, event.target.value)}
+                                  aria-label={`Care team provider member ${index + 1}`}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {providerOptions.map((provider) => (
+                                    <option key={provider.id} value={provider.id}>
+                                      {provider.displayName}
+                                      {provider.facilityName ? ` - ${provider.facilityName}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <Field label="Facility" value={facilityName} />
+                            </>
+                          )}
                           <label className="contact-field">
                             <span>Role</span>
                             <select
@@ -5788,7 +5905,6 @@ function PatientWorkspace({
                               ))}
                             </select>
                           </label>
-                          <Field label="Facility" value={facilityName} />
                           <label className="contact-field">
                             <span>Provider since</span>
                             <input
@@ -5831,7 +5947,11 @@ function PatientWorkspace({
                       <button
                         className="icon-text-button primary"
                         type="submit"
-                        disabled={careTeamSaveStatus === 'saving' || providerOptionsStatus === 'loading'}
+                        disabled={
+                          careTeamSaveStatus === 'saving'
+                          || providerOptionsStatus === 'loading'
+                          || careTeamOptionsStatus === 'loading'
+                        }
                       >
                         <Check size={15} />
                         <span>{careTeamSaveStatus === 'saving' ? 'Saving' : 'Save care team'}</span>
@@ -5848,7 +5968,9 @@ function PatientWorkspace({
                         <X size={15} />
                         <span>Cancel</span>
                       </button>
-                      {providerOptionsStatus === 'error' && <span className="save-note error">Options unavailable</span>}
+                      {(providerOptionsStatus === 'error' || careTeamOptionsStatus === 'error') && (
+                        <span className="save-note error">Options unavailable</span>
+                      )}
                     </div>
                   </form>
                 ) : (
@@ -5858,6 +5980,7 @@ function PatientWorkspace({
                     {careTeamMembers.length > 0 ? (
                       careTeamMembers.map((member, index) => (
                         <div className="care-team-member-summary" key={member.id || `care-team-member-summary-${index}`}>
+                          <Field label="Type" value={member.memberType === 'contact' ? 'Patient contact' : 'Provider'} />
                           <Field label={`Member ${index + 1}`} value={member.memberName} />
                           <Field label="Role" value={member.roleDisplay} />
                           <Field label="Facility" value={member.facilityName} />
@@ -5878,7 +6001,7 @@ function PatientWorkspace({
                           setIsEditingCareTeam(true)
                           setCareTeamSaveStatus('idle')
                         }}
-                        disabled={!chart || providerOptionsStatus === 'loading'}
+                        disabled={!chart || providerOptionsStatus === 'loading' || careTeamOptionsStatus === 'loading'}
                       >
                         <Pencil size={15} />
                         <span>Edit care team</span>
@@ -18574,6 +18697,7 @@ function buildCareTeamDraft(patient: PatientChartSummary | null): PatientCareTea
 function buildCareTeamMemberDraft(member?: PatientCareTeamMember | null): PatientCareTeamMemberUpdate {
   return {
     userId: member?.userId ?? null,
+    contactId: member?.contactId ?? null,
     role: member?.role ?? 'primary_care_provider',
     facilityId: member?.facilityId ?? null,
     providerSince: member?.providerSince ?? '',

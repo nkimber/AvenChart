@@ -163,6 +163,8 @@ public sealed record PatientCareTeamSummary(
 public sealed record PatientCareTeamMember(
     long Id,
     int? UserId,
+    long? ContactId,
+    string MemberType,
     string? MemberName,
     string Role,
     string RoleDisplay,
@@ -245,11 +247,25 @@ public sealed record PatientProviderAssignmentOption(
     int? FacilityId,
     string? FacilityName);
 
+public sealed record PatientCareTeamContactOption(
+    long Id,
+    string DisplayName,
+    string? Relationship,
+    string? Phone,
+    string? Email);
+
+public sealed record PatientCareTeamOptionsResponse(
+    string DatasetId,
+    string DatasetVersion,
+    IReadOnlyList<PatientProviderAssignmentOption> Providers,
+    IReadOnlyList<PatientCareTeamContactOption> Contacts);
+
 public sealed record PatientProviderAssignmentUpdateRequest(
     int? ProviderId);
 
 public sealed record PatientCareTeamMemberUpdateRequest(
     int? UserId,
+    long? ContactId,
     string? Role,
     int? FacilityId,
     string? ProviderSince,
