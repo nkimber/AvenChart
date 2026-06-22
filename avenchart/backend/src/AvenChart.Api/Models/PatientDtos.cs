@@ -168,3 +168,12 @@ public sealed record PatientRegistrationRequest(
     string? Email,
     string? HipaaAllowSms,
     string? HipaaAllowEmail);
+
+public sealed record PatientRegistrationMutationResult(
+    PatientChartSummary? Patient,
+    IReadOnlyList<PatientRegistrationValidationIssue> ValidationIssues);
+
+public sealed record PatientRegistrationValidationIssue(
+    string Field,
+    string Code,
+    string Message);

@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using System.Net.Mail;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -402,13 +403,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             .ToArray();
     }
 
-    public async Task<PatientChartSummary?> CreatePatientAsync(
+    public async Task<PatientRegistrationMutationResult> CreatePatientAsync(
         PatientRegistrationRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryNormalizeRegistration(request, out var normalized))
+        var validationIssues = ValidateRegistration(request, out var normalized);
+        if (validationIssues.Count > 0)
         {
-            return null;
+            return new PatientRegistrationMutationResult(null, validationIssues);
         }
 
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -451,11 +453,20 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         try
         {
             var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-            return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+            var patient = canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+            return new PatientRegistrationMutationResult(patient, Array.Empty<PatientRegistrationValidationIssue>());
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            return null;
+            return new PatientRegistrationMutationResult(
+                null,
+                new[]
+                {
+                    new PatientRegistrationValidationIssue(
+                        "pubpid",
+                        "duplicate",
+                        "Public ID is already in use.")
+                });
         }
     }
 
@@ -908,26 +919,109 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return true;
     }
 
-    private static bool TryNormalizeRegistration(
+    private static IReadOnlyList<PatientRegistrationValidationIssue> ValidateRegistration(
         PatientRegistrationRequest request,
         out NormalizedPatientRegistration normalized)
     {
+        var issues = new List<PatientRegistrationValidationIssue>();
         var pubpid = request.Pubpid?.Trim();
-        if (string.IsNullOrWhiteSpace(pubpid)
-            || !TryNormalizeDemographics(
-                new PatientDemographicsUpdateRequest(
-                    request.FirstName,
-                    request.LastName,
-                    request.PreferredName,
-                    request.Sex,
-                    request.DateOfBirth,
-                    request.Street,
-                    request.City,
-                    request.State,
-                    request.PostalCode,
-                    request.MaritalStatus,
-                    request.Occupation),
-                out var demographics))
+        var firstName = request.FirstName?.Trim();
+        var lastName = request.LastName?.Trim();
+        var sex = request.Sex?.Trim();
+        var dateOfBirthText = request.DateOfBirth?.Trim();
+        var email = NormalizeString(request.Email);
+
+        if (string.IsNullOrWhiteSpace(pubpid))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "pubpid",
+                "required",
+                "Public ID is required by the modernized canonical patient mapping."));
+        }
+        else if (pubpid.Length > 255)
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "pubpid",
+                "maxLength",
+                "Public ID must be 255 characters or fewer."));
+        }
+
+        if (string.IsNullOrWhiteSpace(firstName))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "firstName",
+                "required",
+                "First name is required."));
+        }
+        else if (firstName.Length > 255)
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "firstName",
+                "maxLength",
+                "First name must be 255 characters or fewer."));
+        }
+
+        if (string.IsNullOrWhiteSpace(lastName))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "lastName",
+                "required",
+                "Last name is required."));
+        }
+        else if (lastName.Length < 2)
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "lastName",
+                "minLength",
+                "Last name must be at least 2 characters."));
+        }
+        else if (lastName.Length > 255)
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "lastName",
+                "maxLength",
+                "Last name must be 255 characters or fewer."));
+        }
+
+        if (string.IsNullOrWhiteSpace(sex))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "sex",
+                "required",
+                "Sex is required."));
+        }
+        else if (sex.Length is < 4 or > 30)
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "sex",
+                "length",
+                "Sex must be between 4 and 30 characters."));
+        }
+
+        if (string.IsNullOrWhiteSpace(dateOfBirthText)
+            || !DateOnly.TryParseExact(
+                dateOfBirthText,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var dateOfBirth))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "dateOfBirth",
+                "date",
+                "Date of birth must be a valid date in yyyy-MM-dd format."));
+            dateOfBirth = default;
+        }
+
+        if (email is not null && !IsValidEmail(email))
+        {
+            issues.Add(new PatientRegistrationValidationIssue(
+                "email",
+                "email",
+                "Email must be a valid email address."));
+        }
+
+        if (issues.Count > 0)
         {
             normalized = new NormalizedPatientRegistration(
                 "",
@@ -947,28 +1041,28 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 null,
                 "YES",
                 "YES");
-            return false;
+            return issues;
         }
 
         normalized = new NormalizedPatientRegistration(
-            Pubpid: pubpid,
-            FirstName: demographics.FirstName,
-            LastName: demographics.LastName,
-            PreferredName: demographics.PreferredName,
-            Sex: demographics.Sex,
-            DateOfBirth: demographics.DateOfBirth,
-            Street: demographics.Street,
-            City: demographics.City,
-            State: demographics.State,
-            PostalCode: demographics.PostalCode,
-            MaritalStatus: demographics.MaritalStatus,
-            Occupation: demographics.Occupation,
+            Pubpid: pubpid!,
+            FirstName: firstName!,
+            LastName: lastName!,
+            PreferredName: NormalizeString(request.PreferredName),
+            Sex: sex,
+            DateOfBirth: dateOfBirth,
+            Street: NormalizeString(request.Street),
+            City: NormalizeString(request.City),
+            State: NormalizeString(request.State),
+            PostalCode: NormalizeString(request.PostalCode),
+            MaritalStatus: NormalizeString(request.MaritalStatus),
+            Occupation: NormalizeString(request.Occupation),
             PhoneHome: NormalizeString(request.PhoneHome),
             PhoneCell: NormalizeString(request.PhoneCell),
-            Email: NormalizeString(request.Email),
+            Email: email,
             HipaaAllowSms: NormalizePermissionOrDefault(request.HipaaAllowSms),
             HipaaAllowEmail: NormalizePermissionOrDefault(request.HipaaAllowEmail));
-        return true;
+        return Array.Empty<PatientRegistrationValidationIssue>();
     }
 
     private static string? NormalizeString(string? value)
@@ -981,6 +1075,19 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var normalized = NormalizeString(value)?.ToUpperInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? "YES" : normalized;
+    }
+
+    private static bool IsValidEmail(string value)
+    {
+        try
+        {
+            var address = new MailAddress(value);
+            return string.Equals(address.Address, value, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     private static bool TryNormalizeInsurance(

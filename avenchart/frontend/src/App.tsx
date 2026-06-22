@@ -93,6 +93,7 @@ import {
   createProcedureResult,
   createPatient,
   findPatientDuplicates,
+  PatientRegistrationValidationError,
   updateProcedureReport,
   updateProcedureResult,
   deleteAppointment,
@@ -3985,6 +3986,7 @@ function PatientWorkspace({
   const [isRegistering, setIsRegistering] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState<PatientRegistrationInput>(() => buildRegistrationDraft())
   const [registrationSaveStatus, setRegistrationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [registrationValidationMessages, setRegistrationValidationMessages] = useState<string[]>([])
   const [duplicateSearch, setDuplicateSearch] = useState<PatientDuplicateSearchResponse | null>(null)
   const [duplicateSearchStatus, setDuplicateSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [duplicateSearchError, setDuplicateSearchError] = useState<string | null>(null)
@@ -4020,6 +4022,7 @@ function PatientWorkspace({
 
   function updateRegistrationDraft(field: keyof PatientRegistrationInput, value: string) {
     setRegistrationDraft((current) => ({ ...current, [field]: value }))
+    setRegistrationValidationMessages([])
     setDuplicateSearchStatus('idle')
     setDuplicateSearchError(null)
   }
@@ -4054,7 +4057,11 @@ function PatientWorkspace({
       setRegistrationDraft(buildRegistrationDraft())
       setIsRegistering(false)
       setRegistrationSaveStatus('saved')
-    } catch {
+      setRegistrationValidationMessages([])
+    } catch (registrationError) {
+      if (registrationError instanceof PatientRegistrationValidationError) {
+        setRegistrationValidationMessages(registrationError.messages)
+      }
       setRegistrationSaveStatus('error')
     }
   }
@@ -4216,6 +4223,7 @@ function PatientWorkspace({
             onClick={() => {
               setIsRegistering((current) => !current)
               setRegistrationSaveStatus('idle')
+              setRegistrationValidationMessages([])
             }}
           >
             <UserPlus size={15} />
@@ -4354,12 +4362,23 @@ function PatientWorkspace({
                   setRegistrationDraft(buildRegistrationDraft())
                   setIsRegistering(false)
                   setRegistrationSaveStatus('idle')
+                  setRegistrationValidationMessages([])
                 }}
               >
                 <X size={15} />
                 <span>Cancel</span>
               </button>
             </div>
+            {registrationValidationMessages.length > 0 && (
+              <div className="status-banner error" aria-label="Patient registration validation">
+                <strong>Registration Validation</strong>
+                <ul>
+                  {registrationValidationMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="duplicate-readiness-panel" aria-label="Patient duplicate readiness">
               <div className="duplicate-readiness-header">
                 <strong>Duplicate Readiness</strong>

@@ -147,6 +147,16 @@ export type PatientRegistrationInput = PatientDemographicsUpdate & {
   hipaaAllowEmail: string
 }
 
+export class PatientRegistrationValidationError extends Error {
+  readonly messages: string[]
+
+  constructor(messages: string[]) {
+    super(`Patient registration validation failed: ${messages.join('; ')}`)
+    this.name = 'PatientRegistrationValidationError'
+    this.messages = messages
+  }
+}
+
 export type AppointmentListItem = {
   id: string
   seriesRootId: string
@@ -2255,10 +2265,28 @@ export async function createPatient(
     signal,
   })
   if (!response.ok) {
+    if (response.status === 400) {
+      const messages = await readValidationMessages(response)
+      if (messages.length > 0) {
+        throw new PatientRegistrationValidationError(messages)
+      }
+    }
+
     throw new Error(patientApiError('Patient registration', response.status))
   }
 
   return response.json()
+}
+
+async function readValidationMessages(response: Response) {
+  try {
+    const body = (await response.json()) as { errors?: Record<string, string[]>; title?: string }
+    return Object.values(body.errors ?? {})
+      .flat()
+      .filter((message): message is string => typeof message === 'string' && message.trim().length > 0)
+  } catch {
+    return []
+  }
 }
 
 export async function deletePatient(patientId: string, sessionId?: string | null, signal?: AbortSignal): Promise<void> {

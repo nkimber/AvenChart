@@ -115,6 +115,49 @@ function New-AuthenticatedHttpClient {
     return $client
 }
 
+function Read-HttpErrorBody {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$ErrorRecord
+    )
+
+    if ($ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) {
+        return $ErrorRecord.ErrorDetails.Message
+    }
+
+    $response = $ErrorRecord.Exception.Response
+    if ($null -eq $response) {
+        return $null
+    }
+
+    try {
+        if ($response.Content) {
+            return $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        }
+    }
+    catch {
+    }
+
+    try {
+        if ($response.GetResponseStream) {
+            $stream = $response.GetResponseStream()
+            if ($null -ne $stream) {
+                $reader = [System.IO.StreamReader]::new($stream)
+                try {
+                    return $reader.ReadToEnd()
+                }
+                finally {
+                    $reader.Dispose()
+                }
+            }
+        }
+    }
+    catch {
+    }
+
+    return $null
+}
+
 try {
     $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -Method Get -TimeoutSec 15
     Add-Check -Name "api health" -Result $(if ($health.status -eq "healthy") { "passed" } else { "failed" }) -Details $health
@@ -562,6 +605,75 @@ catch {
         }
     }
     Add-Check -Name "patient registration lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+$invalidRegistrationPubpid = "TMP-PAT-REG-VAL-SMK$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+try {
+    $invalidRegistrationBody = @{
+        pubpid = $invalidRegistrationPubpid
+        firstName = "Validation"
+        lastName = "Q"
+        preferredName = "Slice192"
+        sex = ""
+        dateOfBirth = "1991-04-15"
+        street = "192 Validation Way"
+        city = "Hartford"
+        state = "CT"
+        postalCode = "06103"
+        maritalStatus = "single"
+        occupation = "Registration Validation Fixture"
+        phoneHome = "(860) 555-1920"
+        phoneCell = "(860) 555-1921"
+        email = "not-an-email"
+        hipaaAllowSms = "YES"
+        hipaaAllowEmail = "YES"
+    }
+
+    $validationStatusCode = $null
+    $validationProblem = $null
+    try {
+        Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/patients" `
+            -Method Post `
+            -Headers (Get-AdministrationHeaders) `
+            -ContentType "application/json" `
+            -Body ($invalidRegistrationBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $validationStatusCode = [int]$_.Exception.Response.StatusCode
+        }
+        $validationProblemBody = Read-HttpErrorBody -ErrorRecord $_
+        if ($validationProblemBody) {
+            $validationProblem = $validationProblemBody | ConvertFrom-Json
+        }
+    }
+
+    $invalidLoadFailed = $false
+    try {
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$invalidRegistrationPubpid" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $invalidLoadFailed = $true
+    }
+
+    $registrationValidationPassed = $validationStatusCode -eq 400 `
+        -and $validationProblem.title -eq "Patient registration validation failed" `
+        -and (@($validationProblem.errors.lastName) -contains "Last name must be at least 2 characters.") `
+        -and (@($validationProblem.errors.sex) -contains "Sex is required.") `
+        -and (@($validationProblem.errors.email) -contains "Email must be a valid email address.") `
+        -and $invalidLoadFailed
+
+    Add-Check -Name "patient registration validation readiness" -Result $(if ($registrationValidationPassed) { "passed" } else { "failed" }) -Details @{
+        pubpid = $invalidRegistrationPubpid
+        statusCode = $validationStatusCode
+        validationProblem = $validationProblem
+        invalidLoadFailed = $invalidLoadFailed
+    }
+}
+catch {
+    Add-Check -Name "patient registration validation readiness" -Result "failed" -Details $_.Exception.Message
 }
 
 $duplicateRegistrationPubpid = $null

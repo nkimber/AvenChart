@@ -161,10 +161,10 @@ patients.MapPost("/", async (
         PatientRegistrationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.CreatePatientAsync(request, cancellationToken);
-        return patient is null
-            ? Results.BadRequest("Patient could not be registered from the supplied identity, demographic, and contact details.")
-            : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
+        var result = await repository.CreatePatientAsync(request, cancellationToken);
+        return result.Patient is null
+            ? RegistrationValidationProblem(result.ValidationIssues)
+            : Results.Created($"/api/patients/{result.Patient.CanonicalId}", result.Patient);
     })
     .WithName("RegisterPatient")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "addonly"));
@@ -2074,6 +2074,20 @@ reports.MapGet("/operational/export", async (
     .WithName("ExportOperationalReports");
 
 app.Run();
+
+static IResult RegistrationValidationProblem(IReadOnlyList<PatientRegistrationValidationIssue> issues)
+{
+    var errors = issues
+        .GroupBy(issue => issue.Field)
+        .ToDictionary(
+            group => group.Key,
+            group => group.Select(issue => issue.Message).ToArray());
+
+    return Results.ValidationProblem(
+        errors,
+        statusCode: StatusCodes.Status400BadRequest,
+        title: "Patient registration validation failed");
+}
 
 static void RequireAccessPermission(
     RouteGroupBuilder group,
