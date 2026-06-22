@@ -10941,8 +10941,11 @@ function ProceduresWorkspace({
   const [procedureDiagnosis, setProcedureDiagnosis] = useState('Z00.00')
   const [procedureInstructions, setProcedureInstructions] = useState('Collect fasting sample.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
-  const [proceduresLoginStatus, setProceduresLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
-  const [proceduresLoginError, setProceduresLoginError] = useState<string | null>(null)
+  const [proceduresLoginUsername, setProceduresLoginUsername] = useState('admin')
+  const [proceduresLoginPassword, setProceduresLoginPassword] = useState('pass')
+  const [proceduresLoginStatus, setProceduresLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [proceduresLoginMessage, setProceduresLoginMessage] = useState<string | null>(null)
   const procedureCounts = procedureResults?.counts
   const scheduledOrders = procedureResults?.orders.filter(isScheduledProcedureOrder) ?? []
   const reportlessOrders = procedureResults?.orders.filter((order) => order.reports.length === 0) ?? []
@@ -10961,7 +10964,10 @@ function ProceduresWorkspace({
     [orderCatalog],
   )
   const isLoading = status === 'loading'
-  const proceduresLocked = !sessionId
+  const procedureAuthorizationError =
+    (status === 'error' && Boolean(error?.includes('Procedure access'))) ||
+    (orderCatalogStatus === 'error' && Boolean(orderCatalogError?.includes('Procedure access')))
+  const proceduresLocked = !sessionId || procedureAuthorizationError
 
   useEffect(() => {
     if (!procedureResults || procedureResults.orders.length === 0) {
@@ -11009,40 +11015,60 @@ function ProceduresWorkspace({
   async function handleProceduresLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setProceduresLoginStatus('checking')
-    setProceduresLoginError(null)
+    setProceduresLoginMessage(null)
 
     try {
-      const result = await login({ username: 'admin', password: 'pass' })
+      const result = await login({ username: proceduresLoginUsername, password: proceduresLoginPassword })
       if (result.authenticated && result.sessionId) {
         onProceduresSessionActive(result.sessionId)
-        setProceduresLoginStatus('idle')
+        setProceduresLoginStatus('authenticated')
+        setProceduresLoginMessage(`Signed in as ${result.displayName}`)
       } else {
-        setProceduresLoginStatus('error')
-        setProceduresLoginError(result.failureReason ?? 'Procedure access was not granted.')
+        setProceduresLoginStatus('rejected')
+        setProceduresLoginMessage(result.failureReason ?? 'Procedure access was rejected.')
       }
     } catch (error) {
       setProceduresLoginStatus('error')
-      setProceduresLoginError(error instanceof Error ? error.message : 'Procedure access check failed')
+      setProceduresLoginMessage(error instanceof Error ? error.message : 'Procedure access check failed')
     }
   }
 
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Procedure results search">
-        {!sessionId && (
+        {(!sessionId || procedureAuthorizationError) && (
           <form className="mutation-form" aria-label="Procedures access" onSubmit={handleProceduresLogin}>
             <div className="panel-heading compact-heading">
               <ShieldCheck size={16} />
               <h3>Procedures Access</h3>
             </div>
-            <p className="form-help-text">Sign in to load procedure orders, reports, specimens, and results.</p>
+            <p className="form-help-text">Sign in to load procedure results, orders, reports, and specimens.</p>
+            <label>
+              Username
+              <input
+                value={proceduresLoginUsername}
+                onChange={(event) => setProceduresLoginUsername(event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={proceduresLoginPassword}
+                onChange={(event) => setProceduresLoginPassword(event.target.value)}
+              />
+            </label>
             <div className="detail-actions">
               <button className="icon-text-button primary" type="submit" disabled={proceduresLoginStatus === 'checking'}>
                 <LogIn size={15} />
                 {proceduresLoginStatus === 'checking' ? 'Checking' : 'Verify Procedures Access'}
               </button>
             </div>
-            {proceduresLoginError && <div className="status-banner error">{proceduresLoginError}</div>}
+            {proceduresLoginMessage && (
+              <div className={proceduresLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {proceduresLoginMessage}
+              </div>
+            )}
           </form>
         )}
 

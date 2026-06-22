@@ -6009,9 +6009,96 @@ try {
     $completedOrder = $procedures.orders | Where-Object { $_.name -eq "Complete blood count" -and $_.orderStatus -eq "complete" } | Select-Object -First 1
     $completedReport = $completedOrder.reports | Where-Object { $_.status -eq "complete" } | Select-Object -First 1
     $hemoglobin = $completedReport.results | Where-Object { $_.text -eq "Hemoglobin" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $proceduresPassed = $unauthenticatedProceduresStatus -eq 401 -and $procedures.patientId -eq "MOD-PAT-0009" -and $null -ne $completedOrder -and $null -ne $completedReport -and $null -ne $hemoglobin
+
+    $frontDeskProceduresStatus = 0
+    try {
+        $frontDeskProcedures = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskProceduresStatus = [int]$frontDeskProcedures.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskProceduresStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskCatalogStatus = 0
+    try {
+        $frontDeskCatalog = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/order-catalog" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskCatalogStatus = [int]$frontDeskCatalog.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskCatalogStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskCreateStatus = 0
+    if ($null -eq $completedOrder -or $null -eq $completedOrder.encounter) {
+        throw "Anchor procedure order did not provide an encounter for the procedure authorization check."
+    }
+    $frontDeskCreateBody = @{
+        patientId = "MOD-PAT-0009"
+        providerId = 101
+        labId = 501
+        encounterId = [int]$completedOrder.encounter
+        dateOrdered = "2026-06-18"
+        priority = "routine"
+        status = "pending"
+        procedureCode = "85025"
+        procedureName = "Blocked Procedure Authorization Order"
+        procedureType = "laboratory"
+        diagnosis = "Z00.00"
+        instructions = "This request should be rejected before mutation."
+    } | ConvertTo-Json -Depth 8
+    try {
+        $frontDeskCreate = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/orders" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskCreateBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskCreateStatus = [int]$frontDeskCreate.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskCreateStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $proceduresPassed = $unauthenticatedProceduresStatus -eq 401 `
+        -and $frontDeskProceduresStatus -eq 403 `
+        -and $frontDeskCatalogStatus -eq 403 `
+        -and $frontDeskCreateStatus -eq 403 `
+        -and $procedures.patientId -eq "MOD-PAT-0009" `
+        -and $null -ne $completedOrder `
+        -and $null -ne $completedReport `
+        -and $null -ne $hemoglobin
     Add-Check -Name "anchor procedure results" -Result $(if ($proceduresPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedProceduresStatus
+        frontDeskProcedureStatus = $frontDeskProceduresStatus
+        frontDeskCatalogStatus = $frontDeskCatalogStatus
+        frontDeskCreateStatus = $frontDeskCreateStatus
         patientId = $procedures.patientId
         orderCount = $procedures.orders.Count
         completedOrder = $completedOrder

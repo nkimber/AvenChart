@@ -1246,7 +1246,7 @@ documents.MapDelete("/{documentId:int}", async (
     .WithName("DeletePatientDocument");
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
-RequireActiveSession(procedures);
+RequireAccessPermission(procedures, "patients", "lab", "view");
 
 procedures.MapGet("/lab-provider-address-book", async (
         ProcedureRepository repository,
@@ -1968,21 +1968,6 @@ reports.MapGet("/operational/export", async (
     .WithName("ExportOperationalReports");
 
 app.Run();
-
-static void RequireActiveSession(RouteGroupBuilder group)
-{
-    group.AddEndpointFilter(async (context, next) =>
-    {
-        var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
-        var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
-        if (!session.Authenticated)
-        {
-            return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
-        }
-
-        return await next(context);
-    });
-}
 
 static void RequireAccessPermission(
     RouteGroupBuilder group,

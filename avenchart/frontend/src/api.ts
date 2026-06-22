@@ -2115,6 +2115,10 @@ function billingApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Billing access')
 }
 
+function procedureApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Procedure access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -3480,7 +3484,7 @@ export async function getProcedureResults(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure results load', response.status))
+    throw new Error(procedureApiError('Procedure results load', response.status))
   }
 
   return response.json()
@@ -3516,7 +3520,7 @@ export async function getProcedureReportReviewQueue(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report review queue load', response.status))
+    throw new Error(procedureApiError('Procedure report review queue load', response.status))
   }
 
   return response.json()
@@ -3552,7 +3556,7 @@ export async function getProcedureOrderQueue(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order queue load', response.status))
+    throw new Error(procedureApiError('Procedure order queue load', response.status))
   }
 
   return response.json()
@@ -3575,7 +3579,7 @@ export async function getProcedureLabProviders(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider directory load', response.status))
+    throw new Error(procedureApiError('Procedure lab provider directory load', response.status))
   }
 
   return response.json()
@@ -3590,7 +3594,7 @@ export async function getProcedureLabProviderAddressBook(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider address book load', response.status))
+    throw new Error(procedureApiError('Procedure lab provider address book load', response.status))
   }
 
   return response.json()
@@ -3605,7 +3609,7 @@ export async function getProcedureOrderCatalog(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order catalog load', response.status))
+    throw new Error(procedureApiError('Procedure order catalog load', response.status))
   }
 
   return response.json()
@@ -3623,7 +3627,7 @@ export async function createProcedureOrderCatalogItem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order catalog create', response.status))
+    throw new Error(procedureApiError('Procedure order catalog create', response.status))
   }
 
   return response.json()
@@ -3642,7 +3646,7 @@ export async function updateProcedureOrderCatalogItem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order catalog update', response.status))
+    throw new Error(procedureApiError('Procedure order catalog update', response.status))
   }
 
   return response.json()
@@ -3659,7 +3663,7 @@ export async function deleteProcedureOrderCatalogItem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order catalog delete', response.status))
+    throw new Error(procedureApiError('Procedure order catalog delete', response.status))
   }
 }
 
@@ -3675,7 +3679,7 @@ export async function importProcedureOrderCatalogCompendium(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order catalog compendium import', response.status))
+    throw new Error(procedureApiError('Procedure order catalog compendium import', response.status))
   }
 
   return response.json()
@@ -3693,7 +3697,7 @@ export async function createProcedureLabProviderAddressBookOrganization(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider address book create', response.status))
+    throw new Error(procedureApiError('Procedure lab provider address book create', response.status))
   }
 
   return response.json()
@@ -3710,7 +3714,7 @@ export async function deleteProcedureLabProviderAddressBookOrganization(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider address book delete', response.status))
+    throw new Error(procedureApiError('Procedure lab provider address book delete', response.status))
   }
 }
 
@@ -3726,7 +3730,7 @@ export async function createProcedureLabProvider(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider create', response.status))
+    throw new Error(procedureApiError('Procedure lab provider create', response.status))
   }
 
   return response.json()
@@ -3745,7 +3749,7 @@ export async function updateProcedureLabProvider(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider update', response.status))
+    throw new Error(procedureApiError('Procedure lab provider update', response.status))
   }
 
   return response.json()
@@ -3762,7 +3766,7 @@ export async function deleteProcedureLabProvider(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure lab provider delete', response.status))
+    throw new Error(procedureApiError('Procedure lab provider delete', response.status))
   }
 }
 
@@ -3778,7 +3782,7 @@ export async function createProcedureOrder(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order create', response.status))
+    throw new Error(procedureApiError('Procedure order create', response.status))
   }
 
   return response.json()
@@ -3797,7 +3801,7 @@ export async function updateProcedureOrderStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order status update', response.status))
+    throw new Error(procedureApiError('Procedure order status update', response.status))
   }
 
   return response.json()
@@ -3816,7 +3820,7 @@ export async function transmitProcedureOrder(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order transmit', response.status))
+    throw new Error(procedureApiError('Procedure order transmit', response.status))
   }
 
   return response.json()
@@ -3835,7 +3839,7 @@ export async function updateProcedureOrder(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order update', response.status))
+    throw new Error(procedureApiError('Procedure order update', response.status))
   }
 
   return response.json()
@@ -3853,7 +3857,7 @@ export async function createProcedureReport(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report create', response.status))
+    throw new Error(procedureApiError('Procedure report create', response.status))
   }
 
   return response.json()
@@ -3872,7 +3876,7 @@ export async function updateProcedureReport(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report update', response.status))
+    throw new Error(procedureApiError('Procedure report update', response.status))
   }
 
   return response.json()
@@ -3891,7 +3895,7 @@ export async function signProcedureReport(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report sign-off', response.status))
+    throw new Error(procedureApiError('Procedure report sign-off', response.status))
   }
 
   return response.json()
@@ -3908,7 +3912,7 @@ export async function reopenProcedureReportReview(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report review reopen', response.status))
+    throw new Error(procedureApiError('Procedure report review reopen', response.status))
   }
 
   return response.json()
@@ -3926,7 +3930,7 @@ export async function bulkSignProcedureReports(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure report bulk sign-off', response.status))
+    throw new Error(procedureApiError('Procedure report bulk sign-off', response.status))
   }
 
   return response.json()
@@ -3944,7 +3948,7 @@ export async function createProcedureSpecimen(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure specimen create', response.status))
+    throw new Error(procedureApiError('Procedure specimen create', response.status))
   }
 
   return response.json()
@@ -3962,7 +3966,7 @@ export async function createProcedureResult(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure result create', response.status))
+    throw new Error(procedureApiError('Procedure result create', response.status))
   }
 
   return response.json()
@@ -3981,7 +3985,7 @@ export async function updateProcedureResult(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure result update', response.status))
+    throw new Error(procedureApiError('Procedure result update', response.status))
   }
 
   return response.json()
@@ -3998,7 +4002,7 @@ export async function deleteProcedureOrder(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Procedure order delete', response.status))
+    throw new Error(procedureApiError('Procedure order delete', response.status))
   }
 }
 
