@@ -3428,10 +3428,17 @@ export async function deletePatientMessage(
   }
 }
 
-export async function getProcedureResults(patientId: string, signal?: AbortSignal): Promise<ProcedureResultsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, { signal })
+export async function getProcedureResults(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ProcedureResultsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/${encodeURIComponent(patientId.trim())}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure results load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure results load', response.status))
   }
 
   return response.json()
@@ -3440,6 +3447,7 @@ export async function getProcedureResults(patientId: string, signal?: AbortSigna
 export async function getProcedureReportReviewQueue(
   status = 'unreviewed',
   filters: ProcedureReportReviewQueueFilters = {},
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureReportReviewQueueResponse> {
   const params = new URLSearchParams({ status })
@@ -3461,9 +3469,12 @@ export async function getProcedureReportReviewQueue(
   if (filters.limit) {
     params.set('limit', String(filters.limit))
   }
-  const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/procedures/report-review-queue?${params}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure report review queue load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report review queue load', response.status))
   }
 
   return response.json()
@@ -3472,6 +3483,7 @@ export async function getProcedureReportReviewQueue(
 export async function getProcedureOrderQueue(
   status = 'ready-to-send',
   filters: ProcedureReportReviewQueueFilters = {},
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureOrderQueueResponse> {
   const params = new URLSearchParams({ status })
@@ -3493,9 +3505,12 @@ export async function getProcedureOrderQueue(
   if (filters.limit) {
     params.set('limit', String(filters.limit))
   }
-  const response = await fetch(`${apiBaseUrl}/api/procedures/order-queue?${params}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-queue?${params}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure order queue load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order queue load', response.status))
   }
 
   return response.json()
@@ -3503,6 +3518,7 @@ export async function getProcedureOrderQueue(
 
 export async function getProcedureLabProviders(
   includeInactive = false,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderDirectoryResponse> {
   const params = new URLSearchParams()
@@ -3512,29 +3528,42 @@ export async function getProcedureLabProviders(
 
   const query = params.toString()
   const suffix = query ? `?${query}` : ''
-  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers${suffix}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers${suffix}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider directory load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider directory load', response.status))
   }
 
   return response.json()
 }
 
 export async function getProcedureLabProviderAddressBook(
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderAddressBookResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider address book load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider address book load', response.status))
   }
 
   return response.json()
 }
 
-export async function getProcedureOrderCatalog(signal?: AbortSignal): Promise<ProcedureOrderCatalogResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, { signal })
+export async function getProcedureOrderCatalog(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ProcedureOrderCatalogResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Procedure order catalog load failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order catalog load', response.status))
   }
 
   return response.json()
@@ -3542,16 +3571,17 @@ export async function getProcedureOrderCatalog(signal?: AbortSignal): Promise<Pr
 
 export async function createProcedureOrderCatalogItem(
   input: ProcedureOrderCatalogMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureOrderCatalogMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order catalog create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order catalog create', response.status))
   }
 
   return response.json()
@@ -3560,43 +3590,50 @@ export async function createProcedureOrderCatalogItem(
 export async function updateProcedureOrderCatalogItem(
   itemId: number,
   input: ProcedureOrderCatalogMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureOrderCatalogMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order catalog update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order catalog update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteProcedureOrderCatalogItem(itemId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteProcedureOrderCatalogItem(
+  itemId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/${itemId}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order catalog delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order catalog delete', response.status))
   }
 }
 
 export async function importProcedureOrderCatalogCompendium(
   input: ProcedureOrderCatalogImportInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureOrderCatalogImportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/order-catalog/import-compendium`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order catalog compendium import failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order catalog compendium import', response.status))
   }
 
   return response.json()
@@ -3604,16 +3641,17 @@ export async function importProcedureOrderCatalogCompendium(
 
 export async function createProcedureLabProviderAddressBookOrganization(
   input: ProcedureLabProviderAddressBookMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderAddressBookMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider address book create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider address book create', response.status))
   }
 
   return response.json()
@@ -3621,29 +3659,32 @@ export async function createProcedureLabProviderAddressBookOrganization(
 
 export async function deleteProcedureLabProviderAddressBookOrganization(
   organizationId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-provider-address-book/${organizationId}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider address book delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider address book delete', response.status))
   }
 }
 
 export async function createProcedureLabProvider(
   input: ProcedureLabProviderMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider create', response.status))
   }
 
   return response.json()
@@ -3652,43 +3693,50 @@ export async function createProcedureLabProvider(
 export async function updateProcedureLabProvider(
   providerId: number,
   input: ProcedureLabProviderMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureLabProviderMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteProcedureLabProvider(providerId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteProcedureLabProvider(
+  providerId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/lab-providers/${providerId}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure lab provider delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure lab provider delete', response.status))
   }
 }
 
 export async function createProcedureOrder(
   input: ProcedureOrderCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order create', response.status))
   }
 
   return response.json()
@@ -3697,16 +3745,17 @@ export async function createProcedureOrder(
 export async function updateProcedureOrderStatus(
   orderId: number,
   input: ProcedureOrderStatusUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/status`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order status update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order status update', response.status))
   }
 
   return response.json()
@@ -3715,16 +3764,17 @@ export async function updateProcedureOrderStatus(
 export async function transmitProcedureOrder(
   orderId: number,
   input: ProcedureOrderTransmitInput = {},
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}/transmit`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order transmit failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order transmit', response.status))
   }
 
   return response.json()
@@ -3733,16 +3783,17 @@ export async function transmitProcedureOrder(
 export async function updateProcedureOrder(
   orderId: number,
   input: ProcedureOrderUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order update', response.status))
   }
 
   return response.json()
@@ -3750,16 +3801,17 @@ export async function updateProcedureOrder(
 
 export async function createProcedureReport(
   input: ProcedureReportCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure report create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report create', response.status))
   }
 
   return response.json()
@@ -3768,16 +3820,17 @@ export async function createProcedureReport(
 export async function updateProcedureReport(
   reportId: number,
   input: ProcedureReportUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure report update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report update', response.status))
   }
 
   return response.json()
@@ -3786,16 +3839,17 @@ export async function updateProcedureReport(
 export async function signProcedureReport(
   reportId: number,
   input: ProcedureReportSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure report sign-off failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report sign-off', response.status))
   }
 
   return response.json()
@@ -3803,14 +3857,16 @@ export async function signProcedureReport(
 
 export async function reopenProcedureReportReview(
   reportId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/reopen-review`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure report review reopen failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report review reopen', response.status))
   }
 
   return response.json()
@@ -3818,16 +3874,17 @@ export async function reopenProcedureReportReview(
 
 export async function bulkSignProcedureReports(
   input: ProcedureReportBulkSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureReportBulkSignResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/reports/bulk-sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure report bulk sign-off failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure report bulk sign-off', response.status))
   }
 
   return response.json()
@@ -3835,16 +3892,17 @@ export async function bulkSignProcedureReports(
 
 export async function createProcedureSpecimen(
   input: ProcedureSpecimenCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/specimens`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure specimen create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure specimen create', response.status))
   }
 
   return response.json()
@@ -3852,16 +3910,17 @@ export async function createProcedureSpecimen(
 
 export async function createProcedureResult(
   input: ProcedureResultCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/results`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure result create failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure result create', response.status))
   }
 
   return response.json()
@@ -3870,28 +3929,34 @@ export async function createProcedureResult(
 export async function updateProcedureResult(
   resultId: number,
   input: ProcedureResultUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ProcedureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/results/${encodeURIComponent(String(resultId))}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure result update failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure result update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteProcedureOrder(orderId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteProcedureOrder(
+  orderId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/procedures/orders/${encodeURIComponent(String(orderId))}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Procedure order delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Procedure order delete', response.status))
   }
 }
 

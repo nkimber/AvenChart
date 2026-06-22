@@ -762,6 +762,12 @@ function App() {
     if (activeModule !== 'procedures') {
       return
     }
+    if (!openEmrSessionId) {
+      setProcedureResults(null)
+      setProcedureStatus('idle')
+      setProcedureError(null)
+      return
+    }
 
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
@@ -769,7 +775,7 @@ function App() {
       setProcedureError(null)
 
       try {
-        const result = await getProcedureResults(procedurePatientId, controller.signal)
+        const result = await getProcedureResults(procedurePatientId, openEmrSessionId, controller.signal)
         setProcedureResults(result)
         setProcedureStatus('ready')
       } catch (loadError) {
@@ -784,7 +790,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, procedurePatientId, procedureRefreshKey])
+  }, [activeModule, procedurePatientId, procedureRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'fees') {
@@ -890,6 +896,12 @@ function App() {
     if (activeModule !== 'reports') {
       return
     }
+    if (!openEmrSessionId) {
+      setProcedureLabProviders(null)
+      setProcedureLabProvidersStatus('idle')
+      setProcedureLabProvidersError(null)
+      return
+    }
 
     const controller = new AbortController()
 
@@ -898,7 +910,11 @@ function App() {
       setProcedureLabProvidersError(null)
 
       try {
-        const result = await getProcedureLabProviders(procedureLabProvidersIncludeInactive, controller.signal)
+        const result = await getProcedureLabProviders(
+          procedureLabProvidersIncludeInactive,
+          openEmrSessionId,
+          controller.signal,
+        )
         setProcedureLabProviders(result)
         setProcedureLabProvidersStatus('ready')
       } catch (loadError) {
@@ -913,10 +929,16 @@ function App() {
 
     loadProcedureLabProviders()
     return () => controller.abort()
-  }, [activeModule, procedureLabProvidersIncludeInactive])
+  }, [activeModule, procedureLabProvidersIncludeInactive, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports' && activeModule !== 'procedures') {
+      return
+    }
+    if (!openEmrSessionId) {
+      setProcedureOrderCatalog(null)
+      setProcedureOrderCatalogStatus('idle')
+      setProcedureOrderCatalogError(null)
       return
     }
 
@@ -927,7 +949,7 @@ function App() {
       setProcedureOrderCatalogError(null)
 
       try {
-        const result = await getProcedureOrderCatalog(controller.signal)
+        const result = await getProcedureOrderCatalog(openEmrSessionId, controller.signal)
         setProcedureOrderCatalog(result)
         setProcedureOrderCatalogStatus('ready')
       } catch (loadError) {
@@ -942,10 +964,16 @@ function App() {
 
     loadProcedureOrderCatalog()
     return () => controller.abort()
-  }, [activeModule])
+  }, [activeModule, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
+      return
+    }
+    if (!openEmrSessionId) {
+      setProcedureOrderQueue(null)
+      setProcedureOrderQueueStatus('idle')
+      setProcedureOrderQueueError(null)
       return
     }
 
@@ -965,6 +993,7 @@ function App() {
             fromDate: procedureOrderQueueFromDate,
             toDate: procedureOrderQueueToDate,
           },
+          openEmrSessionId,
           controller.signal,
         )
         setProcedureOrderQueue(result)
@@ -988,10 +1017,17 @@ function App() {
     procedureOrderQueueFromDate,
     procedureOrderQueueToDate,
     procedureOrderQueueRefreshKey,
+    openEmrSessionId,
   ])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
+      return
+    }
+    if (!openEmrSessionId) {
+      setProcedureReportReviewQueue(null)
+      setProcedureReportReviewQueueStatus('idle')
+      setProcedureReportReviewQueueError(null)
       return
     }
 
@@ -1011,6 +1047,7 @@ function App() {
             fromDate: procedureReportReviewQueueFromDate,
             toDate: procedureReportReviewQueueToDate,
           },
+          openEmrSessionId,
           controller.signal,
         )
         setProcedureReportReviewQueue(result)
@@ -1036,6 +1073,7 @@ function App() {
     procedureReportReviewQueueFromDate,
     procedureReportReviewQueueToDate,
     procedureReportReviewQueueRefreshKey,
+    openEmrSessionId,
   ])
 
   const selectedFromList = useMemo(
@@ -1096,6 +1134,14 @@ function App() {
   function getActiveBillingSessionId() {
     if (!openEmrSessionId) {
       throw new Error('Sign in to access billing.')
+    }
+
+    return openEmrSessionId
+  }
+
+  function getActiveProcedureSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access procedure data.')
     }
 
     return openEmrSessionId
@@ -1930,7 +1976,7 @@ function App() {
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      const response = await createProcedureOrder(input)
+      const response = await createProcedureOrder(input, sessionId)
       const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
@@ -1954,11 +2000,11 @@ function App() {
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      const reportResponse = await createProcedureReport(input.report)
+      const reportResponse = await createProcedureReport(input.report, sessionId)
       const resultResponse = await createProcedureResult({
         ...input.result,
         reportId: reportResponse.id,
-      })
+      }, sessionId)
       const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
@@ -1986,7 +2032,7 @@ function App() {
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      const response = await updateProcedureResult(result.id, input)
+      const response = await updateProcedureResult(result.id, input, sessionId)
       const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
@@ -2491,7 +2537,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await createProcedureOrder(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureOrder(input, sessionId)
       setProcedurePatientId(response.detail.patientId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
@@ -2510,7 +2557,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await updateProcedureOrderStatus(order.id, { status: 'complete' })
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureOrderStatus(order.id, { status: 'complete' }, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2528,7 +2576,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await updateProcedureOrder(order.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureOrder(order.id, input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2546,7 +2595,8 @@ function App() {
     setProcedureOrderQueueError(null)
 
     try {
-      await transmitProcedureOrder(order.orderId, { transmittedAt: new Date().toISOString() })
+      const sessionId = getActiveProcedureSessionId()
+      await transmitProcedureOrder(order.orderId, { transmittedAt: new Date().toISOString() }, sessionId)
       setProcedureOrderQueueFilter('transmitted-pending')
       setProcedureOrderQueueRefreshKey((current) => current + 1)
     } catch (transmitError) {
@@ -2562,11 +2612,12 @@ function App() {
     setProcedureReportReviewQueueError(null)
 
     try {
+      const sessionId = getActiveProcedureSessionId()
       const response = await bulkSignProcedureReports({
         reportIds,
         reviewedBy: 'admin',
         reviewedAt: '2026-06-21 11:25:00',
-      })
+      }, sessionId)
       setProcedureReportReviewQueueFilter('reviewed')
       setProcedureReportReviewQueueRefreshKey((current) => current + 1)
       return response
@@ -2583,7 +2634,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await createProcedureReport(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureReport(input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2601,7 +2653,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await updateProcedureReport(report.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureReport(report.id, input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2619,7 +2672,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await signProcedureReport(report.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await signProcedureReport(report.id, input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2638,7 +2692,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await reopenProcedureReportReview(report.id)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await reopenProcedureReportReview(report.id, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2657,7 +2712,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await createProcedureSpecimen(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureSpecimen(input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2675,7 +2731,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await createProcedureResult(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureResult(input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2693,7 +2750,8 @@ function App() {
     setProcedureError(null)
 
     try {
-      const response = await updateProcedureResult(result.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureResult(result.id, input, sessionId)
       setProcedureResults(response.detail)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2711,8 +2769,9 @@ function App() {
     setProcedureError(null)
 
     try {
-      await deleteProcedureOrder(order.id)
-      const refreshed = await getProcedureResults(procedureResults?.patientId ?? procedurePatientId)
+      const sessionId = getActiveProcedureSessionId()
+      await deleteProcedureOrder(order.id, sessionId)
+      const refreshed = await getProcedureResults(procedureResults?.patientId ?? procedurePatientId, sessionId)
       setProcedureResults(refreshed)
       setProcedureStatus('ready')
       setProcedureRefreshKey((current) => current + 1)
@@ -2729,7 +2788,8 @@ function App() {
     setProcedureLabProvidersError(null)
 
     try {
-      const response = await createProcedureLabProvider(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureLabProvider(input, sessionId)
       setProcedureLabProviders(response.directory)
       setProcedureLabProvidersIncludeInactive(response.directory.includeInactive)
       setProcedureLabProvidersStatus('ready')
@@ -2750,7 +2810,8 @@ function App() {
     setProcedureLabProvidersError(null)
 
     try {
-      const response = await updateProcedureLabProvider(provider.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureLabProvider(provider.id, input, sessionId)
       setProcedureLabProviders(response.directory)
       setProcedureLabProvidersIncludeInactive(response.directory.includeInactive)
       setProcedureLabProvidersStatus('ready')
@@ -2768,8 +2829,9 @@ function App() {
     setProcedureLabProvidersError(null)
 
     try {
-      await deleteProcedureLabProvider(provider.id)
-      const refreshed = await getProcedureLabProviders(procedureLabProvidersIncludeInactive)
+      const sessionId = getActiveProcedureSessionId()
+      await deleteProcedureLabProvider(provider.id, sessionId)
+      const refreshed = await getProcedureLabProviders(procedureLabProvidersIncludeInactive, sessionId)
       setProcedureLabProviders(refreshed)
       setProcedureLabProvidersStatus('ready')
     } catch (deleteError) {
@@ -2785,7 +2847,8 @@ function App() {
     setProcedureOrderCatalogError(null)
 
     try {
-      const response = await createProcedureOrderCatalogItem(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await createProcedureOrderCatalogItem(input, sessionId)
       setProcedureOrderCatalog(response.catalog)
       setProcedureOrderCatalogStatus('ready')
       return response
@@ -2805,7 +2868,8 @@ function App() {
     setProcedureOrderCatalogError(null)
 
     try {
-      const response = await updateProcedureOrderCatalogItem(item.id, input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await updateProcedureOrderCatalogItem(item.id, input, sessionId)
       setProcedureOrderCatalog(response.catalog)
       setProcedureOrderCatalogStatus('ready')
       return response
@@ -2822,8 +2886,9 @@ function App() {
     setProcedureOrderCatalogError(null)
 
     try {
-      await deleteProcedureOrderCatalogItem(item.id)
-      const refreshed = await getProcedureOrderCatalog()
+      const sessionId = getActiveProcedureSessionId()
+      await deleteProcedureOrderCatalogItem(item.id, sessionId)
+      const refreshed = await getProcedureOrderCatalog(sessionId)
       setProcedureOrderCatalog(refreshed)
       setProcedureOrderCatalogStatus('ready')
     } catch (deleteError) {
@@ -2839,7 +2904,8 @@ function App() {
     setProcedureOrderCatalogError(null)
 
     try {
-      const response = await importProcedureOrderCatalogCompendium(input)
+      const sessionId = getActiveProcedureSessionId()
+      const response = await importProcedureOrderCatalogCompendium(input, sessionId)
       setProcedureOrderCatalog(response.catalog)
       setProcedureOrderCatalogStatus('ready')
       return response
@@ -3644,6 +3710,11 @@ function App() {
             orderCatalog={procedureOrderCatalog}
             orderCatalogStatus={procedureOrderCatalogStatus}
             orderCatalogError={procedureOrderCatalogError}
+            sessionId={openEmrSessionId}
+            onProceduresSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+              setProcedureRefreshKey((current) => current + 1)
+            }}
             onPatientIdChange={setProcedurePatientId}
             onCreateOrder={handleProcedureOrderCreate}
             onCompleteOrder={handleProcedureOrderComplete}
@@ -10792,6 +10863,8 @@ function ProceduresWorkspace({
   orderCatalog,
   orderCatalogStatus,
   orderCatalogError,
+  sessionId,
+  onProceduresSessionActive,
   onPatientIdChange,
   onCreateOrder,
   onCompleteOrder,
@@ -10812,6 +10885,8 @@ function ProceduresWorkspace({
   orderCatalog: ProcedureOrderCatalogResponse | null
   orderCatalogStatus: 'idle' | 'loading' | 'ready' | 'error'
   orderCatalogError: string | null
+  sessionId: string | null
+  onProceduresSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onCreateOrder: (input: ProcedureOrderCreateInput) => Promise<unknown>
   onCompleteOrder: (order: ProcedureOrderItem) => Promise<unknown>
@@ -10832,6 +10907,8 @@ function ProceduresWorkspace({
   const [procedureDiagnosis, setProcedureDiagnosis] = useState('Z00.00')
   const [procedureInstructions, setProcedureInstructions] = useState('Collect fasting sample.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [proceduresLoginStatus, setProceduresLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
+  const [proceduresLoginError, setProceduresLoginError] = useState<string | null>(null)
   const procedureCounts = procedureResults?.counts
   const scheduledOrders = procedureResults?.orders.filter(isScheduledProcedureOrder) ?? []
   const reportlessOrders = procedureResults?.orders.filter((order) => order.reports.length === 0) ?? []
@@ -10850,6 +10927,7 @@ function ProceduresWorkspace({
     [orderCatalog],
   )
   const isLoading = status === 'loading'
+  const proceduresLocked = !sessionId
 
   useEffect(() => {
     if (!procedureResults || procedureResults.orders.length === 0) {
@@ -10871,6 +10949,11 @@ function ProceduresWorkspace({
 
   async function handleOrderSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (proceduresLocked) {
+      setMutationMessage('Sign in before saving procedure orders.')
+      return
+    }
+
     setMutationMessage(null)
 
     await onCreateOrder({
@@ -10889,9 +10972,46 @@ function ProceduresWorkspace({
     setMutationMessage('Procedure order saved')
   }
 
+  async function handleProceduresLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setProceduresLoginStatus('checking')
+    setProceduresLoginError(null)
+
+    try {
+      const result = await login({ username: 'admin', password: 'pass' })
+      if (result.authenticated && result.sessionId) {
+        onProceduresSessionActive(result.sessionId)
+        setProceduresLoginStatus('idle')
+      } else {
+        setProceduresLoginStatus('error')
+        setProceduresLoginError(result.failureReason ?? 'Procedure access was not granted.')
+      }
+    } catch (error) {
+      setProceduresLoginStatus('error')
+      setProceduresLoginError(error instanceof Error ? error.message : 'Procedure access check failed')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Procedure results search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Procedures access" onSubmit={handleProceduresLogin}>
+            <div className="panel-heading compact-heading">
+              <ShieldCheck size={16} />
+              <h3>Procedures Access</h3>
+            </div>
+            <p className="form-help-text">Sign in to load procedure orders, reports, specimens, and results.</p>
+            <div className="detail-actions">
+              <button className="icon-text-button primary" type="submit" disabled={proceduresLoginStatus === 'checking'}>
+                <LogIn size={15} />
+                {proceduresLoginStatus === 'checking' ? 'Checking' : 'Verify Procedures Access'}
+              </button>
+            </div>
+            {proceduresLoginError && <div className="status-banner error">{proceduresLoginError}</div>}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -10900,6 +11020,7 @@ function ProceduresWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Procedure patient ID"
               placeholder="MOD-PAT-0009"
+              disabled={proceduresLocked}
             />
           </label>
         </div>
@@ -10938,6 +11059,7 @@ function ProceduresWorkspace({
                 onChange={(event) => setProcedureEncounter(event.target.value)}
                 aria-label="New procedure encounter"
                 inputMode="numeric"
+                disabled={proceduresLocked}
                 required
               />
             </label>
@@ -10948,6 +11070,7 @@ function ProceduresWorkspace({
                   value={procedureDate}
                   onChange={(event) => setProcedureDate(event.target.value)}
                   aria-label="New procedure date"
+                  disabled={proceduresLocked}
                   required
                 />
               </label>
@@ -10957,6 +11080,7 @@ function ProceduresWorkspace({
                   value={procedureCode}
                   onChange={(event) => setProcedureCode(event.target.value)}
                   aria-label="New procedure code"
+                  disabled={proceduresLocked}
                   required
                 />
               </label>
@@ -10967,6 +11091,7 @@ function ProceduresWorkspace({
                 value={procedureName}
                 onChange={(event) => setProcedureName(event.target.value)}
                 aria-label="New procedure name"
+                disabled={proceduresLocked}
                 required
               />
             </label>
@@ -10979,6 +11104,7 @@ function ProceduresWorkspace({
                   key={item.id}
                   type="button"
                   className="catalog-pick-button"
+                  disabled={proceduresLocked}
                   onClick={() => {
                     setProcedureCode(item.code ?? '')
                     setProcedureName(item.name)
@@ -10994,6 +11120,7 @@ function ProceduresWorkspace({
                 value={procedureDiagnosis}
                 onChange={(event) => setProcedureDiagnosis(event.target.value)}
                 aria-label="New procedure diagnosis"
+                disabled={proceduresLocked}
                 required
               />
             </label>
@@ -11003,6 +11130,7 @@ function ProceduresWorkspace({
                 value={procedureInstructions}
                 onChange={(event) => setProcedureInstructions(event.target.value)}
                 aria-label="New procedure instructions"
+                disabled={proceduresLocked}
               />
             </label>
           </div>
@@ -11010,7 +11138,7 @@ function ProceduresWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !procedureResults || !procedureEncounter}
+              disabled={proceduresLocked || isLoading || !procedureResults || !procedureEncounter}
             >
               <Check size={15} />
               Save Order
@@ -11056,7 +11184,7 @@ function ProceduresWorkspace({
                     <ProcedureOrderCard
                       key={order.id}
                       order={order}
-                      disabled={isLoading}
+                      disabled={proceduresLocked || isLoading}
                       onComplete={onCompleteOrder}
                       onUpdate={onUpdateOrder}
                       onCreateReport={onCreateReport}
@@ -11096,7 +11224,7 @@ function ProceduresWorkspace({
                   <ProcedureReportGroup
                     key={order.id}
                     order={order}
-                    disabled={isLoading}
+                    disabled={proceduresLocked || isLoading}
                     onCreateResult={onCreateResult}
                     onUpdateReport={onUpdateReport}
                     onSignReport={onSignReport}
@@ -11112,6 +11240,8 @@ function ProceduresWorkspace({
           </>
         ) : status === 'loading' ? (
           <div className="empty-chart">Loading procedure results</div>
+        ) : proceduresLocked ? (
+          <div className="empty-chart">Sign in to load procedure results</div>
         ) : (
           <div className="empty-chart">Enter a patient ID to load procedure results</div>
         )}

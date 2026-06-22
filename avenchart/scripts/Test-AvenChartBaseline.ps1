@@ -3780,7 +3780,7 @@ try {
         instructions = "Created by the smoke encounter procedure order entry check."
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureOrderBody -TimeoutSec 20
+    $createdEncounterProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureOrderBody -TimeoutSec 20
     $smokeEncounterProcedureOrderId = $createdEncounterProcedureOrder.id
     $refreshedEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterProcedureOrderRow = @($refreshedEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
@@ -3793,7 +3793,7 @@ try {
             -and @($_.reports).Count -eq 0
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $smokeEncounterProcedureOrderId = $null
     $afterDeleteEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterProcedureOrderRow = @($afterDeleteEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
@@ -3813,7 +3813,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterProcedureOrderId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -3839,7 +3839,7 @@ try {
         instructions = "Created by the smoke encounter procedure result entry check."
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterProcedureResultOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureResultOrderBody -TimeoutSec 20
+    $createdEncounterProcedureResultOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureResultOrderBody -TimeoutSec 20
     $smokeEncounterProcedureResultOrderId = $createdEncounterProcedureResultOrder.id
 
     $procedureResultReportBody = @{
@@ -3851,7 +3851,7 @@ try {
         reviewStatus = "reviewed"
         notes = "Created by the smoke encounter procedure result entry check."
     } | ConvertTo-Json -Depth 5
-    $createdEncounterProcedureResultReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $procedureResultReportBody -TimeoutSec 20
+    $createdEncounterProcedureResultReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureResultReportBody -TimeoutSec 20
 
     $procedureResultBody = @{
         reportId = $createdEncounterProcedureResultReport.id
@@ -3866,7 +3866,7 @@ try {
         comments = "Created by the smoke encounter procedure result entry check."
         status = "final"
     } | ConvertTo-Json -Depth 5
-    $createdEncounterProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $procedureResultBody -TimeoutSec 20
+    $createdEncounterProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureResultBody -TimeoutSec 20
 
     $refreshedEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterProcedureResultOrderRow = @($refreshedEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
@@ -3900,7 +3900,7 @@ try {
         $null
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $smokeEncounterProcedureResultOrderId = $null
     $afterDeleteEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterProcedureResultOrderRow = @($afterDeleteEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
@@ -3927,7 +3927,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterProcedureResultOrderId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -3954,7 +3954,7 @@ try {
         instructions = "Created by the smoke procedure result correction check."
     } | ConvertTo-Json -Depth 5
 
-    $createdProcedureCorrectionOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureCorrectionOrderBody -TimeoutSec 20
+    $createdProcedureCorrectionOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionOrderBody -TimeoutSec 20
     $smokeProcedureResultCorrectionOrderId = $createdProcedureCorrectionOrder.id
 
     $procedureCorrectionReportBody = @{
@@ -3966,7 +3966,7 @@ try {
         reviewStatus = "reviewed"
         notes = "Created by the smoke procedure result correction check."
     } | ConvertTo-Json -Depth 5
-    $createdProcedureCorrectionReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $procedureCorrectionReportBody -TimeoutSec 20
+    $createdProcedureCorrectionReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionReportBody -TimeoutSec 20
 
     $procedureCorrectionInitialBody = @{
         reportId = $createdProcedureCorrectionReport.id
@@ -3981,7 +3981,7 @@ try {
         comments = "Initial smoke procedure result before correction."
         status = "final"
     } | ConvertTo-Json -Depth 5
-    $createdProcedureCorrectionResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $procedureCorrectionInitialBody -TimeoutSec 20
+    $createdProcedureCorrectionResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionInitialBody -TimeoutSec 20
 
     $procedureCorrectionBody = @{
         resultCode = "2345-7"
@@ -3993,9 +3993,9 @@ try {
         abnormal = "borderline"
         status = "corrected"
     } | ConvertTo-Json -Depth 5
-    $correctedProcedureResultResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$($createdProcedureCorrectionResult.id)" -Method Put -ContentType "application/json" -Body $procedureCorrectionBody -TimeoutSec 20
+    $correctedProcedureResultResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results/$($createdProcedureCorrectionResult.id)" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $procedureCorrectionBody -TimeoutSec 20
 
-    $procedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $procedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $procedureCorrectionOrderRow = @($procedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeProcedureResultCorrectionOrderId -and $_.name -eq $procedureCorrectionOrderName
     } | Select-Object -First 1
@@ -4020,9 +4020,9 @@ try {
         $null
     }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $smokeProcedureResultCorrectionOrderId = $null
-    $afterDeleteProcedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $afterDeleteProcedureCorrectionDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedProcedureCorrectionOrderRow = @($afterDeleteProcedureCorrectionDetail.orders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $procedureCorrectionOrderName
     } | Select-Object -First 1
@@ -4047,7 +4047,7 @@ catch {
 finally {
     if ($null -ne $smokeProcedureResultCorrectionOrderId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeProcedureResultCorrectionOrderId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -5642,12 +5642,31 @@ finally {
 }
 
 try {
-    $procedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" -Method Get -TimeoutSec 20
+    $unauthenticatedProceduresStatus = 0
+    try {
+        $unauthenticatedProcedures = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedProceduresStatus = [int]$unauthenticatedProcedures.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedProceduresStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $procedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $completedOrder = $procedures.orders | Where-Object { $_.name -eq "Complete blood count" -and $_.orderStatus -eq "complete" } | Select-Object -First 1
     $completedReport = $completedOrder.reports | Where-Object { $_.status -eq "complete" } | Select-Object -First 1
     $hemoglobin = $completedReport.results | Where-Object { $_.text -eq "Hemoglobin" -and $_.resultStatus -eq "final" } | Select-Object -First 1
-    $proceduresPassed = $procedures.patientId -eq "MOD-PAT-0009" -and $null -ne $completedOrder -and $null -ne $completedReport -and $null -ne $hemoglobin
+    $proceduresPassed = $unauthenticatedProceduresStatus -eq 401 -and $procedures.patientId -eq "MOD-PAT-0009" -and $null -ne $completedOrder -and $null -ne $completedReport -and $null -ne $hemoglobin
     Add-Check -Name "anchor procedure results" -Result $(if ($proceduresPassed) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedProceduresStatus
         patientId = $procedures.patientId
         orderCount = $procedures.orders.Count
         completedOrder = $completedOrder
@@ -5660,7 +5679,7 @@ catch {
 }
 
 try {
-    $scheduledProcedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0701" -Method Get -TimeoutSec 20
+    $scheduledProcedures = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0701" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $scheduledOrder = $scheduledProcedures.orders | Where-Object {
         $_.name -eq "Complete blood count" `
             -and $_.code -eq "85025" `
@@ -5705,7 +5724,7 @@ try {
         diagnosis = "Z00.00"
         instructions = "Created by the smoke procedure mutation check."
     } | ConvertTo-Json
-    $createdProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $createProcedureBody -TimeoutSec 20
+    $createdProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureBody -TimeoutSec 20
     $procedureOrderMutationId = $createdProcedureOrder.id
     $createdProcedureVisible = $createdProcedureOrder.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId -and $_.name -eq $procedureName -and $_.orderStatus -eq "pending" } | Select-Object -First 1
 
@@ -5720,7 +5739,7 @@ try {
         diagnosis = "R53.83"
         instructions = "Corrected by the smoke procedure mutation check."
     } | ConvertTo-Json
-    $correctedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Put -ContentType "application/json" -Body $correctProcedureOrderBody -TimeoutSec 20
+    $correctedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $correctProcedureOrderBody -TimeoutSec 20
     $correctedProcedureVisible = $correctedProcedureOrder.detail.orders | Where-Object {
         $_.id -eq $procedureOrderMutationId `
             -and $_.name -eq $correctedProcedureName `
@@ -5735,7 +5754,7 @@ try {
     $completeProcedureBody = @{
         status = "complete"
     } | ConvertTo-Json
-    $completedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId/status" -Method Put -ContentType "application/json" -Body $completeProcedureBody -TimeoutSec 20
+    $completedProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $completeProcedureBody -TimeoutSec 20
     $completedProcedureVisible = $completedProcedureOrder.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId -and $_.orderStatus -eq "complete" } | Select-Object -First 1
 
     $createProcedureReportBody = @{
@@ -5747,7 +5766,7 @@ try {
         reviewStatus = "received"
         notes = "Smoke procedure report."
     } | ConvertTo-Json
-    $createdProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -ContentType "application/json" -Body $createProcedureReportBody -TimeoutSec 20
+    $createdProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureReportBody -TimeoutSec 20
     $procedureReportId = $createdProcedureReport.id
 
     $correctProcedureReportBody = @{
@@ -5758,7 +5777,7 @@ try {
         reviewStatus = "received"
         notes = "Corrected smoke procedure report."
     } | ConvertTo-Json
-    $correctedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId" -Method Put -ContentType "application/json" -Body $correctProcedureReportBody -TimeoutSec 20
+    $correctedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $correctProcedureReportBody -TimeoutSec 20
     $correctedProcedureReportVisible = $correctedProcedureReport.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
     $correctedProcedureReportRow = $correctedProcedureReportVisible.reports | Where-Object {
         $_.id -eq $procedureReportId `
@@ -5787,7 +5806,7 @@ try {
         specimenCondition = "Acceptable"
         comments = "Created by the smoke procedure mutation check."
     } | ConvertTo-Json
-    $createdProcedureSpecimen = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens" -Method Post -ContentType "application/json" -Body $createProcedureSpecimenBody -TimeoutSec 20
+    $createdProcedureSpecimen = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/specimens" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureSpecimenBody -TimeoutSec 20
     $procedureSpecimenId = $createdProcedureSpecimen.id
 
     $createProcedureResultBody = @{
@@ -5803,7 +5822,7 @@ try {
         comments = "Created by the smoke procedure mutation check."
         status = "final"
     } | ConvertTo-Json
-    $createdProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $createProcedureResultBody -TimeoutSec 20
+    $createdProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProcedureResultBody -TimeoutSec 20
     $procedureResultId = $createdProcedureResult.id
     $resultOrder = $createdProcedureResult.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
     $resultSpecimen = $resultOrder.specimens | Where-Object {
@@ -5828,7 +5847,7 @@ try {
             -and $_.notes -eq "Corrected smoke procedure report."
     } | Select-Object -First 1
 
-    $unreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
+    $unreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $queuedProcedureReportBeforeSign = $unreviewedProcedureReportQueue.reports | Where-Object {
         $_.reportId -eq $procedureReportId `
             -and $_.orderId -eq $procedureOrderMutationId `
@@ -5836,24 +5855,24 @@ try {
             -and $_.procedureName -eq $correctedProcedureName `
             -and $_.reviewStatus -eq "received"
     } | Select-Object -First 1
-    $filteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $filteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $filteredQueuedProcedureReportBeforeSign = $filteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
-    $providerFilteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&providerId=101&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $providerFilteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&providerId=101&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $providerFilteredQueuedProcedureReportBeforeSign = $providerFilteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.providerId -eq 101 } | Select-Object -First 1
-    $outsideProviderUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&providerId=102&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $outsideProviderUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&providerId=102&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $outsideProviderQueuedProcedureReport = $outsideProviderUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
-    $labFilteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $labFilteredUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $labFilteredQueuedProcedureReportBeforeSign = $labFilteredUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.labId -eq 501 } | Select-Object -First 1
-    $outsideLabUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=502&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $outsideLabUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&labId=502&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $outsideLabQueuedProcedureReport = $outsideLabUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
-    $outsideDateUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-18&toDate=2026-06-18&limit=100" -TimeoutSec 20
+    $outsideDateUnreviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&patientId=MOD-PAT-0009&fromDate=2026-06-18&toDate=2026-06-18&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $outsideDateQueuedProcedureReport = $outsideDateUnreviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
     $signProcedureReportBody = @{
         reviewedBy = "admin"
         reviewedAt = "2026-06-19 14:15:00"
     } | ConvertTo-Json
-    $signedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId/sign" -Method Put -ContentType "application/json" -Body $signProcedureReportBody -TimeoutSec 20
+    $signedProcedureReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/reports/$procedureReportId/sign" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $signProcedureReportBody -TimeoutSec 20
     $signedOrder = $signedProcedureReport.detail.orders | Where-Object { $_.id -eq $procedureOrderMutationId } | Select-Object -First 1
     $signedReport = $signedOrder.reports | Where-Object {
         $_.id -eq $procedureReportId `
@@ -5863,21 +5882,21 @@ try {
     } | Select-Object -First 1
     $createdResultVisible = $signedReport.results | Where-Object { $_.id -eq $procedureResultId -and $_.text -eq $procedureResultText -and $_.result -eq "104" -and $_.resultStatus -eq "final" } | Select-Object -First 1
 
-    $reviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&limit=100" -TimeoutSec 20
+    $reviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $queuedProcedureReportAfterSign = $reviewedProcedureReportQueue.reports | Where-Object {
         $_.reportId -eq $procedureReportId `
             -and $_.reviewStatus -eq "reviewed" `
             -and $_.reviewedBy -eq "admin" `
             -and $_.reviewedAt -eq "2026-06-19 14:15"
     } | Select-Object -First 1
-    $filteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $filteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $filteredQueuedProcedureReportAfterSign = $filteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
-    $providerFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&providerId=101&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $providerFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&providerId=101&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $providerFilteredQueuedProcedureReportAfterSign = $providerFilteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.providerId -eq 101 } | Select-Object -First 1
-    $labFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -TimeoutSec 20
+    $labFilteredReviewedProcedureReportQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=reviewed&patientId=MOD-PAT-0009&labId=501&fromDate=2026-06-19&toDate=2026-06-19&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $labFilteredQueuedProcedureReportAfterSign = $labFilteredReviewedProcedureReportQueue.reports | Where-Object { $_.reportId -eq $procedureReportId -and $_.labId -eq 501 } | Select-Object -First 1
 
-    $unreviewedProcedureReportQueueAfterSign = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -TimeoutSec 20
+    $unreviewedProcedureReportQueueAfterSign = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/report-review-queue?status=unreviewed&limit=100" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $queuedProcedureReportStillUnreviewed = $unreviewedProcedureReportQueueAfterSign.reports | Where-Object { $_.reportId -eq $procedureReportId } | Select-Object -First 1
 
     $procedureMutationPassed = $null -ne $createdProcedureVisible `
@@ -5901,7 +5920,7 @@ try {
         -and $null -ne $labFilteredQueuedProcedureReportAfterSign `
         -and $null -eq $queuedProcedureReportStillUnreviewed
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $procedureOrderMutationId = $null
 
     Add-Check -Name "procedure mutation lifecycle" -Result $(if ($procedureMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -5934,7 +5953,7 @@ catch {
 finally {
     if ($null -ne $procedureOrderMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$procedureOrderMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

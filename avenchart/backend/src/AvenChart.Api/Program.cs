@@ -1246,6 +1246,7 @@ documents.MapDelete("/{documentId:int}", async (
     .WithName("DeletePatientDocument");
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
+RequireActiveSession(procedures);
 
 procedures.MapGet("/lab-provider-address-book", async (
         ProcedureRepository repository,
