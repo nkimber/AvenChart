@@ -121,6 +121,37 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         return session.ToResponse();
     }
 
+    public async Task<bool> HasAccessPermissionAsync(
+        string username,
+        string sectionValue,
+        string permissionValue,
+        string returnValue,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists (
+              select 1
+              from access_user_memberships membership
+              join access_group_permissions permission
+                on permission.group_value = membership.group_value
+              where lower(membership.user_value) = lower(@username)
+                and permission.return_value = @return_value
+                and (
+                  (permission.section_value = @section_value and permission.permission_value = @permission_value)
+                  or (permission.section_value = 'admin' and permission.permission_value = 'super')
+                )
+            );
+            """;
+        command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("section_value", sectionValue);
+        command.Parameters.AddWithValue("permission_value", permissionValue);
+        command.Parameters.AddWithValue("return_value", returnValue);
+
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
     public async Task<AuthAuditResponse> GetLoginAuditAsync(int limit, CancellationToken cancellationToken)
     {
         var safeLimit = Math.Clamp(limit, 1, 50);

@@ -1999,9 +1999,14 @@ function buildLegacyEhrSessionHeaders(sessionId?: string | null, contentType?: s
 }
 
 function adminApiError(action: string, status: number) {
-  return status === 401
-    ? `${action} requires an active admin session.`
-    : `${action} failed with ${status}`
+  if (status === 401) {
+    return `${action} requires an active admin session.`
+  }
+  if (status === 403) {
+    return `${action} requires ACL Administration access.`
+  }
+
+  return `${action} failed with ${status}`
 }
 
 export async function login(input: AuthLoginInput, signal?: AbortSignal): Promise<AuthLoginResponse> {

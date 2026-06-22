@@ -14052,7 +14052,7 @@ function AdministrationWorkspace({
             label="Session"
             value={authSession?.authenticated ? `Active for ${authSession.username}` : 'No active session'}
           />
-          <Field label="Authorization" value="Default ACL model mirrored" />
+          <Field label="Authorization" value="Admin ACL policy enforced" />
           <Field
             label="Audit logging"
             value={loginAudit ? `${loginAudit.totalEvents} login events captured` : 'Login audit endpoint active'}

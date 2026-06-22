@@ -87,6 +87,13 @@ try {
         -Body ($loginBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
+    $frontDeskLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "gold-frontdesk-01"; password = "pass" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
     $rejectedLogin = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/auth/login" `
         -Method Post `
@@ -148,6 +155,25 @@ try {
         -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
         -TimeoutSec 20
 
+    $frontDeskAdministrationStatus = 0
+    try {
+        $frontDeskAdministration = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/administration/directory" `
+            -Method Get `
+            -Headers @{ "X-Legacy EHR-Session" = $frontDeskLogin.sessionId } `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskAdministrationStatus = [int]$frontDeskAdministration.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskAdministrationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
     $auditSuccess = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $true } | Select-Object -First 1
     $auditFailure = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $false } | Select-Object -First 1
 
@@ -171,6 +197,9 @@ try {
         -and -not [string]::IsNullOrWhiteSpace($login.sessionId) `
         -and $session.authenticated -eq $true `
         -and $session.username -eq "admin" `
+        -and $frontDeskLogin.authenticated -eq $true `
+        -and $frontDeskLogin.username -eq "gold-frontdesk-01" `
+        -and $frontDeskAdministrationStatus -eq 403 `
         -and $unauthenticatedAuditStatus -eq 401 `
         -and $unauthenticatedAdministrationStatus -eq 401 `
         -and $administrationDirectory.counts.users -ge 20 `
@@ -190,6 +219,8 @@ try {
         successRole = $login.role
         sessionIssued = -not [string]::IsNullOrWhiteSpace($login.sessionId)
         sessionValidated = $session.authenticated
+        frontDeskUsername = $frontDeskLogin.username
+        frontDeskAdministrationStatus = $frontDeskAdministrationStatus
         unauthenticatedAuditStatus = $unauthenticatedAuditStatus
         unauthenticatedAdministrationStatus = $unauthenticatedAdministrationStatus
         administrationUsers = $administrationDirectory.counts.users

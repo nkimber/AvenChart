@@ -32,6 +32,18 @@ public sealed record AuthSessionResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record AuthAuthorizationFailureResponse(
+    bool Authenticated,
+    bool Authorized,
+    Guid? SessionId,
+    string Username,
+    string Role,
+    string RequiredSection,
+    string RequiredPermission,
+    string RequiredReturnValue,
+    string? FailureReason,
+    string SessionSource);
+
 public sealed record AuthAuditEventItem(
     long Id,
     DateTimeOffset OccurredAt,

@@ -1767,7 +1767,7 @@ billing.MapDelete("/payments/{activityId}", async (
     .WithName("DeleteBillingPaymentPosting");
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
-RequireActiveSession(administration);
+RequireAccessPermission(administration, "admin", "acl", "write");
 
 administration.MapGet("/directory", async (
         AdministrationRepository repository,
@@ -1978,6 +1978,46 @@ static void RequireActiveSession(RouteGroupBuilder group)
         if (!session.Authenticated)
         {
             return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        return await next(context);
+    });
+}
+
+static void RequireAccessPermission(
+    RouteGroupBuilder group,
+    string sectionValue,
+    string permissionValue,
+    string returnValue)
+{
+    group.AddEndpointFilter(async (context, next) =>
+    {
+        var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
+        var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
+        if (!session.Authenticated)
+        {
+            return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var authorized = await repository.HasAccessPermissionAsync(
+            session.Username,
+            sectionValue,
+            permissionValue,
+            returnValue,
+            context.HttpContext.RequestAborted);
+        if (!authorized)
+        {
+            return Results.Json(new AuthAuthorizationFailureResponse(
+                Authenticated: true,
+                Authorized: false,
+                SessionId: session.SessionId,
+                Username: session.Username,
+                Role: session.Role,
+                RequiredSection: sectionValue,
+                RequiredPermission: permissionValue,
+                RequiredReturnValue: returnValue,
+                FailureReason: $"User '{session.Username}' is not authorized for {sectionValue}:{permissionValue} {returnValue}.",
+                SessionSource: session.SessionSource), statusCode: StatusCodes.Status403Forbidden);
         }
 
         return await next(context);

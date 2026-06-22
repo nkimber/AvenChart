@@ -870,6 +870,7 @@ copyRows('staff', ['id', 'username', 'first_name', 'last_name', 'role', 'calenda
 
 copyRows('auth_accounts', ['username', 'display_name', 'role', 'staff_id', 'active', 'password_salt', 'password_hash'], [
   ['admin', 'Administrator', 'administrator', null, true, demoCredentialSalt, hashDemoPassword('pass')],
+  ['gold-frontdesk-01', 'Parker Fleming', 'frontdesk', 117, true, demoCredentialSalt, hashDemoPassword('pass')],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)
