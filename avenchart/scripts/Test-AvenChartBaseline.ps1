@@ -2563,10 +2563,29 @@ finally {
 }
 
 try {
-    $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -TimeoutSec 20
+    $unauthenticatedEncounterSearchStatus = 0
+    try {
+        $unauthenticatedEncounterSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedEncounterSearchStatus = [int]$unauthenticatedEncounterSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedEncounterSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
-    $encounterPassed = $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote
+    $encounterPassed = $unauthenticatedEncounterSearchStatus -eq 401 -and $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote
     Add-Check -Name "anchor encounter search" -Result $(if ($encounterPassed) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedEncounterSearchStatus
         totalMatches = $encounters.totalMatches
         firstEncounter = $anchorEncounter
     }
@@ -2580,7 +2599,7 @@ try {
         throw "Anchor encounter search did not return an encounter."
     }
 
-    $encounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($anchorEncounter.encounter)" -Method Get -TimeoutSec 20
+    $encounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($anchorEncounter.encounter)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterDetailPassed = $encounterDetail.patientId -eq "MOD-PAT-0001" -and $null -ne $encounterDetail.vitals -and $null -ne $encounterDetail.soapNote -and $null -ne $encounterDetail.soapNote.assessment
     Add-Check -Name "anchor encounter detail" -Result $(if ($encounterDetailPassed) { "passed" } else { "failed" }) -Details @{
         encounter = $encounterDetail.encounter
@@ -2608,7 +2627,7 @@ try {
         amendment = $signatureNote
     } | ConvertTo-Json -Depth 5
 
-    $createdSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $signatureBody -TimeoutSec 20
+    $createdSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $signatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterSignatureId = $createdSignature.id
     $createdSignatureVisible = @($createdSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterSignatureId `
@@ -2618,9 +2637,9 @@ try {
             -and $_.amendment -eq $signatureNote
     } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $smokeEncounterSignatureId = $null
-    $afterDeleteSignatureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteSignatureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedSignatureVisible = @($afterDeleteSignatureDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.amendment -eq $signatureNote
     } | Select-Object -First 1
@@ -2638,7 +2657,7 @@ catch {
 finally {
     if ($null -ne $smokeEncounterSignatureId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$smokeEncounterSignatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -2667,9 +2686,9 @@ try {
         amendment = $coSignatureNote
     } | ConvertTo-Json -Depth 5
 
-    $createdPrimarySignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $primarySignatureBody -TimeoutSec 20
+    $createdPrimarySignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $primarySignatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterCoSignatureIds += $createdPrimarySignature.id
-    $createdCoSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $coSignatureBody -TimeoutSec 20
+    $createdCoSignature = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/sign" -Method Put -ContentType "application/json" -Body $coSignatureBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterCoSignatureIds += $createdCoSignature.id
 
     $primarySignatureVisible = @($createdCoSignature.detail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
@@ -2688,10 +2707,10 @@ try {
     } | Select-Object -First 1
 
     foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -TimeoutSec 20 | Out-Null
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     }
     $smokeEncounterCoSignatureIds = @()
-    $afterCoSignatureDeleteDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterCoSignatureDeleteDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedCoSignaturesVisible = @($afterCoSignatureDeleteDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
     }
@@ -2710,7 +2729,7 @@ catch {
 finally {
     foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -2734,7 +2753,7 @@ try {
         notes = "Created by the smoke encounter document attachment check."
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $documentBody -TimeoutSec 20
+    $createdEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $documentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentId = $createdEncounterDocument.id
     $createdEncounterDocumentVisible = @($createdEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentId `
@@ -2748,7 +2767,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentId = $null
-    $afterDeleteDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterDocumentVisible = @($afterDeleteDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $documentName
     } | Select-Object -First 1
@@ -2793,7 +2812,7 @@ try {
         notes = "Created by the smoke encounter binary document attachment check."
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryDocumentBody -TimeoutSec 20
+    $createdEncounterBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterBinaryDocumentId = $createdEncounterBinaryDocument.id
     $createdEncounterBinaryDocumentVisible = @($createdEncounterBinaryDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterBinaryDocumentId `
@@ -2821,7 +2840,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterBinaryDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterBinaryDocumentId = $null
-    $afterDeleteBinaryDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteBinaryDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterBinaryDocumentVisible = @($afterDeleteBinaryDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $binaryDocumentName
     } | Select-Object -First 1
@@ -2876,7 +2895,7 @@ try {
         notes = "Created by the smoke encounter binary document content replacement check."
     } | ConvertTo-Json -Depth 5
 
-    $createdBinaryReplacementDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryReplacementOriginalBody -TimeoutSec 20
+    $createdBinaryReplacementDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $binaryReplacementOriginalBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterBinaryReplacementDocumentId = $createdBinaryReplacementDocument.id
     $binaryReplacementBody = @{
         fileName = $binaryReplacementUpdatedFileName
@@ -2884,7 +2903,7 @@ try {
         contentBase64 = $binaryReplacementUpdatedBase64
     } | ConvertTo-Json -Depth 5
 
-    $replacedBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterBinaryReplacementDocumentId/content/binary" -Method Put -ContentType "application/json" -Body $binaryReplacementBody -TimeoutSec 20
+    $replacedBinaryDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterBinaryReplacementDocumentId/content/binary" -Method Put -ContentType "application/json" -Body $binaryReplacementBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $replacedBinaryDocumentVisible = @($replacedBinaryDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterBinaryReplacementDocumentId `
             -and $_.name -eq $binaryReplacementName `
@@ -2961,7 +2980,7 @@ try {
         notes = $scanNotes
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterScannedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $scanDocumentBody -TimeoutSec 20
+    $createdEncounterScannedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/binary" -Method Post -ContentType "application/json" -Body $scanDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterScannedDocumentId = $createdEncounterScannedDocument.id
     $createdEncounterScannedDocumentVisible = @($createdEncounterScannedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterScannedDocumentId `
@@ -2973,7 +2992,7 @@ try {
             -and $_.ocrStatus -eq "OCR pending"
     } | Select-Object -First 1
 
-    $afterCreateScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterCreateScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $reloadedEncounterScannedDocumentVisible = @($afterCreateScannedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterScannedDocumentId `
             -and $_.isScannedAttachment -eq $true `
@@ -2985,7 +3004,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterScannedDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterScannedDocumentId = $null
-    $afterDeleteScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteScannedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterScannedDocumentVisible = @($afterDeleteScannedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $scanDocumentName
     } | Select-Object -First 1
@@ -3032,7 +3051,7 @@ try {
         notes = "Created by the smoke encounter external-link document check."
     } | ConvertTo-Json -Depth 5
 
-    $createdEncounterExternalLinkDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/external-link" -Method Post -ContentType "application/json" -Body $externalLinkDocumentBody -TimeoutSec 20
+    $createdEncounterExternalLinkDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/external-link" -Method Post -ContentType "application/json" -Body $externalLinkDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterExternalLinkDocumentId = $createdEncounterExternalLinkDocument.id
     $createdEncounterExternalLinkDocumentVisible = @($createdEncounterExternalLinkDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterExternalLinkDocumentId `
@@ -3051,7 +3070,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterExternalLinkDocumentId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterExternalLinkDocumentId = $null
-    $afterDeleteExternalLinkDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteExternalLinkDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterExternalLinkDocumentVisible = @($afterDeleteExternalLinkDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $externalLinkDocumentName
     } | Select-Object -First 1
@@ -3095,7 +3114,7 @@ try {
         notes = "Created by the smoke encounter document metadata check."
     } | ConvertTo-Json
 
-    $createdEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $metadataDocumentBody -TimeoutSec 20
+    $createdEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $metadataDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentMetadataId = $createdEncounterMetadataDocument.id
     $createdMetadataDocumentVisible = @($createdEncounterMetadataDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentMetadataId `
@@ -3111,7 +3130,7 @@ try {
         encounter = 1000013
         notes = "Updated by the smoke encounter document metadata check."
     } | ConvertTo-Json
-    $updatedEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMetadataId/metadata" -Method Put -ContentType "application/json" -Body $metadataUpdateBody -TimeoutSec 20
+    $updatedEncounterMetadataDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMetadataId/metadata" -Method Put -ContentType "application/json" -Body $metadataUpdateBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $updatedMetadataDocumentVisible = @($updatedEncounterMetadataDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentMetadataId `
             -and $_.name -eq $updatedMetadataDocumentName `
@@ -3121,7 +3140,7 @@ try {
     } | Select-Object -First 1
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMetadataId" -Method Delete -TimeoutSec 20 | Out-Null
-    $afterDeleteMetadataDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteMetadataDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedMetadataDocumentVisible = @($afterDeleteMetadataDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $metadataDocumentName -or $_.name -eq $updatedMetadataDocumentName
     } | Select-Object -First 1
@@ -3166,7 +3185,7 @@ try {
         notes = "Created by the smoke encounter document content check."
     } | ConvertTo-Json
 
-    $createdEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $contentDocumentBody -TimeoutSec 20
+    $createdEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $contentDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentContentId = $createdEncounterContentDocument.id
     $createdContentDocumentVisible = @($createdEncounterContentDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentContentId `
@@ -3180,7 +3199,7 @@ try {
         fileName = $replacementFileName
         content = $replacementContent
     } | ConvertTo-Json
-    $replacedEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentContentId/content" -Method Put -ContentType "application/json" -Body $contentReplacementBody -TimeoutSec 20
+    $replacedEncounterContentDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentContentId/content" -Method Put -ContentType "application/json" -Body $contentReplacementBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $replacedContentDocumentVisible = @($replacedEncounterContentDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentContentId `
             -and $_.name -eq $contentDocumentName `
@@ -3194,7 +3213,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentContentId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentContentId = $null
-    $afterDeleteContentDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteContentDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedContentDocumentVisible = @($afterDeleteContentDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $contentDocumentName
     } | Select-Object -First 1
@@ -3238,7 +3257,7 @@ try {
         notes = "Created by the smoke encounter document archive restore check."
     } | ConvertTo-Json
 
-    $createdEncounterArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $archiveDocumentBody -TimeoutSec 20
+    $createdEncounterArchiveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $archiveDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentArchiveRestoreId = $createdEncounterArchiveDocument.id
     $createdArchiveDocumentVisible = @($createdEncounterArchiveDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
@@ -3247,30 +3266,30 @@ try {
             -and $_.contentPreview -like "*$archiveDocumentContent*"
     } | Select-Object -First 1
 
-    $archivedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedDocumentVisible = @($archivedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
             -and $_.name -eq $archiveDocumentName `
             -and $_.deleted -eq 1
     } | Select-Object -First 1
-    $activeOnlyAfterArchive = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $activeOnlyAfterArchive = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedDocumentHidden = @($activeOnlyAfterArchive.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId
     } | Select-Object -First 1
-    $archivedDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    $archivedDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedDocumentIncluded = @($archivedDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
             -and $_.deleted -eq 1
     } | Select-Object -First 1
 
-    $restoredEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/restore" -Method Put -TimeoutSec 20
+    $restoredEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentArchiveRestoreId/restore" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $restoredArchiveDocumentVisible = @($restoredEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
             -and $_.name -eq $archiveDocumentName `
             -and $_.deleted -eq 0 `
             -and $_.contentPreview -like "*$archiveDocumentContent*"
     } | Select-Object -First 1
-    $activeOnlyAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $activeOnlyAfterRestore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $restoredDocumentActive = @($activeOnlyAfterRestore.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentArchiveRestoreId `
             -and $_.deleted -eq 0
@@ -3278,7 +3297,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentArchiveRestoreId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentArchiveRestoreId = $null
-    $afterDeleteArchiveDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    $afterDeleteArchiveDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedArchiveDocumentVisible = @($afterDeleteArchiveDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $archiveDocumentName
     } | Select-Object -First 1
@@ -3327,7 +3346,7 @@ try {
         notes = "Created by the smoke encounter document lifecycle timeline check."
     } | ConvertTo-Json
 
-    $createdEncounterLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $lifecycleDocumentBody -TimeoutSec 20
+    $createdEncounterLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $lifecycleDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentLifecycleId = $createdEncounterLifecycleDocument.id
     $createdLifecycleDocumentVisible = @($createdEncounterLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.name -eq $lifecycleDocumentName
@@ -3338,20 +3357,20 @@ try {
         reviewStatus = "approved"
         reviewedBy = "admin"
     } | ConvertTo-Json
-    $signedLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/sign" -Method Put -ContentType "application/json" -Body $signLifecycleBody -TimeoutSec 20
+    $signedLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/sign" -Method Put -ContentType "application/json" -Body $signLifecycleBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $signedLifecycleDocumentVisible = @($signedLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.reviewStatus -eq "approved" -and $_.reviewedBy -eq "admin"
     } | Select-Object -First 1
     $signedLifecycleCodes = if ($null -eq $signedLifecycleDocumentVisible) { @() } else { @($signedLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/soft-delete" -Method Put -TimeoutSec 20 | Out-Null
-    $archivedLifecycleDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $archivedLifecycleDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013?includeArchivedDocuments=true" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedLifecycleDocumentVisible = @($archivedLifecycleDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.deleted -eq 1
     } | Select-Object -First 1
     $archivedLifecycleCodes = if ($null -eq $archivedLifecycleDocumentVisible) { @() } else { @($archivedLifecycleDocumentVisible.lifecycleEvents | ForEach-Object { $_.code }) }
 
-    $restoredLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/restore" -Method Put -TimeoutSec 20
+    $restoredLifecycleDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentLifecycleId/restore" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $restoredLifecycleDocumentVisible = @($restoredLifecycleDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentLifecycleId -and $_.deleted -eq 0
     } | Select-Object -First 1
@@ -3409,7 +3428,7 @@ try {
         notes = "Created by the smoke encounter document move check."
     } | ConvertTo-Json
 
-    $createdEncounterMoveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $moveDocumentBody -TimeoutSec 20
+    $createdEncounterMoveDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $moveDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentMoveId = $createdEncounterMoveDocument.id
     $createdMoveDocumentVisible = @($createdEncounterMoveDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentMoveId `
@@ -3421,7 +3440,7 @@ try {
     $moveBody = @{
         targetEncounter = 1000011
     } | ConvertTo-Json
-    $movedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMoveId/move" -Method Put -ContentType "application/json" -Body $moveBody -TimeoutSec 20
+    $movedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentMoveId/move" -Method Put -ContentType "application/json" -Body $moveBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $movedSourceDocumentVisible = @($movedEncounterDocument.sourceDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentMoveId
     } | Select-Object -First 1
@@ -3435,7 +3454,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentMoveId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentMoveId = $null
-    $afterDeleteMovedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    $afterDeleteMovedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedMovedDocumentVisible = @($afterDeleteMovedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $moveDocumentName
     } | Select-Object -First 1
@@ -3480,7 +3499,7 @@ try {
         notes = "Created by the smoke encounter document sign-off check."
     } | ConvertTo-Json
 
-    $createdEncounterSignedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $signedDocumentBody -TimeoutSec 20
+    $createdEncounterSignedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $signedDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentSignOffId = $createdEncounterSignedDocument.id
     $createdSignedDocumentVisible = @($createdEncounterSignedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentSignOffId `
@@ -3493,7 +3512,7 @@ try {
         reviewStatus = "approved"
         reviewedBy = "admin"
     } | ConvertTo-Json
-    $signedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentSignOffId/sign" -Method Put -ContentType "application/json" -Body $signBody -TimeoutSec 20
+    $signedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentSignOffId/sign" -Method Put -ContentType "application/json" -Body $signBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $signedEncounterDocumentVisible = @($signedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentSignOffId `
             -and $_.name -eq $signedDocumentName `
@@ -3504,7 +3523,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentSignOffId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentSignOffId = $null
-    $afterDeleteSignedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteSignedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedSignedDocumentVisible = @($afterDeleteSignedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $signedDocumentName
     } | Select-Object -First 1
@@ -3547,7 +3566,7 @@ try {
         notes = "Created by the smoke encounter document denial check."
     } | ConvertTo-Json
 
-    $createdEncounterDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $deniedDocumentBody -TimeoutSec 20
+    $createdEncounterDeniedDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents" -Method Post -ContentType "application/json" -Body $deniedDocumentBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $smokeEncounterDocumentDenialId = $createdEncounterDeniedDocument.id
     $createdDeniedDocumentVisible = @($createdEncounterDeniedDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentDenialId `
@@ -3560,7 +3579,7 @@ try {
         reviewStatus = "denied"
         reviewedBy = "admin"
     } | ConvertTo-Json
-    $deniedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentDenialId/sign" -Method Put -ContentType "application/json" -Body $denyBody -TimeoutSec 20
+    $deniedEncounterDocument = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/documents/$smokeEncounterDocumentDenialId/sign" -Method Put -ContentType "application/json" -Body $denyBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deniedEncounterDocumentVisible = @($deniedEncounterDocument.detail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterDocumentDenialId `
             -and $_.name -eq $deniedDocumentName `
@@ -3571,7 +3590,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/$smokeEncounterDocumentDenialId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterDocumentDenialId = $null
-    $afterDeleteDeniedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteDeniedDocumentDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedDeniedDocumentVisible = @($afterDeleteDeniedDocumentDetail.documents | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $deniedDocumentName
     } | Select-Object -First 1
@@ -3650,7 +3669,7 @@ try {
         throw "Anchor encounter detail did not load."
     }
 
-    $procedureDiagnosisDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    $procedureDiagnosisDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterDiagnoses = @($encounterDetail.diagnosisCodes | Where-Object { $null -ne $_ })
     $procedureEncounterDiagnoses = @($procedureDiagnosisDetail.diagnosisCodes | Where-Object { $null -ne $_ })
     $hyperlipidemiaDiagnosis = $encounterDiagnoses | Where-Object { $_.code -eq "E78.5" } | Select-Object -First 1
@@ -3685,7 +3704,7 @@ catch {
 }
 
 try {
-    $procedureEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -TimeoutSec 20
+    $procedureEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000011" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     if ($null -eq $procedureEncounterDetail) {
         throw "Procedure-linked encounter detail did not load."
     }
@@ -3753,7 +3772,7 @@ try {
 
     $createdEncounterProcedureOrder = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders" -Method Post -ContentType "application/json" -Body $procedureOrderBody -TimeoutSec 20
     $smokeEncounterProcedureOrderId = $createdEncounterProcedureOrder.id
-    $refreshedEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $refreshedEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterProcedureOrderRow = @($refreshedEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterProcedureOrderId `
             -and $_.name -eq $procedureOrderName `
@@ -3766,7 +3785,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureOrderId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterProcedureOrderId = $null
-    $afterDeleteEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteEncounterProcedureDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterProcedureOrderRow = @($afterDeleteEncounterProcedureDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $procedureOrderName
     } | Select-Object -First 1
@@ -3839,7 +3858,7 @@ try {
     } | ConvertTo-Json -Depth 5
     $createdEncounterProcedureResult = Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/results" -Method Post -ContentType "application/json" -Body $procedureResultBody -TimeoutSec 20
 
-    $refreshedEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $refreshedEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterProcedureResultOrderRow = @($refreshedEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.id -eq $smokeEncounterProcedureResultOrderId `
             -and $_.name -eq $procedureResultOrderName `
@@ -3873,7 +3892,7 @@ try {
 
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/procedures/orders/$smokeEncounterProcedureResultOrderId" -Method Delete -TimeoutSec 20 | Out-Null
     $smokeEncounterProcedureResultOrderId = $null
-    $afterDeleteEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $afterDeleteEncounterProcedureResultDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $deletedEncounterProcedureResultOrderRow = @($afterDeleteEncounterProcedureResultDetail.procedureOrders | Where-Object { $null -ne $_ }) | Where-Object {
         $_.name -eq $procedureResultOrderName
     } | Select-Object -First 1
@@ -4097,7 +4116,7 @@ try {
         billingFacilityId = $null
         billingNote = "Created by the smoke encounter mutation check."
     } | ConvertTo-Json
-    $createdEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createEncounterBody -TimeoutSec 20
+    $createdEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createEncounterBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterMutationId = $createdEncounter.encounter
 
     $vitalsBody = @{
@@ -4110,7 +4129,7 @@ try {
         oxygenSaturation = 98
         note = "Smoke vitals detail."
     } | ConvertTo-Json
-    $createdVitals = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/vitals" -Method Post -ContentType "application/json" -Body $vitalsBody -TimeoutSec 20
+    $createdVitals = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/vitals" -Method Post -ContentType "application/json" -Body $vitalsBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $soapBody = @{
         dateTime = "2026-06-18 10:10:00"
@@ -4119,13 +4138,13 @@ try {
         assessment = "Stable smoke workflow condition."
         plan = "Continue smoke workflow validation."
     } | ConvertTo-Json
-    $createdSoap = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/soap-notes" -Method Post -ContentType "application/json" -Body $soapBody -TimeoutSec 20
+    $createdSoap = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId/soap-notes" -Method Post -ContentType "application/json" -Body $soapBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
     $updateBody = @{
         reason = "Smoke Encounter Mutation Updated"
         billingNote = "Updated by the smoke encounter mutation check."
     } | ConvertTo-Json
-    $updatedEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -TimeoutSec 20
+    $updatedEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Put -ContentType "application/json" -Body $updateBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterMutationPassed = $createdEncounter.reason -eq "Smoke Encounter Mutation" `
         -and $createdVitals.id -gt 0 `
         -and $createdSoap.id -gt 0 `
@@ -4134,7 +4153,7 @@ try {
         -and $updatedEncounter.vitals.bloodPressure -eq "128/76" `
         -and $updatedEncounter.soapNote.assessment -eq "Stable smoke workflow condition."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $encounterMutationId = $null
 
     Add-Check -Name "encounter mutation lifecycle" -Result $(if ($encounterMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4152,7 +4171,7 @@ catch {
 finally {
     if ($null -ne $encounterMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4175,7 +4194,7 @@ try {
         posCode = 11
         billingNote = "Created by the smoke encounter metadata check."
     } | ConvertTo-Json
-    $createdMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createMetadataBody -TimeoutSec 20
+    $createdMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters" -Method Post -ContentType "application/json" -Body $createMetadataBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterMetadataMutationId = $createdMetadataEncounter.encounter
 
     $updateMetadataBody = @{
@@ -4186,7 +4205,7 @@ try {
         posCode = 22
         billingNote = "Updated by the smoke encounter metadata check."
     } | ConvertTo-Json
-    $updatedMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Put -ContentType "application/json" -Body $updateMetadataBody -TimeoutSec 20
+    $updatedMetadataEncounter = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Put -ContentType "application/json" -Body $updateMetadataBody -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $encounterMetadataPassed = $createdMetadataEncounter.sensitivity -eq "normal" `
         -and $createdMetadataEncounter.referralSource -eq "self" `
         -and $createdMetadataEncounter.externalId -eq "EXT-$metadataSuffix" `
@@ -4197,7 +4216,7 @@ try {
         -and $updatedMetadataEncounter.posCode -eq 22 `
         -and $updatedMetadataEncounter.billingNote -eq "Updated by the smoke encounter metadata check."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $encounterMetadataMutationId = $null
 
     Add-Check -Name "encounter metadata mutation lifecycle" -Result $(if ($encounterMetadataPassed) { "passed" } else { "failed" }) -Details @{
@@ -4215,7 +4234,7 @@ catch {
 finally {
     if ($null -ne $encounterMetadataMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$encounterMetadataMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6531,7 +6550,7 @@ try {
     $billingLineMutationId = $createdBillingLine.id
     $createdBillingEncounter = $createdBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdBillingVisible = $createdBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
-    $createdEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterBillingVisible = $createdEncounterDetail.billingLines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.activity -eq 1 } | Select-Object -First 1
 
     $statusBillingBody = @{
@@ -6541,7 +6560,7 @@ try {
     $inactiveBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusBillingBody -TimeoutSec 20
     $inactiveBillingEncounter = $inactiveBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveBillingVisible = $inactiveBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
-    $inactiveEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $inactiveEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $inactiveEncounterBillingVisible = $inactiveEncounterDetail.billingLines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
     $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible
     $encounterBillingLinkMutationPassed = $null -ne $createdEncounterBillingVisible -and $null -eq $inactiveEncounterBillingVisible
@@ -6714,7 +6733,7 @@ try {
     $diagnosisLineMutationId = $createdDiagnosisLine.id
     $createdDiagnosisEncounter = $createdDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdDiagnosisVisible = $createdDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId -and $_.codeType -eq "ICD10" -and $_.code -eq "R73.03" -and $_.codeText -eq $diagnosisCodeText -and $_.fee -eq 0 -and $_.justify -eq "R73.03" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
-    $createdDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $createdDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $createdEncounterDiagnosisVisible = @($createdDiagnosisEncounterDetail.diagnosisCodes | Where-Object { $null -ne $_ }) | Where-Object {
         $_.code -eq "R73.03" `
             -and $_.description -eq $diagnosisCodeText `
@@ -6731,7 +6750,7 @@ try {
     $inactiveDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusDiagnosisBody -TimeoutSec 20
     $inactiveDiagnosisEncounter = $inactiveDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveDiagnosisVisible = $inactiveDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId } | Select-Object -First 1
-    $inactiveDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -TimeoutSec 20
+    $inactiveDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $inactiveEncounterDiagnosisVisible = @($inactiveDiagnosisEncounterDetail.diagnosisCodes | Where-Object { $null -ne $_ }) | Where-Object { $_.code -eq "R73.03" } | Select-Object -First 1
     $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible
     $encounterDiagnosisMutationPassed = $null -ne $createdEncounterDiagnosisVisible -and $null -eq $inactiveEncounterDiagnosisVisible

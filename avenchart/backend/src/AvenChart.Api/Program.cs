@@ -319,6 +319,7 @@ appointments.MapDelete("/{appointmentId}", async (
     .WithName("DeleteAppointment");
 
 var encounters = app.MapGroup("/api/encounters").WithTags("Encounters");
+RequireActiveSession(encounters);
 
 encounters.MapGet("/", async (
         EncounterRepository repository,

@@ -2393,6 +2393,7 @@ export async function restoreAppointmentOccurrence(
 export async function searchEncounters(
   patientId: string,
   fromDate: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterSearchResponse> {
   const params = new URLSearchParams()
@@ -2404,9 +2405,12 @@ export async function searchEncounters(
   }
   params.set('limit', '25')
 
-  const response = await fetch(`${apiBaseUrl}/api/encounters?${params.toString()}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/encounters?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Encounter search failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter search', response.status))
   }
 
   return response.json()
@@ -2414,13 +2418,17 @@ export async function searchEncounters(
 
 export async function getEncounterDetail(
   encounter: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
   includeArchivedDocuments = false,
 ): Promise<EncounterDetail> {
   const query = includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''
-  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}${query}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}${query}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Encounter detail load failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter detail load', response.status))
   }
 
   return response.json()
@@ -2428,16 +2436,17 @@ export async function getEncounterDetail(
 
 export async function createEncounter(
   encounter: EncounterCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDetail> {
   const response = await fetch(`${apiBaseUrl}/api/encounters`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(encounter),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter create failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter create', response.status))
   }
 
   return response.json()
@@ -2446,44 +2455,51 @@ export async function createEncounter(
 export async function updateEncounter(
   encounter: number,
   update: EncounterUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDetail> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter update failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteEncounter(encounter: number, signal?: AbortSignal): Promise<void> {
+export async function deleteEncounter(
+  encounter: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter delete', response.status))
   }
 }
 
 export async function createEncounterVitals(
   encounter: number,
   vitals: EncounterVitalsCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterFormMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/vitals`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(vitals),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter vitals create failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter vitals create', response.status))
   }
 
   return response.json()
@@ -2492,16 +2508,17 @@ export async function createEncounterVitals(
 export async function createEncounterSoapNote(
   encounter: number,
   soapNote: EncounterSoapNoteCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterFormMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/soap-notes`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(soapNote),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter SOAP note create failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter SOAP note create', response.status))
   }
 
   return response.json()
@@ -2510,16 +2527,17 @@ export async function createEncounterSoapNote(
 export async function signEncounter(
   encounter: number,
   signature: EncounterSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterSignatureMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter sign-off failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter sign-off', response.status))
   }
 
   return response.json()
@@ -2528,16 +2546,17 @@ export async function signEncounter(
 export async function createEncounterDocument(
   encounter: number,
   document: EncounterDocumentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document attach failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document attach', response.status))
   }
 
   return response.json()
@@ -2546,16 +2565,17 @@ export async function createEncounterDocument(
 export async function createEncounterBinaryDocument(
   encounter: number,
   document: EncounterBinaryDocumentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/binary`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Binary encounter document attach failed with ${response.status}`)
+    throw new Error(sessionApiError('Binary encounter document attach', response.status))
   }
 
   return response.json()
@@ -2564,16 +2584,17 @@ export async function createEncounterBinaryDocument(
 export async function createEncounterExternalLinkDocument(
   encounter: number,
   document: EncounterExternalLinkDocumentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/external-link`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`External-link encounter document attach failed with ${response.status}`)
+    throw new Error(sessionApiError('External-link encounter document attach', response.status))
   }
 
   return response.json()
@@ -2583,16 +2604,17 @@ export async function updateEncounterDocumentMetadata(
   encounter: number,
   documentId: number,
   document: PatientDocumentMetadataUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/metadata`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document metadata update failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document metadata update', response.status))
   }
 
   return response.json()
@@ -2602,16 +2624,17 @@ export async function moveEncounterDocument(
   encounter: number,
   documentId: number,
   input: EncounterDocumentMoveInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMoveResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/move`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document move failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document move', response.status))
   }
 
   return response.json()
@@ -2621,16 +2644,17 @@ export async function replaceEncounterDocumentContent(
   encounter: number,
   documentId: number,
   document: PatientDocumentContentReplaceInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document content replacement failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document content replacement', response.status))
   }
 
   return response.json()
@@ -2640,16 +2664,17 @@ export async function replaceEncounterDocumentBinaryContent(
   encounter: number,
   documentId: number,
   document: PatientDocumentBinaryContentReplaceInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/content/binary`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter binary document content replacement failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter binary document content replacement', response.status))
   }
 
   return response.json()
@@ -2658,14 +2683,16 @@ export async function replaceEncounterDocumentBinaryContent(
 export async function softDeleteEncounterDocument(
   encounter: number,
   documentId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/soft-delete`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document archive failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document archive', response.status))
   }
 
   return response.json()
@@ -2674,14 +2701,16 @@ export async function softDeleteEncounterDocument(
 export async function restoreEncounterDocument(
   encounter: number,
   documentId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/restore`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document restore failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document restore', response.status))
   }
 
   return response.json()
@@ -2691,16 +2720,17 @@ export async function signEncounterDocument(
   encounter: number,
   documentId: number,
   signature: PatientDocumentSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document sign-off failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document sign-off', response.status))
   }
 
   return response.json()
@@ -2710,16 +2740,17 @@ export async function denyEncounterDocument(
   encounter: number,
   documentId: number,
   signature: PatientDocumentSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<EncounterDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/documents/${documentId}/sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Encounter document denial failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter document denial', response.status))
   }
 
   return response.json()
@@ -2728,14 +2759,16 @@ export async function denyEncounterDocument(
 export async function deleteEncounterSignature(
   encounter: number,
   signatureId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/encounters/${encounter}/signatures/${signatureId}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok && response.status !== 404) {
-    throw new Error(`Encounter signature delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Encounter signature delete', response.status))
   }
 }
 

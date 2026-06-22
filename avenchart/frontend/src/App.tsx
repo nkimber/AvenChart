@@ -574,13 +574,23 @@ function App() {
       return
     }
 
+    if (!openEmrSessionId) {
+      setEncounterResult(null)
+      setEncounterStatus('idle')
+      setEncounterError(null)
+      setSelectedEncounter(null)
+      setEncounterDetail(null)
+      setEncounterDetailStatus('idle')
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setEncounterStatus('loading')
       setEncounterError(null)
 
       try {
-        const result = await searchEncounters(encounterPatientId, encounterFromDate, controller.signal)
+        const result = await searchEncounters(encounterPatientId, encounterFromDate, openEmrSessionId, controller.signal)
         setEncounterResult(result)
         setEncounterStatus('ready')
 
@@ -605,10 +615,10 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey])
+  }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, openEmrSessionId])
 
   useEffect(() => {
-    if (activeModule !== 'encounters' || selectedEncounter === null) {
+    if (activeModule !== 'encounters' || selectedEncounter === null || !openEmrSessionId) {
       setEncounterDetailStatus('idle')
       setEncounterDetail(null)
       return
@@ -620,6 +630,7 @@ function App() {
       try {
         const detail = await getEncounterDetail(
           selectedEncounter!,
+          openEmrSessionId,
           controller.signal,
           encounterIncludeArchivedDocuments,
         )
@@ -635,7 +646,7 @@ function App() {
 
     loadEncounterDetail()
     return () => controller.abort()
-  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments])
+  }, [activeModule, selectedEncounter, encounterIncludeArchivedDocuments, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'lists') {
@@ -1033,6 +1044,14 @@ function App() {
     return openEmrSessionId
   }
 
+  function getActiveEncounterSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access encounters.')
+    }
+
+    return openEmrSessionId
+  }
+
   async function handlePatientContactSave(patientId: string, contact: PatientContactUpdate) {
     setChartStatus('loading')
     setPatientError(null)
@@ -1414,7 +1433,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const created = await createEncounter(input)
+      const sessionId = getActiveEncounterSessionId()
+      const created = await createEncounter(input, sessionId)
       setEncounterPatientId(created.patientId)
       setEncounterFromDate(created.date)
       setSelectedEncounter(created.encounter)
@@ -1436,7 +1456,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const updated = await updateEncounter(encounter.encounter, update)
+      const sessionId = getActiveEncounterSessionId()
+      const updated = await updateEncounter(encounter.encounter, update, sessionId)
       setEncounterDetail(updated)
       setSelectedEncounter(updated.encounter)
       setEncounterDetailStatus('ready')
@@ -1455,7 +1476,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      await deleteEncounter(encounter.encounter)
+      const sessionId = getActiveEncounterSessionId()
+      await deleteEncounter(encounter.encounter, sessionId)
       setSelectedEncounter(null)
       setEncounterDetail(null)
       setEncounterDetailStatus('idle')
@@ -1476,7 +1498,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await createEncounterVitals(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await createEncounterVitals(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1498,7 +1521,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await createEncounterSoapNote(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await createEncounterSoapNote(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1520,7 +1544,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await signEncounter(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await signEncounter(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1539,8 +1564,9 @@ function App() {
     setEncounterError(null)
 
     try {
-      await deleteEncounterSignature(encounter.encounter, signature.id)
-      const refreshed = await getEncounterDetail(encounter.encounter)
+      const sessionId = getActiveEncounterSessionId()
+      await deleteEncounterSignature(encounter.encounter, signature.id, sessionId)
+      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
       setEncounterDetailStatus('ready')
@@ -1561,7 +1587,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await createEncounterDocument(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await createEncounterDocument(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1583,7 +1610,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await createEncounterBinaryDocument(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await createEncounterBinaryDocument(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1605,7 +1633,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await createEncounterExternalLinkDocument(encounter.encounter, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await createEncounterExternalLinkDocument(encounter.encounter, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1628,7 +1657,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await updateEncounterDocumentMetadata(encounter.encounter, document.id, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await updateEncounterDocumentMetadata(encounter.encounter, document.id, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1651,7 +1681,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await moveEncounterDocument(encounter.encounter, document.id, { targetEncounter })
+      const sessionId = getActiveEncounterSessionId()
+      const response = await moveEncounterDocument(encounter.encounter, document.id, { targetEncounter }, sessionId)
       setEncounterDetail(response.targetDetail)
       setSelectedEncounter(response.targetDetail.encounter)
       setEncounterPatientId(response.targetDetail.pubpid)
@@ -1676,7 +1707,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await replaceEncounterDocumentContent(encounter.encounter, document.id, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await replaceEncounterDocumentContent(encounter.encounter, document.id, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1700,7 +1732,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await replaceEncounterDocumentBinaryContent(encounter.encounter, document.id, input)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await replaceEncounterDocumentBinaryContent(encounter.encounter, document.id, input, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1723,7 +1756,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await softDeleteEncounterDocument(encounter.encounter, document.id)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await softDeleteEncounterDocument(encounter.encounter, document.id, sessionId)
       setEncounterIncludeArchivedDocuments(true)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
@@ -1746,7 +1780,8 @@ function App() {
     setEncounterError(null)
 
     try {
-      const response = await restoreEncounterDocument(encounter.encounter, document.id)
+      const sessionId = getActiveEncounterSessionId()
+      const response = await restoreEncounterDocument(encounter.encounter, document.id, sessionId)
       setEncounterIncludeArchivedDocuments(true)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
@@ -1769,10 +1804,11 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const response = await signEncounterDocument(encounter.encounter, document.id, {
         reviewStatus: 'approved',
         reviewedBy: 'admin',
-      })
+      }, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1794,10 +1830,11 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const response = await denyEncounterDocument(encounter.encounter, document.id, {
         reviewStatus: 'denied',
         reviewedBy: 'admin',
-      })
+      }, sessionId)
       setEncounterDetail(response.detail)
       setSelectedEncounter(response.detail.encounter)
       setEncounterDetailStatus('ready')
@@ -1819,8 +1856,9 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const response = await createBillingLine(input)
-      const refreshed = await getEncounterDetail(encounter.encounter)
+      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
       setEncounterDetailStatus('ready')
@@ -1842,8 +1880,9 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const response = await createProcedureOrder(input)
-      const refreshed = await getEncounterDetail(encounter.encounter)
+      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
       setEncounterDetailStatus('ready')
@@ -1865,12 +1904,13 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const reportResponse = await createProcedureReport(input.report)
       const resultResponse = await createProcedureResult({
         ...input.result,
         reportId: reportResponse.id,
       })
-      const refreshed = await getEncounterDetail(encounter.encounter)
+      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
       setEncounterDetailStatus('ready')
@@ -1896,8 +1936,9 @@ function App() {
     setEncounterError(null)
 
     try {
+      const sessionId = getActiveEncounterSessionId()
       const response = await updateProcedureResult(result.id, input)
-      const refreshed = await getEncounterDetail(encounter.encounter)
+      const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
       setEncounterDetailStatus('ready')
@@ -3434,6 +3475,11 @@ function App() {
             detailStatus={encounterDetailStatus}
             error={encounterError}
             includeArchivedDocuments={encounterIncludeArchivedDocuments}
+            sessionId={openEmrSessionId}
+            onEncounterSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+              setEncounterRefreshKey((current) => current + 1)
+            }}
             onPatientIdChange={setEncounterPatientId}
             onFromDateChange={setEncounterFromDate}
             onSelectEncounter={setSelectedEncounter}
@@ -5755,6 +5801,8 @@ function EncounterWorkspace({
   detailStatus,
   error,
   includeArchivedDocuments,
+  sessionId,
+  onEncounterSessionActive,
   onPatientIdChange,
   onFromDateChange,
   onSelectEncounter,
@@ -5791,6 +5839,8 @@ function EncounterWorkspace({
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeArchivedDocuments: boolean
+  sessionId: string | null
+  onEncounterSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectEncounter: (encounter: number) => void
@@ -5874,6 +5924,12 @@ function EncounterWorkspace({
   const [createPosCode, setCreatePosCode] = useState('11')
   const [createBillingNote, setCreateBillingNote] = useState('Created from modernized encounter workspace.')
   const [createStatus, setCreateStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [encounterLoginUsername, setEncounterLoginUsername] = useState('admin')
+  const [encounterLoginPassword, setEncounterLoginPassword] = useState('pass')
+  const [encounterLoginStatus, setEncounterLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [encounterLoginMessage, setEncounterLoginMessage] = useState<string | null>(null)
+  const encounterLocked = !sessionId
 
   const [summaryReason, setSummaryReason] = useState('')
   const [summarySensitivity, setSummarySensitivity] = useState('')
@@ -6029,8 +6085,34 @@ function EncounterWorkspace({
     }
   }
 
+  async function handleEncounterLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setEncounterLoginStatus('checking')
+    setEncounterLoginMessage(null)
+
+    try {
+      const result = await login({ username: encounterLoginUsername, password: encounterLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        onEncounterSessionActive(result.sessionId)
+        setEncounterLoginStatus('authenticated')
+        setEncounterLoginMessage(`Signed in as ${result.displayName}`)
+      } else {
+        setEncounterLoginStatus('rejected')
+        setEncounterLoginMessage(result.failureReason ?? 'Encounter access was rejected.')
+      }
+    } catch (loginError) {
+      setEncounterLoginStatus('error')
+      setEncounterLoginMessage(loginError instanceof Error ? loginError.message : 'Encounter access check failed')
+    }
+  }
+
   async function handleCreateSubmit(event: FormEvent) {
     event.preventDefault()
+    if (encounterLocked) {
+      setCreateStatus('error')
+      return
+    }
+
     setCreateStatus('saving')
 
     try {
@@ -6451,6 +6533,37 @@ function EncounterWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Encounter search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Encounter access" onSubmit={handleEncounterLogin}>
+            <div className="panel-heading">
+              <ShieldCheck size={17} />
+              <h3>Encounter Access</h3>
+            </div>
+            <p className="access-copy">Sign in to load encounters.</p>
+            <label>
+              Username
+              <input value={encounterLoginUsername} onChange={(event) => setEncounterLoginUsername(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={encounterLoginPassword}
+                onChange={(event) => setEncounterLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={encounterLoginStatus === 'checking'}>
+              <LogIn size={15} />
+              {encounterLoginStatus === 'checking' ? 'Checking' : 'Verify Encounter Access'}
+            </button>
+            {encounterLoginMessage && (
+              <div className={encounterLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {encounterLoginMessage}
+              </div>
+            )}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -6459,6 +6572,7 @@ function EncounterWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Encounter patient ID"
               placeholder="MOD-PAT-0001"
+              disabled={encounterLocked}
             />
           </label>
           <label className="filter-field">
@@ -6468,6 +6582,7 @@ function EncounterWorkspace({
               onChange={(event) => onFromDateChange(event.target.value)}
               aria-label="Encounter from date"
               type="date"
+              disabled={encounterLocked}
             />
           </label>
         </div>
@@ -6605,7 +6720,7 @@ function EncounterWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={createStatus === 'saving'}>
+            <button className="icon-text-button primary" type="submit" disabled={encounterLocked || createStatus === 'saving'}>
               <CalendarPlus size={16} />
               <span>{createStatus === 'saving' ? 'Saving' : 'Create'}</span>
             </button>
