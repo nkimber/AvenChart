@@ -817,7 +817,7 @@ encounters.MapDelete("/{encounter:int}", async (
     .WithName("DeleteEncounter");
 
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
-RequireActiveSession(clinicalLists);
+RequireAccessPermission(clinicalLists, "patients", "med", "view");
 
 clinicalLists.MapGet("/{patientId}", async (
         ClinicalListRepository repository,

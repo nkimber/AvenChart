@@ -9103,7 +9103,7 @@ function ClinicalListsWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Clinical lists search">
-        {!sessionId && (
+        {(!sessionId || status === 'error') && (
           <form className="mutation-form" aria-label="Lists access" onSubmit={handleListsLogin}>
             <div className="panel-heading">
               <ShieldCheck size={17} />

@@ -4307,13 +4307,64 @@ finally {
 }
 
 try {
+    $frontDeskClinicalListsStatus = 0
+    $frontDeskClinicalListMutationStatus = 0
+    try {
+        $frontDeskClinicalLists = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskClinicalListsStatus = [int]$frontDeskClinicalLists.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskClinicalListsStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskClinicalListMutationBody = @{
+        patientId = "MOD-PAT-0001"
+        title = "Forbidden Smoke Allergy"
+        dateTime = "2026-06-18 09:00:00"
+        comments = "This request should be rejected before mutation."
+        reaction = "Rash"
+        severity = "mild"
+        listOptionId = "parity-allergy"
+    } | ConvertTo-Json
+    try {
+        $frontDeskClinicalListMutation = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/clinical-lists/allergies" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskClinicalListMutationBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskClinicalListMutationStatus = [int]$frontDeskClinicalListMutation.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskClinicalListMutationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
     $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $problem = $clinicalLists.problems | Where-Object { $_.title -like "*diabetes*" } | Select-Object -First 1
     $allergy = $clinicalLists.allergies | Where-Object { $_.title -eq "Penicillin" } | Select-Object -First 1
     $medication = $clinicalLists.medications | Where-Object { $_.title -like "Metformin*" } | Select-Object -First 1
     $prescription = $clinicalLists.prescriptions | Where-Object { $_.drug -eq "Metformin" } | Select-Object -First 1
-    $clinicalListsPassed = $clinicalLists.patientId -eq "MOD-PAT-0001" -and $null -ne $problem -and $null -ne $allergy -and $null -ne $medication -and $null -ne $prescription
+    $clinicalListsPassed = $frontDeskClinicalListsStatus -eq 403 -and $frontDeskClinicalListMutationStatus -eq 403 -and $clinicalLists.patientId -eq "MOD-PAT-0001" -and $null -ne $problem -and $null -ne $allergy -and $null -ne $medication -and $null -ne $prescription
     Add-Check -Name "anchor clinical lists" -Result $(if ($clinicalListsPassed) { "passed" } else { "failed" }) -Details @{
+        frontDeskStatus = $frontDeskClinicalListsStatus
+        frontDeskMutationStatus = $frontDeskClinicalListMutationStatus
         problems = $clinicalLists.problems.Count
         allergies = $clinicalLists.allergies.Count
         medications = $clinicalLists.medications.Count

@@ -2077,10 +2077,18 @@ export async function getLoginAudit(
   return response.json()
 }
 
-function sessionApiError(action: string, status: number) {
-  return status === 401
-    ? `${action} requires an active Legacy EHR session.`
-    : `${action} failed with ${status}`
+function sessionApiError(action: string, status: number, forbiddenRequirement?: string) {
+  if (status === 401) {
+    return `${action} requires an active Legacy EHR session.`
+  }
+  if (status === 403 && forbiddenRequirement) {
+    return `${action} requires ${forbiddenRequirement}.`
+  }
+  return `${action} failed with ${status}`
+}
+
+function clinicalListApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Medical/History access')
 }
 
 export async function searchPatients(
@@ -2792,7 +2800,7 @@ export async function getClinicalLists(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical lists load', response.status))
+    throw new Error(clinicalListApiError('Clinical lists load', response.status))
   }
 
   return response.json()
@@ -2810,7 +2818,7 @@ export async function createClinicalAllergy(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical allergy create', response.status))
+    throw new Error(clinicalListApiError('Clinical allergy create', response.status))
   }
 
   return response.json()
@@ -2828,7 +2836,7 @@ export async function createClinicalProblem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical problem create', response.status))
+    throw new Error(clinicalListApiError('Clinical problem create', response.status))
   }
 
   return response.json()
@@ -2847,7 +2855,7 @@ export async function deactivateClinicalProblem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical problem deactivate', response.status))
+    throw new Error(clinicalListApiError('Clinical problem deactivate', response.status))
   }
 
   return response.json()
@@ -2864,7 +2872,7 @@ export async function deleteClinicalProblem(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical problem delete', response.status))
+    throw new Error(clinicalListApiError('Clinical problem delete', response.status))
   }
 }
 
@@ -2880,7 +2888,7 @@ export async function createClinicalMedication(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical medication create', response.status))
+    throw new Error(clinicalListApiError('Clinical medication create', response.status))
   }
 
   return response.json()
@@ -2899,7 +2907,7 @@ export async function deactivateClinicalMedication(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical medication deactivate', response.status))
+    throw new Error(clinicalListApiError('Clinical medication deactivate', response.status))
   }
 
   return response.json()
@@ -2916,7 +2924,7 @@ export async function deleteClinicalMedication(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical medication delete', response.status))
+    throw new Error(clinicalListApiError('Clinical medication delete', response.status))
   }
 }
 
@@ -2933,7 +2941,7 @@ export async function deactivateClinicalAllergy(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical allergy deactivate', response.status))
+    throw new Error(clinicalListApiError('Clinical allergy deactivate', response.status))
   }
 
   return response.json()
@@ -2950,7 +2958,7 @@ export async function deleteClinicalAllergy(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical allergy delete', response.status))
+    throw new Error(clinicalListApiError('Clinical allergy delete', response.status))
   }
 }
 
@@ -2966,7 +2974,7 @@ export async function createClinicalPrescription(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical prescription create', response.status))
+    throw new Error(clinicalListApiError('Clinical prescription create', response.status))
   }
 
   return response.json()
@@ -2988,7 +2996,7 @@ export async function deactivateClinicalPrescription(
     },
   )
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical prescription deactivate', response.status))
+    throw new Error(clinicalListApiError('Clinical prescription deactivate', response.status))
   }
 
   return response.json()
@@ -3005,7 +3013,7 @@ export async function deleteClinicalPrescription(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical prescription delete', response.status))
+    throw new Error(clinicalListApiError('Clinical prescription delete', response.status))
   }
 }
 
@@ -3021,7 +3029,7 @@ export async function createClinicalImmunization(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical immunization create', response.status))
+    throw new Error(clinicalListApiError('Clinical immunization create', response.status))
   }
 
   return response.json()
@@ -3043,7 +3051,7 @@ export async function markClinicalImmunizationEnteredInError(
     },
   )
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical immunization entered-in-error update', response.status))
+    throw new Error(clinicalListApiError('Clinical immunization entered-in-error update', response.status))
   }
 
   return response.json()
@@ -3063,7 +3071,7 @@ export async function deleteClinicalImmunization(
     },
   )
   if (!response.ok) {
-    throw new Error(sessionApiError('Clinical immunization delete', response.status))
+    throw new Error(clinicalListApiError('Clinical immunization delete', response.status))
   }
 }
 
