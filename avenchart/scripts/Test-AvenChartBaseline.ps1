@@ -4204,7 +4204,7 @@ finally {
 }
 
 try {
-    $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $clinicalLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $problem = $clinicalLists.problems | Where-Object { $_.title -like "*diabetes*" } | Select-Object -First 1
     $allergy = $clinicalLists.allergies | Where-Object { $_.title -eq "Penicillin" } | Select-Object -First 1
     $medication = $clinicalLists.medications | Where-Object { $_.title -like "Metformin*" } | Select-Object -First 1
@@ -4227,7 +4227,7 @@ catch {
 }
 
 try {
-    $immunizationLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0007" -Method Get -TimeoutSec 20
+    $immunizationLists = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/MOD-PAT-0007" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $influenza = $immunizationLists.immunizations | Where-Object { $_.vaccine -eq "Influenza, seasonal, injectable" -and $_.cvxCode -eq "141" } | Select-Object -First 1
     $hepatitisA = $immunizationLists.immunizations | Where-Object { $_.vaccine -eq "Hep A, ped/adol, 2 dose" -and $_.manufacturer -eq "GlaxoSmithKline" } | Select-Object -First 1
     $immunizationsPassed = $immunizationLists.patientId -eq "MOD-PAT-0007" -and $immunizationLists.immunizations.Count -ge 8 -and $null -ne $influenza -and $null -ne $hepatitisA
@@ -4254,18 +4254,18 @@ try {
         severity = "mild"
         listOptionId = "parity-allergy"
     } | ConvertTo-Json
-    $createdAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies" -Method Post -ContentType "application/json" -Body $createAllergyBody -TimeoutSec 20
+    $createdAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createAllergyBody -TimeoutSec 20
     $clinicalAllergyMutationId = $createdAllergy.id
     $createdVisible = $createdAllergy.detail.allergies | Where-Object { $_.title -eq $allergyTitle -and $_.reaction -eq "Rash" -and $_.severity -eq "mild" } | Select-Object -First 1
 
     $deactivateBody = @{
         comments = "Deactivated by the smoke clinical-list mutation check."
     } | ConvertTo-Json
-    $deactivatedAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateBody -TimeoutSec 20
+    $deactivatedAllergy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateBody -TimeoutSec 20
     $inactiveVisible = $deactivatedAllergy.detail.allergies | Where-Object { $_.title -eq $allergyTitle } | Select-Object -First 1
     $clinicalAllergyMutationPassed = $null -ne $createdVisible -and $null -eq $inactiveVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalAllergyMutationId = $null
 
     Add-Check -Name "clinical allergy mutation lifecycle" -Result $(if ($clinicalAllergyMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4280,7 +4280,7 @@ catch {
 finally {
     if ($null -ne $clinicalAllergyMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/allergies/$clinicalAllergyMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4297,18 +4297,18 @@ try {
         diagnosis = "ICD10:Z00.00"
         comments = "Created by the smoke problem-list mutation check."
     } | ConvertTo-Json
-    $createdProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems" -Method Post -ContentType "application/json" -Body $createProblemBody -TimeoutSec 20
+    $createdProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createProblemBody -TimeoutSec 20
     $clinicalProblemMutationId = $createdProblem.id
     $createdProblemVisible = $createdProblem.detail.problems | Where-Object { $_.title -eq $problemTitle -and $_.diagnosis -eq "ICD10:Z00.00" -and $_.activity -eq 1 } | Select-Object -First 1
 
     $deactivateProblemBody = @{
         comments = "Deactivated by the smoke problem-list mutation check."
     } | ConvertTo-Json
-    $deactivatedProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateProblemBody -TimeoutSec 20
+    $deactivatedProblem = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateProblemBody -TimeoutSec 20
     $inactiveProblemVisible = $deactivatedProblem.detail.problems | Where-Object { $_.title -eq $problemTitle } | Select-Object -First 1
     $clinicalProblemMutationPassed = $null -ne $createdProblemVisible -and $null -eq $inactiveProblemVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalProblemMutationId = $null
 
     Add-Check -Name "clinical problem mutation lifecycle" -Result $(if ($clinicalProblemMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4323,7 +4323,7 @@ catch {
 finally {
     if ($null -ne $clinicalProblemMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/problems/$clinicalProblemMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4340,18 +4340,18 @@ try {
         diagnosis = "ICD10:Z00.00"
         comments = "Created by the smoke medication-list mutation check."
     } | ConvertTo-Json
-    $createdMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post -ContentType "application/json" -Body $createMedicationBody -TimeoutSec 20
+    $createdMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createMedicationBody -TimeoutSec 20
     $clinicalMedicationMutationId = $createdMedication.id
     $createdMedicationVisible = $createdMedication.detail.medications | Where-Object { $_.title -eq $medicationTitle -and $_.diagnosis -eq "ICD10:Z00.00" -and $_.activity -eq 1 } | Select-Object -First 1
 
     $deactivateMedicationBody = @{
         comments = "Deactivated by the smoke medication-list mutation check."
     } | ConvertTo-Json
-    $deactivatedMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivateMedicationBody -TimeoutSec 20
+    $deactivatedMedication = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivateMedicationBody -TimeoutSec 20
     $inactiveMedicationVisible = $deactivatedMedication.detail.medications | Where-Object { $_.title -eq $medicationTitle } | Select-Object -First 1
     $clinicalMedicationMutationPassed = $null -ne $createdMedicationVisible -and $null -eq $inactiveMedicationVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalMedicationMutationId = $null
 
     Add-Check -Name "clinical medication mutation lifecycle" -Result $(if ($clinicalMedicationMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4366,7 +4366,7 @@ catch {
 finally {
     if ($null -ne $clinicalMedicationMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/medications/$clinicalMedicationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4389,7 +4389,7 @@ try {
         note = "Created by the smoke prescription mutation check."
         diagnosis = "Z00.00"
     } | ConvertTo-Json
-    $createdPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -ContentType "application/json" -Body $createPrescriptionBody -TimeoutSec 20
+    $createdPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createPrescriptionBody -TimeoutSec 20
     $clinicalPrescriptionMutationId = $createdPrescription.id
     $createdPrescriptionVisible = $createdPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug -and $_.dosage -eq "1 tablet daily" -and $_.active -eq 1 } | Select-Object -First 1
 
@@ -4397,11 +4397,11 @@ try {
         endDate = "2026-08-15"
         note = "Deactivated by the smoke prescription mutation check."
     } | ConvertTo-Json
-    $deactivatedPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -ContentType "application/json" -Body $deactivatePrescriptionBody -TimeoutSec 20
+    $deactivatedPrescription = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId/deactivate" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $deactivatePrescriptionBody -TimeoutSec 20
     $inactivePrescriptionVisible = $deactivatedPrescription.detail.prescriptions | Where-Object { $_.drug -eq $prescriptionDrug } | Select-Object -First 1
     $clinicalPrescriptionMutationPassed = $null -ne $createdPrescriptionVisible -and $null -eq $inactivePrescriptionVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalPrescriptionMutationId = $null
 
     Add-Check -Name "clinical prescription mutation lifecycle" -Result $(if ($clinicalPrescriptionMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4416,7 +4416,7 @@ catch {
 finally {
     if ($null -ne $clinicalPrescriptionMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/prescriptions/$clinicalPrescriptionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -4448,18 +4448,18 @@ try {
         informationSource = "new_immunization_record"
         note = "Created by the smoke immunization mutation check."
     } | ConvertTo-Json
-    $createdImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations" -Method Post -ContentType "application/json" -Body $createImmunizationBody -TimeoutSec 20
+    $createdImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createImmunizationBody -TimeoutSec 20
     $clinicalImmunizationMutationId = $createdImmunization.id
     $createdImmunizationVisible = $createdImmunization.detail.immunizations | Where-Object { $_.lotNumber -eq $immunizationLot -and $_.cvxCode -eq "141" } | Select-Object -First 1
 
     $enteredInErrorBody = @{
         note = "Marked entered in error by the smoke immunization mutation check."
     } | ConvertTo-Json
-    $enteredInErrorImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId/entered-in-error" -Method Put -ContentType "application/json" -Body $enteredInErrorBody -TimeoutSec 20
+    $enteredInErrorImmunization = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId/entered-in-error" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $enteredInErrorBody -TimeoutSec 20
     $enteredInErrorVisible = $enteredInErrorImmunization.detail.immunizations | Where-Object { $_.lotNumber -eq $immunizationLot } | Select-Object -First 1
     $clinicalImmunizationMutationPassed = $null -ne $createdImmunizationVisible -and $null -eq $enteredInErrorVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $clinicalImmunizationMutationId = $null
 
     Add-Check -Name "clinical immunization mutation lifecycle" -Result $(if ($clinicalImmunizationMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -4474,7 +4474,7 @@ catch {
 finally {
     if ($null -ne $clinicalImmunizationMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-lists/immunizations/$clinicalImmunizationMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

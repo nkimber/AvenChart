@@ -2720,10 +2720,17 @@ export async function deleteEncounterSignature(
   }
 }
 
-export async function getClinicalLists(patientId: string, signal?: AbortSignal): Promise<ClinicalListsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/${encodeURIComponent(patientId.trim())}`, { signal })
+export async function getClinicalLists(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ClinicalListsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/${encodeURIComponent(patientId.trim())}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Clinical lists load failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical lists load', response.status))
   }
 
   return response.json()
@@ -2731,16 +2738,17 @@ export async function getClinicalLists(patientId: string, signal?: AbortSignal):
 
 export async function createClinicalAllergy(
   allergy: ClinicalAllergyCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(allergy),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical allergy create failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical allergy create', response.status))
   }
 
   return response.json()
@@ -2748,16 +2756,17 @@ export async function createClinicalAllergy(
 
 export async function createClinicalProblem(
   problem: ClinicalProblemCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(problem),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical problem create failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical problem create', response.status))
   }
 
   return response.json()
@@ -2766,43 +2775,50 @@ export async function createClinicalProblem(
 export async function deactivateClinicalProblem(
   problemId: string,
   update: ClinicalListDeactivateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}/deactivate`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical problem deactivate failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical problem deactivate', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteClinicalProblem(problemId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteClinicalProblem(
+  problemId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/problems/${encodeURIComponent(problemId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical problem delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical problem delete', response.status))
   }
 }
 
 export async function createClinicalMedication(
   medication: ClinicalMedicationCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(medication),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical medication create failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical medication create', response.status))
   }
 
   return response.json()
@@ -2811,71 +2827,84 @@ export async function createClinicalMedication(
 export async function deactivateClinicalMedication(
   medicationId: string,
   update: ClinicalListDeactivateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}/deactivate`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical medication deactivate failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical medication deactivate', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteClinicalMedication(medicationId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteClinicalMedication(
+  medicationId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/medications/${encodeURIComponent(medicationId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical medication delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical medication delete', response.status))
   }
 }
 
 export async function deactivateClinicalAllergy(
   allergyId: string,
   update: ClinicalListDeactivateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}/deactivate`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical allergy deactivate failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical allergy deactivate', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteClinicalAllergy(allergyId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteClinicalAllergy(
+  allergyId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/allergies/${encodeURIComponent(allergyId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical allergy delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical allergy delete', response.status))
   }
 }
 
 export async function createClinicalPrescription(
   prescription: ClinicalPrescriptionCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(prescription),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical prescription create failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical prescription create', response.status))
   }
 
   return response.json()
@@ -2884,46 +2913,53 @@ export async function createClinicalPrescription(
 export async function deactivateClinicalPrescription(
   prescriptionId: string,
   update: ClinicalPrescriptionDeactivateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(
     `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/deactivate`,
     {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Clinical prescription deactivate failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical prescription deactivate', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteClinicalPrescription(prescriptionId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteClinicalPrescription(
+  prescriptionId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical prescription delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical prescription delete', response.status))
   }
 }
 
 export async function createClinicalImmunization(
   immunization: ClinicalImmunizationCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/immunizations`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(immunization),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Clinical immunization create failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical immunization create', response.status))
   }
 
   return response.json()
@@ -2932,34 +2968,40 @@ export async function createClinicalImmunization(
 export async function markClinicalImmunizationEnteredInError(
   immunizationId: number,
   update: ClinicalImmunizationErrorInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   const response = await fetch(
     `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}/entered-in-error`,
     {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Clinical immunization entered-in-error update failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical immunization entered-in-error update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteClinicalImmunization(immunizationId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteClinicalImmunization(
+  immunizationId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(
     `${apiBaseUrl}/api/clinical-lists/immunizations/${encodeURIComponent(String(immunizationId))}`,
     {
       method: 'DELETE',
+      headers: buildLegacyEhrSessionHeaders(sessionId),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Clinical immunization delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Clinical immunization delete', response.status))
   }
 }
 

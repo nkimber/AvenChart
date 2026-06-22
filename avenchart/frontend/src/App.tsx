@@ -627,13 +627,20 @@ function App() {
       return
     }
 
+    if (!openEmrSessionId) {
+      setClinicalLists(null)
+      setClinicalStatus('idle')
+      setClinicalError(null)
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setClinicalStatus('loading')
       setClinicalError(null)
 
       try {
-        const result = await getClinicalLists(clinicalPatientId, controller.signal)
+        const result = await getClinicalLists(clinicalPatientId, openEmrSessionId, controller.signal)
         setClinicalLists(result)
         setClinicalStatus('ready')
       } catch (loadError) {
@@ -648,7 +655,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, clinicalPatientId, clinicalRefreshKey])
+  }, [activeModule, clinicalPatientId, clinicalRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'messages') {
@@ -990,6 +997,14 @@ function App() {
   function getActiveLegacyEhrSessionId() {
     if (!openEmrSessionId) {
       throw new Error('Sign in to access patient data.')
+    }
+
+    return openEmrSessionId
+  }
+
+  function getActiveClinicalListSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access clinical lists.')
     }
 
     return openEmrSessionId
@@ -1869,7 +1884,8 @@ function App() {
     setClinicalError(null)
 
     try {
-      const response = await createClinicalAllergy(input)
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await createClinicalAllergy(input, sessionId)
       setClinicalPatientId(response.detail.patientId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
@@ -1888,9 +1904,10 @@ function App() {
     setClinicalError(null)
 
     try {
+      const sessionId = getActiveClinicalListSessionId()
       const response = await deactivateClinicalAllergy(allergy.id, {
         comments: 'Deactivated from the modernized Lists workspace.',
-      })
+      }, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -1908,8 +1925,9 @@ function App() {
     setClinicalError(null)
 
     try {
-      await deleteClinicalAllergy(allergy.id)
-      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      const sessionId = getActiveClinicalListSessionId()
+      await deleteClinicalAllergy(allergy.id, sessionId)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId, sessionId)
       setClinicalLists(refreshed)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -1926,7 +1944,8 @@ function App() {
     setClinicalError(null)
 
     try {
-      const response = await createClinicalProblem(input)
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await createClinicalProblem(input, sessionId)
       setClinicalPatientId(response.detail.patientId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
@@ -1945,9 +1964,10 @@ function App() {
     setClinicalError(null)
 
     try {
+      const sessionId = getActiveClinicalListSessionId()
       const response = await deactivateClinicalProblem(problem.id, {
         comments: 'Deactivated from the modernized Lists workspace.',
-      })
+      }, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -1965,8 +1985,9 @@ function App() {
     setClinicalError(null)
 
     try {
-      await deleteClinicalProblem(problem.id)
-      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      const sessionId = getActiveClinicalListSessionId()
+      await deleteClinicalProblem(problem.id, sessionId)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId, sessionId)
       setClinicalLists(refreshed)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -1983,7 +2004,8 @@ function App() {
     setClinicalError(null)
 
     try {
-      const response = await createClinicalMedication(input)
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await createClinicalMedication(input, sessionId)
       setClinicalPatientId(response.detail.patientId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
@@ -2002,9 +2024,10 @@ function App() {
     setClinicalError(null)
 
     try {
+      const sessionId = getActiveClinicalListSessionId()
       const response = await deactivateClinicalMedication(medication.id, {
         comments: 'Deactivated from the modernized Lists workspace.',
-      })
+      }, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -2022,8 +2045,9 @@ function App() {
     setClinicalError(null)
 
     try {
-      await deleteClinicalMedication(medication.id)
-      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      const sessionId = getActiveClinicalListSessionId()
+      await deleteClinicalMedication(medication.id, sessionId)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId, sessionId)
       setClinicalLists(refreshed)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -2040,7 +2064,8 @@ function App() {
     setClinicalError(null)
 
     try {
-      const response = await createClinicalPrescription(input)
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await createClinicalPrescription(input, sessionId)
       setClinicalPatientId(response.detail.patientId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
@@ -2059,10 +2084,11 @@ function App() {
     setClinicalError(null)
 
     try {
+      const sessionId = getActiveClinicalListSessionId()
       const response = await deactivateClinicalPrescription(prescription.id, {
         endDate: '2026-08-15',
         note: 'Deactivated from the modernized Lists workspace.',
-      })
+      }, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -2080,8 +2106,9 @@ function App() {
     setClinicalError(null)
 
     try {
-      await deleteClinicalPrescription(prescription.id)
-      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      const sessionId = getActiveClinicalListSessionId()
+      await deleteClinicalPrescription(prescription.id, sessionId)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId, sessionId)
       setClinicalLists(refreshed)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -2098,7 +2125,8 @@ function App() {
     setClinicalError(null)
 
     try {
-      const response = await createClinicalImmunization(input)
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await createClinicalImmunization(input, sessionId)
       setClinicalPatientId(response.detail.patientId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
@@ -2117,9 +2145,10 @@ function App() {
     setClinicalError(null)
 
     try {
+      const sessionId = getActiveClinicalListSessionId()
       const response = await markClinicalImmunizationEnteredInError(immunization.id, {
         note: 'Marked entered in error from the modernized Lists workspace.',
-      })
+      }, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -2137,8 +2166,9 @@ function App() {
     setClinicalError(null)
 
     try {
-      await deleteClinicalImmunization(immunization.id)
-      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId)
+      const sessionId = getActiveClinicalListSessionId()
+      await deleteClinicalImmunization(immunization.id, sessionId)
+      const refreshed = await getClinicalLists(clinicalLists?.patientId ?? clinicalPatientId, sessionId)
       setClinicalLists(refreshed)
       setClinicalStatus('ready')
       setClinicalRefreshKey((current) => current + 1)
@@ -3401,6 +3431,8 @@ function App() {
             clinicalLists={clinicalLists}
             status={clinicalStatus}
             error={clinicalError}
+            sessionId={openEmrSessionId}
+            onClinicalListsSessionActive={setLegacyEhrSessionId}
             onPatientIdChange={setClinicalPatientId}
             onCreateAllergy={handleClinicalAllergyCreate}
             onDeactivateAllergy={handleClinicalAllergyDeactivate}
@@ -8452,6 +8484,8 @@ function ClinicalListsWorkspace({
   clinicalLists,
   status,
   error,
+  sessionId,
+  onClinicalListsSessionActive,
   onPatientIdChange,
   onCreateAllergy,
   onDeactivateAllergy,
@@ -8473,6 +8507,8 @@ function ClinicalListsWorkspace({
   clinicalLists: ClinicalListsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
+  onClinicalListsSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onCreateAllergy: (input: ClinicalAllergyCreateInput) => Promise<unknown>
   onDeactivateAllergy: (allergy: AllergyListItem) => Promise<unknown>
@@ -8490,6 +8526,11 @@ function ClinicalListsWorkspace({
   onMarkImmunizationEnteredInError: (immunization: ImmunizationListItem) => Promise<unknown>
   onDeleteImmunization: (immunization: ImmunizationListItem) => Promise<void>
 }) {
+  const [listsLoginUsername, setListsLoginUsername] = useState('admin')
+  const [listsLoginPassword, setListsLoginPassword] = useState('pass')
+  const [listsLoginStatus, setListsLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [listsLoginMessage, setListsLoginMessage] = useState<string | null>(null)
   const [allergyTitle, setAllergyTitle] = useState('Parity Allergy')
   const [allergyDate, setAllergyDate] = useState('2026-06-18 09:00:00')
   const [allergyReaction, setAllergyReaction] = useState('Rash')
@@ -8521,9 +8562,34 @@ function ClinicalListsWorkspace({
   const [immunizationNote, setImmunizationNote] = useState('Created from the modernized Lists workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const isLoading = status === 'loading'
+  const canUseLists = Boolean(sessionId)
+
+  async function handleListsLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setListsLoginStatus('checking')
+    setListsLoginMessage(null)
+
+    try {
+      const result = await login({ username: listsLoginUsername, password: listsLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        onClinicalListsSessionActive(result.sessionId)
+        setListsLoginStatus('authenticated')
+        setListsLoginMessage(`Signed in as ${result.displayName}`)
+      } else {
+        setListsLoginStatus('rejected')
+        setListsLoginMessage(result.failureReason ?? 'Lists access was rejected.')
+      }
+    } catch (error) {
+      setListsLoginStatus('error')
+      setListsLoginMessage(error instanceof Error ? error.message : 'Lists access check failed')
+    }
+  }
 
   async function handleAllergySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canUseLists) {
+      return
+    }
     setMutationMessage(null)
 
     await onCreateAllergy({
@@ -8541,6 +8607,9 @@ function ClinicalListsWorkspace({
 
   async function handleProblemSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canUseLists) {
+      return
+    }
     setMutationMessage(null)
 
     await onCreateProblem({
@@ -8556,6 +8625,9 @@ function ClinicalListsWorkspace({
 
   async function handleMedicationSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canUseLists) {
+      return
+    }
     setMutationMessage(null)
 
     await onCreateMedication({
@@ -8571,6 +8643,9 @@ function ClinicalListsWorkspace({
 
   async function handlePrescriptionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canUseLists) {
+      return
+    }
     setMutationMessage(null)
 
     await onCreatePrescription({
@@ -8591,6 +8666,9 @@ function ClinicalListsWorkspace({
 
   async function handleImmunizationSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canUseLists) {
+      return
+    }
     setMutationMessage(null)
 
     await onCreateImmunization({
@@ -8620,6 +8698,36 @@ function ClinicalListsWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Clinical lists search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Lists access" onSubmit={handleListsLogin}>
+            <div className="panel-heading">
+              <ShieldCheck size={17} />
+              <h3>Lists Access</h3>
+            </div>
+            <label>
+              Username
+              <input value={listsLoginUsername} onChange={(event) => setListsLoginUsername(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={listsLoginPassword}
+                onChange={(event) => setListsLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={listsLoginStatus === 'checking'}>
+              <LogIn size={15} />
+              {listsLoginStatus === 'checking' ? 'Checking' : 'Verify Lists Access'}
+            </button>
+            {listsLoginMessage && (
+              <div className={listsLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {listsLoginMessage}
+              </div>
+            )}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -8628,6 +8736,7 @@ function ClinicalListsWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Clinical lists patient ID"
               placeholder="MOD-PAT-0001"
+              disabled={!canUseLists}
             />
           </label>
         </div>
@@ -8697,7 +8806,7 @@ function ClinicalListsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={isLoading || !canUseLists}>
               <Check size={15} />
               Save Problem
             </button>
@@ -8757,7 +8866,7 @@ function ClinicalListsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={isLoading || !canUseLists}>
               <Check size={15} />
               Save Allergy
             </button>
@@ -8809,7 +8918,7 @@ function ClinicalListsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={isLoading || !canUseLists}>
               <Check size={15} />
               Save Medication
             </button>
@@ -8891,7 +9000,7 @@ function ClinicalListsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={isLoading || !canUseLists}>
               <Check size={15} />
               Save Rx
             </button>
@@ -8987,7 +9096,7 @@ function ClinicalListsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={isLoading || !canUseLists}>
               <Check size={15} />
               Save Immunization
             </button>
@@ -9019,34 +9128,36 @@ function ClinicalListsWorkspace({
                 items={clinicalLists.problems}
                 onDeactivate={onDeactivateProblem}
                 onDelete={onDeleteProblem}
-                disabled={isLoading}
+                disabled={isLoading || !canUseLists}
               />
               <AllergyPanel
                 items={clinicalLists.allergies}
                 onDeactivate={onDeactivateAllergy}
                 onDelete={onDeleteAllergy}
-                disabled={isLoading}
+                disabled={isLoading || !canUseLists}
               />
               <MedicationPanel
                 items={clinicalLists.medications}
                 onDeactivate={onDeactivateMedication}
                 onDelete={onDeleteMedication}
-                disabled={isLoading}
+                disabled={isLoading || !canUseLists}
               />
               <ImmunizationPanel
                 items={clinicalLists.immunizations}
                 onMarkEnteredInError={onMarkImmunizationEnteredInError}
                 onDelete={onDeleteImmunization}
-                disabled={isLoading}
+                disabled={isLoading || !canUseLists}
               />
               <PrescriptionPanel
                 items={clinicalLists.prescriptions}
                 onDeactivate={onDeactivatePrescription}
                 onDelete={onDeletePrescription}
-                disabled={isLoading}
+                disabled={isLoading || !canUseLists}
               />
             </div>
           </>
+        ) : !sessionId ? (
+          <div className="empty-chart">Sign in to load clinical lists</div>
         ) : status === 'loading' ? (
           <div className="empty-chart">Loading clinical lists</div>
         ) : (
