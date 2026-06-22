@@ -142,7 +142,8 @@ patients.MapPost("/", async (
             ? Results.BadRequest("Patient could not be registered from the supplied identity, demographic, and contact details.")
             : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
     })
-    .WithName("RegisterPatient");
+    .WithName("RegisterPatient")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "addonly"));
 
 patients.MapGet("/{canonicalId}", async (
         PatientRepository repository,
@@ -163,7 +164,8 @@ patients.MapPut("/{patientId}/contact", async (
         var patient = await repository.UpdateContactAsync(patientId, request, cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
-    .WithName("UpdatePatientContact");
+    .WithName("UpdatePatientContact")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapPut("/{patientId}/demographics", async (
         PatientRepository repository,
@@ -176,7 +178,8 @@ patients.MapPut("/{patientId}/demographics", async (
             ? Results.BadRequest("Patient demographics could not be updated from the supplied patient and demographic details.")
             : Results.Ok(patient);
     })
-    .WithName("UpdatePatientDemographics");
+    .WithName("UpdatePatientDemographics")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapDelete("/{patientId}", async (
         PatientRepository repository,
@@ -186,7 +189,8 @@ patients.MapDelete("/{patientId}", async (
         var deleted = await repository.DeleteTemporaryPatientAsync(patientId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteTemporaryPatient");
+    .WithName("DeleteTemporaryPatient")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapPost("/{patientId}/insurance", async (
         PatientRepository repository,
@@ -199,7 +203,8 @@ patients.MapPost("/{patientId}/insurance", async (
             ? Results.BadRequest("Insurance coverage could not be created from the supplied patient and coverage details.")
             : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
     })
-    .WithName("CreatePatientInsurance");
+    .WithName("CreatePatientInsurance")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapPut("/insurance/{insuranceId}", async (
         PatientRepository repository,
@@ -210,7 +215,8 @@ patients.MapPut("/insurance/{insuranceId}", async (
         var patient = await repository.UpdateInsuranceAsync(insuranceId, request, cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
-    .WithName("UpdatePatientInsurance");
+    .WithName("UpdatePatientInsurance")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapDelete("/insurance/{insuranceId}", async (
         PatientRepository repository,
@@ -220,7 +226,8 @@ patients.MapDelete("/insurance/{insuranceId}", async (
         var patient = await repository.DeleteInsuranceAsync(insuranceId, cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
-    .WithName("DeletePatientInsurance");
+    .WithName("DeletePatientInsurance")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 RequireAccessPermission(appointments, "patients", "appt", "view");
