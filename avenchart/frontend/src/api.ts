@@ -242,15 +242,25 @@ export type PatientProviderAssignmentUpdate = {
   providerId: number | null
 }
 
-export type PatientCareTeamUpdate = {
-  teamName: string
-  teamStatus: string
+export type PatientCareTeamMemberUpdate = {
   userId: number | null
   role: string
   facilityId: number | null
   providerSince: string
   status: string
   note: string
+}
+
+export type PatientCareTeamUpdate = {
+  teamName: string
+  teamStatus: string
+  members: PatientCareTeamMemberUpdate[]
+  userId?: number | null
+  role?: string
+  facilityId?: number | null
+  providerSince?: string
+  status?: string
+  note?: string
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {

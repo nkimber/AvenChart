@@ -242,6 +242,7 @@ import {
   type PatientListItem,
   type PatientBillingResponse,
   type PatientCareTeamMember,
+  type PatientCareTeamMemberUpdate,
   type PatientCareTeamUpdate,
   type PatientDocumentBinaryContentReplaceInput,
   type PatientDocumentBinaryCreateInput,
@@ -4250,26 +4251,51 @@ function PatientWorkspace({
     })
   }
 
-  function updateCareTeamDraft(field: keyof PatientCareTeamUpdate, value: string) {
+  function updateCareTeamDraft(field: 'teamName' | 'teamStatus', value: string) {
+    setCareTeamDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateCareTeamMemberDraft(index: number, field: keyof PatientCareTeamMemberUpdate, value: string) {
     setCareTeamDraft((current) => {
-      if (field === 'facilityId') {
-        return { ...current, facilityId: value ? Number(value) : null }
-      }
-
-      if (field === 'userId') {
-        return { ...current, userId: value ? Number(value) : null }
-      }
-
-      return { ...current, [field]: value }
+      const members = current.members.map((member, memberIndex) =>
+        memberIndex === index
+          ? {
+              ...member,
+              [field]: field === 'facilityId' || field === 'userId' ? (value ? Number(value) : null) : value,
+            }
+          : member,
+      )
+      return { ...current, members }
     })
   }
 
-  function updateCareTeamProvider(providerId: string) {
+  function updateCareTeamProvider(index: number, providerId: string) {
     const provider = providerOptions.find((option) => option.id === Number(providerId))
     setCareTeamDraft((current) => ({
       ...current,
-      userId: providerId ? Number(providerId) : null,
-      facilityId: provider?.facilityId ?? null,
+      members: current.members.map((member, memberIndex) =>
+        memberIndex === index
+          ? {
+              ...member,
+              userId: providerId ? Number(providerId) : null,
+              facilityId: provider?.facilityId ?? null,
+            }
+          : member,
+      ),
+    }))
+  }
+
+  function addCareTeamMemberDraft() {
+    setCareTeamDraft((current) => ({
+      ...current,
+      members: [...current.members, buildCareTeamMemberDraft()],
+    }))
+  }
+
+  function removeCareTeamMemberDraft(index: number) {
+    setCareTeamDraft((current) => ({
+      ...current,
+      members: current.members.filter((_, memberIndex) => memberIndex !== index),
     }))
   }
 
@@ -4505,9 +4531,7 @@ function PatientWorkspace({
     }
   }
 
-  const careTeamMember = firstCareTeamMember(chart)
-  const careTeamSelectedProvider = providerOptions.find((provider) => provider.id === careTeamDraft.userId)
-  const careTeamDraftFacilityName = careTeamSelectedProvider?.facilityName ?? careTeamMember?.facilityName ?? ''
+  const careTeamMembers = chart?.careTeam?.members ?? []
 
   return (
     <section className="split-layout">
@@ -5716,68 +5740,93 @@ function PatientWorkspace({
                         ))}
                       </select>
                     </label>
-                    <label className="contact-field">
-                      <span>Member</span>
-                      <select
-                        value={careTeamDraft.userId ?? ''}
-                        onChange={(event) => updateCareTeamProvider(event.target.value)}
-                        aria-label="Care team member"
-                      >
-                        <option value="">Unassigned</option>
-                        {providerOptions.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.displayName}
-                            {provider.facilityName ? ` - ${provider.facilityName}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="contact-field">
-                      <span>Role</span>
-                      <select
-                        value={careTeamDraft.role}
-                        onChange={(event) => updateCareTeamDraft('role', event.target.value)}
-                        aria-label="Care team member role"
-                      >
-                        {careTeamRoleOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <Field label="Facility" value={careTeamDraftFacilityName} />
-                    <label className="contact-field">
-                      <span>Provider since</span>
-                      <input
-                        type="date"
-                        value={careTeamDraft.providerSince}
-                        onChange={(event) => updateCareTeamDraft('providerSince', event.target.value)}
-                        aria-label="Care team provider since"
-                      />
-                    </label>
-                    <label className="contact-field">
-                      <span>Member status</span>
-                      <select
-                        value={careTeamDraft.status}
-                        onChange={(event) => updateCareTeamDraft('status', event.target.value)}
-                        aria-label="Care team member status"
-                      >
-                        {careTeamStatusOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="contact-field">
-                      <span>Note</span>
-                      <input
-                        value={careTeamDraft.note}
-                        onChange={(event) => updateCareTeamDraft('note', event.target.value)}
-                        aria-label="Care team note"
-                      />
-                    </label>
+                    {careTeamDraft.members.map((member, index) => {
+                      const selectedProvider = providerOptions.find((provider) => provider.id === member.userId)
+                      const facilityName = selectedProvider?.facilityName ?? ''
+
+                      return (
+                        <div className="care-team-member-editor" key={`care-team-member-${index}`}>
+                          <div className="care-team-member-heading">
+                            <span>Member {index + 1}</span>
+                            <button
+                              className="icon-text-button compact danger"
+                              type="button"
+                              onClick={() => removeCareTeamMemberDraft(index)}
+                              aria-label={`Remove care team member ${index + 1}`}
+                            >
+                              <Trash2 size={14} />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                          <label className="contact-field">
+                            <span>Member</span>
+                            <select
+                              value={member.userId ?? ''}
+                              onChange={(event) => updateCareTeamProvider(index, event.target.value)}
+                              aria-label={`Care team member ${index + 1}`}
+                            >
+                              <option value="">Unassigned</option>
+                              {providerOptions.map((provider) => (
+                                <option key={provider.id} value={provider.id}>
+                                  {provider.displayName}
+                                  {provider.facilityName ? ` - ${provider.facilityName}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="contact-field">
+                            <span>Role</span>
+                            <select
+                              value={member.role}
+                              onChange={(event) => updateCareTeamMemberDraft(index, 'role', event.target.value)}
+                              aria-label={`Care team member ${index + 1} role`}
+                            >
+                              {careTeamRoleOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <Field label="Facility" value={facilityName} />
+                          <label className="contact-field">
+                            <span>Provider since</span>
+                            <input
+                              type="date"
+                              value={member.providerSince}
+                              onChange={(event) => updateCareTeamMemberDraft(index, 'providerSince', event.target.value)}
+                              aria-label={`Care team member ${index + 1} provider since`}
+                            />
+                          </label>
+                          <label className="contact-field">
+                            <span>Member status</span>
+                            <select
+                              value={member.status}
+                              onChange={(event) => updateCareTeamMemberDraft(index, 'status', event.target.value)}
+                              aria-label={`Care team member ${index + 1} status`}
+                            >
+                              {careTeamStatusOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="contact-field">
+                            <span>Note</span>
+                            <input
+                              value={member.note}
+                              onChange={(event) => updateCareTeamMemberDraft(index, 'note', event.target.value)}
+                              aria-label={`Care team member ${index + 1} note`}
+                            />
+                          </label>
+                        </div>
+                      )
+                    })}
+                    <button className="icon-text-button" type="button" onClick={addCareTeamMemberDraft}>
+                      <UserPlus size={15} />
+                      <span>Add member</span>
+                    </button>
                     <div className="contact-actions">
                       <button
                         className="icon-text-button primary"
@@ -5806,12 +5855,20 @@ function PatientWorkspace({
                   <>
                     <Field label="Team" value={chart?.careTeam?.teamName} />
                     <Field label="Team status" value={chart?.careTeam?.teamStatusDisplay} />
-                    <Field label="Member" value={careTeamMember?.memberName} />
-                    <Field label="Role" value={careTeamMember?.roleDisplay} />
-                    <Field label="Facility" value={careTeamMember?.facilityName} />
-                    <Field label="Provider since" value={careTeamMember?.providerSince} />
-                    <Field label="Member status" value={careTeamMember?.statusDisplay} />
-                    <Field label="Note" value={careTeamMember?.note} />
+                    {careTeamMembers.length > 0 ? (
+                      careTeamMembers.map((member, index) => (
+                        <div className="care-team-member-summary" key={member.id || `care-team-member-summary-${index}`}>
+                          <Field label={`Member ${index + 1}`} value={member.memberName} />
+                          <Field label="Role" value={member.roleDisplay} />
+                          <Field label="Facility" value={member.facilityName} />
+                          <Field label="Provider since" value={member.providerSince} />
+                          <Field label="Member status" value={member.statusDisplay} />
+                          <Field label="Note" value={member.note} />
+                        </div>
+                      ))
+                    ) : (
+                      <Field label="Members" value="Unassigned" />
+                    )}
                     <div className="contact-actions">
                       <button
                         className="icon-text-button"
@@ -18505,15 +18562,17 @@ function buildProviderAssignmentDraft(patient: PatientChartSummary | null): Pati
   }
 }
 
-function firstCareTeamMember(patient: PatientChartSummary | null): PatientCareTeamMember | null {
-  return patient?.careTeam?.members?.[0] ?? null
-}
-
 function buildCareTeamDraft(patient: PatientChartSummary | null): PatientCareTeamUpdate {
-  const member = firstCareTeamMember(patient)
+  const members = patient?.careTeam?.members ?? []
   return {
     teamName: patient?.careTeam?.teamName ?? 'Care Team',
     teamStatus: patient?.careTeam?.teamStatus ?? 'active',
+    members: members.length > 0 ? members.map((member) => buildCareTeamMemberDraft(member)) : [buildCareTeamMemberDraft()],
+  }
+}
+
+function buildCareTeamMemberDraft(member?: PatientCareTeamMember | null): PatientCareTeamMemberUpdate {
+  return {
     userId: member?.userId ?? null,
     role: member?.role ?? 'primary_care_provider',
     facilityId: member?.facilityId ?? null,

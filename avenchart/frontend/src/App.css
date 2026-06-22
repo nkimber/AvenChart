@@ -642,6 +642,25 @@
   gap: 10px;
 }
 
+.care-team-member-editor,
+.care-team-member-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid #d8e2e7;
+  padding-top: 10px;
+}
+
+.care-team-member-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #263c4d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .contact-field {
   display: flex;
   flex-direction: column;

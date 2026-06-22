@@ -955,19 +955,22 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        if (normalized.UserId is null)
+        if (normalized.Members.Count == 0)
         {
             await DeleteCareTeamAsync(connection, transaction, patient.CanonicalId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
         }
 
-        if (!await CareTeamUserExistsAsync(connection, transaction, normalized.UserId.Value, cancellationToken)
-            || (normalized.FacilityId is not null
-                && !await CareTeamFacilityExistsAsync(connection, transaction, normalized.FacilityId.Value, cancellationToken)))
+        foreach (var member in normalized.Members)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            return null;
+            if (!await CareTeamUserExistsAsync(connection, transaction, member.UserId, cancellationToken)
+                || (member.FacilityId is not null
+                    && !await CareTeamFacilityExistsAsync(connection, transaction, member.FacilityId.Value, cancellationToken)))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
         }
 
         await DeleteCareTeamAsync(connection, transaction, patient.CanonicalId, cancellationToken);
@@ -991,7 +994,20 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                     @note,
                     now()
                 );
+                """;
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.AddWithValue("pid", patient.LegacyPid);
+            command.Parameters.AddWithValue("teamName", normalized.TeamName);
+            command.Parameters.AddWithValue("teamStatus", normalized.TeamStatus);
+            command.Parameters.Add("note", NpgsqlDbType.Text).Value = normalized.Note is null ? DBNull.Value : normalized.Note;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
 
+        foreach (var member in normalized.Members)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
                 insert into patient_care_team_members (
                     patient_id,
                     user_id,
@@ -1012,19 +1028,16 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 );
                 """;
             command.Parameters.AddWithValue("patientId", patient.CanonicalId);
-            command.Parameters.AddWithValue("pid", patient.LegacyPid);
-            command.Parameters.AddWithValue("teamName", normalized.TeamName);
-            command.Parameters.AddWithValue("teamStatus", normalized.TeamStatus);
-            command.Parameters.Add("note", NpgsqlDbType.Text).Value = normalized.Note is null ? DBNull.Value : normalized.Note;
-            command.Parameters.AddWithValue("userId", normalized.UserId.Value);
-            command.Parameters.AddWithValue("role", normalized.Role);
-            command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = normalized.FacilityId is null
+            command.Parameters.AddWithValue("userId", member.UserId);
+            command.Parameters.AddWithValue("role", member.Role);
+            command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = member.FacilityId is null
                 ? DBNull.Value
-                : normalized.FacilityId.Value;
-            command.Parameters.Add("providerSince", NpgsqlDbType.Date).Value = normalized.ProviderSince is null
+                : member.FacilityId.Value;
+            command.Parameters.Add("providerSince", NpgsqlDbType.Date).Value = member.ProviderSince is null
                 ? DBNull.Value
-                : normalized.ProviderSince.Value;
-            command.Parameters.AddWithValue("status", normalized.Status);
+                : member.ProviderSince.Value;
+            command.Parameters.AddWithValue("status", member.Status);
+            command.Parameters.Add("note", NpgsqlDbType.Text).Value = member.Note is null ? DBNull.Value : member.Note;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -1400,42 +1413,92 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private static NormalizedPatientCareTeam NormalizeCareTeam(PatientCareTeamUpdateRequest request)
     {
+        var teamStatus = NormalizeCareTeamStatus(request.TeamStatus);
+        if (teamStatus is null && !string.IsNullOrWhiteSpace(request.TeamStatus))
+        {
+            return NormalizedPatientCareTeam.InvalidValue;
+        }
+
+        var memberRequests = request.Members;
+        if (memberRequests is null)
+        {
+            memberRequests =
+            [
+                new PatientCareTeamMemberUpdateRequest(
+                    UserId: request.UserId,
+                    Role: request.Role,
+                    FacilityId: request.FacilityId,
+                    ProviderSince: request.ProviderSince,
+                    Status: request.Status,
+                    Note: request.Note)
+            ];
+        }
+
+        var members = new List<NormalizedPatientCareTeamMember>();
+        foreach (var memberRequest in memberRequests)
+        {
+            var normalizedMember = NormalizeCareTeamMember(memberRequest);
+            if (normalizedMember.Invalid)
+            {
+                return NormalizedPatientCareTeam.InvalidValue;
+            }
+
+            if (normalizedMember.UserId is not null)
+            {
+                members.Add(new NormalizedPatientCareTeamMember(
+                    UserId: normalizedMember.UserId.Value,
+                    Role: normalizedMember.Role,
+                    FacilityId: normalizedMember.FacilityId,
+                    ProviderSince: normalizedMember.ProviderSince,
+                    Status: normalizedMember.Status,
+                    Note: normalizedMember.Note));
+            }
+        }
+
+        return new NormalizedPatientCareTeam(
+            TeamName: NormalizeString(request.TeamName) ?? "Care Team",
+            TeamStatus: teamStatus ?? "active",
+            Members: members,
+            Note: NormalizeString(request.Note),
+            Invalid: false);
+    }
+
+    private static NormalizedPatientCareTeamMemberCandidate NormalizeCareTeamMember(
+        PatientCareTeamMemberUpdateRequest request)
+    {
         if (request.UserId is null)
         {
-            return new NormalizedPatientCareTeam(
-                TeamName: NormalizeString(request.TeamName) ?? "Care Team",
-                TeamStatus: NormalizeCareTeamStatus(request.TeamStatus) ?? "active",
+            return new NormalizedPatientCareTeamMemberCandidate(
                 UserId: null,
-                Role: NormalizeCareTeamRole(request.Role) ?? "primary_care_provider",
-                FacilityId: request.FacilityId,
+                Role: "primary_care_provider",
+                FacilityId: null,
                 ProviderSince: null,
-                Status: NormalizeCareTeamStatus(request.Status) ?? "active",
+                Status: "active",
                 Note: NormalizeString(request.Note),
                 Invalid: false);
         }
 
         if (request.UserId <= 0 || request.FacilityId <= 0)
         {
-            return NormalizedPatientCareTeam.InvalidValue;
+            return NormalizedPatientCareTeamMemberCandidate.InvalidValue;
         }
 
         var providerSince = NormalizeOptionalDate(request.ProviderSince);
         var role = NormalizeCareTeamRole(request.Role);
-        var teamStatus = NormalizeCareTeamStatus(request.TeamStatus);
         var status = NormalizeCareTeamStatus(request.Status);
-        if (providerSince.Invalid || role is null || teamStatus is null || status is null)
+        if (providerSince.Invalid
+            || (role is null && !string.IsNullOrWhiteSpace(request.Role))
+            || (status is null && !string.IsNullOrWhiteSpace(request.Status)))
         {
-            return NormalizedPatientCareTeam.InvalidValue;
+            return NormalizedPatientCareTeamMemberCandidate.InvalidValue;
         }
 
-        return new NormalizedPatientCareTeam(
-            TeamName: NormalizeString(request.TeamName) ?? "Care Team",
-            TeamStatus: teamStatus,
-            UserId: request.UserId,
-            Role: role,
+        return new NormalizedPatientCareTeamMemberCandidate(
+            UserId: request.UserId.Value,
+            Role: role ?? "primary_care_provider",
             FacilityId: request.FacilityId,
             ProviderSince: providerSince.Value,
-            Status: status,
+            Status: status ?? "active",
             Note: NormalizeString(request.Note),
             Invalid: false);
     }
@@ -1995,6 +2058,23 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private sealed record NormalizedPatientCareTeam(
         string TeamName,
         string TeamStatus,
+        IReadOnlyList<NormalizedPatientCareTeamMember> Members,
+        string? Note,
+        bool Invalid)
+    {
+        public static NormalizedPatientCareTeam InvalidValue { get; } =
+            new("", "", [], null, true);
+    }
+
+    private sealed record NormalizedPatientCareTeamMember(
+        int UserId,
+        string Role,
+        int? FacilityId,
+        DateOnly? ProviderSince,
+        string Status,
+        string? Note);
+
+    private sealed record NormalizedPatientCareTeamMemberCandidate(
         int? UserId,
         string Role,
         int? FacilityId,
@@ -2003,8 +2083,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string? Note,
         bool Invalid)
     {
-        public static NormalizedPatientCareTeam InvalidValue { get; } =
-            new("", "", null, "", null, null, "", null, true);
+        public static NormalizedPatientCareTeamMemberCandidate InvalidValue { get; } =
+            new(null, "", null, null, "", null, true);
     }
 
     private sealed record NormalizedPatientRegistration(

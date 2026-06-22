@@ -248,6 +248,14 @@ public sealed record PatientProviderAssignmentOption(
 public sealed record PatientProviderAssignmentUpdateRequest(
     int? ProviderId);
 
+public sealed record PatientCareTeamMemberUpdateRequest(
+    int? UserId,
+    string? Role,
+    int? FacilityId,
+    string? ProviderSince,
+    string? Status,
+    string? Note);
+
 public sealed record PatientCareTeamUpdateRequest(
     string? TeamName,
     string? TeamStatus,
@@ -256,7 +264,8 @@ public sealed record PatientCareTeamUpdateRequest(
     int? FacilityId,
     string? ProviderSince,
     string? Status,
-    string? Note);
+    string? Note,
+    IReadOnlyList<PatientCareTeamMemberUpdateRequest>? Members = null);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,
