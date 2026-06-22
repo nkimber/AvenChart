@@ -576,6 +576,7 @@ catch {
 
 try {
     $unauthenticatedAppointmentSearchStatus = 0
+    $frontDeskAppointmentSearchStatus = 0
     try {
         $unauthenticatedAppointmentSearch = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" `
@@ -592,12 +593,30 @@ try {
             throw
         }
     }
+    try {
+        $frontDeskAppointmentSearch = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskAppointmentSearchStatus = 200
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskAppointmentSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
 
     $appointments = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments?patientId=MOD-PAT-0003&from=2026-06-18&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $anchorAppointment = $appointments.appointments | Select-Object -First 1
-    $appointmentPassed = $unauthenticatedAppointmentSearchStatus -eq 401 -and $null -ne $anchorAppointment -and ([datetime]$anchorAppointment.date) -gt ([datetime]"2026-06-18")
+    $appointmentPassed = $unauthenticatedAppointmentSearchStatus -eq 401 -and $frontDeskAppointmentSearchStatus -eq 200 -and $null -ne $anchorAppointment -and ([datetime]$anchorAppointment.date) -gt ([datetime]"2026-06-18")
     Add-Check -Name "anchor appointment search" -Result $(if ($appointmentPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedAppointmentSearchStatus
+        frontDeskStatus = $frontDeskAppointmentSearchStatus
         totalMatches = $appointments.totalMatches
         firstAppointment = $anchorAppointment
     }
@@ -7019,9 +7038,11 @@ try {
     $clinicianGroup = $administration.accessControl.groups | Where-Object { $_.value -eq "clin" -and $_.name -eq "Clinicians" -and $_.permissionCount -eq 23 } | Select-Object -First 1
     $adminAclPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "admin" -and $_.sectionValue -eq "admin" -and $_.permissionValue -eq "acl" -and $_.returnValue -eq "write" } | Select-Object -First 1
     $frontDeskDemoPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" -and $_.returnValue -eq "write" } | Select-Object -First 1
+    $frontDeskAppointmentPermission = $administration.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "appt" -and $_.returnValue -eq "write" } | Select-Object -First 1
     $adminMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "admin" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
     $systemMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "oe-system" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
-    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $administration.counts.accessUserMemberships -eq 2 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission -and $null -ne $adminMembership -and $null -ne $systemMembership
+    $frontDeskMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "gold-frontdesk-01" -and $_.groupValue -eq "front" -and $_.groupName -eq "Front Office" } | Select-Object -First 1
+    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $administration.counts.accessUserMemberships -eq 3 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission -and $null -ne $frontDeskAppointmentPermission -and $null -ne $adminMembership -and $null -ne $systemMembership -and $null -ne $frontDeskMembership
     Add-Check -Name "anchor administration access control" -Result $(if ($accessControlPassed) { "passed" } else { "failed" }) -Details @{
         counts = $administration.counts
         adminGroup = $adminGroup
@@ -7029,8 +7050,10 @@ try {
         clinicianGroup = $clinicianGroup
         adminAclPermission = $adminAclPermission
         frontDeskDemoPermission = $frontDeskDemoPermission
+        frontDeskAppointmentPermission = $frontDeskAppointmentPermission
         adminMembership = $adminMembership
         systemMembership = $systemMembership
+        frontDeskMembership = $frontDeskMembership
     }
 }
 catch {
@@ -7117,8 +7140,8 @@ try {
     $revokedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/$membershipUserName/front" -Method Delete -Headers $administrationHeaders -TimeoutSec 20
     $revokedFrontMembership = $revokedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" } | Select-Object -First 1
 
-    $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 3 `
-        -and $revokedMembership.detail.counts.accessUserMemberships -eq 2 `
+    $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 4 `
+        -and $revokedMembership.detail.counts.accessUserMemberships -eq 3 `
         -and $null -ne $frontMembership `
         -and $null -eq $revokedFrontMembership
 

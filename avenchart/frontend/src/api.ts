@@ -2091,6 +2091,10 @@ function clinicalListApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Medical/History access')
 }
 
+function appointmentApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Appointment access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -2271,7 +2275,7 @@ export async function searchAppointments(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment search', response.status))
+    throw new Error(appointmentApiError('Appointment search', response.status))
   }
 
   return response.json()
@@ -2287,7 +2291,7 @@ export async function getAppointmentDetail(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment detail load', response.status))
+    throw new Error(appointmentApiError('Appointment detail load', response.status))
   }
 
   return response.json()
@@ -2305,7 +2309,7 @@ export async function createAppointment(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment create', response.status))
+    throw new Error(appointmentApiError('Appointment create', response.status))
   }
 
   return response.json()
@@ -2324,7 +2328,7 @@ export async function updateAppointmentStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment status update', response.status))
+    throw new Error(appointmentApiError('Appointment status update', response.status))
   }
 
   return response.json()
@@ -2343,7 +2347,7 @@ export async function updateAppointment(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment update', response.status))
+    throw new Error(appointmentApiError('Appointment update', response.status))
   }
 
   return response.json()
@@ -2366,7 +2370,7 @@ export async function rescheduleAppointmentOccurrence(
     },
   )
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment occurrence reschedule', response.status))
+    throw new Error(appointmentApiError('Appointment occurrence reschedule', response.status))
   }
 
   return response.json()
@@ -2383,7 +2387,7 @@ export async function deleteAppointment(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment delete', response.status))
+    throw new Error(appointmentApiError('Appointment delete', response.status))
   }
 }
 
@@ -2402,7 +2406,7 @@ export async function restoreAppointmentOccurrence(
     },
   )
   if (!response.ok) {
-    throw new Error(sessionApiError('Appointment occurrence restore', response.status))
+    throw new Error(appointmentApiError('Appointment occurrence restore', response.status))
   }
 
   return response.json()

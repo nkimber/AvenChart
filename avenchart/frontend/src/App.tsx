@@ -5231,7 +5231,7 @@ function CalendarWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Appointment search">
-        {!sessionId && (
+        {(!sessionId || searchStatus === 'error') && (
           <form className="mutation-form" aria-label="Calendar access" onSubmit={handleCalendarLogin}>
             <div className="panel-heading">
               <ShieldCheck size={17} />
@@ -5260,6 +5260,9 @@ function CalendarWorkspace({
               </div>
             )}
           </form>
+        )}
+        {sessionId && calendarLoginMessage && calendarLoginStatus === 'authenticated' && (
+          <div className="status-banner">{calendarLoginMessage}</div>
         )}
 
         <div className="filter-grid">

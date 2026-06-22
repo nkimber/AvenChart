@@ -223,7 +223,7 @@ patients.MapDelete("/insurance/{insuranceId}", async (
     .WithName("DeletePatientInsurance");
 
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
-RequireActiveSession(appointments);
+RequireAccessPermission(appointments, "patients", "appt", "view");
 
 appointments.MapGet("/", async (
         AppointmentRepository repository,

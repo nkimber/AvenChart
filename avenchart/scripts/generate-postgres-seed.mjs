@@ -39,8 +39,9 @@ const accessGroups = [
 ]
 
 const accessUserMemberships = [
-  ['admin', 'Administrator', 'admin', 'Administrators'],
-  ['oe-system', 'System Operation User', 'admin', 'Administrators'],
+  ['admin', 'Administrator', 'admin', 'Administrators', null],
+  ['oe-system', 'System Operation User', 'admin', 'Administrators', null],
+  ['gold-frontdesk-01', 'Parker Fleming', 'front', 'Front Office', 117],
 ]
 
 const accessPermissions = [
@@ -886,7 +887,7 @@ copyRows(
 copyRows(
   'access_user_memberships',
   ['user_value', 'user_name', 'group_value', 'group_name', 'staff_id'],
-  accessUserMemberships.map(([userValue, userName, groupValue, groupName]) => [userValue, userName, groupValue, groupName, null]),
+  accessUserMemberships,
 )
 
 copyRows('patients', [
