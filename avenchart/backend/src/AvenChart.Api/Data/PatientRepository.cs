@@ -124,6 +124,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.hipaa_allow_email,
                 p.marital_status,
                 p.occupation,
+                p.race,
+                p.ethnicity,
+                p.interpreter,
+                p.family_size,
+                p.monthly_income,
+                p.homeless,
+                p.financial_review_date,
                 p.mother_name,
                 p.guardian_name,
                 p.guardian_relationship,
@@ -240,6 +247,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
                 MaritalStatus: ReadNullableString(reader, "marital_status"),
                 Occupation: ReadNullableString(reader, "occupation"),
+                Race: ReadNullableString(reader, "race"),
+                Ethnicity: ReadNullableString(reader, "ethnicity"),
+                Interpreter: ReadNullableString(reader, "interpreter"),
+                FamilySize: ReadNullableIntAsString(reader, "family_size"),
+                MonthlyIncome: ReadNullableIntAsString(reader, "monthly_income"),
+                Homeless: ReadNullableString(reader, "homeless"),
+                FinancialReviewDate: ReadNullableDate(reader, "financial_review_date"),
                 MotherName: ReadNullableString(reader, "mother_name"),
                 GuardianName: ReadNullableString(reader, "guardian_name"),
                 GuardianRelationship: ReadNullableString(reader, "guardian_relationship"),
@@ -571,7 +585,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 state = @state,
                 postal_code = @postalCode,
                 marital_status = @maritalStatus,
-                occupation = @occupation
+                occupation = @occupation,
+                race = @race,
+                ethnicity = @ethnicity,
+                interpreter = @interpreter,
+                family_size = @familySize,
+                monthly_income = @monthlyIncome,
+                homeless = @homeless,
+                financial_review_date = @financialReviewDate
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
                or legacy_pid::text = @patientId
@@ -589,6 +610,19 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
         command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
         command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+        command.Parameters.Add("race", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Race);
+        command.Parameters.Add("ethnicity", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Ethnicity);
+        command.Parameters.Add("interpreter", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Interpreter);
+        command.Parameters.Add("familySize", NpgsqlDbType.Integer).Value = normalized.FamilySize is null
+            ? DBNull.Value
+            : normalized.FamilySize.Value;
+        command.Parameters.Add("monthlyIncome", NpgsqlDbType.Integer).Value = normalized.MonthlyIncome is null
+            ? DBNull.Value
+            : normalized.MonthlyIncome.Value;
+        command.Parameters.Add("homeless", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Homeless);
+        command.Parameters.Add("financialReviewDate", NpgsqlDbType.Date).Value = normalized.FinancialReviewDate is null
+            ? DBNull.Value
+            : normalized.FinancialReviewDate.Value;
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
@@ -997,6 +1031,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         var firstName = request.FirstName?.Trim();
         var lastName = request.LastName?.Trim();
         var dateOfBirthText = request.DateOfBirth?.Trim();
+        var familySize = NormalizeOptionalInt(request.FamilySize);
+        var monthlyIncome = NormalizeOptionalInt(request.MonthlyIncome);
+        var financialReviewDate = NormalizeOptionalDate(request.FinancialReviewDate);
 
         if (string.IsNullOrWhiteSpace(firstName)
             || string.IsNullOrWhiteSpace(lastName)
@@ -1005,9 +1042,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 "yyyy-MM-dd",
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
-                out var dateOfBirth))
+                out var dateOfBirth)
+            || familySize.Invalid
+            || monthlyIncome.Invalid
+            || financialReviewDate.Invalid)
         {
-            normalized = new NormalizedPatientDemographics("", "", null, null, default, null, null, null, null, null, null);
+            normalized = new NormalizedPatientDemographics("", "", null, null, default, null, null, null, null, null, null, null, null, null, null, null, null, null);
             return false;
         }
 
@@ -1022,7 +1062,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             State: NormalizeString(request.State),
             PostalCode: NormalizeString(request.PostalCode),
             MaritalStatus: NormalizeString(request.MaritalStatus),
-            Occupation: NormalizeString(request.Occupation));
+            Occupation: NormalizeString(request.Occupation),
+            Race: NormalizeString(request.Race),
+            Ethnicity: NormalizeString(request.Ethnicity),
+            Interpreter: NormalizeString(request.Interpreter),
+            FamilySize: familySize.Value,
+            MonthlyIncome: monthlyIncome.Value,
+            Homeless: NormalizeString(request.Homeless),
+            FinancialReviewDate: financialReviewDate.Value);
         return true;
     }
 
@@ -1054,6 +1101,37 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         deceasedDate = parsedDate;
         deceasedReason = NormalizeString(request.DeceasedReason);
         return true;
+    }
+
+    private static NormalizedOptionalInt NormalizeOptionalInt(string? value)
+    {
+        var normalized = NormalizeString(value);
+        if (normalized is null)
+        {
+            return new NormalizedOptionalInt(null, false);
+        }
+
+        return int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? new NormalizedOptionalInt(parsed, false)
+            : new NormalizedOptionalInt(null, true);
+    }
+
+    private static NormalizedOptionalDate NormalizeOptionalDate(string? value)
+    {
+        var normalized = NormalizeString(value);
+        if (normalized is null)
+        {
+            return new NormalizedOptionalDate(null, false);
+        }
+
+        return DateOnly.TryParseExact(
+                normalized,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed)
+            ? new NormalizedOptionalDate(parsed, false)
+            : new NormalizedOptionalDate(null, true);
     }
 
     private static IReadOnlyList<PatientRegistrationValidationIssue> ValidateRegistration(
@@ -1346,6 +1424,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal) ? 0 : reader.GetInt32(ordinal);
     }
 
+    private static string? ReadNullableIntAsString(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal).ToString(CultureInfo.InvariantCulture);
+    }
+
     private static int CalculateAge(DateOnly dateOfBirth, DateOnly asOfDate)
     {
         var age = asOfDate.Year - dateOfBirth.Year;
@@ -1389,7 +1473,18 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string? State,
         string? PostalCode,
         string? MaritalStatus,
-        string? Occupation);
+        string? Occupation,
+        string? Race,
+        string? Ethnicity,
+        string? Interpreter,
+        int? FamilySize,
+        int? MonthlyIncome,
+        string? Homeless,
+        DateOnly? FinancialReviewDate);
+
+    private sealed record NormalizedOptionalInt(int? Value, bool Invalid);
+
+    private sealed record NormalizedOptionalDate(DateOnly? Value, bool Invalid);
 
     private sealed record NormalizedPatientRegistration(
         string Pubpid,

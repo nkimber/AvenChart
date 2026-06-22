@@ -448,6 +448,13 @@ try {
         postalCode = $demographicsOriginal.postalCode
         maritalStatus = $demographicsOriginal.maritalStatus
         occupation = $demographicsOriginal.occupation
+        race = $demographicsOriginal.race
+        ethnicity = $demographicsOriginal.ethnicity
+        interpreter = $demographicsOriginal.interpreter
+        familySize = $demographicsOriginal.familySize
+        monthlyIncome = $demographicsOriginal.monthlyIncome
+        homeless = $demographicsOriginal.homeless
+        financialReviewDate = $demographicsOriginal.financialReviewDate
     }
     $demographicsBody = @{
         firstName = "Morgan"
@@ -461,6 +468,13 @@ try {
         postalCode = "06460"
         maritalStatus = "married"
         occupation = "Workflow Analyst"
+        race = "Asian"
+        ethnicity = "Hispanic or Latino"
+        interpreter = "Smoke interpreter requested"
+        familySize = "4"
+        monthlyIncome = "4196"
+        homeless = "YES"
+        financialReviewDate = "2026-02-15"
     }
 
     $updatedDemographics = Invoke-RestMethod `
@@ -482,7 +496,14 @@ try {
         -and $updatedDemographics.state -eq $demographicsBody.state `
         -and $updatedDemographics.postalCode -eq $demographicsBody.postalCode `
         -and $updatedDemographics.maritalStatus -eq $demographicsBody.maritalStatus `
-        -and $updatedDemographics.occupation -eq $demographicsBody.occupation
+        -and $updatedDemographics.occupation -eq $demographicsBody.occupation `
+        -and $updatedDemographics.race -eq $demographicsBody.race `
+        -and $updatedDemographics.ethnicity -eq $demographicsBody.ethnicity `
+        -and $updatedDemographics.interpreter -eq $demographicsBody.interpreter `
+        -and $updatedDemographics.familySize -eq $demographicsBody.familySize `
+        -and $updatedDemographics.monthlyIncome -eq $demographicsBody.monthlyIncome `
+        -and $updatedDemographics.homeless -eq $demographicsBody.homeless `
+        -and $updatedDemographics.financialReviewDate -eq $demographicsBody.financialReviewDate
 
     $restoredDemographics = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
@@ -495,7 +516,14 @@ try {
 
     $demographicsRestorePassed = $restoredDemographics.firstName -eq $originalDemographicsBody.firstName `
         -and $restoredDemographics.lastName -eq $originalDemographicsBody.lastName `
-        -and $restoredDemographics.dateOfBirth -eq $originalDemographicsBody.dateOfBirth
+        -and $restoredDemographics.dateOfBirth -eq $originalDemographicsBody.dateOfBirth `
+        -and $restoredDemographics.race -eq $originalDemographicsBody.race `
+        -and $restoredDemographics.ethnicity -eq $originalDemographicsBody.ethnicity `
+        -and $restoredDemographics.interpreter -eq $originalDemographicsBody.interpreter `
+        -and $restoredDemographics.familySize -eq $originalDemographicsBody.familySize `
+        -and $restoredDemographics.monthlyIncome -eq $originalDemographicsBody.monthlyIncome `
+        -and $restoredDemographics.homeless -eq $originalDemographicsBody.homeless `
+        -and $restoredDemographics.financialReviewDate -eq $originalDemographicsBody.financialReviewDate
 
     Add-Check -Name "patient demographics mutation lifecycle" -Result $(if ($demographicsMutationPassed -and $demographicsRestorePassed) { "passed" } else { "failed" }) -Details @{
         updatedDisplayName = $updatedDemographics.displayName
@@ -521,6 +549,13 @@ finally {
                 postalCode = $demographicsOriginal.postalCode
                 maritalStatus = $demographicsOriginal.maritalStatus
                 occupation = $demographicsOriginal.occupation
+                race = $demographicsOriginal.race
+                ethnicity = $demographicsOriginal.ethnicity
+                interpreter = $demographicsOriginal.interpreter
+                familySize = $demographicsOriginal.familySize
+                monthlyIncome = $demographicsOriginal.monthlyIncome
+                homeless = $demographicsOriginal.homeless
+                financialReviewDate = $demographicsOriginal.financialReviewDate
             }
             Invoke-RestMethod `
                 -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `

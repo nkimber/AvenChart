@@ -99,6 +99,13 @@ export type PatientChartSummary = PatientListItem & {
   hipaaAllowEmail?: string | null
   maritalStatus?: string | null
   occupation?: string | null
+  race?: string | null
+  ethnicity?: string | null
+  interpreter?: string | null
+  familySize?: string | null
+  monthlyIncome?: string | null
+  homeless?: string | null
+  financialReviewDate?: string | null
   motherName?: string | null
   guardianName?: string | null
   guardianRelationship?: string | null
@@ -150,6 +157,13 @@ export type PatientDemographicsUpdate = {
   postalCode: string
   maritalStatus: string
   occupation: string
+  race: string
+  ethnicity: string
+  interpreter: string
+  familySize: string
+  monthlyIncome: string
+  homeless: string
+  financialReviewDate: string
 }
 
 export type PatientDeceasedStatusUpdate = {

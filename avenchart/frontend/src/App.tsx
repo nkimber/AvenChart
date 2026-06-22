@@ -4656,6 +4656,89 @@ function PatientWorkspace({
                         aria-label="Patient occupation"
                       />
                     </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Race</span>
+                        <select
+                          value={demographicsDraft.race}
+                          onChange={(event) => updateDemographicsDraft('race', event.target.value)}
+                          aria-label="Patient race"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="Asian">Asian</option>
+                          <option value="White">White</option>
+                          <option value="Black or African American">Black or African American</option>
+                          <option value="American Indian or Alaska Native">American Indian or Alaska Native</option>
+                          <option value="Native Hawaiian or Other Pacific Islander">Native Hawaiian or Other Pacific Islander</option>
+                          <option value="Other Race">Other Race</option>
+                        </select>
+                      </label>
+                      <label className="contact-field">
+                        <span>Ethnicity</span>
+                        <select
+                          value={demographicsDraft.ethnicity}
+                          onChange={(event) => updateDemographicsDraft('ethnicity', event.target.value)}
+                          aria-label="Patient ethnicity"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="Hispanic or Latino">Hispanic or Latino</option>
+                          <option value="Not Hispanic or Latino">Not Hispanic or Latino</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="contact-field">
+                      <span>Interpreter</span>
+                      <input
+                        value={demographicsDraft.interpreter}
+                        onChange={(event) => updateDemographicsDraft('interpreter', event.target.value)}
+                        aria-label="Patient interpreter"
+                      />
+                    </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Family size</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={demographicsDraft.familySize}
+                          onChange={(event) => updateDemographicsDraft('familySize', event.target.value)}
+                          aria-label="Patient family size"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Monthly income</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={demographicsDraft.monthlyIncome}
+                          onChange={(event) => updateDemographicsDraft('monthlyIncome', event.target.value)}
+                          aria-label="Patient monthly income"
+                        />
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Homeless</span>
+                        <select
+                          value={demographicsDraft.homeless}
+                          onChange={(event) => updateDemographicsDraft('homeless', event.target.value)}
+                          aria-label="Patient homeless status"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="NO">No</option>
+                          <option value="YES">Yes</option>
+                        </select>
+                      </label>
+                      <label className="contact-field">
+                        <span>Financial review</span>
+                        <input
+                          type="date"
+                          value={demographicsDraft.financialReviewDate}
+                          onChange={(event) => updateDemographicsDraft('financialReviewDate', event.target.value)}
+                          aria-label="Patient financial review"
+                        />
+                      </label>
+                    </div>
                     <div className="contact-actions">
                       <button className="icon-text-button primary" type="submit" disabled={demographicsSaveStatus === 'saving'}>
                         <Check size={15} />
@@ -4680,6 +4763,13 @@ function PatientWorkspace({
                     <Field label="Date of birth" value={activePatient.dateOfBirth} />
                     <Field label="Marital status" value={chart?.maritalStatus} />
                     <Field label="Occupation" value={chart?.occupation} />
+                    <Field label="Race" value={chart?.race} />
+                    <Field label="Ethnicity" value={chart?.ethnicity} />
+                    <Field label="Interpreter" value={chart?.interpreter} />
+                    <Field label="Family size" value={chart?.familySize} />
+                    <Field label="Monthly income" value={chart?.monthlyIncome} />
+                    <Field label="Homeless" value={formatYesNo(chart?.homeless)} />
+                    <Field label="Financial review" value={chart?.financialReviewDate} />
                     <Field label="Address" value={formatAddress(chart)} />
                     <Field label="Registered" value={chart?.registrationDate} />
                     <div className="contact-actions">
@@ -17794,6 +17884,13 @@ function buildDemographicsDraft(patient: PatientListItem | PatientChartSummary |
     postalCode: chart?.postalCode ?? '',
     maritalStatus: chart?.maritalStatus ?? '',
     occupation: chart?.occupation ?? '',
+    race: chart?.race ?? '',
+    ethnicity: chart?.ethnicity ?? '',
+    interpreter: chart?.interpreter ?? '',
+    familySize: chart?.familySize ?? '',
+    monthlyIncome: chart?.monthlyIncome ?? '',
+    homeless: chart?.homeless ?? '',
+    financialReviewDate: chart?.financialReviewDate ?? '',
   }
 }
 
@@ -17847,6 +17944,14 @@ function formatGuardianSex(value: string | null | undefined) {
   return value ? (labels[value] ?? value) : ''
 }
 
+function formatYesNo(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    NO: 'No',
+    YES: 'Yes',
+  }
+  return value ? (labels[value] ?? value) : ''
+}
+
 function buildRegistrationDraft(): PatientRegistrationInput {
   return {
     pubpid: '',
@@ -17861,6 +17966,13 @@ function buildRegistrationDraft(): PatientRegistrationInput {
     postalCode: '',
     maritalStatus: 'single',
     occupation: '',
+    race: '',
+    ethnicity: '',
+    interpreter: '',
+    familySize: '',
+    monthlyIncome: '',
+    homeless: 'NO',
+    financialReviewDate: '',
     phoneHome: '',
     phoneCell: '',
     email: '',

@@ -56,6 +56,13 @@ public sealed record PatientChartSummary(
     string? HipaaAllowEmail,
     string? MaritalStatus,
     string? Occupation,
+    string? Race,
+    string? Ethnicity,
+    string? Interpreter,
+    string? FamilySize,
+    string? MonthlyIncome,
+    string? Homeless,
+    string? FinancialReviewDate,
     string? MotherName,
     string? GuardianName,
     string? GuardianRelationship,
@@ -162,7 +169,14 @@ public sealed record PatientDemographicsUpdateRequest(
     string? State,
     string? PostalCode,
     string? MaritalStatus,
-    string? Occupation);
+    string? Occupation,
+    string? Race,
+    string? Ethnicity,
+    string? Interpreter,
+    string? FamilySize,
+    string? MonthlyIncome,
+    string? Homeless,
+    string? FinancialReviewDate);
 
 public sealed record PatientDeceasedStatusUpdateRequest(
     string? DeceasedDate,
