@@ -1083,6 +1083,7 @@ messages.MapDelete("/{messageId}", async (
     .WithName("DeletePatientMessage");
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
+RequireActiveSession(documents);
 
 documents.MapGet("/{documentId:int}/content", async (
         DocumentRepository repository,

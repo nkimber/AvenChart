@@ -3069,14 +3069,16 @@ export async function getPatientMessages(patientId: string, signal?: AbortSignal
 export async function getPatientDocuments(
   patientId: string,
   includeArchived = false,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentsResponse> {
   const query = includeArchived ? '?includeArchived=true' : ''
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(patientId.trim())}${query}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient documents load failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient documents load', response.status))
   }
 
   return response.json()
@@ -3084,34 +3086,49 @@ export async function getPatientDocuments(
 
 export async function getPatientDocumentContent(
   documentId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentContentResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document content load failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document content load', response.status))
   }
 
   return response.json()
 }
 
-export function getPatientDocumentDownloadUrl(documentId: number) {
-  return `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`
+export async function downloadPatientDocument(
+  documentId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(sessionApiError('Patient document download', response.status))
+  }
+
+  return response.blob()
 }
 
 export async function createPatientDocument(
   document: PatientDocumentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document create failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document create', response.status))
   }
 
   return response.json()
@@ -3119,16 +3136,17 @@ export async function createPatientDocument(
 
 export async function createPatientBinaryDocument(
   document: PatientDocumentBinaryCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/binary`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Binary patient document create failed with ${response.status}`)
+    throw new Error(sessionApiError('Binary patient document create', response.status))
   }
 
   return response.json()
@@ -3136,16 +3154,17 @@ export async function createPatientBinaryDocument(
 
 export async function createPatientExternalLinkDocument(
   document: PatientDocumentExternalLinkCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/external-link`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`External-link patient document create failed with ${response.status}`)
+    throw new Error(sessionApiError('External-link patient document create', response.status))
   }
 
   return response.json()
@@ -3154,16 +3173,17 @@ export async function createPatientExternalLinkDocument(
 export async function updatePatientDocumentMetadata(
   documentId: number,
   document: PatientDocumentMetadataUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/metadata`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document metadata update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document metadata update', response.status))
   }
 
   return response.json()
@@ -3172,16 +3192,17 @@ export async function updatePatientDocumentMetadata(
 export async function replacePatientDocumentContent(
   documentId: number,
   document: PatientDocumentContentReplaceInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document content replacement failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document content replacement', response.status))
   }
 
   return response.json()
@@ -3190,16 +3211,17 @@ export async function replacePatientDocumentContent(
 export async function replacePatientDocumentBinaryContent(
   documentId: number,
   document: PatientDocumentBinaryContentReplaceInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/content/binary`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(document),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Binary patient document content replacement failed with ${response.status}`)
+    throw new Error(sessionApiError('Binary patient document content replacement', response.status))
   }
 
   return response.json()
@@ -3207,14 +3229,16 @@ export async function replacePatientDocumentBinaryContent(
 
 export async function softDeletePatientDocument(
   documentId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/soft-delete`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document archive failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document archive', response.status))
   }
 
   return response.json()
@@ -3222,14 +3246,16 @@ export async function softDeletePatientDocument(
 
 export async function restorePatientDocument(
   documentId: number,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/restore`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document restore failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document restore', response.status))
   }
 
   return response.json()
@@ -3238,28 +3264,34 @@ export async function restorePatientDocument(
 export async function signPatientDocument(
   documentId: number,
   signature: PatientDocumentSignInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/sign`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(signature),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document sign-off failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document sign-off', response.status))
   }
 
   return response.json()
 }
 
-export async function deletePatientDocument(documentId: number, signal?: AbortSignal): Promise<void> {
+export async function deletePatientDocument(
+  documentId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient document delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient document delete', response.status))
   }
 }
 

@@ -44,8 +44,8 @@ import {
   getCollectionsWorkQueue,
   getStatementBatch,
   getStatementBatchPackageUrl,
+  downloadPatientDocument,
   getPatientDocumentContent,
-  getPatientDocumentDownloadUrl,
   getPatientDocuments,
   getPatientMessages,
   getProcedureLabProviders,
@@ -716,13 +716,25 @@ function App() {
       return
     }
 
+    if (!openEmrSessionId) {
+      setPatientDocuments(null)
+      setDocumentStatus('idle')
+      setDocumentError(null)
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setDocumentStatus('loading')
       setDocumentError(null)
 
       try {
-        const result = await getPatientDocuments(documentPatientId, documentIncludeArchived, controller.signal)
+        const result = await getPatientDocuments(
+          documentPatientId,
+          documentIncludeArchived,
+          openEmrSessionId,
+          controller.signal,
+        )
         setPatientDocuments(result)
         setDocumentStatus('ready')
       } catch (loadError) {
@@ -737,7 +749,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey])
+  }, [activeModule, documentPatientId, documentIncludeArchived, documentRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'procedures') {
@@ -1047,6 +1059,14 @@ function App() {
   function getActiveEncounterSessionId() {
     if (!openEmrSessionId) {
       throw new Error('Sign in to access encounters.')
+    }
+
+    return openEmrSessionId
+  }
+
+  function getActiveDocumentSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access documents.')
     }
 
     return openEmrSessionId
@@ -3133,7 +3153,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await createPatientDocument(input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await createPatientDocument(input, sessionId)
       setDocumentPatientId(response.detail.patientId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
@@ -3152,7 +3173,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await createPatientBinaryDocument(input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await createPatientBinaryDocument(input, sessionId)
       setDocumentPatientId(response.detail.patientId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
@@ -3171,7 +3193,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await createPatientExternalLinkDocument(input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await createPatientExternalLinkDocument(input, sessionId)
       setDocumentPatientId(response.detail.patientId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
@@ -3193,7 +3216,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await updatePatientDocumentMetadata(document.id, input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await updatePatientDocumentMetadata(document.id, input, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3214,7 +3238,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await replacePatientDocumentContent(document.id, input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await replacePatientDocumentContent(document.id, input, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3236,7 +3261,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await replacePatientDocumentBinaryContent(document.id, input)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await replacePatientDocumentBinaryContent(document.id, input, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3255,7 +3281,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await softDeletePatientDocument(document.id)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await softDeletePatientDocument(document.id, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3273,7 +3300,8 @@ function App() {
     setDocumentError(null)
 
     try {
-      const response = await restorePatientDocument(document.id)
+      const sessionId = getActiveDocumentSessionId()
+      const response = await restorePatientDocument(document.id, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3291,10 +3319,11 @@ function App() {
     setDocumentError(null)
 
     try {
+      const sessionId = getActiveDocumentSessionId()
       const response = await signPatientDocument(document.id, {
         reviewStatus: 'approved',
         reviewedBy: 'admin',
-      })
+      }, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3312,10 +3341,11 @@ function App() {
     setDocumentError(null)
 
     try {
+      const sessionId = getActiveDocumentSessionId()
       const response = await signPatientDocument(document.id, {
         reviewStatus: 'denied',
         reviewedBy: 'admin',
-      })
+      }, sessionId)
       setPatientDocuments(response.detail)
       setDocumentStatus('ready')
       setDocumentRefreshKey((current) => current + 1)
@@ -3333,10 +3363,12 @@ function App() {
     setDocumentError(null)
 
     try {
-      await deletePatientDocument(document.id)
+      const sessionId = getActiveDocumentSessionId()
+      await deletePatientDocument(document.id, sessionId)
       const refreshed = await getPatientDocuments(
         patientDocuments?.patientId ?? documentPatientId,
         documentIncludeArchived,
+        sessionId,
       )
       setPatientDocuments(refreshed)
       setDocumentStatus('ready')
@@ -3599,8 +3631,13 @@ function App() {
             status={documentStatus}
             error={documentError}
             includeArchived={documentIncludeArchived}
+            sessionId={openEmrSessionId}
             onPatientIdChange={setDocumentPatientId}
             onIncludeArchivedChange={setDocumentIncludeArchived}
+            onDocumentsSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+              setDocumentRefreshKey((current) => current + 1)
+            }}
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
@@ -6462,6 +6499,27 @@ function EncounterWorkspace({
     }
   }
 
+  async function handleEncounterDocumentDownload(document: EncounterDocumentAttachment) {
+    if (!sessionId) {
+      setEncounterDocumentContentStatus('error')
+      return
+    }
+
+    try {
+      const blob = await downloadPatientDocument(document.id, sessionId)
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = document.fileName || document.name
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch {
+      setEncounterDocumentContentStatus('error')
+    }
+  }
+
   async function handleFeeSheetSubmit(event: FormEvent) {
     event.preventDefault()
     if (!encounterDetail) {
@@ -7310,6 +7368,7 @@ function EncounterWorkspace({
                     onRestore={handleEncounterDocumentRestore}
                     onSign={handleEncounterDocumentSign}
                     onDeny={handleEncounterDocumentDeny}
+                    onDownload={handleEncounterDocumentDownload}
                   />
                 ))}
                 {attachedDocuments.length === 0 && (
@@ -8169,6 +8228,7 @@ function EncounterDocumentAttachmentCard({
   onRestore,
   onSign,
   onDeny,
+  onDownload,
 }: {
   document: EncounterDocumentAttachment
   encounter: number
@@ -8190,6 +8250,7 @@ function EncounterDocumentAttachmentCard({
   onRestore: (document: EncounterDocumentAttachment) => Promise<void>
   onSign: (document: EncounterDocumentAttachment) => Promise<void>
   onDeny: (document: EncounterDocumentAttachment) => Promise<void>
+  onDownload: (document: EncounterDocumentAttachment) => Promise<void>
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [isMoving, setIsMoving] = useState(false)
@@ -8582,19 +8643,15 @@ function EncounterDocumentAttachmentCard({
 
       <div className="document-item-actions">
         {document.canDownload && (
-          <a
+          <button
             className="icon-text-button secondary"
-            href={getPatientDocumentDownloadUrl(document.id)}
-            aria-disabled={disabled || isArchived}
-            onClick={(event) => {
-              if (disabled || isArchived) {
-                event.preventDefault()
-              }
-            }}
+            type="button"
+            disabled={disabled || isArchived}
+            onClick={() => void onDownload(document)}
           >
             <Download size={14} />
             Download
-          </a>
+          </button>
         )}
         {hasExternalLink && (
           <a className="icon-text-button secondary" href={document.url ?? '#'} target="_blank" rel="noreferrer">
@@ -11065,8 +11122,10 @@ function DocumentsWorkspace({
   status,
   error,
   includeArchived,
+  sessionId,
   onPatientIdChange,
   onIncludeArchivedChange,
+  onDocumentsSessionActive,
   onCreateDocument,
   onCreateBinaryDocument,
   onCreateExternalLinkDocument,
@@ -11084,8 +11143,10 @@ function DocumentsWorkspace({
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeArchived: boolean
+  sessionId: string | null
   onPatientIdChange: (value: string) => void
   onIncludeArchivedChange: (value: boolean) => void
+  onDocumentsSessionActive: (sessionId: string) => void
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
   onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
@@ -11128,6 +11189,8 @@ function DocumentsWorkspace({
   const [linkDocumentUrl, setLinkDocumentUrl] = useState('https://example.test/legacy-ehr/external-record')
   const [linkDocumentNotes, setLinkDocumentNotes] = useState('Linked from the modernized Documents workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [documentsLoginStatus, setDocumentsLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
+  const [documentsLoginError, setDocumentsLoginError] = useState<string | null>(null)
   const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentContentError, setDocumentContentError] = useState<string | null>(null)
@@ -11142,6 +11205,7 @@ function DocumentsWorkspace({
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
+  const documentsLocked = !sessionId
 
   useEffect(() => {
     if (viewedDocument && !documents.some((document) => document.id === viewedDocument.id)) {
@@ -11250,12 +11314,38 @@ function DocumentsWorkspace({
     setMutationMessage('External link saved')
   }
 
+  async function handleDocumentsLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setDocumentsLoginStatus('checking')
+    setDocumentsLoginError(null)
+
+    try {
+      const result = await login({ username: 'admin', password: 'pass' })
+      if (result.authenticated && result.sessionId) {
+        onDocumentsSessionActive(result.sessionId)
+        setDocumentsLoginStatus('idle')
+      } else {
+        setDocumentsLoginStatus('error')
+        setDocumentsLoginError(result.failureReason ?? 'Document access was not granted.')
+      }
+    } catch (error) {
+      setDocumentsLoginStatus('error')
+      setDocumentsLoginError(error instanceof Error ? error.message : 'Document access check failed')
+    }
+  }
+
   async function handleDocumentView(document: PatientDocumentItem) {
+    if (!sessionId) {
+      setDocumentContentStatus('error')
+      setDocumentContentError('Sign in to load document content.')
+      return
+    }
+
     setDocumentContentStatus('loading')
     setDocumentContentError(null)
 
     try {
-      const content = await getPatientDocumentContent(document.id)
+      const content = await getPatientDocumentContent(document.id, sessionId)
       setViewedDocument(content)
       setDocumentContentStatus('ready')
     } catch (error) {
@@ -11265,9 +11355,57 @@ function DocumentsWorkspace({
     }
   }
 
+  async function handleDocumentDownload(document: PatientDocumentItem | PatientDocumentContentResponse) {
+    if (!sessionId) {
+      setDocumentContentStatus('error')
+      setDocumentContentError('Sign in to download documents.')
+      return
+    }
+
+    try {
+      const blob = await downloadPatientDocument(document.id, sessionId)
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = document.fileName || document.name
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setDocumentContentStatus('error')
+      setDocumentContentError(error instanceof Error ? error.message : 'Patient document download failed')
+    }
+  }
+
+  function getDocumentInlineDataUri(document: PatientDocumentContentResponse) {
+    if (!document.contentBase64) {
+      return undefined
+    }
+
+    return `data:${document.mimetype || 'application/octet-stream'};base64,${document.contentBase64}`
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Documents search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Documents access" onSubmit={handleDocumentsLogin}>
+            <div className="panel-heading compact-heading">
+              <ShieldCheck size={16} />
+              <h3>Documents Access</h3>
+            </div>
+            <p className="form-help-text">Sign in to load patient documents.</p>
+            <div className="detail-actions">
+              <button className="icon-text-button primary" type="submit" disabled={documentsLoginStatus === 'checking'}>
+                <LogIn size={15} />
+                {documentsLoginStatus === 'checking' ? 'Checking' : 'Verify Documents Access'}
+              </button>
+            </div>
+            {documentsLoginError && <div className="status-banner error">{documentsLoginError}</div>}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -11276,6 +11414,7 @@ function DocumentsWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Documents patient ID"
               placeholder="MOD-PAT-0001"
+              disabled={documentsLocked}
             />
           </label>
           <label className="checkbox-row">
@@ -11284,6 +11423,7 @@ function DocumentsWorkspace({
               checked={includeArchived}
               onChange={(event) => onIncludeArchivedChange(event.target.checked)}
               aria-label="Show archived documents"
+              disabled={documentsLocked}
             />
             <span>Show archived documents</span>
           </label>
@@ -11390,7 +11530,7 @@ function DocumentsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={documentsLocked || isLoading}>
               <Check size={15} />
               Save Document
             </button>
@@ -11540,7 +11680,7 @@ function DocumentsWorkspace({
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={documentsLocked || isLoading}>
               <ExternalLink size={15} />
               Save Link
             </button>
@@ -11641,11 +11781,15 @@ function DocumentsWorkspace({
                       </div>
                     ) : viewedDocument.previewKind === 'pdf' ? (
                       <div className="document-pdf-preview" aria-label={`PDF preview for ${viewedDocument.name}`}>
-                        <iframe
-                          className="document-inline-pdf-preview"
-                          src={getPatientDocumentDownloadUrl(viewedDocument.id)}
-                          title={`${viewedDocument.name} PDF preview`}
-                        />
+                        {getDocumentInlineDataUri(viewedDocument) ? (
+                          <iframe
+                            className="document-inline-pdf-preview"
+                            src={getDocumentInlineDataUri(viewedDocument)}
+                            title={`${viewedDocument.name} PDF preview`}
+                          />
+                        ) : (
+                          <div className="timeline-placeholder">PDF preview requires document content</div>
+                        )}
                         <div className="document-image-caption">
                           <strong>{viewedDocument.fileName}</strong>
                           <span>{viewedDocument.previewStatus}</span>
@@ -11663,14 +11807,14 @@ function DocumentsWorkspace({
                       <pre className="document-content-block">{viewedDocument.content}</pre>
                     )}
                     <div className="document-item-actions">
-                      <a
+                      <button
                         className="icon-text-button secondary"
-                        href={getPatientDocumentDownloadUrl(viewedDocument.id)}
-                        download={viewedDocument.fileName}
+                        type="button"
+                        onClick={() => void handleDocumentDownload(viewedDocument)}
                       >
                         <Download size={14} />
                         Download
-                      </a>
+                      </button>
                       {viewedDocument.storageMethod === 'web_url' && viewedDocument.url && (
                         <a className="icon-text-button secondary" href={viewedDocument.url} target="_blank" rel="noreferrer">
                           <ExternalLink size={14} />
@@ -11706,6 +11850,7 @@ function DocumentsWorkspace({
                       onSign={onSignDocument}
                       onDeny={onDenyDocument}
                       onDelete={onDeleteDocument}
+                      onDownload={handleDocumentDownload}
                     />
                   ))}
                   {documents.length === 0 && <div className="timeline-placeholder">No documents recorded</div>}
@@ -14095,6 +14240,7 @@ function DocumentItem({
   onRestore,
   onSign,
   onDeny,
+  onDownload,
   onDelete,
 }: {
   document: PatientDocumentItem
@@ -14110,6 +14256,7 @@ function DocumentItem({
   onRestore: (document: PatientDocumentItem) => Promise<unknown>
   onSign: (document: PatientDocumentItem) => Promise<unknown>
   onDeny: (document: PatientDocumentItem) => Promise<unknown>
+  onDownload: (document: PatientDocumentItem) => Promise<void>
   onDelete: (document: PatientDocumentItem) => Promise<void>
 }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -14452,20 +14599,15 @@ function DocumentItem({
           <FileText size={14} />
           View
         </button>
-        <a
+        <button
           className="icon-text-button secondary"
-          href={getPatientDocumentDownloadUrl(document.id)}
-          download
-          aria-disabled={disabled || isArchived}
-          onClick={(event) => {
-            if (disabled || isArchived) {
-              event.preventDefault()
-            }
-          }}
+          type="button"
+          disabled={disabled || isArchived}
+          onClick={() => void onDownload(document)}
         >
           <Download size={14} />
           Download
-        </a>
+        </button>
         {isExternalLink && (
           <a className="icon-text-button secondary" href={document.url ?? '#'} target="_blank" rel="noreferrer">
             <ExternalLink size={14} />
