@@ -2103,6 +2103,10 @@ function patientApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Patient access')
 }
 
+function documentApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Document access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -3115,7 +3119,7 @@ export async function getPatientDocuments(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient documents load', response.status))
+    throw new Error(documentApiError('Patient documents load', response.status))
   }
 
   return response.json()
@@ -3131,7 +3135,7 @@ export async function getPatientDocumentContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document content load', response.status))
+    throw new Error(documentApiError('Patient document content load', response.status))
   }
 
   return response.json()
@@ -3147,7 +3151,7 @@ export async function downloadPatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document download', response.status))
+    throw new Error(documentApiError('Patient document download', response.status))
   }
 
   return response.blob()
@@ -3165,7 +3169,7 @@ export async function createPatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document create', response.status))
+    throw new Error(documentApiError('Patient document create', response.status))
   }
 
   return response.json()
@@ -3183,7 +3187,7 @@ export async function createPatientBinaryDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Binary patient document create', response.status))
+    throw new Error(documentApiError('Binary patient document create', response.status))
   }
 
   return response.json()
@@ -3201,7 +3205,7 @@ export async function createPatientExternalLinkDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('External-link patient document create', response.status))
+    throw new Error(documentApiError('External-link patient document create', response.status))
   }
 
   return response.json()
@@ -3220,7 +3224,7 @@ export async function updatePatientDocumentMetadata(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document metadata update', response.status))
+    throw new Error(documentApiError('Patient document metadata update', response.status))
   }
 
   return response.json()
@@ -3239,7 +3243,7 @@ export async function replacePatientDocumentContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document content replacement', response.status))
+    throw new Error(documentApiError('Patient document content replacement', response.status))
   }
 
   return response.json()
@@ -3258,7 +3262,7 @@ export async function replacePatientDocumentBinaryContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Binary patient document content replacement', response.status))
+    throw new Error(documentApiError('Binary patient document content replacement', response.status))
   }
 
   return response.json()
@@ -3275,7 +3279,7 @@ export async function softDeletePatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document archive', response.status))
+    throw new Error(documentApiError('Patient document archive', response.status))
   }
 
   return response.json()
@@ -3292,7 +3296,7 @@ export async function restorePatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document restore', response.status))
+    throw new Error(documentApiError('Patient document restore', response.status))
   }
 
   return response.json()
@@ -3311,7 +3315,7 @@ export async function signPatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document sign-off', response.status))
+    throw new Error(documentApiError('Patient document sign-off', response.status))
   }
 
   return response.json()
@@ -3328,7 +3332,7 @@ export async function deletePatientDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient document delete', response.status))
+    throw new Error(documentApiError('Patient document delete', response.status))
   }
 }
 

@@ -11568,8 +11568,11 @@ function DocumentsWorkspace({
   const [linkDocumentUrl, setLinkDocumentUrl] = useState('https://example.test/legacy-ehr/external-record')
   const [linkDocumentNotes, setLinkDocumentNotes] = useState('Linked from the modernized Documents workspace.')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
-  const [documentsLoginStatus, setDocumentsLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
-  const [documentsLoginError, setDocumentsLoginError] = useState<string | null>(null)
+  const [documentsLoginUsername, setDocumentsLoginUsername] = useState('admin')
+  const [documentsLoginPassword, setDocumentsLoginPassword] = useState('pass')
+  const [documentsLoginStatus, setDocumentsLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [documentsLoginMessage, setDocumentsLoginMessage] = useState<string | null>(null)
   const [viewedDocument, setViewedDocument] = useState<PatientDocumentContentResponse | null>(null)
   const [documentContentStatus, setDocumentContentStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [documentContentError, setDocumentContentError] = useState<string | null>(null)
@@ -11584,7 +11587,8 @@ function DocumentsWorkspace({
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
-  const documentsLocked = !sessionId
+  const documentAuthorizationError = status === 'error' && Boolean(error?.includes('Document access'))
+  const documentsLocked = !sessionId || documentAuthorizationError
 
   useEffect(() => {
     if (viewedDocument && !documents.some((document) => document.id === viewedDocument.id)) {
@@ -11696,20 +11700,21 @@ function DocumentsWorkspace({
   async function handleDocumentsLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setDocumentsLoginStatus('checking')
-    setDocumentsLoginError(null)
+    setDocumentsLoginMessage(null)
 
     try {
-      const result = await login({ username: 'admin', password: 'pass' })
+      const result = await login({ username: documentsLoginUsername, password: documentsLoginPassword })
       if (result.authenticated && result.sessionId) {
         onDocumentsSessionActive(result.sessionId)
-        setDocumentsLoginStatus('idle')
+        setDocumentsLoginStatus('authenticated')
+        setDocumentsLoginMessage(`Signed in as ${result.displayName}`)
       } else {
-        setDocumentsLoginStatus('error')
-        setDocumentsLoginError(result.failureReason ?? 'Document access was not granted.')
+        setDocumentsLoginStatus('rejected')
+        setDocumentsLoginMessage(result.failureReason ?? 'Document access was rejected.')
       }
     } catch (error) {
       setDocumentsLoginStatus('error')
-      setDocumentsLoginError(error instanceof Error ? error.message : 'Document access check failed')
+      setDocumentsLoginMessage(error instanceof Error ? error.message : 'Document access check failed')
     }
   }
 
@@ -11768,20 +11773,39 @@ function DocumentsWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Documents search">
-        {!sessionId && (
+        {(!sessionId || documentAuthorizationError) && (
           <form className="mutation-form" aria-label="Documents access" onSubmit={handleDocumentsLogin}>
             <div className="panel-heading compact-heading">
               <ShieldCheck size={16} />
               <h3>Documents Access</h3>
             </div>
             <p className="form-help-text">Sign in to load patient documents.</p>
+            <label>
+              Username
+              <input
+                value={documentsLoginUsername}
+                onChange={(event) => setDocumentsLoginUsername(event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={documentsLoginPassword}
+                onChange={(event) => setDocumentsLoginPassword(event.target.value)}
+              />
+            </label>
             <div className="detail-actions">
               <button className="icon-text-button primary" type="submit" disabled={documentsLoginStatus === 'checking'}>
                 <LogIn size={15} />
                 {documentsLoginStatus === 'checking' ? 'Checking' : 'Verify Documents Access'}
               </button>
             </div>
-            {documentsLoginError && <div className="status-banner error">{documentsLoginError}</div>}
+            {documentsLoginMessage && (
+              <div className={documentsLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {documentsLoginMessage}
+              </div>
+            )}
           </form>
         )}
 

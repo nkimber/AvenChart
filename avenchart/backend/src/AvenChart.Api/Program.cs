@@ -1084,7 +1084,7 @@ messages.MapDelete("/{messageId}", async (
     .WithName("DeletePatientMessage");
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
-RequireActiveSession(documents);
+RequireAccessPermission(documents, "patients", "docs", "view");
 
 documents.MapGet("/{documentId:int}/content", async (
         DocumentRepository repository,

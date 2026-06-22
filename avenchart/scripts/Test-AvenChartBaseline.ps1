@@ -4818,6 +4818,9 @@ try {
     $documents = Invoke-RestMethod -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $intakePacket = $documents.documents | Where-Object { $_.name -eq "Primary care intake packet" -and $_.categoryName -eq "Medical Record" } | Select-Object -First 1
     $advanceDirective = $documents.documents | Where-Object { $_.name -eq "Advance directive acknowledgement" -and $_.categoryName -eq "Advance Directive" } | Select-Object -First 1
+    $frontDeskDocumentSearchStatus = 0
+    $frontDeskDocumentContentStatus = 0
+    $frontDeskDocumentCreateStatus = 0
     $unauthenticatedDocumentContentStatus = 0
     if ($null -ne $intakePacket) {
         try {
@@ -4836,10 +4839,78 @@ try {
                 throw
             }
         }
+
+        try {
+            $frontDeskDocumentContent = Invoke-WebRequest `
+                -Uri "$ApiBaseUrl/api/documents/$($intakePacket.id)/content" `
+                -Method Get `
+                -Headers (Get-FrontDeskHeaders) `
+                -TimeoutSec 20 `
+                -ErrorAction Stop
+            $frontDeskDocumentContentStatus = [int]$frontDeskDocumentContent.StatusCode
+        }
+        catch {
+            if ($_.Exception.Response) {
+                $frontDeskDocumentContentStatus = [int]$_.Exception.Response.StatusCode
+            }
+            else {
+                throw
+            }
+        }
+    }
+
+    try {
+        $frontDeskDocumentSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/documents/MOD-PAT-0001" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskDocumentSearchStatus = [int]$frontDeskDocumentSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskDocumentSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskCreateDocumentBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        name = "Blocked Smoke Patient Document"
+        docDate = "2026-06-18"
+        encounter = 1000013
+        content = "This front-desk document create should be rejected before mutation."
+        notes = "Blocked by document authorization smoke check."
+    } | ConvertTo-Json
+    try {
+        $frontDeskDocumentCreate = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/documents" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskCreateDocumentBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskDocumentCreateStatus = [int]$frontDeskDocumentCreate.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskDocumentCreateStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
     }
 
     $documentsPassed = $unauthenticatedDocumentSearchStatus -eq 401 `
         -and $unauthenticatedDocumentContentStatus -eq 401 `
+        -and $frontDeskDocumentSearchStatus -eq 403 `
+        -and $frontDeskDocumentContentStatus -eq 403 `
+        -and $frontDeskDocumentCreateStatus -eq 403 `
         -and $documents.patientId -eq "MOD-PAT-0001" `
         -and $documents.count -eq 2 `
         -and $null -ne $intakePacket `
@@ -4848,6 +4919,9 @@ try {
     Add-Check -Name "anchor patient documents" -Result $(if ($documentsPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedSearchStatus = $unauthenticatedDocumentSearchStatus
         unauthenticatedContentStatus = $unauthenticatedDocumentContentStatus
+        frontDeskSearchStatus = $frontDeskDocumentSearchStatus
+        frontDeskContentStatus = $frontDeskDocumentContentStatus
+        frontDeskCreateStatus = $frontDeskDocumentCreateStatus
         patientId = $documents.patientId
         documentCount = $documents.count
         intakePacket = $intakePacket
