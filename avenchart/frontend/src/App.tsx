@@ -165,6 +165,7 @@ import {
   updatePatientContact,
   updatePatientDeceasedStatus,
   updatePatientDemographics,
+  updatePatientEmployer,
   updatePatientGuardianContact,
   updateProcedureOrder,
   updateProcedureLabProvider,
@@ -245,6 +246,7 @@ import {
   type PatientDocumentContentReplaceInput,
   type PatientDocumentContentResponse,
   type PatientDeceasedStatusUpdate,
+  type PatientEmployerUpdate,
   type PatientGuardianContactUpdate,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
@@ -1271,6 +1273,23 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient guardian contact save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientEmployerSave(patientId: string, employer: PatientEmployerUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientEmployer(patientId, employer, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient employer save failed'
       setPatientError(message)
       throw saveError
     }
@@ -3620,6 +3639,7 @@ function App() {
             onSaveDemographics={handlePatientDemographicsSave}
             onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
             onSaveGuardianContact={handlePatientGuardianContactSave}
+            onSaveEmployer={handlePatientEmployerSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -3991,6 +4011,7 @@ function PatientWorkspace({
   onSaveDemographics,
   onSaveDeceasedStatus,
   onSaveGuardianContact,
+  onSaveEmployer,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -4012,6 +4033,7 @@ function PatientWorkspace({
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
   onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
+  onSaveEmployer: (canonicalId: string, employer: PatientEmployerUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
@@ -4035,6 +4057,9 @@ function PatientWorkspace({
   const [guardianContactSaveStatus, setGuardianContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   )
+  const [isEditingEmployer, setIsEditingEmployer] = useState(false)
+  const [employerDraft, setEmployerDraft] = useState<PatientEmployerUpdate>(() => buildEmployerDraft(null))
+  const [employerSaveStatus, setEmployerSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -4064,6 +4089,9 @@ function PatientWorkspace({
     setGuardianContactDraft(buildGuardianContactDraft(chart))
     setIsEditingGuardianContact(false)
     setGuardianContactSaveStatus('idle')
+    setEmployerDraft(buildEmployerDraft(chart))
+    setIsEditingEmployer(false)
+    setEmployerSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -4086,6 +4114,10 @@ function PatientWorkspace({
 
   function updateGuardianContactDraft(field: keyof PatientGuardianContactUpdate, value: string) {
     setGuardianContactDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateEmployerDraft(field: keyof PatientEmployerUpdate, value: string) {
+    setEmployerDraft((current) => ({ ...current, [field]: value }))
   }
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
@@ -4212,6 +4244,22 @@ function PatientWorkspace({
       setGuardianContactSaveStatus('saved')
     } catch {
       setGuardianContactSaveStatus('error')
+    }
+  }
+
+  async function handleEmployerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setEmployerSaveStatus('saving')
+    try {
+      await onSaveEmployer(chart.canonicalId, employerDraft)
+      setIsEditingEmployer(false)
+      setEmployerSaveStatus('saved')
+    } catch {
+      setEmployerSaveStatus('error')
     }
   }
 
@@ -5039,6 +5087,116 @@ function PatientWorkspace({
                       </button>
                       {guardianContactSaveStatus === 'saved' && <span className="save-note">Saved</span>}
                       {guardianContactSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
+              </InfoPanel>
+
+              <InfoPanel title="Employer" icon={Building2}>
+                {isEditingEmployer && chart ? (
+                  <form className="contact-form" onSubmit={handleEmployerSubmit}>
+                    <label className="contact-field">
+                      <span>Employer</span>
+                      <input
+                        value={employerDraft.employerName}
+                        onChange={(event) => updateEmployerDraft('employerName', event.target.value)}
+                        aria-label="Patient employer name"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Address</span>
+                      <input
+                        value={employerDraft.employerStreet}
+                        onChange={(event) => updateEmployerDraft('employerStreet', event.target.value)}
+                        aria-label="Patient employer address"
+                      />
+                    </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>City</span>
+                        <input
+                          value={employerDraft.employerCity}
+                          onChange={(event) => updateEmployerDraft('employerCity', event.target.value)}
+                          aria-label="Patient employer city"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>State</span>
+                        <input
+                          value={employerDraft.employerState}
+                          onChange={(event) => updateEmployerDraft('employerState', event.target.value)}
+                          aria-label="Patient employer state"
+                        />
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Postal code</span>
+                        <input
+                          value={employerDraft.employerPostalCode}
+                          onChange={(event) => updateEmployerDraft('employerPostalCode', event.target.value)}
+                          aria-label="Patient employer postal code"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Country</span>
+                        <select
+                          value={employerDraft.employerCountry}
+                          onChange={(event) => updateEmployerDraft('employerCountry', event.target.value)}
+                          aria-label="Patient employer country"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="USA">USA</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button primary"
+                        type="submit"
+                        disabled={employerSaveStatus === 'saving'}
+                      >
+                        <Check size={15} />
+                        <span>{employerSaveStatus === 'saving' ? 'Saving' : 'Save employer'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setEmployerDraft(buildEmployerDraft(chart))
+                          setIsEditingEmployer(false)
+                          setEmployerSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Employer" value={chart?.employerName} />
+                    <Field label="Employer address" value={formatEmployerAddress(chart)} />
+                    <Field label="Employer city" value={chart?.employerCity} />
+                    <Field label="Employer state" value={chart?.employerState} />
+                    <Field label="Employer postal code" value={chart?.employerPostalCode} />
+                    <Field label="Employer country" value={chart?.employerCountry} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setEmployerDraft(buildEmployerDraft(chart))
+                          setIsEditingEmployer(true)
+                          setEmployerSaveStatus('idle')
+                        }}
+                        disabled={!chart}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit employer</span>
+                      </button>
+                      {employerSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {employerSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
                     </div>
                   </>
                 )}
@@ -17918,6 +18076,17 @@ function buildGuardianContactDraft(patient: PatientChartSummary | null): Patient
   }
 }
 
+function buildEmployerDraft(patient: PatientChartSummary | null): PatientEmployerUpdate {
+  return {
+    employerName: patient?.employerName ?? '',
+    employerStreet: patient?.employerStreet ?? '',
+    employerCity: patient?.employerCity ?? '',
+    employerState: patient?.employerState ?? '',
+    employerPostalCode: patient?.employerPostalCode ?? '',
+    employerCountry: patient?.employerCountry ?? '',
+  }
+}
+
 function formatGuardianRelationship(value: string | null | undefined) {
   const labels: Record<string, string> = {
     associate: 'Associate',
@@ -18017,6 +18186,16 @@ function formatAddress(chart: PatientChartSummary | null) {
   }
 
   return [chart.street, [chart.city, chart.state, chart.postalCode].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
+}
+
+function formatEmployerAddress(chart: PatientChartSummary | null) {
+  if (!chart?.employerStreet) {
+    return null
+  }
+
+  return [chart.employerStreet, [chart.employerCity, chart.employerState, chart.employerPostalCode].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
 }

@@ -75,6 +75,12 @@ public sealed record PatientChartSummary(
     string? GuardianPostalCode,
     string? GuardianCountry,
     string? GuardianWorkPhone,
+    string? EmployerName,
+    string? EmployerStreet,
+    string? EmployerCity,
+    string? EmployerState,
+    string? EmployerPostalCode,
+    string? EmployerCountry,
     bool PortalEnabled,
     string RegistrationDate,
     string? DeceasedDate,
@@ -195,6 +201,14 @@ public sealed record PatientGuardianContactUpdateRequest(
     string? GuardianPostalCode,
     string? GuardianCountry,
     string? GuardianWorkPhone);
+
+public sealed record PatientEmployerUpdateRequest(
+    string? EmployerName,
+    string? EmployerStreet,
+    string? EmployerCity,
+    string? EmployerState,
+    string? EmployerPostalCode,
+    string? EmployerCountry);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

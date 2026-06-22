@@ -244,6 +244,7 @@ drop table if exists vitals;
 drop table if exists encounters;
 drop table if exists appointments;
 drop table if exists insurance_records;
+drop table if exists patient_employers;
 drop table if exists patients;
 drop table if exists access_user_memberships;
 drop table if exists auth_sessions;
@@ -410,6 +411,18 @@ create table patients (
   registration_date date not null,
   deceased_date date,
   deceased_reason text
+);
+
+create table patient_employers (
+  patient_id text primary key references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  name text,
+  street text,
+  city text,
+  state text,
+  postal_code text,
+  country text,
+  recorded_date date
 );
 
 create table insurance_records (
@@ -1009,6 +1022,28 @@ copyRows('patients', [
   patient.registrationDate,
   null,
   null,
+]))
+
+copyRows('patient_employers', [
+  'patient_id',
+  'pid',
+  'name',
+  'street',
+  'city',
+  'state',
+  'postal_code',
+  'country',
+  'recorded_date',
+], dataset.patients.map((patient) => [
+  patient.canonicalId,
+  patient.pid,
+  patient.employerName,
+  patient.employerStreet,
+  patient.employerCity,
+  patient.employerState,
+  patient.employerPostalCode,
+  patient.employerCountry,
+  patient.registrationDate,
 ]))
 
 copyRows('insurance_records', [
@@ -1718,6 +1753,7 @@ copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis'
 lines.push(`
 create index idx_patients_name on patients (last_name, first_name);
 create index idx_patients_legacy_pid on patients (legacy_pid);
+create index idx_patient_employers_pid on patient_employers (pid);
 create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);
 create index idx_encounters_pid_date on encounters (pid, encounter_date);

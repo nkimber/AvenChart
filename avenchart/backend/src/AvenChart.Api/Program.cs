@@ -233,6 +233,20 @@ patients.MapPut("/{patientId}/guardian-contact", async (
     .WithName("UpdatePatientGuardianContact")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapPut("/{patientId}/employer", async (
+        PatientRepository repository,
+        string patientId,
+        PatientEmployerUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateEmployerAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient employer could not be updated from the supplied patient and employer details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientEmployer")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapDelete("/{patientId}", async (
         PatientRepository repository,
         string patientId,

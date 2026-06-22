@@ -757,6 +757,93 @@ finally {
     }
 }
 
+$employerOriginal = $null
+try {
+    $employerOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalEmployerBody = @{
+        employerName = $employerOriginal.employerName
+        employerStreet = $employerOriginal.employerStreet
+        employerCity = $employerOriginal.employerCity
+        employerState = $employerOriginal.employerState
+        employerPostalCode = $employerOriginal.employerPostalCode
+        employerCountry = $employerOriginal.employerCountry
+    }
+    $employerBody = @{
+        employerName = "Smoke Employer Core"
+        employerStreet = "197 Smoke Employer Plaza"
+        employerCity = "San Diego"
+        employerState = "CA"
+        employerPostalCode = "92197"
+        employerCountry = "USA"
+    }
+
+    $updatedEmployer = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/employer" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($employerBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $reloadedEmployer = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredEmployer = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/employer" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalEmployerBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $employerOriginal = $null
+
+    $mutationPassed = $updatedEmployer.employerName -eq $employerBody.employerName `
+        -and $updatedEmployer.employerStreet -eq $employerBody.employerStreet `
+        -and $updatedEmployer.employerCity -eq $employerBody.employerCity `
+        -and $updatedEmployer.employerState -eq $employerBody.employerState `
+        -and $updatedEmployer.employerPostalCode -eq $employerBody.employerPostalCode `
+        -and $updatedEmployer.employerCountry -eq $employerBody.employerCountry `
+        -and $reloadedEmployer.employerName -eq $employerBody.employerName
+
+    $restorePassed = $restoredEmployer.employerName -eq $originalEmployerBody.employerName `
+        -and $restoredEmployer.employerStreet -eq $originalEmployerBody.employerStreet `
+        -and $restoredEmployer.employerCity -eq $originalEmployerBody.employerCity `
+        -and $restoredEmployer.employerState -eq $originalEmployerBody.employerState `
+        -and $restoredEmployer.employerPostalCode -eq $originalEmployerBody.employerPostalCode `
+        -and $restoredEmployer.employerCountry -eq $originalEmployerBody.employerCountry
+
+    Add-Check -Name "patient employer lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedEmployer = $updatedEmployer.employerName
+        updatedEmployerCity = $updatedEmployer.employerCity
+        restoredEmployer = $restoredEmployer.employerName
+    }
+}
+catch {
+    Add-Check -Name "patient employer lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $employerOriginal) {
+        try {
+            $originalEmployerBody = @{
+                employerName = $employerOriginal.employerName
+                employerStreet = $employerOriginal.employerStreet
+                employerCity = $employerOriginal.employerCity
+                employerState = $employerOriginal.employerState
+                employerPostalCode = $employerOriginal.employerPostalCode
+                employerCountry = $employerOriginal.employerCountry
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/employer" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($originalEmployerBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()

@@ -118,6 +118,12 @@ export type PatientChartSummary = PatientListItem & {
   guardianPostalCode?: string | null
   guardianCountry?: string | null
   guardianWorkPhone?: string | null
+  employerName?: string | null
+  employerStreet?: string | null
+  employerCity?: string | null
+  employerState?: string | null
+  employerPostalCode?: string | null
+  employerCountry?: string | null
   portalEnabled: boolean
   registrationDate: string
   deceasedDate?: string | null
@@ -184,6 +190,15 @@ export type PatientGuardianContactUpdate = {
   guardianPostalCode: string
   guardianCountry: string
   guardianWorkPhone: string
+}
+
+export type PatientEmployerUpdate = {
+  employerName: string
+  employerStreet: string
+  employerCity: string
+  employerState: string
+  employerPostalCode: string
+  employerCountry: string
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {
@@ -2419,6 +2434,25 @@ export async function updatePatientGuardianContact(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient guardian contact update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientEmployer(
+  patientId: string,
+  employer: PatientEmployerUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/employer`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(employer),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient employer update', response.status))
   }
 
   return response.json()

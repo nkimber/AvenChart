@@ -143,6 +143,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.guardian_postal_code,
                 p.guardian_country,
                 p.guardian_work_phone,
+                pe.name as employer_name,
+                pe.street as employer_street,
+                pe.city as employer_city,
+                pe.state as employer_state,
+                pe.postal_code as employer_postal_code,
+                pe.country as employer_country,
                 p.portal_enabled,
                 p.registration_date,
                 p.deceased_date,
@@ -172,6 +178,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 latest_enc.provider_name as encounter_provider,
                 latest_enc.facility_name as encounter_facility
             from patients p
+            left join patient_employers pe on pe.patient_id = p.canonical_id
             left join facilities f on f.id = p.facility_id
             left join staff s on s.id = p.provider_id
             left join lateral ({CountsSql("p.legacy_pid")}) counts on true
@@ -266,6 +273,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 GuardianPostalCode: ReadNullableString(reader, "guardian_postal_code"),
                 GuardianCountry: ReadNullableString(reader, "guardian_country"),
                 GuardianWorkPhone: ReadNullableString(reader, "guardian_work_phone"),
+                EmployerName: ReadNullableString(reader, "employer_name"),
+                EmployerStreet: ReadNullableString(reader, "employer_street"),
+                EmployerCity: ReadNullableString(reader, "employer_city"),
+                EmployerState: ReadNullableString(reader, "employer_state"),
+                EmployerPostalCode: ReadNullableString(reader, "employer_postal_code"),
+                EmployerCountry: ReadNullableString(reader, "employer_country"),
                 PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
@@ -702,6 +715,69 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("guardianPostalCode", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianPostalCode);
         command.Parameters.Add("guardianCountry", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianCountry);
         command.Parameters.Add("guardianWorkPhone", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianWorkPhone);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> UpdateEmployerAsync(
+        string patientId,
+        PatientEmployerUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with matched_patient as (
+                select canonical_id, legacy_pid
+                from patients
+                where lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId
+                limit 1
+            ),
+            upserted as (
+                insert into patient_employers (
+                    patient_id,
+                    pid,
+                    name,
+                    street,
+                    city,
+                    state,
+                    postal_code,
+                    country,
+                    recorded_date
+                )
+                select
+                    canonical_id,
+                    legacy_pid,
+                    @employerName,
+                    @employerStreet,
+                    @employerCity,
+                    @employerState,
+                    @employerPostalCode,
+                    @employerCountry,
+                    current_date
+                from matched_patient
+                on conflict (patient_id) do update set
+                    name = excluded.name,
+                    street = excluded.street,
+                    city = excluded.city,
+                    state = excluded.state,
+                    postal_code = excluded.postal_code,
+                    country = excluded.country,
+                    recorded_date = excluded.recorded_date
+                returning patient_id
+            )
+            select patient_id from upserted;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("employerName", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerName);
+        command.Parameters.Add("employerStreet", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerStreet);
+        command.Parameters.Add("employerCity", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerCity);
+        command.Parameters.Add("employerState", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerState);
+        command.Parameters.Add("employerPostalCode", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerPostalCode);
+        command.Parameters.Add("employerCountry", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerCountry);
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
