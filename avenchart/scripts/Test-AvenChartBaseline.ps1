@@ -34,6 +34,7 @@ function Add-Check {
 
 $AdministrationHeaders = $null
 $FrontDeskHeaders = $null
+$ClinicianHeaders = $null
 
 function Get-AdministrationHeaders {
     if ($null -eq $script:AdministrationHeaders) {
@@ -81,6 +82,29 @@ function Get-FrontDeskHeaders {
     return $script:FrontDeskHeaders
 }
 
+function Get-ClinicianHeaders {
+    if ($null -eq $script:ClinicianHeaders) {
+        $loginBody = @{
+            username = "gold-provider-01"
+            password = "pass"
+        }
+        $login = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/auth/login" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body ($loginBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+
+        if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Clinician smoke login did not issue an active session."
+        }
+
+        $script:ClinicianHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    }
+
+    return $script:ClinicianHeaders
+}
+
 function New-AuthenticatedHttpClient {
     $client = [System.Net.Http.HttpClient]::new()
     $headers = Get-AdministrationHeaders
@@ -116,6 +140,13 @@ try {
         -Method Post `
         -ContentType "application/json" `
         -Body (@{ username = "gold-frontdesk-01"; password = "pass" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $clinicianLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "gold-provider-01"; password = "pass" } | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
     $rejectedLogin = Invoke-RestMethod `
@@ -223,6 +254,9 @@ try {
         -and $session.username -eq "admin" `
         -and $frontDeskLogin.authenticated -eq $true `
         -and $frontDeskLogin.username -eq "gold-frontdesk-01" `
+        -and $clinicianLogin.authenticated -eq $true `
+        -and $clinicianLogin.username -eq "gold-provider-01" `
+        -and $clinicianLogin.role -eq "provider" `
         -and $frontDeskAdministrationStatus -eq 403 `
         -and $unauthenticatedAuditStatus -eq 401 `
         -and $unauthenticatedAdministrationStatus -eq 401 `
@@ -244,6 +278,8 @@ try {
         sessionIssued = -not [string]::IsNullOrWhiteSpace($login.sessionId)
         sessionValidated = $session.authenticated
         frontDeskUsername = $frontDeskLogin.username
+        clinicianUsername = $clinicianLogin.username
+        clinicianRole = $clinicianLogin.role
         frontDeskAdministrationStatus = $frontDeskAdministrationStatus
         unauthenticatedAuditStatus = $unauthenticatedAuditStatus
         unauthenticatedAdministrationStatus = $unauthenticatedAdministrationStatus
@@ -6086,10 +6122,81 @@ try {
         }
     }
 
+    $clinicianProceduresStatus = 0
+    try {
+        $clinicianProcedures = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/procedures/MOD-PAT-0009" `
+            -Method Get `
+            -Headers (Get-ClinicianHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianProceduresStatus = 200
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianProceduresStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $clinicianUpdateStatus = 0
+    $clinicianUpdateBody = @{
+        status = "complete"
+    } | ConvertTo-Json -Depth 8
+    try {
+        $clinicianUpdate = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/orders/$($completedOrder.id)/status" `
+            -Method Put `
+            -Headers (Get-ClinicianHeaders) `
+            -ContentType "application/json" `
+            -Body $clinicianUpdateBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianUpdateStatus = [int]$clinicianUpdate.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianUpdateStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $clinicianSignStatus = 0
+    $clinicianSignBody = @{
+        reviewedBy = "gold-provider-01"
+        reviewedAt = "2026-06-19 14:15:00"
+    } | ConvertTo-Json -Depth 8
+    try {
+        $clinicianSign = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/procedures/reports/$($completedReport.id)/sign" `
+            -Method Put `
+            -Headers (Get-ClinicianHeaders) `
+            -ContentType "application/json" `
+            -Body $clinicianSignBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianSignStatus = [int]$clinicianSign.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianSignStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
     $proceduresPassed = $unauthenticatedProceduresStatus -eq 401 `
         -and $frontDeskProceduresStatus -eq 403 `
         -and $frontDeskCatalogStatus -eq 403 `
         -and $frontDeskCreateStatus -eq 403 `
+        -and $clinicianProceduresStatus -eq 200 `
+        -and $clinicianUpdateStatus -eq 403 `
+        -and $clinicianSignStatus -eq 403 `
         -and $procedures.patientId -eq "MOD-PAT-0009" `
         -and $null -ne $completedOrder `
         -and $null -ne $completedReport `
@@ -6099,6 +6206,9 @@ try {
         frontDeskProcedureStatus = $frontDeskProceduresStatus
         frontDeskCatalogStatus = $frontDeskCatalogStatus
         frontDeskCreateStatus = $frontDeskCreateStatus
+        clinicianProcedureStatus = $clinicianProceduresStatus
+        clinicianUpdateStatus = $clinicianUpdateStatus
+        clinicianSignStatus = $clinicianSignStatus
         patientId = $procedures.patientId
         orderCount = $procedures.orders.Count
         completedOrder = $completedOrder
@@ -7402,7 +7512,8 @@ try {
     $adminMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "admin" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
     $systemMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "oe-system" -and $_.groupValue -eq "admin" -and $_.groupName -eq "Administrators" } | Select-Object -First 1
     $frontDeskMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "gold-frontdesk-01" -and $_.groupValue -eq "front" -and $_.groupName -eq "Front Office" } | Select-Object -First 1
-    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $administration.counts.accessUserMemberships -eq 3 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission -and $null -ne $frontDeskAppointmentPermission -and $null -ne $adminMembership -and $null -ne $systemMembership -and $null -ne $frontDeskMembership
+    $clinicianMembership = $administration.accessControl.userMemberships | Where-Object { $_.userValue -eq "gold-provider-01" -and $_.groupValue -eq "clin" -and $_.groupName -eq "Clinicians" } | Select-Object -First 1
+    $accessControlPassed = $administration.counts.accessGroups -eq 7 -and $administration.counts.accessPermissions -eq 65 -and $administration.counts.accessGroupPermissions -eq 203 -and $administration.counts.accessUserMemberships -eq 4 -and $null -ne $adminGroup -and $null -ne $physicianGroup -and $null -ne $clinicianGroup -and $null -ne $adminAclPermission -and $null -ne $frontDeskDemoPermission -and $null -ne $frontDeskAppointmentPermission -and $null -ne $adminMembership -and $null -ne $systemMembership -and $null -ne $frontDeskMembership -and $null -ne $clinicianMembership
     Add-Check -Name "anchor administration access control" -Result $(if ($accessControlPassed) { "passed" } else { "failed" }) -Details @{
         counts = $administration.counts
         adminGroup = $adminGroup
@@ -7414,6 +7525,7 @@ try {
         adminMembership = $adminMembership
         systemMembership = $systemMembership
         frontDeskMembership = $frontDeskMembership
+        clinicianMembership = $clinicianMembership
     }
 }
 catch {
@@ -7500,8 +7612,8 @@ try {
     $revokedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/$membershipUserName/front" -Method Delete -Headers $administrationHeaders -TimeoutSec 20
     $revokedFrontMembership = $revokedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" } | Select-Object -First 1
 
-    $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 4 `
-        -and $revokedMembership.detail.counts.accessUserMemberships -eq 3 `
+    $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 5 `
+        -and $revokedMembership.detail.counts.accessUserMemberships -eq 4 `
         -and $null -ne $frontMembership `
         -and $null -eq $revokedFrontMembership
 

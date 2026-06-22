@@ -1267,7 +1267,8 @@ procedures.MapPost("/lab-provider-address-book", async (
             ? Results.BadRequest(new { error = "Procedure lab provider address-book organization is required." })
             : Results.Created($"/api/procedures/lab-provider-address-book/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureLabProviderAddressBookOrganization");
+    .WithName("CreateProcedureLabProviderAddressBookOrganization")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/lab-provider-address-book/{organizationId:int}", async (
         ProcedureRepository repository,
@@ -1277,7 +1278,8 @@ procedures.MapDelete("/lab-provider-address-book/{organizationId:int}", async (
         var deleted = await repository.DeleteLabProviderAddressBookOrganizationAsync(organizationId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteProcedureLabProviderAddressBookOrganization");
+    .WithName("DeleteProcedureLabProviderAddressBookOrganization")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapGet("/lab-providers", async (
         ProcedureRepository repository,
@@ -1299,7 +1301,8 @@ procedures.MapPost("/lab-providers", async (
             ? Results.BadRequest(new { error = "Procedure lab provider name or valid address-book organization is required." })
             : Results.Created($"/api/procedures/lab-providers/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureLabProvider");
+    .WithName("CreateProcedureLabProvider")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/lab-providers/{providerId:int}", async (
         ProcedureRepository repository,
@@ -1310,7 +1313,8 @@ procedures.MapPut("/lab-providers/{providerId:int}", async (
         var mutation = await repository.UpdateLabProviderAsync(providerId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureLabProvider");
+    .WithName("UpdateProcedureLabProvider")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/lab-providers/{providerId:int}", async (
         ProcedureRepository repository,
@@ -1320,7 +1324,8 @@ procedures.MapDelete("/lab-providers/{providerId:int}", async (
         var deleted = await repository.DeleteLabProviderAsync(providerId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteProcedureLabProvider");
+    .WithName("DeleteProcedureLabProvider")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapGet("/order-catalog", async (
         ProcedureRepository repository,
@@ -1341,7 +1346,8 @@ procedures.MapPost("/order-catalog", async (
             ? Results.BadRequest(new { error = "Procedure order catalog item requires a valid name, type, parent, lab, and code." })
             : Results.Created($"/api/procedures/order-catalog/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureOrderCatalogItem");
+    .WithName("CreateProcedureOrderCatalogItem")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPost("/order-catalog/import-compendium", async (
         ProcedureRepository repository,
@@ -1353,7 +1359,8 @@ procedures.MapPost("/order-catalog/import-compendium", async (
             ? Results.BadRequest(new { error = "Procedure order catalog compendium import requires a valid vendor format, group, lab, and CSV payload." })
             : Results.Ok(import);
     })
-    .WithName("ImportProcedureOrderCatalogCompendium");
+    .WithName("ImportProcedureOrderCatalogCompendium")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/order-catalog/{itemId:int}", async (
         ProcedureRepository repository,
@@ -1364,7 +1371,8 @@ procedures.MapPut("/order-catalog/{itemId:int}", async (
         var mutation = await repository.UpdateOrderCatalogItemAsync(itemId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureOrderCatalogItem");
+    .WithName("UpdateProcedureOrderCatalogItem")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/order-catalog/{itemId:int}", async (
         ProcedureRepository repository,
@@ -1374,7 +1382,8 @@ procedures.MapDelete("/order-catalog/{itemId:int}", async (
         var deleted = await repository.DeleteOrderCatalogItemAsync(itemId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteProcedureOrderCatalogItem");
+    .WithName("DeleteProcedureOrderCatalogItem")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapGet("/report-review-queue", async (
         ProcedureRepository repository,
@@ -1444,7 +1453,8 @@ procedures.MapPost("/orders", async (
             ? Results.BadRequest("Procedure order could not be created from the supplied patient, encounter, and order details.")
             : Results.Created($"/api/procedures/orders/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureOrder");
+    .WithName("CreateProcedureOrder")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
 procedures.MapPut("/orders/{orderId:int}/status", async (
         ProcedureRepository repository,
@@ -1455,7 +1465,8 @@ procedures.MapPut("/orders/{orderId:int}/status", async (
         var mutation = await repository.UpdateOrderStatusAsync(orderId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureOrderStatus");
+    .WithName("UpdateProcedureOrderStatus")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPost("/orders/{orderId:int}/transmit", async (
         ProcedureRepository repository,
@@ -1468,7 +1479,8 @@ procedures.MapPost("/orders/{orderId:int}/transmit", async (
             ? Results.BadRequest("Procedure order could not be marked transmitted from the supplied order state.")
             : Results.Ok(mutation);
     })
-    .WithName("TransmitProcedureOrder");
+    .WithName("TransmitProcedureOrder")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/orders/{orderId:int}", async (
         ProcedureRepository repository,
@@ -1481,7 +1493,8 @@ procedures.MapPut("/orders/{orderId:int}", async (
             ? Results.BadRequest("Procedure order could not be updated from the supplied order details.")
             : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureOrder");
+    .WithName("UpdateProcedureOrder")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPost("/reports", async (
         ProcedureRepository repository,
@@ -1493,7 +1506,8 @@ procedures.MapPost("/reports", async (
             ? Results.BadRequest("Procedure report could not be created from the supplied order and report details.")
             : Results.Created($"/api/procedures/reports/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureReport");
+    .WithName("CreateProcedureReport")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
 procedures.MapPut("/reports/{reportId:int}", async (
         ProcedureRepository repository,
@@ -1506,7 +1520,8 @@ procedures.MapPut("/reports/{reportId:int}", async (
             ? Results.BadRequest("Procedure report could not be updated from the supplied report details.")
             : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureReport");
+    .WithName("UpdateProcedureReport")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/reports/{reportId:int}/sign", async (
         ProcedureRepository repository,
@@ -1519,7 +1534,8 @@ procedures.MapPut("/reports/{reportId:int}/sign", async (
             ? Results.BadRequest("Procedure report could not be signed from the supplied review details.")
             : Results.Ok(mutation);
     })
-    .WithName("SignProcedureReport");
+    .WithName("SignProcedureReport")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));
 
 procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
         ProcedureRepository repository,
@@ -1531,7 +1547,8 @@ procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
             ? Results.BadRequest("Procedure report review could not be reopened.")
             : Results.Ok(mutation);
     })
-    .WithName("ReopenProcedureReportReview");
+    .WithName("ReopenProcedureReportReview")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapPut("/reports/bulk-sign", async (
         ProcedureRepository repository,
@@ -1543,7 +1560,8 @@ procedures.MapPut("/reports/bulk-sign", async (
             ? Results.BadRequest("Procedure reports could not be bulk signed from the supplied review details.")
             : Results.Ok(mutation);
     })
-    .WithName("BulkSignProcedureReports");
+    .WithName("BulkSignProcedureReports")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));
 
 procedures.MapPost("/specimens", async (
         ProcedureRepository repository,
@@ -1555,7 +1573,8 @@ procedures.MapPost("/specimens", async (
             ? Results.BadRequest("Procedure specimen could not be created from the supplied order and specimen details.")
             : Results.Created($"/api/procedures/specimens/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureSpecimen");
+    .WithName("CreateProcedureSpecimen")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
 procedures.MapPost("/results", async (
         ProcedureRepository repository,
@@ -1567,7 +1586,8 @@ procedures.MapPost("/results", async (
             ? Results.BadRequest("Procedure result could not be created from the supplied report and result details.")
             : Results.Created($"/api/procedures/results/{mutation.Id}", mutation);
     })
-    .WithName("CreateProcedureResult");
+    .WithName("CreateProcedureResult")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "addonly"));
 
 procedures.MapPut("/results/{resultId:int}", async (
         ProcedureRepository repository,
@@ -1578,7 +1598,8 @@ procedures.MapPut("/results/{resultId:int}", async (
         var mutation = await repository.UpdateResultAsync(resultId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateProcedureResult");
+    .WithName("UpdateProcedureResult")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 procedures.MapDelete("/orders/{orderId:int}", async (
         ProcedureRepository repository,
@@ -1588,7 +1609,8 @@ procedures.MapDelete("/orders/{orderId:int}", async (
         var deleted = await repository.DeleteOrderCascadeAsync(orderId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteProcedureOrderCascade");
+    .WithName("DeleteProcedureOrderCascade")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
 
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 RequireAccessPermission(billing, "acct", "bill", "view");
@@ -1975,7 +1997,15 @@ static void RequireAccessPermission(
     string permissionValue,
     string returnValue)
 {
-    group.AddEndpointFilter(async (context, next) =>
+    group.AddEndpointFilter(AccessPermissionFilter(sectionValue, permissionValue, returnValue));
+}
+
+static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> AccessPermissionFilter(
+    string sectionValue,
+    string permissionValue,
+    string returnValue)
+{
+    return async (context, next) =>
     {
         var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
         var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
@@ -2006,7 +2036,7 @@ static void RequireAccessPermission(
         }
 
         return await next(context);
-    });
+    };
 }
 
 static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
