@@ -197,9 +197,28 @@ catch {
 }
 
 try {
-    $search = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" -Method Get -TimeoutSec 20
+    $unauthenticatedPatientSearchStatus = 0
+    try {
+        $unauthenticatedPatientSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedPatientSearchStatus = [int]$unauthenticatedPatientSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedPatientSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $search = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $anchor = $search.patients | Where-Object { $_.canonicalId -eq "MOD-PAT-0001" } | Select-Object -First 1
-    Add-Check -Name "anchor patient search" -Result $(if ($null -ne $anchor) { "passed" } else { "failed" }) -Details @{
+    Add-Check -Name "anchor patient search" -Result $(if ($null -ne $anchor -and $unauthenticatedPatientSearchStatus -eq 401) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedPatientSearchStatus
         totalMatches = $search.totalMatches
         firstPatient = $search.patients | Select-Object -First 1
     }
@@ -209,7 +228,7 @@ catch {
 }
 
 try {
-    $chart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $chart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $chartPassed = $chart.canonicalId -eq "MOD-PAT-0001" -and $chart.legacyPid -eq 100001 -and $chart.displayName -like "Stone,*"
     Add-Check -Name "anchor chart summary" -Result $(if ($chartPassed) { "passed" } else { "failed" }) -Details @{
         canonicalId = $chart.canonicalId
@@ -223,7 +242,7 @@ catch {
 
 $demographicsOriginal = $null
 try {
-    $demographicsOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -TimeoutSec 20
+    $demographicsOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $originalDemographicsBody = @{
         firstName = $demographicsOriginal.firstName
         lastName = $demographicsOriginal.lastName
@@ -254,6 +273,7 @@ try {
     $updatedDemographics = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
         -Method Put `
+        -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
         -Body ($demographicsBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
@@ -274,6 +294,7 @@ try {
     $restoredDemographics = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
         -Method Put `
+        -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
         -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
@@ -311,6 +332,7 @@ finally {
             Invoke-RestMethod `
                 -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/demographics" `
                 -Method Put `
+                -Headers (Get-AdministrationHeaders) `
                 -ContentType "application/json" `
                 -Body ($originalDemographicsBody | ConvertTo-Json -Depth 5) `
                 -TimeoutSec 20 | Out-Null
@@ -347,19 +369,20 @@ try {
     $createdPatient = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients" `
         -Method Post `
+        -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
         -Body ($registrationBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
 
-    $loadedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Get -TimeoutSec 20
-    $searchCreatedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=$registrationPubpid&limit=5" -Method Get -TimeoutSec 20
+    $loadedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $searchCreatedPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=$registrationPubpid&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $registrationPubpid = $null
 
     $deletedLoadFailed = $false
     try {
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$($registrationBody.pubpid)" -Method Get -TimeoutSec 20 | Out-Null
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$($registrationBody.pubpid)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     }
     catch {
         $deletedLoadFailed = $true
@@ -383,7 +406,7 @@ try {
 catch {
     if ($registrationPubpid) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$registrationPubpid" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -392,7 +415,7 @@ catch {
 }
 
 try {
-    $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)
     $primary = $coverage | Where-Object { $_.type -eq "primary" } | Select-Object -First 1
     $secondary = $coverage | Where-Object { $_.type -eq "secondary" } | Select-Object -First 1
@@ -429,6 +452,7 @@ try {
     $createdCoverageChart = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005/insurance" `
         -Method Post `
+        -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
         -Body ($insuranceCreateBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
@@ -449,6 +473,7 @@ try {
     $updatedCoverageChart = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" `
         -Method Put `
+        -Headers (Get-AdministrationHeaders) `
         -ContentType "application/json" `
         -Body ($insuranceUpdateBody | ConvertTo-Json -Depth 5) `
         -TimeoutSec 20
@@ -457,6 +482,7 @@ try {
     $deletedCoverageChart = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" `
         -Method Delete `
+        -Headers (Get-AdministrationHeaders) `
         -TimeoutSec 20
     $insuranceMutationId = $null
     $deletedCoverage = @($deletedCoverageChart.insurance) | Where-Object { $_.policyNumber -eq $insuranceUpdateBody.policyNumber } | Select-Object -First 1
@@ -475,7 +501,7 @@ try {
 catch {
     if ($insuranceMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

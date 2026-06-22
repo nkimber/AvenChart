@@ -119,6 +119,7 @@ auth.MapGet("/login-audit", async (
     .WithName("GetLoginAudit");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
+RequireActiveSession(patients);
 
 patients.MapGet("/", async (
         PatientRepository repository,
@@ -1759,17 +1760,7 @@ billing.MapDelete("/payments/{activityId}", async (
     .WithName("DeleteBillingPaymentPosting");
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
-administration.AddEndpointFilter(async (context, next) =>
-{
-    var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
-    var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
-    if (!session.Authenticated)
-    {
-        return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
-    }
-
-    return await next(context);
-});
+RequireActiveSession(administration);
 
 administration.MapGet("/directory", async (
         AdministrationRepository repository,
@@ -1946,17 +1937,7 @@ administration.MapDelete("/access-control/user-memberships/{userValue}/{groupVal
     .WithName("RevokeAdministrationAccessUserMembership");
 
 var reports = app.MapGroup("/api/reports").WithTags("Reports");
-reports.AddEndpointFilter(async (context, next) =>
-{
-    var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
-    var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
-    if (!session.Authenticated)
-    {
-        return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
-    }
-
-    return await next(context);
-});
+RequireActiveSession(reports);
 
 reports.MapGet("/operational", async (
         ReportRepository repository,
@@ -1981,6 +1962,21 @@ reports.MapGet("/operational/export", async (
 
 app.Run();
 
+static void RequireActiveSession(RouteGroupBuilder group)
+{
+    group.AddEndpointFilter(async (context, next) =>
+    {
+        var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
+        var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
+        if (!session.Authenticated)
+        {
+            return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        return await next(context);
+    });
+}
+
 static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     AuthRepository repository,
     HttpContext httpContext,
@@ -2000,7 +1996,7 @@ static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
             LastSeenAt: null,
             ExpiresAt: null,
             EndedAt: null,
-            FailureReason: "A valid admin session is required.",
+            FailureReason: "A valid Legacy EHR session is required.",
             SessionSource: "avenchart");
     }
 

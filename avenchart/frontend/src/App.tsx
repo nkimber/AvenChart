@@ -321,7 +321,7 @@ function App() {
   const [searchResult, setSearchResult] = useState<PatientSearchResponse | null>(null)
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null)
   const [chart, setChart] = useState<PatientChartSummary | null>(null)
-  const [searchStatus, setSearchStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [chartStatus, setChartStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [patientError, setPatientError] = useState<string | null>(null)
 
@@ -380,7 +380,7 @@ function App() {
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [administrationError, setAdministrationError] = useState<string | null>(null)
   const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
-  const [administrationSessionId, setAdministrationSessionId] = useState<string | null>(null)
+  const [openEmrSessionId, setLegacyEhrSessionId] = useState<string | null>(null)
 
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -421,13 +421,23 @@ function App() {
   const [procedureReportReviewQueueRefreshKey, setProcedureReportReviewQueueRefreshKey] = useState(0)
 
   useEffect(() => {
+    if (!openEmrSessionId) {
+      setSearchResult(null)
+      setSelectedPatientId(null)
+      setChart(null)
+      setSearchStatus('idle')
+      setChartStatus('idle')
+      setPatientError(null)
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setSearchStatus('loading')
       setPatientError(null)
 
       try {
-        const result = await searchPatients(query, controller.signal)
+        const result = await searchPatients(query, openEmrSessionId, controller.signal)
         setSearchResult(result)
         setSearchStatus('ready')
 
@@ -452,10 +462,10 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [query])
+  }, [query, openEmrSessionId])
 
   useEffect(() => {
-    if (!selectedPatientId) {
+    if (!selectedPatientId || !openEmrSessionId) {
       setChartStatus('idle')
       setChart(null)
       return
@@ -465,7 +475,7 @@ function App() {
     async function loadChart() {
       setChartStatus('loading')
       try {
-        const patient = await getPatientChart(selectedPatientId!, controller.signal)
+        const patient = await getPatientChart(selectedPatientId!, openEmrSessionId, controller.signal)
         setChart(patient)
         setChartStatus('ready')
       } catch (chartError) {
@@ -478,7 +488,7 @@ function App() {
 
     loadChart()
     return () => controller.abort()
-  }, [selectedPatientId])
+  }, [selectedPatientId, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
@@ -756,7 +766,7 @@ function App() {
     if (activeModule !== 'admin') {
       return
     }
-    if (!administrationSessionId) {
+    if (!openEmrSessionId) {
       setAdministrationDirectory(null)
       setAdministrationStatus('idle')
       setAdministrationError(null)
@@ -769,7 +779,7 @@ function App() {
       setAdministrationError(null)
 
       try {
-        const result = await getAdministrationDirectory(administrationSessionId, controller.signal)
+        const result = await getAdministrationDirectory(openEmrSessionId, controller.signal)
         setAdministrationDirectory(result)
         setAdministrationStatus('ready')
       } catch (loadError) {
@@ -782,14 +792,14 @@ function App() {
 
     loadAdministrationDirectory()
     return () => controller.abort()
-  }, [activeModule, administrationRefreshKey, administrationSessionId])
+  }, [activeModule, administrationRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
       return
     }
 
-    if (!administrationSessionId) {
+    if (!openEmrSessionId) {
       setOperationalReports(null)
       setReportsStatus('idle')
       setReportsError(null)
@@ -803,7 +813,7 @@ function App() {
       setReportsError(null)
 
       try {
-        const result = await getOperationalReports(administrationSessionId, controller.signal)
+        const result = await getOperationalReports(openEmrSessionId, controller.signal)
         setOperationalReports(result)
         setReportsStatus('ready')
       } catch (loadError) {
@@ -816,7 +826,7 @@ function App() {
 
     loadOperationalReports()
     return () => controller.abort()
-  }, [activeModule, administrationSessionId])
+  }, [activeModule, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -977,12 +987,21 @@ function App() {
 
   const activePatient = chart ?? selectedFromList
 
+  function getActiveLegacyEhrSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access patient data.')
+    }
+
+    return openEmrSessionId
+  }
+
   async function handlePatientContactSave(patientId: string, contact: PatientContactUpdate) {
     setChartStatus('loading')
     setPatientError(null)
 
     try {
-      const updated = await updatePatientContact(patientId, contact)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientContact(patientId, contact, sessionId)
       setChart(updated)
       setChartStatus('ready')
       setSearchResult((current) => {
@@ -1018,7 +1037,8 @@ function App() {
     setPatientError(null)
 
     try {
-      const updated = await updatePatientDemographics(patientId, demographics)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientDemographics(patientId, demographics, sessionId)
       setChart(updated)
       setSelectedPatientId(updated.canonicalId)
       setChartStatus('ready')
@@ -1065,7 +1085,8 @@ function App() {
     setPatientError(null)
 
     try {
-      const created = await createPatient(input)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const created = await createPatient(input, sessionId)
       setChart(created)
       setSelectedPatientId(created.canonicalId)
       setQuery(created.pubpid)
@@ -1097,7 +1118,8 @@ function App() {
     setPatientError(null)
 
     try {
-      const updated = await createPatientInsurance(patientId, insurance)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await createPatientInsurance(patientId, insurance, sessionId)
       setChart(updated)
       setChartStatus('ready')
       return updated
@@ -1114,7 +1136,8 @@ function App() {
     setPatientError(null)
 
     try {
-      const updated = await updatePatientInsurance(insuranceId, insurance)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientInsurance(insuranceId, insurance, sessionId)
       setChart(updated)
       setChartStatus('ready')
       return updated
@@ -1131,7 +1154,8 @@ function App() {
     setPatientError(null)
 
     try {
-      const updated = await deletePatientInsurance(insuranceId)
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await deletePatientInsurance(insuranceId, sessionId)
       setChart(updated)
       setChartStatus('ready')
       return updated
@@ -2666,11 +2690,11 @@ function App() {
   }
 
   function getActiveAdministrationSessionId() {
-    if (!administrationSessionId) {
+    if (!openEmrSessionId) {
       throw new Error('Sign in to manage administration data.')
     }
 
-    return administrationSessionId
+    return openEmrSessionId
   }
 
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
@@ -3296,6 +3320,8 @@ function App() {
             searchStatus={searchStatus}
             chartStatus={chartStatus}
             error={patientError}
+            sessionId={openEmrSessionId}
+            onPatientSessionActive={setLegacyEhrSessionId}
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
             onCreatePatient={handlePatientCreate}
@@ -3478,8 +3504,8 @@ function App() {
             reports={operationalReports}
             status={reportsStatus}
             error={reportsError}
-            sessionId={administrationSessionId}
-            onReportsSessionActive={setAdministrationSessionId}
+            sessionId={openEmrSessionId}
+            onReportsSessionActive={setLegacyEhrSessionId}
             labProviders={procedureLabProviders}
             labProvidersStatus={procedureLabProvidersStatus}
             labProvidersError={procedureLabProvidersError}
@@ -3545,11 +3571,11 @@ function App() {
             onGrantAccessMembership={handleAdministrationAccessUserMembershipGrant}
             onRevokeAccessMembership={handleAdministrationAccessUserMembershipRevoke}
             onAdminSessionActive={(sessionId) => {
-              setAdministrationSessionId(sessionId)
+              setLegacyEhrSessionId(sessionId)
               setAdministrationRefreshKey((current) => current + 1)
             }}
             onAdminSessionEnded={() => {
-              setAdministrationSessionId(null)
+              setLegacyEhrSessionId(null)
               setAdministrationDirectory(null)
               setAdministrationStatus('idle')
               setAdministrationError(null)
@@ -3632,6 +3658,8 @@ function PatientWorkspace({
   searchStatus,
   chartStatus,
   error,
+  sessionId,
+  onPatientSessionActive,
   onQueryChange,
   onSelectPatient,
   onCreatePatient,
@@ -3646,9 +3674,11 @@ function PatientWorkspace({
   selectedPatientId: string | null
   activePatient: PatientListItem | PatientChartSummary | null
   chart: PatientChartSummary | null
-  searchStatus: 'loading' | 'ready' | 'error'
+  searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   chartStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
+  onPatientSessionActive: (sessionId: string) => void
   onQueryChange: (value: string) => void
   onSelectPatient: (canonicalId: string) => void
   onCreatePatient: (patient: PatientRegistrationInput) => Promise<PatientChartSummary>
@@ -3672,6 +3702,11 @@ function PatientWorkspace({
   const [isRegistering, setIsRegistering] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState<PatientRegistrationInput>(() => buildRegistrationDraft())
   const [registrationSaveStatus, setRegistrationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [patientLoginUsername, setPatientLoginUsername] = useState('admin')
+  const [patientLoginPassword, setPatientLoginPassword] = useState('pass')
+  const [patientLoginStatus, setPatientLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [patientLoginMessage, setPatientLoginMessage] = useState<string | null>(null)
 
   useEffect(() => {
     setDemographicsDraft(buildDemographicsDraft(chart ?? activePatient))
@@ -3699,6 +3734,27 @@ function PatientWorkspace({
 
   function updateRegistrationDraft(field: keyof PatientRegistrationInput, value: string) {
     setRegistrationDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handlePatientLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPatientLoginStatus('checking')
+    setPatientLoginMessage(null)
+
+    try {
+      const result = await login({ username: patientLoginUsername, password: patientLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        onPatientSessionActive(result.sessionId)
+        setPatientLoginStatus('authenticated')
+        setPatientLoginMessage(`Signed in as ${result.displayName}`)
+      } else {
+        setPatientLoginStatus('rejected')
+        setPatientLoginMessage(result.failureReason ?? 'Patient access was rejected.')
+      }
+    } catch (loginError) {
+      setPatientLoginStatus('error')
+      setPatientLoginMessage(loginError instanceof Error ? loginError.message : 'Patient access check failed')
+    }
   }
 
   async function handleRegistrationSubmit(event: FormEvent<HTMLFormElement>) {
@@ -3791,6 +3847,36 @@ function PatientWorkspace({
   return (
     <section className="split-layout">
       <section className="finder-panel" aria-label="Patient search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Patient access" onSubmit={handlePatientLogin}>
+            <div className="panel-heading">
+              <ShieldCheck size={17} />
+              <h3>Patient Access</h3>
+            </div>
+            <label>
+              Username
+              <input value={patientLoginUsername} onChange={(event) => setPatientLoginUsername(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={patientLoginPassword}
+                onChange={(event) => setPatientLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={patientLoginStatus === 'checking'}>
+              <LogIn size={15} />
+              {patientLoginStatus === 'checking' ? 'Checking' : 'Verify Patient Access'}
+            </button>
+            {patientLoginMessage && (
+              <div className={patientLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {patientLoginMessage}
+              </div>
+            )}
+          </form>
+        )}
+
         <div className="search-box">
           <Search size={18} />
           <input
@@ -3798,6 +3884,7 @@ function PatientWorkspace({
             onChange={(event) => onQueryChange(event.target.value)}
             aria-label="Search patients"
             placeholder="Name, ID, phone, or email"
+            disabled={!sessionId}
           />
         </div>
 
@@ -3805,6 +3892,7 @@ function PatientWorkspace({
           <button
             className="icon-text-button primary"
             type="button"
+            disabled={!sessionId}
             onClick={() => {
               setIsRegistering((current) => !current)
               setRegistrationSaveStatus('idle')
@@ -3947,13 +4035,17 @@ function PatientWorkspace({
         )}
 
         <div className="result-meta">
-          <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} matches`}</span>
+          <span>
+            {!sessionId ? 'Sign in required' : searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} matches`}
+          </span>
           <span>Limit {searchResult?.limit ?? 25}</span>
         </div>
 
         {searchStatus === 'error' && <div className="status-banner error">{error}</div>}
 
         <div className="patient-list">
+          {!sessionId && <div className="empty-state">Sign in to search patient charts</div>}
+
           {searchResult?.patients.map((patient) => (
             <PatientResult
               key={patient.canonicalId}
@@ -4376,7 +4468,9 @@ function PatientWorkspace({
             </div>
           </>
         ) : (
-          <div className="empty-chart">Select a patient to open the chart summary</div>
+          <div className="empty-chart">
+            {sessionId ? 'Select a patient to open the chart summary' : 'Sign in to load patient charts'}
+          </div>
         )}
       </section>
     </section>

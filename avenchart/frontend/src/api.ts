@@ -1987,7 +1987,7 @@ export type AuthAuditResponse = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
-function buildAdminSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
+function buildLegacyEhrSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
   const headers: Record<string, string> = {}
   if (contentType) {
     headers['content-type'] = contentType
@@ -2067,25 +2067,45 @@ export async function getLoginAudit(
   return response.json()
 }
 
-export async function searchPatients(search: string, signal?: AbortSignal): Promise<PatientSearchResponse> {
+function sessionApiError(action: string, status: number) {
+  return status === 401
+    ? `${action} requires an active Legacy EHR session.`
+    : `${action} failed with ${status}`
+}
+
+export async function searchPatients(
+  search: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientSearchResponse> {
   const params = new URLSearchParams()
   if (search.trim()) {
     params.set('search', search.trim())
   }
   params.set('limit', '25')
 
-  const response = await fetch(`${apiBaseUrl}/api/patients?${params.toString()}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/patients?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Patient search failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient search', response.status))
   }
 
   return response.json()
 }
 
-export async function getPatientChart(canonicalId: string, signal?: AbortSignal): Promise<PatientChartSummary> {
-  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(canonicalId)}`, { signal })
+export async function getPatientChart(
+  canonicalId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(canonicalId)}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Patient chart load failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient chart load', response.status))
   }
 
   return response.json()
@@ -2093,44 +2113,47 @@ export async function getPatientChart(canonicalId: string, signal?: AbortSignal)
 
 export async function createPatient(
   patient: PatientRegistrationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(patient),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient registration failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient registration', response.status))
   }
 
   return response.json()
 }
 
-export async function deletePatient(patientId: string, signal?: AbortSignal): Promise<void> {
+export async function deletePatient(patientId: string, sessionId?: string | null, signal?: AbortSignal): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok && response.status !== 404) {
-    throw new Error(`Patient delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient delete', response.status))
   }
 }
 
 export async function updatePatientContact(
   patientId: string,
   contact: PatientContactUpdate,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/contact`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(contact),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient contact update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient contact update', response.status))
   }
 
   return response.json()
@@ -2139,16 +2162,17 @@ export async function updatePatientContact(
 export async function updatePatientDemographics(
   patientId: string,
   demographics: PatientDemographicsUpdate,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/demographics`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(demographics),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient demographics update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient demographics update', response.status))
   }
 
   return response.json()
@@ -2157,16 +2181,17 @@ export async function updatePatientDemographics(
 export async function createPatientInsurance(
   patientId: string,
   insurance: PatientInsuranceMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/insurance`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(insurance),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient insurance create failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient insurance create', response.status))
   }
 
   return response.json()
@@ -2175,16 +2200,17 @@ export async function createPatientInsurance(
 export async function updatePatientInsurance(
   insuranceId: string,
   insurance: PatientInsuranceMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(insurance),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient insurance update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient insurance update', response.status))
   }
 
   return response.json()
@@ -2192,14 +2218,16 @@ export async function updatePatientInsurance(
 
 export async function deletePatientInsurance(
   insuranceId: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   const response = await fetch(`${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient insurance delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient insurance delete', response.status))
   }
 
   return response.json()
@@ -3933,7 +3961,7 @@ export async function getAdministrationDirectory(
   signal?: AbortSignal,
 ): Promise<AdministrationDirectoryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/directory`, {
-    headers: buildAdminSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -3950,7 +3978,7 @@ export async function createAdministrationUser(
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users`, {
     method: 'POST',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -3969,7 +3997,7 @@ export async function updateAdministrationUser(
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'PUT',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -3987,7 +4015,7 @@ export async function deleteAdministrationUser(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'DELETE',
-    headers: buildAdminSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -4002,7 +4030,7 @@ export async function createAdministrationFacility(
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities`, {
     method: 'POST',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -4021,7 +4049,7 @@ export async function updateAdministrationFacility(
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'PUT',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -4039,7 +4067,7 @@ export async function deleteAdministrationFacility(
 ): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'DELETE',
-    headers: buildAdminSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -4054,7 +4082,7 @@ export async function grantAdministrationAccessPermission(
 ): Promise<AdministrationAccessPermissionMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/group-permissions`, {
     method: 'PUT',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -4074,7 +4102,7 @@ export async function revokeAdministrationAccessPermission(
     `${apiBaseUrl}/api/administration/access-control/group-permissions/${encodeURIComponent(input.groupValue)}/${encodeURIComponent(input.sectionValue)}/${encodeURIComponent(input.permissionValue)}`,
     {
       method: 'DELETE',
-      headers: buildAdminSessionHeaders(sessionId),
+      headers: buildLegacyEhrSessionHeaders(sessionId),
       signal,
     },
   )
@@ -4092,7 +4120,7 @@ export async function grantAdministrationAccessUserMembership(
 ): Promise<AdministrationAccessUserMembershipMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/user-memberships`, {
     method: 'PUT',
-    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
@@ -4112,7 +4140,7 @@ export async function revokeAdministrationAccessUserMembership(
     `${apiBaseUrl}/api/administration/access-control/user-memberships/${encodeURIComponent(input.userValue)}/${encodeURIComponent(input.groupValue)}`,
     {
       method: 'DELETE',
-      headers: buildAdminSessionHeaders(sessionId),
+      headers: buildLegacyEhrSessionHeaders(sessionId),
       signal,
     },
   )
@@ -4128,7 +4156,7 @@ export async function getOperationalReports(
   signal?: AbortSignal,
 ): Promise<OperationalReportsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/reports/operational`, {
-    headers: buildAdminSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
@@ -4144,7 +4172,7 @@ export function getOperationalReportsCsvUrl() {
 
 export async function getOperationalReportsCsv(sessionId?: string | null, signal?: AbortSignal): Promise<string> {
   const response = await fetch(getOperationalReportsCsvUrl(), {
-    headers: buildAdminSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
