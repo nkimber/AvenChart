@@ -54,7 +54,7 @@ import {
   getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
-  getOperationalReportsCsvUrl,
+  getOperationalReportsCsv,
   getLoginAudit,
   getCurrentSession,
   createAppointment,
@@ -789,6 +789,13 @@ function App() {
       return
     }
 
+    if (!administrationSessionId) {
+      setOperationalReports(null)
+      setReportsStatus('idle')
+      setReportsError(null)
+      return
+    }
+
     const controller = new AbortController()
 
     async function loadOperationalReports() {
@@ -796,7 +803,7 @@ function App() {
       setReportsError(null)
 
       try {
-        const result = await getOperationalReports(controller.signal)
+        const result = await getOperationalReports(administrationSessionId, controller.signal)
         setOperationalReports(result)
         setReportsStatus('ready')
       } catch (loadError) {
@@ -809,7 +816,7 @@ function App() {
 
     loadOperationalReports()
     return () => controller.abort()
-  }, [activeModule])
+  }, [activeModule, administrationSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -3471,6 +3478,8 @@ function App() {
             reports={operationalReports}
             status={reportsStatus}
             error={reportsError}
+            sessionId={administrationSessionId}
+            onReportsSessionActive={setAdministrationSessionId}
             labProviders={procedureLabProviders}
             labProvidersStatus={procedureLabProvidersStatus}
             labProvidersError={procedureLabProvidersError}
@@ -11291,6 +11300,8 @@ function ReportsWorkspace({
   reports,
   status,
   error,
+  sessionId,
+  onReportsSessionActive,
   labProviders,
   labProvidersStatus,
   labProvidersError,
@@ -11342,6 +11353,8 @@ function ReportsWorkspace({
   reports: OperationalReportsResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
+  onReportsSessionActive: (sessionId: string) => void
   labProviders: ProcedureLabProviderDirectoryResponse | null
   labProvidersStatus: 'idle' | 'loading' | 'ready' | 'error'
   labProvidersError: string | null
@@ -11398,6 +11411,63 @@ function ReportsWorkspace({
   onReviewQueueToDateChange: (toDate: string) => void
   onReviewQueueBulkSign: (reportIds: number[]) => Promise<ProcedureReportBulkSignResponse>
 }) {
+  const [reportsLoginUsername, setReportsLoginUsername] = useState('admin')
+  const [reportsLoginPassword, setReportsLoginPassword] = useState('pass')
+  const [reportsLoginStatus, setReportsLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [reportsLoginMessage, setReportsLoginMessage] = useState<string | null>(null)
+  const [csvStatus, setCsvStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
+  const [csvError, setCsvError] = useState<string | null>(null)
+
+  async function handleReportsLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setReportsLoginStatus('checking')
+    setReportsLoginMessage(null)
+
+    try {
+      const result = await login({ username: reportsLoginUsername, password: reportsLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        onReportsSessionActive(result.sessionId)
+        setReportsLoginStatus('authenticated')
+        setReportsLoginMessage(`Signed in as ${result.displayName}`)
+      } else {
+        setReportsLoginStatus('rejected')
+        setReportsLoginMessage(result.failureReason ?? 'Reports access was rejected.')
+      }
+    } catch (error) {
+      setReportsLoginStatus('error')
+      setReportsLoginMessage(error instanceof Error ? error.message : 'Reports access check failed')
+    }
+  }
+
+  async function handleCsvExport() {
+    if (!sessionId) {
+      setCsvStatus('error')
+      setCsvError('Sign in before exporting operational reports.')
+      return
+    }
+
+    setCsvStatus('downloading')
+    setCsvError(null)
+
+    try {
+      const csv = await getOperationalReportsCsv(sessionId)
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const href = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = 'legacy-ehr-operational-report.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(href)
+      setCsvStatus('ready')
+    } catch (error) {
+      setCsvStatus('error')
+      setCsvError(error instanceof Error ? error.message : 'Operational reports CSV export failed')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Reports summary">
@@ -11408,7 +11478,37 @@ function ReportsWorkspace({
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
 
-        {reports ? (
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Reports access" onSubmit={handleReportsLogin}>
+            <div className="panel-heading">
+              <ShieldCheck size={17} />
+              <h3>Reports Access</h3>
+            </div>
+            <label>
+              Username
+              <input value={reportsLoginUsername} onChange={(event) => setReportsLoginUsername(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={reportsLoginPassword}
+                onChange={(event) => setReportsLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={reportsLoginStatus === 'checking'}>
+              <LogIn size={15} />
+              {reportsLoginStatus === 'checking' ? 'Checking' : 'Verify Reports Access'}
+            </button>
+            {reportsLoginMessage && (
+              <div className={reportsLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {reportsLoginMessage}
+              </div>
+            )}
+          </form>
+        )}
+
+        {sessionId && reports ? (
           <>
             <div className="list-counts">
               <MetricRow label="Patients" value={reports.counts.patients} />
@@ -11426,14 +11526,22 @@ function ReportsWorkspace({
               <Field label="Current year" value={reports.currentYear} />
               <Field label="Dataset" value={reports.datasetVersion} />
               <Field label="Exports" value="CSV ready" />
-              <a className="icon-text-button secondary" href={getOperationalReportsCsvUrl()} download>
+              <button
+                type="button"
+                className="icon-text-button secondary"
+                onClick={() => void handleCsvExport()}
+                disabled={csvStatus === 'downloading'}
+              >
                 <Download size={15} />
-                CSV Export
-              </a>
+                {csvStatus === 'downloading' ? 'Preparing CSV' : 'CSV Export'}
+              </button>
+              {csvError && <div className="status-banner error">{csvError}</div>}
             </div>
           </>
         ) : (
-          <div className="empty-state">No operational reports loaded</div>
+          <div className="empty-state">
+            {sessionId ? 'No operational reports loaded' : 'Sign in to load operational reports'}
+          </div>
         )}
       </section>
 

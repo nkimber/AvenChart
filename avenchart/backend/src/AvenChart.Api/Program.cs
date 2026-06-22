@@ -1946,6 +1946,17 @@ administration.MapDelete("/access-control/user-memberships/{userValue}/{groupVal
     .WithName("RevokeAdministrationAccessUserMembership");
 
 var reports = app.MapGroup("/api/reports").WithTags("Reports");
+reports.AddEndpointFilter(async (context, next) =>
+{
+    var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
+    var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
+    if (!session.Authenticated)
+    {
+        return Results.Json(session, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    return await next(context);
+});
 
 reports.MapGet("/operational", async (
         ReportRepository repository,

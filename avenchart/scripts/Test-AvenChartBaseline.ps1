@@ -6987,11 +6987,30 @@ finally {
 }
 
 try {
-    $reports = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/operational" -Method Get -TimeoutSec 20
+    $unauthenticatedReportsStatus = 0
+    try {
+        $unauthenticatedReports = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/reports/operational" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedReportsStatus = [int]$unauthenticatedReports.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedReportsStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $reports = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/operational" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $topProvider = $reports.providerActivity | Where-Object { $_.username -eq "gold-provider-02" } | Select-Object -First 1
     $northFacility = $reports.facilityActivity | Where-Object { $_.code -eq "NORTH" } | Select-Object -First 1
     $asthmaCondition = $reports.clinicalConditions | Where-Object { $_.title -eq "Asthma, uncomplicated" -and $_.diagnosis -eq "ICD10:J45.909" } | Select-Object -First 1
-    $reportsPassed = $reports.counts.patients -eq 1000 `
+    $reportsPassed = $unauthenticatedReportsStatus -eq 401 `
+        -and $reports.counts.patients -eq 1000 `
         -and $reports.counts.futureAppointments -eq 1261 `
         -and $reports.counts.currentYearEncounters -eq 1100 `
         -and $reports.counts.billingLines -eq 3000 `
@@ -7004,6 +7023,7 @@ try {
         -and $null -ne $asthmaCondition `
         -and $asthmaCondition.patients -eq 188
     Add-Check -Name "anchor operational reports" -Result $(if ($reportsPassed) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedReportsStatus
         counts = $reports.counts
         topProvider = $topProvider
         northFacility = $northFacility
@@ -7015,11 +7035,31 @@ catch {
 }
 
 try {
-    $reportExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/operational/export" -Method Get -UseBasicParsing -TimeoutSec 20
+    $unauthenticatedReportExportStatus = 0
+    try {
+        $unauthenticatedReportExport = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/reports/operational/export" `
+            -Method Get `
+            -UseBasicParsing `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedReportExportStatus = [int]$unauthenticatedReportExport.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedReportExportStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $reportExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/operational/export" -Method Get -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20
     $contentType = ($reportExport.Headers["Content-Type"] -join ",")
     $exportText = [string]$reportExport.Content
     $sampleLines = $exportText -split "\r?\n" | Select-Object -First 5
-    $exportPassed = $reportExport.StatusCode -eq 200 `
+    $exportPassed = $unauthenticatedReportExportStatus -eq 401 `
+        -and $reportExport.StatusCode -eq 200 `
         -and $contentType -like "text/csv*" `
         -and $exportText.Contains("Section,Name,Metric,Value") `
         -and $exportText.Contains("Counts,Patients,Total,1000") `
@@ -7028,6 +7068,7 @@ try {
         -and $exportText.Contains("Facility Activity,NORTH,Billing Total,148904.00") `
         -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")
     Add-Check -Name "operational reports csv export" -Result $(if ($exportPassed) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedReportExportStatus
         statusCode = $reportExport.StatusCode
         contentType = $contentType
         sample = $sampleLines

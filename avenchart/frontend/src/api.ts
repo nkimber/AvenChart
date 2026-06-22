@@ -4123,10 +4123,16 @@ export async function revokeAdministrationAccessUserMembership(
   return response.json()
 }
 
-export async function getOperationalReports(signal?: AbortSignal): Promise<OperationalReportsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/reports/operational`, { signal })
+export async function getOperationalReports(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<OperationalReportsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/reports/operational`, {
+    headers: buildAdminSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Operational reports load failed with ${response.status}`)
+    throw new Error(adminApiError('Operational reports load', response.status))
   }
 
   return response.json()
@@ -4134,4 +4140,16 @@ export async function getOperationalReports(signal?: AbortSignal): Promise<Opera
 
 export function getOperationalReportsCsvUrl() {
   return `${apiBaseUrl}/api/reports/operational/export`
+}
+
+export async function getOperationalReportsCsv(sessionId?: string | null, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(getOperationalReportsCsvUrl(), {
+    headers: buildAdminSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Operational reports CSV export', response.status))
+  }
+
+  return response.text()
 }
