@@ -1590,6 +1590,7 @@ procedures.MapDelete("/orders/{orderId:int}", async (
     .WithName("DeleteProcedureOrderCascade");
 
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
+RequireActiveSession(billing);
 
 billing.MapGet("/statements/batch", async (
         BillingRepository repository,

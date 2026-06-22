@@ -5942,12 +5942,31 @@ finally {
 }
 
 try {
-    $billing = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0001" -Method Get -TimeoutSec 20
+    $unauthenticatedBillingStatus = 0
+    try {
+        $unauthenticatedBilling = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0001" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedBillingStatus = [int]$unauthenticatedBilling.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedBillingStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $billing = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $latestEncounter = $billing.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $officeVisit = $latestEncounter.lines | Where-Object { $_.code -eq "99214" -and $_.codeText -eq "Established patient office visit" } | Select-Object -First 1
     $venipuncture = $latestEncounter.lines | Where-Object { $_.code -eq "36415" -and $_.codeText -eq "Routine venipuncture" } | Select-Object -First 1
-    $billingPassed = $billing.patientId -eq "MOD-PAT-0001" -and $null -ne $latestEncounter -and $null -ne $officeVisit -and $null -ne $venipuncture
+    $billingPassed = $unauthenticatedBillingStatus -eq 401 -and $billing.patientId -eq "MOD-PAT-0001" -and $null -ne $latestEncounter -and $null -ne $officeVisit -and $null -ne $venipuncture
     Add-Check -Name "anchor fee sheet billing" -Result $(if ($billingPassed) { "passed" } else { "failed" }) -Details @{
+        unauthenticatedStatus = $unauthenticatedBillingStatus
         patientId = $billing.patientId
         encounterCount = $billing.encounters.Count
         latestEncounter = $latestEncounter
@@ -5960,7 +5979,7 @@ catch {
 }
 
 try {
-    $claimBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $claimBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $claimRows = @($claimBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $queuedClaim = $claimRows | Where-Object { $_.statusLabel -eq "Queued for billing" -and $_.billProcess -eq 1 } | Select-Object -First 1
     $generatedClaim = $claimRows | Where-Object { $_.statusLabel -eq "Marked as cleared" -and $_.processFile -like "CLAIM-*-837P.txt" } | Select-Object -First 1
@@ -5984,7 +6003,7 @@ catch {
 
 $claimStatusMutationId = $null
 try {
-    $beforeClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforeClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $beforeClaimRows = @($beforeClaimMutationBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $claimStatusSuffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $claimStatusProcessFile = "CLAIM-1000052-SMOKE-$claimStatusSuffix-837P.txt"
@@ -6003,7 +6022,7 @@ try {
         x12PartnerId = 0
         submittedClaim = "Smoke claim status mutation $claimStatusSuffix"
     } | ConvertTo-Json
-    $createdClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims" -Method Post -ContentType "application/json" -Body $createClaimStatusBody -TimeoutSec 20
+    $createdClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createClaimStatusBody -TimeoutSec 20
     $claimStatusMutationId = $createdClaimStatus.id
     $createdClaimRows = @($createdClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $createdClaimVisible = $createdClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Queued for billing" -and $_.billProcess -eq 1 -and $_.target -eq "HCFA" } | Select-Object -First 1
@@ -6017,7 +6036,7 @@ try {
         x12PartnerId = 1
         submittedClaim = "Generated smoke claim status mutation $claimStatusSuffix"
     } | ConvertTo-Json
-    $generatedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -ContentType "application/json" -Body $generateClaimStatusBody -TimeoutSec 20
+    $generatedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $generateClaimStatusBody -TimeoutSec 20
     $generatedClaimRows = @($generatedClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $generatedClaimVisible = $generatedClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Marked as cleared" -and $_.processFile -eq $claimStatusProcessFile -and $_.target -eq "X12" } | Select-Object -First 1
 
@@ -6030,13 +6049,13 @@ try {
         x12PartnerId = 0
         submittedClaim = "Cleared smoke claim status mutation $claimStatusSuffix"
     } | ConvertTo-Json
-    $clearedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -ContentType "application/json" -Body $clearClaimStatusBody -TimeoutSec 20
+    $clearedClaimStatus = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $clearClaimStatusBody -TimeoutSec 20
     $clearedClaimRows = @($clearedClaimStatus.detail.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
     $clearedClaimVisible = $clearedClaimRows | Where-Object { $_.id -eq $claimStatusMutationId -and $_.statusLabel -eq "Marked as cleared" -and [string]::IsNullOrWhiteSpace($_.processFile) -and $_.target -eq "HCFA" } | Select-Object -First 1
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $claimStatusMutationId = $null
-    $afterClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $afterClaimMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $afterClaimRows = @($afterClaimMutationBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
 
     $claimStatusMutationPassed = $null -ne $createdClaimVisible `
@@ -6059,7 +6078,7 @@ catch {
 finally {
     if ($null -ne $claimStatusMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/claims/$claimStatusMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6067,7 +6086,7 @@ finally {
 }
 
 try {
-    $paymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $paymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $paymentRows = @($paymentBilling.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
     $anchorPayment = $paymentRows | Where-Object { $_.reference -eq "EOB-NSTAR-1000052" -and $_.payAmount -eq 126 } | Select-Object -First 1
     $anchorAdjustment = $paymentRows | Where-Object { $_.reference -eq "EOB-NSTAR-1000052" -and $_.adjustmentAmount -eq 42 -and $_.reasonCode -eq "CO-45" } | Select-Object -First 1
@@ -6089,7 +6108,7 @@ catch {
 
 $paymentPostingMutationId = $null
 try {
-    $beforePaymentMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforePaymentMutationBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $beforePaymentMutationSummary = $beforePaymentMutationBilling.accountSummary
     $paymentPostingReference = "EOB-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
     $paymentPostingClaim = "NSTAR-CLM-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
@@ -6114,18 +6133,18 @@ try {
         reasonCode = "CO-45"
         payerClaimNumber = $paymentPostingClaim
     } | ConvertTo-Json
-    $createdPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -ContentType "application/json" -Body $createPaymentPostingBody -TimeoutSec 20
+    $createdPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createPaymentPostingBody -TimeoutSec 20
     $paymentPostingMutationId = $createdPaymentPosting.id
     $createdPaymentRows = @($createdPaymentPosting.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
     $createdPaymentVisible = $createdPaymentRows | Where-Object { $_.activityId -eq $paymentPostingMutationId -and $_.reference -eq $paymentPostingReference -and $_.payAmount -eq 21 -and $_.adjustmentAmount -eq 3.5 -and $_.reasonCode -eq "CO-45" } | Select-Object -First 1
     $createdPaymentSummary = $createdPaymentPosting.detail.accountSummary
 
-    $voidedPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId/void" -Method Put -TimeoutSec 20
+    $voidedPaymentPosting = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId/void" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $voidedPaymentRows = @($voidedPaymentPosting.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
     $voidedPaymentVisible = $voidedPaymentRows | Where-Object { $_.activityId -eq $paymentPostingMutationId } | Select-Object -First 1
     $voidedPaymentSummary = $voidedPaymentPosting.detail.accountSummary
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $paymentPostingMutationId = $null
 
     $paymentPostingMutationPassed = $null -ne $createdPaymentVisible `
@@ -6150,7 +6169,7 @@ catch {
 finally {
     if ($null -ne $paymentPostingMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$paymentPostingMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6159,7 +6178,7 @@ finally {
 
 $patientPaymentMutationId = $null
 try {
-    $beforePatientPaymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $beforePatientPaymentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $beforePatientPaymentSummary = $beforePatientPaymentBilling.accountSummary
     $patientPaymentReference = "RCPT-SMOKE-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
     $createPatientPaymentBody = @{
@@ -6183,18 +6202,18 @@ try {
         reasonCode = ""
         payerClaimNumber = ""
     } | ConvertTo-Json
-    $createdPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -ContentType "application/json" -Body $createPatientPaymentBody -TimeoutSec 20
+    $createdPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createPatientPaymentBody -TimeoutSec 20
     $patientPaymentMutationId = $createdPatientPayment.id
     $createdPatientPaymentRows = @($createdPatientPayment.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
     $createdPatientPaymentVisible = $createdPatientPaymentRows | Where-Object { $_.activityId -eq $patientPaymentMutationId -and $_.payerType -eq 0 -and $_.reference -eq $patientPaymentReference -and $_.payAmount -eq 35 -and $_.adjustmentAmount -eq 0 } | Select-Object -First 1
     $createdPatientPaymentSummary = $createdPatientPayment.detail.accountSummary
 
-    $voidedPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId/void" -Method Put -TimeoutSec 20
+    $voidedPatientPayment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId/void" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $voidedPatientPaymentRows = @($voidedPatientPayment.detail.encounters | ForEach-Object { $_.payments } | Where-Object { $null -ne $_ })
     $voidedPatientPaymentVisible = $voidedPatientPaymentRows | Where-Object { $_.activityId -eq $patientPaymentMutationId } | Select-Object -First 1
     $voidedPatientPaymentSummary = $voidedPatientPayment.detail.accountSummary
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $patientPaymentMutationId = $null
 
     $patientPaymentMutationPassed = $null -ne $createdPatientPaymentVisible `
@@ -6219,7 +6238,7 @@ catch {
 finally {
     if ($null -ne $patientPaymentMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/payments/$patientPaymentMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6227,7 +6246,7 @@ finally {
 }
 
 try {
-    $balanceBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $balanceBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $balanceEncounter = $balanceBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1
     $balanceSummary = $balanceBilling.accountSummary
     $accountBalancePassed = $balanceBilling.patientId -eq "MOD-PAT-0005" `
@@ -6252,7 +6271,7 @@ catch {
 }
 
 try {
-    $agingBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $agingBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $agingSummary = $agingBilling.agingSummary
     $currentEncounter = $agingBilling.encounters | Where-Object { $_.encounter -eq 1000053 } | Select-Object -First 1
     $days31To60Encounter = $agingBilling.encounters | Where-Object { $_.encounter -eq 1000052 } | Select-Object -First 1
@@ -6287,7 +6306,7 @@ catch {
 }
 
 try {
-    $ledgerBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $ledgerBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $ledgerSummary = $ledgerBilling.ledgerSummary
     $ledgerEntries = @($ledgerBilling.ledgerEntries)
     $firstLedgerEntry = $ledgerEntries | Select-Object -First 1
@@ -6326,7 +6345,7 @@ catch {
 }
 
 try {
-    $statementBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $statementBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $statementSummary = $statementBilling.statementSummary
     $accountStatementPassed = $statementBilling.patientId -eq "MOD-PAT-0005" `
         -and $null -ne $statementSummary `
@@ -6358,7 +6377,7 @@ catch {
 }
 
 try {
-    $statementDocumentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -TimeoutSec 20
+    $statementDocumentBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $statementDocument = $statementDocumentBilling.statementDocument
     $lastStatementLine = if ($null -ne $statementDocument -and $statementDocument.lineItems.Count -gt 0) {
         $statementDocument.lineItems[$statementDocument.lineItems.Count - 1]
@@ -6389,7 +6408,7 @@ catch {
 }
 
 try {
-    $statementPdfResponse = Invoke-WebRequest -UseBasicParsing -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005/statement.pdf" -Method Get -TimeoutSec 20
+    $statementPdfResponse = Invoke-WebRequest -UseBasicParsing -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005/statement.pdf" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $statementPdfBytes = if ($statementPdfResponse.Content -is [byte[]]) {
         $statementPdfResponse.Content
     } else {
@@ -6418,7 +6437,7 @@ catch {
 }
 
 try {
-    $statementBatch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/statements/batch?limit=5" -Method Get -TimeoutSec 20
+    $statementBatch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/statements/batch?limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $statementBatchCandidates = @($statementBatch.candidates)
     $firstStatementBatchCandidate = $statementBatchCandidates | Select-Object -First 1
     $statementBatchPassed = $statementBatch.asOfDate -eq "2026-06-18" `
@@ -6450,7 +6469,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
     $statementPackagePath = Join-Path $env:TEMP "legacy-ehr-statement-batch-$([guid]::NewGuid().ToString('N')).zip"
-    $statementPackageClient = [System.Net.Http.HttpClient]::new()
+    $statementPackageClient = New-AuthenticatedHttpClient
     $statementPackageClient.Timeout = [TimeSpan]::FromSeconds(20)
     $statementPackageResponse = $statementPackageClient.GetAsync("$ApiBaseUrl/api/billing/statements/batch/package.zip?limit=5").GetAwaiter().GetResult()
     $statementPackageResponse.EnsureSuccessStatusCode() | Out-Null
@@ -6522,7 +6541,7 @@ catch {
 }
 
 try {
-    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -TimeoutSec 20
+    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $firstCollectionItem = @($collectionsWorkQueue.items) | Select-Object -First 1
     $collectionsWorkQueuePassed = $collectionsWorkQueue.asOfDate -eq "2026-06-18" `
         -and [int]$collectionsWorkQueue.accountCount -gt 0 `
@@ -6551,7 +6570,7 @@ catch {
 
 $collectionsFollowUpId = $null
 try {
-    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -TimeoutSec 20
+    $collectionsWorkQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/work-queue?limit=5" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $firstCollectionItem = @($collectionsWorkQueue.items) | Select-Object -First 1
     $createFollowUpBody = @{
         patientId = $firstCollectionItem.pubpid
@@ -6559,7 +6578,7 @@ try {
         action = $firstCollectionItem.recommendedAction
         note = "Created by the smoke collections follow-up check."
     } | ConvertTo-Json
-    $createdFollowUp = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/follow-ups" -Method Post -ContentType "application/json" -Body $createFollowUpBody -TimeoutSec 20
+    $createdFollowUp = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/collections/follow-ups" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createFollowUpBody -TimeoutSec 20
     $collectionsFollowUpId = $createdFollowUp.id
 
     $closeFollowUpBody = @{
@@ -6618,7 +6637,7 @@ try {
         units = 1
         justify = "Z00.00"
     } | ConvertTo-Json
-    $createdBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createBillingBody -TimeoutSec 20
+    $createdBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createBillingBody -TimeoutSec 20
     $billingLineMutationId = $createdBillingLine.id
     $createdBillingEncounter = $createdBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdBillingVisible = $createdBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId -and $_.code -eq "99213" -and $_.codeText -eq $billingCodeText -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
@@ -6629,7 +6648,7 @@ try {
         billed = 1
         activity = 0
     } | ConvertTo-Json
-    $inactiveBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusBillingBody -TimeoutSec 20
+    $inactiveBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusBillingBody -TimeoutSec 20
     $inactiveBillingEncounter = $inactiveBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveBillingVisible = $inactiveBillingEncounter.lines | Where-Object { $_.id -eq $billingLineMutationId } | Select-Object -First 1
     $inactiveEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
@@ -6637,7 +6656,7 @@ try {
     $billingLineMutationPassed = $null -ne $createdBillingVisible -and $null -eq $inactiveBillingVisible
     $encounterBillingLinkMutationPassed = $null -ne $createdEncounterBillingVisible -and $null -eq $inactiveEncounterBillingVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingLineMutationId = $null
 
     Add-Check -Name "billing line mutation lifecycle" -Result $(if ($billingLineMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -6658,7 +6677,7 @@ catch {
 finally {
     if ($null -ne $billingLineMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6680,7 +6699,7 @@ try {
         units = 1
         justify = "Z00.00"
     } | ConvertTo-Json
-    $createdCorrectionLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createCorrectionBody -TimeoutSec 20
+    $createdCorrectionLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createCorrectionBody -TimeoutSec 20
     $billingCorrectionMutationId = $createdCorrectionLine.id
 
     $correctionBody = @{
@@ -6689,7 +6708,7 @@ try {
         units = 3
         justify = "E78.5"
     } | ConvertTo-Json
-    $correctedBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Put -ContentType "application/json" -Body $correctionBody -TimeoutSec 20
+    $correctedBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $correctionBody -TimeoutSec 20
     $correctedBillingEncounter = $correctedBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $correctedBillingVisible = $correctedBillingEncounter.lines | Where-Object { $_.id -eq $billingCorrectionMutationId -and $_.code -eq "99213" -and $_.codeText -eq $correctedBillingText -and $_.fee -eq 142.25 -and $_.units -eq 3 -and $_.justify -eq "E78.5" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
 
@@ -6697,12 +6716,12 @@ try {
         billed = 1
         activity = 0
     } | ConvertTo-Json
-    $inactiveCorrectionLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId/status" -Method Put -ContentType "application/json" -Body $statusCorrectionBody -TimeoutSec 20
+    $inactiveCorrectionLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusCorrectionBody -TimeoutSec 20
     $inactiveCorrectionEncounter = $inactiveCorrectionLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveCorrectionVisible = $inactiveCorrectionEncounter.lines | Where-Object { $_.id -eq $billingCorrectionMutationId } | Select-Object -First 1
     $billingCorrectionPassed = $null -ne $correctedBillingVisible -and $null -eq $inactiveCorrectionVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingCorrectionMutationId = $null
 
     Add-Check -Name "billing correction mutation lifecycle" -Result $(if ($billingCorrectionPassed) { "passed" } else { "failed" }) -Details @{
@@ -6717,7 +6736,7 @@ catch {
 finally {
     if ($null -ne $billingCorrectionMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingCorrectionMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6740,7 +6759,7 @@ try {
         units = 1
         justify = "Z00.00"
     } | ConvertTo-Json
-    $createdModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createModifierBody -TimeoutSec 20
+    $createdModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createModifierBody -TimeoutSec 20
     $billingModifierMutationId = $createdModifierLine.id
 
     $modifierBody = @{
@@ -6750,7 +6769,7 @@ try {
         units = 2
         justify = "E78.5"
     } | ConvertTo-Json
-    $modifiedBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Put -ContentType "application/json" -Body $modifierBody -TimeoutSec 20
+    $modifiedBillingLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $modifierBody -TimeoutSec 20
     $modifiedBillingEncounter = $modifiedBillingLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $modifiedBillingVisible = $modifiedBillingEncounter.lines | Where-Object { $_.id -eq $billingModifierMutationId -and $_.code -eq "99213" -and $_.modifier -eq "25" -and $_.codeText -eq $modifierBillingText -and $_.fee -eq 142.25 -and $_.units -eq 2 -and $_.justify -eq "E78.5" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
 
@@ -6758,12 +6777,12 @@ try {
         billed = 1
         activity = 0
     } | ConvertTo-Json
-    $inactiveModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId/status" -Method Put -ContentType "application/json" -Body $statusModifierBody -TimeoutSec 20
+    $inactiveModifierLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusModifierBody -TimeoutSec 20
     $inactiveModifierEncounter = $inactiveModifierLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveModifierVisible = $inactiveModifierEncounter.lines | Where-Object { $_.id -eq $billingModifierMutationId } | Select-Object -First 1
     $billingModifierPassed = $null -ne $modifiedBillingVisible -and $null -eq $inactiveModifierVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $billingModifierMutationId = $null
 
     Add-Check -Name "billing modifier mutation lifecycle" -Result $(if ($billingModifierPassed) { "passed" } else { "failed" }) -Details @{
@@ -6778,7 +6797,7 @@ catch {
 finally {
     if ($null -ne $billingModifierMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$billingModifierMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6801,7 +6820,7 @@ try {
         units = 1
         justify = "R73.03"
     } | ConvertTo-Json
-    $createdDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -ContentType "application/json" -Body $createDiagnosisBody -TimeoutSec 20
+    $createdDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createDiagnosisBody -TimeoutSec 20
     $diagnosisLineMutationId = $createdDiagnosisLine.id
     $createdDiagnosisEncounter = $createdDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $createdDiagnosisVisible = $createdDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId -and $_.codeType -eq "ICD10" -and $_.code -eq "R73.03" -and $_.codeText -eq $diagnosisCodeText -and $_.fee -eq 0 -and $_.justify -eq "R73.03" -and $_.billed -eq 0 -and $_.activity -eq 1 } | Select-Object -First 1
@@ -6819,7 +6838,7 @@ try {
         billed = 1
         activity = 0
     } | ConvertTo-Json
-    $inactiveDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId/status" -Method Put -ContentType "application/json" -Body $statusDiagnosisBody -TimeoutSec 20
+    $inactiveDiagnosisLine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $statusDiagnosisBody -TimeoutSec 20
     $inactiveDiagnosisEncounter = $inactiveDiagnosisLine.detail.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $inactiveDiagnosisVisible = $inactiveDiagnosisEncounter.lines | Where-Object { $_.id -eq $diagnosisLineMutationId } | Select-Object -First 1
     $inactiveDiagnosisEncounterDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
@@ -6827,7 +6846,7 @@ try {
     $diagnosisLineMutationPassed = $null -ne $createdDiagnosisVisible -and $null -eq $inactiveDiagnosisVisible
     $encounterDiagnosisMutationPassed = $null -ne $createdEncounterDiagnosisVisible -and $null -eq $inactiveEncounterDiagnosisVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $diagnosisLineMutationId = $null
 
     Add-Check -Name "billing diagnosis mutation lifecycle" -Result $(if ($diagnosisLineMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -6847,7 +6866,7 @@ catch {
 finally {
     if ($null -ne $diagnosisLineMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/lines/$diagnosisLineMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

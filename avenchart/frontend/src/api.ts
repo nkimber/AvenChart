@@ -3895,32 +3895,49 @@ export async function deleteProcedureOrder(orderId: number, signal?: AbortSignal
   }
 }
 
-export async function getPatientBilling(patientId: string, signal?: AbortSignal): Promise<PatientBillingResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, { signal })
+export async function getPatientBilling(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientBillingResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Patient billing load failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient billing load', response.status))
   }
 
   return response.json()
 }
 
-export async function getStatementBatch(limit = 10, signal?: AbortSignal): Promise<StatementBatchResponse> {
+export async function getStatementBatch(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementBatchResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Statement batch load failed with ${response.status}`)
+    throw new Error(sessionApiError('Statement batch load', response.status))
   }
 
   return response.json()
 }
 
-export async function getCollectionsWorkQueue(limit = 10, signal?: AbortSignal): Promise<CollectionsWorkQueueResponse> {
+export async function getCollectionsWorkQueue(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<CollectionsWorkQueueResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Collections work queue load failed with ${response.status}`)
+    throw new Error(sessionApiError('Collections work queue load', response.status))
   }
 
   return response.json()
@@ -3928,41 +3945,67 @@ export async function getCollectionsWorkQueue(limit = 10, signal?: AbortSignal):
 
 export async function createCollectionsFollowUp(
   input: CollectionsFollowUpCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<CollectionsFollowUpMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/collections/follow-ups`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Collections follow-up create failed with ${response.status}`)
+    throw new Error(sessionApiError('Collections follow-up create', response.status))
   }
 
   return response.json()
 }
 
-export function getStatementBatchPackageUrl(limit = 10) {
-  return `${apiBaseUrl}/api/billing/statements/batch/package.zip?limit=${encodeURIComponent(String(limit))}`
+export async function downloadStatementBatchPackage(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/package.zip?limit=${encodeURIComponent(String(limit))}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(sessionApiError('Statement batch package download', response.status))
+  }
+
+  return response.blob()
 }
 
-export function getBillingStatementPdfUrl(patientId: string) {
-  return `${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}/statement.pdf`
+export async function downloadBillingStatementPdf(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/${encodeURIComponent(patientId.trim())}/statement.pdf`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(sessionApiError('Billing statement PDF download', response.status))
+  }
+
+  return response.blob()
 }
 
 export async function createBillingLine(
   input: BillingLineCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing line create failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing line create', response.status))
   }
 
   return response.json()
@@ -3971,16 +4014,17 @@ export async function createBillingLine(
 export async function updateBillingLineStatus(
   billingLineId: string,
   input: BillingLineStatusUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}/status`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing line status update failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing line status update', response.status))
   }
 
   return response.json()
@@ -3989,43 +4033,50 @@ export async function updateBillingLineStatus(
 export async function updateBillingLine(
   billingLineId: string,
   input: BillingLineUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingLineMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing line update failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing line update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteBillingLine(billingLineId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteBillingLine(
+  billingLineId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/lines/${encodeURIComponent(billingLineId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing line delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing line delete', response.status))
   }
 }
 
 export async function createBillingClaimStatus(
   input: BillingClaimCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing claim status create failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing claim status create', response.status))
   }
 
   return response.json()
@@ -4034,43 +4085,50 @@ export async function createBillingClaimStatus(
 export async function updateBillingClaimStatus(
   claimId: string,
   input: BillingClaimStatusUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingClaimMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/status`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing claim status update failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing claim status update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteBillingClaimStatus(claimId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteBillingClaimStatus(
+  claimId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing claim status delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing claim status delete', response.status))
   }
 }
 
 export async function createBillingPaymentPosting(
   input: BillingPaymentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing payment posting create failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing payment posting create', response.status))
   }
 
   return response.json()
@@ -4078,26 +4136,33 @@ export async function createBillingPaymentPosting(
 
 export async function voidBillingPaymentPosting(
   activityId: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<BillingPaymentMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}/void`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing payment posting void failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing payment posting void', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteBillingPaymentPosting(activityId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteBillingPaymentPosting(
+  activityId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Billing payment posting delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Billing payment posting delete', response.status))
   }
 }
 

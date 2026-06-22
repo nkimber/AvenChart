@@ -40,10 +40,10 @@ import {
   getEncounterDetail,
   getPatientChart,
   getPatientBilling,
-  getBillingStatementPdfUrl,
   getCollectionsWorkQueue,
   getStatementBatch,
-  getStatementBatchPackageUrl,
+  downloadBillingStatementPdf,
+  downloadStatementBatchPackage,
   downloadPatientDocument,
   getPatientDocumentContent,
   getPatientDocuments,
@@ -790,6 +790,12 @@ function App() {
     if (activeModule !== 'fees') {
       return
     }
+    if (!openEmrSessionId) {
+      setPatientBilling(null)
+      setBillingStatus('idle')
+      setBillingError(null)
+      return
+    }
 
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
@@ -797,7 +803,7 @@ function App() {
       setBillingError(null)
 
       try {
-        const result = await getPatientBilling(billingPatientId, controller.signal)
+        const result = await getPatientBilling(billingPatientId, openEmrSessionId, controller.signal)
         setPatientBilling(result)
         setBillingStatus('ready')
       } catch (loadError) {
@@ -812,7 +818,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, billingPatientId])
+  }, [activeModule, billingPatientId, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'admin') {
@@ -1082,6 +1088,14 @@ function App() {
   function getActiveDocumentSessionId() {
     if (!openEmrSessionId) {
       throw new Error('Sign in to access documents.')
+    }
+
+    return openEmrSessionId
+  }
+
+  function getActiveBillingSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access billing.')
     }
 
     return openEmrSessionId
@@ -1892,7 +1906,7 @@ function App() {
 
     try {
       const sessionId = getActiveEncounterSessionId()
-      const response = await createBillingLine(input)
+      const response = await createBillingLine(input, sessionId)
       const refreshed = await getEncounterDetail(encounter.encounter, sessionId)
       setEncounterDetail(refreshed)
       setSelectedEncounter(refreshed.encounter)
@@ -2293,7 +2307,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await createBillingLine(input)
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingLine(input, sessionId)
       setBillingPatientId(response.detail.patientId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
@@ -2311,7 +2326,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await updateBillingLine(lineId, input)
+      const sessionId = getActiveBillingSessionId()
+      const response = await updateBillingLine(lineId, input, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2328,10 +2344,11 @@ function App() {
     setBillingError(null)
 
     try {
+      const sessionId = getActiveBillingSessionId()
       const response = await updateBillingLineStatus(line.id, {
         billed: 1,
         activity: 0,
-      })
+      }, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2348,8 +2365,9 @@ function App() {
     setBillingError(null)
 
     try {
-      await deleteBillingLine(line.id)
-      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      const sessionId = getActiveBillingSessionId()
+      await deleteBillingLine(line.id, sessionId)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId, sessionId)
       setPatientBilling(refreshed)
       setBillingStatus('ready')
     } catch (deleteError) {
@@ -2365,7 +2383,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await createBillingClaimStatus(input)
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingClaimStatus(input, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2382,7 +2401,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await updateBillingClaimStatus(claim.id, input)
+      const sessionId = getActiveBillingSessionId()
+      const response = await updateBillingClaimStatus(claim.id, input, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2399,8 +2419,9 @@ function App() {
     setBillingError(null)
 
     try {
-      await deleteBillingClaimStatus(claim.id)
-      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      const sessionId = getActiveBillingSessionId()
+      await deleteBillingClaimStatus(claim.id, sessionId)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId, sessionId)
       setPatientBilling(refreshed)
       setBillingStatus('ready')
     } catch (deleteError) {
@@ -2416,7 +2437,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await createBillingPaymentPosting(input)
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingPaymentPosting(input, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2433,7 +2455,8 @@ function App() {
     setBillingError(null)
 
     try {
-      const response = await voidBillingPaymentPosting(payment.activityId)
+      const sessionId = getActiveBillingSessionId()
+      const response = await voidBillingPaymentPosting(payment.activityId, sessionId)
       setPatientBilling(response.detail)
       setBillingStatus('ready')
       return response
@@ -2450,8 +2473,9 @@ function App() {
     setBillingError(null)
 
     try {
-      await deleteBillingPaymentPosting(payment.activityId)
-      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId)
+      const sessionId = getActiveBillingSessionId()
+      await deleteBillingPaymentPosting(payment.activityId, sessionId)
+      const refreshed = await getPatientBilling(patientBilling?.patientId ?? billingPatientId, sessionId)
       setPatientBilling(refreshed)
       setBillingStatus('ready')
     } catch (deleteError) {
@@ -3594,6 +3618,10 @@ function App() {
             patientBilling={patientBilling}
             status={billingStatus}
             error={billingError}
+            sessionId={openEmrSessionId}
+            onBillingSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+            }}
             onPatientIdChange={setBillingPatientId}
             onCreateLine={handleBillingLineCreate}
             onUpdateLine={handleBillingLineUpdate}
@@ -9479,6 +9507,8 @@ function FeesWorkspace({
   patientBilling,
   status,
   error,
+  sessionId,
+  onBillingSessionActive,
   onPatientIdChange,
   onCreateLine,
   onUpdateLine,
@@ -9495,6 +9525,8 @@ function FeesWorkspace({
   patientBilling: PatientBillingResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
+  onBillingSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onCreateLine: (input: BillingLineCreateInput) => Promise<unknown>
   onUpdateLine: (lineId: string, input: BillingLineUpdateInput) => Promise<unknown>
@@ -9542,13 +9574,19 @@ function FeesWorkspace({
   const [paymentPayerClaimNumber, setPaymentPayerClaimNumber] = useState('NSTAR-CLM-PARITY')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const [statementBatch, setStatementBatch] = useState<StatementBatchResponse | null>(null)
-  const [statementBatchStatus, setStatementBatchStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [statementBatchStatus, setStatementBatchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [statementBatchError, setStatementBatchError] = useState<string | null>(null)
   const [collectionsWorkQueue, setCollectionsWorkQueue] = useState<CollectionsWorkQueueResponse | null>(null)
-  const [collectionsWorkQueueStatus, setCollectionsWorkQueueStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [collectionsWorkQueueStatus, setCollectionsWorkQueueStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [collectionsWorkQueueError, setCollectionsWorkQueueError] = useState<string | null>(null)
   const [collectionsFollowUpStatus, setCollectionsFollowUpStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [collectionsFollowUpMessage, setCollectionsFollowUpMessage] = useState<string | null>(null)
+  const [billingLoginStatus, setBillingLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
+  const [billingLoginError, setBillingLoginError] = useState<string | null>(null)
+  const [statementPdfStatus, setStatementPdfStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
+  const [statementPdfError, setStatementPdfError] = useState<string | null>(null)
+  const [batchPackageStatus, setBatchPackageStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
+  const [batchPackageError, setBatchPackageError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -9561,15 +9599,26 @@ function FeesWorkspace({
   const ledgerEntries = patientBilling?.ledgerEntries ?? []
   const statementLineItems = statementDocument?.lineItems ?? []
   const isLoading = status === 'loading'
+  const feesLocked = !sessionId
 
   useEffect(() => {
+    if (!sessionId) {
+      setStatementBatch(null)
+      setStatementBatchStatus('idle')
+      setStatementBatchError(null)
+      setCollectionsWorkQueue(null)
+      setCollectionsWorkQueueStatus('idle')
+      setCollectionsWorkQueueError(null)
+      return
+    }
+
     const controller = new AbortController()
     setStatementBatchStatus('loading')
     setStatementBatchError(null)
     setCollectionsWorkQueueStatus('loading')
     setCollectionsWorkQueueError(null)
 
-    getStatementBatch(5, controller.signal)
+    getStatementBatch(5, sessionId, controller.signal)
       .then((result) => {
         setStatementBatch(result)
         setStatementBatchStatus('ready')
@@ -9581,7 +9630,7 @@ function FeesWorkspace({
         }
       })
 
-    getCollectionsWorkQueue(5, controller.signal)
+    getCollectionsWorkQueue(5, sessionId, controller.signal)
       .then((result) => {
         setCollectionsWorkQueue(result)
         setCollectionsWorkQueueStatus('ready')
@@ -9594,7 +9643,7 @@ function FeesWorkspace({
       })
 
     return () => controller.abort()
-  }, [])
+  }, [sessionId])
 
   useEffect(() => {
     if (!patientBilling || patientBilling.encounters.length === 0) {
@@ -9729,12 +9778,15 @@ function FeesWorkspace({
     setCollectionsFollowUpMessage(null)
 
     try {
+      if (!sessionId) {
+        throw new Error('Sign in to create collections follow-up tasks.')
+      }
       const response = await createCollectionsFollowUp({
         patientId: item.pubpid,
         assignedTo: 'billing',
         action: item.recommendedAction,
         note: 'Created from the modernized Fees collections work queue.',
-      })
+      }, sessionId)
       setCollectionsFollowUpStatus('saved')
       setCollectionsFollowUpMessage(`Created ${response.task.title} assigned to ${response.task.assignedTo}`)
       onPatientIdChange(response.task.pubpid)
@@ -9747,9 +9799,92 @@ function FeesWorkspace({
     }
   }
 
+  async function handleBillingLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBillingLoginStatus('checking')
+    setBillingLoginError(null)
+
+    try {
+      const result = await login({ username: 'admin', password: 'pass' })
+      if (result.authenticated && result.sessionId) {
+        onBillingSessionActive(result.sessionId)
+        setBillingLoginStatus('idle')
+      } else {
+        setBillingLoginStatus('error')
+        setBillingLoginError(result.failureReason ?? 'Billing access was not granted.')
+      }
+    } catch (error) {
+      setBillingLoginStatus('error')
+      setBillingLoginError(error instanceof Error ? error.message : 'Billing access check failed')
+    }
+  }
+
+  async function handleStatementPdfDownload() {
+    if (!statementDocument || !patientBilling || !sessionId) {
+      return
+    }
+
+    setStatementPdfStatus('downloading')
+    setStatementPdfError(null)
+    try {
+      const blob = await downloadBillingStatementPdf(patientBilling.pubpid, sessionId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${statementDocument.statementNumber}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+      setStatementPdfStatus('ready')
+    } catch (error) {
+      setStatementPdfStatus('error')
+      setStatementPdfError(error instanceof Error ? error.message : 'Billing statement PDF download failed')
+    }
+  }
+
+  async function handleStatementBatchPackageDownload() {
+    if (!sessionId) {
+      return
+    }
+
+    setBatchPackageStatus('downloading')
+    setBatchPackageError(null)
+    try {
+      const blob = await downloadStatementBatchPackage(5, sessionId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = statementBatch
+        ? `statement-batch-${statementBatch.asOfDate.replaceAll('-', '')}-top${statementBatch.candidates.length}.zip`
+        : 'statement-batch.zip'
+      link.click()
+      URL.revokeObjectURL(url)
+      setBatchPackageStatus('ready')
+    } catch (error) {
+      setBatchPackageStatus('error')
+      setBatchPackageError(error instanceof Error ? error.message : 'Statement batch package download failed')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Fees search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Billing access" onSubmit={handleBillingLogin}>
+            <div className="panel-heading compact-heading">
+              <ShieldCheck size={16} />
+              <h3>Billing Access</h3>
+            </div>
+            <p className="form-help-text">Sign in to load fee sheet data.</p>
+            <div className="detail-actions">
+              <button className="icon-text-button primary" type="submit" disabled={billingLoginStatus === 'checking'}>
+                <LogIn size={15} />
+                {billingLoginStatus === 'checking' ? 'Checking' : 'Verify Billing Access'}
+              </button>
+            </div>
+            {billingLoginError && <div className="status-banner error">{billingLoginError}</div>}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -9758,6 +9893,7 @@ function FeesWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Fees patient ID"
               placeholder="MOD-PAT-0001"
+              disabled={feesLocked}
             />
           </label>
         </div>
@@ -9783,6 +9919,8 @@ function FeesWorkspace({
             <MetricRow label="Ledger entries" value={ledgerEntries.length} />
             <MetricRow label="Statement ready" value={statementSummary ? 1 : 0} />
           </div>
+        ) : feesLocked ? (
+          <div className="empty-state">Sign in to load fee sheet data</div>
         ) : (
           <div className="empty-state">No fee sheet loaded</div>
         )}
@@ -9877,7 +10015,7 @@ function FeesWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
             >
               <Check size={15} />
               Save CPT
@@ -9934,7 +10072,7 @@ function FeesWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
             >
               <Check size={15} />
               Save Diagnosis
@@ -10011,7 +10149,7 @@ function FeesWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
             >
               <Check size={15} />
               Queue Claim
@@ -10165,7 +10303,7 @@ function FeesWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
             >
               <Check size={15} />
               Post Payment
@@ -10242,7 +10380,7 @@ function FeesWorkspace({
             <button
               className="icon-text-button primary"
               type="submit"
-              disabled={isLoading || !patientBilling || !correctionLineId}
+              disabled={feesLocked || isLoading || !patientBilling || !correctionLineId}
             >
               <Check size={15} />
               Save Correction
@@ -10256,6 +10394,10 @@ function FeesWorkspace({
           batch={statementBatch}
           status={statementBatchStatus}
           error={statementBatchError}
+          disabled={feesLocked}
+          downloadStatus={batchPackageStatus}
+          downloadError={batchPackageError}
+          onDownloadPackage={handleStatementBatchPackageDownload}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -10265,6 +10407,7 @@ function FeesWorkspace({
           error={collectionsWorkQueueError}
           followUpStatus={collectionsFollowUpStatus}
           followUpMessage={collectionsFollowUpMessage}
+          disabled={feesLocked}
           onSelectItem={(item) => onPatientIdChange(item.pubpid)}
           onCreateFollowUp={handleCollectionsFollowUp}
         />
@@ -10352,16 +10495,18 @@ function FeesWorkspace({
                   </div>
                   {statementDocument && (
                     <div className="statement-document-actions">
-                      <a
+                      <button
                         className="icon-text-button secondary"
-                        href={getBillingStatementPdfUrl(patientBilling.pubpid)}
-                        download={`${statementDocument.statementNumber}.pdf`}
+                        type="button"
+                        disabled={feesLocked || statementPdfStatus === 'downloading'}
+                        onClick={() => void handleStatementPdfDownload()}
                       >
                         <Download size={14} />
-                        PDF Export
-                      </a>
+                        {statementPdfStatus === 'downloading' ? 'Preparing PDF' : 'PDF Export'}
+                      </button>
                     </div>
                   )}
+                  {statementPdfError && <div className="status-banner error">{statementPdfError}</div>}
                   <div className="statement-readiness-grid">
                     <Field label="Status" value={statementDocument?.statementStatus} />
                     <Field label="Period" value={`${statementDocument?.statementPeriodStart ?? ''} to ${statementDocument?.statementPeriodEnd ?? ''}`} />
@@ -10423,7 +10568,7 @@ function FeesWorkspace({
                     <BillingEncounterCard
                       key={encounter.encounter}
                       encounter={encounter}
-                      disabled={isLoading}
+                      disabled={isLoading || feesLocked}
                       onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
@@ -10440,6 +10585,8 @@ function FeesWorkspace({
               </section>
             </div>
           </>
+        ) : feesLocked ? (
+          <div className="empty-chart">Sign in to load fee sheet data</div>
         ) : status === 'loading' ? (
           <div className="empty-chart">Loading fee sheet</div>
         ) : (
@@ -10454,11 +10601,19 @@ function StatementBatchPanel({
   batch,
   status,
   error,
+  disabled,
+  downloadStatus,
+  downloadError,
+  onDownloadPackage,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
-  status: 'loading' | 'ready' | 'error'
+  status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  disabled: boolean
+  downloadStatus: 'idle' | 'downloading' | 'ready' | 'error'
+  downloadError: string | null
+  onDownloadPackage: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
@@ -10468,24 +10623,26 @@ function StatementBatchPanel({
       <div className="panel-heading">
         <Mail size={17} />
         <h3>Statement Batch</h3>
-        <a
+        <button
           className="icon-text-button secondary statement-batch-export"
-          href={getStatementBatchPackageUrl(5)}
-          download={batch ? `statement-batch-${batch.asOfDate.replaceAll('-', '')}-top${candidates.length}.zip` : 'statement-batch.zip'}
+          type="button"
+          disabled={disabled || downloadStatus === 'downloading' || !batch}
+          onClick={() => void onDownloadPackage()}
         >
           <Download size={14} />
-          Batch Export
-        </a>
+          {downloadStatus === 'downloading' ? 'Preparing Batch' : 'Batch Export'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
         {status === 'error' && <div className="status-banner error">{error}</div>}
+        {downloadError && <div className="status-banner error">{downloadError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
-          <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : 'Loading'} />
-          <Field label="Past due" value={batch ? formatCurrency(batch.totalPastDueAmount) : 'Loading'} />
-          <Field label="Current due" value={batch ? formatCurrency(batch.totalCurrentDueAmount) : 'Loading'} />
-          <Field label="As of" value={batch?.asOfDate ?? 'Loading'} />
+          <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
+          <Field label="Past due" value={batch ? formatCurrency(batch.totalPastDueAmount) : status === 'loading' ? 'Loading' : 0} />
+          <Field label="Current due" value={batch ? formatCurrency(batch.totalCurrentDueAmount) : status === 'loading' ? 'Loading' : 0} />
+          <Field label="As of" value={batch?.asOfDate ?? (status === 'loading' ? 'Loading' : '')} />
         </div>
 
         <div className="statement-batch-list">
@@ -10520,7 +10677,8 @@ function StatementBatchPanel({
             </article>
           ))}
 
-          {status === 'loading' && <div className="timeline-placeholder">Loading statement candidates</div>}
+          {disabled && <div className="timeline-placeholder">Sign in to load statement candidates</div>}
+          {!disabled && status === 'loading' && <div className="timeline-placeholder">Loading statement candidates</div>}
           {status === 'ready' && candidates.length === 0 && (
             <div className="timeline-placeholder">No accounts are ready for statements</div>
           )}
@@ -10536,14 +10694,16 @@ function CollectionsWorkQueuePanel({
   error,
   followUpStatus,
   followUpMessage,
+  disabled,
   onSelectItem,
   onCreateFollowUp,
 }: {
   queue: CollectionsWorkQueueResponse | null
-  status: 'loading' | 'ready' | 'error'
+  status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   followUpStatus: 'idle' | 'saving' | 'saved' | 'error'
   followUpMessage: string | null
+  disabled: boolean
   onSelectItem: (item: CollectionsWorkQueueItem) => void
   onCreateFollowUp: (item: CollectionsWorkQueueItem) => Promise<unknown>
 }) {
@@ -10584,6 +10744,7 @@ function CollectionsWorkQueuePanel({
                   <button
                     className="icon-text-button secondary"
                     type="button"
+                    disabled={disabled}
                     onClick={() => onSelectItem(item)}
                   >
                     <Search size={14} />
@@ -10592,7 +10753,7 @@ function CollectionsWorkQueuePanel({
                   <button
                     className="icon-text-button primary"
                     type="button"
-                    disabled={followUpStatus === 'saving'}
+                    disabled={disabled || followUpStatus === 'saving'}
                     onClick={() => void onCreateFollowUp(item)}
                   >
                     <ClipboardList size={14} />
@@ -10612,7 +10773,8 @@ function CollectionsWorkQueuePanel({
             </article>
           ))}
 
-          {status === 'loading' && <div className="timeline-placeholder">Loading collections work queue</div>}
+          {disabled && <div className="timeline-placeholder">Sign in to load collections work queue</div>}
+          {!disabled && status === 'loading' && <div className="timeline-placeholder">Loading collections work queue</div>}
           {status === 'ready' && items.length === 0 && (
             <div className="timeline-placeholder">No accounts require collections follow-up</div>
           )}
