@@ -9662,8 +9662,11 @@ function FeesWorkspace({
   const [collectionsWorkQueueError, setCollectionsWorkQueueError] = useState<string | null>(null)
   const [collectionsFollowUpStatus, setCollectionsFollowUpStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [collectionsFollowUpMessage, setCollectionsFollowUpMessage] = useState<string | null>(null)
-  const [billingLoginStatus, setBillingLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
-  const [billingLoginError, setBillingLoginError] = useState<string | null>(null)
+  const [billingLoginUsername, setBillingLoginUsername] = useState('admin')
+  const [billingLoginPassword, setBillingLoginPassword] = useState('pass')
+  const [billingLoginStatus, setBillingLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [billingLoginMessage, setBillingLoginMessage] = useState<string | null>(null)
   const [statementPdfStatus, setStatementPdfStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
   const [statementPdfError, setStatementPdfError] = useState<string | null>(null)
   const [batchPackageStatus, setBatchPackageStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
@@ -9680,7 +9683,8 @@ function FeesWorkspace({
   const ledgerEntries = patientBilling?.ledgerEntries ?? []
   const statementLineItems = statementDocument?.lineItems ?? []
   const isLoading = status === 'loading'
-  const feesLocked = !sessionId
+  const billingAuthorizationError = status === 'error' && Boolean(error?.includes('Billing access'))
+  const feesLocked = !sessionId || billingAuthorizationError
 
   useEffect(() => {
     if (!sessionId) {
@@ -9883,20 +9887,21 @@ function FeesWorkspace({
   async function handleBillingLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBillingLoginStatus('checking')
-    setBillingLoginError(null)
+    setBillingLoginMessage(null)
 
     try {
-      const result = await login({ username: 'admin', password: 'pass' })
+      const result = await login({ username: billingLoginUsername, password: billingLoginPassword })
       if (result.authenticated && result.sessionId) {
         onBillingSessionActive(result.sessionId)
-        setBillingLoginStatus('idle')
+        setBillingLoginStatus('authenticated')
+        setBillingLoginMessage(`Signed in as ${result.displayName}`)
       } else {
-        setBillingLoginStatus('error')
-        setBillingLoginError(result.failureReason ?? 'Billing access was not granted.')
+        setBillingLoginStatus('rejected')
+        setBillingLoginMessage(result.failureReason ?? 'Billing access was rejected.')
       }
     } catch (error) {
       setBillingLoginStatus('error')
-      setBillingLoginError(error instanceof Error ? error.message : 'Billing access check failed')
+      setBillingLoginMessage(error instanceof Error ? error.message : 'Billing access check failed')
     }
   }
 
@@ -9949,20 +9954,39 @@ function FeesWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Fees search">
-        {!sessionId && (
+        {(!sessionId || billingAuthorizationError) && (
           <form className="mutation-form" aria-label="Billing access" onSubmit={handleBillingLogin}>
             <div className="panel-heading compact-heading">
               <ShieldCheck size={16} />
               <h3>Billing Access</h3>
             </div>
             <p className="form-help-text">Sign in to load fee sheet data.</p>
+            <label>
+              Username
+              <input
+                value={billingLoginUsername}
+                onChange={(event) => setBillingLoginUsername(event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={billingLoginPassword}
+                onChange={(event) => setBillingLoginPassword(event.target.value)}
+              />
+            </label>
             <div className="detail-actions">
               <button className="icon-text-button primary" type="submit" disabled={billingLoginStatus === 'checking'}>
                 <LogIn size={15} />
                 {billingLoginStatus === 'checking' ? 'Checking' : 'Verify Billing Access'}
               </button>
             </div>
-            {billingLoginError && <div className="status-banner error">{billingLoginError}</div>}
+            {billingLoginMessage && (
+              <div className={billingLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {billingLoginMessage}
+              </div>
+            )}
           </form>
         )}
 

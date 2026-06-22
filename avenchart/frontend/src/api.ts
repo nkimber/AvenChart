@@ -2111,6 +2111,10 @@ function messageApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Message access')
 }
 
+function billingApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Billing access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -4008,7 +4012,7 @@ export async function getPatientBilling(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient billing load', response.status))
+    throw new Error(billingApiError('Patient billing load', response.status))
   }
 
   return response.json()
@@ -4024,7 +4028,7 @@ export async function getStatementBatch(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Statement batch load', response.status))
+    throw new Error(billingApiError('Statement batch load', response.status))
   }
 
   return response.json()
@@ -4040,7 +4044,7 @@ export async function getCollectionsWorkQueue(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Collections work queue load', response.status))
+    throw new Error(billingApiError('Collections work queue load', response.status))
   }
 
   return response.json()
@@ -4058,7 +4062,7 @@ export async function createCollectionsFollowUp(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Collections follow-up create', response.status))
+    throw new Error(billingApiError('Collections follow-up create', response.status))
   }
 
   return response.json()
@@ -4074,7 +4078,7 @@ export async function downloadStatementBatchPackage(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Statement batch package download', response.status))
+    throw new Error(billingApiError('Statement batch package download', response.status))
   }
 
   return response.blob()
@@ -4090,7 +4094,7 @@ export async function downloadBillingStatementPdf(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing statement PDF download', response.status))
+    throw new Error(billingApiError('Billing statement PDF download', response.status))
   }
 
   return response.blob()
@@ -4108,7 +4112,7 @@ export async function createBillingLine(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing line create', response.status))
+    throw new Error(billingApiError('Billing line create', response.status))
   }
 
   return response.json()
@@ -4127,7 +4131,7 @@ export async function updateBillingLineStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing line status update', response.status))
+    throw new Error(billingApiError('Billing line status update', response.status))
   }
 
   return response.json()
@@ -4146,7 +4150,7 @@ export async function updateBillingLine(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing line update', response.status))
+    throw new Error(billingApiError('Billing line update', response.status))
   }
 
   return response.json()
@@ -4163,7 +4167,7 @@ export async function deleteBillingLine(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing line delete', response.status))
+    throw new Error(billingApiError('Billing line delete', response.status))
   }
 }
 
@@ -4179,7 +4183,7 @@ export async function createBillingClaimStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing claim status create', response.status))
+    throw new Error(billingApiError('Billing claim status create', response.status))
   }
 
   return response.json()
@@ -4198,7 +4202,7 @@ export async function updateBillingClaimStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing claim status update', response.status))
+    throw new Error(billingApiError('Billing claim status update', response.status))
   }
 
   return response.json()
@@ -4215,7 +4219,7 @@ export async function deleteBillingClaimStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing claim status delete', response.status))
+    throw new Error(billingApiError('Billing claim status delete', response.status))
   }
 }
 
@@ -4231,7 +4235,7 @@ export async function createBillingPaymentPosting(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing payment posting create', response.status))
+    throw new Error(billingApiError('Billing payment posting create', response.status))
   }
 
   return response.json()
@@ -4248,7 +4252,7 @@ export async function voidBillingPaymentPosting(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing payment posting void', response.status))
+    throw new Error(billingApiError('Billing payment posting void', response.status))
   }
 
   return response.json()
@@ -4265,7 +4269,7 @@ export async function deleteBillingPaymentPosting(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Billing payment posting delete', response.status))
+    throw new Error(billingApiError('Billing payment posting delete', response.status))
   }
 }
 

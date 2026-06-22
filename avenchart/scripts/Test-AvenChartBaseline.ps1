@@ -6324,13 +6324,66 @@ try {
         }
     }
 
+    $frontDeskBillingStatus = 0
+    try {
+        $frontDeskBilling = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0001" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskBillingStatus = [int]$frontDeskBilling.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskBillingStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskBillingMutationStatus = 0
+    $frontDeskBillingMutationBody = @{
+        patientId = "MOD-PAT-0001"
+        encounter = 1000013
+        billingDate = "2026-06-18"
+        codeType = "CPT4"
+        code = "99213"
+        codeText = "Blocked Billing Authorization Line"
+        fee = 125
+        units = 1
+        justify = "Z00.00"
+    } | ConvertTo-Json
+    try {
+        $frontDeskBillingMutation = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/billing/lines" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskBillingMutationBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskBillingMutationStatus = [int]$frontDeskBillingMutation.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskBillingMutationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
     $billing = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0001" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $latestEncounter = $billing.encounters | Where-Object { $_.encounter -eq 1000013 } | Select-Object -First 1
     $officeVisit = $latestEncounter.lines | Where-Object { $_.code -eq "99214" -and $_.codeText -eq "Established patient office visit" } | Select-Object -First 1
     $venipuncture = $latestEncounter.lines | Where-Object { $_.code -eq "36415" -and $_.codeText -eq "Routine venipuncture" } | Select-Object -First 1
-    $billingPassed = $unauthenticatedBillingStatus -eq 401 -and $billing.patientId -eq "MOD-PAT-0001" -and $null -ne $latestEncounter -and $null -ne $officeVisit -and $null -ne $venipuncture
+    $billingPassed = $unauthenticatedBillingStatus -eq 401 -and $frontDeskBillingStatus -eq 403 -and $frontDeskBillingMutationStatus -eq 403 -and $billing.patientId -eq "MOD-PAT-0001" -and $null -ne $latestEncounter -and $null -ne $officeVisit -and $null -ne $venipuncture
     Add-Check -Name "anchor fee sheet billing" -Result $(if ($billingPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedBillingStatus
+        frontDeskStatus = $frontDeskBillingStatus
+        frontDeskMutationStatus = $frontDeskBillingMutationStatus
         patientId = $billing.patientId
         encounterCount = $billing.encounters.Count
         latestEncounter = $latestEncounter
