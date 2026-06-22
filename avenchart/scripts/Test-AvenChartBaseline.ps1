@@ -564,6 +564,82 @@ catch {
     Add-Check -Name "patient registration lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+$duplicateRegistrationPubpid = $null
+try {
+    $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $duplicateAnchor = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $duplicateRegistrationPubpid = "TMP-PAT-REG-DUP-SMK$suffix"
+    $duplicateRegistrationBody = @{
+        pubpid = $duplicateRegistrationPubpid
+        firstName = $duplicateAnchor.firstName
+        lastName = $duplicateAnchor.lastName
+        preferredName = "Slice191"
+        sex = $duplicateAnchor.sex
+        dateOfBirth = $duplicateAnchor.dateOfBirth
+        street = "191 Duplicate Way"
+        city = "New Haven"
+        state = "CT"
+        postalCode = "06511"
+        maritalStatus = "single"
+        occupation = "Duplicate Detection Fixture"
+        phoneHome = $duplicateAnchor.phoneHome
+        phoneCell = $duplicateAnchor.phoneCell
+        email = $duplicateAnchor.email
+        hipaaAllowSms = "YES"
+        hipaaAllowEmail = "YES"
+    }
+
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients" `
+        -Method Post `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($duplicateRegistrationBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20 | Out-Null
+
+    $duplicateQuery = "firstName=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.firstName))" +
+        "&lastName=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.lastName))" +
+        "&dateOfBirth=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.dateOfBirth))" +
+        "&phone=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.phoneHome))" +
+        "&email=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.email))" +
+        "&excludePatientId=$([System.Uri]::EscapeDataString([string]$duplicateRegistrationBody.pubpid))&limit=5"
+    $duplicateSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/duplicates?$duplicateQuery" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $duplicateCandidate = @($duplicateSearch.candidates) | Where-Object { $_.pubpid -eq "MOD-PAT-0010" } | Select-Object -First 1
+
+    $duplicateChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$duplicateRegistrationPubpid" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $chartDuplicateCandidate = @($duplicateChart.duplicateCandidates) | Where-Object { $_.pubpid -eq "MOD-PAT-0010" } | Select-Object -First 1
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$duplicateRegistrationPubpid" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $duplicateRegistrationPubpid = $null
+
+    $duplicateDetectionPassed = $duplicateSearch.totalCandidates -ge 1 `
+        -and $null -ne $duplicateCandidate `
+        -and $duplicateCandidate.matchScore -eq 100 `
+        -and (@($duplicateCandidate.matchReasons) -contains "Same first name, last name, and date of birth") `
+        -and (@($duplicateCandidate.matchReasons) -contains "Matching phone") `
+        -and (@($duplicateCandidate.matchReasons) -contains "Matching email") `
+        -and $duplicateChart.pubpid -eq $duplicateRegistrationBody.pubpid `
+        -and $null -ne $chartDuplicateCandidate `
+        -and $chartDuplicateCandidate.matchScore -eq 100
+
+    Add-Check -Name "patient duplicate detection readiness" -Result $(if ($duplicateDetectionPassed) { "passed" } else { "failed" }) -Details @{
+        pubpid = $duplicateRegistrationBody.pubpid
+        totalCandidates = $duplicateSearch.totalCandidates
+        duplicateCandidate = $duplicateCandidate
+        chartDuplicateCandidate = $chartDuplicateCandidate
+    }
+}
+catch {
+    if ($duplicateRegistrationPubpid) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$duplicateRegistrationPubpid" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    Add-Check -Name "patient duplicate detection readiness" -Result "failed" -Details $_.Exception.Message
+}
+
 try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)

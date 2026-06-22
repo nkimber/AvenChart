@@ -539,6 +539,66 @@
   background: #fbfdfd;
 }
 
+.duplicate-readiness-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duplicate-readiness-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #556978;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.duplicate-readiness-header strong {
+  color: #163743;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.duplicate-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.duplicate-candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #d8e5e8;
+  border-radius: 7px;
+  background: #f9fbfb;
+  padding: 10px;
+}
+
+.duplicate-candidate-card strong {
+  color: #163743;
+  font-size: 13px;
+}
+
+.duplicate-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.duplicate-reason-list span {
+  border-radius: 6px;
+  background: #edf5f6;
+  color: #1d566b;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .insurance-item {
   display: flex;
   flex-direction: column;

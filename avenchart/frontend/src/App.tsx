@@ -92,6 +92,7 @@ import {
   createProcedureSpecimen,
   createProcedureResult,
   createPatient,
+  findPatientDuplicates,
   updateProcedureReport,
   updateProcedureResult,
   deleteAppointment,
@@ -227,6 +228,8 @@ import {
   type ImmunizationListItem,
   type MedicationListItem,
   type PatientChartSummary,
+  type PatientDuplicateCandidate,
+  type PatientDuplicateSearchResponse,
   type PatientInsuranceItem,
   type PatientInsuranceMutationInput,
   type PatientListItem,
@@ -3982,6 +3985,9 @@ function PatientWorkspace({
   const [isRegistering, setIsRegistering] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState<PatientRegistrationInput>(() => buildRegistrationDraft())
   const [registrationSaveStatus, setRegistrationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [duplicateSearch, setDuplicateSearch] = useState<PatientDuplicateSearchResponse | null>(null)
+  const [duplicateSearchStatus, setDuplicateSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [duplicateSearchError, setDuplicateSearchError] = useState<string | null>(null)
   const [patientLoginUsername, setPatientLoginUsername] = useState('admin')
   const [patientLoginPassword, setPatientLoginPassword] = useState('pass')
   const [patientLoginStatus, setPatientLoginStatus] =
@@ -4014,6 +4020,8 @@ function PatientWorkspace({
 
   function updateRegistrationDraft(field: keyof PatientRegistrationInput, value: string) {
     setRegistrationDraft((current) => ({ ...current, [field]: value }))
+    setDuplicateSearchStatus('idle')
+    setDuplicateSearchError(null)
   }
 
   async function handlePatientLogin(event: FormEvent<HTMLFormElement>) {
@@ -4048,6 +4056,35 @@ function PatientWorkspace({
       setRegistrationSaveStatus('saved')
     } catch {
       setRegistrationSaveStatus('error')
+    }
+  }
+
+  async function handleDuplicateCheck() {
+    if (!sessionId) {
+      return
+    }
+
+    setDuplicateSearchStatus('loading')
+    setDuplicateSearchError(null)
+    try {
+      const result = await findPatientDuplicates(
+        {
+          firstName: registrationDraft.firstName,
+          lastName: registrationDraft.lastName,
+          dateOfBirth: registrationDraft.dateOfBirth,
+          phone: registrationDraft.phoneHome || registrationDraft.phoneCell,
+          email: registrationDraft.email,
+          excludePatientId: registrationDraft.pubpid,
+          limit: 5,
+        },
+        sessionId,
+      )
+      setDuplicateSearch(result)
+      setDuplicateSearchStatus('ready')
+    } catch (duplicateError) {
+      setDuplicateSearch(null)
+      setDuplicateSearchStatus('error')
+      setDuplicateSearchError(duplicateError instanceof Error ? duplicateError.message : 'Duplicate check failed')
     }
   }
 
@@ -4297,6 +4334,15 @@ function PatientWorkspace({
               </label>
             </div>
             <div className="contact-actions">
+              <button
+                className="icon-text-button"
+                type="button"
+                disabled={!sessionId || duplicateSearchStatus === 'loading'}
+                onClick={handleDuplicateCheck}
+              >
+                <Search size={15} />
+                <span>{duplicateSearchStatus === 'loading' ? 'Checking' : 'Check duplicates'}</span>
+              </button>
               <button className="icon-text-button primary" type="submit" disabled={registrationSaveStatus === 'saving'}>
                 <Check size={15} />
                 <span>{registrationSaveStatus === 'saving' ? 'Registering' : 'Create chart'}</span>
@@ -4313,6 +4359,18 @@ function PatientWorkspace({
                 <X size={15} />
                 <span>Cancel</span>
               </button>
+            </div>
+            <div className="duplicate-readiness-panel" aria-label="Patient duplicate readiness">
+              <div className="duplicate-readiness-header">
+                <strong>Duplicate Readiness</strong>
+                <span>{duplicateSearchStatus === 'ready' ? `${duplicateSearch?.totalCandidates ?? 0} candidates` : 'Not checked'}</span>
+              </div>
+              {duplicateSearchStatus === 'error' && (
+                <div className="status-banner error">{duplicateSearchError ?? 'Duplicate check failed'}</div>
+              )}
+              {duplicateSearchStatus === 'ready' && (
+                <PatientDuplicateCandidateList candidates={duplicateSearch?.candidates ?? []} />
+              )}
             </div>
           </form>
         )}
@@ -4614,6 +4672,16 @@ function PatientWorkspace({
                     </div>
                   </>
                 )}
+              </InfoPanel>
+
+              <InfoPanel title="Duplicate Detection" icon={UserRound}>
+                <div className="duplicate-readiness-panel" aria-label="Patient duplicate detection">
+                  <div className="duplicate-readiness-header">
+                    <strong>Patient duplicate detection</strong>
+                    <span>{chart ? `${chart.duplicateCandidates.length} candidates` : 'Loading'}</span>
+                  </div>
+                  <PatientDuplicateCandidateList candidates={chart?.duplicateCandidates ?? []} />
+                </div>
               </InfoPanel>
 
               <InfoPanel title="Insurance" icon={WalletCards}>
@@ -15271,6 +15339,38 @@ function AdministrationAccessGroupCard({
         {remainingCount > 0 && <span>{remainingCount} more permissions</span>}
       </div>
     </article>
+  )
+}
+
+function PatientDuplicateCandidateList({ candidates }: { candidates: PatientDuplicateCandidate[] }) {
+  if (candidates.length === 0) {
+    return <div className="timeline-placeholder">No duplicate candidates detected</div>
+  }
+
+  return (
+    <div className="duplicate-candidate-list">
+      {candidates.map((candidate) => (
+        <article className="duplicate-candidate-card" key={candidate.canonicalId}>
+          <div className="message-item-header">
+            <strong>{candidate.displayName}</strong>
+            <span className="status-tag">Score {candidate.matchScore}</span>
+          </div>
+          <div className="procedure-order-meta">
+            <span>{candidate.pubpid}</span>
+            <span>DOB {candidate.dateOfBirth}</span>
+          </div>
+          <div className="procedure-order-meta">
+            <span>{candidate.phoneHome ?? candidate.phoneCell ?? candidate.phone ?? 'No phone'}</span>
+            <span>{candidate.email ?? 'No email'}</span>
+          </div>
+          <div className="duplicate-reason-list">
+            {candidate.matchReasons.map((reason) => (
+              <span key={reason}>{reason}</span>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
   )
 }
 

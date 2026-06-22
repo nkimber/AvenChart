@@ -61,9 +61,37 @@ public sealed record PatientChartSummary(
     string? FacilityName,
     string? PrimaryProviderName,
     IReadOnlyList<PatientInsuranceItem> Insurance,
+    IReadOnlyList<PatientDuplicateCandidate> DuplicateCandidates,
     PatientActivityCounts Counts,
     PatientTimelineItem? NextAppointment,
     PatientTimelineItem? LatestEncounter);
+
+public sealed record PatientDuplicateSearchResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string? FirstName,
+    string? LastName,
+    string? DateOfBirth,
+    string? Phone,
+    string? Email,
+    int Limit,
+    int TotalCandidates,
+    IReadOnlyList<PatientDuplicateCandidate> Candidates);
+
+public sealed record PatientDuplicateCandidate(
+    string CanonicalId,
+    int LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string FirstName,
+    string LastName,
+    string DateOfBirth,
+    string? Phone,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? Email,
+    int MatchScore,
+    IReadOnlyList<string> MatchReasons);
 
 public sealed record PatientActivityCounts(
     int Appointments,

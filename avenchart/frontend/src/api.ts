@@ -52,6 +52,35 @@ export type PatientInsuranceItem = {
   relationship?: string | null
 }
 
+export type PatientDuplicateCandidate = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  phone?: string | null
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+  matchScore: number
+  matchReasons: string[]
+}
+
+export type PatientDuplicateSearchResponse = {
+  datasetId: string
+  datasetVersion: string
+  firstName?: string | null
+  lastName?: string | null
+  dateOfBirth?: string | null
+  phone?: string | null
+  email?: string | null
+  limit: number
+  totalCandidates: number
+  candidates: PatientDuplicateCandidate[]
+}
+
 export type PatientInsuranceMutationInput = {
   type: string
   provider: string
@@ -73,6 +102,7 @@ export type PatientChartSummary = PatientListItem & {
   portalEnabled: boolean
   registrationDate: string
   insurance: PatientInsuranceItem[]
+  duplicateCandidates: PatientDuplicateCandidate[]
   nextAppointment?: PatientTimelineItem | null
   latestEncounter?: PatientTimelineItem | null
 }
@@ -2163,6 +2193,51 @@ export async function getPatientChart(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient chart load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function findPatientDuplicates(
+  input: {
+    firstName?: string | null
+    lastName?: string | null
+    dateOfBirth?: string | null
+    phone?: string | null
+    email?: string | null
+    excludePatientId?: string | null
+    limit?: number | null
+  },
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDuplicateSearchResponse> {
+  const params = new URLSearchParams()
+  if (input.firstName?.trim()) {
+    params.set('firstName', input.firstName.trim())
+  }
+  if (input.lastName?.trim()) {
+    params.set('lastName', input.lastName.trim())
+  }
+  if (input.dateOfBirth?.trim()) {
+    params.set('dateOfBirth', input.dateOfBirth.trim())
+  }
+  if (input.phone?.trim()) {
+    params.set('phone', input.phone.trim())
+  }
+  if (input.email?.trim()) {
+    params.set('email', input.email.trim())
+  }
+  if (input.excludePatientId?.trim()) {
+    params.set('excludePatientId', input.excludePatientId.trim())
+  }
+  params.set('limit', String(input.limit ?? 10))
+
+  const response = await fetch(`${apiBaseUrl}/api/patients/duplicates?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient duplicate detection', response.status))
   }
 
   return response.json()

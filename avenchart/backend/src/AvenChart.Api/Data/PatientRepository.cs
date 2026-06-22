@@ -230,13 +230,69 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
                 Insurance: Array.Empty<PatientInsuranceItem>(),
+                DuplicateCandidates: Array.Empty<PatientDuplicateCandidate>(),
                 Counts: ReadCounts(reader),
                 NextAppointment: ReadAppointment(reader),
                 LatestEncounter: ReadEncounter(reader));
         }
 
         var insurance = await GetInsuranceForPatientAsync(connection, summary.CanonicalId, cancellationToken);
-        return summary with { Insurance = insurance };
+        var duplicateCandidates = await GetDuplicateCandidatesAsync(
+            connection,
+            new NormalizedDuplicateSearch(
+                FirstName: summary.FirstName,
+                LastName: summary.LastName,
+                DateOfBirth: DateOnly.ParseExact(summary.DateOfBirth, "yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Phone: summary.PhoneHome ?? summary.PhoneCell ?? summary.Phone,
+                PhoneDigits: NormalizePhoneDigits(summary.PhoneHome ?? summary.PhoneCell ?? summary.Phone),
+                Email: NormalizeString(summary.Email)?.ToLowerInvariant(),
+                ExcludePatientId: summary.CanonicalId),
+            5,
+            cancellationToken);
+        return summary with { Insurance = insurance, DuplicateCandidates = duplicateCandidates };
+    }
+
+    public async Task<PatientDuplicateSearchResponse> FindDuplicateCandidatesAsync(
+        string? firstName,
+        string? lastName,
+        string? dateOfBirth,
+        string? phone,
+        string? email,
+        string? excludePatientId,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var safeLimit = Math.Clamp(limit ?? 10, 1, 25);
+        var normalized = NormalizeDuplicateSearch(firstName, lastName, dateOfBirth, phone, email, excludePatientId);
+        if (normalized is null)
+        {
+            return new PatientDuplicateSearchResponse(
+                DatasetId: metadata.DatasetId,
+                DatasetVersion: metadata.DatasetVersion,
+                FirstName: NormalizeString(firstName),
+                LastName: NormalizeString(lastName),
+                DateOfBirth: NormalizeString(dateOfBirth),
+                Phone: NormalizeString(phone),
+                Email: NormalizeString(email),
+                Limit: safeLimit,
+                TotalCandidates: 0,
+                Candidates: Array.Empty<PatientDuplicateCandidate>());
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var candidates = await GetDuplicateCandidatesAsync(connection, normalized, safeLimit, cancellationToken);
+        return new PatientDuplicateSearchResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            FirstName: normalized.FirstName,
+            LastName: normalized.LastName,
+            DateOfBirth: normalized.DateOfBirth?.ToString("yyyy-MM-dd"),
+            Phone: normalized.Phone,
+            Email: normalized.Email,
+            Limit: safeLimit,
+            TotalCandidates: candidates.Count,
+            Candidates: candidates);
     }
 
     private static async Task<IReadOnlyList<PatientInsuranceItem>> GetInsuranceForPatientAsync(
@@ -274,6 +330,76 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         }
 
         return coverage;
+    }
+
+    private static async Task<IReadOnlyList<PatientDuplicateCandidate>> GetDuplicateCandidatesAsync(
+        NpgsqlConnection connection,
+        NormalizedDuplicateSearch search,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (search.DateOfBirth is null
+            && string.IsNullOrWhiteSpace(search.PhoneDigits)
+            && string.IsNullOrWhiteSpace(search.Email))
+        {
+            return Array.Empty<PatientDuplicateCandidate>();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                p.canonical_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.date_of_birth,
+                p.phone,
+                p.phone_home,
+                p.phone_cell,
+                p.email
+            from patients p
+            where (@excludePatientId is null
+                   or (lower(p.canonical_id) <> lower(@excludePatientId)
+                       and lower(p.pubpid) <> lower(@excludePatientId)
+                       and p.legacy_pid::text <> @excludePatientId))
+              and (
+                    (@firstName is not null
+                     and @lastName is not null
+                     and @dateOfBirth is not null
+                     and lower(p.first_name) = @firstName
+                     and lower(p.last_name) = @lastName
+                     and p.date_of_birth = @dateOfBirth)
+                    or (@phoneDigits is not null
+                        and @phoneDigits in (
+                            regexp_replace(coalesce(p.phone, ''), '[^0-9]', '', 'g'),
+                            regexp_replace(coalesce(p.phone_home, ''), '[^0-9]', '', 'g'),
+                            regexp_replace(coalesce(p.phone_cell, ''), '[^0-9]', '', 'g')))
+                    or (@email is not null and lower(coalesce(p.email, '')) = @email)
+                  )
+            order by p.last_name, p.first_name, p.pubpid
+            limit 50;
+            """;
+        AddDuplicateSearchParameters(command, search);
+
+        var candidates = new List<PatientDuplicateCandidate>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var candidate = BuildDuplicateCandidate(reader, search);
+            if (candidate.MatchScore > 0)
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates
+            .OrderByDescending(candidate => candidate.MatchScore)
+            .ThenBy(candidate => candidate.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.Pubpid, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToArray();
     }
 
     public async Task<PatientChartSummary?> CreatePatientAsync(
@@ -600,10 +726,138 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("search", NpgsqlDbType.Text).Value = normalizedSearch is null ? DBNull.Value : $"%{normalizedSearch}%";
     }
 
+    private static void AddDuplicateSearchParameters(NpgsqlCommand command, NormalizedDuplicateSearch search)
+    {
+        command.Parameters.Add("firstName", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(search.FirstName)
+            ? DBNull.Value
+            : search.FirstName.ToLowerInvariant();
+        command.Parameters.Add("lastName", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(search.LastName)
+            ? DBNull.Value
+            : search.LastName.ToLowerInvariant();
+        command.Parameters.Add("dateOfBirth", NpgsqlDbType.Date).Value = search.DateOfBirth is null
+            ? DBNull.Value
+            : search.DateOfBirth.Value;
+        command.Parameters.Add("phoneDigits", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(search.PhoneDigits)
+            ? DBNull.Value
+            : search.PhoneDigits;
+        command.Parameters.Add("email", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(search.Email)
+            ? DBNull.Value
+            : search.Email.ToLowerInvariant();
+        command.Parameters.Add("excludePatientId", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(search.ExcludePatientId)
+            ? DBNull.Value
+            : search.ExcludePatientId;
+    }
+
+    private static PatientDuplicateCandidate BuildDuplicateCandidate(DbDataReader reader, NormalizedDuplicateSearch search)
+    {
+        var candidateFirstName = reader.GetString(reader.GetOrdinal("first_name"));
+        var candidateLastName = reader.GetString(reader.GetOrdinal("last_name"));
+        var candidateDateOfBirth = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("date_of_birth"));
+        var phone = ReadNullableString(reader, "phone");
+        var phoneHome = ReadNullableString(reader, "phone_home");
+        var phoneCell = ReadNullableString(reader, "phone_cell");
+        var email = ReadNullableString(reader, "email");
+
+        var score = 0;
+        var reasons = new List<string>();
+        if (!string.IsNullOrWhiteSpace(search.FirstName)
+            && !string.IsNullOrWhiteSpace(search.LastName)
+            && search.DateOfBirth is not null
+            && string.Equals(candidateFirstName, search.FirstName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidateLastName, search.LastName, StringComparison.OrdinalIgnoreCase)
+            && candidateDateOfBirth == search.DateOfBirth)
+        {
+            score += 80;
+            reasons.Add("Same first name, last name, and date of birth");
+        }
+
+        if (!string.IsNullOrWhiteSpace(search.PhoneDigits)
+            && new[] { phone, phoneHome, phoneCell }
+                .Select(NormalizePhoneDigits)
+                .Any(candidatePhone => candidatePhone == search.PhoneDigits))
+        {
+            score += 10;
+            reasons.Add("Matching phone");
+        }
+
+        if (!string.IsNullOrWhiteSpace(search.Email)
+            && string.Equals(email, search.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 10;
+            reasons.Add("Matching email");
+        }
+
+        return new PatientDuplicateCandidate(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            DisplayName: BuildDisplayName(reader),
+            FirstName: candidateFirstName,
+            LastName: candidateLastName,
+            DateOfBirth: candidateDateOfBirth.ToString("yyyy-MM-dd"),
+            Phone: phone,
+            PhoneHome: phoneHome,
+            PhoneCell: phoneCell,
+            Email: email,
+            MatchScore: score,
+            MatchReasons: reasons);
+    }
+
     private static string? NormalizeSearch(string? search)
     {
         var trimmed = search?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed.ToLowerInvariant();
+    }
+
+    private static NormalizedDuplicateSearch? NormalizeDuplicateSearch(
+        string? firstName,
+        string? lastName,
+        string? dateOfBirth,
+        string? phone,
+        string? email,
+        string? excludePatientId)
+    {
+        var normalizedFirstName = NormalizeString(firstName);
+        var normalizedLastName = NormalizeString(lastName);
+        DateOnly? normalizedDateOfBirth = null;
+        if (!string.IsNullOrWhiteSpace(dateOfBirth)
+            && DateOnly.TryParseExact(
+                dateOfBirth.Trim(),
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsedDateOfBirth))
+        {
+            normalizedDateOfBirth = parsedDateOfBirth;
+        }
+
+        var normalizedPhone = NormalizeString(phone);
+        var normalizedPhoneDigits = NormalizePhoneDigits(normalizedPhone);
+        var normalizedEmail = NormalizeString(email)?.ToLowerInvariant();
+
+        if ((string.IsNullOrWhiteSpace(normalizedFirstName)
+             || string.IsNullOrWhiteSpace(normalizedLastName)
+             || normalizedDateOfBirth is null)
+            && string.IsNullOrWhiteSpace(normalizedPhoneDigits)
+            && string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return null;
+        }
+
+        return new NormalizedDuplicateSearch(
+            FirstName: normalizedFirstName,
+            LastName: normalizedLastName,
+            DateOfBirth: normalizedDateOfBirth,
+            Phone: normalizedPhone,
+            PhoneDigits: normalizedPhoneDigits,
+            Email: normalizedEmail,
+            ExcludePatientId: NormalizeString(excludePatientId));
+    }
+
+    private static string? NormalizePhoneDigits(string? value)
+    {
+        var digits = value is null ? "" : new string(value.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? null : digits;
     }
 
     private static object NormalizeNullable(string? value)
@@ -854,6 +1108,15 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record PatientIdentity(string CanonicalId, int LegacyPid);
+
+    private sealed record NormalizedDuplicateSearch(
+        string? FirstName,
+        string? LastName,
+        DateOnly? DateOfBirth,
+        string? Phone,
+        string? PhoneDigits,
+        string? Email,
+        string? ExcludePatientId);
 
     private sealed record NormalizedInsurance(
         string Type,

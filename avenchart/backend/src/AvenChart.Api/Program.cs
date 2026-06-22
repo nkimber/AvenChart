@@ -132,6 +132,30 @@ patients.MapGet("/", async (
     })
     .WithName("SearchPatients");
 
+patients.MapGet("/duplicates", async (
+        PatientRepository repository,
+        string? firstName,
+        string? lastName,
+        string? dateOfBirth,
+        string? phone,
+        string? email,
+        string? excludePatientId,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.FindDuplicateCandidatesAsync(
+            firstName,
+            lastName,
+            dateOfBirth,
+            phone,
+            email,
+            excludePatientId,
+            limit,
+            cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("FindPatientDuplicateCandidates");
+
 patients.MapPost("/", async (
         PatientRepository repository,
         PatientRegistrationRequest request,
