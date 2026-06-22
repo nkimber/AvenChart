@@ -165,6 +165,7 @@ import {
   updatePatientContact,
   updatePatientDeceasedStatus,
   updatePatientDemographics,
+  updatePatientGuardianContact,
   updateProcedureOrder,
   updateProcedureLabProvider,
   updateProcedureOrderCatalogItem,
@@ -244,6 +245,7 @@ import {
   type PatientDocumentContentReplaceInput,
   type PatientDocumentContentResponse,
   type PatientDeceasedStatusUpdate,
+  type PatientGuardianContactUpdate,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
@@ -1252,6 +1254,23 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient deceased status save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientGuardianContactSave(patientId: string, guardianContact: PatientGuardianContactUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientGuardianContact(patientId, guardianContact, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient guardian contact save failed'
       setPatientError(message)
       throw saveError
     }
@@ -3600,6 +3619,7 @@ function App() {
             onSaveContact={handlePatientContactSave}
             onSaveDemographics={handlePatientDemographicsSave}
             onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
+            onSaveGuardianContact={handlePatientGuardianContactSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -3970,6 +3990,7 @@ function PatientWorkspace({
   onSaveContact,
   onSaveDemographics,
   onSaveDeceasedStatus,
+  onSaveGuardianContact,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -3990,6 +4011,7 @@ function PatientWorkspace({
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
+  onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
@@ -4004,6 +4026,13 @@ function PatientWorkspace({
     buildDeceasedStatusDraft(null),
   )
   const [deceasedStatusSaveStatus, setDeceasedStatusSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  )
+  const [isEditingGuardianContact, setIsEditingGuardianContact] = useState(false)
+  const [guardianContactDraft, setGuardianContactDraft] = useState<PatientGuardianContactUpdate>(() =>
+    buildGuardianContactDraft(null),
+  )
+  const [guardianContactSaveStatus, setGuardianContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   )
   const [isEditingContact, setIsEditingContact] = useState(false)
@@ -4032,6 +4061,9 @@ function PatientWorkspace({
     setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
     setIsEditingDeceasedStatus(false)
     setDeceasedStatusSaveStatus('idle')
+    setGuardianContactDraft(buildGuardianContactDraft(chart))
+    setIsEditingGuardianContact(false)
+    setGuardianContactSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -4050,6 +4082,10 @@ function PatientWorkspace({
 
   function updateDeceasedStatusDraft(field: keyof PatientDeceasedStatusUpdate, value: string) {
     setDeceasedStatusDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateGuardianContactDraft(field: keyof PatientGuardianContactUpdate, value: string) {
+    setGuardianContactDraft((current) => ({ ...current, [field]: value }))
   }
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
@@ -4160,6 +4196,22 @@ function PatientWorkspace({
       setDeceasedStatusSaveStatus('saved')
     } catch {
       setDeceasedStatusSaveStatus('error')
+    }
+  }
+
+  async function handleGuardianContactSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setGuardianContactSaveStatus('saving')
+    try {
+      await onSaveGuardianContact(chart.canonicalId, guardianContactDraft)
+      setIsEditingGuardianContact(false)
+      setGuardianContactSaveStatus('saved')
+    } catch {
+      setGuardianContactSaveStatus('error')
     }
   }
 
@@ -4715,6 +4767,102 @@ function PatientWorkspace({
                       </button>
                       {deceasedStatusSaveStatus === 'saved' && <span className="save-note">Saved</span>}
                       {deceasedStatusSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
+              </InfoPanel>
+
+              <InfoPanel title="Guardian Contact" icon={UserPlus}>
+                {isEditingGuardianContact && chart ? (
+                  <form className="contact-form" onSubmit={handleGuardianContactSubmit}>
+                    <label className="contact-field">
+                      <span>Mother name</span>
+                      <input
+                        value={guardianContactDraft.motherName}
+                        onChange={(event) => updateGuardianContactDraft('motherName', event.target.value)}
+                        aria-label="Patient mother name"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Guardian name</span>
+                      <input
+                        value={guardianContactDraft.guardianName}
+                        onChange={(event) => updateGuardianContactDraft('guardianName', event.target.value)}
+                        aria-label="Patient guardian name"
+                      />
+                    </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Relationship</span>
+                        <input
+                          value={guardianContactDraft.guardianRelationship}
+                          onChange={(event) => updateGuardianContactDraft('guardianRelationship', event.target.value)}
+                          aria-label="Patient guardian relationship"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Phone</span>
+                        <input
+                          value={guardianContactDraft.guardianPhone}
+                          onChange={(event) => updateGuardianContactDraft('guardianPhone', event.target.value)}
+                          aria-label="Patient guardian phone"
+                        />
+                      </label>
+                    </div>
+                    <label className="contact-field">
+                      <span>Email</span>
+                      <input
+                        value={guardianContactDraft.guardianEmail}
+                        onChange={(event) => updateGuardianContactDraft('guardianEmail', event.target.value)}
+                        aria-label="Patient guardian email"
+                      />
+                    </label>
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button primary"
+                        type="submit"
+                        disabled={guardianContactSaveStatus === 'saving'}
+                      >
+                        <Check size={15} />
+                        <span>{guardianContactSaveStatus === 'saving' ? 'Saving' : 'Save guardian'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setGuardianContactDraft(buildGuardianContactDraft(chart))
+                          setIsEditingGuardianContact(false)
+                          setGuardianContactSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Mother name" value={chart?.motherName} />
+                    <Field label="Guardian" value={chart?.guardianName} />
+                    <Field label="Relationship" value={formatGuardianRelationship(chart?.guardianRelationship)} />
+                    <Field label="Guardian phone" value={chart?.guardianPhone} />
+                    <Field label="Guardian email" value={chart?.guardianEmail} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setGuardianContactDraft(buildGuardianContactDraft(chart))
+                          setIsEditingGuardianContact(true)
+                          setGuardianContactSaveStatus('idle')
+                        }}
+                        disabled={!chart}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit guardian</span>
+                      </button>
+                      {guardianContactSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {guardianContactSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
                     </div>
                   </>
                 )}
@@ -17568,6 +17716,33 @@ function buildDeceasedStatusDraft(patient: PatientChartSummary | null): PatientD
     deceasedDate: patient?.deceasedDate ?? '',
     deceasedReason: patient?.deceasedReason ?? '',
   }
+}
+
+function buildGuardianContactDraft(patient: PatientChartSummary | null): PatientGuardianContactUpdate {
+  return {
+    motherName: patient?.motherName ?? '',
+    guardianName: patient?.guardianName ?? '',
+    guardianRelationship: patient?.guardianRelationship ?? '',
+    guardianPhone: patient?.guardianPhone ?? '',
+    guardianEmail: patient?.guardianEmail ?? '',
+  }
+}
+
+function formatGuardianRelationship(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    associate: 'Associate',
+    brother: 'Brother',
+    care_giver: 'Care giver',
+    child: 'Child',
+    father: 'Father',
+    guardian: 'Guardian',
+    mother: 'Mother',
+    parent: 'Parent',
+    sibling: 'Sibling',
+    sister: 'Sister',
+    spouse: 'Spouse',
+  }
+  return value ? (labels[value] ?? value) : ''
 }
 
 function buildRegistrationDraft(): PatientRegistrationInput {

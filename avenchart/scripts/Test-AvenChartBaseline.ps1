@@ -604,6 +604,88 @@ finally {
     }
 }
 
+$guardianOriginal = $null
+try {
+    $guardianOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalGuardianBody = @{
+        motherName = $guardianOriginal.motherName
+        guardianName = $guardianOriginal.guardianName
+        guardianRelationship = $guardianOriginal.guardianRelationship
+        guardianPhone = $guardianOriginal.guardianPhone
+        guardianEmail = $guardianOriginal.guardianEmail
+    }
+    $guardianBody = @{
+        motherName = "Smoke Mother Guardian"
+        guardianName = "Smoke Guardian Contact"
+        guardianRelationship = "guardian"
+        guardianPhone = "(619) 555-1940"
+        guardianEmail = "smoke.guardian194@example.test"
+    }
+
+    $updatedGuardian = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/guardian-contact" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($guardianBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $reloadedGuardian = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredGuardian = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/guardian-contact" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalGuardianBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $guardianOriginal = $null
+
+    $mutationPassed = $updatedGuardian.motherName -eq $guardianBody.motherName `
+        -and $updatedGuardian.guardianName -eq $guardianBody.guardianName `
+        -and $updatedGuardian.guardianRelationship -eq $guardianBody.guardianRelationship `
+        -and $updatedGuardian.guardianPhone -eq $guardianBody.guardianPhone `
+        -and $updatedGuardian.guardianEmail -eq $guardianBody.guardianEmail `
+        -and $reloadedGuardian.guardianName -eq $guardianBody.guardianName
+
+    $restorePassed = $restoredGuardian.motherName -eq $originalGuardianBody.motherName `
+        -and $restoredGuardian.guardianName -eq $originalGuardianBody.guardianName `
+        -and $restoredGuardian.guardianRelationship -eq $originalGuardianBody.guardianRelationship `
+        -and $restoredGuardian.guardianPhone -eq $originalGuardianBody.guardianPhone `
+        -and $restoredGuardian.guardianEmail -eq $originalGuardianBody.guardianEmail
+
+    Add-Check -Name "patient guardian contact lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedGuardian = $updatedGuardian.guardianName
+        updatedRelationship = $updatedGuardian.guardianRelationship
+        restoredGuardian = $restoredGuardian.guardianName
+    }
+}
+catch {
+    Add-Check -Name "patient guardian contact lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $guardianOriginal) {
+        try {
+            $originalGuardianBody = @{
+                motherName = $guardianOriginal.motherName
+                guardianName = $guardianOriginal.guardianName
+                guardianRelationship = $guardianOriginal.guardianRelationship
+                guardianPhone = $guardianOriginal.guardianPhone
+                guardianEmail = $guardianOriginal.guardianEmail
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/guardian-contact" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($originalGuardianBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()

@@ -56,6 +56,11 @@ public sealed record PatientChartSummary(
     string? HipaaAllowEmail,
     string? MaritalStatus,
     string? Occupation,
+    string? MotherName,
+    string? GuardianName,
+    string? GuardianRelationship,
+    string? GuardianPhone,
+    string? GuardianEmail,
     bool PortalEnabled,
     string RegistrationDate,
     string? DeceasedDate,
@@ -155,6 +160,13 @@ public sealed record PatientDemographicsUpdateRequest(
 public sealed record PatientDeceasedStatusUpdateRequest(
     string? DeceasedDate,
     string? DeceasedReason);
+
+public sealed record PatientGuardianContactUpdateRequest(
+    string? MotherName,
+    string? GuardianName,
+    string? GuardianRelationship,
+    string? GuardianPhone,
+    string? GuardianEmail);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

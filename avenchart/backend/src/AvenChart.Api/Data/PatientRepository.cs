@@ -124,6 +124,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.hipaa_allow_email,
                 p.marital_status,
                 p.occupation,
+                p.mother_name,
+                p.guardian_name,
+                p.guardian_relationship,
+                p.guardian_phone,
+                p.guardian_email,
                 p.portal_enabled,
                 p.registration_date,
                 p.deceased_date,
@@ -228,6 +233,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
                 MaritalStatus: ReadNullableString(reader, "marital_status"),
                 Occupation: ReadNullableString(reader, "occupation"),
+                MotherName: ReadNullableString(reader, "mother_name"),
+                GuardianName: ReadNullableString(reader, "guardian_name"),
+                GuardianRelationship: ReadNullableString(reader, "guardian_relationship"),
+                GuardianPhone: ReadNullableString(reader, "guardian_phone"),
+                GuardianEmail: ReadNullableString(reader, "guardian_email"),
                 PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
@@ -599,6 +609,37 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("deceasedReason", NpgsqlDbType.Text).Value = deceasedReason is null
             ? DBNull.Value
             : deceasedReason;
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> UpdateGuardianContactAsync(
+        string patientId,
+        PatientGuardianContactUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set
+                mother_name = @motherName,
+                guardian_name = @guardianName,
+                guardian_relationship = @guardianRelationship,
+                guardian_phone = @guardianPhone,
+                guardian_email = @guardianEmail
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("motherName", NpgsqlDbType.Text).Value = NormalizeNullable(request.MotherName);
+        command.Parameters.Add("guardianName", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianName);
+        command.Parameters.Add("guardianRelationship", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianRelationship);
+        command.Parameters.Add("guardianPhone", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianPhone);
+        command.Parameters.Add("guardianEmail", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianEmail);
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
