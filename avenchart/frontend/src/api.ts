@@ -1987,6 +1987,23 @@ export type AuthAuditResponse = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
+function buildAdminSessionHeaders(sessionId?: string | null, contentType?: string): HeadersInit {
+  const headers: Record<string, string> = {}
+  if (contentType) {
+    headers['content-type'] = contentType
+  }
+  if (sessionId) {
+    headers['X-Legacy EHR-Session'] = sessionId
+  }
+  return headers
+}
+
+function adminApiError(action: string, status: number) {
+  return status === 401
+    ? `${action} requires an active admin session.`
+    : `${action} failed with ${status}`
+}
+
 export async function login(input: AuthLoginInput, signal?: AbortSignal): Promise<AuthLoginResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
     method: 'POST',
@@ -3911,10 +3928,16 @@ export async function deleteBillingPaymentPosting(activityId: string, signal?: A
   }
 }
 
-export async function getAdministrationDirectory(signal?: AbortSignal): Promise<AdministrationDirectoryResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/administration/directory`, { signal })
+export async function getAdministrationDirectory(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AdministrationDirectoryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/administration/directory`, {
+    headers: buildAdminSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Administration directory load failed with ${response.status}`)
+    throw new Error(adminApiError('Administration directory load', response.status))
   }
 
   return response.json()
@@ -3922,16 +3945,17 @@ export async function getAdministrationDirectory(signal?: AbortSignal): Promise<
 
 export async function createAdministrationUser(
   input: AdministrationUserMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration user create failed with ${response.status}`)
+    throw new Error(adminApiError('Administration user create', response.status))
   }
 
   return response.json()
@@ -3940,43 +3964,50 @@ export async function createAdministrationUser(
 export async function updateAdministrationUser(
   userId: number,
   input: AdministrationUserMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationUserMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration user update failed with ${response.status}`)
+    throw new Error(adminApiError('Administration user update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteAdministrationUser(userId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteAdministrationUser(
+  userId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/users/${userId}`, {
     method: 'DELETE',
+    headers: buildAdminSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration user delete failed with ${response.status}`)
+    throw new Error(adminApiError('Administration user delete', response.status))
   }
 }
 
 export async function createAdministrationFacility(
   input: AdministrationFacilityMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration facility create failed with ${response.status}`)
+    throw new Error(adminApiError('Administration facility create', response.status))
   }
 
   return response.json()
@@ -3985,43 +4016,50 @@ export async function createAdministrationFacility(
 export async function updateAdministrationFacility(
   facilityId: number,
   input: AdministrationFacilityMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationFacilityMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration facility update failed with ${response.status}`)
+    throw new Error(adminApiError('Administration facility update', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteAdministrationFacility(facilityId: number, signal?: AbortSignal): Promise<void> {
+export async function deleteAdministrationFacility(
+  facilityId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/administration/facilities/${facilityId}`, {
     method: 'DELETE',
+    headers: buildAdminSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration facility delete failed with ${response.status}`)
+    throw new Error(adminApiError('Administration facility delete', response.status))
   }
 }
 
 export async function grantAdministrationAccessPermission(
   input: AdministrationAccessPermissionMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationAccessPermissionMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/group-permissions`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration access permission grant failed with ${response.status}`)
+    throw new Error(adminApiError('Administration access permission grant', response.status))
   }
 
   return response.json()
@@ -4029,17 +4067,19 @@ export async function grantAdministrationAccessPermission(
 
 export async function revokeAdministrationAccessPermission(
   input: Pick<AdministrationAccessPermissionMutationInput, 'groupValue' | 'sectionValue' | 'permissionValue'>,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationAccessPermissionMutationResponse> {
   const response = await fetch(
     `${apiBaseUrl}/api/administration/access-control/group-permissions/${encodeURIComponent(input.groupValue)}/${encodeURIComponent(input.sectionValue)}/${encodeURIComponent(input.permissionValue)}`,
     {
       method: 'DELETE',
+      headers: buildAdminSessionHeaders(sessionId),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Administration access permission revoke failed with ${response.status}`)
+    throw new Error(adminApiError('Administration access permission revoke', response.status))
   }
 
   return response.json()
@@ -4047,16 +4087,17 @@ export async function revokeAdministrationAccessPermission(
 
 export async function grantAdministrationAccessUserMembership(
   input: AdministrationAccessUserMembershipMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationAccessUserMembershipMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/administration/access-control/user-memberships`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildAdminSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Administration access user membership grant failed with ${response.status}`)
+    throw new Error(adminApiError('Administration access user membership grant', response.status))
   }
 
   return response.json()
@@ -4064,17 +4105,19 @@ export async function grantAdministrationAccessUserMembership(
 
 export async function revokeAdministrationAccessUserMembership(
   input: AdministrationAccessUserMembershipMutationInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AdministrationAccessUserMembershipMutationResponse> {
   const response = await fetch(
     `${apiBaseUrl}/api/administration/access-control/user-memberships/${encodeURIComponent(input.userValue)}/${encodeURIComponent(input.groupValue)}`,
     {
       method: 'DELETE',
+      headers: buildAdminSessionHeaders(sessionId),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Administration access user membership revoke failed with ${response.status}`)
+    throw new Error(adminApiError('Administration access user membership revoke', response.status))
   }
 
   return response.json()

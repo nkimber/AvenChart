@@ -32,6 +32,31 @@ function Add-Check {
     }
 }
 
+$AdministrationHeaders = $null
+
+function Get-AdministrationHeaders {
+    if ($null -eq $script:AdministrationHeaders) {
+        $loginBody = @{
+            username = "admin"
+            password = "pass"
+        }
+        $login = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/auth/login" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body ($loginBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+
+        if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Administration smoke login did not issue an active session."
+        }
+
+        $script:AdministrationHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    }
+
+    return $script:AdministrationHeaders
+}
+
 try {
     $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -Method Get -TimeoutSec 15
     Add-Check -Name "api health" -Result $(if ($health.status -eq "healthy") { "passed" } else { "failed" }) -Details $health
@@ -89,6 +114,30 @@ try {
         -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
         -TimeoutSec 20
 
+    $unauthenticatedAdministrationStatus = 0
+    try {
+        $unauthenticatedAdministration = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/administration/directory" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedAdministrationStatus = [int]$unauthenticatedAdministration.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedAdministrationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $administrationDirectory = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/administration/directory" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -TimeoutSec 20
+
     $auditSuccess = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $true } | Select-Object -First 1
     $auditFailure = $loginAudit.events | Where-Object { $_.username -eq "admin" -and $_.success -eq $false } | Select-Object -First 1
 
@@ -113,6 +162,9 @@ try {
         -and $session.authenticated -eq $true `
         -and $session.username -eq "admin" `
         -and $unauthenticatedAuditStatus -eq 401 `
+        -and $unauthenticatedAdministrationStatus -eq 401 `
+        -and $administrationDirectory.counts.users -ge 20 `
+        -and $administrationDirectory.counts.facilities -ge 3 `
         -and $logout.authenticated -eq $false `
         -and $null -ne $logout.endedAt `
         -and $sessionAfterLogout.authenticated -eq $false `
@@ -129,6 +181,9 @@ try {
         sessionIssued = -not [string]::IsNullOrWhiteSpace($login.sessionId)
         sessionValidated = $session.authenticated
         unauthenticatedAuditStatus = $unauthenticatedAuditStatus
+        unauthenticatedAdministrationStatus = $unauthenticatedAdministrationStatus
+        administrationUsers = $administrationDirectory.counts.users
+        administrationFacilities = $administrationDirectory.counts.facilities
         sessionEnded = $null -ne $logout.endedAt
         sessionAfterLogout = $sessionAfterLogout.authenticated
         rejectedReason = $rejectedLogin.failureReason
@@ -6664,7 +6719,8 @@ finally {
 }
 
 try {
-    $administration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/directory" -Method Get -TimeoutSec 20
+    $administrationHeaders = Get-AdministrationHeaders
+    $administration = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/directory" -Method Get -Headers $administrationHeaders -TimeoutSec 20
     $provider = $administration.users | Where-Object { $_.username -eq "gold-provider-02" -and $_.role -eq "provider" } | Select-Object -First 1
     $billingUser = $administration.users | Where-Object { $_.username -eq "gold-billing-01" -and $_.role -eq "billing" } | Select-Object -First 1
     $mainFacility = $administration.facilities | Where-Object { $_.code -eq "MAIN" -and $_.name -eq "Modernization Family Medicine" } | Select-Object -First 1
@@ -6703,6 +6759,7 @@ catch {
 }
 
 try {
+    $administrationHeaders = Get-AdministrationHeaders
     $accessGrantBody = @{
         groupValue = "front"
         sectionValue = "patients"
@@ -6710,11 +6767,11 @@ try {
         returnValue = "write"
     } | ConvertTo-Json
 
-    $revokedAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions/front/patients/demo" -Method Delete -TimeoutSec 20
+    $revokedAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions/front/patients/demo" -Method Delete -Headers $administrationHeaders -TimeoutSec 20
     $revokedFrontGroup = $revokedAccess.detail.accessControl.groups | Where-Object { $_.value -eq "front" -and $_.permissionCount -eq 5 } | Select-Object -First 1
     $revokedFrontDemo = $revokedAccess.detail.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" } | Select-Object -First 1
 
-    $restoredAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20
+    $restoredAccess = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20
     $restoredFrontGroup = $restoredAccess.detail.accessControl.groups | Where-Object { $_.value -eq "front" -and $_.permissionCount -eq 6 } | Select-Object -First 1
     $restoredFrontDemo = $restoredAccess.detail.accessControl.groupPermissions | Where-Object { $_.groupValue -eq "front" -and $_.sectionValue -eq "patients" -and $_.permissionValue -eq "demo" -and $_.returnValue -eq "write" } | Select-Object -First 1
 
@@ -6744,7 +6801,7 @@ finally {
             permissionValue = "demo"
             returnValue = "write"
         } | ConvertTo-Json
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20 | Out-Null
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $accessGrantBody -TimeoutSec 20 | Out-Null
     }
     catch {
     }
@@ -6752,6 +6809,7 @@ finally {
 
 $administrationMembershipUserId = $null
 try {
+    $administrationHeaders = Get-AdministrationHeaders
     $membershipUserName = "smoke-membership-user"
     $createMembershipUserBody = @{
         username = $membershipUserName
@@ -6765,7 +6823,7 @@ try {
         active = $true
     } | ConvertTo-Json
 
-    $createdMembershipUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -ContentType "application/json" -Body $createMembershipUserBody -TimeoutSec 20
+    $createdMembershipUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -Headers $administrationHeaders -ContentType "application/json" -Body $createMembershipUserBody -TimeoutSec 20
     $administrationMembershipUserId = $createdMembershipUser.id
 
     $membershipGrantBody = @{
@@ -6773,10 +6831,10 @@ try {
         groupValue = "front"
     } | ConvertTo-Json
 
-    $grantedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships" -Method Put -ContentType "application/json" -Body $membershipGrantBody -TimeoutSec 20
+    $grantedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $membershipGrantBody -TimeoutSec 20
     $frontMembership = $grantedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" -and $_.groupName -eq "Front Office" } | Select-Object -First 1
 
-    $revokedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/$membershipUserName/front" -Method Delete -TimeoutSec 20
+    $revokedMembership = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/$membershipUserName/front" -Method Delete -Headers $administrationHeaders -TimeoutSec 20
     $revokedFrontMembership = $revokedMembership.detail.accessControl.userMemberships | Where-Object { $_.userValue -eq $membershipUserName -and $_.groupValue -eq "front" } | Select-Object -First 1
 
     $membershipMutationPassed = $grantedMembership.detail.counts.accessUserMemberships -eq 3 `
@@ -6784,7 +6842,7 @@ try {
         -and $null -ne $frontMembership `
         -and $null -eq $revokedFrontMembership
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -Headers $administrationHeaders -TimeoutSec 20 | Out-Null
     $administrationMembershipUserId = $null
 
     Add-Check -Name "administration user group membership mutation lifecycle" -Result $(if ($membershipMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -6799,13 +6857,13 @@ catch {
 }
 finally {
     try {
-        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/smoke-membership-user/front" -Method Delete -TimeoutSec 20 | Out-Null
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/user-memberships/smoke-membership-user/front" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     }
     catch {
     }
     if ($null -ne $administrationMembershipUserId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationMembershipUserId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6814,6 +6872,7 @@ finally {
 
 $administrationUserMutationId = $null
 try {
+    $administrationHeaders = Get-AdministrationHeaders
     $userName = "smoke-admin-user"
     $createUserBody = @{
         username = $userName
@@ -6827,7 +6886,7 @@ try {
         active = $true
     } | ConvertTo-Json
 
-    $createdUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -ContentType "application/json" -Body $createUserBody -TimeoutSec 20
+    $createdUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users" -Method Post -Headers $administrationHeaders -ContentType "application/json" -Body $createUserBody -TimeoutSec 20
     $administrationUserMutationId = $createdUser.id
     $createdUserVisible = $createdUser.detail.users | Where-Object { $_.id -eq $administrationUserMutationId -and $_.username -eq $userName -and $_.active } | Select-Object -First 1
 
@@ -6843,11 +6902,11 @@ try {
         active = $false
     } | ConvertTo-Json
 
-    $updatedUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Put -ContentType "application/json" -Body $updateUserBody -TimeoutSec 20
+    $updatedUser = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $updateUserBody -TimeoutSec 20
     $updatedUserVisible = $updatedUser.detail.users | Where-Object { $_.id -eq $administrationUserMutationId -and $_.lastName -eq "Admin Inactive" -and -not $_.active } | Select-Object -First 1
     $userMutationPassed = $null -ne $createdUserVisible -and $null -ne $updatedUserVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -Headers $administrationHeaders -TimeoutSec 20 | Out-Null
     $administrationUserMutationId = $null
 
     Add-Check -Name "administration user mutation lifecycle" -Result $(if ($userMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -6862,7 +6921,7 @@ catch {
 finally {
     if ($null -ne $administrationUserMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/users/$administrationUserMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6871,6 +6930,7 @@ finally {
 
 $administrationFacilityMutationId = $null
 try {
+    $administrationHeaders = Get-AdministrationHeaders
     $facilityName = "Smoke Facility Mutation"
     $createFacilityBody = @{
         code = "SMOKE"
@@ -6884,7 +6944,7 @@ try {
         active = $true
     } | ConvertTo-Json
 
-    $createdFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities" -Method Post -ContentType "application/json" -Body $createFacilityBody -TimeoutSec 20
+    $createdFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities" -Method Post -Headers $administrationHeaders -ContentType "application/json" -Body $createFacilityBody -TimeoutSec 20
     $administrationFacilityMutationId = $createdFacility.id
     $createdVisible = $createdFacility.detail.facilities | Where-Object { $_.id -eq $administrationFacilityMutationId -and $_.name -eq $facilityName -and $_.active } | Select-Object -First 1
 
@@ -6900,11 +6960,11 @@ try {
         active = $false
     } | ConvertTo-Json
 
-    $updatedFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Put -ContentType "application/json" -Body $updateFacilityBody -TimeoutSec 20
+    $updatedFacility = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $updateFacilityBody -TimeoutSec 20
     $updatedVisible = $updatedFacility.detail.facilities | Where-Object { $_.id -eq $administrationFacilityMutationId -and $_.name -eq "$facilityName Inactive" -and -not $_.active } | Select-Object -First 1
     $facilityMutationPassed = $null -ne $createdVisible -and $null -ne $updatedVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -Headers $administrationHeaders -TimeoutSec 20 | Out-Null
     $administrationFacilityMutationId = $null
 
     Add-Check -Name "administration facility mutation lifecycle" -Result $(if ($facilityMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -6919,7 +6979,7 @@ catch {
 finally {
     if ($null -ne $administrationFacilityMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

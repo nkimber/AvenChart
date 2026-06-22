@@ -380,6 +380,7 @@ function App() {
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [administrationError, setAdministrationError] = useState<string | null>(null)
   const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
+  const [administrationSessionId, setAdministrationSessionId] = useState<string | null>(null)
 
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -755,6 +756,12 @@ function App() {
     if (activeModule !== 'admin') {
       return
     }
+    if (!administrationSessionId) {
+      setAdministrationDirectory(null)
+      setAdministrationStatus('idle')
+      setAdministrationError(null)
+      return
+    }
 
     const controller = new AbortController()
     async function loadAdministrationDirectory() {
@@ -762,7 +769,7 @@ function App() {
       setAdministrationError(null)
 
       try {
-        const result = await getAdministrationDirectory(controller.signal)
+        const result = await getAdministrationDirectory(administrationSessionId, controller.signal)
         setAdministrationDirectory(result)
         setAdministrationStatus('ready')
       } catch (loadError) {
@@ -775,7 +782,7 @@ function App() {
 
     loadAdministrationDirectory()
     return () => controller.abort()
-  }, [activeModule, administrationRefreshKey])
+  }, [activeModule, administrationRefreshKey, administrationSessionId])
 
   useEffect(() => {
     if (activeModule !== 'reports') {
@@ -2651,12 +2658,21 @@ function App() {
     }
   }
 
+  function getActiveAdministrationSessionId() {
+    if (!administrationSessionId) {
+      throw new Error('Sign in to manage administration data.')
+    }
+
+    return administrationSessionId
+  }
+
   async function handleAdministrationUserCreate(input: AdministrationUserMutationInput) {
     setAdministrationStatus('loading')
     setAdministrationError(null)
 
     try {
-      const response = await createAdministrationUser(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await createAdministrationUser(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2677,7 +2693,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await updateAdministrationUser(user.id, input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await updateAdministrationUser(user.id, input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2695,8 +2712,9 @@ function App() {
     setAdministrationError(null)
 
     try {
-      await deleteAdministrationUser(user.id)
-      const refreshed = await getAdministrationDirectory()
+      const sessionId = getActiveAdministrationSessionId()
+      await deleteAdministrationUser(user.id, sessionId)
+      const refreshed = await getAdministrationDirectory(sessionId)
       setAdministrationDirectory(refreshed)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2713,7 +2731,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await createAdministrationFacility(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await createAdministrationFacility(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2734,7 +2753,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await updateAdministrationFacility(facility.id, input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await updateAdministrationFacility(facility.id, input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2752,8 +2772,9 @@ function App() {
     setAdministrationError(null)
 
     try {
-      await deleteAdministrationFacility(facility.id)
-      const refreshed = await getAdministrationDirectory()
+      const sessionId = getActiveAdministrationSessionId()
+      await deleteAdministrationFacility(facility.id, sessionId)
+      const refreshed = await getAdministrationDirectory(sessionId)
       setAdministrationDirectory(refreshed)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2770,7 +2791,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await grantAdministrationAccessPermission(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await grantAdministrationAccessPermission(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2788,7 +2810,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await revokeAdministrationAccessPermission(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await revokeAdministrationAccessPermission(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2806,7 +2829,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await grantAdministrationAccessUserMembership(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await grantAdministrationAccessUserMembership(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -2824,7 +2848,8 @@ function App() {
     setAdministrationError(null)
 
     try {
-      const response = await revokeAdministrationAccessUserMembership(input)
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await revokeAdministrationAccessUserMembership(input, sessionId)
       setAdministrationDirectory(response.detail)
       setAdministrationStatus('ready')
       setAdministrationRefreshKey((current) => current + 1)
@@ -3510,6 +3535,16 @@ function App() {
             onRevokeAccessPermission={handleAdministrationAccessPermissionRevoke}
             onGrantAccessMembership={handleAdministrationAccessUserMembershipGrant}
             onRevokeAccessMembership={handleAdministrationAccessUserMembershipRevoke}
+            onAdminSessionActive={(sessionId) => {
+              setAdministrationSessionId(sessionId)
+              setAdministrationRefreshKey((current) => current + 1)
+            }}
+            onAdminSessionEnded={() => {
+              setAdministrationSessionId(null)
+              setAdministrationDirectory(null)
+              setAdministrationStatus('idle')
+              setAdministrationError(null)
+            }}
           />
         )}
       </main>
@@ -12646,6 +12681,8 @@ function AdministrationWorkspace({
   onRevokeAccessPermission,
   onGrantAccessMembership,
   onRevokeAccessMembership,
+  onAdminSessionActive,
+  onAdminSessionEnded,
 }: {
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -12666,6 +12703,8 @@ function AdministrationWorkspace({
   onRevokeAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
   onGrantAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
   onRevokeAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
+  onAdminSessionActive: (sessionId: string) => void
+  onAdminSessionEnded: () => void
 }) {
   const billingUsers = countUsersByRole(directory?.users, 'billing')
   const frontDeskUsers = countUsersByRole(directory?.users, 'frontdesk')
@@ -12764,6 +12803,7 @@ function AdministrationWorkspace({
     setAuthSession(null)
     setSessionStatus('idle')
     setSessionError(null)
+    onAdminSessionEnded()
 
     try {
       const result = await login({ username: loginUsername, password: loginPassword })
@@ -12785,6 +12825,7 @@ function AdministrationWorkspace({
           sessionSource: 'avenchart',
         })
         setSessionStatus('active')
+        onAdminSessionActive(result.sessionId)
       }
     } catch (error) {
       setLoginStatus('error')
@@ -12807,6 +12848,11 @@ function AdministrationWorkspace({
       const session = await getCurrentSession(sessionId)
       setAuthSession(session)
       setSessionStatus(session.authenticated ? 'active' : 'ended')
+      if (session.authenticated && session.sessionId) {
+        onAdminSessionActive(session.sessionId)
+      } else {
+        onAdminSessionEnded()
+      }
       if (!session.authenticated) {
         setSessionError(session.failureReason ?? 'Session is not active.')
       }
@@ -12834,6 +12880,7 @@ function AdministrationWorkspace({
       setLoginAudit(null)
       setLoginAuditStatus('idle')
       setLoginAuditError(null)
+      onAdminSessionEnded()
     } catch (error) {
       setSessionStatus('error')
       setSessionError(error instanceof Error ? error.message : 'Session logout failed')
@@ -13445,7 +13492,7 @@ function AdministrationWorkspace({
         ) : status === 'loading' ? (
           <div className="empty-chart">Loading administration directory</div>
         ) : (
-          <div className="empty-chart">Open Admin to load the users and facilities directory</div>
+          <div className="empty-chart">Sign in to load the users and facilities directory</div>
         )}
       </section>
     </section>
