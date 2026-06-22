@@ -33,6 +33,7 @@ function Add-Check {
 }
 
 $AdministrationHeaders = $null
+$FrontDeskHeaders = $null
 
 function Get-AdministrationHeaders {
     if ($null -eq $script:AdministrationHeaders) {
@@ -55,6 +56,29 @@ function Get-AdministrationHeaders {
     }
 
     return $script:AdministrationHeaders
+}
+
+function Get-FrontDeskHeaders {
+    if ($null -eq $script:FrontDeskHeaders) {
+        $loginBody = @{
+            username = "gold-frontdesk-01"
+            password = "pass"
+        }
+        $login = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/auth/login" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body ($loginBody | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+
+        if ($login.authenticated -ne $true -or [string]::IsNullOrWhiteSpace($login.sessionId)) {
+            throw "Front-desk smoke login did not issue an active session."
+        }
+
+        $script:FrontDeskHeaders = @{ "X-Legacy EHR-Session" = $login.sessionId }
+    }
+
+    return $script:FrontDeskHeaders
 }
 
 function New-AuthenticatedHttpClient {
@@ -7193,6 +7217,7 @@ finally {
 
 try {
     $unauthenticatedReportsStatus = 0
+    $frontDeskReportsStatus = 0
     try {
         $unauthenticatedReports = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/reports/operational" `
@@ -7209,12 +7234,30 @@ try {
             throw
         }
     }
+    try {
+        $frontDeskReports = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/reports/operational" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskReportsStatus = [int]$frontDeskReports.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskReportsStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
 
     $reports = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/operational" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $topProvider = $reports.providerActivity | Where-Object { $_.username -eq "gold-provider-02" } | Select-Object -First 1
     $northFacility = $reports.facilityActivity | Where-Object { $_.code -eq "NORTH" } | Select-Object -First 1
     $asthmaCondition = $reports.clinicalConditions | Where-Object { $_.title -eq "Asthma, uncomplicated" -and $_.diagnosis -eq "ICD10:J45.909" } | Select-Object -First 1
     $reportsPassed = $unauthenticatedReportsStatus -eq 401 `
+        -and $frontDeskReportsStatus -eq 403 `
         -and $reports.counts.patients -eq 1000 `
         -and $reports.counts.futureAppointments -eq 1261 `
         -and $reports.counts.currentYearEncounters -eq 1100 `
@@ -7229,6 +7272,7 @@ try {
         -and $asthmaCondition.patients -eq 188
     Add-Check -Name "anchor operational reports" -Result $(if ($reportsPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedReportsStatus
+        frontDeskStatus = $frontDeskReportsStatus
         counts = $reports.counts
         topProvider = $topProvider
         northFacility = $northFacility
@@ -7241,6 +7285,7 @@ catch {
 
 try {
     $unauthenticatedReportExportStatus = 0
+    $frontDeskReportExportStatus = 0
     try {
         $unauthenticatedReportExport = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/reports/operational/export" `
@@ -7258,12 +7303,31 @@ try {
             throw
         }
     }
+    try {
+        $frontDeskReportExport = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/reports/operational/export" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -UseBasicParsing `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskReportExportStatus = [int]$frontDeskReportExport.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskReportExportStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
 
     $reportExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/operational/export" -Method Get -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20
     $contentType = ($reportExport.Headers["Content-Type"] -join ",")
     $exportText = [string]$reportExport.Content
     $sampleLines = $exportText -split "\r?\n" | Select-Object -First 5
     $exportPassed = $unauthenticatedReportExportStatus -eq 401 `
+        -and $frontDeskReportExportStatus -eq 403 `
         -and $reportExport.StatusCode -eq 200 `
         -and $contentType -like "text/csv*" `
         -and $exportText.Contains("Section,Name,Metric,Value") `
@@ -7274,6 +7338,7 @@ try {
         -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")
     Add-Check -Name "operational reports csv export" -Result $(if ($exportPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedReportExportStatus
+        frontDeskStatus = $frontDeskReportExportStatus
         statusCode = $reportExport.StatusCode
         contentType = $contentType
         sample = $sampleLines

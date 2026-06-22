@@ -1944,7 +1944,7 @@ administration.MapDelete("/access-control/user-memberships/{userValue}/{groupVal
     .WithName("RevokeAdministrationAccessUserMembership");
 
 var reports = app.MapGroup("/api/reports").WithTags("Reports");
-RequireActiveSession(reports);
+RequireAccessPermission(reports, "patients", "pat_rep", "view");
 
 reports.MapGet("/operational", async (
         ReportRepository repository,

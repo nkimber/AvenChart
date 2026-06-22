@@ -130,6 +130,7 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        var allowedReturnValues = GetAllowedReturnValues(returnValue);
         command.CommandText = """
             select exists (
               select 1
@@ -137,7 +138,7 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
               join access_group_permissions permission
                 on permission.group_value = membership.group_value
               where lower(membership.user_value) = lower(@username)
-                and permission.return_value = @return_value
+                and permission.return_value = any(@return_values)
                 and (
                   (permission.section_value = @section_value and permission.permission_value = @permission_value)
                   or (permission.section_value = 'admin' and permission.permission_value = 'super')
@@ -147,9 +148,20 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("username", username);
         command.Parameters.AddWithValue("section_value", sectionValue);
         command.Parameters.AddWithValue("permission_value", permissionValue);
-        command.Parameters.AddWithValue("return_value", returnValue);
+        command.Parameters.AddWithValue("return_values", allowedReturnValues);
 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static string[] GetAllowedReturnValues(string returnValue)
+    {
+        return returnValue.Trim().ToLowerInvariant() switch
+        {
+            "view" => ["view", "addonly", "wsome", "write"],
+            "addonly" => ["addonly", "write"],
+            "wsome" => ["wsome", "write"],
+            _ => [returnValue]
+        };
     }
 
     public async Task<AuthAuditResponse> GetLoginAuditAsync(int limit, CancellationToken cancellationToken)

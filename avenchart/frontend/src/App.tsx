@@ -12419,7 +12419,7 @@ function ReportsWorkspace({
 
         {status === 'error' && <div className="status-banner error">{error}</div>}
 
-        {!sessionId && (
+        {(!sessionId || status === 'error') && (
           <form className="mutation-form" aria-label="Reports access" onSubmit={handleReportsLogin}>
             <div className="panel-heading">
               <ShieldCheck size={17} />

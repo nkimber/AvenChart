@@ -1998,12 +1998,17 @@ function buildLegacyEhrSessionHeaders(sessionId?: string | null, contentType?: s
   return headers
 }
 
-function adminApiError(action: string, status: number) {
+function adminApiError(
+  action: string,
+  status: number,
+  forbiddenRequirement = 'ACL Administration access',
+  sessionRequirement = 'an active admin session',
+) {
   if (status === 401) {
-    return `${action} requires an active admin session.`
+    return `${action} requires ${sessionRequirement}.`
   }
   if (status === 403) {
-    return `${action} requires ACL Administration access.`
+    return `${action} requires ${forbiddenRequirement}.`
   }
 
   return `${action} failed with ${status}`
@@ -4440,7 +4445,9 @@ export async function getOperationalReports(
     signal,
   })
   if (!response.ok) {
-    throw new Error(adminApiError('Operational reports load', response.status))
+    throw new Error(
+      adminApiError('Operational reports load', response.status, 'Patient Report access', 'an active Legacy EHR session'),
+    )
   }
 
   return response.json()
@@ -4456,7 +4463,14 @@ export async function getOperationalReportsCsv(sessionId?: string | null, signal
     signal,
   })
   if (!response.ok) {
-    throw new Error(adminApiError('Operational reports CSV export', response.status))
+    throw new Error(
+      adminApiError(
+        'Operational reports CSV export',
+        response.status,
+        'Patient Report access',
+        'an active Legacy EHR session',
+      ),
+    )
   }
 
   return response.text()
