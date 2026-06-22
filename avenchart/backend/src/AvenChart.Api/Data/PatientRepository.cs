@@ -129,6 +129,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.guardian_relationship,
                 p.guardian_phone,
                 p.guardian_email,
+                p.guardian_sex,
+                p.guardian_address,
+                p.guardian_city,
+                p.guardian_state,
+                p.guardian_postal_code,
+                p.guardian_country,
+                p.guardian_work_phone,
                 p.portal_enabled,
                 p.registration_date,
                 p.deceased_date,
@@ -238,6 +245,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 GuardianRelationship: ReadNullableString(reader, "guardian_relationship"),
                 GuardianPhone: ReadNullableString(reader, "guardian_phone"),
                 GuardianEmail: ReadNullableString(reader, "guardian_email"),
+                GuardianSex: ReadNullableString(reader, "guardian_sex"),
+                GuardianAddress: ReadNullableString(reader, "guardian_address"),
+                GuardianCity: ReadNullableString(reader, "guardian_city"),
+                GuardianState: ReadNullableString(reader, "guardian_state"),
+                GuardianPostalCode: ReadNullableString(reader, "guardian_postal_code"),
+                GuardianCountry: ReadNullableString(reader, "guardian_country"),
+                GuardianWorkPhone: ReadNullableString(reader, "guardian_work_phone"),
                 PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
@@ -628,7 +642,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 guardian_name = @guardianName,
                 guardian_relationship = @guardianRelationship,
                 guardian_phone = @guardianPhone,
-                guardian_email = @guardianEmail
+                guardian_email = @guardianEmail,
+                guardian_sex = @guardianSex,
+                guardian_address = @guardianAddress,
+                guardian_city = @guardianCity,
+                guardian_state = @guardianState,
+                guardian_postal_code = @guardianPostalCode,
+                guardian_country = @guardianCountry,
+                guardian_work_phone = @guardianWorkPhone
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
                or legacy_pid::text = @patientId
@@ -640,6 +661,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("guardianRelationship", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianRelationship);
         command.Parameters.Add("guardianPhone", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianPhone);
         command.Parameters.Add("guardianEmail", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianEmail);
+        command.Parameters.Add("guardianSex", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianSex);
+        command.Parameters.Add("guardianAddress", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianAddress);
+        command.Parameters.Add("guardianCity", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianCity);
+        command.Parameters.Add("guardianState", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianState);
+        command.Parameters.Add("guardianPostalCode", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianPostalCode);
+        command.Parameters.Add("guardianCountry", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianCountry);
+        command.Parameters.Add("guardianWorkPhone", NpgsqlDbType.Text).Value = NormalizeNullable(request.GuardianWorkPhone);
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);

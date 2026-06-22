@@ -613,6 +613,13 @@ try {
         guardianRelationship = $guardianOriginal.guardianRelationship
         guardianPhone = $guardianOriginal.guardianPhone
         guardianEmail = $guardianOriginal.guardianEmail
+        guardianSex = $guardianOriginal.guardianSex
+        guardianAddress = $guardianOriginal.guardianAddress
+        guardianCity = $guardianOriginal.guardianCity
+        guardianState = $guardianOriginal.guardianState
+        guardianPostalCode = $guardianOriginal.guardianPostalCode
+        guardianCountry = $guardianOriginal.guardianCountry
+        guardianWorkPhone = $guardianOriginal.guardianWorkPhone
     }
     $guardianBody = @{
         motherName = "Smoke Mother Guardian"
@@ -620,6 +627,13 @@ try {
         guardianRelationship = "guardian"
         guardianPhone = "(619) 555-1940"
         guardianEmail = "smoke.guardian194@example.test"
+        guardianSex = "Female"
+        guardianAddress = "195 Smoke Guardian Way"
+        guardianCity = "Chula Vista"
+        guardianState = "California"
+        guardianPostalCode = "91910"
+        guardianCountry = "USA"
+        guardianWorkPhone = "(619) 555-1950"
     }
 
     $updatedGuardian = Invoke-RestMethod `
@@ -646,17 +660,32 @@ try {
         -and $updatedGuardian.guardianRelationship -eq $guardianBody.guardianRelationship `
         -and $updatedGuardian.guardianPhone -eq $guardianBody.guardianPhone `
         -and $updatedGuardian.guardianEmail -eq $guardianBody.guardianEmail `
+        -and $updatedGuardian.guardianSex -eq $guardianBody.guardianSex `
+        -and $updatedGuardian.guardianAddress -eq $guardianBody.guardianAddress `
+        -and $updatedGuardian.guardianCity -eq $guardianBody.guardianCity `
+        -and $updatedGuardian.guardianState -eq $guardianBody.guardianState `
+        -and $updatedGuardian.guardianPostalCode -eq $guardianBody.guardianPostalCode `
+        -and $updatedGuardian.guardianCountry -eq $guardianBody.guardianCountry `
+        -and $updatedGuardian.guardianWorkPhone -eq $guardianBody.guardianWorkPhone `
         -and $reloadedGuardian.guardianName -eq $guardianBody.guardianName
 
     $restorePassed = $restoredGuardian.motherName -eq $originalGuardianBody.motherName `
         -and $restoredGuardian.guardianName -eq $originalGuardianBody.guardianName `
         -and $restoredGuardian.guardianRelationship -eq $originalGuardianBody.guardianRelationship `
         -and $restoredGuardian.guardianPhone -eq $originalGuardianBody.guardianPhone `
-        -and $restoredGuardian.guardianEmail -eq $originalGuardianBody.guardianEmail
+        -and $restoredGuardian.guardianEmail -eq $originalGuardianBody.guardianEmail `
+        -and $restoredGuardian.guardianSex -eq $originalGuardianBody.guardianSex `
+        -and $restoredGuardian.guardianAddress -eq $originalGuardianBody.guardianAddress `
+        -and $restoredGuardian.guardianCity -eq $originalGuardianBody.guardianCity `
+        -and $restoredGuardian.guardianState -eq $originalGuardianBody.guardianState `
+        -and $restoredGuardian.guardianPostalCode -eq $originalGuardianBody.guardianPostalCode `
+        -and $restoredGuardian.guardianCountry -eq $originalGuardianBody.guardianCountry `
+        -and $restoredGuardian.guardianWorkPhone -eq $originalGuardianBody.guardianWorkPhone
 
     Add-Check -Name "patient guardian contact lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
         updatedGuardian = $updatedGuardian.guardianName
         updatedRelationship = $updatedGuardian.guardianRelationship
+        updatedGuardianCity = $updatedGuardian.guardianCity
         restoredGuardian = $restoredGuardian.guardianName
     }
 }
@@ -672,6 +701,13 @@ finally {
                 guardianRelationship = $guardianOriginal.guardianRelationship
                 guardianPhone = $guardianOriginal.guardianPhone
                 guardianEmail = $guardianOriginal.guardianEmail
+                guardianSex = $guardianOriginal.guardianSex
+                guardianAddress = $guardianOriginal.guardianAddress
+                guardianCity = $guardianOriginal.guardianCity
+                guardianState = $guardianOriginal.guardianState
+                guardianPostalCode = $guardianOriginal.guardianPostalCode
+                guardianCountry = $guardianOriginal.guardianCountry
+                guardianWorkPhone = $guardianOriginal.guardianWorkPhone
             }
             Invoke-RestMethod `
                 -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/guardian-contact" `

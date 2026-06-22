@@ -104,6 +104,13 @@ export type PatientChartSummary = PatientListItem & {
   guardianRelationship?: string | null
   guardianPhone?: string | null
   guardianEmail?: string | null
+  guardianSex?: string | null
+  guardianAddress?: string | null
+  guardianCity?: string | null
+  guardianState?: string | null
+  guardianPostalCode?: string | null
+  guardianCountry?: string | null
+  guardianWorkPhone?: string | null
   portalEnabled: boolean
   registrationDate: string
   deceasedDate?: string | null
@@ -156,6 +163,13 @@ export type PatientGuardianContactUpdate = {
   guardianRelationship: string
   guardianPhone: string
   guardianEmail: string
+  guardianSex: string
+  guardianAddress: string
+  guardianCity: string
+  guardianState: string
+  guardianPostalCode: string
+  guardianCountry: string
+  guardianWorkPhone: string
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {

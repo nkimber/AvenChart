@@ -61,6 +61,13 @@ public sealed record PatientChartSummary(
     string? GuardianRelationship,
     string? GuardianPhone,
     string? GuardianEmail,
+    string? GuardianSex,
+    string? GuardianAddress,
+    string? GuardianCity,
+    string? GuardianState,
+    string? GuardianPostalCode,
+    string? GuardianCountry,
+    string? GuardianWorkPhone,
     bool PortalEnabled,
     string RegistrationDate,
     string? DeceasedDate,
@@ -166,7 +173,14 @@ public sealed record PatientGuardianContactUpdateRequest(
     string? GuardianName,
     string? GuardianRelationship,
     string? GuardianPhone,
-    string? GuardianEmail);
+    string? GuardianEmail,
+    string? GuardianSex,
+    string? GuardianAddress,
+    string? GuardianCity,
+    string? GuardianState,
+    string? GuardianPostalCode,
+    string? GuardianCountry,
+    string? GuardianWorkPhone);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

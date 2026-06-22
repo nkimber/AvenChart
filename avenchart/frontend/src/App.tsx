@@ -4794,18 +4794,97 @@ function PatientWorkspace({
                     <div className="mutation-grid two-column">
                       <label className="contact-field">
                         <span>Relationship</span>
-                        <input
+                        <select
                           value={guardianContactDraft.guardianRelationship}
                           onChange={(event) => updateGuardianContactDraft('guardianRelationship', event.target.value)}
                           aria-label="Patient guardian relationship"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="guardian">Guardian</option>
+                          <option value="parent">Parent</option>
+                          <option value="spouse">Spouse</option>
+                          <option value="mother">Mother</option>
+                          <option value="father">Father</option>
+                          <option value="sibling">Sibling</option>
+                          <option value="care_giver">Care giver</option>
+                        </select>
+                      </label>
+                      <label className="contact-field">
+                        <span>Sex</span>
+                        <select
+                          value={guardianContactDraft.guardianSex}
+                          onChange={(event) => updateGuardianContactDraft('guardianSex', event.target.value)}
+                          aria-label="Patient guardian sex"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="Female">Female</option>
+                          <option value="Male">Male</option>
+                          <option value="UNK">Unknown</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="contact-field">
+                      <span>Address</span>
+                      <input
+                        value={guardianContactDraft.guardianAddress}
+                        onChange={(event) => updateGuardianContactDraft('guardianAddress', event.target.value)}
+                        aria-label="Patient guardian address"
+                      />
+                    </label>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>City</span>
+                        <input
+                          value={guardianContactDraft.guardianCity}
+                          onChange={(event) => updateGuardianContactDraft('guardianCity', event.target.value)}
+                          aria-label="Patient guardian city"
                         />
                       </label>
+                      <label className="contact-field">
+                        <span>State</span>
+                        <input
+                          value={guardianContactDraft.guardianState}
+                          onChange={(event) => updateGuardianContactDraft('guardianState', event.target.value)}
+                          aria-label="Patient guardian state"
+                        />
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
+                      <label className="contact-field">
+                        <span>Postal code</span>
+                        <input
+                          value={guardianContactDraft.guardianPostalCode}
+                          onChange={(event) => updateGuardianContactDraft('guardianPostalCode', event.target.value)}
+                          aria-label="Patient guardian postal code"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Country</span>
+                        <select
+                          value={guardianContactDraft.guardianCountry}
+                          onChange={(event) => updateGuardianContactDraft('guardianCountry', event.target.value)}
+                          aria-label="Patient guardian country"
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="USA">USA</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mutation-grid two-column">
                       <label className="contact-field">
                         <span>Phone</span>
                         <input
                           value={guardianContactDraft.guardianPhone}
                           onChange={(event) => updateGuardianContactDraft('guardianPhone', event.target.value)}
                           aria-label="Patient guardian phone"
+                        />
+                      </label>
+                      <label className="contact-field">
+                        <span>Work phone</span>
+                        <input
+                          value={guardianContactDraft.guardianWorkPhone}
+                          onChange={(event) => updateGuardianContactDraft('guardianWorkPhone', event.target.value)}
+                          aria-label="Patient guardian work phone"
                         />
                       </label>
                     </div>
@@ -4845,7 +4924,14 @@ function PatientWorkspace({
                     <Field label="Mother name" value={chart?.motherName} />
                     <Field label="Guardian" value={chart?.guardianName} />
                     <Field label="Relationship" value={formatGuardianRelationship(chart?.guardianRelationship)} />
+                    <Field label="Guardian sex" value={formatGuardianSex(chart?.guardianSex)} />
+                    <Field label="Guardian address" value={chart?.guardianAddress} />
+                    <Field label="Guardian city" value={chart?.guardianCity} />
+                    <Field label="Guardian state" value={chart?.guardianState} />
+                    <Field label="Guardian postal code" value={chart?.guardianPostalCode} />
+                    <Field label="Guardian country" value={chart?.guardianCountry} />
                     <Field label="Guardian phone" value={chart?.guardianPhone} />
+                    <Field label="Guardian work phone" value={chart?.guardianWorkPhone} />
                     <Field label="Guardian email" value={chart?.guardianEmail} />
                     <div className="contact-actions">
                       <button
@@ -17725,6 +17811,13 @@ function buildGuardianContactDraft(patient: PatientChartSummary | null): Patient
     guardianRelationship: patient?.guardianRelationship ?? '',
     guardianPhone: patient?.guardianPhone ?? '',
     guardianEmail: patient?.guardianEmail ?? '',
+    guardianSex: patient?.guardianSex ?? '',
+    guardianAddress: patient?.guardianAddress ?? '',
+    guardianCity: patient?.guardianCity ?? '',
+    guardianState: patient?.guardianState ?? '',
+    guardianPostalCode: patient?.guardianPostalCode ?? '',
+    guardianCountry: patient?.guardianCountry ?? '',
+    guardianWorkPhone: patient?.guardianWorkPhone ?? '',
   }
 }
 
@@ -17741,6 +17834,15 @@ function formatGuardianRelationship(value: string | null | undefined) {
     sibling: 'Sibling',
     sister: 'Sister',
     spouse: 'Spouse',
+  }
+  return value ? (labels[value] ?? value) : ''
+}
+
+function formatGuardianSex(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    Female: 'Female',
+    Male: 'Male',
+    UNK: 'Unknown',
   }
   return value ? (labels[value] ?? value) : ''
 }
