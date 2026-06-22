@@ -363,6 +363,16 @@ export type EncounterSignatureItem = {
   signatureHash: string
 }
 
+export type EncounterAmendmentHistoryItem = {
+  signatureId: number
+  signerUsername: string
+  signedAt: string
+  isLock: boolean
+  amendment: string
+  hash: string
+  signatureHash: string
+}
+
 export type EncounterDetail = EncounterListItem & {
   firstName: string
   lastName: string
@@ -377,6 +387,7 @@ export type EncounterDetail = EncounterListItem & {
   claims: BillingClaimItem[]
   procedureOrders: ProcedureOrderItem[]
   signatures: EncounterSignatureItem[]
+  amendmentHistory: EncounterAmendmentHistoryItem[]
   documents: EncounterDocumentAttachment[]
 }
 

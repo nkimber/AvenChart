@@ -1094,6 +1094,7 @@
 .encounter-procedure-panel,
 .encounter-documents-panel,
 .encounter-signature-panel,
+.encounter-amendment-panel,
 .encounter-fee-sheet-panel,
 .encounter-procedure-entry-panel {
   margin-top: 12px;
@@ -1169,6 +1170,7 @@
 .encounter-diagnosis-list,
 .encounter-claim-list,
 .encounter-signature-list,
+.encounter-amendment-list,
 .encounter-documents-list {
   display: grid;
   gap: 10px;
@@ -1187,6 +1189,7 @@
 .encounter-diagnosis-card,
 .encounter-claim-card,
 .encounter-signature-card,
+.encounter-amendment-card,
 .encounter-document-card {
   background: #f8fafb;
   border: 1px solid #e0e8ec;
@@ -1204,26 +1207,31 @@
   justify-content: space-between;
 }
 
-.encounter-signature-card > div {
+.encounter-signature-card > div,
+.encounter-amendment-card > div {
   display: flex;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
 }
 
-.encounter-signature-card strong {
+.encounter-signature-card strong,
+.encounter-amendment-card strong {
   color: #123743;
   font-size: 14px;
 }
 
 .encounter-signature-card span,
-.encounter-signature-card p {
+.encounter-signature-card p,
+.encounter-amendment-card span,
+.encounter-amendment-card p {
   color: #52636b;
   font-size: 13px;
   margin: 0;
 }
 
-.encounter-signature-card code {
+.encounter-signature-card code,
+.encounter-amendment-card code {
   align-self: flex-start;
   background: #edf5f6;
   border-radius: 5px;
@@ -2464,6 +2472,7 @@
   .encounter-diagnosis-list,
   .encounter-claim-list,
   .encounter-signature-list,
+  .encounter-amendment-list,
   .encounter-documents-list,
   .encounter-procedure-result-list,
   .encounter-signature-form,

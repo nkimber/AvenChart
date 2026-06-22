@@ -11,6 +11,7 @@ import {
   Download,
   ExternalLink,
   FileCheck2,
+  FileClock,
   FileText,
   FlaskConical,
   FolderOpen,
@@ -205,6 +206,7 @@ import {
   type CollectionsWorkQueueItem,
   type CollectionsWorkQueueResponse,
   type CollectionsFollowUpMutationResponse,
+  type EncounterAmendmentHistoryItem,
   type EncounterCreateInput,
   type EncounterBinaryDocumentCreateInput,
   type EncounterDiagnosisCode,
@@ -4896,6 +4898,10 @@ function formatSignatureCount(count: number) {
   return `${count} ${count === 1 ? 'signature' : 'signatures'}`
 }
 
+function formatAmendmentCount(count: number) {
+  return `${count} ${count === 1 ? 'amendment' : 'amendments'}`
+}
+
 function appointmentOverlapDetail(count: number, appointmentIds: string[]) {
   if (count <= 0) {
     return 'None'
@@ -6708,6 +6714,7 @@ function EncounterWorkspace({
   const archivedAttachedDocuments = attachedDocuments.filter((document) => document.deleted !== 0)
   const activeAttachedDocumentCount = attachedDocuments.length - archivedAttachedDocuments.length
   const encounterSignatures = encounterDetail?.signatures ?? []
+  const encounterAmendmentHistory = encounterDetail?.amendmentHistory ?? []
   const encounterBillingLines = encounterDetail?.billingLines ?? []
   const encounterBillingTotal = encounterBillingLines.reduce((sum, line) => sum + (line.fee ?? 0), 0)
   const encounterClaims = encounterDetail?.claims ?? []
@@ -7031,6 +7038,25 @@ function EncounterWorkspace({
                 ))}
                 {encounterSignatures.length === 0 && (
                   <div className="timeline-placeholder">No sign-off recorded for this encounter</div>
+                )}
+              </div>
+            </section>
+
+            <section className="info-panel encounter-amendment-panel" aria-label="Encounter amendment history">
+              <div className="panel-heading">
+                <FileClock size={17} />
+                <h3>Amendment History</h3>
+                <span className="panel-count-pill">{formatAmendmentCount(encounterAmendmentHistory.length)}</span>
+                {encounterAmendmentHistory.some((item) => item.isLock) && (
+                  <span className="panel-count-pill">Locked</span>
+                )}
+              </div>
+              <div className="encounter-amendment-list">
+                {encounterAmendmentHistory.map((item) => (
+                  <EncounterAmendmentHistoryCard key={item.signatureId} item={item} />
+                ))}
+                {encounterAmendmentHistory.length === 0 && (
+                  <div className="timeline-placeholder">No amendments recorded for this encounter</div>
                 )}
               </div>
             </section>
@@ -7872,6 +7898,19 @@ function EncounterSignatureCard({
       >
         <Trash2 size={15} />
       </button>
+    </article>
+  )
+}
+
+function EncounterAmendmentHistoryCard({ item }: { item: EncounterAmendmentHistoryItem }) {
+  return (
+    <article className="encounter-amendment-card">
+      <div>
+        <strong>{item.isLock ? 'Locked amendment' : 'Signed amendment'}</strong>
+        <span>{item.signerUsername} / {item.signedAt}</span>
+        <p>{item.amendment}</p>
+        <code>{item.hash.slice(0, 12)}</code>
+      </div>
     </article>
   )
 }

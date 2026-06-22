@@ -2996,6 +2996,18 @@ try {
             -and $_.isLock -eq $true `
             -and $_.amendment -eq $coSignatureNote
     } | Select-Object -First 1
+    $amendmentHistory = @($createdCoSignature.detail.amendmentHistory | Where-Object { $null -ne $_ })
+    $primaryAmendmentVisible = $amendmentHistory | Where-Object {
+        $_.signatureId -eq $createdPrimarySignature.id `
+            -and $_.signerUsername -eq "admin" `
+            -and $_.amendment -eq $primarySignatureNote
+    } | Select-Object -First 1
+    $coSignatureAmendmentVisible = $amendmentHistory | Where-Object {
+        $_.signatureId -eq $createdCoSignature.id `
+            -and $_.signerUsername -eq "gold-provider-02" `
+            -and $_.isLock -eq $true `
+            -and $_.amendment -eq $coSignatureNote
+    } | Select-Object -First 1
 
     foreach ($signatureId in @($smokeEncounterCoSignatureIds)) {
         Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/signatures/$signatureId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
@@ -3005,13 +3017,20 @@ try {
     $deletedCoSignaturesVisible = @($afterCoSignatureDeleteDetail.signatures | Where-Object { $null -ne $_ }) | Where-Object {
         $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
     }
+    $deletedAmendmentsVisible = @($afterCoSignatureDeleteDetail.amendmentHistory | Where-Object { $null -ne $_ }) | Where-Object {
+        $_.amendment -eq $primarySignatureNote -or $_.amendment -eq $coSignatureNote
+    }
 
-    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and @($deletedCoSignaturesVisible).Count -eq 0
+    $encounterCoSignaturePassed = $null -ne $primarySignatureVisible -and $null -ne $coSignatureVisible -and $null -ne $primaryAmendmentVisible -and $null -ne $coSignatureAmendmentVisible -and @($amendmentHistory).Count -eq 2 -and @($deletedCoSignaturesVisible).Count -eq 0 -and @($deletedAmendmentsVisible).Count -eq 0
     Add-Check -Name "encounter co-signature lifecycle" -Result $(if ($encounterCoSignaturePassed) { "passed" } else { "failed" }) -Details @{
         encounter = 1000013
         primarySignature = $primarySignatureVisible
         coSignature = $coSignatureVisible
+        amendmentHistoryCount = @($amendmentHistory).Count
+        primaryAmendment = $primaryAmendmentVisible
+        coSignatureAmendment = $coSignatureAmendmentVisible
         deletedVisibleCount = @($deletedCoSignaturesVisible).Count
+        deletedAmendmentCount = @($deletedAmendmentsVisible).Count
     }
 }
 catch {

@@ -63,6 +63,7 @@ public sealed record EncounterDetail(
     IReadOnlyList<BillingClaimItem> Claims,
     IReadOnlyList<ProcedureOrderItem> ProcedureOrders,
     IReadOnlyList<EncounterSignatureItem> Signatures,
+    IReadOnlyList<EncounterAmendmentHistoryItem> AmendmentHistory,
     IReadOnlyList<EncounterDocumentAttachment> Documents);
 
 public sealed record EncounterSignatureItem(
@@ -73,6 +74,15 @@ public sealed record EncounterSignatureItem(
     string SignedAt,
     bool IsLock,
     string? Amendment,
+    string Hash,
+    string SignatureHash);
+
+public sealed record EncounterAmendmentHistoryItem(
+    int SignatureId,
+    string SignerUsername,
+    string SignedAt,
+    bool IsLock,
+    string Amendment,
     string Hash,
     string SignatureHash);
 

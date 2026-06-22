@@ -184,6 +184,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             Claims: Array.Empty<BillingClaimItem>(),
             ProcedureOrders: Array.Empty<ProcedureOrderItem>(),
             Signatures: Array.Empty<EncounterSignatureItem>(),
+            AmendmentHistory: Array.Empty<EncounterAmendmentHistoryItem>(),
             Documents: Array.Empty<EncounterDocumentAttachment>());
 
         await reader.DisposeAsync();
@@ -206,6 +207,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             Claims = claims,
             ProcedureOrders = procedureOrders,
             Signatures = signatures,
+            AmendmentHistory = BuildAmendmentHistory(signatures),
             Documents = documents
         };
     }
@@ -969,6 +971,22 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         }
 
         return signatures;
+    }
+
+    private static IReadOnlyList<EncounterAmendmentHistoryItem> BuildAmendmentHistory(
+        IReadOnlyList<EncounterSignatureItem> signatures)
+    {
+        return signatures
+            .Where(signature => !string.IsNullOrWhiteSpace(signature.Amendment))
+            .Select(signature => new EncounterAmendmentHistoryItem(
+                SignatureId: signature.Id,
+                SignerUsername: signature.SignerUsername,
+                SignedAt: signature.SignedAt,
+                IsLock: signature.IsLock,
+                Amendment: signature.Amendment!,
+                Hash: signature.Hash,
+                SignatureHash: signature.SignatureHash))
+            .ToList();
     }
 
     private static async Task<IReadOnlyList<ProcedureReportRow>> GetProcedureReportsForOrdersAsync(
