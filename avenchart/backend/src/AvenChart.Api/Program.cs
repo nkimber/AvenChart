@@ -1701,7 +1701,8 @@ billing.MapPost("/collections/follow-ups", async (
             ? Results.BadRequest("Collections follow-up could not be created from the supplied patient and account state.")
             : Results.Created($"/api/messages/{mutation.Id}", mutation);
     })
-    .WithName("CreateBillingCollectionsFollowUp");
+    .WithName("CreateBillingCollectionsFollowUp")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapGet("/{patientId}", async (
         BillingRepository repository,
@@ -1736,7 +1737,8 @@ billing.MapPost("/lines", async (
         var mutation = await repository.CreateLineAsync(request, cancellationToken);
         return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/lines/{mutation.Id}", mutation);
     })
-    .WithName("CreateBillingLine");
+    .WithName("CreateBillingLine")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPut("/lines/{billingLineId}", async (
         BillingRepository repository,
@@ -1747,7 +1749,8 @@ billing.MapPut("/lines/{billingLineId}", async (
         var mutation = await repository.UpdateLineAsync(billingLineId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateBillingLine");
+    .WithName("UpdateBillingLine")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPut("/lines/{billingLineId}/status", async (
         BillingRepository repository,
@@ -1758,7 +1761,8 @@ billing.MapPut("/lines/{billingLineId}/status", async (
         var mutation = await repository.UpdateLineStatusAsync(billingLineId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateBillingLineStatus");
+    .WithName("UpdateBillingLineStatus")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapDelete("/lines/{billingLineId}", async (
         BillingRepository repository,
@@ -1768,7 +1772,8 @@ billing.MapDelete("/lines/{billingLineId}", async (
         var deleted = await repository.DeleteLineAsync(billingLineId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteBillingLine");
+    .WithName("DeleteBillingLine")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPost("/claims", async (
         BillingRepository repository,
@@ -1778,7 +1783,8 @@ billing.MapPost("/claims", async (
         var mutation = await repository.CreateClaimAsync(request, cancellationToken);
         return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/claims/{mutation.Id}", mutation);
     })
-    .WithName("CreateBillingClaimStatus");
+    .WithName("CreateBillingClaimStatus")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPut("/claims/{claimId}/status", async (
         BillingRepository repository,
@@ -1789,7 +1795,8 @@ billing.MapPut("/claims/{claimId}/status", async (
         var mutation = await repository.UpdateClaimStatusAsync(claimId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdateBillingClaimStatus");
+    .WithName("UpdateBillingClaimStatus")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapDelete("/claims/{claimId}", async (
         BillingRepository repository,
@@ -1799,7 +1806,8 @@ billing.MapDelete("/claims/{claimId}", async (
         var deleted = await repository.DeleteClaimAsync(claimId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteBillingClaimStatus");
+    .WithName("DeleteBillingClaimStatus")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPost("/payments", async (
         BillingRepository repository,
@@ -1809,7 +1817,8 @@ billing.MapPost("/payments", async (
         var mutation = await repository.CreatePaymentAsync(request, cancellationToken);
         return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/payments/{mutation.Id}", mutation);
     })
-    .WithName("CreateBillingPaymentPosting");
+    .WithName("CreateBillingPaymentPosting")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapPut("/payments/{activityId}/void", async (
         BillingRepository repository,
@@ -1819,7 +1828,8 @@ billing.MapPut("/payments/{activityId}/void", async (
         var mutation = await repository.VoidPaymentAsync(activityId, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("VoidBillingPaymentPosting");
+    .WithName("VoidBillingPaymentPosting")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 billing.MapDelete("/payments/{activityId}", async (
         BillingRepository repository,
@@ -1829,7 +1839,8 @@ billing.MapDelete("/payments/{activityId}", async (
         var deleted = await repository.DeletePaymentAsync(activityId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeleteBillingPaymentPosting");
+    .WithName("DeleteBillingPaymentPosting")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 RequireAccessPermission(administration, "admin", "acl", "write");

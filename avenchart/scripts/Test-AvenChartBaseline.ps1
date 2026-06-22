@@ -6658,6 +6658,72 @@ catch {
     Add-Check -Name "anchor fee sheet billing" -Result "failed" -Details $_.Exception.Message
 }
 
+$billingViewGrantActive = $false
+try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $billingViewGrantBody = @{
+        groupValue = "clin"
+        sectionValue = "acct"
+        permissionValue = "bill"
+        returnValue = "view"
+    } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $billingViewGrantBody -TimeoutSec 20 | Out-Null
+    $billingViewGrantActive = $true
+    $script:ClinicianHeaders = $null
+
+    $clinicianBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-ClinicianHeaders) -TimeoutSec 20
+    $clinicianBillingMutationStatus = 0
+    $clinicianBillingMutationBody = @{
+        patientId = "MOD-PAT-0005"
+        encounter = 1000052
+        billingDate = "2026-06-18"
+        codeType = "CPT4"
+        code = "99213"
+        codeText = "Blocked Billing Mutation Authorization Line"
+        fee = 125
+        units = 1
+        justify = "Z00.00"
+    } | ConvertTo-Json
+    try {
+        $clinicianBillingMutation = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/billing/lines" `
+            -Method Post `
+            -Headers (Get-ClinicianHeaders) `
+            -ContentType "application/json" `
+            -Body $clinicianBillingMutationBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianBillingMutationStatus = [int]$clinicianBillingMutation.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianBillingMutationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $billingMutationAuthorizationPassed = $clinicianBilling.patientId -eq "MOD-PAT-0005" -and $clinicianBillingMutationStatus -eq 403
+    Add-Check -Name "billing mutation authorization" -Result $(if ($billingMutationAuthorizationPassed) { "passed" } else { "failed" }) -Details @{
+        patientId = $clinicianBilling.patientId
+        clinicianMutationStatus = $clinicianBillingMutationStatus
+    }
+}
+catch {
+    Add-Check -Name "billing mutation authorization" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($billingViewGrantActive) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/access-control/group-permissions/clin/acct/bill" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+    $script:ClinicianHeaders = $null
+}
+
 try {
     $claimBilling = Invoke-RestMethod -Uri "$ApiBaseUrl/api/billing/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $claimRows = @($claimBilling.encounters | ForEach-Object { $_.claims } | Where-Object { $null -ne $_ })
