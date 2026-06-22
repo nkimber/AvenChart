@@ -3057,10 +3057,17 @@ export async function deleteClinicalImmunization(
   }
 }
 
-export async function getPatientMessages(patientId: string, signal?: AbortSignal): Promise<PatientMessagesResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, { signal })
+export async function getPatientMessages(
+  patientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(patientId.trim())}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Patient messages load failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient messages load', response.status))
   }
 
   return response.json()
@@ -3297,16 +3304,17 @@ export async function deletePatientDocument(
 
 export async function createPatientMessage(
   message: PatientMessageCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(message),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message create failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message create', response.status))
   }
 
   return response.json()
@@ -3315,16 +3323,17 @@ export async function createPatientMessage(
 export async function updatePatientMessageStatus(
   messageId: string,
   update: PatientMessageStatusUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/status`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message update', response.status))
   }
 
   return response.json()
@@ -3333,16 +3342,17 @@ export async function updatePatientMessageStatus(
 export async function updatePatientMessageContent(
   messageId: string,
   update: PatientMessageContentUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/content`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message content update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message content update', response.status))
   }
 
   return response.json()
@@ -3351,16 +3361,17 @@ export async function updatePatientMessageContent(
 export async function updatePatientMessageAssignment(
   messageId: string,
   update: PatientMessageAssignmentUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/assignment`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message assignment update failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message assignment update', response.status))
   }
 
   return response.json()
@@ -3369,16 +3380,17 @@ export async function updatePatientMessageAssignment(
 export async function replyToPatientMessage(
   messageId: string,
   reply: PatientMessageReplyInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/reply`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(reply),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message reply failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message reply', response.status))
   }
 
   return response.json()
@@ -3386,26 +3398,33 @@ export async function replyToPatientMessage(
 
 export async function softDeletePatientMessage(
   messageId: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/soft-delete`, {
     method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message archive failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message archive', response.status))
   }
 
   return response.json()
 }
 
-export async function deletePatientMessage(messageId: string, signal?: AbortSignal): Promise<void> {
+export async function deletePatientMessage(
+  messageId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient message delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Patient message delete', response.status))
   }
 }
 

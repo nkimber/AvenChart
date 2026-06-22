@@ -688,13 +688,20 @@ function App() {
       return
     }
 
+    if (!openEmrSessionId) {
+      setPatientMessages(null)
+      setMessageStatus('idle')
+      setMessageError(null)
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setMessageStatus('loading')
       setMessageError(null)
 
       try {
-        const result = await getPatientMessages(messagePatientId, controller.signal)
+        const result = await getPatientMessages(messagePatientId, openEmrSessionId, controller.signal)
         setPatientMessages(result)
         setMessageStatus('ready')
       } catch (loadError) {
@@ -709,7 +716,7 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, messagePatientId, messageRefreshKey])
+  }, [activeModule, messagePatientId, messageRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'documents') {
@@ -1043,6 +1050,14 @@ function App() {
   function getActiveClinicalListSessionId() {
     if (!openEmrSessionId) {
       throw new Error('Sign in to access clinical lists.')
+    }
+
+    return openEmrSessionId
+  }
+
+  function getActiveMessageSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access patient messages.')
     }
 
     return openEmrSessionId
@@ -3021,7 +3036,8 @@ function App() {
     setMessageError(null)
 
     try {
-      const response = await createPatientMessage(input)
+      const sessionId = getActiveMessageSessionId()
+      const response = await createPatientMessage(input, sessionId)
       setMessagePatientId(response.detail.patientId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
@@ -3040,12 +3056,13 @@ function App() {
     setMessageError(null)
 
     try {
+      const sessionId = getActiveMessageSessionId()
       const response = await updatePatientMessageStatus(message.id, {
         status: 'Done',
         body: message.body?.startsWith('Closed from')
           ? message.body
           : 'Closed from the modernized Messages workspace.',
-      })
+      }, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3063,7 +3080,8 @@ function App() {
     setMessageError(null)
 
     try {
-      const response = await updatePatientMessageContent(message.id, update)
+      const sessionId = getActiveMessageSessionId()
+      const response = await updatePatientMessageContent(message.id, update, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3081,7 +3099,8 @@ function App() {
     setMessageError(null)
 
     try {
-      const response = await updatePatientMessageAssignment(message.id, update)
+      const sessionId = getActiveMessageSessionId()
+      const response = await updatePatientMessageAssignment(message.id, update, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3099,7 +3118,8 @@ function App() {
     setMessageError(null)
 
     try {
-      const response = await replyToPatientMessage(message.id, reply)
+      const sessionId = getActiveMessageSessionId()
+      const response = await replyToPatientMessage(message.id, reply, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3117,7 +3137,8 @@ function App() {
     setMessageError(null)
 
     try {
-      const response = await softDeletePatientMessage(message.id)
+      const sessionId = getActiveMessageSessionId()
+      const response = await softDeletePatientMessage(message.id, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3135,8 +3156,9 @@ function App() {
     setMessageError(null)
 
     try {
-      await deletePatientMessage(message.id)
-      const refreshed = await getPatientMessages(patientMessages?.patientId ?? messagePatientId)
+      const sessionId = getActiveMessageSessionId()
+      await deletePatientMessage(message.id, sessionId)
+      const refreshed = await getPatientMessages(patientMessages?.patientId ?? messagePatientId, sessionId)
       setPatientMessages(refreshed)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -3614,7 +3636,12 @@ function App() {
             patientMessages={patientMessages}
             status={messageStatus}
             error={messageError}
+            sessionId={openEmrSessionId}
             onPatientIdChange={setMessagePatientId}
+            onMessagesSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+              setMessageRefreshKey((current) => current + 1)
+            }}
             onCreateMessage={handlePatientMessageCreate}
             onCloseMessage={handlePatientMessageClose}
             onUpdateMessageContent={handlePatientMessageContent}
@@ -10936,7 +10963,9 @@ function MessagesWorkspace({
   patientMessages,
   status,
   error,
+  sessionId,
   onPatientIdChange,
+  onMessagesSessionActive,
   onCreateMessage,
   onCloseMessage,
   onUpdateMessageContent,
@@ -10949,7 +10978,9 @@ function MessagesWorkspace({
   patientMessages: PatientMessagesResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
   onPatientIdChange: (value: string) => void
+  onMessagesSessionActive: (sessionId: string) => void
   onCreateMessage: (input: PatientMessageCreateInput) => Promise<unknown>
   onCloseMessage: (message: PatientMessageItem) => Promise<unknown>
   onUpdateMessageContent: (message: PatientMessageItem, update: PatientMessageContentUpdateInput) => Promise<unknown>
@@ -10962,9 +10993,12 @@ function MessagesWorkspace({
   const [messageBody, setMessageBody] = useState('Created from the modernized Messages workspace.')
   const [assignedTo, setAssignedTo] = useState('admin')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
+  const [messagesLoginStatus, setMessagesLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
+  const [messagesLoginError, setMessagesLoginError] = useState<string | null>(null)
   const newCount = countMessagesByStatus(patientMessages?.messages, 'New')
   const doneCount = countMessagesByStatus(patientMessages?.messages, 'Done')
   const isLoading = status === 'loading'
+  const messagesLocked = !sessionId
 
   async function handleMessageSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -10980,9 +11014,46 @@ function MessagesWorkspace({
     setMutationMessage('Message saved')
   }
 
+  async function handleMessagesLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMessagesLoginStatus('checking')
+    setMessagesLoginError(null)
+
+    try {
+      const result = await login({ username: 'admin', password: 'pass' })
+      if (result.authenticated && result.sessionId) {
+        onMessagesSessionActive(result.sessionId)
+        setMessagesLoginStatus('idle')
+      } else {
+        setMessagesLoginStatus('error')
+        setMessagesLoginError(result.failureReason ?? 'Message access was not granted.')
+      }
+    } catch (error) {
+      setMessagesLoginStatus('error')
+      setMessagesLoginError(error instanceof Error ? error.message : 'Message access check failed')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Messages search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Messages access" onSubmit={handleMessagesLogin}>
+            <div className="panel-heading compact-heading">
+              <ShieldCheck size={16} />
+              <h3>Messages Access</h3>
+            </div>
+            <p className="form-help-text">Sign in to load patient messages.</p>
+            <div className="detail-actions">
+              <button className="icon-text-button primary" type="submit" disabled={messagesLoginStatus === 'checking'}>
+                <LogIn size={15} />
+                {messagesLoginStatus === 'checking' ? 'Checking' : 'Verify Messages Access'}
+              </button>
+            </div>
+            {messagesLoginError && <div className="status-banner error">{messagesLoginError}</div>}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -10991,6 +11062,7 @@ function MessagesWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Messages patient ID"
               placeholder="MOD-PAT-0004"
+              disabled={messagesLocked}
             />
           </label>
         </div>
@@ -11025,6 +11097,7 @@ function MessagesWorkspace({
                 value={messageTitle}
                 onChange={(event) => setMessageTitle(event.target.value)}
                 aria-label="New message title"
+                disabled={messagesLocked}
                 required
               />
             </label>
@@ -11034,6 +11107,7 @@ function MessagesWorkspace({
                 value={assignedTo}
                 onChange={(event) => setAssignedTo(event.target.value)}
                 aria-label="New message assigned to"
+                disabled={messagesLocked}
                 required
               />
             </label>
@@ -11044,12 +11118,13 @@ function MessagesWorkspace({
                 onChange={(event) => setMessageBody(event.target.value)}
                 aria-label="New message body"
                 rows={4}
+                disabled={messagesLocked}
                 required
               />
             </label>
           </div>
           <div className="detail-actions">
-            <button className="icon-text-button primary" type="submit" disabled={isLoading}>
+            <button className="icon-text-button primary" type="submit" disabled={messagesLocked || isLoading}>
               <Check size={15} />
               Save Message
             </button>
@@ -11090,7 +11165,7 @@ function MessagesWorkspace({
                     <MessageItem
                       key={message.id}
                       message={message}
-                      disabled={isLoading}
+                      disabled={messagesLocked || isLoading}
                       onClose={onCloseMessage}
                       onUpdateContent={onUpdateMessageContent}
                       onAssign={onAssignMessage}
@@ -11108,6 +11183,8 @@ function MessagesWorkspace({
           </>
         ) : status === 'loading' ? (
           <div className="empty-chart">Loading patient messages</div>
+        ) : messagesLocked ? (
+          <div className="empty-chart">Sign in to load patient messages</div>
         ) : (
           <div className="empty-chart">Enter a patient ID to load messages</div>
         )}

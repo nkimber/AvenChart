@@ -4530,10 +4530,29 @@ finally {
 }
 
 try {
-    $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -TimeoutSec 20
+    $unauthenticatedMessageSearchStatus = 0
+    try {
+        $unauthenticatedMessageSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" `
+            -Method Get `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $unauthenticatedMessageSearchStatus = [int]$unauthenticatedMessageSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedMessageSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
     $portalMessage = $messages.messages | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
     $messagesPassed = $messages.patientId -eq "MOD-PAT-0004" `
+        -and $unauthenticatedMessageSearchStatus -eq 401 `
         -and $messages.portalEnabled `
         -and $null -ne $careTeamMessage `
         -and $null -ne $portalMessage `
@@ -4543,6 +4562,7 @@ try {
         -and -not $portalMessage.isEncrypted
     Add-Check -Name "anchor patient messages" -Result $(if ($messagesPassed) { "passed" } else { "failed" }) -Details @{
         patientId = $messages.patientId
+        unauthenticatedMessageSearchStatus = $unauthenticatedMessageSearchStatus
         portalEnabled = $messages.portalEnabled
         messageCount = $messages.messages.Count
         careTeamMessage = $careTeamMessage
@@ -5532,7 +5552,7 @@ try {
         body = "Created by the smoke patient-message mutation check."
         assignedTo = "admin"
     } | ConvertTo-Json
-    $createdMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -ContentType "application/json" -Body $createMessageBody -TimeoutSec 20
+    $createdMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $createMessageBody -TimeoutSec 20
     $patientMessageMutationId = $createdMessage.id
     $createdVisible = $createdMessage.detail.messages | Where-Object { $_.title -eq $messageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
 
@@ -5542,7 +5562,7 @@ try {
         title = $editedMessageTitle
         body = $editedMessageBody
     } | ConvertTo-Json
-    $editedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content" -Method Put -ContentType "application/json" -Body $contentBody -TimeoutSec 20
+    $editedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/content" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $contentBody -TimeoutSec 20
     $editedVisible = $editedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.body -eq $editedMessageBody -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
     $createdUpdateMetadataBlank = $null -ne $createdVisible `
         -and $null -eq $createdVisible.updatedBy `
@@ -5567,7 +5587,7 @@ try {
         body = $replyMessageBody
         assignedTo = "admin"
     } | ConvertTo-Json
-    $repliedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/reply" -Method Put -ContentType "application/json" -Body $replyBody -TimeoutSec 20
+    $repliedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/reply" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $replyBody -TimeoutSec 20
     $replyVisible = $repliedMessage.detail.messages | Where-Object { $_.id -eq $patientMessageMutationId -and $_.body -like "*$replyMessageBody*" -and $_.body -like "*admin to admin*" -and $_.status -eq "New" } | Select-Object -First 1
     Add-Check -Name "patient message reply update" -Result $(if ($null -ne $replyVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
@@ -5577,7 +5597,7 @@ try {
     $assignmentBody = @{
         assignedTo = "billing"
     } | ConvertTo-Json
-    $assignedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/assignment" -Method Put -ContentType "application/json" -Body $assignmentBody -TimeoutSec 20
+    $assignedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/assignment" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $assignmentBody -TimeoutSec 20
     $assignedVisible = $assignedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "billing" } | Select-Object -First 1
     Add-Check -Name "patient message assignment update" -Result $(if ($null -ne $assignedVisible) { "passed" } else { "failed" }) -Details @{
         messageId = $patientMessageMutationId
@@ -5588,14 +5608,14 @@ try {
         status = "Done"
         body = "Closed by the smoke patient-message mutation check."
     } | ConvertTo-Json
-    $closedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/status" -Method Put -ContentType "application/json" -Body $closeBody -TimeoutSec 20
+    $closedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $closeBody -TimeoutSec 20
     $closedVisible = $closedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle -and $_.status -eq "Done" -and $_.body -eq "Closed by the smoke patient-message mutation check." } | Select-Object -First 1
 
-    $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -TimeoutSec 20
+    $archivedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId/soft-delete" -Method Put -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $archivedVisible = $archivedMessage.detail.messages | Where-Object { $_.title -eq $editedMessageTitle } | Select-Object -First 1
     $patientMessageMutationPassed = $null -ne $createdVisible -and $null -ne $editedVisible -and $null -ne $replyVisible -and $null -ne $assignedVisible -and $null -ne $closedVisible -and $null -eq $archivedVisible
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $patientMessageMutationId = $null
 
     Add-Check -Name "patient message mutation lifecycle" -Result $(if ($patientMessageMutationPassed) { "passed" } else { "failed" }) -Details @{
@@ -5614,7 +5634,7 @@ catch {
 finally {
     if ($null -ne $patientMessageMutationId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }
@@ -6546,8 +6566,8 @@ try {
         status = "Done"
         body = "Closed by the smoke collections follow-up check."
     } | ConvertTo-Json
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/status" -Method Put -ContentType "application/json" -Body $closeFollowUpBody -TimeoutSec 20 | Out-Null
-    $patientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)" -Method Get -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId/status" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $closeFollowUpBody -TimeoutSec 20 | Out-Null
+    $patientMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$($firstCollectionItem.pubpid)" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $closedFollowUp = $patientMessages.messages | Where-Object { $_.id -eq $collectionsFollowUpId -and $_.status -eq "Done" } | Select-Object -First 1
     $collectionsFollowUpPassed = $createdFollowUp.task.title -eq "Collections follow-up: $($firstCollectionItem.statementNumber)" `
         -and $createdFollowUp.task.assignedTo -eq "billing" `
@@ -6558,7 +6578,7 @@ try {
         -and $null -ne $closedFollowUp `
         -and $closedFollowUp.body -eq "Closed by the smoke collections follow-up check."
 
-    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
     $collectionsFollowUpId = $null
 
     Add-Check -Name "collections follow-up task lifecycle" -Result $(if ($collectionsFollowUpPassed) { "passed" } else { "failed" }) -Details @{
@@ -6576,7 +6596,7 @@ catch {
 finally {
     if ($null -ne $collectionsFollowUpId) {
         try {
-            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -TimeoutSec 20 | Out-Null
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$collectionsFollowUpId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
         }
         catch {
         }

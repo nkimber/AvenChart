@@ -995,6 +995,7 @@ clinicalLists.MapDelete("/immunizations/{immunizationId:int}", async (
     .WithName("DeleteClinicalImmunization");
 
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
+RequireActiveSession(messages);
 
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,
