@@ -844,6 +844,72 @@ finally {
     }
 }
 
+$providerAssignmentOriginal = $null
+try {
+    $providerAssignmentOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalProviderAssignmentBody = @{
+        providerId = $providerAssignmentOriginal.providerId
+    }
+    $providerAssignmentBody = @{
+        providerId = 103
+    }
+
+    $updatedProviderAssignment = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/provider-assignment" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($providerAssignmentBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $providerOptions = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/provider-options" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $reloadedProviderAssignment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredProviderAssignment = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/provider-assignment" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalProviderAssignmentBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $providerAssignmentOriginal = $null
+
+    $hasProviderOption = ($providerOptions.providers | Where-Object { $_.id -eq 103 -and $_.displayName -eq "Alex Chen" } | Select-Object -First 1) -ne $null
+    $mutationPassed = $updatedProviderAssignment.providerId -eq 103 `
+        -and $updatedProviderAssignment.primaryProviderName -eq "Alex Chen" `
+        -and $reloadedProviderAssignment.providerId -eq 103 `
+        -and $hasProviderOption
+
+    $restorePassed = $restoredProviderAssignment.providerId -eq $originalProviderAssignmentBody.providerId
+
+    Add-Check -Name "patient provider assignment lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedProviderId = $updatedProviderAssignment.providerId
+        updatedProvider = $updatedProviderAssignment.primaryProviderName
+        restoredProviderId = $restoredProviderAssignment.providerId
+    }
+}
+catch {
+    Add-Check -Name "patient provider assignment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $providerAssignmentOriginal) {
+        try {
+            $originalProviderAssignmentBody = @{
+                providerId = $providerAssignmentOriginal.providerId
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/provider-assignment" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($originalProviderAssignmentBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()

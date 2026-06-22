@@ -27,6 +27,8 @@ public sealed record PatientListItem(
     string? PhoneHome,
     string? PhoneCell,
     string? Email,
+    int? ProviderId,
+    int? FacilityId,
     string? FacilityName,
     string? PrimaryProviderName,
     PatientActivityCounts Counts);
@@ -85,6 +87,8 @@ public sealed record PatientChartSummary(
     string RegistrationDate,
     string? DeceasedDate,
     string? DeceasedReason,
+    int? ProviderId,
+    int? FacilityId,
     string? FacilityName,
     string? PrimaryProviderName,
     IReadOnlyList<PatientInsuranceItem> Insurance,
@@ -209,6 +213,19 @@ public sealed record PatientEmployerUpdateRequest(
     string? EmployerState,
     string? EmployerPostalCode,
     string? EmployerCountry);
+
+public sealed record PatientProviderAssignmentOptionsResponse(
+    string DatasetId,
+    string DatasetVersion,
+    IReadOnlyList<PatientProviderAssignmentOption> Providers);
+
+public sealed record PatientProviderAssignmentOption(
+    int Id,
+    string DisplayName,
+    string? FacilityName);
+
+public sealed record PatientProviderAssignmentUpdateRequest(
+    int? ProviderId);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

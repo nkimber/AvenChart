@@ -40,6 +40,7 @@ import {
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
+  getPatientProviderAssignmentOptions,
   getPatientBilling,
   getCollectionsWorkQueue,
   getStatementBatch,
@@ -167,6 +168,7 @@ import {
   updatePatientDemographics,
   updatePatientEmployer,
   updatePatientGuardianContact,
+  updatePatientProviderAssignment,
   updateProcedureOrder,
   updateProcedureLabProvider,
   updateProcedureOrderCatalogItem,
@@ -248,6 +250,9 @@ import {
   type PatientDeceasedStatusUpdate,
   type PatientEmployerUpdate,
   type PatientGuardianContactUpdate,
+  type PatientProviderAssignmentOption,
+  type PatientProviderAssignmentOptionsResponse,
+  type PatientProviderAssignmentUpdate,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
@@ -335,6 +340,10 @@ function App() {
   const [chart, setChart] = useState<PatientChartSummary | null>(null)
   const [searchStatus, setSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [chartStatus, setChartStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [providerAssignmentOptions, setProviderAssignmentOptions] =
+    useState<PatientProviderAssignmentOptionsResponse | null>(null)
+  const [providerAssignmentOptionsStatus, setProviderAssignmentOptionsStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [patientError, setPatientError] = useState<string | null>(null)
 
   const [appointmentPatientId, setAppointmentPatientId] = useState('MOD-PAT-0003')
@@ -439,6 +448,8 @@ function App() {
       setChart(null)
       setSearchStatus('idle')
       setChartStatus('idle')
+      setProviderAssignmentOptions(null)
+      setProviderAssignmentOptionsStatus('idle')
       setPatientError(null)
       return
     }
@@ -475,6 +486,32 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [query, openEmrSessionId])
+
+  useEffect(() => {
+    if (!openEmrSessionId) {
+      setProviderAssignmentOptions(null)
+      setProviderAssignmentOptionsStatus('idle')
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadProviderAssignmentOptions() {
+      setProviderAssignmentOptionsStatus('loading')
+      try {
+        const options = await getPatientProviderAssignmentOptions(openEmrSessionId, controller.signal)
+        setProviderAssignmentOptions(options)
+        setProviderAssignmentOptionsStatus('ready')
+      } catch (optionsError) {
+        if (!controller.signal.aborted) {
+          setProviderAssignmentOptionsStatus('error')
+          setPatientError(optionsError instanceof Error ? optionsError.message : 'Patient provider options failed')
+        }
+      }
+    }
+
+    loadProviderAssignmentOptions()
+    return () => controller.abort()
+  }, [openEmrSessionId])
 
   useEffect(() => {
     if (!selectedPatientId || !openEmrSessionId) {
@@ -1229,6 +1266,8 @@ function App() {
                   phoneHome: updated.phoneHome,
                   phoneCell: updated.phoneCell,
                   email: updated.email,
+                  providerId: updated.providerId,
+                  facilityId: updated.facilityId,
                   facilityName: updated.facilityName,
                   primaryProviderName: updated.primaryProviderName,
                 }
@@ -1290,6 +1329,44 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient employer save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientProviderAssignmentSave(
+    patientId: string,
+    assignment: PatientProviderAssignmentUpdate,
+  ) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientProviderAssignment(patientId, assignment, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+      setSearchResult((current) => {
+        if (!current) {
+          return current
+        }
+
+        return {
+          ...current,
+          patients: current.patients.map((patient) =>
+            patient.canonicalId === updated.canonicalId
+              ? {
+                  ...patient,
+                  providerId: updated.providerId,
+                  primaryProviderName: updated.primaryProviderName,
+                }
+              : patient,
+          ),
+        }
+      })
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient provider assignment save failed'
       setPatientError(message)
       throw saveError
     }
@@ -3629,6 +3706,8 @@ function App() {
             chart={chart}
             searchStatus={searchStatus}
             chartStatus={chartStatus}
+            providerOptions={providerAssignmentOptions?.providers ?? []}
+            providerOptionsStatus={providerAssignmentOptionsStatus}
             error={patientError}
             sessionId={openEmrSessionId}
             onPatientSessionActive={setLegacyEhrSessionId}
@@ -3640,6 +3719,7 @@ function App() {
             onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
             onSaveGuardianContact={handlePatientGuardianContactSave}
             onSaveEmployer={handlePatientEmployerSave}
+            onSaveProviderAssignment={handlePatientProviderAssignmentSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -4001,6 +4081,8 @@ function PatientWorkspace({
   chart,
   searchStatus,
   chartStatus,
+  providerOptions,
+  providerOptionsStatus,
   error,
   sessionId,
   onPatientSessionActive,
@@ -4012,6 +4094,7 @@ function PatientWorkspace({
   onSaveDeceasedStatus,
   onSaveGuardianContact,
   onSaveEmployer,
+  onSaveProviderAssignment,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -4023,6 +4106,8 @@ function PatientWorkspace({
   chart: PatientChartSummary | null
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   chartStatus: 'idle' | 'loading' | 'ready' | 'error'
+  providerOptions: PatientProviderAssignmentOption[]
+  providerOptionsStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   sessionId: string | null
   onPatientSessionActive: (sessionId: string) => void
@@ -4034,6 +4119,7 @@ function PatientWorkspace({
   onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
   onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
   onSaveEmployer: (canonicalId: string, employer: PatientEmployerUpdate) => Promise<void>
+  onSaveProviderAssignment: (canonicalId: string, assignment: PatientProviderAssignmentUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
@@ -4060,6 +4146,12 @@ function PatientWorkspace({
   const [isEditingEmployer, setIsEditingEmployer] = useState(false)
   const [employerDraft, setEmployerDraft] = useState<PatientEmployerUpdate>(() => buildEmployerDraft(null))
   const [employerSaveStatus, setEmployerSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [isEditingProviderAssignment, setIsEditingProviderAssignment] = useState(false)
+  const [providerAssignmentDraft, setProviderAssignmentDraft] = useState<PatientProviderAssignmentUpdate>(() =>
+    buildProviderAssignmentDraft(null),
+  )
+  const [providerAssignmentSaveStatus, setProviderAssignmentSaveStatus] =
+    useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -4092,6 +4184,9 @@ function PatientWorkspace({
     setEmployerDraft(buildEmployerDraft(chart))
     setIsEditingEmployer(false)
     setEmployerSaveStatus('idle')
+    setProviderAssignmentDraft(buildProviderAssignmentDraft(chart))
+    setIsEditingProviderAssignment(false)
+    setProviderAssignmentSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -4118,6 +4213,12 @@ function PatientWorkspace({
 
   function updateEmployerDraft(field: keyof PatientEmployerUpdate, value: string) {
     setEmployerDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateProviderAssignmentDraft(providerId: string) {
+    setProviderAssignmentDraft({
+      providerId: providerId ? Number(providerId) : null,
+    })
   }
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
@@ -4260,6 +4361,22 @@ function PatientWorkspace({
       setEmployerSaveStatus('saved')
     } catch {
       setEmployerSaveStatus('error')
+    }
+  }
+
+  async function handleProviderAssignmentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setProviderAssignmentSaveStatus('saving')
+    try {
+      await onSaveProviderAssignment(chart.canonicalId, providerAssignmentDraft)
+      setIsEditingProviderAssignment(false)
+      setProviderAssignmentSaveStatus('saved')
+    } catch {
+      setProviderAssignmentSaveStatus('error')
     }
   }
 
@@ -5197,6 +5314,75 @@ function PatientWorkspace({
                       </button>
                       {employerSaveStatus === 'saved' && <span className="save-note">Saved</span>}
                       {employerSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
+              </InfoPanel>
+
+              <InfoPanel title="Primary Provider" icon={Stethoscope}>
+                {isEditingProviderAssignment && chart ? (
+                  <form className="contact-form" onSubmit={handleProviderAssignmentSubmit}>
+                    <label className="contact-field">
+                      <span>Provider</span>
+                      <select
+                        value={providerAssignmentDraft.providerId ?? ''}
+                        onChange={(event) => updateProviderAssignmentDraft(event.target.value)}
+                        aria-label="Patient primary provider"
+                      >
+                        <option value="">Unassigned</option>
+                        {providerOptions.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.displayName}
+                            {provider.facilityName ? ` - ${provider.facilityName}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button primary"
+                        type="submit"
+                        disabled={providerAssignmentSaveStatus === 'saving' || providerOptionsStatus === 'loading'}
+                      >
+                        <Check size={15} />
+                        <span>{providerAssignmentSaveStatus === 'saving' ? 'Saving' : 'Save provider'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setProviderAssignmentDraft(buildProviderAssignmentDraft(chart))
+                          setIsEditingProviderAssignment(false)
+                          setProviderAssignmentSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                      {providerOptionsStatus === 'error' && <span className="save-note error">Options unavailable</span>}
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Primary provider" value={chart?.primaryProviderName} />
+                    <Field label="Provider ID" value={chart?.providerId?.toString()} />
+                    <Field label="Facility" value={chart?.facilityName ?? activePatient.facilityName} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setProviderAssignmentDraft(buildProviderAssignmentDraft(chart))
+                          setIsEditingProviderAssignment(true)
+                          setProviderAssignmentSaveStatus('idle')
+                        }}
+                        disabled={!chart || providerOptionsStatus === 'loading'}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit provider</span>
+                      </button>
+                      {providerAssignmentSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {providerAssignmentSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
                     </div>
                   </>
                 )}
@@ -18084,6 +18270,12 @@ function buildEmployerDraft(patient: PatientChartSummary | null): PatientEmploye
     employerState: patient?.employerState ?? '',
     employerPostalCode: patient?.employerPostalCode ?? '',
     employerCountry: patient?.employerCountry ?? '',
+  }
+}
+
+function buildProviderAssignmentDraft(patient: PatientChartSummary | null): PatientProviderAssignmentUpdate {
+  return {
+    providerId: patient?.providerId ?? null,
   }
 }
 

@@ -156,6 +156,16 @@ patients.MapGet("/duplicates", async (
     })
     .WithName("FindPatientDuplicateCandidates");
 
+patients.MapGet("/provider-options", async (
+        PatientRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var options = await repository.GetProviderAssignmentOptionsAsync(cancellationToken);
+        return Results.Ok(options);
+    })
+    .WithName("GetPatientProviderAssignmentOptions")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
+
 patients.MapPost("/", async (
         PatientRepository repository,
         PatientRegistrationRequest request,
@@ -245,6 +255,20 @@ patients.MapPut("/{patientId}/employer", async (
             : Results.Ok(patient);
     })
     .WithName("UpdatePatientEmployer")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapPut("/{patientId}/provider-assignment", async (
+        PatientRepository repository,
+        string patientId,
+        PatientProviderAssignmentUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateProviderAssignmentAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient provider assignment could not be updated from the supplied patient and provider details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientProviderAssignment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapDelete("/{patientId}", async (

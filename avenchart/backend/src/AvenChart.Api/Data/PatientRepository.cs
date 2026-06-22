@@ -37,6 +37,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.phone_home,
                 p.phone_cell,
                 p.email,
+                p.provider_id,
+                p.facility_id,
                 f.name as facility_name,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 counts.appointment_count,
@@ -80,6 +82,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 PhoneHome: ReadNullableString(reader, "phone_home"),
                 PhoneCell: ReadNullableString(reader, "phone_cell"),
                 Email: ReadNullableString(reader, "email"),
+                ProviderId: ReadNullableInt(reader, "provider_id"),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
                 Counts: ReadCounts(reader)));
@@ -153,6 +157,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.registration_date,
                 p.deceased_date,
                 p.deceased_reason,
+                p.provider_id,
+                p.facility_id,
                 f.name as facility_name,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 counts.appointment_count,
@@ -283,6 +289,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
                 DeceasedReason: ReadNullableString(reader, "deceased_reason"),
+                ProviderId: ReadNullableInt(reader, "provider_id"),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
                 Insurance: Array.Empty<PatientInsuranceItem>(),
@@ -306,6 +314,41 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             5,
             cancellationToken);
         return summary with { Insurance = insurance, DuplicateCandidates = duplicateCandidates };
+    }
+
+    public async Task<PatientProviderAssignmentOptionsResponse> GetProviderAssignmentOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                s.id,
+                trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                f.name as facility_name
+            from staff s
+            left join facilities f on f.id = s.facility_id
+            where s.active = true
+              and lower(s.role) = 'provider'
+            order by s.last_name, s.first_name, s.id;
+            """;
+
+        var providers = new List<PatientProviderAssignmentOption>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            providers.Add(new PatientProviderAssignmentOption(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                DisplayName: reader.GetString(reader.GetOrdinal("provider_name")),
+                FacilityName: ReadNullableString(reader, "facility_name")));
+        }
+
+        return new PatientProviderAssignmentOptionsResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Providers: providers);
     }
 
     public async Task<PatientDuplicateSearchResponse> FindDuplicateCandidatesAsync(
@@ -778,6 +821,42 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("employerState", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerState);
         command.Parameters.Add("employerPostalCode", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerPostalCode);
         command.Parameters.Add("employerCountry", NpgsqlDbType.Text).Value = NormalizeNullable(request.EmployerCountry);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> UpdateProviderAssignmentAsync(
+        string patientId,
+        PatientProviderAssignmentUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set provider_id = @providerId
+            where (
+                    lower(canonical_id) = lower(@patientId)
+                 or lower(pubpid) = lower(@patientId)
+                 or legacy_pid::text = @patientId
+            )
+              and (
+                    @providerId is null
+                 or exists (
+                        select 1
+                        from staff
+                        where id = @providerId
+                          and active = true
+                          and lower(role) = 'provider'
+                    )
+              )
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null
+            ? DBNull.Value
+            : request.ProviderId.Value;
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
@@ -1498,6 +1577,12 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? 0 : reader.GetInt32(ordinal);
+    }
+
+    private static int? ReadNullableInt(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
     }
 
     private static string? ReadNullableIntAsString(DbDataReader reader, string columnName)

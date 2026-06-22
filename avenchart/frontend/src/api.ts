@@ -27,6 +27,8 @@ export type PatientListItem = {
   phoneHome?: string | null
   phoneCell?: string | null
   email?: string | null
+  providerId?: number | null
+  facilityId?: number | null
   facilityName?: string | null
   primaryProviderName?: string | null
   counts: PatientActivityCounts
@@ -199,6 +201,22 @@ export type PatientEmployerUpdate = {
   employerState: string
   employerPostalCode: string
   employerCountry: string
+}
+
+export type PatientProviderAssignmentOption = {
+  id: number
+  displayName: string
+  facilityName?: string | null
+}
+
+export type PatientProviderAssignmentOptionsResponse = {
+  datasetId: string
+  datasetVersion: string
+  providers: PatientProviderAssignmentOption[]
+}
+
+export type PatientProviderAssignmentUpdate = {
+  providerId: number | null
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {
@@ -2271,6 +2289,21 @@ export async function getPatientChart(
   return response.json()
 }
 
+export async function getPatientProviderAssignmentOptions(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientProviderAssignmentOptionsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/provider-options`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient provider options load', response.status))
+  }
+
+  return response.json()
+}
+
 export async function findPatientDuplicates(
   input: {
     firstName?: string | null
@@ -2453,6 +2486,25 @@ export async function updatePatientEmployer(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient employer update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientProviderAssignment(
+  patientId: string,
+  assignment: PatientProviderAssignmentUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/provider-assignment`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(assignment),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient provider assignment update', response.status))
   }
 
   return response.json()
