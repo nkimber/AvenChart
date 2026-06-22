@@ -2107,6 +2107,10 @@ function documentApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Document access')
 }
 
+function messageApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Message access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -3101,7 +3105,7 @@ export async function getPatientMessages(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient messages load', response.status))
+    throw new Error(messageApiError('Patient messages load', response.status))
   }
 
   return response.json()
@@ -3348,7 +3352,7 @@ export async function createPatientMessage(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message create', response.status))
+    throw new Error(messageApiError('Patient message create', response.status))
   }
 
   return response.json()
@@ -3367,7 +3371,7 @@ export async function updatePatientMessageStatus(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message update', response.status))
+    throw new Error(messageApiError('Patient message update', response.status))
   }
 
   return response.json()
@@ -3386,7 +3390,7 @@ export async function updatePatientMessageContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message content update', response.status))
+    throw new Error(messageApiError('Patient message content update', response.status))
   }
 
   return response.json()
@@ -3405,7 +3409,7 @@ export async function updatePatientMessageAssignment(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message assignment update', response.status))
+    throw new Error(messageApiError('Patient message assignment update', response.status))
   }
 
   return response.json()
@@ -3424,7 +3428,7 @@ export async function replyToPatientMessage(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message reply', response.status))
+    throw new Error(messageApiError('Patient message reply', response.status))
   }
 
   return response.json()
@@ -3441,7 +3445,7 @@ export async function softDeletePatientMessage(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message archive', response.status))
+    throw new Error(messageApiError('Patient message archive', response.status))
   }
 
   return response.json()
@@ -3458,7 +3462,7 @@ export async function deletePatientMessage(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient message delete', response.status))
+    throw new Error(messageApiError('Patient message delete', response.status))
   }
 }
 

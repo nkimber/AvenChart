@@ -11295,12 +11295,16 @@ function MessagesWorkspace({
   const [messageBody, setMessageBody] = useState('Created from the modernized Messages workspace.')
   const [assignedTo, setAssignedTo] = useState('admin')
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
-  const [messagesLoginStatus, setMessagesLoginStatus] = useState<'idle' | 'checking' | 'error'>('idle')
-  const [messagesLoginError, setMessagesLoginError] = useState<string | null>(null)
+  const [messagesLoginUsername, setMessagesLoginUsername] = useState('admin')
+  const [messagesLoginPassword, setMessagesLoginPassword] = useState('pass')
+  const [messagesLoginStatus, setMessagesLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [messagesLoginMessage, setMessagesLoginMessage] = useState<string | null>(null)
   const newCount = countMessagesByStatus(patientMessages?.messages, 'New')
   const doneCount = countMessagesByStatus(patientMessages?.messages, 'Done')
   const isLoading = status === 'loading'
-  const messagesLocked = !sessionId
+  const messageAuthorizationError = status === 'error' && Boolean(error?.includes('Message access'))
+  const messagesLocked = !sessionId || messageAuthorizationError
 
   async function handleMessageSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -11319,40 +11323,60 @@ function MessagesWorkspace({
   async function handleMessagesLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessagesLoginStatus('checking')
-    setMessagesLoginError(null)
+    setMessagesLoginMessage(null)
 
     try {
-      const result = await login({ username: 'admin', password: 'pass' })
+      const result = await login({ username: messagesLoginUsername, password: messagesLoginPassword })
       if (result.authenticated && result.sessionId) {
         onMessagesSessionActive(result.sessionId)
-        setMessagesLoginStatus('idle')
+        setMessagesLoginStatus('authenticated')
+        setMessagesLoginMessage(`Signed in as ${result.displayName}`)
       } else {
-        setMessagesLoginStatus('error')
-        setMessagesLoginError(result.failureReason ?? 'Message access was not granted.')
+        setMessagesLoginStatus('rejected')
+        setMessagesLoginMessage(result.failureReason ?? 'Message access was rejected.')
       }
     } catch (error) {
       setMessagesLoginStatus('error')
-      setMessagesLoginError(error instanceof Error ? error.message : 'Message access check failed')
+      setMessagesLoginMessage(error instanceof Error ? error.message : 'Message access check failed')
     }
   }
 
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Messages search">
-        {!sessionId && (
+        {(!sessionId || messageAuthorizationError) && (
           <form className="mutation-form" aria-label="Messages access" onSubmit={handleMessagesLogin}>
             <div className="panel-heading compact-heading">
               <ShieldCheck size={16} />
               <h3>Messages Access</h3>
             </div>
             <p className="form-help-text">Sign in to load patient messages.</p>
+            <label>
+              Username
+              <input
+                value={messagesLoginUsername}
+                onChange={(event) => setMessagesLoginUsername(event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={messagesLoginPassword}
+                onChange={(event) => setMessagesLoginPassword(event.target.value)}
+              />
+            </label>
             <div className="detail-actions">
               <button className="icon-text-button primary" type="submit" disabled={messagesLoginStatus === 'checking'}>
                 <LogIn size={15} />
                 {messagesLoginStatus === 'checking' ? 'Checking' : 'Verify Messages Access'}
               </button>
             </div>
-            {messagesLoginError && <div className="status-banner error">{messagesLoginError}</div>}
+            {messagesLoginMessage && (
+              <div className={messagesLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {messagesLoginMessage}
+              </div>
+            )}
           </form>
         )}
 

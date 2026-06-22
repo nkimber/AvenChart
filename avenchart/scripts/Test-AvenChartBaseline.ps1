@@ -4754,6 +4754,8 @@ finally {
 
 try {
     $unauthenticatedMessageSearchStatus = 0
+    $frontDeskMessageSearchStatus = 0
+    $frontDeskMessageCreateStatus = 0
     try {
         $unauthenticatedMessageSearch = Invoke-WebRequest `
             -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" `
@@ -4770,12 +4772,56 @@ try {
             throw
         }
     }
+    try {
+        $frontDeskMessageSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskMessageSearchStatus = [int]$frontDeskMessageSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskMessageSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+    try {
+        $frontDeskMessageCreateBody = @{
+            patientId = "MOD-PAT-0004"
+            title = "Blocked Message Authorization Smoke"
+            body = "This request should be rejected before mutation."
+            assignedTo = "admin"
+        } | ConvertTo-Json
+        $frontDeskMessageCreate = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/messages" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskMessageCreateBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskMessageCreateStatus = [int]$frontDeskMessageCreate.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskMessageCreateStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
 
     $messages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $careTeamMessage = $messages.messages | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
     $portalMessage = $messages.messages | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
     $messagesPassed = $messages.patientId -eq "MOD-PAT-0004" `
         -and $unauthenticatedMessageSearchStatus -eq 401 `
+        -and $frontDeskMessageSearchStatus -eq 403 `
+        -and $frontDeskMessageCreateStatus -eq 403 `
         -and $messages.portalEnabled `
         -and $null -ne $careTeamMessage `
         -and $null -ne $portalMessage `
@@ -4786,6 +4832,8 @@ try {
     Add-Check -Name "anchor patient messages" -Result $(if ($messagesPassed) { "passed" } else { "failed" }) -Details @{
         patientId = $messages.patientId
         unauthenticatedMessageSearchStatus = $unauthenticatedMessageSearchStatus
+        frontDeskMessageSearchStatus = $frontDeskMessageSearchStatus
+        frontDeskMessageCreateStatus = $frontDeskMessageCreateStatus
         portalEnabled = $messages.portalEnabled
         messageCount = $messages.messages.Count
         careTeamMessage = $careTeamMessage
