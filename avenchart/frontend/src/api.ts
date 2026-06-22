@@ -2236,6 +2236,7 @@ export async function deletePatientInsurance(
 export async function searchAppointments(
   patientId: string,
   fromDate: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentSearchResponse> {
   const params = new URLSearchParams()
@@ -2247,9 +2248,12 @@ export async function searchAppointments(
   }
   params.set('limit', '25')
 
-  const response = await fetch(`${apiBaseUrl}/api/appointments?${params.toString()}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/appointments?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Appointment search failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment search', response.status))
   }
 
   return response.json()
@@ -2257,11 +2261,15 @@ export async function searchAppointments(
 
 export async function getAppointmentDetail(
   appointmentId: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
-  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, { signal })
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
   if (!response.ok) {
-    throw new Error(`Appointment detail load failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment detail load', response.status))
   }
 
   return response.json()
@@ -2269,16 +2277,17 @@ export async function getAppointmentDetail(
 
 export async function createAppointment(
   appointment: AppointmentCreateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(appointment),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Appointment create failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment create', response.status))
   }
 
   return response.json()
@@ -2287,16 +2296,17 @@ export async function createAppointment(
 export async function updateAppointmentStatus(
   appointmentId: string,
   update: AppointmentStatusUpdate,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/status`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Appointment status update failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment status update', response.status))
   }
 
   return response.json()
@@ -2305,16 +2315,17 @@ export async function updateAppointmentStatus(
 export async function updateAppointment(
   appointmentId: string,
   update: AppointmentUpdateInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json' },
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(update),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Appointment update failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment update', response.status))
   }
 
   return response.json()
@@ -2324,48 +2335,56 @@ export async function rescheduleAppointmentOccurrence(
   appointmentId: string,
   occurrenceDate: string,
   update: AppointmentOccurrenceRescheduleInput,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(
     `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`,
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
       body: JSON.stringify(update),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Appointment occurrence reschedule failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment occurrence reschedule', response.status))
   }
 
   return response.json()
 }
 
-export async function deleteAppointment(appointmentId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteAppointment(
+  appointmentId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'DELETE',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Appointment delete failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment delete', response.status))
   }
 }
 
 export async function restoreAppointmentOccurrence(
   appointmentId: string,
   occurrenceDate: string,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<AppointmentDetail> {
   const response = await fetch(
     `${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
     {
       method: 'POST',
+      headers: buildLegacyEhrSessionHeaders(sessionId),
       signal,
     },
   )
   if (!response.ok) {
-    throw new Error(`Appointment occurrence restore failed with ${response.status}`)
+    throw new Error(sessionApiError('Appointment occurrence restore', response.status))
   }
 
   return response.json()

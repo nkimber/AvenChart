@@ -495,13 +495,28 @@ function App() {
       return
     }
 
+    if (!openEmrSessionId) {
+      setAppointmentStatus('idle')
+      setAppointmentError(null)
+      setAppointmentResult(null)
+      setSelectedAppointmentId(null)
+      setAppointmentDetail(null)
+      setAppointmentDetailStatus('idle')
+      return
+    }
+
     const controller = new AbortController()
     const timeout = window.setTimeout(async () => {
       setAppointmentStatus('loading')
       setAppointmentError(null)
 
       try {
-        const result = await searchAppointments(appointmentPatientId, appointmentFromDate, controller.signal)
+        const result = await searchAppointments(
+          appointmentPatientId,
+          appointmentFromDate,
+          openEmrSessionId,
+          controller.signal,
+        )
         setAppointmentResult(result)
         setAppointmentStatus('ready')
 
@@ -526,10 +541,10 @@ function App() {
       controller.abort()
       window.clearTimeout(timeout)
     }
-  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey])
+  }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, openEmrSessionId])
 
   useEffect(() => {
-    if (activeModule !== 'calendar' || !selectedAppointmentId) {
+    if (activeModule !== 'calendar' || !selectedAppointmentId || !openEmrSessionId) {
       setAppointmentDetailStatus('idle')
       setAppointmentDetail(null)
       return
@@ -539,7 +554,7 @@ function App() {
     async function loadAppointmentDetail() {
       setAppointmentDetailStatus('loading')
       try {
-        const detail = await getAppointmentDetail(selectedAppointmentId!, controller.signal)
+        const detail = await getAppointmentDetail(selectedAppointmentId!, openEmrSessionId, controller.signal)
         setAppointmentDetail(detail)
         setAppointmentDetailStatus('ready')
       } catch (detailError) {
@@ -552,7 +567,7 @@ function App() {
 
     loadAppointmentDetail()
     return () => controller.abort()
-  }, [activeModule, selectedAppointmentId])
+  }, [activeModule, selectedAppointmentId, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
@@ -1010,6 +1025,14 @@ function App() {
     return openEmrSessionId
   }
 
+  function getActiveAppointmentSessionId() {
+    if (!openEmrSessionId) {
+      throw new Error('Sign in to access appointment schedules.')
+    }
+
+    return openEmrSessionId
+  }
+
   async function handlePatientContactSave(patientId: string, contact: PatientContactUpdate) {
     setChartStatus('loading')
     setPatientError(null)
@@ -1187,7 +1210,8 @@ function App() {
     setAppointmentError(null)
 
     try {
-      const created = await createAppointment(input)
+      const sessionId = getActiveAppointmentSessionId()
+      const created = await createAppointment(input, sessionId)
       setAppointmentPatientId(created.patientId)
       setAppointmentFromDate(created.date)
       setSelectedAppointmentId(created.id)
@@ -1209,7 +1233,8 @@ function App() {
     setAppointmentError(null)
 
     try {
-      const updated = await updateAppointment(appointment.id, input)
+      const sessionId = getActiveAppointmentSessionId()
+      const updated = await updateAppointment(appointment.id, input, sessionId)
       setAppointmentPatientId(updated.patientId)
       setAppointmentFromDate(updated.date)
       setSelectedAppointmentId(updated.id)
@@ -1233,7 +1258,8 @@ function App() {
     setAppointmentError(null)
 
     try {
-      const updated = await rescheduleAppointmentOccurrence(appointment.seriesRootId, appointment.date, input)
+      const sessionId = getActiveAppointmentSessionId()
+      const updated = await rescheduleAppointmentOccurrence(appointment.seriesRootId, appointment.date, input, sessionId)
       setAppointmentPatientId(updated.patientId)
       setAppointmentFromDate(updated.date)
       setSelectedAppointmentId(updated.id)
@@ -1254,10 +1280,11 @@ function App() {
     setAppointmentError(null)
 
     try {
+      const sessionId = getActiveAppointmentSessionId()
       const updated = await updateAppointmentStatus(appointment.id, {
         status: 'x',
         title: appointment.title.endsWith('Cancelled') ? appointment.title : `${appointment.title} Cancelled`,
-      })
+      }, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -1276,10 +1303,11 @@ function App() {
     setAppointmentError(null)
 
     try {
+      const sessionId = getActiveAppointmentSessionId()
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '@',
         title: appointment.title.endsWith('Arrived') ? appointment.title : `${appointment.title} Arrived`,
-      })
+      }, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -1301,10 +1329,11 @@ function App() {
       const baseTitle = appointment.title.endsWith(' Arrived')
         ? appointment.title.slice(0, -' Arrived'.length)
         : appointment.title
+      const sessionId = getActiveAppointmentSessionId()
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '>',
         title: baseTitle.endsWith('Checked Out') ? baseTitle : `${baseTitle} Checked Out`,
-      })
+      }, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -1323,10 +1352,11 @@ function App() {
     setAppointmentError(null)
 
     try {
+      const sessionId = getActiveAppointmentSessionId()
       const updated = await updateAppointmentStatus(appointment.id, {
         status: '?',
         title: appointment.title.endsWith('No Show') ? appointment.title : `${appointment.title} No Show`,
-      })
+      }, sessionId)
       setAppointmentDetail(updated)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetailStatus('ready')
@@ -1345,7 +1375,8 @@ function App() {
     setAppointmentError(null)
 
     try {
-      await deleteAppointment(appointment.id)
+      const sessionId = getActiveAppointmentSessionId()
+      await deleteAppointment(appointment.id, sessionId)
       setSelectedAppointmentId(null)
       setAppointmentDetail(null)
       setAppointmentDetailStatus('idle')
@@ -1363,7 +1394,8 @@ function App() {
     setAppointmentError(null)
 
     try {
-      const updated = await restoreAppointmentOccurrence(appointment.seriesRootId, occurrenceDate)
+      const sessionId = getActiveAppointmentSessionId()
+      const updated = await restoreAppointmentOccurrence(appointment.seriesRootId, occurrenceDate, sessionId)
       setSelectedAppointmentId(updated.id)
       setAppointmentDetail(updated)
       setAppointmentDetailStatus('ready')
@@ -3372,6 +3404,11 @@ function App() {
             searchStatus={appointmentStatus}
             detailStatus={appointmentDetailStatus}
             error={appointmentError}
+            sessionId={openEmrSessionId}
+            onCalendarSessionActive={(sessionId) => {
+              setLegacyEhrSessionId(sessionId)
+              setAppointmentRefreshKey((current) => current + 1)
+            }}
             onPatientIdChange={setAppointmentPatientId}
             onFromDateChange={setAppointmentFromDate}
             onSelectAppointment={setSelectedAppointmentId}
@@ -4672,6 +4709,8 @@ function CalendarWorkspace({
   searchStatus,
   detailStatus,
   error,
+  sessionId,
+  onCalendarSessionActive,
   onPatientIdChange,
   onFromDateChange,
   onSelectAppointment,
@@ -4693,6 +4732,8 @@ function CalendarWorkspace({
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
+  onCalendarSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onFromDateChange: (value: string) => void
   onSelectAppointment: (appointmentId: string) => void
@@ -4749,7 +4790,13 @@ function CalendarWorkspace({
   const [editRecurrenceExdates, setEditRecurrenceExdates] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [calendarLoginUsername, setCalendarLoginUsername] = useState('admin')
+  const [calendarLoginPassword, setCalendarLoginPassword] = useState('pass')
+  const [calendarLoginStatus, setCalendarLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [calendarLoginMessage, setCalendarLoginMessage] = useState<string | null>(null)
   const selectedOccurrenceIsVirtual = appointmentDetail?.isVirtualOccurrence ?? false
+  const calendarLocked = !sessionId
 
   useEffect(() => {
     if (!appointmentDetail) {
@@ -4782,8 +4829,34 @@ function CalendarWorkspace({
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
 
+  async function handleCalendarLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setCalendarLoginStatus('checking')
+    setCalendarLoginMessage(null)
+
+    try {
+      const result = await login({ username: calendarLoginUsername, password: calendarLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        onCalendarSessionActive(result.sessionId)
+        setCalendarLoginStatus('authenticated')
+        setCalendarLoginMessage(`Signed in as ${result.displayName}`)
+      } else {
+        setCalendarLoginStatus('rejected')
+        setCalendarLoginMessage(result.failureReason ?? 'Calendar access was rejected.')
+      }
+    } catch (loginError) {
+      setCalendarLoginStatus('error')
+      setCalendarLoginMessage(loginError instanceof Error ? loginError.message : 'Calendar access check failed')
+    }
+  }
+
   async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (calendarLocked) {
+      setMutationStatus('error')
+      return
+    }
+
     setMutationStatus('saving')
 
     try {
@@ -4817,7 +4890,7 @@ function CalendarWorkspace({
   }
 
   async function handleCancelSelected() {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4831,7 +4904,7 @@ function CalendarWorkspace({
   }
 
   async function handleArriveSelected() {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4845,7 +4918,7 @@ function CalendarWorkspace({
   }
 
   async function handleCheckOutSelected() {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4859,7 +4932,7 @@ function CalendarWorkspace({
   }
 
   async function handleNoShowSelected() {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4874,7 +4947,7 @@ function CalendarWorkspace({
 
   async function handleUpdateSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4919,7 +4992,7 @@ function CalendarWorkspace({
   }
 
   async function handleDeleteSelected() {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4933,7 +5006,7 @@ function CalendarWorkspace({
   }
 
   async function handleRestoreSkippedDate(occurrenceDate: string) {
-    if (!appointmentDetail) {
+    if (!appointmentDetail || calendarLocked) {
       return
     }
 
@@ -4949,6 +5022,37 @@ function CalendarWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Appointment search">
+        {!sessionId && (
+          <form className="mutation-form" aria-label="Calendar access" onSubmit={handleCalendarLogin}>
+            <div className="panel-heading">
+              <ShieldCheck size={17} />
+              <h3>Calendar Access</h3>
+            </div>
+            <p className="access-copy">Sign in to load appointment schedules.</p>
+            <label>
+              Username
+              <input value={calendarLoginUsername} onChange={(event) => setCalendarLoginUsername(event.target.value)} />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={calendarLoginPassword}
+                onChange={(event) => setCalendarLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={calendarLoginStatus === 'checking'}>
+              <LogIn size={15} />
+              {calendarLoginStatus === 'checking' ? 'Checking' : 'Verify Calendar Access'}
+            </button>
+            {calendarLoginMessage && (
+              <div className={calendarLoginStatus === 'authenticated' ? 'status-banner' : 'status-banner error'}>
+                {calendarLoginMessage}
+              </div>
+            )}
+          </form>
+        )}
+
         <div className="filter-grid">
           <label className="filter-field">
             <span>Patient ID</span>
@@ -4957,6 +5061,7 @@ function CalendarWorkspace({
               onChange={(event) => onPatientIdChange(event.target.value)}
               aria-label="Appointment patient ID"
               placeholder="MOD-PAT-0003"
+              disabled={calendarLocked}
             />
           </label>
           <label className="filter-field">
@@ -4966,6 +5071,7 @@ function CalendarWorkspace({
               onChange={(event) => onFromDateChange(event.target.value)}
               aria-label="Appointment from date"
               type="date"
+              disabled={calendarLocked}
             />
           </label>
         </div>
@@ -5206,7 +5312,7 @@ function CalendarWorkspace({
             </label>
           </div>
           <div className="contact-actions">
-            <button className="icon-text-button primary" type="submit" disabled={mutationStatus === 'saving'}>
+            <button className="icon-text-button primary" type="submit" disabled={calendarLocked || mutationStatus === 'saving'}>
               <CalendarPlus size={15} />
               <span>{mutationStatus === 'saving' ? 'Saving' : 'Create'}</span>
             </button>
@@ -5221,6 +5327,7 @@ function CalendarWorkspace({
         </div>
 
         {searchStatus === 'error' && <div className="status-banner error">{error}</div>}
+        {calendarLocked && <div className="status-banner">Sign in to load appointment schedules.</div>}
 
         <div className="appointment-list">
           {searchResult?.appointments.map((appointment) => (
@@ -5257,7 +5364,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleArriveSelected}
-                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '@' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '@' || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <Check size={15} />
                 <span>Mark arrived</span>
@@ -5266,7 +5373,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleCheckOutSelected}
-                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '>' || appointmentDetail.status === '?'}
               >
                 <ClipboardList size={15} />
                 <span>Mark checked out</span>
@@ -5275,7 +5382,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleNoShowSelected}
-                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '?' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === '?' || appointmentDetail.status === '@' || appointmentDetail.status === '>'}
               >
                 <Clock size={15} />
                 <span>Mark no-show</span>
@@ -5284,7 +5391,7 @@ function CalendarWorkspace({
                 className="icon-text-button"
                 type="button"
                 onClick={handleCancelSelected}
-                disabled={detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === 'x'}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || appointmentDetail.status === 'x'}
               >
                 <Ban size={15} />
                 <span>Cancel appointment</span>
@@ -5293,7 +5400,7 @@ function CalendarWorkspace({
                 className="icon-text-button danger"
                 type="button"
                 onClick={handleDeleteSelected}
-                disabled={detailStatus === 'loading'}
+                disabled={calendarLocked || detailStatus === 'loading'}
               >
                 {selectedOccurrenceIsVirtual ? <Ban size={15} /> : <Trash2 size={15} />}
                 <span>{selectedOccurrenceIsVirtual ? 'Skip occurrence' : 'Delete appointment'}</span>
@@ -5561,7 +5668,7 @@ function CalendarWorkspace({
                 </label>
               </div>
               <div className="contact-actions">
-                <button className="icon-text-button primary" type="submit" disabled={detailStatus === 'loading' || mutationStatus === 'saving'}>
+                <button className="icon-text-button primary" type="submit" disabled={calendarLocked || detailStatus === 'loading' || mutationStatus === 'saving'}>
                   <Check size={15} />
                   <span>{mutationStatus === 'saving' ? 'Saving' : selectedOccurrenceIsVirtual ? 'Reschedule occurrence' : 'Save schedule'}</span>
                 </button>
@@ -5594,7 +5701,7 @@ function CalendarWorkspace({
                             type="button"
                             key={skippedDate}
                             onClick={() => void handleRestoreSkippedDate(skippedDate)}
-                            disabled={detailStatus === 'loading' || mutationStatus === 'saving'}
+                            disabled={calendarLocked || detailStatus === 'loading' || mutationStatus === 'saving'}
                             aria-label={`Restore occurrence ${skippedDate}`}
                           >
                             <RotateCcw size={14} />
