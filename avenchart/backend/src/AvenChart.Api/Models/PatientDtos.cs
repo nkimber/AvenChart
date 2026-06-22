@@ -58,6 +58,8 @@ public sealed record PatientChartSummary(
     string? Occupation,
     bool PortalEnabled,
     string RegistrationDate,
+    string? DeceasedDate,
+    string? DeceasedReason,
     string? FacilityName,
     string? PrimaryProviderName,
     IReadOnlyList<PatientInsuranceItem> Insurance,
@@ -149,6 +151,10 @@ public sealed record PatientDemographicsUpdateRequest(
     string? PostalCode,
     string? MaritalStatus,
     string? Occupation);
+
+public sealed record PatientDeceasedStatusUpdateRequest(
+    string? DeceasedDate,
+    string? DeceasedReason);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

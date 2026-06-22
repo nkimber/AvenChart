@@ -101,6 +101,8 @@ export type PatientChartSummary = PatientListItem & {
   occupation?: string | null
   portalEnabled: boolean
   registrationDate: string
+  deceasedDate?: string | null
+  deceasedReason?: string | null
   insurance: PatientInsuranceItem[]
   duplicateCandidates: PatientDuplicateCandidate[]
   nextAppointment?: PatientTimelineItem | null
@@ -136,6 +138,11 @@ export type PatientDemographicsUpdate = {
   postalCode: string
   maritalStatus: string
   occupation: string
+}
+
+export type PatientDeceasedStatusUpdate = {
+  deceasedDate: string
+  deceasedReason: string
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {
@@ -2333,6 +2340,25 @@ export async function updatePatientDemographics(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient demographics update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientDeceasedStatus(
+  patientId: string,
+  status: PatientDeceasedStatusUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/deceased-status`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(status),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient deceased status update', response.status))
   }
 
   return response.json()

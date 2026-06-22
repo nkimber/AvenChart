@@ -205,6 +205,20 @@ patients.MapPut("/{patientId}/demographics", async (
     .WithName("UpdatePatientDemographics")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapPut("/{patientId}/deceased-status", async (
+        PatientRepository repository,
+        string patientId,
+        PatientDeceasedStatusUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateDeceasedStatusAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient deceased status could not be updated from the supplied patient and status details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientDeceasedStatus")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapDelete("/{patientId}", async (
         PatientRepository repository,
         string patientId,

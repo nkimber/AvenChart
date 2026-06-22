@@ -126,6 +126,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.occupation,
                 p.portal_enabled,
                 p.registration_date,
+                p.deceased_date,
+                p.deceased_reason,
                 f.name as facility_name,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 counts.appointment_count,
@@ -228,6 +230,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 Occupation: ReadNullableString(reader, "occupation"),
                 PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
                 RegistrationDate: ReadDate(reader, "registration_date"),
+                DeceasedDate: ReadNullableDate(reader, "deceased_date"),
+                DeceasedReason: ReadNullableString(reader, "deceased_reason"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
                 Insurance: Array.Empty<PatientInsuranceItem>(),
@@ -561,6 +565,40 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
         command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
         command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientChartSummary?> UpdateDeceasedStatusAsync(
+        string patientId,
+        PatientDeceasedStatusUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryNormalizeDeceasedStatus(request, out var deceasedDate, out var deceasedReason))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set
+                deceased_date = @deceasedDate,
+                deceased_reason = @deceasedReason
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("deceasedDate", NpgsqlDbType.Date).Value = deceasedDate is null
+            ? DBNull.Value
+            : deceasedDate.Value;
+        command.Parameters.Add("deceasedReason", NpgsqlDbType.Text).Value = deceasedReason is null
+            ? DBNull.Value
+            : deceasedReason;
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
@@ -919,6 +957,36 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return true;
     }
 
+    private static bool TryNormalizeDeceasedStatus(
+        PatientDeceasedStatusUpdateRequest request,
+        out DateOnly? deceasedDate,
+        out string? deceasedReason)
+    {
+        var dateText = request.DeceasedDate?.Trim();
+        if (string.IsNullOrWhiteSpace(dateText))
+        {
+            deceasedDate = null;
+            deceasedReason = NormalizeString(request.DeceasedReason);
+            return true;
+        }
+
+        if (!DateOnly.TryParseExact(
+                dateText,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsedDate))
+        {
+            deceasedDate = null;
+            deceasedReason = null;
+            return false;
+        }
+
+        deceasedDate = parsedDate;
+        deceasedReason = NormalizeString(request.DeceasedReason);
+        return true;
+    }
+
     private static IReadOnlyList<PatientRegistrationValidationIssue> ValidateRegistration(
         PatientRegistrationRequest request,
         out NormalizedPatientRegistration normalized)
@@ -1188,6 +1256,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private static string ReadDate(DbDataReader reader, string columnName) =>
         reader.GetFieldValue<DateOnly>(reader.GetOrdinal(columnName)).ToString("yyyy-MM-dd");
+
+    private static string? ReadNullableDate(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)
     {

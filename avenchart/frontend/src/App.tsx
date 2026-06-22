@@ -163,6 +163,7 @@ import {
   updatePatientInsurance,
   updatePatientMessageStatus,
   updatePatientContact,
+  updatePatientDeceasedStatus,
   updatePatientDemographics,
   updateProcedureOrder,
   updateProcedureLabProvider,
@@ -242,6 +243,7 @@ import {
   type PatientDocumentCreateInput,
   type PatientDocumentContentReplaceInput,
   type PatientDocumentContentResponse,
+  type PatientDeceasedStatusUpdate,
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
@@ -1233,6 +1235,23 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient demographics save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientDeceasedStatusSave(patientId: string, status: PatientDeceasedStatusUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientDeceasedStatus(patientId, status, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient deceased status save failed'
       setPatientError(message)
       throw saveError
     }
@@ -3580,6 +3599,7 @@ function App() {
             onCreatePatient={handlePatientCreate}
             onSaveContact={handlePatientContactSave}
             onSaveDemographics={handlePatientDemographicsSave}
+            onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -3949,6 +3969,7 @@ function PatientWorkspace({
   onCreatePatient,
   onSaveContact,
   onSaveDemographics,
+  onSaveDeceasedStatus,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -3968,6 +3989,7 @@ function PatientWorkspace({
   onCreatePatient: (patient: PatientRegistrationInput) => Promise<PatientChartSummary>
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
+  onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
@@ -3977,6 +3999,13 @@ function PatientWorkspace({
     buildDemographicsDraft(null),
   )
   const [demographicsSaveStatus, setDemographicsSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [isEditingDeceasedStatus, setIsEditingDeceasedStatus] = useState(false)
+  const [deceasedStatusDraft, setDeceasedStatusDraft] = useState<PatientDeceasedStatusUpdate>(() =>
+    buildDeceasedStatusDraft(null),
+  )
+  const [deceasedStatusSaveStatus, setDeceasedStatusSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  )
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -4000,6 +4029,9 @@ function PatientWorkspace({
     setDemographicsDraft(buildDemographicsDraft(chart ?? activePatient))
     setIsEditingDemographics(false)
     setDemographicsSaveStatus('idle')
+    setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
+    setIsEditingDeceasedStatus(false)
+    setDeceasedStatusSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -4014,6 +4046,10 @@ function PatientWorkspace({
 
   function updateDemographicsDraft(field: keyof PatientDemographicsUpdate, value: string) {
     setDemographicsDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateDeceasedStatusDraft(field: keyof PatientDeceasedStatusUpdate, value: string) {
+    setDeceasedStatusDraft((current) => ({ ...current, [field]: value }))
   }
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
@@ -4108,6 +4144,22 @@ function PatientWorkspace({
       setDemographicsSaveStatus('saved')
     } catch {
       setDemographicsSaveStatus('error')
+    }
+  }
+
+  async function handleDeceasedStatusSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setDeceasedStatusSaveStatus('saving')
+    try {
+      await onSaveDeceasedStatus(chart.canonicalId, deceasedStatusDraft)
+      setIsEditingDeceasedStatus(false)
+      setDeceasedStatusSaveStatus('saved')
+    } catch {
+      setDeceasedStatusSaveStatus('error')
     }
   }
 
@@ -4594,6 +4646,75 @@ function PatientWorkspace({
                       </button>
                       {demographicsSaveStatus === 'saved' && <span className="save-note">Saved</span>}
                       {demographicsSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
+              </InfoPanel>
+
+              <InfoPanel title="Deceased Status" icon={HeartPulse}>
+                {isEditingDeceasedStatus && chart ? (
+                  <form className="contact-form" onSubmit={handleDeceasedStatusSubmit}>
+                    <label className="contact-field">
+                      <span>Deceased date</span>
+                      <input
+                        type="date"
+                        value={deceasedStatusDraft.deceasedDate}
+                        onChange={(event) => updateDeceasedStatusDraft('deceasedDate', event.target.value)}
+                        aria-label="Patient deceased date"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Reason deceased</span>
+                      <input
+                        value={deceasedStatusDraft.deceasedReason}
+                        onChange={(event) => updateDeceasedStatusDraft('deceasedReason', event.target.value)}
+                        aria-label="Patient deceased reason"
+                      />
+                    </label>
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button primary"
+                        type="submit"
+                        disabled={deceasedStatusSaveStatus === 'saving'}
+                      >
+                        <Check size={15} />
+                        <span>{deceasedStatusSaveStatus === 'saving' ? 'Saving' : 'Save status'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
+                          setIsEditingDeceasedStatus(false)
+                          setDeceasedStatusSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Status" value={chart?.deceasedDate ? 'Deceased' : 'Active patient'} />
+                    <Field label="Deceased date" value={chart?.deceasedDate} />
+                    <Field label="Reason deceased" value={chart?.deceasedReason} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
+                          setIsEditingDeceasedStatus(true)
+                          setDeceasedStatusSaveStatus('idle')
+                        }}
+                        disabled={!chart}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit status</span>
+                      </button>
+                      {deceasedStatusSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {deceasedStatusSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
                     </div>
                   </>
                 )}
@@ -17439,6 +17560,13 @@ function buildDemographicsDraft(patient: PatientListItem | PatientChartSummary |
     postalCode: chart?.postalCode ?? '',
     maritalStatus: chart?.maritalStatus ?? '',
     occupation: chart?.occupation ?? '',
+  }
+}
+
+function buildDeceasedStatusDraft(patient: PatientChartSummary | null): PatientDeceasedStatusUpdate {
+  return {
+    deceasedDate: patient?.deceasedDate ?? '',
+    deceasedReason: patient?.deceasedReason ?? '',
   }
 }
 

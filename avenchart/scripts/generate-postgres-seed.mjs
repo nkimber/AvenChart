@@ -388,7 +388,9 @@ create table patients (
   provider_id integer references staff(id),
   facility_id integer references facilities(id),
   portal_enabled boolean not null,
-  registration_date date not null
+  registration_date date not null,
+  deceased_date date,
+  deceased_reason text
 );
 
 create table insurance_records (
@@ -919,6 +921,8 @@ copyRows('patients', [
   'facility_id',
   'portal_enabled',
   'registration_date',
+  'deceased_date',
+  'deceased_reason',
 ], dataset.patients.map((patient) => [
   patient.canonicalId,
   patient.pid,
@@ -946,6 +950,8 @@ copyRows('patients', [
   patient.facilityId,
   patient.portalEnabled,
   patient.registrationDate,
+  null,
+  null,
 ]))
 
 copyRows('insurance_records', [

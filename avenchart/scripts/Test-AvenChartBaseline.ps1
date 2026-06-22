@@ -535,6 +535,75 @@ finally {
     }
 }
 
+$deceasedOriginal = $null
+try {
+    $deceasedOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalDeceasedBody = @{
+        deceasedDate = $deceasedOriginal.deceasedDate
+        deceasedReason = $deceasedOriginal.deceasedReason
+    }
+    $deceasedBody = @{
+        deceasedDate = "2026-06-20"
+        deceasedReason = "Smoke deceased-status readiness"
+    }
+
+    $updatedDeceased = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/deceased-status" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($deceasedBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $reloadedDeceased = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredDeceased = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/deceased-status" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalDeceasedBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $deceasedOriginal = $null
+
+    $mutationPassed = $updatedDeceased.deceasedDate -eq $deceasedBody.deceasedDate `
+        -and $updatedDeceased.deceasedReason -eq $deceasedBody.deceasedReason `
+        -and $reloadedDeceased.deceasedDate -eq $deceasedBody.deceasedDate `
+        -and $reloadedDeceased.deceasedReason -eq $deceasedBody.deceasedReason
+
+    $restorePassed = $restoredDeceased.deceasedDate -eq $originalDeceasedBody.deceasedDate `
+        -and $restoredDeceased.deceasedReason -eq $originalDeceasedBody.deceasedReason
+
+    Add-Check -Name "patient deceased status lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedDate = $updatedDeceased.deceasedDate
+        updatedReason = $updatedDeceased.deceasedReason
+        restoredDate = $restoredDeceased.deceasedDate
+        restoredReason = $restoredDeceased.deceasedReason
+    }
+}
+catch {
+    Add-Check -Name "patient deceased status lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $deceasedOriginal) {
+        try {
+            $originalDeceasedBody = @{
+                deceasedDate = $deceasedOriginal.deceasedDate
+                deceasedReason = $deceasedOriginal.deceasedReason
+            }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/deceased-status" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($originalDeceasedBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
