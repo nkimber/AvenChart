@@ -282,10 +282,59 @@ try {
 
     $search = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $anchor = $search.patients | Where-Object { $_.canonicalId -eq "MOD-PAT-0001" } | Select-Object -First 1
-    Add-Check -Name "anchor patient search" -Result $(if ($null -ne $anchor -and $unauthenticatedPatientSearchStatus -eq 401) { "passed" } else { "failed" }) -Details @{
+    $frontDeskPatientSearchStatus = 0
+    $frontDeskPatientChartStatus = 0
+    $frontDeskPatientSearch = $null
+    $frontDeskPatientChart = $null
+    try {
+        $frontDeskPatientSearch = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/patients?search=MOD-PAT-0001&limit=5" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20
+        $frontDeskPatientSearchStatus = 200
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskPatientSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+    try {
+        $frontDeskPatientChart = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20
+        $frontDeskPatientChartStatus = 200
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskPatientChartStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    Add-Check -Name "anchor patient search" -Result $(if ($null -ne $anchor -and $unauthenticatedPatientSearchStatus -eq 401 -and $frontDeskPatientSearchStatus -eq 200 -and $frontDeskPatientChartStatus -eq 200) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedPatientSearchStatus
+        frontDeskSearchStatus = $frontDeskPatientSearchStatus
+        frontDeskChartStatus = $frontDeskPatientChartStatus
         totalMatches = $search.totalMatches
         firstPatient = $search.patients | Select-Object -First 1
+        frontDeskFirstPatient = $frontDeskPatientSearch.patients | Select-Object -First 1
+        frontDeskChart = if ($null -ne $frontDeskPatientChart) {
+            @{
+                canonicalId = $frontDeskPatientChart.canonicalId
+                displayName = $frontDeskPatientChart.displayName
+                purpose = $frontDeskPatientChart.purpose
+            }
+        } else {
+            $null
+        }
     }
 }
 catch {

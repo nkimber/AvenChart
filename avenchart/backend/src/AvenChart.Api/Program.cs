@@ -119,7 +119,7 @@ auth.MapGet("/login-audit", async (
     .WithName("GetLoginAudit");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
-RequireActiveSession(patients);
+RequireAccessPermission(patients, "patients", "demo", "view");
 
 patients.MapGet("/", async (
         PatientRepository repository,

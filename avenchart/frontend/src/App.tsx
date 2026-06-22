@@ -4154,6 +4154,9 @@ function PatientWorkspace({
             )}
           </form>
         )}
+        {sessionId && patientLoginMessage && patientLoginStatus === 'authenticated' && (
+          <div className="status-banner">{patientLoginMessage}</div>
+        )}
 
         <div className="search-box">
           <Search size={18} />

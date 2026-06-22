@@ -2099,6 +2099,10 @@ function encounterApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Encounter access')
 }
 
+function patientApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Patient access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -2115,7 +2119,7 @@ export async function searchPatients(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient search', response.status))
+    throw new Error(patientApiError('Patient search', response.status))
   }
 
   return response.json()
@@ -2131,7 +2135,7 @@ export async function getPatientChart(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient chart load', response.status))
+    throw new Error(patientApiError('Patient chart load', response.status))
   }
 
   return response.json()
@@ -2149,7 +2153,7 @@ export async function createPatient(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient registration', response.status))
+    throw new Error(patientApiError('Patient registration', response.status))
   }
 
   return response.json()
@@ -2162,7 +2166,7 @@ export async function deletePatient(patientId: string, sessionId?: string | null
     signal,
   })
   if (!response.ok && response.status !== 404) {
-    throw new Error(sessionApiError('Patient delete', response.status))
+    throw new Error(patientApiError('Patient delete', response.status))
   }
 }
 
@@ -2179,7 +2183,7 @@ export async function updatePatientContact(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient contact update', response.status))
+    throw new Error(patientApiError('Patient contact update', response.status))
   }
 
   return response.json()
@@ -2198,7 +2202,7 @@ export async function updatePatientDemographics(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient demographics update', response.status))
+    throw new Error(patientApiError('Patient demographics update', response.status))
   }
 
   return response.json()
@@ -2217,7 +2221,7 @@ export async function createPatientInsurance(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient insurance create', response.status))
+    throw new Error(patientApiError('Patient insurance create', response.status))
   }
 
   return response.json()
@@ -2236,7 +2240,7 @@ export async function updatePatientInsurance(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient insurance update', response.status))
+    throw new Error(patientApiError('Patient insurance update', response.status))
   }
 
   return response.json()
@@ -2253,7 +2257,7 @@ export async function deletePatientInsurance(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Patient insurance delete', response.status))
+    throw new Error(patientApiError('Patient insurance delete', response.status))
   }
 
   return response.json()
