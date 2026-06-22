@@ -6720,7 +6720,7 @@ function EncounterWorkspace({
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Encounter search">
-        {!sessionId && (
+        {(!sessionId || searchStatus === 'error') && (
           <form className="mutation-form" aria-label="Encounter access" onSubmit={handleEncounterLogin}>
             <div className="panel-heading">
               <ShieldCheck size={17} />
@@ -6749,6 +6749,10 @@ function EncounterWorkspace({
               </div>
             )}
           </form>
+        )}
+
+        {sessionId && encounterLoginMessage && encounterLoginStatus === 'authenticated' && searchStatus !== 'error' && (
+          <div className="status-banner">{encounterLoginMessage}</div>
         )}
 
         <div className="filter-grid">

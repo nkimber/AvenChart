@@ -2665,11 +2665,60 @@ try {
         }
     }
 
+    $frontDeskEncounterSearchStatus = 0
+    try {
+        $frontDeskEncounterSearch = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" `
+            -Method Get `
+            -Headers (Get-FrontDeskHeaders) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskEncounterSearchStatus = [int]$frontDeskEncounterSearch.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskEncounterSearchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskEncounterMutationStatus = 0
+    $frontDeskEncounterMutationBody = @{
+        patientId = "MOD-PAT-0001"
+        dateTime = "2026-06-18 10:00:00"
+        reason = "Blocked Encounter Authorization"
+        facilityId = 10
+        billingFacilityId = 10
+    } | ConvertTo-Json -Depth 5
+    try {
+        $frontDeskEncounterMutation = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/encounters" `
+            -Method Post `
+            -Headers (Get-FrontDeskHeaders) `
+            -ContentType "application/json" `
+            -Body $frontDeskEncounterMutationBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $frontDeskEncounterMutationStatus = [int]$frontDeskEncounterMutation.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskEncounterMutationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
     $encounters = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters?patientId=MOD-PAT-0001&from=2026-01-01&limit=5" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $anchorEncounter = $encounters.encounters | Select-Object -First 1
-    $encounterPassed = $unauthenticatedEncounterSearchStatus -eq 401 -and $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote
+    $encounterPassed = $unauthenticatedEncounterSearchStatus -eq 401 -and $frontDeskEncounterSearchStatus -eq 403 -and $frontDeskEncounterMutationStatus -eq 403 -and $null -ne $anchorEncounter -and $anchorEncounter.patientId -eq "MOD-PAT-0001" -and $anchorEncounter.hasVitals -and $anchorEncounter.hasSoapNote
     Add-Check -Name "anchor encounter search" -Result $(if ($encounterPassed) { "passed" } else { "failed" }) -Details @{
         unauthenticatedStatus = $unauthenticatedEncounterSearchStatus
+        frontDeskStatus = $frontDeskEncounterSearchStatus
+        frontDeskMutationStatus = $frontDeskEncounterMutationStatus
         totalMatches = $encounters.totalMatches
         firstEncounter = $anchorEncounter
     }

@@ -2095,6 +2095,10 @@ function appointmentApiError(action: string, status: number) {
   return sessionApiError(action, status, 'Appointment access')
 }
 
+function encounterApiError(action: string, status: number) {
+  return sessionApiError(action, status, 'Encounter access')
+}
+
 export async function searchPatients(
   search: string,
   sessionId?: string | null,
@@ -2432,7 +2436,7 @@ export async function searchEncounters(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter search', response.status))
+    throw new Error(encounterApiError('Encounter search', response.status))
   }
 
   return response.json()
@@ -2450,7 +2454,7 @@ export async function getEncounterDetail(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter detail load', response.status))
+    throw new Error(encounterApiError('Encounter detail load', response.status))
   }
 
   return response.json()
@@ -2468,7 +2472,7 @@ export async function createEncounter(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter create', response.status))
+    throw new Error(encounterApiError('Encounter create', response.status))
   }
 
   return response.json()
@@ -2487,7 +2491,7 @@ export async function updateEncounter(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter update', response.status))
+    throw new Error(encounterApiError('Encounter update', response.status))
   }
 
   return response.json()
@@ -2504,7 +2508,7 @@ export async function deleteEncounter(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter delete', response.status))
+    throw new Error(encounterApiError('Encounter delete', response.status))
   }
 }
 
@@ -2521,7 +2525,7 @@ export async function createEncounterVitals(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter vitals create', response.status))
+    throw new Error(encounterApiError('Encounter vitals create', response.status))
   }
 
   return response.json()
@@ -2540,7 +2544,7 @@ export async function createEncounterSoapNote(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter SOAP note create', response.status))
+    throw new Error(encounterApiError('Encounter SOAP note create', response.status))
   }
 
   return response.json()
@@ -2559,7 +2563,7 @@ export async function signEncounter(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter sign-off', response.status))
+    throw new Error(encounterApiError('Encounter sign-off', response.status))
   }
 
   return response.json()
@@ -2578,7 +2582,7 @@ export async function createEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document attach', response.status))
+    throw new Error(encounterApiError('Encounter document attach', response.status))
   }
 
   return response.json()
@@ -2597,7 +2601,7 @@ export async function createEncounterBinaryDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Binary encounter document attach', response.status))
+    throw new Error(encounterApiError('Binary encounter document attach', response.status))
   }
 
   return response.json()
@@ -2616,7 +2620,7 @@ export async function createEncounterExternalLinkDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('External-link encounter document attach', response.status))
+    throw new Error(encounterApiError('External-link encounter document attach', response.status))
   }
 
   return response.json()
@@ -2636,7 +2640,7 @@ export async function updateEncounterDocumentMetadata(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document metadata update', response.status))
+    throw new Error(encounterApiError('Encounter document metadata update', response.status))
   }
 
   return response.json()
@@ -2656,7 +2660,7 @@ export async function moveEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document move', response.status))
+    throw new Error(encounterApiError('Encounter document move', response.status))
   }
 
   return response.json()
@@ -2676,7 +2680,7 @@ export async function replaceEncounterDocumentContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document content replacement', response.status))
+    throw new Error(encounterApiError('Encounter document content replacement', response.status))
   }
 
   return response.json()
@@ -2696,7 +2700,7 @@ export async function replaceEncounterDocumentBinaryContent(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter binary document content replacement', response.status))
+    throw new Error(encounterApiError('Encounter binary document content replacement', response.status))
   }
 
   return response.json()
@@ -2714,7 +2718,7 @@ export async function softDeleteEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document archive', response.status))
+    throw new Error(encounterApiError('Encounter document archive', response.status))
   }
 
   return response.json()
@@ -2732,7 +2736,7 @@ export async function restoreEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document restore', response.status))
+    throw new Error(encounterApiError('Encounter document restore', response.status))
   }
 
   return response.json()
@@ -2752,7 +2756,7 @@ export async function signEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document sign-off', response.status))
+    throw new Error(encounterApiError('Encounter document sign-off', response.status))
   }
 
   return response.json()
@@ -2772,7 +2776,7 @@ export async function denyEncounterDocument(
     signal,
   })
   if (!response.ok) {
-    throw new Error(sessionApiError('Encounter document denial', response.status))
+    throw new Error(encounterApiError('Encounter document denial', response.status))
   }
 
   return response.json()
@@ -2790,7 +2794,7 @@ export async function deleteEncounterSignature(
     signal,
   })
   if (!response.ok && response.status !== 404) {
-    throw new Error(sessionApiError('Encounter signature delete', response.status))
+    throw new Error(encounterApiError('Encounter signature delete', response.status))
   }
 }
 
