@@ -454,7 +454,8 @@ encounters.MapPost("/{encounter:int}/documents", async (
             ? Results.NotFound()
             : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
     })
-    .WithName("CreateEncounterDocument");
+    .WithName("CreateEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 encounters.MapPost("/{encounter:int}/documents/binary", async (
         EncounterRepository encounterRepository,
@@ -491,7 +492,8 @@ encounters.MapPost("/{encounter:int}/documents/binary", async (
             ? Results.NotFound()
             : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
     })
-    .WithName("CreateBinaryEncounterDocument");
+    .WithName("CreateBinaryEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 encounters.MapPost("/{encounter:int}/documents/external-link", async (
         EncounterRepository encounterRepository,
@@ -526,7 +528,8 @@ encounters.MapPost("/{encounter:int}/documents/external-link", async (
             ? Results.NotFound()
             : Results.Created($"/api/documents/{mutation.Id}", new EncounterDocumentMutationResponse(mutation.Id, refreshed));
     })
-    .WithName("CreateExternalLinkEncounterDocument");
+    .WithName("CreateExternalLinkEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async (
         EncounterRepository encounterRepository,
@@ -566,7 +569,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async 
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("UpdateEncounterDocumentMetadata");
+    .WithName("UpdateEncounterDocumentMetadata")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
         EncounterRepository encounterRepository,
@@ -616,7 +620,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMoveResponse(documentId, refreshedSource, refreshedTarget));
     })
-    .WithName("MoveEncounterDocument");
+    .WithName("MoveEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
         EncounterRepository encounterRepository,
@@ -648,7 +653,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("ReplaceEncounterDocumentContent");
+    .WithName("ReplaceEncounterDocumentContent")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", async (
         EncounterRepository encounterRepository,
@@ -680,7 +686,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", 
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("ReplaceEncounterDocumentBinaryContent");
+    .WithName("ReplaceEncounterDocumentBinaryContent")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", async (
         EncounterRepository encounterRepository,
@@ -714,7 +721,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", asy
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("SoftDeleteEncounterDocument");
+    .WithName("SoftDeleteEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
         EncounterRepository encounterRepository,
@@ -751,7 +759,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("RestoreEncounterDocument");
+    .WithName("RestoreEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         EncounterRepository encounterRepository,
@@ -783,7 +792,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
             ? Results.NotFound()
             : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
     })
-    .WithName("SignEncounterDocument");
+    .WithName("SignEncounterDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 encounters.MapDelete("/{encounter:int}/signatures/{signatureId:int}", async (
         EncounterRepository repository,
@@ -1155,7 +1165,8 @@ documents.MapPost("/", async (
             ? Results.BadRequest("Patient document could not be created from the supplied patient and document details.")
             : Results.Created($"/api/documents/{mutation.Id}", mutation);
     })
-    .WithName("CreatePatientDocument");
+    .WithName("CreatePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 documents.MapPost("/binary", async (
         DocumentRepository repository,
@@ -1167,7 +1178,8 @@ documents.MapPost("/binary", async (
             ? Results.BadRequest("Binary patient document could not be created from the supplied patient, file, and document details.")
             : Results.Created($"/api/documents/{mutation.Id}", mutation);
     })
-    .WithName("CreateBinaryPatientDocument");
+    .WithName("CreateBinaryPatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 documents.MapPost("/external-link", async (
         DocumentRepository repository,
@@ -1179,7 +1191,8 @@ documents.MapPost("/external-link", async (
             ? Results.BadRequest("External-link patient document could not be created from the supplied patient, URL, and document details.")
             : Results.Created($"/api/documents/{mutation.Id}", mutation);
     })
-    .WithName("CreateExternalLinkPatientDocument");
+    .WithName("CreateExternalLinkPatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
 documents.MapPut("/{documentId:int}/metadata", async (
         DocumentRepository repository,
@@ -1192,7 +1205,8 @@ documents.MapPut("/{documentId:int}/metadata", async (
             ? Results.BadRequest("Patient document metadata could not be updated from the supplied filing details.")
             : Results.Ok(mutation);
     })
-    .WithName("UpdatePatientDocumentMetadata");
+    .WithName("UpdatePatientDocumentMetadata")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/content", async (
         DocumentRepository repository,
@@ -1205,7 +1219,8 @@ documents.MapPut("/{documentId:int}/content", async (
             ? Results.BadRequest("Patient document content could not be replaced from the supplied text payload.")
             : Results.Ok(mutation);
     })
-    .WithName("ReplacePatientDocumentContent");
+    .WithName("ReplacePatientDocumentContent")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/content/binary", async (
         DocumentRepository repository,
@@ -1218,7 +1233,8 @@ documents.MapPut("/{documentId:int}/content/binary", async (
             ? Results.BadRequest("Binary patient document content could not be replaced from the supplied file payload.")
             : Results.Ok(mutation);
     })
-    .WithName("ReplaceBinaryPatientDocumentContent");
+    .WithName("ReplaceBinaryPatientDocumentContent")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
@@ -1228,7 +1244,8 @@ documents.MapPut("/{documentId:int}/soft-delete", async (
         var mutation = await repository.SoftDeleteAsync(documentId, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("SoftDeletePatientDocument");
+    .WithName("SoftDeletePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/restore", async (
         DocumentRepository repository,
@@ -1238,7 +1255,8 @@ documents.MapPut("/{documentId:int}/restore", async (
         var mutation = await repository.RestoreAsync(documentId, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("RestorePatientDocument");
+    .WithName("RestorePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/sign", async (
         DocumentRepository repository,
@@ -1249,7 +1267,8 @@ documents.MapPut("/{documentId:int}/sign", async (
         var mutation = await repository.SignAsync(documentId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("SignPatientDocument");
+    .WithName("SignPatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapDelete("/{documentId:int}", async (
         DocumentRepository repository,
@@ -1259,7 +1278,8 @@ documents.MapDelete("/{documentId:int}", async (
         var deleted = await repository.DeleteAsync(documentId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeletePatientDocument");
+    .WithName("DeletePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs_rm", "write"));
 
 var procedures = app.MapGroup("/api/procedures").WithTags("Procedures");
 RequireAccessPermission(procedures, "patients", "lab", "view");
