@@ -1043,7 +1043,8 @@ messages.MapPost("/", async (
             ? Results.BadRequest("Patient message could not be created from the supplied patient, title, and body.")
             : Results.Created($"/api/messages/{mutation.Id}", mutation);
     })
-    .WithName("CreatePatientMessage");
+    .WithName("CreatePatientMessage")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "addonly"));
 
 messages.MapPut("/{messageId}/status", async (
         MessageRepository repository,
@@ -1054,7 +1055,8 @@ messages.MapPut("/{messageId}/status", async (
         var mutation = await repository.UpdateStatusAsync(messageId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdatePatientMessageStatus");
+    .WithName("UpdatePatientMessageStatus")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapPut("/{messageId}/content", async (
         MessageRepository repository,
@@ -1065,7 +1067,8 @@ messages.MapPut("/{messageId}/content", async (
         var mutation = await repository.UpdateContentAsync(messageId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdatePatientMessageContent");
+    .WithName("UpdatePatientMessageContent")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapPut("/{messageId}/assignment", async (
         MessageRepository repository,
@@ -1076,7 +1079,8 @@ messages.MapPut("/{messageId}/assignment", async (
         var mutation = await repository.UpdateAssignmentAsync(messageId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("UpdatePatientMessageAssignment");
+    .WithName("UpdatePatientMessageAssignment")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
@@ -1087,7 +1091,8 @@ messages.MapPut("/{messageId}/reply", async (
         var mutation = await repository.ReplyAsync(messageId, request, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("ReplyToPatientMessage");
+    .WithName("ReplyToPatientMessage")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapPut("/{messageId}/soft-delete", async (
         MessageRepository repository,
@@ -1097,7 +1102,8 @@ messages.MapPut("/{messageId}/soft-delete", async (
         var mutation = await repository.SoftDeleteAsync(messageId, cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
-    .WithName("SoftDeletePatientMessage");
+    .WithName("SoftDeletePatientMessage")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 messages.MapDelete("/{messageId}", async (
         MessageRepository repository,
@@ -1107,7 +1113,8 @@ messages.MapDelete("/{messageId}", async (
         var deleted = await repository.DeleteAsync(messageId, cancellationToken);
         return deleted ? Results.NoContent() : Results.NotFound();
     })
-    .WithName("DeletePatientMessage");
+    .WithName("DeletePatientMessage")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

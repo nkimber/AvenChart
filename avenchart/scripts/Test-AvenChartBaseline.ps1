@@ -6022,6 +6022,72 @@ finally {
     }
 }
 
+$patientMessageMutationAuthorizationId = $null
+try {
+    $clinicianMessages = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/MOD-PAT-0004" -Method Get -Headers (Get-ClinicianHeaders) -TimeoutSec 20
+    $authorizationMessageTitle = "Smoke Patient Message Authorization $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $createAuthorizationMessageBody = @{
+        patientId = "MOD-PAT-0004"
+        title = $authorizationMessageTitle
+        body = "Created by the smoke patient-message mutation authorization check."
+        assignedTo = "admin"
+    } | ConvertTo-Json
+    $clinicianCreatedMessage = Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages" -Method Post -Headers (Get-ClinicianHeaders) -ContentType "application/json" -Body $createAuthorizationMessageBody -TimeoutSec 20
+    $patientMessageMutationAuthorizationId = $clinicianCreatedMessage.id
+    $clinicianCreatedVisible = $clinicianCreatedMessage.detail.messages | Where-Object { $_.id -eq $patientMessageMutationAuthorizationId -and $_.title -eq $authorizationMessageTitle -and $_.status -eq "New" -and $_.assignedTo -eq "admin" } | Select-Object -First 1
+
+    $clinicianStatusUpdateStatus = 0
+    try {
+        $blockedStatusBody = @{
+            status = "Done"
+            body = "This clinician status update should be blocked."
+        } | ConvertTo-Json
+        $clinicianStatusUpdate = Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId/status" `
+            -Method Put `
+            -Headers (Get-ClinicianHeaders) `
+            -ContentType "application/json" `
+            -Body $blockedStatusBody `
+            -TimeoutSec 20 `
+            -ErrorAction Stop
+        $clinicianStatusUpdateStatus = [int]$clinicianStatusUpdate.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $clinicianStatusUpdateStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $patientMessageMutationAuthorizationPassed = $clinicianMessages.patientId -eq "MOD-PAT-0004" `
+        -and $null -ne $clinicianCreatedVisible `
+        -and $clinicianStatusUpdateStatus -eq 403
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+    $patientMessageMutationAuthorizationId = $null
+
+    Add-Check -Name "patient message mutation authorization" -Result $(if ($patientMessageMutationAuthorizationPassed) { "passed" } else { "failed" }) -Details @{
+        clinicianPatientId = $clinicianMessages.patientId
+        createdId = $clinicianCreatedMessage.id
+        createdVisible = $clinicianCreatedVisible
+        clinicianStatusUpdateStatus = $clinicianStatusUpdateStatus
+    }
+}
+catch {
+    Add-Check -Name "patient message mutation authorization" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $patientMessageMutationAuthorizationId) {
+        try {
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/messages/$patientMessageMutationAuthorizationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $unauthenticatedProceduresStatus = 0
     try {
