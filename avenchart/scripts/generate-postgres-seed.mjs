@@ -244,6 +244,8 @@ drop table if exists vitals;
 drop table if exists encounters;
 drop table if exists appointments;
 drop table if exists insurance_records;
+drop table if exists patient_care_team_members;
+drop table if exists patient_care_teams;
 drop table if exists patient_employers;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -423,6 +425,26 @@ create table patient_employers (
   postal_code text,
   country text,
   recorded_date date
+);
+
+create table patient_care_teams (
+  patient_id text primary key references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  team_name text not null default 'Care Team',
+  team_status text not null default 'active',
+  note text,
+  updated_at timestamptz not null default now()
+);
+
+create table patient_care_team_members (
+  id bigserial primary key,
+  patient_id text not null references patient_care_teams(patient_id) on delete cascade,
+  user_id integer references staff(id),
+  role text not null,
+  facility_id integer references facilities(id),
+  provider_since date,
+  status text not null default 'active',
+  note text
 );
 
 create table insurance_records (
@@ -1754,6 +1776,7 @@ lines.push(`
 create index idx_patients_name on patients (last_name, first_name);
 create index idx_patients_legacy_pid on patients (legacy_pid);
 create index idx_patient_employers_pid on patient_employers (pid);
+create index idx_patient_care_team_members_patient on patient_care_team_members (patient_id);
 create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);
 create index idx_encounters_pid_date on encounters (pid, encounter_date);

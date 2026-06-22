@@ -164,6 +164,7 @@ import {
   updatePatientInsurance,
   updatePatientMessageStatus,
   updatePatientContact,
+  updatePatientCareTeam,
   updatePatientDeceasedStatus,
   updatePatientDemographics,
   updatePatientEmployer,
@@ -240,6 +241,8 @@ import {
   type PatientInsuranceMutationInput,
   type PatientListItem,
   type PatientBillingResponse,
+  type PatientCareTeamMember,
+  type PatientCareTeamUpdate,
   type PatientDocumentBinaryContentReplaceInput,
   type PatientDocumentBinaryCreateInput,
   type PatientContactUpdate,
@@ -1367,6 +1370,23 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient provider assignment save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientCareTeamSave(patientId: string, careTeam: PatientCareTeamUpdate) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientCareTeam(patientId, careTeam, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient care team save failed'
       setPatientError(message)
       throw saveError
     }
@@ -3720,6 +3740,7 @@ function App() {
             onSaveGuardianContact={handlePatientGuardianContactSave}
             onSaveEmployer={handlePatientEmployerSave}
             onSaveProviderAssignment={handlePatientProviderAssignmentSave}
+            onSaveCareTeam={handlePatientCareTeamSave}
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
@@ -4095,6 +4116,7 @@ function PatientWorkspace({
   onSaveGuardianContact,
   onSaveEmployer,
   onSaveProviderAssignment,
+  onSaveCareTeam,
   onCreateInsurance,
   onUpdateInsurance,
   onDeleteInsurance,
@@ -4120,6 +4142,7 @@ function PatientWorkspace({
   onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
   onSaveEmployer: (canonicalId: string, employer: PatientEmployerUpdate) => Promise<void>
   onSaveProviderAssignment: (canonicalId: string, assignment: PatientProviderAssignmentUpdate) => Promise<void>
+  onSaveCareTeam: (canonicalId: string, careTeam: PatientCareTeamUpdate) => Promise<void>
   onCreateInsurance: (canonicalId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onUpdateInsurance: (insuranceId: string, insurance: PatientInsuranceMutationInput) => Promise<PatientChartSummary>
   onDeleteInsurance: (insuranceId: string) => Promise<PatientChartSummary>
@@ -4152,6 +4175,9 @@ function PatientWorkspace({
   )
   const [providerAssignmentSaveStatus, setProviderAssignmentSaveStatus] =
     useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [isEditingCareTeam, setIsEditingCareTeam] = useState(false)
+  const [careTeamDraft, setCareTeamDraft] = useState<PatientCareTeamUpdate>(() => buildCareTeamDraft(null))
+  const [careTeamSaveStatus, setCareTeamSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingContact, setIsEditingContact] = useState(false)
   const [contactDraft, setContactDraft] = useState<PatientContactUpdate>(() => buildContactDraft(null))
   const [contactSaveStatus, setContactSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -4187,6 +4213,9 @@ function PatientWorkspace({
     setProviderAssignmentDraft(buildProviderAssignmentDraft(chart))
     setIsEditingProviderAssignment(false)
     setProviderAssignmentSaveStatus('idle')
+    setCareTeamDraft(buildCareTeamDraft(chart))
+    setIsEditingCareTeam(false)
+    setCareTeamSaveStatus('idle')
     setContactDraft(buildContactDraft(chart ?? activePatient))
     setIsEditingContact(false)
     setContactSaveStatus('idle')
@@ -4219,6 +4248,29 @@ function PatientWorkspace({
     setProviderAssignmentDraft({
       providerId: providerId ? Number(providerId) : null,
     })
+  }
+
+  function updateCareTeamDraft(field: keyof PatientCareTeamUpdate, value: string) {
+    setCareTeamDraft((current) => {
+      if (field === 'facilityId') {
+        return { ...current, facilityId: value ? Number(value) : null }
+      }
+
+      if (field === 'userId') {
+        return { ...current, userId: value ? Number(value) : null }
+      }
+
+      return { ...current, [field]: value }
+    })
+  }
+
+  function updateCareTeamProvider(providerId: string) {
+    const provider = providerOptions.find((option) => option.id === Number(providerId))
+    setCareTeamDraft((current) => ({
+      ...current,
+      userId: providerId ? Number(providerId) : null,
+      facilityId: provider?.facilityId ?? null,
+    }))
   }
 
   function updateInsuranceDraft(field: keyof PatientInsuranceMutationInput, value: string) {
@@ -4380,6 +4432,22 @@ function PatientWorkspace({
     }
   }
 
+  async function handleCareTeamSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!chart) {
+      return
+    }
+
+    setCareTeamSaveStatus('saving')
+    try {
+      await onSaveCareTeam(chart.canonicalId, careTeamDraft)
+      setIsEditingCareTeam(false)
+      setCareTeamSaveStatus('saved')
+    } catch {
+      setCareTeamSaveStatus('error')
+    }
+  }
+
   async function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!chart) {
@@ -4436,6 +4504,10 @@ function PatientWorkspace({
       setInsuranceSaveStatus('error')
     }
   }
+
+  const careTeamMember = firstCareTeamMember(chart)
+  const careTeamSelectedProvider = providerOptions.find((provider) => provider.id === careTeamDraft.userId)
+  const careTeamDraftFacilityName = careTeamSelectedProvider?.facilityName ?? careTeamMember?.facilityName ?? ''
 
   return (
     <section className="split-layout">
@@ -5620,9 +5692,145 @@ function PatientWorkspace({
                 loading={chartStatus === 'loading'}
               />
               <InfoPanel title="Care Team" icon={Building2}>
-                <Field label="Primary provider" value={activePatient.primaryProviderName} />
-                <Field label="Cohort" value={activePatient.cohort} />
-                <Field label="Test purpose" value={activePatient.purpose} />
+                {isEditingCareTeam && chart ? (
+                  <form className="contact-form" onSubmit={handleCareTeamSubmit}>
+                    <label className="contact-field">
+                      <span>Team name</span>
+                      <input
+                        value={careTeamDraft.teamName}
+                        onChange={(event) => updateCareTeamDraft('teamName', event.target.value)}
+                        aria-label="Care team name"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Team status</span>
+                      <select
+                        value={careTeamDraft.teamStatus}
+                        onChange={(event) => updateCareTeamDraft('teamStatus', event.target.value)}
+                        aria-label="Care team status"
+                      >
+                        {careTeamStatusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="contact-field">
+                      <span>Member</span>
+                      <select
+                        value={careTeamDraft.userId ?? ''}
+                        onChange={(event) => updateCareTeamProvider(event.target.value)}
+                        aria-label="Care team member"
+                      >
+                        <option value="">Unassigned</option>
+                        {providerOptions.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.displayName}
+                            {provider.facilityName ? ` - ${provider.facilityName}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="contact-field">
+                      <span>Role</span>
+                      <select
+                        value={careTeamDraft.role}
+                        onChange={(event) => updateCareTeamDraft('role', event.target.value)}
+                        aria-label="Care team member role"
+                      >
+                        {careTeamRoleOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Field label="Facility" value={careTeamDraftFacilityName} />
+                    <label className="contact-field">
+                      <span>Provider since</span>
+                      <input
+                        type="date"
+                        value={careTeamDraft.providerSince}
+                        onChange={(event) => updateCareTeamDraft('providerSince', event.target.value)}
+                        aria-label="Care team provider since"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Member status</span>
+                      <select
+                        value={careTeamDraft.status}
+                        onChange={(event) => updateCareTeamDraft('status', event.target.value)}
+                        aria-label="Care team member status"
+                      >
+                        {careTeamStatusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="contact-field">
+                      <span>Note</span>
+                      <input
+                        value={careTeamDraft.note}
+                        onChange={(event) => updateCareTeamDraft('note', event.target.value)}
+                        aria-label="Care team note"
+                      />
+                    </label>
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button primary"
+                        type="submit"
+                        disabled={careTeamSaveStatus === 'saving' || providerOptionsStatus === 'loading'}
+                      >
+                        <Check size={15} />
+                        <span>{careTeamSaveStatus === 'saving' ? 'Saving' : 'Save care team'}</span>
+                      </button>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setCareTeamDraft(buildCareTeamDraft(chart))
+                          setIsEditingCareTeam(false)
+                          setCareTeamSaveStatus('idle')
+                        }}
+                      >
+                        <X size={15} />
+                        <span>Cancel</span>
+                      </button>
+                      {providerOptionsStatus === 'error' && <span className="save-note error">Options unavailable</span>}
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <Field label="Team" value={chart?.careTeam?.teamName} />
+                    <Field label="Team status" value={chart?.careTeam?.teamStatusDisplay} />
+                    <Field label="Member" value={careTeamMember?.memberName} />
+                    <Field label="Role" value={careTeamMember?.roleDisplay} />
+                    <Field label="Facility" value={careTeamMember?.facilityName} />
+                    <Field label="Provider since" value={careTeamMember?.providerSince} />
+                    <Field label="Member status" value={careTeamMember?.statusDisplay} />
+                    <Field label="Note" value={careTeamMember?.note} />
+                    <div className="contact-actions">
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setCareTeamDraft(buildCareTeamDraft(chart))
+                          setIsEditingCareTeam(true)
+                          setCareTeamSaveStatus('idle')
+                        }}
+                        disabled={!chart || providerOptionsStatus === 'loading'}
+                      >
+                        <Pencil size={15} />
+                        <span>Edit care team</span>
+                      </button>
+                      {careTeamSaveStatus === 'saved' && <span className="save-note">Saved</span>}
+                      {careTeamSaveStatus === 'error' && <span className="save-note error">Save failed</span>}
+                    </div>
+                  </>
+                )}
               </InfoPanel>
             </div>
           </>
@@ -5640,6 +5848,24 @@ const appointmentCategoryOptions = [
   { id: 9, label: 'Established Patient' },
   { id: 10, label: 'New Patient' },
   { id: 13, label: 'Preventive Care Services' },
+] as const
+
+const careTeamRoleOptions = [
+  { value: 'primary_care_provider', label: 'Primary Care Provider' },
+  { value: 'physician', label: 'Physician' },
+  { value: 'nurse', label: 'Nurse' },
+  { value: 'case_manager', label: 'Case Manager' },
+  { value: 'social_worker', label: 'Social Worker' },
+  { value: 'specialist', label: 'Specialist' },
+  { value: 'other', label: 'Other' },
+] as const
+
+const careTeamStatusOptions = [
+  { value: 'proposed', label: 'Proposed' },
+  { value: 'active', label: 'Active' },
+  { value: 'suspended', label: 'Suspended' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'entered-in-error', label: 'Entered In Error' },
 ] as const
 
 const appointmentRepeatUnitOptions = [
@@ -18276,6 +18502,24 @@ function buildEmployerDraft(patient: PatientChartSummary | null): PatientEmploye
 function buildProviderAssignmentDraft(patient: PatientChartSummary | null): PatientProviderAssignmentUpdate {
   return {
     providerId: patient?.providerId ?? null,
+  }
+}
+
+function firstCareTeamMember(patient: PatientChartSummary | null): PatientCareTeamMember | null {
+  return patient?.careTeam?.members?.[0] ?? null
+}
+
+function buildCareTeamDraft(patient: PatientChartSummary | null): PatientCareTeamUpdate {
+  const member = firstCareTeamMember(patient)
+  return {
+    teamName: patient?.careTeam?.teamName ?? 'Care Team',
+    teamStatus: patient?.careTeam?.teamStatus ?? 'active',
+    userId: member?.userId ?? null,
+    role: member?.role ?? 'primary_care_provider',
+    facilityId: member?.facilityId ?? null,
+    providerSince: member?.providerSince ?? '',
+    status: member?.status ?? 'active',
+    note: member?.note ?? '',
   }
 }
 

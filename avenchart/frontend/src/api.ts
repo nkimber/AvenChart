@@ -54,6 +54,27 @@ export type PatientInsuranceItem = {
   relationship?: string | null
 }
 
+export type PatientCareTeamMember = {
+  id: number
+  userId?: number | null
+  memberName?: string | null
+  role: string
+  roleDisplay: string
+  facilityId?: number | null
+  facilityName?: string | null
+  providerSince?: string | null
+  status: string
+  statusDisplay: string
+  note?: string | null
+}
+
+export type PatientCareTeamSummary = {
+  teamName: string
+  teamStatus: string
+  teamStatusDisplay: string
+  members: PatientCareTeamMember[]
+}
+
 export type PatientDuplicateCandidate = {
   canonicalId: string
   legacyPid: number
@@ -130,6 +151,7 @@ export type PatientChartSummary = PatientListItem & {
   registrationDate: string
   deceasedDate?: string | null
   deceasedReason?: string | null
+  careTeam?: PatientCareTeamSummary | null
   insurance: PatientInsuranceItem[]
   duplicateCandidates: PatientDuplicateCandidate[]
   nextAppointment?: PatientTimelineItem | null
@@ -206,6 +228,7 @@ export type PatientEmployerUpdate = {
 export type PatientProviderAssignmentOption = {
   id: number
   displayName: string
+  facilityId?: number | null
   facilityName?: string | null
 }
 
@@ -217,6 +240,17 @@ export type PatientProviderAssignmentOptionsResponse = {
 
 export type PatientProviderAssignmentUpdate = {
   providerId: number | null
+}
+
+export type PatientCareTeamUpdate = {
+  teamName: string
+  teamStatus: string
+  userId: number | null
+  role: string
+  facilityId: number | null
+  providerSince: string
+  status: string
+  note: string
 }
 
 export type PatientRegistrationInput = PatientDemographicsUpdate & {
@@ -2505,6 +2539,25 @@ export async function updatePatientProviderAssignment(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient provider assignment update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientCareTeam(
+  patientId: string,
+  careTeam: PatientCareTeamUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/care-team`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(careTeam),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient care team update', response.status))
   }
 
   return response.json()

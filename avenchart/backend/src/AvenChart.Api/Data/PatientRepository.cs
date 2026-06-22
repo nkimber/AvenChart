@@ -293,6 +293,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
+                CareTeam: null,
                 Insurance: Array.Empty<PatientInsuranceItem>(),
                 DuplicateCandidates: Array.Empty<PatientDuplicateCandidate>(),
                 Counts: ReadCounts(reader),
@@ -301,6 +302,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         }
 
         var insurance = await GetInsuranceForPatientAsync(connection, summary.CanonicalId, cancellationToken);
+        var careTeam = await GetCareTeamForPatientAsync(connection, summary.CanonicalId, cancellationToken);
         var duplicateCandidates = await GetDuplicateCandidatesAsync(
             connection,
             new NormalizedDuplicateSearch(
@@ -313,7 +315,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 ExcludePatientId: summary.CanonicalId),
             5,
             cancellationToken);
-        return summary with { Insurance = insurance, DuplicateCandidates = duplicateCandidates };
+        return summary with { CareTeam = careTeam, Insurance = insurance, DuplicateCandidates = duplicateCandidates };
     }
 
     public async Task<PatientProviderAssignmentOptionsResponse> GetProviderAssignmentOptionsAsync(
@@ -327,6 +329,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             select
                 s.id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                s.facility_id,
                 f.name as facility_name
             from staff s
             left join facilities f on f.id = s.facility_id
@@ -342,6 +345,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             providers.Add(new PatientProviderAssignmentOption(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
                 DisplayName: reader.GetString(reader.GetOrdinal("provider_name")),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name")));
         }
 
@@ -349,6 +353,75 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
             Providers: providers);
+    }
+
+    private static async Task<PatientCareTeamSummary?> GetCareTeamForPatientAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                ct.team_name,
+                ct.team_status,
+                ctm.id,
+                ctm.user_id,
+                trim(concat(s.first_name, ' ', s.last_name)) as member_name,
+                ctm.role,
+                ctm.facility_id,
+                f.name as facility_name,
+                ctm.provider_since,
+                ctm.status,
+                ctm.note
+            from patient_care_teams ct
+            left join patient_care_team_members ctm on ctm.patient_id = ct.patient_id
+            left join staff s on s.id = ctm.user_id
+            left join facilities f on f.id = ctm.facility_id
+            where ct.patient_id = @patientId
+            order by ctm.id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        string? teamName = null;
+        string? teamStatus = null;
+        var members = new List<PatientCareTeamMember>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            teamName ??= reader.GetString(reader.GetOrdinal("team_name"));
+            teamStatus ??= reader.GetString(reader.GetOrdinal("team_status"));
+            if (reader.IsDBNull(reader.GetOrdinal("id")))
+            {
+                continue;
+            }
+
+            var role = reader.GetString(reader.GetOrdinal("role"));
+            var status = reader.GetString(reader.GetOrdinal("status"));
+            members.Add(new PatientCareTeamMember(
+                Id: reader.GetInt64(reader.GetOrdinal("id")),
+                UserId: ReadNullableInt(reader, "user_id"),
+                MemberName: ReadNullableString(reader, "member_name"),
+                Role: role,
+                RoleDisplay: CareTeamRoleDisplay(role),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                ProviderSince: ReadNullableDate(reader, "provider_since"),
+                Status: status,
+                StatusDisplay: CareTeamStatusDisplay(status),
+                Note: ReadNullableString(reader, "note")));
+        }
+
+        if (teamName is null || teamStatus is null)
+        {
+            return null;
+        }
+
+        return new PatientCareTeamSummary(
+            TeamName: teamName,
+            TeamStatus: teamStatus,
+            TeamStatusDisplay: CareTeamStatusDisplay(teamStatus),
+            Members: members);
     }
 
     public async Task<PatientDuplicateSearchResponse> FindDuplicateCandidatesAsync(
@@ -862,6 +935,103 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
+    public async Task<PatientChartSummary?> UpdateCareTeamAsync(
+        string patientId,
+        PatientCareTeamUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalized = NormalizeCareTeam(request);
+        if (normalized.Invalid)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        if (normalized.UserId is null)
+        {
+            await DeleteCareTeamAsync(connection, transaction, patient.CanonicalId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
+        }
+
+        if (!await CareTeamUserExistsAsync(connection, transaction, normalized.UserId.Value, cancellationToken)
+            || (normalized.FacilityId is not null
+                && !await CareTeamFacilityExistsAsync(connection, transaction, normalized.FacilityId.Value, cancellationToken)))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await DeleteCareTeamAsync(connection, transaction, patient.CanonicalId, cancellationToken);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_care_teams (
+                    patient_id,
+                    pid,
+                    team_name,
+                    team_status,
+                    note,
+                    updated_at
+                )
+                values (
+                    @patientId,
+                    @pid,
+                    @teamName,
+                    @teamStatus,
+                    @note,
+                    now()
+                );
+
+                insert into patient_care_team_members (
+                    patient_id,
+                    user_id,
+                    role,
+                    facility_id,
+                    provider_since,
+                    status,
+                    note
+                )
+                values (
+                    @patientId,
+                    @userId,
+                    @role,
+                    @facilityId,
+                    @providerSince,
+                    @status,
+                    @note
+                );
+                """;
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.AddWithValue("pid", patient.LegacyPid);
+            command.Parameters.AddWithValue("teamName", normalized.TeamName);
+            command.Parameters.AddWithValue("teamStatus", normalized.TeamStatus);
+            command.Parameters.Add("note", NpgsqlDbType.Text).Value = normalized.Note is null ? DBNull.Value : normalized.Note;
+            command.Parameters.AddWithValue("userId", normalized.UserId.Value);
+            command.Parameters.AddWithValue("role", normalized.Role);
+            command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = normalized.FacilityId is null
+                ? DBNull.Value
+                : normalized.FacilityId.Value;
+            command.Parameters.Add("providerSince", NpgsqlDbType.Date).Value = normalized.ProviderSince is null
+                ? DBNull.Value
+                : normalized.ProviderSince.Value;
+            command.Parameters.AddWithValue("status", normalized.Status);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
+    }
+
     public async Task<PatientChartSummary?> CreateInsuranceAsync(
         string patientId,
         PatientInsuranceMutationRequest request,
@@ -1226,6 +1396,181 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Homeless: NormalizeString(request.Homeless),
             FinancialReviewDate: financialReviewDate.Value);
         return true;
+    }
+
+    private static NormalizedPatientCareTeam NormalizeCareTeam(PatientCareTeamUpdateRequest request)
+    {
+        if (request.UserId is null)
+        {
+            return new NormalizedPatientCareTeam(
+                TeamName: NormalizeString(request.TeamName) ?? "Care Team",
+                TeamStatus: NormalizeCareTeamStatus(request.TeamStatus) ?? "active",
+                UserId: null,
+                Role: NormalizeCareTeamRole(request.Role) ?? "primary_care_provider",
+                FacilityId: request.FacilityId,
+                ProviderSince: null,
+                Status: NormalizeCareTeamStatus(request.Status) ?? "active",
+                Note: NormalizeString(request.Note),
+                Invalid: false);
+        }
+
+        if (request.UserId <= 0 || request.FacilityId <= 0)
+        {
+            return NormalizedPatientCareTeam.InvalidValue;
+        }
+
+        var providerSince = NormalizeOptionalDate(request.ProviderSince);
+        var role = NormalizeCareTeamRole(request.Role);
+        var teamStatus = NormalizeCareTeamStatus(request.TeamStatus);
+        var status = NormalizeCareTeamStatus(request.Status);
+        if (providerSince.Invalid || role is null || teamStatus is null || status is null)
+        {
+            return NormalizedPatientCareTeam.InvalidValue;
+        }
+
+        return new NormalizedPatientCareTeam(
+            TeamName: NormalizeString(request.TeamName) ?? "Care Team",
+            TeamStatus: teamStatus,
+            UserId: request.UserId,
+            Role: role,
+            FacilityId: request.FacilityId,
+            ProviderSince: providerSince.Value,
+            Status: status,
+            Note: NormalizeString(request.Note),
+            Invalid: false);
+    }
+
+    private static string? NormalizeCareTeamRole(string? value)
+    {
+        var normalized = NormalizeString(value);
+        return normalized switch
+        {
+            null => null,
+            "family_medicine_specialist" => normalized,
+            "case_manager" => normalized,
+            "caregiver" => normalized,
+            "nurse" => normalized,
+            "social_worker" => normalized,
+            "pharmacist" => normalized,
+            "specialist" => normalized,
+            "other" => normalized,
+            "physician" => normalized,
+            "nurse_practitioner" => normalized,
+            "physician_assistant" => normalized,
+            "therapist" => normalized,
+            "primary_care_provider" => normalized,
+            "dietitian" => normalized,
+            "mental_health" => normalized,
+            "healthcare_professional" => normalized,
+            _ => null
+        };
+    }
+
+    private static string? NormalizeCareTeamStatus(string? value)
+    {
+        var normalized = NormalizeString(value);
+        return normalized switch
+        {
+            null => null,
+            "proposed" => normalized,
+            "active" => normalized,
+            "suspended" => normalized,
+            "inactive" => normalized,
+            "entered-in-error" => normalized,
+            _ => null
+        };
+    }
+
+    private static string CareTeamRoleDisplay(string value) =>
+        value switch
+        {
+            "family_medicine_specialist" => "Family Medicine Specialist",
+            "case_manager" => "Case Manager",
+            "caregiver" => "Caregiver",
+            "nurse" => "Nurse",
+            "social_worker" => "Social Worker",
+            "pharmacist" => "Pharmacist",
+            "specialist" => "Specialist",
+            "physician" => "Physician",
+            "nurse_practitioner" => "Nurse Practitioner",
+            "physician_assistant" => "Physician Assistant",
+            "therapist" => "Clinical Therapist",
+            "primary_care_provider" => "Primary Care Provider",
+            "dietitian" => "Dietitian",
+            "mental_health" => "Mental Health Professional",
+            "healthcare_professional" => "Healthcare Professional",
+            "other" => "Other",
+            _ => value
+        };
+
+    private static string CareTeamStatusDisplay(string value) =>
+        value switch
+        {
+            "proposed" => "Proposed",
+            "active" => "Active",
+            "suspended" => "Suspended",
+            "inactive" => "Inactive",
+            "entered-in-error" => "Entered In Error",
+            _ => value
+        };
+
+    private static async Task<bool> CareTeamUserExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists (
+                select 1
+                from staff
+                where id = @userId
+                  and active = true
+            );
+            """;
+        command.Parameters.AddWithValue("userId", userId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> CareTeamFacilityExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists (
+                select 1
+                from facilities
+                where id = @facilityId
+                  and inactive = false
+            );
+            """;
+        command.Parameters.AddWithValue("facilityId", facilityId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task DeleteCareTeamAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            delete from patient_care_team_members
+            where patient_id = @patientId;
+
+            delete from patient_care_teams
+            where patient_id = @patientId;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static bool TryNormalizeDeceasedStatus(
@@ -1646,6 +1991,21 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private sealed record NormalizedOptionalInt(int? Value, bool Invalid);
 
     private sealed record NormalizedOptionalDate(DateOnly? Value, bool Invalid);
+
+    private sealed record NormalizedPatientCareTeam(
+        string TeamName,
+        string TeamStatus,
+        int? UserId,
+        string Role,
+        int? FacilityId,
+        DateOnly? ProviderSince,
+        string Status,
+        string? Note,
+        bool Invalid)
+    {
+        public static NormalizedPatientCareTeam InvalidValue { get; } =
+            new("", "", null, "", null, null, "", null, true);
+    }
 
     private sealed record NormalizedPatientRegistration(
         string Pubpid,

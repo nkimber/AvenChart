@@ -91,6 +91,7 @@ public sealed record PatientChartSummary(
     int? FacilityId,
     string? FacilityName,
     string? PrimaryProviderName,
+    PatientCareTeamSummary? CareTeam,
     IReadOnlyList<PatientInsuranceItem> Insurance,
     IReadOnlyList<PatientDuplicateCandidate> DuplicateCandidates,
     PatientActivityCounts Counts,
@@ -152,6 +153,25 @@ public sealed record PatientInsuranceItem(
     string? PolicyNumber,
     string? GroupNumber,
     string? Relationship);
+
+public sealed record PatientCareTeamSummary(
+    string TeamName,
+    string TeamStatus,
+    string TeamStatusDisplay,
+    IReadOnlyList<PatientCareTeamMember> Members);
+
+public sealed record PatientCareTeamMember(
+    long Id,
+    int? UserId,
+    string? MemberName,
+    string Role,
+    string RoleDisplay,
+    int? FacilityId,
+    string? FacilityName,
+    string? ProviderSince,
+    string Status,
+    string StatusDisplay,
+    string? Note);
 
 public sealed record PatientInsuranceMutationRequest(
     string Type,
@@ -222,10 +242,21 @@ public sealed record PatientProviderAssignmentOptionsResponse(
 public sealed record PatientProviderAssignmentOption(
     int Id,
     string DisplayName,
+    int? FacilityId,
     string? FacilityName);
 
 public sealed record PatientProviderAssignmentUpdateRequest(
     int? ProviderId);
+
+public sealed record PatientCareTeamUpdateRequest(
+    string? TeamName,
+    string? TeamStatus,
+    int? UserId,
+    string? Role,
+    int? FacilityId,
+    string? ProviderSince,
+    string? Status,
+    string? Note);
 
 public sealed record PatientRegistrationRequest(
     string? Pubpid,

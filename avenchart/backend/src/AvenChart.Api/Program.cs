@@ -271,6 +271,20 @@ patients.MapPut("/{patientId}/provider-assignment", async (
     .WithName("UpdatePatientProviderAssignment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapPut("/{patientId}/care-team", async (
+        PatientRepository repository,
+        string patientId,
+        PatientCareTeamUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdateCareTeamAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient care team could not be updated from the supplied patient and care-team details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientCareTeam")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapDelete("/{patientId}", async (
         PatientRepository repository,
         string patientId,

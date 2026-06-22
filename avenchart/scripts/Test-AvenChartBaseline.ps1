@@ -910,6 +910,100 @@ finally {
     }
 }
 
+$careTeamOriginal = $null
+try {
+    $careTeamOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $originalCareTeamMember = $null
+    if ($null -ne $careTeamOriginal.careTeam -and @($careTeamOriginal.careTeam.members).Count -gt 0) {
+        $originalCareTeamMember = @($careTeamOriginal.careTeam.members)[0]
+    }
+
+    $originalCareTeamBody = @{
+        teamName = $(if ($null -ne $careTeamOriginal.careTeam) { $careTeamOriginal.careTeam.teamName } else { "Care Team" })
+        teamStatus = $(if ($null -ne $careTeamOriginal.careTeam) { $careTeamOriginal.careTeam.teamStatus } else { "active" })
+        userId = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.userId } else { $null })
+        role = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.role } else { "primary_care_provider" })
+        facilityId = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.facilityId } else { $null })
+        providerSince = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.providerSince } else { $null })
+        status = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.status } else { "active" })
+        note = $(if ($null -ne $originalCareTeamMember) { $originalCareTeamMember.note } else { "" })
+    }
+    $careTeamBody = @{
+        teamName = "Care Team"
+        teamStatus = "active"
+        userId = 103
+        role = "primary_care_provider"
+        facilityId = 12
+        providerSince = "2026-06-18"
+        status = "active"
+        note = "Slice 199 care coordination anchor"
+    }
+
+    $updatedCareTeam = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($careTeamBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $reloadedCareTeam = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+
+    $restoredCareTeam = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+        -Method Put `
+        -Headers (Get-AdministrationHeaders) `
+        -ContentType "application/json" `
+        -Body ($originalCareTeamBody | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    $careTeamOriginal = $null
+
+    $updatedMember = @($updatedCareTeam.careTeam.members)[0]
+    $reloadedMember = @($reloadedCareTeam.careTeam.members)[0]
+    $mutationPassed = $updatedCareTeam.careTeam.teamName -eq "Care Team" `
+        -and $updatedMember.memberName -eq "Alex Chen" `
+        -and $updatedMember.roleDisplay -eq "Primary Care Provider" `
+        -and $updatedMember.facilityName -eq "East County Care Center" `
+        -and $updatedMember.providerSince -eq "2026-06-18" `
+        -and $updatedMember.note -eq "Slice 199 care coordination anchor" `
+        -and $reloadedMember.memberName -eq "Alex Chen"
+
+    if ($null -eq $originalCareTeamBody.userId) {
+        $restorePassed = $null -eq $restoredCareTeam.careTeam
+    }
+    else {
+        $restoredMember = @($restoredCareTeam.careTeam.members)[0]
+        $restorePassed = $restoredMember.userId -eq $originalCareTeamBody.userId `
+            -and $restoredMember.role -eq $originalCareTeamBody.role
+    }
+
+    Add-Check -Name "patient care team lifecycle" -Result $(if ($mutationPassed -and $restorePassed) { "passed" } else { "failed" }) -Details @{
+        updatedTeam = $updatedCareTeam.careTeam.teamName
+        updatedMember = $updatedMember.memberName
+        updatedFacility = $updatedMember.facilityName
+        restored = $restorePassed
+    }
+}
+catch {
+    Add-Check -Name "patient care team lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $careTeamOriginal) {
+        try {
+            $careTeamRestoreBody = if ($null -ne $originalCareTeamBody) { $originalCareTeamBody } else { @{ userId = $null } }
+            Invoke-RestMethod `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/care-team" `
+                -Method Put `
+                -Headers (Get-AdministrationHeaders) `
+                -ContentType "application/json" `
+                -Body ($careTeamRestoreBody | ConvertTo-Json -Depth 5) `
+                -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 $registrationPubpid = $null
 try {
     $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
