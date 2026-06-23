@@ -309,11 +309,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SenderName: session.DisplayName,
             RecipientId: recipientId,
             RecipientName: recipientName,
+            MailChain: nextId,
+            ReplyMailChain: nextId,
             PortalRelation: "portal:composed",
             IsEncrypted: false);
         var recipientMessage = sentMessage with
         {
             Id = (nextId + 1).ToString(),
+            MailChain = nextId + 1,
             SenderName = session.DisplayName,
             RecipientName = recipientName
         };
@@ -356,6 +359,112 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             DisplayName: session.DisplayName,
             RecipientId: recipientId,
             RecipientName: recipientName,
+            SentMessage: sentMessage,
+            RecipientMessage: recipientMessage,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalReplyMessageResponse> ReplyToMessageAsync(
+        Guid sessionId,
+        int messageId,
+        PatientPortalReplyMessageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ReplyFailure(session, messageId.ToString(), session.FailureReason ?? "Session is not active.");
+        }
+
+        var body = NormalizeText(request.Body);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return ReplyFailure(session, messageId.ToString(), "Secure message reply body is required.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var original = await GetPortalInboxMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
+        if (original is null)
+        {
+            return ReplyFailure(session, messageId.ToString(), "Secure message was not found in the signed-in portal inbox.");
+        }
+
+        var recipientId = NormalizeText(original.Item.SenderId)
+            ?? NormalizeText(original.Item.AssignedTo)
+            ?? "admin";
+        var recipientName = NormalizeText(original.Item.SenderName)
+            ?? await GetRecipientDisplayNameAsync(connection, recipientId, cancellationToken);
+        var replyThreadId = original.Item.ReplyMailChain > 0
+            ? original.Item.ReplyMailChain
+            : original.Item.MailChain > 0
+                ? original.Item.MailChain
+                : messageId;
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var messageDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        var sentMessage = new PatientPortalMessageItem(
+            Id: nextId.ToString(),
+            Date: messageDate,
+            Title: original.Item.Title,
+            Body: body,
+            Status: "New",
+            AssignedTo: recipientId,
+            SenderId: session.PortalUsername,
+            SenderName: session.DisplayName,
+            RecipientId: recipientId,
+            RecipientName: recipientName,
+            MailChain: nextId,
+            ReplyMailChain: replyThreadId,
+            PortalRelation: "portal:reply",
+            IsEncrypted: false);
+        var recipientMessage = sentMessage with
+        {
+            Id = (nextId + 1).ToString(),
+            MailChain = nextId + 1
+        };
+
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            sentMessage,
+            owner: session.PortalUsername,
+            userValue: session.PortalUsername,
+            mailChain: nextId,
+            replyMailChain: replyThreadId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            recipientMessage,
+            owner: recipientId,
+            userValue: session.PortalUsername,
+            mailChain: nextId + 1,
+            replyMailChain: replyThreadId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalReplyMessageResponse(
+            Authenticated: true,
+            Created: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            OriginalMessageId: original.Item.Id,
+            OriginalMessage: original.Item,
             SentMessage: sentMessage,
             RecipientMessage: recipientMessage,
             MessageCount: inboxCount,
@@ -482,6 +591,26 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             FailureReason: "Patient portal session header was not supplied.",
             SessionSource: SessionSource);
 
+    public static PatientPortalReplyMessageResponse MissingSessionHeaderReplyMessage(string messageId) =>
+        new(
+            Authenticated: false,
+            Created: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            OriginalMessageId: messageId,
+            OriginalMessage: null,
+            SentMessage: null,
+            RecipientMessage: null,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     private static PatientPortalComposeMessageResponse ComposeFailure(
         PatientPortalSessionResponse session,
         string reason,
@@ -497,6 +626,28 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         DisplayName: session.DisplayName,
         RecipientId: recipientId,
         RecipientName: string.Empty,
+        SentMessage: null,
+        RecipientMessage: null,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalReplyMessageResponse ReplyFailure(
+        PatientPortalSessionResponse session,
+        string originalMessageId,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        Created: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        OriginalMessageId: originalMessageId,
+        OriginalMessage: null,
         SentMessage: null,
         RecipientMessage: null,
         MessageCount: 0,
@@ -590,7 +741,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             : "owner = @portal_username and recipient_id = @portal_username";
         command.CommandText = $"""
             select id, message_date, title, body, message_status, assigned_to, portal_relation,
-              sender_id, sender_name, recipient_id, recipient_name, is_encrypted
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
             where deleted = 0 and {folderPredicate}
             order by message_date desc, id desc;
@@ -613,11 +764,58 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
                 RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
                 RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
+                MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
+                ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
                 PortalRelation: ReadNullableString(reader, "portal_relation"),
                 IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted"))));
         }
 
         return messages;
+    }
+
+    private static async Task<PortalMailboxMessageRow?> GetPortalInboxMessageAsync(
+        NpgsqlConnection connection,
+        string portalUsername,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            from portal_mailbox_messages
+            where deleted = 0
+              and owner = @portal_username
+              and recipient_id = @portal_username
+              and id = @message_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("portal_username", portalUsername);
+        command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var item = new PatientPortalMessageItem(
+            Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+            Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
+            Title: ReadNullableString(reader, "title") ?? string.Empty,
+            Body: ReadNullableString(reader, "body") ?? string.Empty,
+            Status: ReadNullableString(reader, "message_status") ?? string.Empty,
+            AssignedTo: ReadNullableString(reader, "assigned_to") ?? string.Empty,
+            SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
+            SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
+            RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
+            RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
+            MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
+            ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
+            PortalRelation: ReadNullableString(reader, "portal_relation"),
+            IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")));
+
+        return new PortalMailboxMessageRow(item);
     }
 
     private static async Task<int> GetNextPortalMailboxIdAsync(
@@ -908,6 +1106,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Inbox,
         Sent
     }
+
+    private sealed record PortalMailboxMessageRow(PatientPortalMessageItem Item);
 
     private sealed record PatientPortalAccountRow(
         string CanonicalId,

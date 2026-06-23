@@ -194,6 +194,20 @@ patientPortal.MapPost("/messages", async (
     })
     .WithName("ComposePatientPortalMessage");
 
+patientPortal.MapPost("/messages/{messageId:int}/reply", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        int messageId,
+        PatientPortalReplyMessageRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.ReplyToMessageAsync(sessionId, messageId, request, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderReplyMessage(messageId.ToString()));
+    })
+    .WithName("ReplyToPatientPortalMessage");
+
 patientPortal.MapDelete("/session", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

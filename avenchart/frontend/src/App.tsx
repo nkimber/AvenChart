@@ -57,6 +57,7 @@ import {
   getPatientPortalHome,
   getPatientPortalMessages,
   composePatientPortalMessage,
+  replyPatientPortalMessage,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -409,6 +410,7 @@ function App() {
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
   const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
   const [patientPortalComposeBody, setPatientPortalComposeBody] = useState('Please review my latest care-team follow-up when available.')
+  const [patientPortalReplyBodies, setPatientPortalReplyBodies] = useState<Record<string, string>>({})
   const [patientPortalStatus, setPatientPortalStatus] =
     useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
   const [patientPortalMessage, setPatientPortalMessage] = useState<string | null>(null)
@@ -3854,6 +3856,42 @@ function App() {
     }
   }
 
+  async function handlePatientPortalReplySubmit(messageId: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before replying to a secure message.')
+      return
+    }
+
+    const body = (patientPortalReplyBodies[messageId] ?? '').trim()
+    if (!body) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Secure message reply text is required.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const replyResult = await replyPatientPortalMessage(patientPortalSessionId, messageId, { body })
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      setPatientPortalStatus(replyResult.created ? 'ready' : 'rejected')
+      setPatientPortalMessage(replyResult.created
+        ? `Secure message reply sent for ${replyResult.originalMessage?.title || replyResult.originalMessageId}`
+        : replyResult.failureReason ?? 'Secure message reply was not sent.')
+      if (replyResult.created) {
+        setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: '' }))
+      }
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message reply failed')
+    }
+  }
+
   async function handlePatientPortalHomeLogout() {
     if (!patientPortalSessionId) {
       return
@@ -3986,14 +4024,17 @@ function App() {
             composeRecipient={patientPortalComposeRecipient}
             composeTitle={patientPortalComposeTitle}
             composeBody={patientPortalComposeBody}
+            replyBodies={patientPortalReplyBodies}
             onUsernameChange={setPatientPortalUsername}
             onPasswordChange={setPatientPortalPassword}
             onComposeRecipientChange={setPatientPortalComposeRecipient}
             onComposeTitleChange={setPatientPortalComposeTitle}
             onComposeBodyChange={setPatientPortalComposeBody}
+            onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
             onComposeSubmit={handlePatientPortalComposeSubmit}
+            onReplySubmit={handlePatientPortalReplySubmit}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4362,14 +4403,17 @@ function PatientPortalWorkspace({
   composeRecipient,
   composeTitle,
   composeBody,
+  replyBodies,
   onUsernameChange,
   onPasswordChange,
   onComposeRecipientChange,
   onComposeTitleChange,
   onComposeBodyChange,
+  onReplyBodyChange,
   onLogin,
   onRefresh,
   onComposeSubmit,
+  onReplySubmit,
   onLogout,
 }: {
   username: string
@@ -4382,14 +4426,17 @@ function PatientPortalWorkspace({
   composeRecipient: string
   composeTitle: string
   composeBody: string
+  replyBodies: Record<string, string>
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onComposeRecipientChange: (value: string) => void
   onComposeTitleChange: (value: string) => void
   onComposeBodyChange: (value: string) => void
+  onReplyBodyChange: (messageId: string, value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onReplySubmit: (messageId: string) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
@@ -4543,6 +4590,35 @@ function PatientPortalWorkspace({
                         <span>{portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
                       </div>
+                      <form
+                        className="contact-form portal-reply-form"
+                        aria-label={`Reply to ${portalMessage.title}`}
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void onReplySubmit(portalMessage.id)
+                        }}
+                      >
+                        <label className="contact-field">
+                          <span>Reply</span>
+                          <textarea
+                            value={replyBodies[portalMessage.id] ?? ''}
+                            onChange={(event) => onReplyBodyChange(portalMessage.id, event.target.value)}
+                            aria-label={`Reply to ${portalMessage.title}`}
+                            disabled={!authenticated || busy}
+                            rows={3}
+                          />
+                        </label>
+                        <div className="contact-actions">
+                          <button
+                            className="icon-text-button"
+                            type="submit"
+                            disabled={!authenticated || busy || (replyBodies[portalMessage.id] ?? '').trim() === ''}
+                          >
+                            <Reply size={15} />
+                            <span>Send reply</span>
+                          </button>
+                        </div>
+                      </form>
                     </article>
                   ))}
                   {(portalMessages?.messages.length ?? 0) === 0 && (

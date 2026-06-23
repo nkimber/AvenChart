@@ -101,6 +101,8 @@ public sealed record PatientPortalMessageItem(
     string SenderName,
     string RecipientId,
     string RecipientName,
+    int MailChain,
+    int ReplyMailChain,
     string? PortalRelation,
     bool IsEncrypted);
 
@@ -121,6 +123,28 @@ public sealed record PatientPortalComposeMessageResponse(
     string DisplayName,
     string RecipientId,
     string RecipientName,
+    PatientPortalMessageItem? SentMessage,
+    PatientPortalMessageItem? RecipientMessage,
+    int MessageCount,
+    int SentMessageCount,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalReplyMessageRequest(
+    string? Body);
+
+public sealed record PatientPortalReplyMessageResponse(
+    bool Authenticated,
+    bool Created,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string OriginalMessageId,
+    PatientPortalMessageItem? OriginalMessage,
     PatientPortalMessageItem? SentMessage,
     PatientPortalMessageItem? RecipientMessage,
     int MessageCount,

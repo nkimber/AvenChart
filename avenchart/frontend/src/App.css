@@ -1047,6 +1047,11 @@
   padding: 12px 0;
 }
 
+.portal-reply-form {
+  border-top: 1px solid #e0e8ec;
+  padding-top: 10px;
+}
+
 .document-category-stack {
   display: flex;
   flex-wrap: wrap;
