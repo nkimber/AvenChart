@@ -573,17 +573,36 @@ try {
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
 
+    $endedPortalSession = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/session" `
+        -Method Delete `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+
+    $inactivePortalSession = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/session" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+
     $portalAuthenticationPassed = $validPortalLogin.authenticated `
         -and $validPortalLogin.username -eq "mod-pat-0004@example.test" `
         -and $validPortalLogin.pubpid -eq "MOD-PAT-0004" `
         -and $validPortalLogin.sessionId `
         -and $portalSession.authenticated `
         -and $portalSession.sessionId -eq $validPortalLogin.sessionId `
+        -and -not $endedPortalSession.authenticated `
+        -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
+        -and $endedPortalSession.endedAt `
+        -and -not $inactivePortalSession.authenticated `
+        -and $inactivePortalSession.failureReason -eq "Session is not active." `
         -and -not $invalidPortalLogin.authenticated `
         -and $invalidPortalLogin.failureReason -eq "Invalid username or password."
     Add-Check -Name "anchor patient portal authentication" -Result $(if ($portalAuthenticationPassed) { "passed" } else { "failed" }) -Details @{
         validLogin = $validPortalLogin
         session = $portalSession
+        endedSession = $endedPortalSession
+        inactiveSession = $inactivePortalSession
         invalidLogin = $invalidPortalLogin
     }
 }

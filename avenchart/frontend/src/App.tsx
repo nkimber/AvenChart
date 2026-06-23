@@ -18,6 +18,7 @@ import {
   HeartPulse,
   KeyRound,
   LogIn,
+  LogOut,
   Mail,
   MapPin,
   Pencil,
@@ -61,6 +62,7 @@ import {
   getOperationalReportsCsv,
   getLoginAudit,
   getCurrentSession,
+  endPatientPortalSession,
   createAppointment,
   bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
@@ -4255,6 +4257,8 @@ function PatientWorkspace({
   const [portalLoginStatus, setPortalLoginStatus] =
     useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [portalLoginMessage, setPortalLoginMessage] = useState<string | null>(null)
+  const [portalSessionId, setPortalSessionId] = useState<string | null>(null)
+  const [portalSessionStatus, setPortalSessionStatus] = useState<'idle' | 'ending' | 'ended' | 'error'>('idle')
   const [isEditingGuardianContact, setIsEditingGuardianContact] = useState(false)
   const [guardianContactDraft, setGuardianContactDraft] = useState<PatientGuardianContactUpdate>(() =>
     buildGuardianContactDraft(null),
@@ -4306,6 +4310,8 @@ function PatientWorkspace({
     setPortalLoginPassword('PortalPass207!')
     setPortalLoginStatus('idle')
     setPortalLoginMessage(null)
+    setPortalSessionId(null)
+    setPortalSessionStatus('idle')
     setGuardianContactDraft(buildGuardianContactDraft(chart))
     setIsEditingGuardianContact(false)
     setGuardianContactSaveStatus('idle')
@@ -4588,14 +4594,41 @@ function PatientWorkspace({
       })
       if (result.authenticated && result.sessionId) {
         setPortalLoginStatus('authenticated')
+        setPortalSessionId(result.sessionId)
+        setPortalSessionStatus('idle')
         setPortalLoginMessage(`Portal sign-in ready for ${result.displayName}`)
       } else {
         setPortalLoginStatus('rejected')
+        setPortalSessionId(null)
+        setPortalSessionStatus('idle')
         setPortalLoginMessage(result.failureReason ?? 'Patient portal sign-in was rejected.')
       }
     } catch (portalError) {
       setPortalLoginStatus('error')
+      setPortalSessionId(null)
+      setPortalSessionStatus('idle')
       setPortalLoginMessage(portalError instanceof Error ? portalError.message : 'Patient portal sign-in check failed')
+    }
+  }
+
+  async function handlePortalSessionEndClick() {
+    if (!portalSessionId) {
+      return
+    }
+
+    setPortalSessionStatus('ending')
+    setPortalLoginMessage(null)
+
+    try {
+      const result = await endPatientPortalSession(portalSessionId)
+      setPortalSessionId(null)
+      setPortalSessionStatus('ended')
+      setPortalLoginStatus('idle')
+      setPortalLoginMessage(`Portal session ended for ${result.displayName || portalLoginUsername}`)
+    } catch (portalError) {
+      setPortalSessionStatus('error')
+      setPortalLoginStatus('error')
+      setPortalLoginMessage(portalError instanceof Error ? portalError.message : 'Patient portal session logout failed')
     }
   }
 
@@ -5280,10 +5313,25 @@ function PatientWorkspace({
                       <LogIn size={15} />
                       <span>{portalLoginStatus === 'checking' ? 'Checking portal sign-in' : 'Verify portal sign-in'}</span>
                     </button>
+                    {portalSessionId && (
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={handlePortalSessionEndClick}
+                        disabled={portalSessionStatus === 'ending'}
+                      >
+                        <LogOut size={15} />
+                        <span>
+                          {portalSessionStatus === 'ending' ? 'Ending portal session' : 'End portal session'}
+                        </span>
+                      </button>
+                    )}
                     {portalLoginMessage && (
                       <span
                         className={
-                          portalLoginStatus === 'authenticated' ? 'save-note' : 'save-note error'
+                          portalLoginStatus === 'authenticated' || portalSessionStatus === 'ended'
+                            ? 'save-note'
+                            : 'save-note error'
                         }
                       >
                         {portalLoginMessage}

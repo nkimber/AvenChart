@@ -2413,6 +2413,22 @@ export async function getPatientPortalSession(
   return response.json()
 }
 
+export async function endPatientPortalSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
+    method: 'DELETE',
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal session logout failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function logout(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/logout`, {
     method: 'POST',

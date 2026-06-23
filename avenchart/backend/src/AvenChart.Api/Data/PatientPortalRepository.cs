@@ -143,6 +143,50 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return row.ToResponse(authenticated: true, null, pubpid, displayName);
     }
 
+    public async Task<PatientPortalSessionResponse> EndSessionAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patient_portal_sessions
+            set ended_at = coalesce(ended_at, now()),
+                last_seen_at = now()
+            where id = @session_id
+            returning id, patient_id, pid, portal_username, portal_login_username, created_at, last_seen_at, expires_at, ended_at, session_source;
+            """;
+        command.Parameters.AddWithValue("session_id", sessionId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return InactiveSession(sessionId, "Session is not active.");
+        }
+
+        var row = ReadSessionRow(reader);
+        await reader.DisposeAsync();
+
+        await using var patientCommand = connection.CreateCommand();
+        patientCommand.CommandText = """
+            select pubpid, first_name, last_name
+            from patients
+            where canonical_id = @patient_id
+            limit 1;
+            """;
+        patientCommand.Parameters.AddWithValue("patient_id", row.CanonicalId);
+
+        await using var patientReader = await patientCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await patientReader.ReadAsync(cancellationToken))
+        {
+            return row.ToResponse(authenticated: false, "Session patient was not found.", string.Empty, string.Empty);
+        }
+
+        var pubpid = patientReader.GetString(patientReader.GetOrdinal("pubpid"));
+        var displayName = $"{patientReader.GetString(patientReader.GetOrdinal("last_name"))}, {patientReader.GetString(patientReader.GetOrdinal("first_name"))}";
+        return row.ToResponse(authenticated: false, "Session is not active.", pubpid, displayName);
+    }
+
     private static PatientPortalLoginResponse Failed(string username, string reason) => new(
         Authenticated: false,
         Username: username,

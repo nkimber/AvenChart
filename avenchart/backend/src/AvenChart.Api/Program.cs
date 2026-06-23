@@ -157,6 +157,32 @@ patientPortal.MapGet("/session", async (
     })
     .WithName("GetPatientPortalSession");
 
+patientPortal.MapDelete("/session", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.EndSessionAsync(sessionId, cancellationToken))
+            : Results.Ok(new PatientPortalSessionResponse(
+                Authenticated: false,
+                SessionId: null,
+                Username: string.Empty,
+                PortalUsername: string.Empty,
+                CanonicalId: string.Empty,
+                LegacyPid: null,
+                Pubpid: string.Empty,
+                DisplayName: string.Empty,
+                CreatedAt: null,
+                LastSeenAt: null,
+                ExpiresAt: null,
+                EndedAt: null,
+                FailureReason: "Patient portal session header was not supplied.",
+                SessionSource: "avenchart-portal"));
+    })
+    .WithName("EndPatientPortalSession");
+
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
 
