@@ -53,6 +53,7 @@ import {
   getPatientDocumentContent,
   getPatientDocuments,
   getPatientMessages,
+  getPatientPortalHome,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -276,6 +277,7 @@ import {
   type PatientMessageItem,
   type PatientMessageReplyInput,
   type PatientMessagesResponse,
+  type PatientPortalHomeSummaryResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
   type StatementBatchCandidate,
@@ -316,6 +318,7 @@ import './App.css'
 
 type ModuleId =
   | 'patients'
+  | 'portal'
   | 'calendar'
   | 'encounters'
   | 'lists'
@@ -333,6 +336,7 @@ type EncounterProcedureResultSetInput = {
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
+  { id: 'portal', label: 'Portal', icon: KeyRound, implemented: 'portal' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
   { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
   { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
@@ -393,6 +397,13 @@ function App() {
   const [messageStatus, setMessageStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [messageError, setMessageError] = useState<string | null>(null)
   const [messageRefreshKey, setMessageRefreshKey] = useState(0)
+  const [patientPortalUsername, setPatientPortalUsername] = useState('mod-pat-0004@example.test')
+  const [patientPortalPassword, setPatientPortalPassword] = useState('PortalPass207!')
+  const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
+  const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
+  const [patientPortalStatus, setPatientPortalStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
+  const [patientPortalMessage, setPatientPortalMessage] = useState<string | null>(null)
 
   const [documentPatientId, setDocumentPatientId] = useState('MOD-PAT-0001')
   const [patientDocuments, setPatientDocuments] = useState<PatientDocumentsResponse | null>(null)
@@ -3732,6 +3743,87 @@ function App() {
     }
   }
 
+  async function handlePatientPortalHomeLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const loginResult = await loginPatientPortal({
+        username: patientPortalUsername,
+        password: patientPortalPassword,
+      })
+
+      if (!loginResult.authenticated || !loginResult.sessionId) {
+        setPatientPortalSessionId(null)
+        setPatientPortalHome(null)
+        setPatientPortalStatus('rejected')
+        setPatientPortalMessage(loginResult.failureReason ?? 'Patient portal sign-in was rejected.')
+        return
+      }
+
+      const home = await getPatientPortalHome(loginResult.sessionId)
+      if (!home.authenticated) {
+        setPatientPortalSessionId(loginResult.sessionId)
+        setPatientPortalHome(home)
+        setPatientPortalStatus('rejected')
+        setPatientPortalMessage(home.failureReason ?? 'Patient portal home was not available.')
+        return
+      }
+
+      setPatientPortalSessionId(loginResult.sessionId)
+      setPatientPortalHome(home)
+      setPatientPortalStatus('ready')
+      setPatientPortalMessage(`Portal home ready for ${home.displayName}`)
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalHome(null)
+      setPatientPortalSessionId(null)
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home failed')
+    }
+  }
+
+  async function handlePatientPortalHomeRefresh() {
+    if (!patientPortalSessionId) {
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
+      setPatientPortalMessage(home.authenticated
+        ? `Portal home refreshed for ${home.displayName}`
+        : home.failureReason ?? 'Patient portal home was not available.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home refresh failed')
+    }
+  }
+
+  async function handlePatientPortalHomeLogout() {
+    if (!patientPortalSessionId) {
+      return
+    }
+
+    setPatientPortalStatus('ending')
+    setPatientPortalMessage(null)
+
+    try {
+      const result = await endPatientPortalSession(patientPortalSessionId)
+      setPatientPortalSessionId(null)
+      setPatientPortalHome(null)
+      setPatientPortalStatus('idle')
+      setPatientPortalMessage(`Portal session ended for ${result.displayName || patientPortalUsername}`)
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal logout failed')
+    }
+  }
+
   const datasetVersion =
     activeModule === 'calendar'
       ? appointmentResult?.datasetVersion ?? searchResult?.datasetVersion
@@ -3745,6 +3837,8 @@ function App() {
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'portal'
+            ? patientPortalHome?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'reports'
             ? operationalReports?.datasetVersion ?? searchResult?.datasetVersion
             : activeModule === 'admin'
@@ -3827,6 +3921,21 @@ function App() {
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
+          />
+        )}
+        {activeModule === 'portal' && (
+          <PatientPortalWorkspace
+            username={patientPortalUsername}
+            password={patientPortalPassword}
+            status={patientPortalStatus}
+            message={patientPortalMessage}
+            sessionId={patientPortalSessionId}
+            home={patientPortalHome}
+            onUsernameChange={setPatientPortalUsername}
+            onPasswordChange={setPatientPortalPassword}
+            onLogin={handlePatientPortalHomeLogin}
+            onRefresh={handlePatientPortalHomeRefresh}
+            onLogout={handlePatientPortalHomeLogout}
           />
         )}
         {activeModule === 'calendar' && (
@@ -4116,6 +4225,9 @@ function App() {
 }
 
 function moduleEyebrow(moduleId: ModuleId) {
+  if (moduleId === 'portal') {
+    return 'Patient Portal'
+  }
   if (moduleId === 'calendar') {
     return 'Scheduling'
   }
@@ -4147,6 +4259,9 @@ function moduleEyebrow(moduleId: ModuleId) {
 }
 
 function moduleTitle(moduleId: ModuleId) {
+  if (moduleId === 'portal') {
+    return 'Portal'
+  }
   if (moduleId === 'calendar') {
     return 'Calendar'
   }
@@ -4175,6 +4290,153 @@ function moduleTitle(moduleId: ModuleId) {
     return 'Admin'
   }
   return 'Patient/Client'
+}
+
+function PatientPortalWorkspace({
+  username,
+  password,
+  status,
+  message,
+  sessionId,
+  home,
+  onUsernameChange,
+  onPasswordChange,
+  onLogin,
+  onRefresh,
+  onLogout,
+}: {
+  username: string
+  password: string
+  status: 'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'
+  message: string | null
+  sessionId: string | null
+  home: PatientPortalHomeSummaryResponse | null
+  onUsernameChange: (value: string) => void
+  onPasswordChange: (value: string) => void
+  onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onRefresh: () => Promise<void>
+  onLogout: () => Promise<void>
+}) {
+  const authenticated = Boolean(home?.authenticated && sessionId)
+  const busy = status === 'loading' || status === 'ending'
+
+  return (
+    <section className="scheduler-layout">
+      <section className="finder-panel" aria-label="Patient portal sign-in">
+        <form className="contact-form" aria-label="Patient portal home access" onSubmit={onLogin}>
+          <label className="contact-field">
+            <span>Portal username</span>
+            <input
+              value={username}
+              onChange={(event) => onUsernameChange(event.target.value)}
+              aria-label="Portal username"
+              autoComplete="username"
+            />
+          </label>
+          <label className="contact-field">
+            <span>Portal password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              aria-label="Portal password"
+              autoComplete="current-password"
+            />
+          </label>
+          <div className="contact-actions">
+            <button className="icon-text-button primary" type="submit" disabled={busy}>
+              <LogIn size={15} />
+              <span>{status === 'loading' ? 'Opening portal home' : 'Open Portal Home'}</span>
+            </button>
+            {authenticated && (
+              <button className="icon-text-button" type="button" onClick={onRefresh} disabled={busy}>
+                <RotateCcw size={15} />
+                <span>Refresh portal home</span>
+              </button>
+            )}
+            {authenticated && (
+              <button className="icon-text-button" type="button" onClick={onLogout} disabled={busy}>
+                <LogOut size={15} />
+                <span>{status === 'ending' ? 'Ending portal session' : 'End portal session'}</span>
+              </button>
+            )}
+          </div>
+          {message && (
+            <div className={status === 'ready' || status === 'idle' ? 'status-banner success' : 'status-banner error'}>
+              {message}
+            </div>
+          )}
+        </form>
+
+        <InfoPanel title="Portal Session" icon={KeyRound}>
+          <Field label="Session" value={authenticated ? 'Active' : 'Not active'} />
+          <Field label="Portal username" value={home?.portalUsername || username} />
+          <Field label="Source" value={home?.sessionSource} />
+          <Field label="Dataset" value={home?.datasetVersion} />
+          <Field label="As of" value={home?.asOfDate} />
+        </InfoPanel>
+      </section>
+
+      <section className="appointment-detail-panel" aria-label="Patient portal home summary">
+        {authenticated && home ? (
+          <>
+            <div className="chart-banner">
+              <div>
+                <p className="eyebrow">Portal Home</p>
+                <h2>{home.displayName}</h2>
+                <p className="patient-line">
+                  {home.pubpid} / PID {home.legacyPid ?? 'Unknown'} / {home.username}
+                </p>
+              </div>
+              <div className="portal-pill">Portal home ready</div>
+            </div>
+
+            <div className="chart-grid">
+              <InfoPanel title="Messages" icon={Mail}>
+                <MetricRow label="All messages" value={home.messages.totalMessages} />
+                <MetricRow label="New messages" value={home.messages.newMessages} />
+                <MetricRow label="Done messages" value={home.messages.doneMessages} />
+                <Field label="Latest message" value={home.messages.latestMessageTitle} />
+                <Field label="Latest message date" value={home.messages.latestMessageDate} />
+              </InfoPanel>
+
+              <InfoPanel title="Upcoming Appointments" icon={CalendarDays}>
+                <MetricRow label="Upcoming" value={home.upcomingAppointmentCount} />
+                {home.upcomingAppointments.length === 0 && (
+                  <div className="empty-state inline">No upcoming appointments</div>
+                )}
+                {home.upcomingAppointments.map((appointment) => (
+                  <article className="clinical-item" key={appointment.id}>
+                    <div>
+                      <strong>{appointment.title}</strong>
+                      <span>
+                        {appointment.date} {appointment.startTime}
+                      </span>
+                    </div>
+                    <div>
+                      <span>{appointment.categoryName || 'Appointment'}</span>
+                      <span>{appointment.providerName || 'No provider'}</span>
+                    </div>
+                    <Field label="Status" value={appointment.status} />
+                    <Field label="Facility" value={appointment.facilityName} />
+                  </article>
+                ))}
+              </InfoPanel>
+
+              <InfoPanel title="Patient" icon={UserRound}>
+                <Field label="Patient ID" value={home.pubpid} />
+                <Field label="Canonical ID" value={home.canonicalId} />
+                <Field label="Legacy PID" value={home.legacyPid} />
+                <Field label="Portal login" value={home.username} />
+              </InfoPanel>
+            </div>
+          </>
+        ) : (
+          <div className="empty-state">Sign in to open the patient portal home</div>
+        )}
+      </section>
+    </section>
+  )
 }
 
 function PatientWorkspace({

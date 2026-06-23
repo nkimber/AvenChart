@@ -2307,6 +2307,46 @@ export type PatientPortalSessionResponse = {
   sessionSource: string
 }
 
+export type PatientPortalHomeMessageSummary = {
+  totalMessages: number
+  newMessages: number
+  doneMessages: number
+  latestMessageTitle?: string | null
+  latestMessageDate?: string | null
+}
+
+export type PatientPortalHomeAppointmentSummary = {
+  id: string
+  date: string
+  startTime: string
+  title: string
+  status?: string | null
+  categoryId?: number | null
+  categoryName?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  comments?: string | null
+}
+
+export type PatientPortalHomeSummaryResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  messages: PatientPortalHomeMessageSummary
+  upcomingAppointmentCount: number
+  upcomingAppointments: PatientPortalHomeAppointmentSummary[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -2408,6 +2448,21 @@ export async function getPatientPortalSession(
   })
   if (!response.ok) {
     throw new Error(`Patient portal session check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalHome(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalHomeSummaryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/home`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal home check failed with ${response.status}`)
   }
 
   return response.json()

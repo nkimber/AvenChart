@@ -573,6 +573,13 @@ try {
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
 
+    $portalHome = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/home" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+    $portalHomeAppointments = @($portalHome.upcomingAppointments)
+
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
         -Method Delete `
@@ -591,6 +598,14 @@ try {
         -and $validPortalLogin.sessionId `
         -and $portalSession.authenticated `
         -and $portalSession.sessionId -eq $validPortalLogin.sessionId `
+        -and $portalHome.authenticated `
+        -and $portalHome.pubpid -eq "MOD-PAT-0004" `
+        -and $portalHome.displayName -eq "Kim, Nora" `
+        -and $portalHome.messages.totalMessages -eq 2 `
+        -and $portalHome.messages.newMessages -eq 1 `
+        -and $portalHomeAppointments.Count -gt 0 `
+        -and $portalHomeAppointments[0].date -eq "2026-07-28" `
+        -and $portalHomeAppointments[0].title -eq "Preventive Care" `
         -and -not $endedPortalSession.authenticated `
         -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
         -and $endedPortalSession.endedAt `
@@ -601,6 +616,7 @@ try {
     Add-Check -Name "anchor patient portal authentication" -Result $(if ($portalAuthenticationPassed) { "passed" } else { "failed" }) -Details @{
         validLogin = $validPortalLogin
         session = $portalSession
+        home = $portalHome
         endedSession = $endedPortalSession
         inactiveSession = $inactivePortalSession
         invalidLogin = $invalidPortalLogin

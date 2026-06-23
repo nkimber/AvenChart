@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -187,6 +188,44 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return row.ToResponse(authenticated: false, "Session is not active.", pubpid, displayName);
     }
 
+    public async Task<PatientPortalHomeSummaryResponse> GetHomeSummaryAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyHomeSummary(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var messages = await GetMessageSummaryAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var appointments = await GetUpcomingAppointmentsAsync(
+            connection,
+            session.LegacyPid.Value,
+            metadata.BaseDate,
+            cancellationToken);
+
+        return new PatientPortalHomeSummaryResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Messages: messages,
+            UpcomingAppointmentCount: appointments.TotalCount,
+            UpcomingAppointments: appointments.Items,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     private static PatientPortalLoginResponse Failed(string username, string reason) => new(
         Authenticated: false,
         Username: username,
@@ -200,6 +239,168 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         SessionCreatedAt: null,
         SessionExpiresAt: null,
         SessionSource: SessionSource);
+
+    private static PatientPortalHomeSummaryResponse EmptyHomeSummary(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Messages: new PatientPortalHomeMessageSummary(0, 0, 0, null, null),
+        UpcomingAppointmentCount: 0,
+        UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalHomeSummaryResponse MissingSessionHomeSummary(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Messages: new PatientPortalHomeMessageSummary(0, 0, 0, null, null),
+        UpcomingAppointmentCount: 0,
+        UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
+        MissingSessionHomeSummary("Patient portal session header was not supplied.");
+
+    private static async Task<DatasetMetadata> GetMetadataAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select dataset_id, version, base_date
+            from dataset_metadata
+            order by generated_at desc
+            limit 1;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new DatasetMetadata("unseeded", "unknown", DateOnly.FromDateTime(DateTime.UtcNow));
+        }
+
+        return new DatasetMetadata(
+            reader.GetString(reader.GetOrdinal("dataset_id")),
+            reader.GetString(reader.GetOrdinal("version")),
+            reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
+    }
+
+    private static async Task<PatientPortalHomeMessageSummary> GetMessageSummaryAsync(
+        NpgsqlConnection connection,
+        int pid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              count(*)::int as total_messages,
+              count(*) filter (where status = 'New')::int as new_messages,
+              count(*) filter (where status = 'Done')::int as done_messages,
+              (
+                select title
+                from messages latest
+                where latest.pid = @pid and latest.deleted = 0
+                order by latest.message_date desc, latest.id desc
+                limit 1
+              ) as latest_message_title,
+              (
+                select message_date
+                from messages latest
+                where latest.pid = @pid and latest.deleted = 0
+                order by latest.message_date desc, latest.id desc
+                limit 1
+              ) as latest_message_date
+            from messages
+            where pid = @pid and deleted = 0;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new PatientPortalHomeMessageSummary(0, 0, 0, null, null);
+        }
+
+        return new PatientPortalHomeMessageSummary(
+            TotalMessages: reader.GetInt32(reader.GetOrdinal("total_messages")),
+            NewMessages: reader.GetInt32(reader.GetOrdinal("new_messages")),
+            DoneMessages: reader.GetInt32(reader.GetOrdinal("done_messages")),
+            LatestMessageTitle: ReadNullableString(reader, "latest_message_title"),
+            LatestMessageDate: ReadNullableDate(reader, "latest_message_date"));
+    }
+
+    private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(
+        NpgsqlConnection connection,
+        int pid,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              a.id,
+              a.appointment_date,
+              a.start_time,
+              coalesce(a.title, 'Appointment') as title,
+              a.status,
+              a.category_id,
+              trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+              f.name as facility_name,
+              a.comments,
+              count(*) over ()::int as total_count
+            from appointments a
+            left join staff s on s.id = a.provider_id
+            left join facilities f on f.id = a.facility_id
+            where a.pid = @pid
+              and a.appointment_date >= @as_of_date
+            order by a.appointment_date, a.start_time, a.id
+            limit 10;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.Add("as_of_date", NpgsqlDbType.Date).Value = asOfDate;
+
+        var items = new List<PatientPortalHomeAppointmentSummary>();
+        var totalCount = 0;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+            var categoryId = ReadNullableInt(reader, "category_id");
+            items.Add(new PatientPortalHomeAppointmentSummary(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date")).ToString("yyyy-MM-dd"),
+                StartTime: reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time")).ToString("HH:mm"),
+                Title: reader.GetString(reader.GetOrdinal("title")),
+                Status: ReadNullableString(reader, "status"),
+                CategoryId: categoryId,
+                CategoryName: GetAppointmentCategoryName(categoryId),
+                ProviderName: ReadNullableString(reader, "provider_name"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                Comments: ReadNullableString(reader, "comments")));
+        }
+
+        return new AppointmentSummaryRows(totalCount, items);
+    }
 
     private static async Task<PatientPortalSessionRow> CreateSessionAsync(
         NpgsqlConnection connection,
@@ -294,6 +495,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
+    private static int? ReadNullableInt(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static string? ReadNullableDate(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
+    {
+        9 => "Established Patient",
+        10 => "New Patient",
+        13 => "Preventive Care Services",
+        null => null,
+        _ => $"Category {categoryId.Value}"
+    };
+
     private static string HashPassword(string salt, string password)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{salt}:{password}"));
@@ -317,6 +539,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Guid SessionId,
         DateTimeOffset CreatedAt,
         DateTimeOffset ExpiresAt);
+
+    private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record AppointmentSummaryRows(
+        int TotalCount,
+        IReadOnlyList<PatientPortalHomeAppointmentSummary> Items);
 
     private sealed record PatientPortalSessionReadRow(
         Guid SessionId,
