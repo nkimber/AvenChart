@@ -4615,7 +4615,11 @@ function PatientPortalWorkspace({
   const authenticated = Boolean(home?.authenticated && sessionId)
   const busy = status === 'loading' || status === 'ending'
   const selectablePortalMessages = useMemo(
-    () => [...(portalMessages?.messages ?? []), ...(portalMessages?.sentMessages ?? [])],
+    () => [
+      ...(portalMessages?.messages ?? []),
+      ...(portalMessages?.sentMessages ?? []),
+      ...(portalMessages?.allMessages ?? []),
+    ],
     [portalMessages],
   )
   const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
@@ -4787,7 +4791,7 @@ function PatientPortalWorkspace({
                     </button>
                   </div>
                 </form>
-                <div className="message-list-body">
+                <div className="message-list-body" role="region" aria-label="Inbox secure messages">
                   {(portalMessages?.messages ?? []).map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
@@ -4887,7 +4891,7 @@ function PatientPortalWorkspace({
                   <span>Sent</span>
                   <span>{portalMessages?.sentMessageCount ?? 0} messages</span>
                 </div>
-                <div className="message-list-body">
+                <div className="message-list-body" role="region" aria-label="Sent secure messages">
                   {(portalMessages?.sentMessages ?? []).map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
@@ -4952,6 +4956,82 @@ function PatientPortalWorkspace({
                   ))}
                   {(portalMessages?.sentMessages?.length ?? 0) === 0 && (
                     <div className="timeline-placeholder">No sent secure messages recorded</div>
+                  )}
+                </div>
+                <div className="result-meta">
+                  <span>All</span>
+                  <span>{portalMessages?.allMessageCount ?? 0} messages</span>
+                </div>
+                <div className="message-list-body" role="region" aria-label="All secure messages">
+                  {(portalMessages?.allMessages ?? []).map((portalMessage) => {
+                    const patientAuthored = portalMessage.senderId === home.portalUsername
+                    return (
+                      <article className="message-item" key={portalMessage.id}>
+                        <div className="message-item-header">
+                          <label className="message-select-control">
+                            <input
+                              type="checkbox"
+                              checked={selectedPortalMessageIdSet.has(portalMessage.id)}
+                              onChange={(event) => togglePortalMessageSelection(portalMessage.id, event.target.checked)}
+                              disabled={!authenticated || busy}
+                              aria-label={`Select all-folder secure message ${portalMessage.title}`}
+                            />
+                          </label>
+                          <div>
+                            <strong>{portalMessage.title}</strong>
+                            <span>
+                              {portalMessage.date} / {patientAuthored
+                                ? `To ${portalMessage.recipientName || portalMessage.recipientId || 'Care team'}`
+                                : `From ${portalMessage.senderName || portalMessage.senderId || 'Care team'}`}
+                            </span>
+                          </div>
+                          <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
+                            {portalMessage.status || 'Status pending'}
+                          </span>
+                        </div>
+                        <p>{portalMessage.body}</p>
+                        <div className="message-meta-row">
+                          <span>{patientAuthored ? 'Patient sent message' : 'Care team message'}</span>
+                          <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                          <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
+                        </div>
+                        <div className="contact-actions">
+                          <button
+                            className="icon-text-button"
+                            type="button"
+                            onClick={() => void onLoadThread(portalMessage.id)}
+                            disabled={!authenticated || busy}
+                          >
+                            <Mail size={15} />
+                            <span>View thread</span>
+                          </button>
+                          {portalMessage.status === 'New' && (
+                            <button
+                              className="icon-text-button"
+                              type="button"
+                              onClick={() => void onMarkRead(portalMessage.id)}
+                              disabled={!authenticated || busy}
+                            >
+                              <Check size={15} />
+                              <span>Mark read</span>
+                            </button>
+                          )}
+                          <button
+                            className="icon-text-button"
+                            type="button"
+                            onClick={() => void onDeleteMessage(portalMessage.id)}
+                            disabled={!authenticated || busy}
+                          >
+                            <Trash2 size={15} />
+                            <span>Archive message</span>
+                          </button>
+                        </div>
+                        <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
+                      </article>
+                    )
+                  })}
+                  {(portalMessages?.allMessages?.length ?? 0) === 0 && (
+                    <div className="timeline-placeholder">No active secure messages recorded</div>
                   )}
                 </div>
               </section>

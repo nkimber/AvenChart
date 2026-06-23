@@ -2380,6 +2380,8 @@ export type PatientPortalMessagesResponse = {
   messages: PatientPortalMessageItem[]
   sentMessageCount: number
   sentMessages: PatientPortalMessageItem[]
+  allMessageCount: number
+  allMessages: PatientPortalMessageItem[]
   failureReason?: string | null
   sessionSource: string
 }

@@ -585,8 +585,11 @@ try {
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalMessageItems = @($portalMessages.messages)
+    $portalAllMessageItems = @($portalMessages.allMessages)
     $portalInboxMessage = $portalMessageItems | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
     $portalCareTeamMessage = $portalMessageItems | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
+    $portalAllInboxMessage = $portalAllMessageItems | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
+    $portalAllCareTeamMessage = $portalAllMessageItems | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
 
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
@@ -616,12 +619,15 @@ try {
         -and $portalHomeAppointments[0].title -eq "Preventive Care" `
         -and $portalMessages.authenticated `
         -and $portalMessages.messageCount -eq 2 `
+        -and $portalMessages.allMessageCount -eq 2 `
         -and $null -ne $portalInboxMessage `
         -and $portalInboxMessage.body -eq "Patient portal question about medications." `
         -and $portalInboxMessage.portalRelation -eq "portal:MOD-PAT-0004" `
         -and -not $portalInboxMessage.isEncrypted `
         -and $null -ne $portalCareTeamMessage `
         -and $portalCareTeamMessage.body -eq "Follow-up message for Nora Kim." `
+        -and $null -ne $portalAllInboxMessage `
+        -and $null -ne $portalAllCareTeamMessage `
         -and -not $endedPortalSession.authenticated `
         -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
         -and $endedPortalSession.endedAt `

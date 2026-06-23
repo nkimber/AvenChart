@@ -248,6 +248,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             session.PortalUsername,
             PortalMessageFolder.Sent,
             cancellationToken);
+        var allMessages = await GetPortalMessagesAsync(
+            connection,
+            session.PortalUsername,
+            PortalMessageFolder.All,
+            cancellationToken);
 
         return new PatientPortalMessagesResponse(
             Authenticated: true,
@@ -265,6 +270,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Messages: messages,
             SentMessageCount: sentMessages.Count,
             SentMessages: sentMessages,
+            AllMessageCount: allMessages.Count,
+            AllMessages: allMessages,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -827,6 +834,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Messages: Array.Empty<PatientPortalMessageItem>(),
         SentMessageCount: 0,
         SentMessages: Array.Empty<PatientPortalMessageItem>(),
+        AllMessageCount: 0,
+        AllMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -846,6 +855,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Messages: Array.Empty<PatientPortalMessageItem>(),
         SentMessageCount: 0,
         SentMessages: Array.Empty<PatientPortalMessageItem>(),
+        AllMessageCount: 0,
+        AllMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1184,9 +1195,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        var folderPredicate = folder == PortalMessageFolder.Sent
-            ? "owner = @portal_username and sender_id = @portal_username"
-            : "owner = @portal_username and recipient_id = @portal_username";
+        var folderPredicate = GetPortalMessageFolderPredicate(folder);
         command.CommandText = $"""
             select id, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
@@ -1344,9 +1353,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        var folderPredicate = folder == PortalMessageFolder.Sent
-            ? "owner = @portal_username and sender_id = @portal_username"
-            : "owner = @portal_username and recipient_id = @portal_username";
+        var folderPredicate = GetPortalMessageFolderPredicate(folder);
         command.CommandText = $"""
             select count(*)::int
             from portal_mailbox_messages
@@ -1357,6 +1364,13 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(value);
     }
+
+    private static string GetPortalMessageFolderPredicate(PortalMessageFolder folder) => folder switch
+    {
+        PortalMessageFolder.Sent => "owner = @portal_username and sender_id = @portal_username",
+        PortalMessageFolder.All => "owner = @portal_username",
+        _ => "owner = @portal_username and recipient_id = @portal_username"
+    };
 
     private static async Task InsertPortalMailboxMessageAsync(
         NpgsqlConnection connection,
@@ -1607,7 +1621,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private enum PortalMessageFolder
     {
         Inbox,
-        Sent
+        Sent,
+        All
     }
 
     private sealed record PortalMailboxMessageRow(PatientPortalMessageItem Item);

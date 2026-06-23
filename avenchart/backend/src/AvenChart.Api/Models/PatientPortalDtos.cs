@@ -87,6 +87,8 @@ public sealed record PatientPortalMessagesResponse(
     IReadOnlyList<PatientPortalMessageItem> Messages,
     int SentMessageCount,
     IReadOnlyList<PatientPortalMessageItem> SentMessages,
+    int AllMessageCount,
+    IReadOnlyList<PatientPortalMessageItem> AllMessages,
     string? FailureReason,
     string SessionSource);
 
