@@ -526,6 +526,82 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalDeleteMessageResponse> DeleteMessageAsync(
+        Guid sessionId,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return DeleteFailure(session, messageId.ToString(), session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var message = await GetPortalOwnedMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
+        if (message is null)
+        {
+            return DeleteFailure(
+                session,
+                messageId.ToString(),
+                "Secure message was not found in the signed-in portal mailbox.");
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            with updated as (
+              update portal_mailbox_messages
+              set message_status = 'Delete',
+                  activity = 1,
+                  deleted = 1
+              where owner = @portal_username
+                and (mail_chain = @message_id or id = @message_id)
+              returning id, message_date, title, body, message_status, assigned_to, portal_relation,
+                mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            )
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            from updated
+            order by message_date asc, id asc;
+            """;
+        command.Parameters.AddWithValue("portal_username", session.PortalUsername);
+        command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+
+        var deletedMessages = new List<PatientPortalMessageItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                deletedMessages.Add(ReadPortalMessageItem(reader));
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalDeleteMessageResponse(
+            Authenticated: true,
+            Deleted: deletedMessages.Count > 0,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            MessageId: message.Item.Id,
+            DeletedMessage: deletedMessages.FirstOrDefault(),
+            DeletedMessageCount: deletedMessages.Count,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: deletedMessages.Count > 0 ? null : "Secure message was not archived.",
+            SessionSource: session.SessionSource);
+    }
+
     private static PatientPortalLoginResponse Failed(string username, string reason) => new(
         Authenticated: false,
         Username: username,
@@ -685,6 +761,25 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             FailureReason: "Patient portal session header was not supplied.",
             SessionSource: SessionSource);
 
+    public static PatientPortalDeleteMessageResponse MissingSessionHeaderDeleteMessage(string messageId) =>
+        new(
+            Authenticated: false,
+            Deleted: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            MessageId: messageId,
+            DeletedMessage: null,
+            DeletedMessageCount: 0,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     private static PatientPortalComposeMessageResponse ComposeFailure(
         PatientPortalSessionResponse session,
         string reason,
@@ -724,6 +819,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         OriginalMessage: null,
         SentMessage: null,
         RecipientMessage: null,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalDeleteMessageResponse DeleteFailure(
+        PatientPortalSessionResponse session,
+        string messageId,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        Deleted: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        MessageId: messageId,
+        DeletedMessage: null,
+        DeletedMessageCount: 0,
         MessageCount: 0,
         SentMessageCount: 0,
         FailureReason: reason,

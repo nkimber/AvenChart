@@ -2455,6 +2455,25 @@ export type PatientPortalReplyMessageResponse = {
   sessionSource: string
 }
 
+export type PatientPortalDeleteMessageResponse = {
+  authenticated: boolean
+  deleted: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  messageId: string
+  deletedMessage?: PatientPortalMessageItem | null
+  deletedMessageCount: number
+  messageCount: number
+  sentMessageCount: number
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -2645,6 +2664,23 @@ export async function replyPatientPortalMessage(
   })
   if (!response.ok) {
     throw new Error(`Patient portal message reply failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function deletePatientPortalMessage(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalDeleteMessageResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message archive failed with ${response.status}`)
   }
 
   return response.json()

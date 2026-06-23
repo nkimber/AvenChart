@@ -171,3 +171,21 @@ public sealed record PatientPortalReplyMessageResponse(
     int SentMessageCount,
     string? FailureReason,
     string SessionSource);
+
+public sealed record PatientPortalDeleteMessageResponse(
+    bool Authenticated,
+    bool Deleted,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string MessageId,
+    PatientPortalMessageItem? DeletedMessage,
+    int DeletedMessageCount,
+    int MessageCount,
+    int SentMessageCount,
+    string? FailureReason,
+    string SessionSource);

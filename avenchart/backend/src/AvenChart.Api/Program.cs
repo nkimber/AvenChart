@@ -221,6 +221,19 @@ patientPortal.MapPost("/messages/{messageId:int}/reply", async (
     })
     .WithName("ReplyToPatientPortalMessage");
 
+patientPortal.MapDelete("/messages/{messageId:int}", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        int messageId,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.DeleteMessageAsync(sessionId, messageId, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderDeleteMessage(messageId.ToString()));
+    })
+    .WithName("DeletePatientPortalMessage");
+
 patientPortal.MapDelete("/session", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

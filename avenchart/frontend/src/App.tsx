@@ -59,6 +59,7 @@ import {
   getPatientPortalMessages,
   composePatientPortalMessage,
   replyPatientPortalMessage,
+  deletePatientPortalMessage,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -3924,6 +3925,42 @@ function App() {
     }
   }
 
+  async function handlePatientPortalMessageDelete(messageId: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before archiving a secure message.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const deleteResult = await deletePatientPortalMessage(patientPortalSessionId, messageId)
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      setPatientPortalThreads((current) => {
+        const next = { ...current }
+        delete next[messageId]
+        return next
+      })
+      setPatientPortalReplyBodies((current) => {
+        const next = { ...current }
+        delete next[messageId]
+        return next
+      })
+      setPatientPortalStatus(deleteResult.deleted ? 'ready' : 'rejected')
+      setPatientPortalMessage(deleteResult.deleted
+        ? `Secure message archived for ${deleteResult.deletedMessage?.title || deleteResult.messageId}`
+        : deleteResult.failureReason ?? 'Secure message was not archived.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message archive failed')
+    }
+  }
+
   async function handlePatientPortalHomeLogout() {
     if (!patientPortalSessionId) {
       return
@@ -4070,6 +4107,7 @@ function App() {
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
             onLoadThread={handlePatientPortalThreadLoad}
+            onDeleteMessage={handlePatientPortalMessageDelete}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4451,6 +4489,7 @@ function PatientPortalWorkspace({
   onComposeSubmit,
   onReplySubmit,
   onLoadThread,
+  onDeleteMessage,
   onLogout,
 }: {
   username: string
@@ -4476,6 +4515,7 @@ function PatientPortalWorkspace({
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
   onLoadThread: (messageId: string) => Promise<void>
+  onDeleteMessage: (messageId: string) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
@@ -4640,6 +4680,15 @@ function PatientPortalWorkspace({
                           <Mail size={15} />
                           <span>View thread</span>
                         </button>
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => void onDeleteMessage(portalMessage.id)}
+                          disabled={!authenticated || busy}
+                        >
+                          <Trash2 size={15} />
+                          <span>Archive message</span>
+                        </button>
                       </div>
                       <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
                       <form
@@ -4710,6 +4759,15 @@ function PatientPortalWorkspace({
                         >
                           <Mail size={15} />
                           <span>View thread</span>
+                        </button>
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => void onDeleteMessage(portalMessage.id)}
+                          disabled={!authenticated || busy}
+                        >
+                          <Trash2 size={15} />
+                          <span>Archive message</span>
                         </button>
                       </div>
                       <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
