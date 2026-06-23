@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
@@ -274,6 +275,76 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             AllMessages: allMessages,
             FailureReason: null,
             SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalDocumentsResponse> GetDocumentsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyDocuments(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var documents = await GetPortalDocumentsAsync(connection, session.LegacyPid.Value, cancellationToken);
+
+        return BuildDocumentsResponse(session, metadata, documents);
+    }
+
+    public async Task<PatientPortalDocumentsDownloadPackage> DownloadDocumentsAsync(
+        Guid sessionId,
+        PatientPortalDocumentsDownloadRequest request,
+        CancellationToken cancellationToken)
+    {
+        var selectedDocumentIds = (request.DocumentIds ?? Array.Empty<int>())
+            .Where(documentId => documentId > 0)
+            .Distinct()
+            .ToArray();
+        if (selectedDocumentIds.Length == 0)
+        {
+            return DownloadFailure("Select at least one patient document to download.");
+        }
+
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return DownloadFailure(session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var documents = await GetPortalDownloadDocumentsAsync(
+            connection,
+            session.LegacyPid.Value,
+            selectedDocumentIds,
+            cancellationToken);
+        if (documents.Count == 0)
+        {
+            return DownloadFailure("Selected patient documents were not found in the signed-in portal account.");
+        }
+
+        await using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var document in documents)
+            {
+                var entry = archive.CreateEntry(BuildZipEntryName(document.Item, usedEntryNames), CompressionLevel.Fastest);
+                await using var entryStream = entry.Open();
+                await entryStream.WriteAsync(document.Content, cancellationToken);
+            }
+        }
+
+        return new PatientPortalDocumentsDownloadPackage(
+            Downloadable: true,
+            FileName: "patient_documents.zip",
+            ContentType: "application/zip",
+            Content: stream.ToArray(),
+            DocumentCount: documents.Count,
+            Documents: documents.Select(document => document.Item).ToArray(),
+            FailureReason: null);
     }
 
     public async Task<PatientPortalMessageThreadResponse> GetMessageThreadAsync(
@@ -860,8 +931,52 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalDocumentsResponse EmptyDocuments(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        DocumentCount: 0,
+        Categories: Array.Empty<PatientPortalDocumentCategory>(),
+        Documents: Array.Empty<PatientPortalDocumentItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalDocumentsResponse MissingSessionDocuments(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        DocumentCount: 0,
+        Categories: Array.Empty<PatientPortalDocumentCategory>(),
+        Documents: Array.Empty<PatientPortalDocumentItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
+
+    public static PatientPortalDocumentsResponse MissingSessionHeaderDocuments() =>
+        MissingSessionDocuments("Patient portal session header was not supplied.");
+
+    public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
+        DownloadFailure("Patient portal session header was not supplied.");
 
     public static PatientPortalMessageThreadResponse MissingSessionHeaderMessageThread(string messageId) =>
         new(
@@ -1136,6 +1251,194 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             reader.GetString(reader.GetOrdinal("dataset_id")),
             reader.GetString(reader.GetOrdinal("version")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
+    }
+
+    private static PatientPortalDocumentsResponse BuildDocumentsResponse(
+        PatientPortalSessionResponse session,
+        DatasetMetadata metadata,
+        IReadOnlyList<PatientPortalDocumentItem> documents)
+    {
+        var categories = documents
+            .GroupBy(document => new { document.CategoryId, document.CategoryName, document.DisplayPath })
+            .OrderBy(group => group.Key.DisplayPath, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new PatientPortalDocumentCategory(
+                CategoryId: group.Key.CategoryId,
+                CategoryName: group.Key.CategoryName,
+                DisplayPath: group.Key.DisplayPath,
+                DocumentCount: group.Count(),
+                Documents: group.OrderByDescending(document => document.DocDate).ThenByDescending(document => document.Id).ToArray()))
+            .ToArray();
+
+        return new PatientPortalDocumentsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            DocumentCount: documents.Count,
+            Categories: categories,
+            Documents: documents,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    private static PatientPortalDocumentsDownloadPackage DownloadFailure(string reason) => new(
+        Downloadable: false,
+        FileName: "patient_documents.zip",
+        ContentType: "application/zip",
+        Content: Array.Empty<byte>(),
+        DocumentCount: 0,
+        Documents: Array.Empty<PatientPortalDocumentItem>(),
+        FailureReason: reason);
+
+    private static async Task<IReadOnlyList<PatientPortalDocumentItem>> GetPortalDocumentsAsync(
+        NpgsqlConnection connection,
+        int pid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, document_key, category_id, category_name, name, doc_date, uploaded_at,
+              mimetype, file_name, size_bytes, storage_method
+            from patient_documents
+            where pid = @pid and deleted = 0
+            order by category_name, doc_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+
+        var documents = new List<PatientPortalDocumentItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            documents.Add(ReadPortalDocumentItem(reader));
+        }
+
+        return documents;
+    }
+
+    private static async Task<IReadOnlyList<PortalDownloadDocumentRow>> GetPortalDownloadDocumentsAsync(
+        NpgsqlConnection connection,
+        int pid,
+        IReadOnlyList<int> documentIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, document_key, category_id, category_name, name, doc_date, uploaded_at,
+              mimetype, file_name, size_bytes, storage_method, coalesce(content, '') as content, content_bytes
+            from patient_documents
+            where pid = @pid
+              and deleted = 0
+              and coalesce(storage_method, 'database') <> 'web_url'
+              and id = any(@document_ids)
+            order by category_name, doc_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.Add("document_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = documentIds.ToArray();
+
+        var documents = new List<PortalDownloadDocumentRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var item = ReadPortalDocumentItem(reader);
+            var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
+            var contentBytes = reader.IsDBNull(contentBytesOrdinal)
+                ? Encoding.UTF8.GetBytes(reader.GetString(reader.GetOrdinal("content")))
+                : (byte[])reader.GetValue(contentBytesOrdinal);
+
+            documents.Add(new PortalDownloadDocumentRow(item, contentBytes));
+        }
+
+        return documents;
+    }
+
+    private static PatientPortalDocumentItem ReadPortalDocumentItem(NpgsqlDataReader reader)
+    {
+        var name = reader.GetString(reader.GetOrdinal("name"));
+        var mimetype = ReadNullableString(reader, "mimetype");
+        var storageMethod = ReadNullableString(reader, "storage_method");
+        var categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+        var fileName = ReadNullableString(reader, "file_name") ?? BuildPortalDocumentFileName(name, mimetype);
+
+        return new PatientPortalDocumentItem(
+            Id: reader.GetInt32(reader.GetOrdinal("id")),
+            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+            CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+            CategoryName: categoryName,
+            DisplayPath: BuildPortalDocumentDisplayPath(categoryName),
+            Name: name,
+            DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
+            UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+            Mimetype: mimetype,
+            FileName: fileName,
+            SizeBytes: ReadNullableInt(reader, "size_bytes"),
+            StorageMethod: storageMethod,
+            CanDownload: !string.Equals(storageMethod, "web_url", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildPortalDocumentDisplayPath(string categoryName)
+    {
+        var trimmed = categoryName.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? "Unfiled" : trimmed;
+    }
+
+    private static string BuildPortalDocumentFileName(string name, string? mimetype)
+    {
+        var extension = mimetype switch
+        {
+            "application/pdf" => ".pdf",
+            "application/xml" => ".xml",
+            "image/png" => ".png",
+            "image/jpeg" => ".jpg",
+            "text/uri-list" => ".url",
+            _ => ".txt"
+        };
+        var sanitized = SanitizeZipPathSegment(name);
+        return sanitized.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? sanitized : $"{sanitized}{extension}";
+    }
+
+    private static string BuildZipEntryName(PatientPortalDocumentItem document, HashSet<string> usedEntryNames)
+    {
+        var folder = SanitizeZipPathSegment(document.DisplayPath);
+        var fileName = SanitizeZipPathSegment(document.FileName);
+        var candidate = $"{folder}/{fileName}";
+        if (usedEntryNames.Add(candidate))
+        {
+            return candidate;
+        }
+
+        var extension = Path.GetExtension(fileName);
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        var index = 2;
+        while (true)
+        {
+            candidate = $"{folder}/{baseName}-{index}{extension}";
+            if (usedEntryNames.Add(candidate))
+            {
+                return candidate;
+            }
+
+            index += 1;
+        }
+    }
+
+    private static string SanitizeZipPathSegment(string value)
+    {
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Trim().Length);
+        foreach (var character in value.Trim())
+        {
+            builder.Append(character is '/' or '\\' || invalidCharacters.Contains(character) ? '-' : character);
+        }
+
+        var sanitized = builder.ToString().Trim('.', ' ');
+        return string.IsNullOrWhiteSpace(sanitized) ? "document" : sanitized;
     }
 
     private static async Task<PatientPortalHomeMessageSummary> GetMessageSummaryAsync(
@@ -1624,6 +1927,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Sent,
         All
     }
+
+    private sealed record PortalDownloadDocumentRow(PatientPortalDocumentItem Item, byte[] Content);
 
     private sealed record PortalMailboxMessageRow(PatientPortalMessageItem Item);
 

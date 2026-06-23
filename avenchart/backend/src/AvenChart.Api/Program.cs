@@ -181,6 +181,35 @@ patientPortal.MapGet("/messages", async (
     })
     .WithName("GetPatientPortalMessages");
 
+patientPortal.MapGet("/documents", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetDocumentsAsync(sessionId, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderDocuments());
+    })
+    .WithName("GetPatientPortalDocuments");
+
+patientPortal.MapPost("/documents/download", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        PatientPortalDocumentsDownloadRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var package = Guid.TryParse(header, out var sessionId)
+            ? await repository.DownloadDocumentsAsync(sessionId, request, cancellationToken)
+            : PatientPortalRepository.MissingSessionHeaderDocumentsDownload();
+
+        return package.Downloadable
+            ? Results.File(package.Content, package.ContentType, package.FileName)
+            : Results.BadRequest(new { package.FailureReason });
+    })
+    .WithName("DownloadPatientPortalDocuments");
+
 patientPortal.MapGet("/messages/{messageId:int}/thread", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

@@ -2386,6 +2386,53 @@ export type PatientPortalMessagesResponse = {
   sessionSource: string
 }
 
+export type PatientPortalDocumentItem = {
+  id: number
+  documentKey: string
+  categoryId: number
+  categoryName: string
+  displayPath: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  fileName: string
+  sizeBytes?: number | null
+  storageMethod?: string | null
+  canDownload: boolean
+}
+
+export type PatientPortalDocumentCategory = {
+  categoryId: number
+  categoryName: string
+  displayPath: string
+  documentCount: number
+  documents: PatientPortalDocumentItem[]
+}
+
+export type PatientPortalDocumentsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  documentCount: number
+  categories: PatientPortalDocumentCategory[]
+  documents: PatientPortalDocumentItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
+export type PatientPortalDocumentsDownloadInput = {
+  documentIds: number[]
+}
+
 export type PatientPortalMessageThreadResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2651,6 +2698,43 @@ export async function getPatientPortalMessages(
   }
 
   return response.json()
+}
+
+export async function getPatientPortalDocuments(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalDocumentsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal documents check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function downloadPatientPortalDocuments(
+  sessionId: string,
+  input: PatientPortalDocumentsDownloadInput,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents/download`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Patient portal document download failed with ${response.status}`)
+  }
+
+  return response.blob()
 }
 
 export async function getPatientPortalMessageThread(

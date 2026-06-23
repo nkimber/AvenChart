@@ -92,6 +92,58 @@ public sealed record PatientPortalMessagesResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalDocumentsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int DocumentCount,
+    IReadOnlyList<PatientPortalDocumentCategory> Categories,
+    IReadOnlyList<PatientPortalDocumentItem> Documents,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalDocumentCategory(
+    int CategoryId,
+    string CategoryName,
+    string DisplayPath,
+    int DocumentCount,
+    IReadOnlyList<PatientPortalDocumentItem> Documents);
+
+public sealed record PatientPortalDocumentItem(
+    int Id,
+    string DocumentKey,
+    int CategoryId,
+    string CategoryName,
+    string DisplayPath,
+    string Name,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    string FileName,
+    int? SizeBytes,
+    string? StorageMethod,
+    bool CanDownload);
+
+public sealed record PatientPortalDocumentsDownloadRequest(
+    IReadOnlyList<int>? DocumentIds);
+
+public sealed record PatientPortalDocumentsDownloadPackage(
+    bool Downloadable,
+    string FileName,
+    string ContentType,
+    byte[] Content,
+    int DocumentCount,
+    IReadOnlyList<PatientPortalDocumentItem> Documents,
+    string? FailureReason);
+
 public sealed record PatientPortalMessageThreadResponse(
     bool Authenticated,
     Guid? SessionId,

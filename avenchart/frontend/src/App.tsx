@@ -51,9 +51,11 @@ import {
   downloadBillingStatementPdf,
   downloadStatementBatchPackage,
   downloadPatientDocument,
+  downloadPatientPortalDocuments,
   getPatientDocumentContent,
   getPatientDocuments,
   getPatientMessages,
+  getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalMessageThread,
   getPatientPortalMessages,
@@ -279,6 +281,7 @@ import {
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
+  type PatientPortalDocumentsResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
   type PatientMessageCreateInput,
@@ -412,6 +415,7 @@ function App() {
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
+  const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
   const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
   const [patientPortalComposeBody, setPatientPortalComposeBody] = useState('Please review my latest care-team follow-up when available.')
@@ -3774,6 +3778,7 @@ function App() {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
         setPatientPortalMessages(null)
+        setPatientPortalDocuments(null)
         setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(loginResult.failureReason ?? 'Patient portal sign-in was rejected.')
@@ -3782,10 +3787,12 @@ function App() {
 
       const home = await getPatientPortalHome(loginResult.sessionId)
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
+      const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
         setPatientPortalMessages(messages)
+        setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(home.failureReason ?? 'Patient portal home was not available.')
@@ -3795,6 +3802,7 @@ function App() {
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
+      setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Portal home ready for ${home.displayName}`)
@@ -3802,6 +3810,7 @@ function App() {
       setPatientPortalStatus('error')
       setPatientPortalHome(null)
       setPatientPortalMessages(null)
+      setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
       setPatientPortalThreads({})
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home failed')
@@ -3819,8 +3828,10 @@ function App() {
     try {
       const home = await getPatientPortalHome(patientPortalSessionId)
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
+      const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
+      setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
       setPatientPortalMessage(home.authenticated
         ? `Portal home refreshed for ${home.displayName}`
@@ -4049,6 +4060,43 @@ function App() {
     }
   }
 
+  async function handlePatientPortalDocumentsDownload(documentIds: number[]) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before downloading patient documents.')
+      return
+    }
+
+    const selectedDocumentIds = Array.from(
+      new Set(documentIds.filter((documentId) => Number.isInteger(documentId) && documentId > 0)),
+    )
+    if (selectedDocumentIds.length === 0) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Select at least one patient document to download.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const blob = await downloadPatientPortalDocuments(patientPortalSessionId, { documentIds: selectedDocumentIds })
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = 'patient_documents.zip'
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      setPatientPortalStatus('ready')
+      setPatientPortalMessage(`Downloaded ${selectedDocumentIds.length} patient document${selectedDocumentIds.length === 1 ? '' : 's'}`)
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal document download failed')
+    }
+  }
+
   async function handlePatientPortalHomeLogout() {
     if (!patientPortalSessionId) {
       return
@@ -4062,6 +4110,7 @@ function App() {
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
       setPatientPortalMessages(null)
+      setPatientPortalDocuments(null)
       setPatientPortalThreads({})
       setPatientPortalStatus('idle')
       setPatientPortalMessage(`Portal session ended for ${result.displayName || patientPortalUsername}`)
@@ -4179,6 +4228,7 @@ function App() {
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
             portalMessages={patientPortalMessages}
+            portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
             composeTitle={patientPortalComposeTitle}
             composeBody={patientPortalComposeBody}
@@ -4198,6 +4248,7 @@ function App() {
             onMarkRead={handlePatientPortalMessageRead}
             onDeleteMessage={handlePatientPortalMessageDelete}
             onArchiveMessages={handlePatientPortalMessagesArchive}
+            onDownloadDocuments={handlePatientPortalDocumentsDownload}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4563,6 +4614,7 @@ function PatientPortalWorkspace({
   sessionId,
   home,
   portalMessages,
+  portalDocuments,
   composeRecipient,
   composeTitle,
   composeBody,
@@ -4582,6 +4634,7 @@ function PatientPortalWorkspace({
   onMarkRead,
   onDeleteMessage,
   onArchiveMessages,
+  onDownloadDocuments,
   onLogout,
 }: {
   username: string
@@ -4591,6 +4644,7 @@ function PatientPortalWorkspace({
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
   portalMessages: PatientPortalMessagesResponse | null
+  portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
   composeTitle: string
   composeBody: string
@@ -4610,6 +4664,7 @@ function PatientPortalWorkspace({
   onMarkRead: (messageId: string) => Promise<void>
   onDeleteMessage: (messageId: string) => Promise<void>
   onArchiveMessages: (messageIds: string[]) => Promise<void>
+  onDownloadDocuments: (documentIds: number[]) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
@@ -4625,11 +4680,23 @@ function PatientPortalWorkspace({
   const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
   const selectedPortalMessageIdSet = useMemo(() => new Set(selectedPortalMessageIds), [selectedPortalMessageIds])
   const selectedPortalMessageCount = selectedPortalMessageIds.length
+  const selectablePortalDocuments = useMemo(
+    () => portalDocuments?.documents.filter((document) => document.canDownload) ?? [],
+    [portalDocuments],
+  )
+  const [selectedPortalDocumentIds, setSelectedPortalDocumentIds] = useState<number[]>([])
+  const selectedPortalDocumentIdSet = useMemo(() => new Set(selectedPortalDocumentIds), [selectedPortalDocumentIds])
+  const selectedPortalDocumentCount = selectedPortalDocumentIds.length
 
   useEffect(() => {
     const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
     setSelectedPortalMessageIds((current) => current.filter((messageId) => availableMessageIds.has(messageId)))
   }, [selectablePortalMessages])
+
+  useEffect(() => {
+    const availableDocumentIds = new Set(selectablePortalDocuments.map((document) => document.id))
+    setSelectedPortalDocumentIds((current) => current.filter((documentId) => availableDocumentIds.has(documentId)))
+  }, [selectablePortalDocuments])
 
   function togglePortalMessageSelection(messageId: string, checked: boolean) {
     setSelectedPortalMessageIds((current) => {
@@ -4648,6 +4715,25 @@ function PatientPortalWorkspace({
 
     await onArchiveMessages(selectedPortalMessageIds)
     setSelectedPortalMessageIds([])
+  }
+
+  function togglePortalDocumentSelection(documentId: number, checked: boolean) {
+    setSelectedPortalDocumentIds((current) => {
+      if (checked) {
+        return current.includes(documentId) ? current : [...current, documentId]
+      }
+
+      return current.filter((selectedDocumentId) => selectedDocumentId !== documentId)
+    })
+  }
+
+  async function handleDownloadSelectedDocuments() {
+    if (selectedPortalDocumentIds.length === 0) {
+      return
+    }
+
+    await onDownloadDocuments(selectedPortalDocumentIds)
+    setSelectedPortalDocumentIds([])
   }
 
   return (
@@ -4729,6 +4815,69 @@ function PatientPortalWorkspace({
                 <Field label="Latest message" value={home.messages.latestMessageTitle} />
                 <Field label="Latest message date" value={home.messages.latestMessageDate} />
               </InfoPanel>
+
+              <section className="info-panel messages-panel" aria-label="Patient portal documents">
+                <div className="panel-heading">
+                  <FolderOpen size={17} />
+                  <h3>Documents</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Active documents</span>
+                  <span>{portalDocuments?.documentCount ?? 0} documents</span>
+                </div>
+                <div className="contact-actions portal-batch-actions" aria-label="Patient portal document actions">
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => void handleDownloadSelectedDocuments()}
+                    disabled={!authenticated || busy || selectedPortalDocumentCount === 0}
+                  >
+                    <Download size={15} />
+                    <span>Download selected documents</span>
+                  </button>
+                  <span className="message-selection-count">{selectedPortalDocumentCount} selected</span>
+                </div>
+                {(portalDocuments?.categories ?? []).map((category) => (
+                  <div className="message-list-body" role="region" aria-label={`Patient portal document category ${category.displayPath}`} key={category.categoryId}>
+                    <div className="result-meta">
+                      <span>{category.displayPath}</span>
+                      <span>{category.documentCount} documents</span>
+                    </div>
+                    {category.documents.map((document) => (
+                      <article className="message-item" key={document.id}>
+                        <div className="message-item-header">
+                          <label className="message-select-control">
+                            <input
+                              type="checkbox"
+                              checked={selectedPortalDocumentIdSet.has(document.id)}
+                              onChange={(event) => togglePortalDocumentSelection(document.id, event.target.checked)}
+                              disabled={!authenticated || busy || !document.canDownload}
+                              aria-label={`Select patient portal document ${document.name}`}
+                            />
+                          </label>
+                          <div>
+                            <strong>{document.name}</strong>
+                            <span>
+                              {document.docDate} / {document.fileName}
+                            </span>
+                          </div>
+                          <span className={document.canDownload ? 'status-pill active' : 'status-pill'}>
+                            {document.canDownload ? 'Downloadable' : 'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="message-meta-row">
+                          <span>{document.mimetype || 'application/octet-stream'}</span>
+                          <span>{document.sizeBytes ?? 0} bytes</span>
+                          <span>{document.storageMethod || 'database'}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ))}
+                {(portalDocuments?.documentCount ?? 0) === 0 && (
+                  <div className="timeline-placeholder">No patient documents recorded</div>
+                )}
+              </section>
 
               <section className="info-panel messages-panel">
                 <div className="panel-heading">
