@@ -1106,6 +1106,23 @@
   padding: 4px 7px;
 }
 
+.message-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message-meta-row span {
+  border: 1px solid #d8e6df;
+  border-radius: 999px;
+  background: #eef7f1;
+  color: #315746;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 4px 7px;
+}
+
 .message-content-form,
 .message-assignment-form,
 .message-reply-form {
@@ -1877,6 +1894,11 @@
   font-size: 12px;
   font-weight: 800;
   padding: 4px 9px;
+}
+
+.status-pill.active {
+  background: #eef7f1;
+  color: #315746;
 }
 
 .segmented-control {

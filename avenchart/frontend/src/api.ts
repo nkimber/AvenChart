@@ -2347,6 +2347,37 @@ export type PatientPortalHomeSummaryResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMessageItem = {
+  id: string
+  date: string
+  title: string
+  body: string
+  status: string
+  assignedTo: string
+  senderName: string
+  recipientName: string
+  portalRelation?: string | null
+  isEncrypted: boolean
+}
+
+export type PatientPortalMessagesResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  messageCount: number
+  messages: PatientPortalMessageItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -2463,6 +2494,21 @@ export async function getPatientPortalHome(
   })
   if (!response.ok) {
     throw new Error(`Patient portal home check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMessages(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessagesResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal messages check failed with ${response.status}`)
   }
 
   return response.json()

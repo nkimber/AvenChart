@@ -54,6 +54,7 @@ import {
   getPatientDocuments,
   getPatientMessages,
   getPatientPortalHome,
+  getPatientPortalMessages,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -278,6 +279,7 @@ import {
   type PatientMessageReplyInput,
   type PatientMessagesResponse,
   type PatientPortalHomeSummaryResponse,
+  type PatientPortalMessagesResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
   type StatementBatchCandidate,
@@ -401,6 +403,7 @@ function App() {
   const [patientPortalPassword, setPatientPortalPassword] = useState('PortalPass207!')
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
+  const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalStatus, setPatientPortalStatus] =
     useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
   const [patientPortalMessage, setPatientPortalMessage] = useState<string | null>(null)
@@ -3757,15 +3760,18 @@ function App() {
       if (!loginResult.authenticated || !loginResult.sessionId) {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
+        setPatientPortalMessages(null)
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(loginResult.failureReason ?? 'Patient portal sign-in was rejected.')
         return
       }
 
       const home = await getPatientPortalHome(loginResult.sessionId)
+      const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
+        setPatientPortalMessages(messages)
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(home.failureReason ?? 'Patient portal home was not available.')
         return
@@ -3773,11 +3779,13 @@ function App() {
 
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Portal home ready for ${home.displayName}`)
     } catch (portalError) {
       setPatientPortalStatus('error')
       setPatientPortalHome(null)
+      setPatientPortalMessages(null)
       setPatientPortalSessionId(null)
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home failed')
     }
@@ -3793,7 +3801,9 @@ function App() {
 
     try {
       const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
       setPatientPortalMessage(home.authenticated
         ? `Portal home refreshed for ${home.displayName}`
@@ -3816,6 +3826,7 @@ function App() {
       const result = await endPatientPortalSession(patientPortalSessionId)
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
+      setPatientPortalMessages(null)
       setPatientPortalStatus('idle')
       setPatientPortalMessage(`Portal session ended for ${result.displayName || patientPortalUsername}`)
     } catch (portalError) {
@@ -3931,6 +3942,7 @@ function App() {
             message={patientPortalMessage}
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
+            portalMessages={patientPortalMessages}
             onUsernameChange={setPatientPortalUsername}
             onPasswordChange={setPatientPortalPassword}
             onLogin={handlePatientPortalHomeLogin}
@@ -4299,6 +4311,7 @@ function PatientPortalWorkspace({
   message,
   sessionId,
   home,
+  portalMessages,
   onUsernameChange,
   onPasswordChange,
   onLogin,
@@ -4311,6 +4324,7 @@ function PatientPortalWorkspace({
   message: string | null
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
+  portalMessages: PatientPortalMessagesResponse | null
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
@@ -4399,6 +4413,42 @@ function PatientPortalWorkspace({
                 <Field label="Latest message" value={home.messages.latestMessageTitle} />
                 <Field label="Latest message date" value={home.messages.latestMessageDate} />
               </InfoPanel>
+
+              <section className="info-panel messages-panel">
+                <div className="panel-heading">
+                  <Mail size={17} />
+                  <h3>Secure Messages</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Inbox</span>
+                  <span>{portalMessages?.messageCount ?? 0} messages</span>
+                </div>
+                <div className="message-list-body">
+                  {(portalMessages?.messages ?? []).map((portalMessage) => (
+                    <article className="message-item" key={portalMessage.id}>
+                      <div className="message-item-header">
+                        <div>
+                          <strong>{portalMessage.title}</strong>
+                          <span>
+                            {portalMessage.date} / {portalMessage.senderName || portalMessage.assignedTo || 'Care team'}
+                          </span>
+                        </div>
+                        <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
+                          {portalMessage.status || 'Status pending'}
+                        </span>
+                      </div>
+                      <p>{portalMessage.body}</p>
+                      <div className="message-meta-row">
+                        <span>{portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message'}</span>
+                        <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalMessages?.messages.length ?? 0) === 0 && (
+                    <div className="timeline-placeholder">No secure messages recorded</div>
+                  )}
+                </div>
+              </section>
 
               <InfoPanel title="Upcoming Appointments" icon={CalendarDays}>
                 <MetricRow label="Upcoming" value={home.upcomingAppointmentCount} />

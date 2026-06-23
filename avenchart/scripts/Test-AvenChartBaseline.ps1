@@ -579,6 +579,14 @@ try {
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalHomeAppointments = @($portalHome.upcomingAppointments)
+    $portalMessages = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/messages" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+    $portalMessageItems = @($portalMessages.messages)
+    $portalInboxMessage = $portalMessageItems | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
+    $portalCareTeamMessage = $portalMessageItems | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
 
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
@@ -606,6 +614,14 @@ try {
         -and $portalHomeAppointments.Count -gt 0 `
         -and $portalHomeAppointments[0].date -eq "2026-07-28" `
         -and $portalHomeAppointments[0].title -eq "Preventive Care" `
+        -and $portalMessages.authenticated `
+        -and $portalMessages.messageCount -eq 2 `
+        -and $null -ne $portalInboxMessage `
+        -and $portalInboxMessage.body -eq "Patient portal question about medications." `
+        -and $portalInboxMessage.portalRelation -eq "portal:MOD-PAT-0004" `
+        -and -not $portalInboxMessage.isEncrypted `
+        -and $null -ne $portalCareTeamMessage `
+        -and $portalCareTeamMessage.body -eq "Follow-up message for Nora Kim." `
         -and -not $endedPortalSession.authenticated `
         -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
         -and $endedPortalSession.endedAt `
@@ -617,6 +633,7 @@ try {
         validLogin = $validPortalLogin
         session = $portalSession
         home = $portalHome
+        messages = $portalMessages
         endedSession = $endedPortalSession
         inactiveSession = $inactivePortalSession
         invalidLogin = $invalidPortalLogin

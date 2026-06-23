@@ -70,3 +70,32 @@ public sealed record PatientPortalHomeAppointmentSummary(
     string? ProviderName,
     string? FacilityName,
     string? Comments);
+
+public sealed record PatientPortalMessagesResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int MessageCount,
+    IReadOnlyList<PatientPortalMessageItem> Messages,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalMessageItem(
+    string Id,
+    string Date,
+    string Title,
+    string Body,
+    string Status,
+    string AssignedTo,
+    string SenderName,
+    string RecipientName,
+    string? PortalRelation,
+    bool IsEncrypted);

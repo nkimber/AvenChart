@@ -226,6 +226,42 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessagesResponse> GetMessagesAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyMessages(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var messages = await GetPortalMessagesAsync(
+            connection,
+            session.LegacyPid.Value,
+            session.DisplayName,
+            cancellationToken);
+
+        return new PatientPortalMessagesResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            MessageCount: messages.Count,
+            Messages: messages,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     private static PatientPortalLoginResponse Failed(string username, string reason) => new(
         Authenticated: false,
         Username: username,
@@ -277,6 +313,45 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
         FailureReason: reason,
         SessionSource: SessionSource);
+
+    private static PatientPortalMessagesResponse EmptyMessages(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        MessageCount: 0,
+        Messages: Array.Empty<PatientPortalMessageItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessagesResponse MissingSessionMessages(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        MessageCount: 0,
+        Messages: Array.Empty<PatientPortalMessageItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
+        MissingSessionMessages("Patient portal session header was not supplied.");
 
     public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
         MissingSessionHomeSummary("Patient portal session header was not supplied.");
@@ -347,6 +422,42 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             DoneMessages: reader.GetInt32(reader.GetOrdinal("done_messages")),
             LatestMessageTitle: ReadNullableString(reader, "latest_message_title"),
             LatestMessageDate: ReadNullableDate(reader, "latest_message_date"));
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageItem>> GetPortalMessagesAsync(
+        NpgsqlConnection connection,
+        int pid,
+        string displayName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted
+            from messages
+            where pid = @pid and deleted = 0
+            order by message_date desc, id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+
+        var messages = new List<PatientPortalMessageItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var assignedTo = ReadNullableString(reader, "assigned_to") ?? string.Empty;
+            messages.Add(new PatientPortalMessageItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
+                Title: ReadNullableString(reader, "title") ?? string.Empty,
+                Body: ReadNullableString(reader, "body") ?? string.Empty,
+                Status: ReadNullableString(reader, "status") ?? string.Empty,
+                AssignedTo: assignedTo,
+                SenderName: assignedTo,
+                RecipientName: displayName,
+                PortalRelation: ReadNullableString(reader, "portal_relation"),
+                IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted"))));
+        }
+
+        return messages;
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(
