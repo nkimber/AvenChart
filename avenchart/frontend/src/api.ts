@@ -77,6 +77,55 @@ export type PatientCareTeamSummary = {
   members: PatientCareTeamMember[]
 }
 
+export type PatientHistorySummary = {
+  coffee?: string | null
+  tobacco?: string | null
+  alcohol?: string | null
+  sleepPatterns?: string | null
+  exercisePatterns?: string | null
+  seatbeltUse?: string | null
+  counseling?: string | null
+  hazardousActivities?: string | null
+  recreationalDrugs?: string | null
+  lastPhysicalExam?: string | null
+  lastMammogram?: string | null
+  lastProstateExam?: string | null
+  lastColonoscopy?: string | null
+  lastEcg?: string | null
+  lastRetinal?: string | null
+  lastFluvax?: string | null
+  lastPneuvax?: string | null
+  lastLdl?: string | null
+  lastHemoglobin?: string | null
+  lastPsa?: string | null
+  lastExamResults?: string | null
+  historyMother?: string | null
+  historyFather?: string | null
+  historySiblings?: string | null
+  historyOffspring?: string | null
+  historySpouse?: string | null
+  relativesCancer?: string | null
+  relativesTuberculosis?: string | null
+  relativesDiabetes?: string | null
+  relativesHighBloodPressure?: string | null
+  relativesHeartProblems?: string | null
+  relativesStroke?: string | null
+  relativesEpilepsy?: string | null
+  relativesMentalIllness?: string | null
+  relativesSuicide?: string | null
+  appendectomyDate?: string | null
+  tonsillectomyDate?: string | null
+  cholecystectomyDate?: string | null
+  heartSurgeryDate?: string | null
+  hysterectomyDate?: string | null
+  herniaRepairDate?: string | null
+  hipReplacementDate?: string | null
+  kneeReplacementDate?: string | null
+  additionalHistory?: string | null
+  exams?: string | null
+  recordedAt?: string | null
+}
+
 export type PatientDuplicateCandidate = {
   canonicalId: string
   legacyPid: number
@@ -155,6 +204,7 @@ export type PatientChartSummary = PatientListItem & {
   deceasedReason?: string | null
   careTeam?: PatientCareTeamSummary | null
   insurance: PatientInsuranceItem[]
+  history?: PatientHistorySummary | null
   duplicateCandidates: PatientDuplicateCandidate[]
   nextAppointment?: PatientTimelineItem | null
   latestEncounter?: PatientTimelineItem | null

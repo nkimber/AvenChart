@@ -433,6 +433,29 @@ catch {
     Add-Check -Name "anchor chart summary" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $historyChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $historyPassed = $null -ne $historyChart.history `
+        -and $historyChart.history.tobacco -eq "Former smoker - quit 2019" `
+        -and $historyChart.history.exercisePatterns -eq "Walks 30 minutes 5 days/week" `
+        -and $historyChart.history.lastPhysicalExam -eq "2026-01-15" `
+        -and $historyChart.history.lastProstateExam -eq "2026-02-09" `
+        -and $historyChart.history.lastLdl -eq "2026-01-11 LDL 100" `
+        -and $historyChart.history.lastHemoglobin -eq "2026-01-11 Hgb 13.0" `
+        -and $historyChart.history.appendectomyDate -eq "2016-04-20" `
+        -and $historyChart.history.additionalHistory -like "Gold history for MOD-PAT-0010*"
+    Add-Check -Name "anchor patient history" -Result $(if ($historyPassed) { "passed" } else { "failed" }) -Details @{
+        canonicalId = $historyChart.canonicalId
+        tobacco = $historyChart.history.tobacco
+        exercisePatterns = $historyChart.history.exercisePatterns
+        lastLdl = $historyChart.history.lastLdl
+        appendectomyDate = $historyChart.history.appendectomyDate
+    }
+}
+catch {
+    Add-Check -Name "anchor patient history" -Result "failed" -Details $_.Exception.Message
+}
+
 $demographicsOriginal = $null
 try {
     $demographicsOriginal = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20

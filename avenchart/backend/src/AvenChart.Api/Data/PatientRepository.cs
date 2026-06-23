@@ -295,6 +295,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 PrimaryProviderName: ReadNullableString(reader, "provider_name"),
                 CareTeam: null,
                 Insurance: Array.Empty<PatientInsuranceItem>(),
+                History: null,
                 DuplicateCandidates: Array.Empty<PatientDuplicateCandidate>(),
                 Counts: ReadCounts(reader),
                 NextAppointment: ReadAppointment(reader),
@@ -303,6 +304,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         var insurance = await GetInsuranceForPatientAsync(connection, summary.CanonicalId, cancellationToken);
         var careTeam = await GetCareTeamForPatientAsync(connection, summary.CanonicalId, cancellationToken);
+        var history = await GetHistoryForPatientAsync(connection, summary.CanonicalId, cancellationToken);
         var duplicateCandidates = await GetDuplicateCandidatesAsync(
             connection,
             new NormalizedDuplicateSearch(
@@ -315,7 +317,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 ExcludePatientId: summary.CanonicalId),
             5,
             cancellationToken);
-        return summary with { CareTeam = careTeam, Insurance = insurance, DuplicateCandidates = duplicateCandidates };
+        return summary with { CareTeam = careTeam, Insurance = insurance, History = history, DuplicateCandidates = duplicateCandidates };
     }
 
     public async Task<PatientProviderAssignmentOptionsResponse> GetProviderAssignmentOptionsAsync(
@@ -546,6 +548,120 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Limit: safeLimit,
             TotalCandidates: candidates.Count,
             Candidates: candidates);
+    }
+
+    private static async Task<PatientHistorySummary?> GetHistoryForPatientAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                coffee,
+                tobacco,
+                alcohol,
+                sleep_patterns,
+                exercise_patterns,
+                seatbelt_use,
+                counseling,
+                hazardous_activities,
+                recreational_drugs,
+                last_physical_exam,
+                last_mammogram,
+                last_prostate_exam,
+                last_colonoscopy,
+                last_ecg,
+                last_retinal,
+                last_fluvax,
+                last_pneuvax,
+                last_ldl,
+                last_hemoglobin,
+                last_psa,
+                last_exam_results,
+                history_mother,
+                history_father,
+                history_siblings,
+                history_offspring,
+                history_spouse,
+                relatives_cancer,
+                relatives_tuberculosis,
+                relatives_diabetes,
+                relatives_high_blood_pressure,
+                relatives_heart_problems,
+                relatives_stroke,
+                relatives_epilepsy,
+                relatives_mental_illness,
+                relatives_suicide,
+                appendectomy_date,
+                tonsillectomy_date,
+                cholecystectomy_date,
+                heart_surgery_date,
+                hysterectomy_date,
+                hernia_repair_date,
+                hip_replacement_date,
+                knee_replacement_date,
+                additional_history,
+                exams,
+                to_char(recorded_at, 'YYYY-MM-DD HH24:MI:SS') as recorded_at
+            from patient_histories
+            where lower(patient_id) = lower(@canonicalId);
+            """;
+        command.Parameters.AddWithValue("canonicalId", canonicalId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PatientHistorySummary(
+            Coffee: ReadNullableString(reader, "coffee"),
+            Tobacco: ReadNullableString(reader, "tobacco"),
+            Alcohol: ReadNullableString(reader, "alcohol"),
+            SleepPatterns: ReadNullableString(reader, "sleep_patterns"),
+            ExercisePatterns: ReadNullableString(reader, "exercise_patterns"),
+            SeatbeltUse: ReadNullableString(reader, "seatbelt_use"),
+            Counseling: ReadNullableString(reader, "counseling"),
+            HazardousActivities: ReadNullableString(reader, "hazardous_activities"),
+            RecreationalDrugs: ReadNullableString(reader, "recreational_drugs"),
+            LastPhysicalExam: ReadNullableString(reader, "last_physical_exam"),
+            LastMammogram: ReadNullableString(reader, "last_mammogram"),
+            LastProstateExam: ReadNullableString(reader, "last_prostate_exam"),
+            LastColonoscopy: ReadNullableString(reader, "last_colonoscopy"),
+            LastEcg: ReadNullableString(reader, "last_ecg"),
+            LastRetinal: ReadNullableString(reader, "last_retinal"),
+            LastFluvax: ReadNullableString(reader, "last_fluvax"),
+            LastPneuvax: ReadNullableString(reader, "last_pneuvax"),
+            LastLdl: ReadNullableString(reader, "last_ldl"),
+            LastHemoglobin: ReadNullableString(reader, "last_hemoglobin"),
+            LastPsa: ReadNullableString(reader, "last_psa"),
+            LastExamResults: ReadNullableString(reader, "last_exam_results"),
+            HistoryMother: ReadNullableString(reader, "history_mother"),
+            HistoryFather: ReadNullableString(reader, "history_father"),
+            HistorySiblings: ReadNullableString(reader, "history_siblings"),
+            HistoryOffspring: ReadNullableString(reader, "history_offspring"),
+            HistorySpouse: ReadNullableString(reader, "history_spouse"),
+            RelativesCancer: ReadNullableString(reader, "relatives_cancer"),
+            RelativesTuberculosis: ReadNullableString(reader, "relatives_tuberculosis"),
+            RelativesDiabetes: ReadNullableString(reader, "relatives_diabetes"),
+            RelativesHighBloodPressure: ReadNullableString(reader, "relatives_high_blood_pressure"),
+            RelativesHeartProblems: ReadNullableString(reader, "relatives_heart_problems"),
+            RelativesStroke: ReadNullableString(reader, "relatives_stroke"),
+            RelativesEpilepsy: ReadNullableString(reader, "relatives_epilepsy"),
+            RelativesMentalIllness: ReadNullableString(reader, "relatives_mental_illness"),
+            RelativesSuicide: ReadNullableString(reader, "relatives_suicide"),
+            AppendectomyDate: ReadNullableDate(reader, "appendectomy_date"),
+            TonsillectomyDate: ReadNullableDate(reader, "tonsillectomy_date"),
+            CholecystectomyDate: ReadNullableDate(reader, "cholecystectomy_date"),
+            HeartSurgeryDate: ReadNullableDate(reader, "heart_surgery_date"),
+            HysterectomyDate: ReadNullableDate(reader, "hysterectomy_date"),
+            HerniaRepairDate: ReadNullableDate(reader, "hernia_repair_date"),
+            HipReplacementDate: ReadNullableDate(reader, "hip_replacement_date"),
+            KneeReplacementDate: ReadNullableDate(reader, "knee_replacement_date"),
+            AdditionalHistory: ReadNullableString(reader, "additional_history"),
+            Exams: ReadNullableString(reader, "exams"),
+            RecordedAt: ReadNullableString(reader, "recorded_at"));
     }
 
     private static async Task<IReadOnlyList<PatientInsuranceItem>> GetInsuranceForPatientAsync(

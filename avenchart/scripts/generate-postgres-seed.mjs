@@ -247,6 +247,7 @@ drop table if exists insurance_records;
 drop table if exists patient_care_team_members;
 drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
+drop table if exists patient_histories;
 drop table if exists patient_employers;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -426,6 +427,57 @@ create table patient_employers (
   postal_code text,
   country text,
   recorded_date date
+);
+
+create table patient_histories (
+  patient_id text primary key references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  coffee text,
+  tobacco text,
+  alcohol text,
+  sleep_patterns text,
+  exercise_patterns text,
+  seatbelt_use text,
+  counseling text,
+  hazardous_activities text,
+  recreational_drugs text,
+  last_physical_exam text,
+  last_mammogram text,
+  last_prostate_exam text,
+  last_colonoscopy text,
+  last_ecg text,
+  last_retinal text,
+  last_fluvax text,
+  last_pneuvax text,
+  last_ldl text,
+  last_hemoglobin text,
+  last_psa text,
+  last_exam_results text,
+  history_mother text,
+  history_father text,
+  history_siblings text,
+  history_offspring text,
+  history_spouse text,
+  relatives_cancer text,
+  relatives_tuberculosis text,
+  relatives_diabetes text,
+  relatives_high_blood_pressure text,
+  relatives_heart_problems text,
+  relatives_stroke text,
+  relatives_epilepsy text,
+  relatives_mental_illness text,
+  relatives_suicide text,
+  appendectomy_date date,
+  tonsillectomy_date date,
+  cholecystectomy_date date,
+  heart_surgery_date date,
+  hysterectomy_date date,
+  hernia_repair_date date,
+  hip_replacement_date date,
+  knee_replacement_date date,
+  additional_history text,
+  exams text,
+  recorded_at timestamp
 );
 
 create table patient_related_contacts (
@@ -1080,6 +1132,106 @@ copyRows('patient_employers', [
   patient.employerPostalCode,
   patient.employerCountry,
   patient.registrationDate,
+]))
+
+copyRows('patient_histories', [
+  'patient_id',
+  'pid',
+  'coffee',
+  'tobacco',
+  'alcohol',
+  'sleep_patterns',
+  'exercise_patterns',
+  'seatbelt_use',
+  'counseling',
+  'hazardous_activities',
+  'recreational_drugs',
+  'last_physical_exam',
+  'last_mammogram',
+  'last_prostate_exam',
+  'last_colonoscopy',
+  'last_ecg',
+  'last_retinal',
+  'last_fluvax',
+  'last_pneuvax',
+  'last_ldl',
+  'last_hemoglobin',
+  'last_psa',
+  'last_exam_results',
+  'history_mother',
+  'history_father',
+  'history_siblings',
+  'history_offspring',
+  'history_spouse',
+  'relatives_cancer',
+  'relatives_tuberculosis',
+  'relatives_diabetes',
+  'relatives_high_blood_pressure',
+  'relatives_heart_problems',
+  'relatives_stroke',
+  'relatives_epilepsy',
+  'relatives_mental_illness',
+  'relatives_suicide',
+  'appendectomy_date',
+  'tonsillectomy_date',
+  'cholecystectomy_date',
+  'heart_surgery_date',
+  'hysterectomy_date',
+  'hernia_repair_date',
+  'hip_replacement_date',
+  'knee_replacement_date',
+  'additional_history',
+  'exams',
+  'recorded_at',
+], dataset.patientHistories.map((history) => [
+  history.patientId,
+  history.pid,
+  history.coffee,
+  history.tobacco,
+  history.alcohol,
+  history.sleepPatterns,
+  history.exercisePatterns,
+  history.seatbeltUse,
+  postgresTextDefault(history.counseling),
+  history.hazardousActivities,
+  history.recreationalDrugs,
+  history.lastPhysicalExam,
+  postgresTextDefault(history.lastMammogram),
+  postgresTextDefault(history.lastProstateExam),
+  history.lastColonoscopy,
+  postgresTextDefault(history.lastEcg),
+  postgresTextDefault(history.lastRetinal),
+  history.lastFluvax,
+  postgresTextDefault(history.lastPneuvax),
+  history.lastLdl,
+  history.lastHemoglobin,
+  postgresTextDefault(history.lastPsa),
+  history.lastExamResults,
+  history.historyMother,
+  history.historyFather,
+  history.historySiblings,
+  history.historyOffspring,
+  postgresTextDefault(history.historySpouse),
+  postgresTextDefault(history.relativesCancer),
+  postgresTextDefault(history.relativesTuberculosis),
+  history.relativesDiabetes,
+  history.relativesHighBloodPressure,
+  postgresTextDefault(history.relativesHeartProblems),
+  postgresTextDefault(history.relativesStroke),
+  postgresTextDefault(history.relativesEpilepsy),
+  postgresTextDefault(history.relativesMentalIllness),
+  postgresTextDefault(history.relativesSuicide),
+  dateOnlyOrNull(history.appendectomy),
+  dateOnlyOrNull(history.tonsillectomy),
+  dateOnlyOrNull(history.cholecystectomy),
+  dateOnlyOrNull(history.heartSurgery),
+  dateOnlyOrNull(history.hysterectomy),
+  dateOnlyOrNull(history.herniaRepair),
+  dateOnlyOrNull(history.hipReplacement),
+  dateOnlyOrNull(history.kneeReplacement),
+  history.additionalHistory,
+  history.exams,
+  history.recordedDate,
 ]))
 
 copyRows('patient_related_contacts', [
@@ -1812,6 +1964,7 @@ lines.push(`
 create index idx_patients_name on patients (last_name, first_name);
 create index idx_patients_legacy_pid on patients (legacy_pid);
 create index idx_patient_employers_pid on patient_employers (pid);
+create index idx_patient_histories_pid on patient_histories (pid);
 create index idx_patient_related_contacts_patient on patient_related_contacts (patient_id);
 create index idx_patient_care_team_members_patient on patient_care_team_members (patient_id);
 create index idx_insurance_records_pid on insurance_records (pid);
@@ -1855,6 +2008,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
   counts: {
     patients: dataset.patients.length,
     insuranceRecords: dataset.insuranceRecords.length,
+    patientHistories: dataset.patientHistories.length,
     appointments: dataset.appointments.length,
     encounters: dataset.encounters.length,
     vitals: dataset.vitals.length,
@@ -1912,4 +2066,8 @@ function copyValue(value) {
 
 function postgresTextDefault(value) {
   return value === null || value === undefined || value === '' ? copyEmptyString : value
+}
+
+function dateOnlyOrNull(value) {
+  return value ? String(value).slice(0, 10) : null
 }

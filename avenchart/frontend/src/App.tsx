@@ -5766,6 +5766,33 @@ function PatientWorkspace({
                 />
               </InfoPanel>
 
+              <InfoPanel title="History and Lifestyle" icon={HeartPulse}>
+                <Field label="Tobacco" value={chart?.history?.tobacco} />
+                <Field label="Alcohol" value={chart?.history?.alcohol} />
+                <Field label="Coffee" value={chart?.history?.coffee} />
+                <Field label="Sleep patterns" value={chart?.history?.sleepPatterns} />
+                <Field label="Exercise patterns" value={chart?.history?.exercisePatterns} />
+                <Field label="Seatbelt use" value={chart?.history?.seatbeltUse} />
+                <Field label="Recreational drugs" value={chart?.history?.recreationalDrugs} />
+                <Field label="Hazardous activities" value={chart?.history?.hazardousActivities} />
+                <Field label="Counseling" value={chart?.history?.counseling} />
+                <Field label="Additional history" value={chart?.history?.additionalHistory} />
+                <Field label="Exams" value={chart?.history?.exams} />
+                <Field label="Mother" value={chart?.history?.historyMother} />
+                <Field label="Father" value={chart?.history?.historyFather} />
+                <Field label="Siblings" value={chart?.history?.historySiblings} />
+                <Field label="Relatives diabetes" value={chart?.history?.relativesDiabetes} />
+                <Field label="Relatives high blood pressure" value={chart?.history?.relativesHighBloodPressure} />
+                <Field label="Relatives mental illness" value={chart?.history?.relativesMentalIllness} />
+                <Field label="Last physical" value={chart?.history?.lastPhysicalExam} />
+                <Field label="Last colonoscopy" value={chart?.history?.lastColonoscopy} />
+                <Field label="Last LDL" value={chart?.history?.lastLdl} />
+                <Field label="Last hemoglobin" value={chart?.history?.lastHemoglobin} />
+                <Field label="Last PSA" value={chart?.history?.lastPsa} />
+                <Field label="Appendectomy" value={chart?.history?.appendectomyDate} />
+                <Field label="Recorded" value={chart?.history?.recordedAt} />
+              </InfoPanel>
+
               <InfoPanel title="Clinical Activity" icon={HeartPulse}>
                 <MetricRow label="Appointments" value={activePatient.counts.appointments} />
                 <MetricRow label="Encounters" value={activePatient.counts.encounters} />
