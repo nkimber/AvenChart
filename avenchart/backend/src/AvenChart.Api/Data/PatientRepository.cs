@@ -671,7 +671,33 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, type, provider, plan_name, policy_number, group_number, relationship
+            select
+                id,
+                type,
+                provider,
+                plan_name,
+                policy_number,
+                group_number,
+                relationship,
+                subscriber_first_name,
+                subscriber_middle_name,
+                subscriber_last_name,
+                subscriber_date_of_birth,
+                subscriber_sex,
+                subscriber_street,
+                subscriber_street_line_2,
+                subscriber_city,
+                subscriber_state,
+                subscriber_postal_code,
+                subscriber_country,
+                subscriber_phone,
+                subscriber_employer,
+                subscriber_employer_street,
+                subscriber_employer_street_line_2,
+                subscriber_employer_city,
+                subscriber_employer_state,
+                subscriber_employer_postal_code,
+                subscriber_employer_country
             from insurance_records
             where lower(patient_id) = lower(@canonicalId)
             order by
@@ -695,7 +721,26 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 PlanName: ReadNullableString(reader, "plan_name"),
                 PolicyNumber: ReadNullableString(reader, "policy_number"),
                 GroupNumber: ReadNullableString(reader, "group_number"),
-                Relationship: ReadNullableString(reader, "relationship")));
+                Relationship: ReadNullableString(reader, "relationship"),
+                SubscriberFirstName: ReadNullableString(reader, "subscriber_first_name"),
+                SubscriberMiddleName: ReadNullableString(reader, "subscriber_middle_name"),
+                SubscriberLastName: ReadNullableString(reader, "subscriber_last_name"),
+                SubscriberDateOfBirth: ReadNullableDate(reader, "subscriber_date_of_birth"),
+                SubscriberSex: ReadNullableString(reader, "subscriber_sex"),
+                SubscriberStreet: ReadNullableString(reader, "subscriber_street"),
+                SubscriberStreetLine2: ReadNullableString(reader, "subscriber_street_line_2"),
+                SubscriberCity: ReadNullableString(reader, "subscriber_city"),
+                SubscriberState: ReadNullableString(reader, "subscriber_state"),
+                SubscriberPostalCode: ReadNullableString(reader, "subscriber_postal_code"),
+                SubscriberCountry: ReadNullableString(reader, "subscriber_country"),
+                SubscriberPhone: ReadNullableString(reader, "subscriber_phone"),
+                SubscriberEmployer: ReadNullableString(reader, "subscriber_employer"),
+                SubscriberEmployerStreet: ReadNullableString(reader, "subscriber_employer_street"),
+                SubscriberEmployerStreetLine2: ReadNullableString(reader, "subscriber_employer_street_line_2"),
+                SubscriberEmployerCity: ReadNullableString(reader, "subscriber_employer_city"),
+                SubscriberEmployerState: ReadNullableString(reader, "subscriber_employer_state"),
+                SubscriberEmployerPostalCode: ReadNullableString(reader, "subscriber_employer_postal_code"),
+                SubscriberEmployerCountry: ReadNullableString(reader, "subscriber_employer_country")));
         }
 
         return coverage;
@@ -1279,9 +1324,67 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into insurance_records
-                (id, patient_id, pid, type, provider, plan_name, policy_number, group_number, relationship)
+                (
+                    id,
+                    patient_id,
+                    pid,
+                    type,
+                    provider,
+                    plan_name,
+                    policy_number,
+                    group_number,
+                    relationship,
+                    subscriber_first_name,
+                    subscriber_middle_name,
+                    subscriber_last_name,
+                    subscriber_date_of_birth,
+                    subscriber_sex,
+                    subscriber_street,
+                    subscriber_street_line_2,
+                    subscriber_city,
+                    subscriber_state,
+                    subscriber_postal_code,
+                    subscriber_country,
+                    subscriber_phone,
+                    subscriber_employer,
+                    subscriber_employer_street,
+                    subscriber_employer_street_line_2,
+                    subscriber_employer_city,
+                    subscriber_employer_state,
+                    subscriber_employer_postal_code,
+                    subscriber_employer_country
+                )
             values
-                (@id, @patientId, @pid, @type, @provider, @planName, @policyNumber, @groupNumber, @relationship);
+                (
+                    @id,
+                    @patientId,
+                    @pid,
+                    @type,
+                    @provider,
+                    @planName,
+                    @policyNumber,
+                    @groupNumber,
+                    @relationship,
+                    @subscriberFirstName,
+                    @subscriberMiddleName,
+                    @subscriberLastName,
+                    @subscriberDateOfBirth,
+                    @subscriberSex,
+                    @subscriberStreet,
+                    @subscriberStreetLine2,
+                    @subscriberCity,
+                    @subscriberState,
+                    @subscriberPostalCode,
+                    @subscriberCountry,
+                    @subscriberPhone,
+                    @subscriberEmployer,
+                    @subscriberEmployerStreet,
+                    @subscriberEmployerStreetLine2,
+                    @subscriberEmployerCity,
+                    @subscriberEmployerState,
+                    @subscriberEmployerPostalCode,
+                    @subscriberEmployerCountry
+                );
             """;
         command.Parameters.AddWithValue("id", $"INS-PARITY-{Guid.NewGuid():N}");
         command.Parameters.AddWithValue("patientId", patient.CanonicalId);
@@ -1312,7 +1415,26 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 plan_name = @planName,
                 policy_number = @policyNumber,
                 group_number = @groupNumber,
-                relationship = @relationship
+                relationship = @relationship,
+                subscriber_first_name = @subscriberFirstName,
+                subscriber_middle_name = @subscriberMiddleName,
+                subscriber_last_name = @subscriberLastName,
+                subscriber_date_of_birth = @subscriberDateOfBirth,
+                subscriber_sex = @subscriberSex,
+                subscriber_street = @subscriberStreet,
+                subscriber_street_line_2 = @subscriberStreetLine2,
+                subscriber_city = @subscriberCity,
+                subscriber_state = @subscriberState,
+                subscriber_postal_code = @subscriberPostalCode,
+                subscriber_country = @subscriberCountry,
+                subscriber_phone = @subscriberPhone,
+                subscriber_employer = @subscriberEmployer,
+                subscriber_employer_street = @subscriberEmployerStreet,
+                subscriber_employer_street_line_2 = @subscriberEmployerStreetLine2,
+                subscriber_employer_city = @subscriberEmployerCity,
+                subscriber_employer_state = @subscriberEmployerState,
+                subscriber_employer_postal_code = @subscriberEmployerPostalCode,
+                subscriber_employer_country = @subscriberEmployerCountry
             where id = @id
             returning patient_id;
             """;
@@ -2122,19 +2244,46 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         var policyNumber = request.PolicyNumber?.Trim();
         var groupNumber = request.GroupNumber?.Trim();
         var relationship = request.Relationship?.Trim();
+        var subscriberDateOfBirth = NormalizeOptionalDate(request.SubscriberDateOfBirth);
 
         if (string.IsNullOrWhiteSpace(type)
             || string.IsNullOrWhiteSpace(provider)
             || string.IsNullOrWhiteSpace(planName)
             || string.IsNullOrWhiteSpace(policyNumber)
             || string.IsNullOrWhiteSpace(groupNumber)
-            || string.IsNullOrWhiteSpace(relationship))
+            || string.IsNullOrWhiteSpace(relationship)
+            || subscriberDateOfBirth.Invalid)
         {
-            normalized = new NormalizedInsurance("", "", "", "", "", "");
+            normalized = new NormalizedInsurance("", "", "", "", "", "", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
             return false;
         }
 
-        normalized = new NormalizedInsurance(type, provider, planName, policyNumber, groupNumber, relationship);
+        normalized = new NormalizedInsurance(
+            type,
+            provider,
+            planName,
+            policyNumber,
+            groupNumber,
+            relationship,
+            NormalizeString(request.SubscriberFirstName),
+            NormalizeString(request.SubscriberMiddleName),
+            NormalizeString(request.SubscriberLastName),
+            subscriberDateOfBirth.Value,
+            NormalizeString(request.SubscriberSex),
+            NormalizeString(request.SubscriberStreet),
+            NormalizeString(request.SubscriberStreetLine2),
+            NormalizeString(request.SubscriberCity),
+            NormalizeString(request.SubscriberState),
+            NormalizeString(request.SubscriberPostalCode),
+            NormalizeString(request.SubscriberCountry),
+            NormalizeString(request.SubscriberPhone),
+            NormalizeString(request.SubscriberEmployer),
+            NormalizeString(request.SubscriberEmployerStreet),
+            NormalizeString(request.SubscriberEmployerStreetLine2),
+            NormalizeString(request.SubscriberEmployerCity),
+            NormalizeString(request.SubscriberEmployerState),
+            NormalizeString(request.SubscriberEmployerPostalCode),
+            NormalizeString(request.SubscriberEmployerCountry));
         return true;
     }
 
@@ -2146,6 +2295,25 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("policyNumber", normalized.PolicyNumber);
         command.Parameters.AddWithValue("groupNumber", normalized.GroupNumber);
         command.Parameters.AddWithValue("relationship", normalized.Relationship);
+        command.Parameters.Add("subscriberFirstName", NpgsqlDbType.Text).Value = normalized.SubscriberFirstName is null ? DBNull.Value : normalized.SubscriberFirstName;
+        command.Parameters.Add("subscriberMiddleName", NpgsqlDbType.Text).Value = normalized.SubscriberMiddleName is null ? DBNull.Value : normalized.SubscriberMiddleName;
+        command.Parameters.Add("subscriberLastName", NpgsqlDbType.Text).Value = normalized.SubscriberLastName is null ? DBNull.Value : normalized.SubscriberLastName;
+        command.Parameters.Add("subscriberDateOfBirth", NpgsqlDbType.Date).Value = normalized.SubscriberDateOfBirth is null ? DBNull.Value : normalized.SubscriberDateOfBirth.Value;
+        command.Parameters.Add("subscriberSex", NpgsqlDbType.Text).Value = normalized.SubscriberSex is null ? DBNull.Value : normalized.SubscriberSex;
+        command.Parameters.Add("subscriberStreet", NpgsqlDbType.Text).Value = normalized.SubscriberStreet is null ? DBNull.Value : normalized.SubscriberStreet;
+        command.Parameters.Add("subscriberStreetLine2", NpgsqlDbType.Text).Value = normalized.SubscriberStreetLine2 is null ? DBNull.Value : normalized.SubscriberStreetLine2;
+        command.Parameters.Add("subscriberCity", NpgsqlDbType.Text).Value = normalized.SubscriberCity is null ? DBNull.Value : normalized.SubscriberCity;
+        command.Parameters.Add("subscriberState", NpgsqlDbType.Text).Value = normalized.SubscriberState is null ? DBNull.Value : normalized.SubscriberState;
+        command.Parameters.Add("subscriberPostalCode", NpgsqlDbType.Text).Value = normalized.SubscriberPostalCode is null ? DBNull.Value : normalized.SubscriberPostalCode;
+        command.Parameters.Add("subscriberCountry", NpgsqlDbType.Text).Value = normalized.SubscriberCountry is null ? DBNull.Value : normalized.SubscriberCountry;
+        command.Parameters.Add("subscriberPhone", NpgsqlDbType.Text).Value = normalized.SubscriberPhone is null ? DBNull.Value : normalized.SubscriberPhone;
+        command.Parameters.Add("subscriberEmployer", NpgsqlDbType.Text).Value = normalized.SubscriberEmployer is null ? DBNull.Value : normalized.SubscriberEmployer;
+        command.Parameters.Add("subscriberEmployerStreet", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerStreet is null ? DBNull.Value : normalized.SubscriberEmployerStreet;
+        command.Parameters.Add("subscriberEmployerStreetLine2", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerStreetLine2 is null ? DBNull.Value : normalized.SubscriberEmployerStreetLine2;
+        command.Parameters.Add("subscriberEmployerCity", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerCity is null ? DBNull.Value : normalized.SubscriberEmployerCity;
+        command.Parameters.Add("subscriberEmployerState", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerState is null ? DBNull.Value : normalized.SubscriberEmployerState;
+        command.Parameters.Add("subscriberEmployerPostalCode", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerPostalCode is null ? DBNull.Value : normalized.SubscriberEmployerPostalCode;
+        command.Parameters.Add("subscriberEmployerCountry", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerCountry is null ? DBNull.Value : normalized.SubscriberEmployerCountry;
     }
 
     private static PatientActivityCounts ReadCounts(DbDataReader reader) => new(
@@ -2279,7 +2447,26 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string PlanName,
         string PolicyNumber,
         string GroupNumber,
-        string Relationship);
+        string Relationship,
+        string? SubscriberFirstName,
+        string? SubscriberMiddleName,
+        string? SubscriberLastName,
+        DateOnly? SubscriberDateOfBirth,
+        string? SubscriberSex,
+        string? SubscriberStreet,
+        string? SubscriberStreetLine2,
+        string? SubscriberCity,
+        string? SubscriberState,
+        string? SubscriberPostalCode,
+        string? SubscriberCountry,
+        string? SubscriberPhone,
+        string? SubscriberEmployer,
+        string? SubscriberEmployerStreet,
+        string? SubscriberEmployerStreetLine2,
+        string? SubscriberEmployerCity,
+        string? SubscriberEmployerState,
+        string? SubscriberEmployerPostalCode,
+        string? SubscriberEmployerCountry);
 
     private sealed record NormalizedPatientDemographics(
         string FirstName,

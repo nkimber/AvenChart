@@ -5734,6 +5734,101 @@ function PatientWorkspace({
                       />
                     </label>
                   </div>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Subscriber first</span>
+                      <input
+                        value={insuranceDraft.subscriberFirstName}
+                        onChange={(event) => updateInsuranceDraft('subscriberFirstName', event.target.value)}
+                        aria-label="Subscriber first name"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Subscriber last</span>
+                      <input
+                        value={insuranceDraft.subscriberLastName}
+                        onChange={(event) => updateInsuranceDraft('subscriberLastName', event.target.value)}
+                        aria-label="Subscriber last name"
+                      />
+                    </label>
+                  </div>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Subscriber DOB</span>
+                      <input
+                        type="date"
+                        value={insuranceDraft.subscriberDateOfBirth}
+                        onChange={(event) => updateInsuranceDraft('subscriberDateOfBirth', event.target.value)}
+                        aria-label="Subscriber date of birth"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Subscriber sex</span>
+                      <select
+                        value={insuranceDraft.subscriberSex}
+                        onChange={(event) => updateInsuranceDraft('subscriberSex', event.target.value)}
+                        aria-label="Subscriber sex"
+                      >
+                        <option value="">Not recorded</option>
+                        <option value="Female">Female</option>
+                        <option value="Male">Male</option>
+                        <option value="Other">Other</option>
+                        <option value="Unknown">Unknown</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="contact-field">
+                    <span>Subscriber street</span>
+                    <input
+                      value={insuranceDraft.subscriberStreet}
+                      onChange={(event) => updateInsuranceDraft('subscriberStreet', event.target.value)}
+                      aria-label="Subscriber street"
+                    />
+                  </label>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Subscriber city</span>
+                      <input
+                        value={insuranceDraft.subscriberCity}
+                        onChange={(event) => updateInsuranceDraft('subscriberCity', event.target.value)}
+                        aria-label="Subscriber city"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Subscriber state</span>
+                      <input
+                        value={insuranceDraft.subscriberState}
+                        onChange={(event) => updateInsuranceDraft('subscriberState', event.target.value)}
+                        aria-label="Subscriber state"
+                      />
+                    </label>
+                  </div>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Subscriber ZIP</span>
+                      <input
+                        value={insuranceDraft.subscriberPostalCode}
+                        onChange={(event) => updateInsuranceDraft('subscriberPostalCode', event.target.value)}
+                        aria-label="Subscriber postal code"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Subscriber phone</span>
+                      <input
+                        value={insuranceDraft.subscriberPhone}
+                        onChange={(event) => updateInsuranceDraft('subscriberPhone', event.target.value)}
+                        aria-label="Subscriber phone"
+                      />
+                    </label>
+                  </div>
+                  <label className="contact-field">
+                    <span>Subscriber employer</span>
+                    <input
+                      value={insuranceDraft.subscriberEmployer}
+                      onChange={(event) => updateInsuranceDraft('subscriberEmployer', event.target.value)}
+                      aria-label="Subscriber employer"
+                    />
+                  </label>
                   <div className="contact-actions">
                     <button className="icon-text-button primary" type="submit" disabled={!chart || insuranceSaveStatus === 'saving'}>
                       <Check size={15} />
@@ -18432,6 +18527,12 @@ function InsuranceCoverageList({
           <Field label="Policy" value={item.policyNumber} />
           <Field label="Group" value={item.groupNumber} />
           <Field label="Relationship" value={formatCoverageRelationship(item.relationship)} />
+          <Field label="Subscriber" value={formatInsuranceSubscriberName(item)} />
+          <Field label="Subscriber DOB" value={item.subscriberDateOfBirth} />
+          <Field label="Subscriber sex" value={item.subscriberSex} />
+          <Field label="Subscriber address" value={formatInsuranceSubscriberAddress(item)} />
+          <Field label="Subscriber phone" value={item.subscriberPhone} />
+          <Field label="Subscriber employer" value={item.subscriberEmployer} />
           <div className="insurance-actions">
             <button className="icon-text-button" type="button" disabled={disabled} onClick={() => onEdit(item)}>
               <Pencil size={14} />
@@ -18506,6 +18607,16 @@ function formatCoverageType(value?: string | null) {
 
 function formatCoverageRelationship(value?: string | null) {
   return value ? formatCoverageType(value) : null
+}
+
+function formatInsuranceSubscriberName(item: PatientInsuranceItem) {
+  const name = [item.subscriberFirstName, item.subscriberMiddleName, item.subscriberLastName].filter(Boolean).join(' ')
+  return name || null
+}
+
+function formatInsuranceSubscriberAddress(item: PatientInsuranceItem) {
+  const cityLine = [item.subscriberCity, item.subscriberState, item.subscriberPostalCode].filter(Boolean).join(' ')
+  return [item.subscriberStreet, item.subscriberStreetLine2, cityLine, item.subscriberCountry].filter(Boolean).join(', ') || null
 }
 
 function MetricRow({ label, value }: { label: string; value: number }) {
@@ -18804,6 +18915,25 @@ function buildInsuranceDraft(item?: PatientInsuranceItem | null): PatientInsuran
     policyNumber: item?.policyNumber ?? 'PAR-TEMP-1005',
     groupNumber: item?.groupNumber ?? 'PAR-GRP-1005',
     relationship: item?.relationship ?? 'self',
+    subscriberFirstName: item?.subscriberFirstName ?? 'Parity',
+    subscriberMiddleName: item?.subscriberMiddleName ?? '',
+    subscriberLastName: item?.subscriberLastName ?? 'Subscriber',
+    subscriberDateOfBirth: item?.subscriberDateOfBirth ?? '1980-01-01',
+    subscriberSex: item?.subscriberSex ?? '',
+    subscriberStreet: item?.subscriberStreet ?? '100 Test Subscriber Way',
+    subscriberStreetLine2: item?.subscriberStreetLine2 ?? '',
+    subscriberCity: item?.subscriberCity ?? 'San Diego',
+    subscriberState: item?.subscriberState ?? 'CA',
+    subscriberPostalCode: item?.subscriberPostalCode ?? '92101',
+    subscriberCountry: item?.subscriberCountry ?? 'US',
+    subscriberPhone: item?.subscriberPhone ?? '619-555-0199',
+    subscriberEmployer: item?.subscriberEmployer ?? 'Parity Coverage Employer',
+    subscriberEmployerStreet: item?.subscriberEmployerStreet ?? '',
+    subscriberEmployerStreetLine2: item?.subscriberEmployerStreetLine2 ?? '',
+    subscriberEmployerCity: item?.subscriberEmployerCity ?? '',
+    subscriberEmployerState: item?.subscriberEmployerState ?? '',
+    subscriberEmployerPostalCode: item?.subscriberEmployerPostalCode ?? '',
+    subscriberEmployerCountry: item?.subscriberEmployerCountry ?? '',
   }
 }
 

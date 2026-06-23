@@ -1366,7 +1366,14 @@ try {
         -and $primary.groupNumber -eq "GRP104" `
         -and $secondary.provider -eq "Acme Health" `
         -and $secondary.policyNumber -eq "SEC100005" `
-        -and $secondary.groupNumber -eq "GRP204"
+        -and $secondary.groupNumber -eq "GRP204" `
+        -and $secondary.relationship -eq "spouse" `
+        -and $secondary.subscriberFirstName -eq "Jamie" `
+        -and $secondary.subscriberLastName -eq "Morgan" `
+        -and $secondary.subscriberDateOfBirth -eq "1976-05-05" `
+        -and $secondary.subscriberStreet -eq "2204 Mesa Partner Ave" `
+        -and $secondary.subscriberPhone -eq "619-555-7004" `
+        -and $secondary.subscriberEmployer -eq "Harbor Health Logistics"
     Add-Check -Name "anchor insurance coverage" -Result $(if ($coveragePassed) { "passed" } else { "failed" }) -Details @{
         canonicalId = $coverageChart.canonicalId
         displayName = $coverageChart.displayName
@@ -1387,6 +1394,25 @@ try {
         policyNumber = "SMK$suffix"
         groupNumber = "SGRP$suffix"
         relationship = "self"
+        subscriberFirstName = "Smoke"
+        subscriberMiddleName = ""
+        subscriberLastName = "Subscriber"
+        subscriberDateOfBirth = "1980-01-01"
+        subscriberSex = "Female"
+        subscriberStreet = "1 Smoke Subscriber Way"
+        subscriberStreetLine2 = ""
+        subscriberCity = "San Diego"
+        subscriberState = "CA"
+        subscriberPostalCode = "92101"
+        subscriberCountry = "US"
+        subscriberPhone = "619-555-6600"
+        subscriberEmployer = "Smoke Coverage Employer"
+        subscriberEmployerStreet = "2 Smoke Employer Way"
+        subscriberEmployerStreetLine2 = ""
+        subscriberEmployerCity = "San Diego"
+        subscriberEmployerState = "CA"
+        subscriberEmployerPostalCode = "92101"
+        subscriberEmployerCountry = "US"
     }
     $createdCoverageChart = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005/insurance" `
@@ -1408,6 +1434,25 @@ try {
         policyNumber = "USMK$suffix"
         groupNumber = "USGRP$suffix"
         relationship = "self"
+        subscriberFirstName = "Updated"
+        subscriberMiddleName = ""
+        subscriberLastName = "Subscriber"
+        subscriberDateOfBirth = "1981-02-02"
+        subscriberSex = "Male"
+        subscriberStreet = "3 Updated Subscriber Way"
+        subscriberStreetLine2 = ""
+        subscriberCity = "Poway"
+        subscriberState = "CA"
+        subscriberPostalCode = "92064"
+        subscriberCountry = "US"
+        subscriberPhone = "619-555-6601"
+        subscriberEmployer = "Updated Coverage Employer"
+        subscriberEmployerStreet = "4 Updated Employer Way"
+        subscriberEmployerStreetLine2 = ""
+        subscriberEmployerCity = "Poway"
+        subscriberEmployerState = "CA"
+        subscriberEmployerPostalCode = "92064"
+        subscriberEmployerCountry = "US"
     }
     $updatedCoverageChart = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/insurance/$insuranceMutationId" `
@@ -1428,8 +1473,13 @@ try {
 
     $insuranceMutationPassed = $createdCoverage.provider -eq "Acme Health" `
         -and $createdCoverage.planName -eq $insuranceCreateBody.planName `
+        -and $createdCoverage.subscriberFirstName -eq $insuranceCreateBody.subscriberFirstName `
+        -and $createdCoverage.subscriberStreet -eq $insuranceCreateBody.subscriberStreet `
         -and $updatedCoverage.provider -eq "Northstar HMO" `
         -and $updatedCoverage.planName -eq $insuranceUpdateBody.planName `
+        -and $updatedCoverage.subscriberFirstName -eq $insuranceUpdateBody.subscriberFirstName `
+        -and $updatedCoverage.subscriberStreet -eq $insuranceUpdateBody.subscriberStreet `
+        -and $updatedCoverage.subscriberEmployer -eq $insuranceUpdateBody.subscriberEmployer `
         -and $null -eq $deletedCoverage
     Add-Check -Name "patient insurance mutation lifecycle" -Result $(if ($insuranceMutationPassed) { "passed" } else { "failed" }) -Details @{
         created = $createdCoverage

@@ -52,6 +52,25 @@ export type PatientInsuranceItem = {
   policyNumber?: string | null
   groupNumber?: string | null
   relationship?: string | null
+  subscriberFirstName?: string | null
+  subscriberMiddleName?: string | null
+  subscriberLastName?: string | null
+  subscriberDateOfBirth?: string | null
+  subscriberSex?: string | null
+  subscriberStreet?: string | null
+  subscriberStreetLine2?: string | null
+  subscriberCity?: string | null
+  subscriberState?: string | null
+  subscriberPostalCode?: string | null
+  subscriberCountry?: string | null
+  subscriberPhone?: string | null
+  subscriberEmployer?: string | null
+  subscriberEmployerStreet?: string | null
+  subscriberEmployerStreetLine2?: string | null
+  subscriberEmployerCity?: string | null
+  subscriberEmployerState?: string | null
+  subscriberEmployerPostalCode?: string | null
+  subscriberEmployerCountry?: string | null
 }
 
 export type PatientCareTeamMember = {
@@ -162,6 +181,25 @@ export type PatientInsuranceMutationInput = {
   policyNumber: string
   groupNumber: string
   relationship: string
+  subscriberFirstName: string
+  subscriberMiddleName: string
+  subscriberLastName: string
+  subscriberDateOfBirth: string
+  subscriberSex: string
+  subscriberStreet: string
+  subscriberStreetLine2: string
+  subscriberCity: string
+  subscriberState: string
+  subscriberPostalCode: string
+  subscriberCountry: string
+  subscriberPhone: string
+  subscriberEmployer: string
+  subscriberEmployerStreet: string
+  subscriberEmployerStreetLine2: string
+  subscriberEmployerCity: string
+  subscriberEmployerState: string
+  subscriberEmployerPostalCode: string
+  subscriberEmployerCountry: string
 }
 
 export type PatientChartSummary = PatientListItem & {
