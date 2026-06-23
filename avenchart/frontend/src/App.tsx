@@ -24,6 +24,7 @@ import {
   Pencil,
   Reply,
   Search,
+  Send,
   ShieldCheck,
   Stethoscope,
   RotateCcw,
@@ -55,6 +56,7 @@ import {
   getPatientMessages,
   getPatientPortalHome,
   getPatientPortalMessages,
+  composePatientPortalMessage,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -404,6 +406,9 @@ function App() {
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
+  const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
+  const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
+  const [patientPortalComposeBody, setPatientPortalComposeBody] = useState('Please review my latest care-team follow-up when available.')
   const [patientPortalStatus, setPatientPortalStatus] =
     useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
   const [patientPortalMessage, setPatientPortalMessage] = useState<string | null>(null)
@@ -3814,6 +3819,41 @@ function App() {
     }
   }
 
+  async function handlePatientPortalComposeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before composing a secure message.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const composeResult = await composePatientPortalMessage(patientPortalSessionId, {
+        recipientId: patientPortalComposeRecipient,
+        title: patientPortalComposeTitle,
+        body: patientPortalComposeBody,
+      })
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      setPatientPortalStatus(composeResult.created ? 'ready' : 'rejected')
+      setPatientPortalMessage(composeResult.created
+        ? `Secure message sent to ${composeResult.recipientName || composeResult.recipientId}`
+        : composeResult.failureReason ?? 'Secure message was not sent.')
+      if (composeResult.created) {
+        setPatientPortalComposeTitle('')
+        setPatientPortalComposeBody('')
+      }
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message compose failed')
+    }
+  }
+
   async function handlePatientPortalHomeLogout() {
     if (!patientPortalSessionId) {
       return
@@ -3943,10 +3983,17 @@ function App() {
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
             portalMessages={patientPortalMessages}
+            composeRecipient={patientPortalComposeRecipient}
+            composeTitle={patientPortalComposeTitle}
+            composeBody={patientPortalComposeBody}
             onUsernameChange={setPatientPortalUsername}
             onPasswordChange={setPatientPortalPassword}
+            onComposeRecipientChange={setPatientPortalComposeRecipient}
+            onComposeTitleChange={setPatientPortalComposeTitle}
+            onComposeBodyChange={setPatientPortalComposeBody}
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
+            onComposeSubmit={handlePatientPortalComposeSubmit}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4312,10 +4359,17 @@ function PatientPortalWorkspace({
   sessionId,
   home,
   portalMessages,
+  composeRecipient,
+  composeTitle,
+  composeBody,
   onUsernameChange,
   onPasswordChange,
+  onComposeRecipientChange,
+  onComposeTitleChange,
+  onComposeBodyChange,
   onLogin,
   onRefresh,
+  onComposeSubmit,
   onLogout,
 }: {
   username: string
@@ -4325,10 +4379,17 @@ function PatientPortalWorkspace({
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
   portalMessages: PatientPortalMessagesResponse | null
+  composeRecipient: string
+  composeTitle: string
+  composeBody: string
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
+  onComposeRecipientChange: (value: string) => void
+  onComposeTitleChange: (value: string) => void
+  onComposeBodyChange: (value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
+  onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
@@ -4423,6 +4484,46 @@ function PatientPortalWorkspace({
                   <span>Inbox</span>
                   <span>{portalMessages?.messageCount ?? 0} messages</span>
                 </div>
+                <form className="contact-form portal-compose-form" aria-label="Compose secure message" onSubmit={onComposeSubmit}>
+                  <label className="contact-field">
+                    <span>To</span>
+                    <input
+                      value={composeRecipient}
+                      onChange={(event) => onComposeRecipientChange(event.target.value)}
+                      aria-label="Secure message recipient"
+                      disabled={!authenticated || busy}
+                    />
+                  </label>
+                  <label className="contact-field">
+                    <span>Subject</span>
+                    <input
+                      value={composeTitle}
+                      onChange={(event) => onComposeTitleChange(event.target.value)}
+                      aria-label="Secure message subject"
+                      disabled={!authenticated || busy}
+                    />
+                  </label>
+                  <label className="contact-field">
+                    <span>Message</span>
+                    <textarea
+                      value={composeBody}
+                      onChange={(event) => onComposeBodyChange(event.target.value)}
+                      aria-label="Secure message body"
+                      disabled={!authenticated || busy}
+                      rows={4}
+                    />
+                  </label>
+                  <div className="contact-actions">
+                    <button
+                      className="icon-text-button primary"
+                      type="submit"
+                      disabled={!authenticated || busy || composeTitle.trim() === '' || composeBody.trim() === ''}
+                    >
+                      <Send size={15} />
+                      <span>Send secure message</span>
+                    </button>
+                  </div>
+                </form>
                 <div className="message-list-body">
                   {(portalMessages?.messages ?? []).map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
@@ -4446,6 +4547,35 @@ function PatientPortalWorkspace({
                   ))}
                   {(portalMessages?.messages.length ?? 0) === 0 && (
                     <div className="timeline-placeholder">No secure messages recorded</div>
+                  )}
+                </div>
+                <div className="result-meta">
+                  <span>Sent</span>
+                  <span>{portalMessages?.sentMessageCount ?? 0} messages</span>
+                </div>
+                <div className="message-list-body">
+                  {(portalMessages?.sentMessages ?? []).map((portalMessage) => (
+                    <article className="message-item" key={portalMessage.id}>
+                      <div className="message-item-header">
+                        <div>
+                          <strong>{portalMessage.title}</strong>
+                          <span>
+                            {portalMessage.date} / To {portalMessage.recipientName || portalMessage.recipientId || 'Care team'}
+                          </span>
+                        </div>
+                        <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
+                          {portalMessage.status || 'Status pending'}
+                        </span>
+                      </div>
+                      <p>{portalMessage.body}</p>
+                      <div className="message-meta-row">
+                        <span>Recipient {portalMessage.recipientId || portalMessage.assignedTo || 'care team'}</span>
+                        <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalMessages?.sentMessages?.length ?? 0) === 0 && (
+                    <div className="timeline-placeholder">No sent secure messages recorded</div>
                   )}
                 </div>
               </section>

@@ -23,6 +23,21 @@ fs.mkdirSync(outputDir, { recursive: true })
 
 const copyEmptyString = Symbol('copy-empty-string')
 const demoCredentialSalt = 'legacy-ehr-modernized-demo-v1'
+const patientsByPid = new Map(dataset.patients.map((patient) => [patient.pid, patient]))
+const portalMailboxMessages = dataset.messages
+  .map((message, index) => {
+    const patient = patientsByPid.get(message.pid)
+    if (!patient?.portalAccount) {
+      return null
+    }
+
+    return {
+      id: 9300000 + index + 1,
+      message,
+      patient,
+    }
+  })
+  .filter(Boolean)
 
 function hashDemoPassword(password) {
   return crypto.createHash('sha256').update(`${demoCredentialSalt}:${password}`, 'utf8').digest('hex')
@@ -224,6 +239,7 @@ drop table if exists medications;
 drop table if exists allergies;
 drop table if exists problems;
 drop table if exists patient_documents;
+drop table if exists portal_mailbox_messages;
 drop table if exists messages;
 drop table if exists lab_results;
 drop table if exists lab_reports;
@@ -919,6 +935,31 @@ create table messages (
   updated_at timestamp,
   deleted integer not null default 0,
   activity integer not null default 1
+);
+
+create table portal_mailbox_messages (
+  id integer primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  message_date date not null,
+  body text,
+  owner text not null,
+  user_value text not null,
+  group_name text not null default 'Default',
+  activity integer not null default 1,
+  authorized integer not null default 1,
+  title text,
+  assigned_to text,
+  message_status text,
+  portal_relation text,
+  mail_chain integer not null,
+  sender_id text not null,
+  sender_name text not null,
+  recipient_id text not null,
+  recipient_name text not null,
+  reply_mail_chain integer not null,
+  is_encrypted boolean not null default false,
+  deleted integer not null default 0
 );
 
 create table patient_documents (
@@ -1968,6 +2009,55 @@ copyRows('messages', [
     1,
   ]))
 
+copyRows('portal_mailbox_messages', [
+  'id',
+  'patient_id',
+  'pid',
+  'message_date',
+  'body',
+  'owner',
+  'user_value',
+  'group_name',
+  'activity',
+  'authorized',
+  'title',
+  'assigned_to',
+  'message_status',
+  'portal_relation',
+  'mail_chain',
+  'sender_id',
+  'sender_name',
+  'recipient_id',
+  'recipient_name',
+  'reply_mail_chain',
+  'is_encrypted',
+  'deleted',
+],
+  portalMailboxMessages.map(({ id, message, patient }) => [
+    id,
+    message.patientId,
+    message.pid,
+    message.date,
+    message.body,
+    patient.portalAccount.portalUsername,
+    'admin',
+    'Default',
+    1,
+    1,
+    message.title,
+    message.assignedTo,
+    message.status,
+    message.portalRelation,
+    id,
+    message.assignedTo,
+    'Administrator',
+    patient.portalAccount.portalUsername,
+    `${patient.fname} ${patient.lname}`,
+    id,
+    Boolean(message.isEncrypted),
+    0,
+  ]))
+
 copyRows('patient_documents', [
   'id',
   'document_key',
@@ -2091,6 +2181,8 @@ create index idx_lab_order_catalog_lab_id on lab_order_catalog (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);
+create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);
+create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);
 create index idx_patient_documents_pid_date on patient_documents (pid, doc_date);
 create index idx_patient_documents_category on patient_documents (category_name);
 create index idx_problems_pid on problems (pid);
@@ -2130,6 +2222,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     labReports: dataset.labReports.length,
     labResults: dataset.labResults.length,
     messages: dataset.messages.length,
+    portalMailboxMessages: portalMailboxMessages.length,
     patientDocuments: dataset.patientDocuments.length,
     problems: dataset.problems.length,
     allergies: dataset.allergies.length,

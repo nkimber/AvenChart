@@ -1041,6 +1041,12 @@
   min-width: 0;
 }
 
+.portal-compose-form {
+  border-top: 1px solid #d9e3e8;
+  border-bottom: 1px solid #d9e3e8;
+  padding: 12px 0;
+}
+
 .document-category-stack {
   display: flex;
   flex-wrap: wrap;

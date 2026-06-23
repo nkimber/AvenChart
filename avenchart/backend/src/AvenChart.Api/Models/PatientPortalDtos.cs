@@ -85,6 +85,8 @@ public sealed record PatientPortalMessagesResponse(
     string AsOfDate,
     int MessageCount,
     IReadOnlyList<PatientPortalMessageItem> Messages,
+    int SentMessageCount,
+    IReadOnlyList<PatientPortalMessageItem> SentMessages,
     string? FailureReason,
     string SessionSource);
 
@@ -95,7 +97,33 @@ public sealed record PatientPortalMessageItem(
     string Body,
     string Status,
     string AssignedTo,
+    string SenderId,
     string SenderName,
+    string RecipientId,
     string RecipientName,
     string? PortalRelation,
     bool IsEncrypted);
+
+public sealed record PatientPortalComposeMessageRequest(
+    string? RecipientId,
+    string? Title,
+    string? Body);
+
+public sealed record PatientPortalComposeMessageResponse(
+    bool Authenticated,
+    bool Created,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string RecipientId,
+    string RecipientName,
+    PatientPortalMessageItem? SentMessage,
+    PatientPortalMessageItem? RecipientMessage,
+    int MessageCount,
+    int SentMessageCount,
+    string? FailureReason,
+    string SessionSource);

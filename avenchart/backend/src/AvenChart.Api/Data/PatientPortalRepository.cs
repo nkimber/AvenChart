@@ -200,7 +200,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
-        var messages = await GetMessageSummaryAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var messages = await GetMessageSummaryAsync(connection, session.PortalUsername, cancellationToken);
         var appointments = await GetUpcomingAppointmentsAsync(
             connection,
             session.LegacyPid.Value,
@@ -240,8 +240,13 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var messages = await GetPortalMessagesAsync(
             connection,
-            session.LegacyPid.Value,
-            session.DisplayName,
+            session.PortalUsername,
+            PortalMessageFolder.Inbox,
+            cancellationToken);
+        var sentMessages = await GetPortalMessagesAsync(
+            connection,
+            session.PortalUsername,
+            PortalMessageFolder.Sent,
             cancellationToken);
 
         return new PatientPortalMessagesResponse(
@@ -258,6 +263,103 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
             MessageCount: messages.Count,
             Messages: messages,
+            SentMessageCount: sentMessages.Count,
+            SentMessages: sentMessages,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalComposeMessageResponse> ComposeMessageAsync(
+        Guid sessionId,
+        PatientPortalComposeMessageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ComposeFailure(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        var recipientId = NormalizeText(request.RecipientId) ?? "admin";
+        var title = NormalizeText(request.Title);
+        var body = NormalizeText(request.Body);
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return ComposeFailure(session, "Secure message title is required.", recipientId);
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return ComposeFailure(session, "Secure message body is required.", recipientId);
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var recipientName = await GetRecipientDisplayNameAsync(connection, recipientId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var sentMessage = new PatientPortalMessageItem(
+            Id: nextId.ToString(),
+            Date: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+            Title: title,
+            Body: body,
+            Status: "New",
+            AssignedTo: recipientId,
+            SenderId: session.PortalUsername,
+            SenderName: session.DisplayName,
+            RecipientId: recipientId,
+            RecipientName: recipientName,
+            PortalRelation: "portal:composed",
+            IsEncrypted: false);
+        var recipientMessage = sentMessage with
+        {
+            Id = (nextId + 1).ToString(),
+            SenderName = session.DisplayName,
+            RecipientName = recipientName
+        };
+
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            sentMessage,
+            owner: session.PortalUsername,
+            userValue: session.PortalUsername,
+            mailChain: nextId,
+            replyMailChain: nextId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            recipientMessage,
+            owner: recipientId,
+            userValue: session.PortalUsername,
+            mailChain: nextId + 1,
+            replyMailChain: nextId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalComposeMessageResponse(
+            Authenticated: true,
+            Created: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            RecipientId: recipientId,
+            RecipientName: recipientName,
+            SentMessage: sentMessage,
+            RecipientMessage: recipientMessage,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -330,6 +432,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
         MessageCount: 0,
         Messages: Array.Empty<PatientPortalMessageItem>(),
+        SentMessageCount: 0,
+        SentMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -347,6 +451,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
         MessageCount: 0,
         Messages: Array.Empty<PatientPortalMessageItem>(),
+        SentMessageCount: 0,
+        SentMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -355,6 +461,48 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
         MissingSessionHomeSummary("Patient portal session header was not supplied.");
+
+    public static PatientPortalComposeMessageResponse MissingSessionHeaderComposeMessage() =>
+        new(
+            Authenticated: false,
+            Created: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            RecipientId: string.Empty,
+            RecipientName: string.Empty,
+            SentMessage: null,
+            RecipientMessage: null,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
+    private static PatientPortalComposeMessageResponse ComposeFailure(
+        PatientPortalSessionResponse session,
+        string reason,
+        string recipientId = "") => new(
+        Authenticated: session.Authenticated,
+        Created: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        RecipientId: recipientId,
+        RecipientName: string.Empty,
+        SentMessage: null,
+        RecipientMessage: null,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
 
     private static async Task<DatasetMetadata> GetMetadataAsync(
         NpgsqlConnection connection,
@@ -382,33 +530,39 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     private static async Task<PatientPortalHomeMessageSummary> GetMessageSummaryAsync(
         NpgsqlConnection connection,
-        int pid,
+        string portalUsername,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
               count(*)::int as total_messages,
-              count(*) filter (where status = 'New')::int as new_messages,
-              count(*) filter (where status = 'Done')::int as done_messages,
+              count(*) filter (where message_status = 'New')::int as new_messages,
+              count(*) filter (where message_status = 'Done')::int as done_messages,
               (
                 select title
-                from messages latest
-                where latest.pid = @pid and latest.deleted = 0
+                from portal_mailbox_messages latest
+                where latest.deleted = 0
+                  and latest.owner = @portal_username
+                  and latest.recipient_id = @portal_username
                 order by latest.message_date desc, latest.id desc
                 limit 1
               ) as latest_message_title,
               (
                 select message_date
-                from messages latest
-                where latest.pid = @pid and latest.deleted = 0
+                from portal_mailbox_messages latest
+                where latest.deleted = 0
+                  and latest.owner = @portal_username
+                  and latest.recipient_id = @portal_username
                 order by latest.message_date desc, latest.id desc
                 limit 1
               ) as latest_message_date
-            from messages
-            where pid = @pid and deleted = 0;
+            from portal_mailbox_messages
+            where deleted = 0
+              and owner = @portal_username
+              and recipient_id = @portal_username;
             """;
-        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("portal_username", portalUsername);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -426,18 +580,22 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     private static async Task<IReadOnlyList<PatientPortalMessageItem>> GetPortalMessagesAsync(
         NpgsqlConnection connection,
-        int pid,
-        string displayName,
+        string portalUsername,
+        PortalMessageFolder folder,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted
-            from messages
-            where pid = @pid and deleted = 0
+        var folderPredicate = folder == PortalMessageFolder.Sent
+            ? "owner = @portal_username and sender_id = @portal_username"
+            : "owner = @portal_username and recipient_id = @portal_username";
+        command.CommandText = $"""
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              sender_id, sender_name, recipient_id, recipient_name, is_encrypted
+            from portal_mailbox_messages
+            where deleted = 0 and {folderPredicate}
             order by message_date desc, id desc;
             """;
-        command.Parameters.AddWithValue("pid", pid);
+        command.Parameters.AddWithValue("portal_username", portalUsername);
 
         var messages = new List<PatientPortalMessageItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -445,19 +603,125 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         {
             var assignedTo = ReadNullableString(reader, "assigned_to") ?? string.Empty;
             messages.Add(new PatientPortalMessageItem(
-                Id: reader.GetString(reader.GetOrdinal("id")),
+                Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
                 Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
                 Title: ReadNullableString(reader, "title") ?? string.Empty,
                 Body: ReadNullableString(reader, "body") ?? string.Empty,
-                Status: ReadNullableString(reader, "status") ?? string.Empty,
+                Status: ReadNullableString(reader, "message_status") ?? string.Empty,
                 AssignedTo: assignedTo,
-                SenderName: assignedTo,
-                RecipientName: displayName,
+                SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
+                SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
+                RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
+                RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
                 PortalRelation: ReadNullableString(reader, "portal_relation"),
                 IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted"))));
         }
 
         return messages;
+    }
+
+    private static async Task<int> GetNextPortalMailboxIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select greatest(coalesce(max(id), 9390000) + 1, 9390001)
+            from portal_mailbox_messages;
+            """;
+
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(value);
+    }
+
+    private static async Task<int> GetPortalMessageCountAsync(
+        NpgsqlConnection connection,
+        string portalUsername,
+        PortalMessageFolder folder,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        var folderPredicate = folder == PortalMessageFolder.Sent
+            ? "owner = @portal_username and sender_id = @portal_username"
+            : "owner = @portal_username and recipient_id = @portal_username";
+        command.CommandText = $"""
+            select count(*)::int
+            from portal_mailbox_messages
+            where deleted = 0 and {folderPredicate};
+            """;
+        command.Parameters.AddWithValue("portal_username", portalUsername);
+
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(value);
+    }
+
+    private static async Task InsertPortalMailboxMessageAsync(
+        NpgsqlConnection connection,
+        PatientPortalSessionResponse session,
+        PatientPortalMessageItem message,
+        string owner,
+        string userValue,
+        int mailChain,
+        int replyMailChain,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into portal_mailbox_messages (
+              id, patient_id, pid, message_date, body, owner, user_value, group_name,
+              activity, authorized, title, assigned_to, message_status, portal_relation, mail_chain,
+              sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain,
+              is_encrypted, deleted
+            )
+            values (
+              @id, @patient_id, @pid, @message_date, @body, @owner, @user_value, 'Default',
+              1, 1, @title, @assigned_to, @message_status, @portal_relation, @mail_chain,
+              @sender_id, @sender_name, @recipient_id, @recipient_name, @reply_mail_chain,
+              @is_encrypted, 0
+            );
+            """;
+        command.Parameters.Add("id", NpgsqlDbType.Integer).Value = int.Parse(message.Id);
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = session.CanonicalId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = session.LegacyPid ?? 0;
+        command.Parameters.Add("message_date", NpgsqlDbType.Date).Value = DateOnly.Parse(message.Date);
+        command.Parameters.Add("body", NpgsqlDbType.Text).Value = message.Body;
+        command.Parameters.Add("owner", NpgsqlDbType.Text).Value = owner;
+        command.Parameters.Add("user_value", NpgsqlDbType.Text).Value = userValue;
+        command.Parameters.Add("title", NpgsqlDbType.Text).Value = message.Title;
+        command.Parameters.Add("assigned_to", NpgsqlDbType.Text).Value = message.AssignedTo;
+        command.Parameters.Add("message_status", NpgsqlDbType.Text).Value = message.Status;
+        command.Parameters.Add("portal_relation", NpgsqlDbType.Text).Value = message.PortalRelation is { } relation ? (object)relation : DBNull.Value;
+        command.Parameters.Add("mail_chain", NpgsqlDbType.Integer).Value = mailChain;
+        command.Parameters.Add("sender_id", NpgsqlDbType.Text).Value = message.SenderId;
+        command.Parameters.Add("sender_name", NpgsqlDbType.Text).Value = message.SenderName;
+        command.Parameters.Add("recipient_id", NpgsqlDbType.Text).Value = message.RecipientId;
+        command.Parameters.Add("recipient_name", NpgsqlDbType.Text).Value = message.RecipientName;
+        command.Parameters.Add("reply_mail_chain", NpgsqlDbType.Integer).Value = replyMailChain;
+        command.Parameters.Add("is_encrypted", NpgsqlDbType.Boolean).Value = message.IsEncrypted;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<string> GetRecipientDisplayNameAsync(
+        NpgsqlConnection connection,
+        string recipientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select coalesce(
+              (select trim(first_name || ' ' || last_name) from staff where username = @recipient_id limit 1),
+              (select display_name from auth_accounts where username = @recipient_id limit 1),
+              @recipient_id
+            ) as display_name;
+            """;
+        command.Parameters.Add("recipient_id", NpgsqlDbType.Text).Value = recipientId;
+
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value?.ToString() ?? recipientId;
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(
@@ -627,10 +891,22 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         _ => $"Category {categoryId.Value}"
     };
 
+    private static string? NormalizeText(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
     private static string HashPassword(string salt, string password)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{salt}:{password}"));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private enum PortalMessageFolder
+    {
+        Inbox,
+        Sent
     }
 
     private sealed record PatientPortalAccountRow(

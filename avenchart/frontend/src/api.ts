@@ -2354,7 +2354,9 @@ export type PatientPortalMessageItem = {
   body: string
   status: string
   assignedTo: string
+  senderId: string
   senderName: string
+  recipientId: string
   recipientName: string
   portalRelation?: string | null
   isEncrypted: boolean
@@ -2374,6 +2376,34 @@ export type PatientPortalMessagesResponse = {
   asOfDate: string
   messageCount: number
   messages: PatientPortalMessageItem[]
+  sentMessageCount: number
+  sentMessages: PatientPortalMessageItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
+export type PatientPortalComposeMessageInput = {
+  recipientId?: string | null
+  title: string
+  body: string
+}
+
+export type PatientPortalComposeMessageResponse = {
+  authenticated: boolean
+  created: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  recipientId: string
+  recipientName: string
+  sentMessage?: PatientPortalMessageItem | null
+  recipientMessage?: PatientPortalMessageItem | null
+  messageCount: number
+  sentMessageCount: number
   failureReason?: string | null
   sessionSource: string
 }
@@ -2509,6 +2539,27 @@ export async function getPatientPortalMessages(
   })
   if (!response.ok) {
     throw new Error(`Patient portal messages check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function composePatientPortalMessage(
+  sessionId: string,
+  input: PatientPortalComposeMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalComposeMessageResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message compose failed with ${response.status}`)
   }
 
   return response.json()
