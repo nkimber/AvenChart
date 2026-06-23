@@ -1040,6 +1040,42 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
+    public async Task<PatientChartSummary?> UpdatePortalAccountResetAsync(
+        string patientId,
+        PatientPortalAccountResetRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with matched_patient as (
+                select canonical_id
+                from patients
+                where lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId
+                limit 1
+            )
+            update patient_portal_accounts
+            set
+                one_time_token = case
+                    when @oneTimeLinkPending then concat('reset-', lower(patient_id))
+                    else null
+                end,
+                password_status = case
+                    when @oneTimeLinkPending then 0
+                    else 1
+                end
+            where patient_id in (select canonical_id from matched_patient)
+            returning patient_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("oneTimeLinkPending", request.OneTimeLinkPending);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
     public async Task<PatientChartSummary?> UpdateGuardianContactAsync(
         string patientId,
         PatientGuardianContactUpdateRequest request,
@@ -2348,7 +2384,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             PortalLoginUsername: ReadNullableString(reader, "portal_account_login_username"),
             PasswordStatus: passwordStatus,
             PasswordStatusLabel: PortalPasswordStatusLabel(passwordStatus),
-            OneTimeLinkPending: !string.IsNullOrWhiteSpace(oneTimeToken));
+            OneTimeLinkPending: !string.IsNullOrWhiteSpace(oneTimeToken),
+            ResetStatusLabel: PortalResetStatusLabel(!string.IsNullOrWhiteSpace(oneTimeToken), portalUsername));
     }
 
     private static string PortalPasswordStatusLabel(int? status) => status switch
@@ -2358,6 +2395,16 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         null => "No account provisioned",
         _ => $"Status {status.Value.ToString(CultureInfo.InvariantCulture)}"
     };
+
+    private static string PortalResetStatusLabel(bool oneTimeLinkPending, string? portalUsername)
+    {
+        if (string.IsNullOrWhiteSpace(portalUsername))
+        {
+            return "No account provisioned";
+        }
+
+        return oneTimeLinkPending ? "One-time reset pending" : "No reset pending";
+    }
 
     private static PatientTimelineItem? ReadAppointment(DbDataReader reader)
     {

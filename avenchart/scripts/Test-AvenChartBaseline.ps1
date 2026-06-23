@@ -444,7 +444,8 @@ try {
         -and $portalAccount.portalLoginUsername -eq "mod-pat-0004@example.test" `
         -and $portalAccount.passwordStatus -eq 1 `
         -and $portalAccount.passwordStatusLabel -eq "Patient-managed password" `
-        -and -not $portalAccount.oneTimeLinkPending
+        -and -not $portalAccount.oneTimeLinkPending `
+        -and $portalAccount.resetStatusLabel -eq "No reset pending"
     Add-Check -Name "anchor patient portal account" -Result $(if ($portalAccountPassed) { "passed" } else { "failed" }) -Details @{
         canonicalId = $portalAccountChart.canonicalId
         portalAccount = $portalAccount
@@ -452,6 +453,43 @@ try {
 }
 catch {
     Add-Check -Name "anchor patient portal account" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $resetHeaders = Get-AdministrationHeaders
+    $issueReset = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004/portal-account/reset" `
+        -Method Put `
+        -Headers $resetHeaders `
+        -ContentType "application/json" `
+        -Body (@{ oneTimeLinkPending = $true } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $clearReset = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004/portal-account/reset" `
+        -Method Put `
+        -Headers $resetHeaders `
+        -ContentType "application/json" `
+        -Body (@{ oneTimeLinkPending = $false } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $issued = $issueReset.portalAccount
+    $cleared = $clearReset.portalAccount
+    $portalResetPassed = $issued.oneTimeLinkPending `
+        -and $issued.passwordStatus -eq 0 `
+        -and $issued.passwordStatusLabel -eq "Temporary password issued" `
+        -and $issued.resetStatusLabel -eq "One-time reset pending" `
+        -and -not $cleared.oneTimeLinkPending `
+        -and $cleared.passwordStatus -eq 1 `
+        -and $cleared.passwordStatusLabel -eq "Patient-managed password" `
+        -and $cleared.resetStatusLabel -eq "No reset pending"
+    Add-Check -Name "anchor patient portal reset lifecycle" -Result $(if ($portalResetPassed) { "passed" } else { "failed" }) -Details @{
+        issued = $issued
+        cleared = $cleared
+    }
+}
+catch {
+    Add-Check -Name "anchor patient portal reset lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
 try {

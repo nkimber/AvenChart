@@ -108,6 +108,10 @@ public sealed record PatientPortalAccountSummary(
     string? PortalLoginUsername,
     int? PasswordStatus,
     string PasswordStatusLabel,
+    bool OneTimeLinkPending,
+    string ResetStatusLabel);
+
+public sealed record PatientPortalAccountResetRequest(
     bool OneTimeLinkPending);
 
 public sealed record PatientDuplicateSearchResponse(

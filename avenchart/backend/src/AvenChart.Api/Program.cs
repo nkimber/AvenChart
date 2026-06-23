@@ -229,6 +229,20 @@ patients.MapPut("/{patientId}/deceased-status", async (
     .WithName("UpdatePatientDeceasedStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapPut("/{patientId}/portal-account/reset", async (
+        PatientRepository repository,
+        string patientId,
+        PatientPortalAccountResetRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.UpdatePortalAccountResetAsync(patientId, request, cancellationToken);
+        return patient is null
+            ? Results.BadRequest("Patient portal account reset state could not be updated from the supplied patient and reset details.")
+            : Results.Ok(patient);
+    })
+    .WithName("UpdatePatientPortalAccountReset")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapPut("/{patientId}/guardian-contact", async (
         PatientRepository repository,
         string patientId,

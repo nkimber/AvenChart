@@ -171,6 +171,7 @@ import {
   updatePatientDemographics,
   updatePatientEmployer,
   updatePatientGuardianContact,
+  updatePatientPortalAccountReset,
   updatePatientProviderAssignment,
   updateProcedureOrder,
   updateProcedureLabProvider,
@@ -1336,6 +1337,24 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient deceased status save failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientPortalAccountReset(patientId: string, oneTimeLinkPending: boolean) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientPortalAccountReset(patientId, { oneTimeLinkPending }, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+      return updated
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient portal account reset update failed'
       setPatientError(message)
       throw saveError
     }
@@ -3777,6 +3796,7 @@ function App() {
             onSaveContact={handlePatientContactSave}
             onSaveDemographics={handlePatientDemographicsSave}
             onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
+            onUpdatePortalAccountReset={handlePatientPortalAccountReset}
             onSaveGuardianContact={handlePatientGuardianContactSave}
             onSaveEmployer={handlePatientEmployerSave}
             onSaveProviderAssignment={handlePatientProviderAssignmentSave}
@@ -4155,6 +4175,7 @@ function PatientWorkspace({
   onSaveContact,
   onSaveDemographics,
   onSaveDeceasedStatus,
+  onUpdatePortalAccountReset,
   onSaveGuardianContact,
   onSaveEmployer,
   onSaveProviderAssignment,
@@ -4183,6 +4204,7 @@ function PatientWorkspace({
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
+  onUpdatePortalAccountReset: (canonicalId: string, oneTimeLinkPending: boolean) => Promise<PatientChartSummary>
   onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
   onSaveEmployer: (canonicalId: string, employer: PatientEmployerUpdate) => Promise<void>
   onSaveProviderAssignment: (canonicalId: string, assignment: PatientProviderAssignmentUpdate) => Promise<void>
@@ -4203,6 +4225,7 @@ function PatientWorkspace({
   const [deceasedStatusSaveStatus, setDeceasedStatusSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   )
+  const [portalResetSaveStatus, setPortalResetSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingGuardianContact, setIsEditingGuardianContact] = useState(false)
   const [guardianContactDraft, setGuardianContactDraft] = useState<PatientGuardianContactUpdate>(() =>
     buildGuardianContactDraft(null),
@@ -4248,6 +4271,7 @@ function PatientWorkspace({
     setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
     setIsEditingDeceasedStatus(false)
     setDeceasedStatusSaveStatus('idle')
+    setPortalResetSaveStatus('idle')
     setGuardianContactDraft(buildGuardianContactDraft(chart))
     setIsEditingGuardianContact(false)
     setGuardianContactSaveStatus('idle')
@@ -4487,6 +4511,20 @@ function PatientWorkspace({
       setDeceasedStatusSaveStatus('saved')
     } catch {
       setDeceasedStatusSaveStatus('error')
+    }
+  }
+
+  async function handlePortalResetClick(oneTimeLinkPending: boolean) {
+    if (!chart) {
+      return
+    }
+
+    setPortalResetSaveStatus('saving')
+    try {
+      await onUpdatePortalAccountReset(chart.canonicalId, oneTimeLinkPending)
+      setPortalResetSaveStatus('saved')
+    } catch {
+      setPortalResetSaveStatus('error')
     }
   }
 
@@ -5141,7 +5179,26 @@ function PatientWorkspace({
                 <Field label="Portal username" value={chart?.portalAccount?.portalUsername} />
                 <Field label="Login username" value={chart?.portalAccount?.portalLoginUsername} />
                 <Field label="Password status" value={chart?.portalAccount?.passwordStatusLabel} />
-                <Field label="One-time reset" value={chart?.portalAccount?.oneTimeLinkPending ? 'Pending' : 'Not pending'} />
+                <Field label="One-time reset" value={chart?.portalAccount?.resetStatusLabel} />
+                <div className="contact-actions">
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => handlePortalResetClick(!chart?.portalAccount?.oneTimeLinkPending)}
+                    disabled={!chart?.portalAccount?.hasAccount || portalResetSaveStatus === 'saving'}
+                  >
+                    <RotateCcw size={15} />
+                    <span>
+                      {portalResetSaveStatus === 'saving'
+                        ? 'Updating reset'
+                        : chart?.portalAccount?.oneTimeLinkPending
+                          ? 'Clear portal reset'
+                          : 'Issue portal reset'}
+                    </span>
+                  </button>
+                  {portalResetSaveStatus === 'saved' && <span className="save-note">Updated</span>}
+                  {portalResetSaveStatus === 'error' && <span className="save-note error">Update failed</span>}
+                </div>
               </InfoPanel>
 
               <InfoPanel title="Deceased Status" icon={HeartPulse}>

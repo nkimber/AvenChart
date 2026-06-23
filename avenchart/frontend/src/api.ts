@@ -258,6 +258,11 @@ export type PatientPortalAccountSummary = {
   passwordStatus?: number | null
   passwordStatusLabel: string
   oneTimeLinkPending: boolean
+  resetStatusLabel: string
+}
+
+export type PatientPortalAccountResetUpdate = {
+  oneTimeLinkPending: boolean
 }
 
 export type PatientSearchResponse = {
@@ -2626,6 +2631,25 @@ export async function updatePatientDeceasedStatus(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient deceased status update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientPortalAccountReset(
+  patientId: string,
+  reset: PatientPortalAccountResetUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/portal-account/reset`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(reset),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient portal account reset update', response.status))
   }
 
   return response.json()
