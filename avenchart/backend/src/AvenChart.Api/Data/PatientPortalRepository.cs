@@ -269,6 +269,59 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessageThreadResponse> GetMessageThreadAsync(
+        Guid sessionId,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ThreadFailure(session, messageId.ToString(), 0, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var anchor = await GetPortalOwnedMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
+        if (anchor is null)
+        {
+            return ThreadFailure(
+                session,
+                messageId.ToString(),
+                0,
+                "Secure message was not found in the signed-in portal mailbox.",
+                metadata);
+        }
+
+        var threadId = ResolvePortalThreadId(anchor.Item, messageId);
+        var threadMessages = await GetPortalMessageThreadAsync(
+            connection,
+            session.PortalUsername,
+            messageId,
+            threadId,
+            cancellationToken);
+
+        return new PatientPortalMessageThreadResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            MessageId: anchor.Item.Id,
+            ThreadId: threadId,
+            AnchorMessage: anchor.Item,
+            ThreadMessageCount: threadMessages.Count,
+            ThreadMessages: threadMessages,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalComposeMessageResponse> ComposeMessageAsync(
         Guid sessionId,
         PatientPortalComposeMessageRequest request,
@@ -568,6 +621,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
 
+    public static PatientPortalMessageThreadResponse MissingSessionHeaderMessageThread(string messageId) =>
+        new(
+            Authenticated: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            DatasetId: "unseeded",
+            DatasetVersion: "unknown",
+            AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+            MessageId: messageId,
+            ThreadId: 0,
+            AnchorMessage: null,
+            ThreadMessageCount: 0,
+            ThreadMessages: Array.Empty<PatientPortalMessageItem>(),
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
         MissingSessionHomeSummary("Patient portal session header was not supplied.");
 
@@ -652,6 +726,31 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         RecipientMessage: null,
         MessageCount: 0,
         SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessageThreadResponse ThreadFailure(
+        PatientPortalSessionResponse session,
+        string messageId,
+        int threadId,
+        string reason,
+        DatasetMetadata? metadata = null) => new(
+        Authenticated: session.Authenticated,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: metadata?.DatasetId ?? "unseeded",
+        DatasetVersion: metadata?.DatasetVersion ?? "unknown",
+        AsOfDate: (metadata?.BaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow)).ToString("yyyy-MM-dd"),
+        MessageId: messageId,
+        ThreadId: threadId,
+        AnchorMessage: null,
+        ThreadMessageCount: 0,
+        ThreadMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -752,22 +851,65 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var assignedTo = ReadNullableString(reader, "assigned_to") ?? string.Empty;
-            messages.Add(new PatientPortalMessageItem(
-                Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
-                Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
-                Title: ReadNullableString(reader, "title") ?? string.Empty,
-                Body: ReadNullableString(reader, "body") ?? string.Empty,
-                Status: ReadNullableString(reader, "message_status") ?? string.Empty,
-                AssignedTo: assignedTo,
-                SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
-                SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
-                RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
-                RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
-                MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
-                ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
-                PortalRelation: ReadNullableString(reader, "portal_relation"),
-                IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted"))));
+            messages.Add(ReadPortalMessageItem(reader));
+        }
+
+        return messages;
+    }
+
+    private static async Task<PortalMailboxMessageRow?> GetPortalOwnedMessageAsync(
+        NpgsqlConnection connection,
+        string portalUsername,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            from portal_mailbox_messages
+            where deleted = 0
+              and owner = @portal_username
+              and (sender_id = @portal_username or recipient_id = @portal_username)
+              and id = @message_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("portal_username", portalUsername);
+        command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new PortalMailboxMessageRow(ReadPortalMessageItem(reader))
+            : null;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageItem>> GetPortalMessageThreadAsync(
+        NpgsqlConnection connection,
+        string portalUsername,
+        int messageId,
+        int threadId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            from portal_mailbox_messages
+            where deleted = 0
+              and owner = @portal_username
+              and (sender_id = @portal_username or recipient_id = @portal_username)
+              and (reply_mail_chain = @thread_id or mail_chain = @thread_id or id = @message_id)
+            order by message_date asc, id asc;
+            """;
+        command.Parameters.AddWithValue("portal_username", portalUsername);
+        command.Parameters.Add("thread_id", NpgsqlDbType.Integer).Value = threadId;
+        command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+
+        var messages = new List<PatientPortalMessageItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            messages.Add(ReadPortalMessageItem(reader));
         }
 
         return messages;
@@ -799,23 +941,35 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var item = new PatientPortalMessageItem(
-            Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
-            Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
-            Title: ReadNullableString(reader, "title") ?? string.Empty,
-            Body: ReadNullableString(reader, "body") ?? string.Empty,
-            Status: ReadNullableString(reader, "message_status") ?? string.Empty,
-            AssignedTo: ReadNullableString(reader, "assigned_to") ?? string.Empty,
-            SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
-            SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
-            RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
-            RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
-            MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
-            ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
-            PortalRelation: ReadNullableString(reader, "portal_relation"),
-            IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")));
+        var item = ReadPortalMessageItem(reader);
 
         return new PortalMailboxMessageRow(item);
+    }
+
+    private static PatientPortalMessageItem ReadPortalMessageItem(NpgsqlDataReader reader) => new(
+        Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+        Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
+        Title: ReadNullableString(reader, "title") ?? string.Empty,
+        Body: ReadNullableString(reader, "body") ?? string.Empty,
+        Status: ReadNullableString(reader, "message_status") ?? string.Empty,
+        AssignedTo: ReadNullableString(reader, "assigned_to") ?? string.Empty,
+        SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
+        SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
+        RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
+        RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
+        MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
+        ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
+        PortalRelation: ReadNullableString(reader, "portal_relation"),
+        IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")));
+
+    private static int ResolvePortalThreadId(PatientPortalMessageItem message, int fallbackMessageId)
+    {
+        if (message.ReplyMailChain > 0)
+        {
+            return message.ReplyMailChain;
+        }
+
+        return message.MailChain > 0 ? message.MailChain : fallbackMessageId;
     }
 
     private static async Task<int> GetNextPortalMailboxIdAsync(

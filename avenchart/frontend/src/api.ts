@@ -2384,6 +2384,27 @@ export type PatientPortalMessagesResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMessageThreadResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  messageId: string
+  threadId: number
+  anchorMessage?: PatientPortalMessageItem | null
+  threadMessageCount: number
+  threadMessages: PatientPortalMessageItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalComposeMessageInput = {
   recipientId?: string | null
   title: string
@@ -2565,6 +2586,22 @@ export async function getPatientPortalMessages(
   })
   if (!response.ok) {
     throw new Error(`Patient portal messages check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMessageThread(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageThreadResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/thread`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message thread check failed with ${response.status}`)
   }
 
   return response.json()

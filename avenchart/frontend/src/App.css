@@ -1052,6 +1052,41 @@
   padding-top: 10px;
 }
 
+.portal-thread-panel {
+  background: #ffffff;
+  border: 1px solid #dce7ea;
+  border-radius: 7px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.portal-thread-message {
+  border-left: 3px solid #72a4a6;
+  display: grid;
+  gap: 5px;
+  padding-left: 10px;
+}
+
+.portal-thread-message div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.portal-thread-message strong {
+  color: #123743;
+  font-size: 13px;
+}
+
+.portal-thread-message span,
+.portal-thread-message p {
+  color: #4d5f68;
+  font-size: 12px;
+  margin: 0;
+}
+
 .document-category-stack {
   display: flex;
   flex-wrap: wrap;

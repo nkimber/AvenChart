@@ -55,6 +55,7 @@ import {
   getPatientDocuments,
   getPatientMessages,
   getPatientPortalHome,
+  getPatientPortalMessageThread,
   getPatientPortalMessages,
   composePatientPortalMessage,
   replyPatientPortalMessage,
@@ -282,6 +283,7 @@ import {
   type PatientMessageReplyInput,
   type PatientMessagesResponse,
   type PatientPortalHomeSummaryResponse,
+  type PatientPortalMessageThreadResponse,
   type PatientPortalMessagesResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
@@ -411,6 +413,7 @@ function App() {
   const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
   const [patientPortalComposeBody, setPatientPortalComposeBody] = useState('Please review my latest care-team follow-up when available.')
   const [patientPortalReplyBodies, setPatientPortalReplyBodies] = useState<Record<string, string>>({})
+  const [patientPortalThreads, setPatientPortalThreads] = useState<Record<string, PatientPortalMessageThreadResponse>>({})
   const [patientPortalStatus, setPatientPortalStatus] =
     useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
   const [patientPortalMessage, setPatientPortalMessage] = useState<string | null>(null)
@@ -3768,6 +3771,7 @@ function App() {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
         setPatientPortalMessages(null)
+        setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(loginResult.failureReason ?? 'Patient portal sign-in was rejected.')
         return
@@ -3779,6 +3783,7 @@ function App() {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
         setPatientPortalMessages(messages)
+        setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(home.failureReason ?? 'Patient portal home was not available.')
         return
@@ -3787,6 +3792,7 @@ function App() {
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
+      setPatientPortalThreads({})
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Portal home ready for ${home.displayName}`)
     } catch (portalError) {
@@ -3794,6 +3800,7 @@ function App() {
       setPatientPortalHome(null)
       setPatientPortalMessages(null)
       setPatientPortalSessionId(null)
+      setPatientPortalThreads({})
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home failed')
     }
   }
@@ -3885,10 +3892,35 @@ function App() {
         : replyResult.failureReason ?? 'Secure message reply was not sent.')
       if (replyResult.created) {
         setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: '' }))
+        const thread = await getPatientPortalMessageThread(patientPortalSessionId, messageId)
+        setPatientPortalThreads((current) => ({ ...current, [messageId]: thread }))
       }
     } catch (portalError) {
       setPatientPortalStatus('error')
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message reply failed')
+    }
+  }
+
+  async function handlePatientPortalThreadLoad(messageId: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before loading a secure-message thread.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const thread = await getPatientPortalMessageThread(patientPortalSessionId, messageId)
+      setPatientPortalThreads((current) => ({ ...current, [messageId]: thread }))
+      setPatientPortalStatus(thread.authenticated ? 'ready' : 'rejected')
+      setPatientPortalMessage(thread.authenticated
+        ? `Secure message thread ready for ${thread.anchorMessage?.title || thread.messageId}`
+        : thread.failureReason ?? 'Secure message thread was not available.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message thread failed')
     }
   }
 
@@ -3905,6 +3937,7 @@ function App() {
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
       setPatientPortalMessages(null)
+      setPatientPortalThreads({})
       setPatientPortalStatus('idle')
       setPatientPortalMessage(`Portal session ended for ${result.displayName || patientPortalUsername}`)
     } catch (portalError) {
@@ -4025,6 +4058,7 @@ function App() {
             composeTitle={patientPortalComposeTitle}
             composeBody={patientPortalComposeBody}
             replyBodies={patientPortalReplyBodies}
+            threads={patientPortalThreads}
             onUsernameChange={setPatientPortalUsername}
             onPasswordChange={setPatientPortalPassword}
             onComposeRecipientChange={setPatientPortalComposeRecipient}
@@ -4035,6 +4069,7 @@ function App() {
             onRefresh={handlePatientPortalHomeRefresh}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
+            onLoadThread={handlePatientPortalThreadLoad}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4404,6 +4439,7 @@ function PatientPortalWorkspace({
   composeTitle,
   composeBody,
   replyBodies,
+  threads,
   onUsernameChange,
   onPasswordChange,
   onComposeRecipientChange,
@@ -4414,6 +4450,7 @@ function PatientPortalWorkspace({
   onRefresh,
   onComposeSubmit,
   onReplySubmit,
+  onLoadThread,
   onLogout,
 }: {
   username: string
@@ -4427,6 +4464,7 @@ function PatientPortalWorkspace({
   composeTitle: string
   composeBody: string
   replyBodies: Record<string, string>
+  threads: Record<string, PatientPortalMessageThreadResponse>
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onComposeRecipientChange: (value: string) => void
@@ -4437,6 +4475,7 @@ function PatientPortalWorkspace({
   onRefresh: () => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
+  onLoadThread: (messageId: string) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
@@ -4589,7 +4628,20 @@ function PatientPortalWorkspace({
                       <div className="message-meta-row">
                         <span>{portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                        <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                       </div>
+                      <div className="contact-actions">
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => void onLoadThread(portalMessage.id)}
+                          disabled={!authenticated || busy}
+                        >
+                          <Mail size={15} />
+                          <span>View thread</span>
+                        </button>
+                      </div>
+                      <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
                       <form
                         className="contact-form portal-reply-form"
                         aria-label={`Reply to ${portalMessage.title}`}
@@ -4647,7 +4699,20 @@ function PatientPortalWorkspace({
                       <div className="message-meta-row">
                         <span>Recipient {portalMessage.recipientId || portalMessage.assignedTo || 'care team'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                        <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                       </div>
+                      <div className="contact-actions">
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => void onLoadThread(portalMessage.id)}
+                          disabled={!authenticated || busy}
+                        >
+                          <Mail size={15} />
+                          <span>View thread</span>
+                        </button>
+                      </div>
+                      <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
                     </article>
                   ))}
                   {(portalMessages?.sentMessages?.length ?? 0) === 0 && (
@@ -4691,6 +4756,47 @@ function PatientPortalWorkspace({
           <div className="empty-state">Sign in to open the patient portal home</div>
         )}
       </section>
+    </section>
+  )
+}
+
+function PatientPortalThreadPanel({
+  thread,
+  portalUsername,
+}: {
+  thread?: PatientPortalMessageThreadResponse
+  portalUsername: string
+}) {
+  if (!thread) {
+    return null
+  }
+
+  if (!thread.authenticated) {
+    return <div className="timeline-placeholder">{thread.failureReason || 'Secure message thread was not available'}</div>
+  }
+
+  return (
+    <section className="portal-thread-panel" aria-label={`Secure message thread ${thread.threadId}`}>
+      <div className="result-meta">
+        <span>Thread {thread.threadId}</span>
+        <span>{thread.threadMessageCount} messages</span>
+      </div>
+      {thread.threadMessages.map((threadMessage) => {
+        const patientAuthored = threadMessage.senderId === portalUsername
+        return (
+          <article className="portal-thread-message" key={threadMessage.id}>
+            <div>
+              <strong>{patientAuthored ? 'Patient reply' : 'Care team message'}</strong>
+              <span>
+                {threadMessage.date} / {patientAuthored
+                  ? `To ${threadMessage.recipientName || threadMessage.recipientId || 'Care team'}`
+                  : `From ${threadMessage.senderName || threadMessage.senderId || threadMessage.assignedTo || 'Care team'}`}
+              </span>
+            </div>
+            <p>{threadMessage.body}</p>
+          </article>
+        )
+      })}
     </section>
   )
 }

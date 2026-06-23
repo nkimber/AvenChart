@@ -90,6 +90,26 @@ public sealed record PatientPortalMessagesResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalMessageThreadResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string MessageId,
+    int ThreadId,
+    PatientPortalMessageItem? AnchorMessage,
+    int ThreadMessageCount,
+    IReadOnlyList<PatientPortalMessageItem> ThreadMessages,
+    string? FailureReason,
+    string SessionSource);
+
 public sealed record PatientPortalMessageItem(
     string Id,
     string Date,
