@@ -1076,6 +1076,28 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
+    public async Task<PatientChartSummary?> UpdatePortalAccountAccessAsync(
+        string patientId,
+        PatientPortalAccountAccessRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patients
+            set portal_enabled = @portalEnabled
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            returning canonical_id;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("portalEnabled", request.PortalEnabled);
+
+        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
     public async Task<PatientChartSummary?> UpdateGuardianContactAsync(
         string patientId,
         PatientGuardianContactUpdateRequest request,
@@ -2378,6 +2400,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         return new PatientPortalAccountSummary(
             PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
+            AccessStatusLabel: PortalAccessStatusLabel(reader.GetBoolean(reader.GetOrdinal("portal_enabled")), portalUsername),
             CmsPortalLogin: ReadNullableString(reader, "cms_portal_login"),
             HasAccount: !string.IsNullOrWhiteSpace(portalUsername),
             PortalUsername: portalUsername,
@@ -2404,6 +2427,16 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         }
 
         return oneTimeLinkPending ? "One-time reset pending" : "No reset pending";
+    }
+
+    private static string PortalAccessStatusLabel(bool portalEnabled, string? portalUsername)
+    {
+        if (portalEnabled)
+        {
+            return "Enabled";
+        }
+
+        return string.IsNullOrWhiteSpace(portalUsername) ? "Pending" : "Access disabled";
     }
 
     private static PatientTimelineItem? ReadAppointment(DbDataReader reader)

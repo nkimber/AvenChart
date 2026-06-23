@@ -102,6 +102,7 @@ public sealed record PatientChartSummary(
 
 public sealed record PatientPortalAccountSummary(
     bool PortalEnabled,
+    string AccessStatusLabel,
     string? CmsPortalLogin,
     bool HasAccount,
     string? PortalUsername,
@@ -113,6 +114,9 @@ public sealed record PatientPortalAccountSummary(
 
 public sealed record PatientPortalAccountResetRequest(
     bool OneTimeLinkPending);
+
+public sealed record PatientPortalAccountAccessRequest(
+    bool PortalEnabled);
 
 public sealed record PatientDuplicateSearchResponse(
     string DatasetId,

@@ -251,6 +251,7 @@ export type PatientChartSummary = PatientListItem & {
 
 export type PatientPortalAccountSummary = {
   portalEnabled: boolean
+  accessStatusLabel: string
   cmsPortalLogin?: string | null
   hasAccount: boolean
   portalUsername?: string | null
@@ -263,6 +264,10 @@ export type PatientPortalAccountSummary = {
 
 export type PatientPortalAccountResetUpdate = {
   oneTimeLinkPending: boolean
+}
+
+export type PatientPortalAccountAccessUpdate = {
+  portalEnabled: boolean
 }
 
 export type PatientSearchResponse = {
@@ -2650,6 +2655,25 @@ export async function updatePatientPortalAccountReset(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient portal account reset update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updatePatientPortalAccountAccess(
+  patientId: string,
+  access: PatientPortalAccountAccessUpdate,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/portal-account/access`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(access),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient portal account access update', response.status))
   }
 
   return response.json()

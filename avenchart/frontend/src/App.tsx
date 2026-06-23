@@ -171,6 +171,7 @@ import {
   updatePatientDemographics,
   updatePatientEmployer,
   updatePatientGuardianContact,
+  updatePatientPortalAccountAccess,
   updatePatientPortalAccountReset,
   updatePatientProviderAssignment,
   updateProcedureOrder,
@@ -1355,6 +1356,24 @@ function App() {
     } catch (saveError) {
       setChartStatus('error')
       const message = saveError instanceof Error ? saveError.message : 'Patient portal account reset update failed'
+      setPatientError(message)
+      throw saveError
+    }
+  }
+
+  async function handlePatientPortalAccountAccess(patientId: string, portalEnabled: boolean) {
+    setChartStatus('loading')
+    setPatientError(null)
+
+    try {
+      const sessionId = getActiveLegacyEhrSessionId()
+      const updated = await updatePatientPortalAccountAccess(patientId, { portalEnabled }, sessionId)
+      setChart(updated)
+      setChartStatus('ready')
+      return updated
+    } catch (saveError) {
+      setChartStatus('error')
+      const message = saveError instanceof Error ? saveError.message : 'Patient portal account access update failed'
       setPatientError(message)
       throw saveError
     }
@@ -3796,6 +3815,7 @@ function App() {
             onSaveContact={handlePatientContactSave}
             onSaveDemographics={handlePatientDemographicsSave}
             onSaveDeceasedStatus={handlePatientDeceasedStatusSave}
+            onUpdatePortalAccountAccess={handlePatientPortalAccountAccess}
             onUpdatePortalAccountReset={handlePatientPortalAccountReset}
             onSaveGuardianContact={handlePatientGuardianContactSave}
             onSaveEmployer={handlePatientEmployerSave}
@@ -4175,6 +4195,7 @@ function PatientWorkspace({
   onSaveContact,
   onSaveDemographics,
   onSaveDeceasedStatus,
+  onUpdatePortalAccountAccess,
   onUpdatePortalAccountReset,
   onSaveGuardianContact,
   onSaveEmployer,
@@ -4204,6 +4225,7 @@ function PatientWorkspace({
   onSaveContact: (canonicalId: string, contact: PatientContactUpdate) => Promise<void>
   onSaveDemographics: (canonicalId: string, demographics: PatientDemographicsUpdate) => Promise<void>
   onSaveDeceasedStatus: (canonicalId: string, status: PatientDeceasedStatusUpdate) => Promise<void>
+  onUpdatePortalAccountAccess: (canonicalId: string, portalEnabled: boolean) => Promise<PatientChartSummary>
   onUpdatePortalAccountReset: (canonicalId: string, oneTimeLinkPending: boolean) => Promise<PatientChartSummary>
   onSaveGuardianContact: (canonicalId: string, guardianContact: PatientGuardianContactUpdate) => Promise<void>
   onSaveEmployer: (canonicalId: string, employer: PatientEmployerUpdate) => Promise<void>
@@ -4225,6 +4247,7 @@ function PatientWorkspace({
   const [deceasedStatusSaveStatus, setDeceasedStatusSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   )
+  const [portalAccessSaveStatus, setPortalAccessSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [portalResetSaveStatus, setPortalResetSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isEditingGuardianContact, setIsEditingGuardianContact] = useState(false)
   const [guardianContactDraft, setGuardianContactDraft] = useState<PatientGuardianContactUpdate>(() =>
@@ -4271,6 +4294,7 @@ function PatientWorkspace({
     setDeceasedStatusDraft(buildDeceasedStatusDraft(chart))
     setIsEditingDeceasedStatus(false)
     setDeceasedStatusSaveStatus('idle')
+    setPortalAccessSaveStatus('idle')
     setPortalResetSaveStatus('idle')
     setGuardianContactDraft(buildGuardianContactDraft(chart))
     setIsEditingGuardianContact(false)
@@ -4525,6 +4549,20 @@ function PatientWorkspace({
       setPortalResetSaveStatus('saved')
     } catch {
       setPortalResetSaveStatus('error')
+    }
+  }
+
+  async function handlePortalAccessClick(portalEnabled: boolean) {
+    if (!chart) {
+      return
+    }
+
+    setPortalAccessSaveStatus('saving')
+    try {
+      await onUpdatePortalAccountAccess(chart.canonicalId, portalEnabled)
+      setPortalAccessSaveStatus('saved')
+    } catch {
+      setPortalAccessSaveStatus('error')
     }
   }
 
@@ -5173,7 +5211,7 @@ function PatientWorkspace({
               </InfoPanel>
 
               <InfoPanel title="Portal Account" icon={KeyRound}>
-                <Field label="Portal access" value={chart?.portalAccount?.portalEnabled ? 'Enabled' : 'Pending'} />
+                <Field label="Portal access" value={chart?.portalAccount?.accessStatusLabel} />
                 <Field label="CMS login" value={chart?.portalAccount?.cmsPortalLogin} />
                 <Field label="Onsite account" value={chart?.portalAccount?.hasAccount ? 'Provisioned' : 'Not provisioned'} />
                 <Field label="Portal username" value={chart?.portalAccount?.portalUsername} />
@@ -5181,6 +5219,21 @@ function PatientWorkspace({
                 <Field label="Password status" value={chart?.portalAccount?.passwordStatusLabel} />
                 <Field label="One-time reset" value={chart?.portalAccount?.resetStatusLabel} />
                 <div className="contact-actions">
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => handlePortalAccessClick(!chart?.portalAccount?.portalEnabled)}
+                    disabled={!chart?.portalAccount?.hasAccount || portalAccessSaveStatus === 'saving'}
+                  >
+                    <ShieldCheck size={15} />
+                    <span>
+                      {portalAccessSaveStatus === 'saving'
+                        ? 'Updating access'
+                        : chart?.portalAccount?.portalEnabled
+                          ? 'Revoke portal access'
+                          : 'Grant portal access'}
+                    </span>
+                  </button>
                   <button
                     className="icon-text-button"
                     type="button"
@@ -5196,6 +5249,8 @@ function PatientWorkspace({
                           : 'Issue portal reset'}
                     </span>
                   </button>
+                  {portalAccessSaveStatus === 'saved' && <span className="save-note">Access updated</span>}
+                  {portalAccessSaveStatus === 'error' && <span className="save-note error">Access update failed</span>}
                   {portalResetSaveStatus === 'saved' && <span className="save-note">Updated</span>}
                   {portalResetSaveStatus === 'error' && <span className="save-note error">Update failed</span>}
                 </div>

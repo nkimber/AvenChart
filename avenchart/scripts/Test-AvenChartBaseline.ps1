@@ -493,6 +493,66 @@ catch {
 }
 
 try {
+    $accessHeaders = Get-AdministrationHeaders
+    $restorePortalAccess = $false
+    try {
+        $revokeAccess = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004/portal-account/access" `
+            -Method Put `
+            -Headers $accessHeaders `
+            -ContentType "application/json" `
+            -Body (@{ portalEnabled = $false } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+        $restorePortalAccess = $true
+
+        $grantAccess = Invoke-RestMethod `
+            -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004/portal-account/access" `
+            -Method Put `
+            -Headers $accessHeaders `
+            -ContentType "application/json" `
+            -Body (@{ portalEnabled = $true } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+        $restorePortalAccess = $false
+
+        $revoked = $revokeAccess.portalAccount
+        $granted = $grantAccess.portalAccount
+        $portalAccessPassed = -not $revokeAccess.portalEnabled `
+            -and -not $revoked.portalEnabled `
+            -and $revoked.accessStatusLabel -eq "Access disabled" `
+            -and $revoked.hasAccount `
+            -and $revoked.cmsPortalLogin -eq "mod-pat-0004@example.test" `
+            -and $grantAccess.portalEnabled `
+            -and $granted.portalEnabled `
+            -and $granted.accessStatusLabel -eq "Enabled" `
+            -and $granted.hasAccount `
+            -and $granted.cmsPortalLogin -eq "mod-pat-0004@example.test"
+        Add-Check -Name "anchor patient portal access lifecycle" -Result $(if ($portalAccessPassed) { "passed" } else { "failed" }) -Details @{
+            revoked = $revoked
+            granted = $granted
+        }
+    }
+    finally {
+        if ($restorePortalAccess) {
+            try {
+                Invoke-RestMethod `
+                    -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004/portal-account/access" `
+                    -Method Put `
+                    -Headers $accessHeaders `
+                    -ContentType "application/json" `
+                    -Body (@{ portalEnabled = $true } | ConvertTo-Json -Depth 5) `
+                    -TimeoutSec 20 | Out-Null
+            }
+            catch {
+                # The outer catch records the smoke failure; this best-effort restore keeps the anchor reusable.
+            }
+        }
+    }
+}
+catch {
+    Add-Check -Name "anchor patient portal access lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $historyChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $historyPassed = $null -ne $historyChart.history `
         -and $historyChart.history.tobacco -eq "Former smoker - quit 2019" `
