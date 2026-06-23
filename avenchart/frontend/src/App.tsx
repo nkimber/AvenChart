@@ -16,6 +16,7 @@ import {
   FlaskConical,
   FolderOpen,
   HeartPulse,
+  KeyRound,
   LogIn,
   Mail,
   MapPin,
@@ -5131,6 +5132,16 @@ function PatientWorkspace({
                     </div>
                   </>
                 )}
+              </InfoPanel>
+
+              <InfoPanel title="Portal Account" icon={KeyRound}>
+                <Field label="Portal access" value={chart?.portalAccount?.portalEnabled ? 'Enabled' : 'Pending'} />
+                <Field label="CMS login" value={chart?.portalAccount?.cmsPortalLogin} />
+                <Field label="Onsite account" value={chart?.portalAccount?.hasAccount ? 'Provisioned' : 'Not provisioned'} />
+                <Field label="Portal username" value={chart?.portalAccount?.portalUsername} />
+                <Field label="Login username" value={chart?.portalAccount?.portalLoginUsername} />
+                <Field label="Password status" value={chart?.portalAccount?.passwordStatusLabel} />
+                <Field label="One-time reset" value={chart?.portalAccount?.oneTimeLinkPending ? 'Pending' : 'Not pending'} />
               </InfoPanel>
 
               <InfoPanel title="Deceased Status" icon={HeartPulse}>

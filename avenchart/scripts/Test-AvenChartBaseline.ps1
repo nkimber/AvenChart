@@ -434,6 +434,27 @@ catch {
 }
 
 try {
+    $portalAccountChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0004" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $portalAccount = $portalAccountChart.portalAccount
+    $portalAccountPassed = $null -ne $portalAccount `
+        -and $portalAccount.portalEnabled `
+        -and $portalAccount.hasAccount `
+        -and $portalAccount.cmsPortalLogin -eq "mod-pat-0004@example.test" `
+        -and $portalAccount.portalUsername -eq "mod-pat-0004@example.test" `
+        -and $portalAccount.portalLoginUsername -eq "mod-pat-0004@example.test" `
+        -and $portalAccount.passwordStatus -eq 1 `
+        -and $portalAccount.passwordStatusLabel -eq "Patient-managed password" `
+        -and -not $portalAccount.oneTimeLinkPending
+    Add-Check -Name "anchor patient portal account" -Result $(if ($portalAccountPassed) { "passed" } else { "failed" }) -Details @{
+        canonicalId = $portalAccountChart.canonicalId
+        portalAccount = $portalAccount
+    }
+}
+catch {
+    Add-Check -Name "anchor patient portal account" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $historyChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $historyPassed = $null -ne $historyChart.history `
         -and $historyChart.history.tobacco -eq "Former smoker - quit 2019" `

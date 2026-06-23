@@ -154,6 +154,11 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 pe.postal_code as employer_postal_code,
                 pe.country as employer_country,
                 p.portal_enabled,
+                p.cms_portal_login,
+                ppa.portal_username as portal_account_username,
+                ppa.portal_login_username as portal_account_login_username,
+                ppa.password_status as portal_account_password_status,
+                ppa.one_time_token as portal_account_one_time_token,
                 p.registration_date,
                 p.deceased_date,
                 p.deceased_reason,
@@ -185,6 +190,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 latest_enc.facility_name as encounter_facility
             from patients p
             left join patient_employers pe on pe.patient_id = p.canonical_id
+            left join patient_portal_accounts ppa on ppa.patient_id = p.canonical_id
             left join facilities f on f.id = p.facility_id
             left join staff s on s.id = p.provider_id
             left join lateral ({CountsSql("p.legacy_pid")}) counts on true
@@ -286,6 +292,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 EmployerPostalCode: ReadNullableString(reader, "employer_postal_code"),
                 EmployerCountry: ReadNullableString(reader, "employer_country"),
                 PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
+                PortalAccount: ReadPortalAccount(reader),
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
                 DeceasedReason: ReadNullableString(reader, "deceased_reason"),
@@ -2326,6 +2333,31 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         Problems: ReadInt(reader, "problem_count"),
         Allergies: ReadInt(reader, "allergy_count"),
         Medications: ReadInt(reader, "medication_count"));
+
+    private static PatientPortalAccountSummary ReadPortalAccount(DbDataReader reader)
+    {
+        var passwordStatus = ReadNullableInt(reader, "portal_account_password_status");
+        var oneTimeToken = ReadNullableString(reader, "portal_account_one_time_token");
+        var portalUsername = ReadNullableString(reader, "portal_account_username");
+
+        return new PatientPortalAccountSummary(
+            PortalEnabled: reader.GetBoolean(reader.GetOrdinal("portal_enabled")),
+            CmsPortalLogin: ReadNullableString(reader, "cms_portal_login"),
+            HasAccount: !string.IsNullOrWhiteSpace(portalUsername),
+            PortalUsername: portalUsername,
+            PortalLoginUsername: ReadNullableString(reader, "portal_account_login_username"),
+            PasswordStatus: passwordStatus,
+            PasswordStatusLabel: PortalPasswordStatusLabel(passwordStatus),
+            OneTimeLinkPending: !string.IsNullOrWhiteSpace(oneTimeToken));
+    }
+
+    private static string PortalPasswordStatusLabel(int? status) => status switch
+    {
+        0 => "Temporary password issued",
+        1 => "Patient-managed password",
+        null => "No account provisioned",
+        _ => $"Status {status.Value.ToString(CultureInfo.InvariantCulture)}"
+    };
 
     private static PatientTimelineItem? ReadAppointment(DbDataReader reader)
     {

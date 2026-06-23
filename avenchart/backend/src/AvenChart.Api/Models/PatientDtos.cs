@@ -84,6 +84,7 @@ public sealed record PatientChartSummary(
     string? EmployerPostalCode,
     string? EmployerCountry,
     bool PortalEnabled,
+    PatientPortalAccountSummary? PortalAccount,
     string RegistrationDate,
     string? DeceasedDate,
     string? DeceasedReason,
@@ -98,6 +99,16 @@ public sealed record PatientChartSummary(
     PatientActivityCounts Counts,
     PatientTimelineItem? NextAppointment,
     PatientTimelineItem? LatestEncounter);
+
+public sealed record PatientPortalAccountSummary(
+    bool PortalEnabled,
+    string? CmsPortalLogin,
+    bool HasAccount,
+    string? PortalUsername,
+    string? PortalLoginUsername,
+    int? PasswordStatus,
+    string PasswordStatusLabel,
+    bool OneTimeLinkPending);
 
 public sealed record PatientDuplicateSearchResponse(
     string DatasetId,

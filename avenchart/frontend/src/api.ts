@@ -237,6 +237,7 @@ export type PatientChartSummary = PatientListItem & {
   employerPostalCode?: string | null
   employerCountry?: string | null
   portalEnabled: boolean
+  portalAccount?: PatientPortalAccountSummary | null
   registrationDate: string
   deceasedDate?: string | null
   deceasedReason?: string | null
@@ -246,6 +247,17 @@ export type PatientChartSummary = PatientListItem & {
   duplicateCandidates: PatientDuplicateCandidate[]
   nextAppointment?: PatientTimelineItem | null
   latestEncounter?: PatientTimelineItem | null
+}
+
+export type PatientPortalAccountSummary = {
+  portalEnabled: boolean
+  cmsPortalLogin?: string | null
+  hasAccount: boolean
+  portalUsername?: string | null
+  portalLoginUsername?: string | null
+  passwordStatus?: number | null
+  passwordStatusLabel: string
+  oneTimeLinkPending: boolean
 }
 
 export type PatientSearchResponse = {

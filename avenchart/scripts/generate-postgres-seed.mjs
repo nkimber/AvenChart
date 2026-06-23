@@ -249,6 +249,7 @@ drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
 drop table if exists patient_histories;
 drop table if exists patient_employers;
+drop table if exists patient_portal_accounts;
 drop table if exists patients;
 drop table if exists access_user_memberships;
 drop table if exists auth_sessions;
@@ -412,9 +413,19 @@ create table patients (
   provider_id integer references staff(id),
   facility_id integer references facilities(id),
   portal_enabled boolean not null,
+  cms_portal_login text,
   registration_date date not null,
   deceased_date date,
   deceased_reason text
+);
+
+create table patient_portal_accounts (
+  patient_id text primary key references patients(canonical_id) on delete cascade,
+  pid integer not null unique,
+  portal_username text not null,
+  portal_login_username text,
+  password_status integer not null,
+  one_time_token text
 );
 
 create table patient_employers (
@@ -1078,6 +1089,7 @@ copyRows('patients', [
   'provider_id',
   'facility_id',
   'portal_enabled',
+  'cms_portal_login',
   'registration_date',
   'deceased_date',
   'deceased_reason',
@@ -1126,9 +1138,26 @@ copyRows('patients', [
   patient.providerId,
   patient.facilityId,
   patient.portalEnabled,
+  patient.cmsPortalLogin,
   patient.registrationDate,
   null,
   null,
+]))
+
+copyRows('patient_portal_accounts', [
+  'patient_id',
+  'pid',
+  'portal_username',
+  'portal_login_username',
+  'password_status',
+  'one_time_token',
+], dataset.patients.filter((patient) => patient.portalAccount).map((patient) => [
+  patient.canonicalId,
+  patient.pid,
+  patient.portalAccount.portalUsername,
+  patient.portalAccount.portalLoginUsername,
+  patient.portalAccount.passwordStatus,
+  patient.portalAccount.oneTimeToken,
 ]))
 
 copyRows('patient_employers', [
@@ -2076,6 +2105,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     claims: dataset.claims.length,
     paymentSessions: dataset.paymentSessions.length,
     paymentActivities: dataset.paymentActivities.length,
+    portalAccounts: dataset.patients.filter((patient) => patient.portalAccount).length,
     labOrders: dataset.labOrders.length,
     labReports: dataset.labReports.length,
     labResults: dataset.labResults.length,
