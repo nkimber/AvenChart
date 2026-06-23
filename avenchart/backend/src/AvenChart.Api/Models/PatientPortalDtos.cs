@@ -71,6 +71,25 @@ public sealed record PatientPortalHomeAppointmentSummary(
     string? FacilityName,
     string? Comments);
 
+public sealed record PatientPortalAppointmentsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int UpcomingAppointmentCount,
+    IReadOnlyList<PatientPortalHomeAppointmentSummary> UpcomingAppointments,
+    int PastAppointmentCount,
+    IReadOnlyList<PatientPortalHomeAppointmentSummary> PastAppointments,
+    string? FailureReason,
+    string SessionSource);
+
 public sealed record PatientPortalMessagesResponse(
     bool Authenticated,
     Guid? SessionId,

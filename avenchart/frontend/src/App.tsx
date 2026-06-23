@@ -55,6 +55,7 @@ import {
   getPatientDocumentContent,
   getPatientDocuments,
   getPatientMessages,
+  getPatientPortalAppointments,
   getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalMessageThread,
@@ -281,6 +282,7 @@ import {
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
+  type PatientPortalAppointmentsResponse,
   type PatientPortalDocumentsResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
@@ -414,6 +416,7 @@ function App() {
   const [patientPortalPassword, setPatientPortalPassword] = useState('PortalPass207!')
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
+  const [patientPortalAppointments, setPatientPortalAppointments] = useState<PatientPortalAppointmentsResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3777,6 +3780,7 @@ function App() {
       if (!loginResult.authenticated || !loginResult.sessionId) {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
+        setPatientPortalAppointments(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
@@ -3786,11 +3790,13 @@ function App() {
       }
 
       const home = await getPatientPortalHome(loginResult.sessionId)
+      const appointments = home.authenticated ? await getPatientPortalAppointments(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
+        setPatientPortalAppointments(appointments)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
@@ -3801,6 +3807,7 @@ function App() {
 
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
+      setPatientPortalAppointments(appointments)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
@@ -3809,6 +3816,7 @@ function App() {
     } catch (portalError) {
       setPatientPortalStatus('error')
       setPatientPortalHome(null)
+      setPatientPortalAppointments(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
@@ -3827,9 +3835,11 @@ function App() {
 
     try {
       const home = await getPatientPortalHome(patientPortalSessionId)
+      const appointments = home.authenticated ? await getPatientPortalAppointments(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
+      setPatientPortalAppointments(appointments)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
@@ -4109,6 +4119,7 @@ function App() {
       const result = await endPatientPortalSession(patientPortalSessionId)
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
+      setPatientPortalAppointments(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
@@ -4227,6 +4238,7 @@ function App() {
             message={patientPortalMessage}
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
+            portalAppointments={patientPortalAppointments}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4613,6 +4625,7 @@ function PatientPortalWorkspace({
   message,
   sessionId,
   home,
+  portalAppointments,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4643,6 +4656,7 @@ function PatientPortalWorkspace({
   message: string | null
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
+  portalAppointments: PatientPortalAppointmentsResponse | null
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -4687,6 +4701,10 @@ function PatientPortalWorkspace({
   const [selectedPortalDocumentIds, setSelectedPortalDocumentIds] = useState<number[]>([])
   const selectedPortalDocumentIdSet = useMemo(() => new Set(selectedPortalDocumentIds), [selectedPortalDocumentIds])
   const selectedPortalDocumentCount = selectedPortalDocumentIds.length
+  const upcomingPortalAppointments = portalAppointments?.upcomingAppointments ?? home?.upcomingAppointments ?? []
+  const pastPortalAppointments = portalAppointments?.pastAppointments ?? []
+  const upcomingPortalAppointmentCount = portalAppointments?.upcomingAppointmentCount ?? home?.upcomingAppointmentCount ?? 0
+  const pastPortalAppointmentCount = portalAppointments?.pastAppointmentCount ?? 0
 
   useEffect(() => {
     const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
@@ -5185,12 +5203,19 @@ function PatientPortalWorkspace({
                 </div>
               </section>
 
-              <InfoPanel title="Upcoming Appointments" icon={CalendarDays}>
-                <MetricRow label="Upcoming" value={home.upcomingAppointmentCount} />
-                {home.upcomingAppointments.length === 0 && (
+              <section className="info-panel messages-panel" aria-label="Patient portal appointments">
+                <div className="panel-heading">
+                  <CalendarDays size={17} />
+                  <h3>Appointments</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Upcoming</span>
+                  <span>{upcomingPortalAppointmentCount} appointments</span>
+                </div>
+                {upcomingPortalAppointments.length === 0 && (
                   <div className="empty-state inline">No upcoming appointments</div>
                 )}
-                {home.upcomingAppointments.map((appointment) => (
+                {upcomingPortalAppointments.map((appointment) => (
                   <article className="clinical-item" key={appointment.id}>
                     <div>
                       <strong>{appointment.title}</strong>
@@ -5206,7 +5231,30 @@ function PatientPortalWorkspace({
                     <Field label="Facility" value={appointment.facilityName} />
                   </article>
                 ))}
-              </InfoPanel>
+                <div className="result-meta">
+                  <span>Past</span>
+                  <span>{pastPortalAppointmentCount} appointments</span>
+                </div>
+                {pastPortalAppointments.length === 0 && (
+                  <div className="empty-state inline">No past appointments</div>
+                )}
+                {pastPortalAppointments.map((appointment) => (
+                  <article className="clinical-item" key={appointment.id}>
+                    <div>
+                      <strong>{appointment.title}</strong>
+                      <span>
+                        {appointment.date} {appointment.startTime}
+                      </span>
+                    </div>
+                    <div>
+                      <span>{appointment.categoryName || 'Appointment'}</span>
+                      <span>{appointment.providerName || 'No provider'}</span>
+                    </div>
+                    <Field label="Status" value={appointment.status} />
+                    <Field label="Facility" value={appointment.facilityName} />
+                  </article>
+                ))}
+              </section>
 
               <InfoPanel title="Patient" icon={UserRound}>
                 <Field label="Patient ID" value={home.pubpid} />

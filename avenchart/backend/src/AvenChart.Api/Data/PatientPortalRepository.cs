@@ -227,6 +227,51 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalAppointmentsResponse> GetAppointmentsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyAppointments(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var upcomingAppointments = await GetPortalAppointmentsAsync(
+            connection,
+            session.LegacyPid.Value,
+            metadata.BaseDate,
+            PortalAppointmentWindow.Upcoming,
+            cancellationToken);
+        var pastAppointments = await GetPortalAppointmentsAsync(
+            connection,
+            session.LegacyPid.Value,
+            metadata.BaseDate,
+            PortalAppointmentWindow.Past,
+            cancellationToken);
+
+        return new PatientPortalAppointmentsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            UpcomingAppointmentCount: upcomingAppointments.TotalCount,
+            UpcomingAppointments: upcomingAppointments.Items,
+            PastAppointmentCount: pastAppointments.TotalCount,
+            PastAppointments: pastAppointments.Items,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalMessagesResponse> GetMessagesAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -887,6 +932,46 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalAppointmentsResponse EmptyAppointments(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        UpcomingAppointmentCount: 0,
+        UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        PastAppointmentCount: 0,
+        PastAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalAppointmentsResponse MissingSessionAppointments(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        UpcomingAppointmentCount: 0,
+        UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        PastAppointmentCount: 0,
+        PastAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     private static PatientPortalMessagesResponse EmptyMessages(
         PatientPortalSessionResponse session,
         string reason) => new(
@@ -1001,6 +1086,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
         MissingSessionHomeSummary("Patient portal session header was not supplied.");
+
+    public static PatientPortalAppointmentsResponse MissingSessionHeaderAppointments() =>
+        MissingSessionAppointments("Patient portal session header was not supplied.");
 
     public static PatientPortalComposeMessageResponse MissingSessionHeaderComposeMessage() =>
         new(
@@ -1747,9 +1835,23 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         int pid,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
+        => await GetPortalAppointmentsAsync(
+            connection,
+            pid,
+            asOfDate,
+            PortalAppointmentWindow.Upcoming,
+            cancellationToken);
+
+    private static async Task<AppointmentSummaryRows> GetPortalAppointmentsAsync(
+        NpgsqlConnection connection,
+        int pid,
+        DateOnly asOfDate,
+        PortalAppointmentWindow window,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = window == PortalAppointmentWindow.Upcoming
+            ? """
             select
               a.id,
               a.appointment_date,
@@ -1767,6 +1869,26 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             where a.pid = @pid
               and a.appointment_date >= @as_of_date
             order by a.appointment_date, a.start_time, a.id
+            limit 10;
+            """
+            : """
+            select
+              a.id,
+              a.appointment_date,
+              a.start_time,
+              coalesce(a.title, 'Appointment') as title,
+              a.status,
+              a.category_id,
+              trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+              f.name as facility_name,
+              a.comments,
+              count(*) over ()::int as total_count
+            from appointments a
+            left join staff s on s.id = a.provider_id
+            left join facilities f on f.id = a.facility_id
+            where a.pid = @pid
+              and a.appointment_date < @as_of_date
+            order by a.appointment_date desc, a.start_time desc, a.id desc
             limit 10;
             """;
         command.Parameters.AddWithValue("pid", pid);
@@ -1926,6 +2048,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Inbox,
         Sent,
         All
+    }
+
+    private enum PortalAppointmentWindow
+    {
+        Upcoming,
+        Past
     }
 
     private sealed record PortalDownloadDocumentRow(PatientPortalDocumentItem Item, byte[] Content);

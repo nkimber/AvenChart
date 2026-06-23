@@ -2347,6 +2347,26 @@ export type PatientPortalHomeSummaryResponse = {
   sessionSource: string
 }
 
+export type PatientPortalAppointmentsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  upcomingAppointmentCount: number
+  upcomingAppointments: PatientPortalHomeAppointmentSummary[]
+  pastAppointmentCount: number
+  pastAppointments: PatientPortalHomeAppointmentSummary[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalMessageItem = {
   id: string
   date: string
@@ -2680,6 +2700,21 @@ export async function getPatientPortalHome(
   })
   if (!response.ok) {
     throw new Error(`Patient portal home check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalAppointments(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal appointments check failed with ${response.status}`)
   }
 
   return response.json()
