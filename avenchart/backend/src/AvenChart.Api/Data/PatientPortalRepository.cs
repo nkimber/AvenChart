@@ -526,6 +526,71 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalReadMessageResponse> MarkMessageReadAsync(
+        Guid sessionId,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ReadFailure(session, messageId.ToString(), session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var message = await GetPortalOwnedMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
+        if (message is null)
+        {
+            return ReadFailure(
+                session,
+                messageId.ToString(),
+                "Secure message was not found in the signed-in portal mailbox.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update portal_mailbox_messages
+            set message_status = 'Read',
+                activity = 1
+            where id = @message_id
+              and owner = @portal_username
+              and deleted = 0
+            returning id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted;
+            """;
+        command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+        command.Parameters.AddWithValue("portal_username", session.PortalUsername);
+
+        PatientPortalMessageItem? readMessage = null;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                readMessage = ReadPortalMessageItem(reader);
+            }
+        }
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalReadMessageResponse(
+            Authenticated: true,
+            MarkedRead: readMessage is not null,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            MessageId: message.Item.Id,
+            Message: readMessage,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: readMessage is null ? "Secure message was not marked read." : null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalDeleteMessageResponse> DeleteMessageAsync(
         Guid sessionId,
         int messageId,
@@ -761,6 +826,24 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             FailureReason: "Patient portal session header was not supplied.",
             SessionSource: SessionSource);
 
+    public static PatientPortalReadMessageResponse MissingSessionHeaderReadMessage(string messageId) =>
+        new(
+            Authenticated: false,
+            MarkedRead: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            MessageId: messageId,
+            Message: null,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     public static PatientPortalDeleteMessageResponse MissingSessionHeaderDeleteMessage(string messageId) =>
         new(
             Authenticated: false,
@@ -819,6 +902,26 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         OriginalMessage: null,
         SentMessage: null,
         RecipientMessage: null,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalReadMessageResponse ReadFailure(
+        PatientPortalSessionResponse session,
+        string messageId,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        MarkedRead: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        MessageId: messageId,
+        Message: null,
         MessageCount: 0,
         SentMessageCount: 0,
         FailureReason: reason,

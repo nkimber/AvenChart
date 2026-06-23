@@ -59,6 +59,7 @@ import {
   getPatientPortalMessages,
   composePatientPortalMessage,
   replyPatientPortalMessage,
+  readPatientPortalMessage,
   deletePatientPortalMessage,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
@@ -3925,6 +3926,36 @@ function App() {
     }
   }
 
+  async function handlePatientPortalMessageRead(messageId: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before marking a secure message read.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const readResult = await readPatientPortalMessage(patientPortalSessionId, messageId)
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      if (patientPortalThreads[messageId]) {
+        const thread = await getPatientPortalMessageThread(patientPortalSessionId, messageId)
+        setPatientPortalThreads((current) => ({ ...current, [messageId]: thread }))
+      }
+      setPatientPortalStatus(readResult.markedRead ? 'ready' : 'rejected')
+      setPatientPortalMessage(readResult.markedRead
+        ? `Secure message marked read for ${readResult.message?.title || readResult.messageId}`
+        : readResult.failureReason ?? 'Secure message was not marked read.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message read-status update failed')
+    }
+  }
+
   async function handlePatientPortalMessageDelete(messageId: string) {
     if (!patientPortalSessionId) {
       setPatientPortalStatus('rejected')
@@ -4107,6 +4138,7 @@ function App() {
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
             onLoadThread={handlePatientPortalThreadLoad}
+            onMarkRead={handlePatientPortalMessageRead}
             onDeleteMessage={handlePatientPortalMessageDelete}
             onLogout={handlePatientPortalHomeLogout}
           />
@@ -4489,6 +4521,7 @@ function PatientPortalWorkspace({
   onComposeSubmit,
   onReplySubmit,
   onLoadThread,
+  onMarkRead,
   onDeleteMessage,
   onLogout,
 }: {
@@ -4515,6 +4548,7 @@ function PatientPortalWorkspace({
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
   onLoadThread: (messageId: string) => Promise<void>
+  onMarkRead: (messageId: string) => Promise<void>
   onDeleteMessage: (messageId: string) => Promise<void>
   onLogout: () => Promise<void>
 }) {
@@ -4680,6 +4714,17 @@ function PatientPortalWorkspace({
                           <Mail size={15} />
                           <span>View thread</span>
                         </button>
+                        {portalMessage.status === 'New' && (
+                          <button
+                            className="icon-text-button"
+                            type="button"
+                            onClick={() => void onMarkRead(portalMessage.id)}
+                            disabled={!authenticated || busy}
+                          >
+                            <Check size={15} />
+                            <span>Mark read</span>
+                          </button>
+                        )}
                         <button
                           className="icon-text-button"
                           type="button"
@@ -4760,6 +4805,17 @@ function PatientPortalWorkspace({
                           <Mail size={15} />
                           <span>View thread</span>
                         </button>
+                        {portalMessage.status === 'New' && (
+                          <button
+                            className="icon-text-button"
+                            type="button"
+                            onClick={() => void onMarkRead(portalMessage.id)}
+                            disabled={!authenticated || busy}
+                          >
+                            <Check size={15} />
+                            <span>Mark read</span>
+                          </button>
+                        )}
                         <button
                           className="icon-text-button"
                           type="button"
