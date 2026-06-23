@@ -2270,6 +2270,43 @@ export type AuthSessionResponse = {
   sessionSource: string
 }
 
+export type PatientPortalLoginInput = {
+  username: string
+  password: string
+}
+
+export type PatientPortalLoginResponse = {
+  authenticated: boolean
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  failureReason?: string | null
+  sessionId?: string | null
+  sessionCreatedAt?: string | null
+  sessionExpiresAt?: string | null
+  sessionSource: string
+}
+
+export type PatientPortalSessionResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  createdAt?: string | null
+  lastSeenAt?: string | null
+  expiresAt?: string | null
+  endedAt?: string | null
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -2339,6 +2376,38 @@ export async function getCurrentSession(sessionId: string, signal?: AbortSignal)
   })
   if (!response.ok) {
     throw new Error(`Session readiness check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function loginPatientPortal(
+  input: PatientPortalLoginInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalLoginResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal login check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal session check failed with ${response.status}`)
   }
 
   return response.json()

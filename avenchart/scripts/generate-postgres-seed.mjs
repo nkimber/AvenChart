@@ -249,6 +249,7 @@ drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
 drop table if exists patient_histories;
 drop table if exists patient_employers;
+drop table if exists patient_portal_sessions;
 drop table if exists patient_portal_accounts;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -424,8 +425,23 @@ create table patient_portal_accounts (
   pid integer not null unique,
   portal_username text not null,
   portal_login_username text,
+  password_salt text not null,
+  password_hash text not null,
   password_status integer not null,
   one_time_token text
+);
+
+create table patient_portal_sessions (
+  id uuid primary key,
+  patient_id text not null references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  portal_username text not null,
+  portal_login_username text not null,
+  created_at timestamptz not null,
+  last_seen_at timestamptz not null,
+  expires_at timestamptz not null,
+  ended_at timestamptz,
+  session_source text not null default 'avenchart-portal'
 );
 
 create table patient_employers (
@@ -1149,6 +1165,8 @@ copyRows('patient_portal_accounts', [
   'pid',
   'portal_username',
   'portal_login_username',
+  'password_salt',
+  'password_hash',
   'password_status',
   'one_time_token',
 ], dataset.patients.filter((patient) => patient.portalAccount).map((patient) => [
@@ -1156,6 +1174,8 @@ copyRows('patient_portal_accounts', [
   patient.pid,
   patient.portalAccount.portalUsername,
   patient.portalAccount.portalLoginUsername,
+  demoCredentialSalt,
+  hashDemoPassword(patient.portalAccount.portalPassword),
   patient.portalAccount.passwordStatus,
   patient.portalAccount.oneTimeToken,
 ]))

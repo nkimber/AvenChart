@@ -553,6 +553,45 @@ catch {
 }
 
 try {
+    $validPortalLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "mod-pat-0004@example.test"; password = "PortalPass207!" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $invalidPortalLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "mod-pat-0004@example.test"; password = "WrongPortal207!" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $portalSession = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/session" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+
+    $portalAuthenticationPassed = $validPortalLogin.authenticated `
+        -and $validPortalLogin.username -eq "mod-pat-0004@example.test" `
+        -and $validPortalLogin.pubpid -eq "MOD-PAT-0004" `
+        -and $validPortalLogin.sessionId `
+        -and $portalSession.authenticated `
+        -and $portalSession.sessionId -eq $validPortalLogin.sessionId `
+        -and -not $invalidPortalLogin.authenticated `
+        -and $invalidPortalLogin.failureReason -eq "Invalid username or password."
+    Add-Check -Name "anchor patient portal authentication" -Result $(if ($portalAuthenticationPassed) { "passed" } else { "failed" }) -Details @{
+        validLogin = $validPortalLogin
+        session = $portalSession
+        invalidLogin = $invalidPortalLogin
+    }
+}
+catch {
+    Add-Check -Name "anchor patient portal authentication" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $historyChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $historyPassed = $null -ne $historyChart.history `
         -and $historyChart.history.tobacco -eq "Former smoker - quit 2019" `

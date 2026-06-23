@@ -22,6 +22,7 @@ builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<AuthRepository>();
+builder.Services.AddScoped<PatientPortalRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -117,6 +118,44 @@ auth.MapGet("/login-audit", async (
         return Results.Ok(response);
     })
     .WithName("GetLoginAudit");
+
+var patientPortal = app.MapGroup("/api/patient-portal").WithTags("Patient Portal");
+
+patientPortal.MapPost("/login", async (
+        PatientPortalRepository repository,
+        PatientPortalLoginRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.LoginAsync(request, cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("PatientPortalLogin");
+
+patientPortal.MapGet("/session", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetCurrentSessionAsync(sessionId, cancellationToken))
+            : Results.Ok(new PatientPortalSessionResponse(
+                Authenticated: false,
+                SessionId: null,
+                Username: string.Empty,
+                PortalUsername: string.Empty,
+                CanonicalId: string.Empty,
+                LegacyPid: null,
+                Pubpid: string.Empty,
+                DisplayName: string.Empty,
+                CreatedAt: null,
+                LastSeenAt: null,
+                ExpiresAt: null,
+                EndedAt: null,
+                FailureReason: "Patient portal session header was not supplied.",
+                SessionSource: "avenchart-portal"));
+    })
+    .WithName("GetPatientPortalSession");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");

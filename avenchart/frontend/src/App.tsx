@@ -65,6 +65,7 @@ import {
   bulkSignProcedureReports,
   importProcedureOrderCatalogCompendium,
   login,
+  loginPatientPortal,
   logout,
   createBillingClaimStatus,
   createBillingLine,
@@ -4249,6 +4250,11 @@ function PatientWorkspace({
   )
   const [portalAccessSaveStatus, setPortalAccessSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [portalResetSaveStatus, setPortalResetSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [portalLoginUsername, setPortalLoginUsername] = useState('')
+  const [portalLoginPassword, setPortalLoginPassword] = useState('PortalPass207!')
+  const [portalLoginStatus, setPortalLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [portalLoginMessage, setPortalLoginMessage] = useState<string | null>(null)
   const [isEditingGuardianContact, setIsEditingGuardianContact] = useState(false)
   const [guardianContactDraft, setGuardianContactDraft] = useState<PatientGuardianContactUpdate>(() =>
     buildGuardianContactDraft(null),
@@ -4296,6 +4302,10 @@ function PatientWorkspace({
     setDeceasedStatusSaveStatus('idle')
     setPortalAccessSaveStatus('idle')
     setPortalResetSaveStatus('idle')
+    setPortalLoginUsername(chart?.portalAccount?.portalLoginUsername ?? '')
+    setPortalLoginPassword('PortalPass207!')
+    setPortalLoginStatus('idle')
+    setPortalLoginMessage(null)
     setGuardianContactDraft(buildGuardianContactDraft(chart))
     setIsEditingGuardianContact(false)
     setGuardianContactSaveStatus('idle')
@@ -4563,6 +4573,29 @@ function PatientWorkspace({
       setPortalAccessSaveStatus('saved')
     } catch {
       setPortalAccessSaveStatus('error')
+    }
+  }
+
+  async function handlePortalLoginCheck(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPortalLoginStatus('checking')
+    setPortalLoginMessage(null)
+
+    try {
+      const result = await loginPatientPortal({
+        username: portalLoginUsername,
+        password: portalLoginPassword,
+      })
+      if (result.authenticated && result.sessionId) {
+        setPortalLoginStatus('authenticated')
+        setPortalLoginMessage(`Portal sign-in ready for ${result.displayName}`)
+      } else {
+        setPortalLoginStatus('rejected')
+        setPortalLoginMessage(result.failureReason ?? 'Patient portal sign-in was rejected.')
+      }
+    } catch (portalError) {
+      setPortalLoginStatus('error')
+      setPortalLoginMessage(portalError instanceof Error ? portalError.message : 'Patient portal sign-in check failed')
     }
   }
 
@@ -5218,6 +5251,46 @@ function PatientWorkspace({
                 <Field label="Login username" value={chart?.portalAccount?.portalLoginUsername} />
                 <Field label="Password status" value={chart?.portalAccount?.passwordStatusLabel} />
                 <Field label="One-time reset" value={chart?.portalAccount?.resetStatusLabel} />
+                <form className="contact-form" aria-label="Patient portal login readiness" onSubmit={handlePortalLoginCheck}>
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Portal login</span>
+                      <input
+                        value={portalLoginUsername}
+                        onChange={(event) => setPortalLoginUsername(event.target.value)}
+                        aria-label="Portal login username"
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Portal password</span>
+                      <input
+                        type="password"
+                        value={portalLoginPassword}
+                        onChange={(event) => setPortalLoginPassword(event.target.value)}
+                        aria-label="Portal login password"
+                      />
+                    </label>
+                  </div>
+                  <div className="contact-actions">
+                    <button
+                      className="icon-text-button"
+                      type="submit"
+                      disabled={!chart?.portalAccount?.hasAccount || portalLoginStatus === 'checking'}
+                    >
+                      <LogIn size={15} />
+                      <span>{portalLoginStatus === 'checking' ? 'Checking portal sign-in' : 'Verify portal sign-in'}</span>
+                    </button>
+                    {portalLoginMessage && (
+                      <span
+                        className={
+                          portalLoginStatus === 'authenticated' ? 'save-note' : 'save-note error'
+                        }
+                      >
+                        {portalLoginMessage}
+                      </span>
+                    )}
+                  </div>
+                </form>
                 <div className="contact-actions">
                   <button
                     className="icon-text-button"
