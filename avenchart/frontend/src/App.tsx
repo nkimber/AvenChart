@@ -61,6 +61,7 @@ import {
   replyPatientPortalMessage,
   readPatientPortalMessage,
   deletePatientPortalMessage,
+  archivePatientPortalMessages,
   getProcedureLabProviders,
   getProcedureOrderCatalog,
   getProcedureOrderQueue,
@@ -3992,6 +3993,62 @@ function App() {
     }
   }
 
+  async function handlePatientPortalMessagesArchive(messageIds: string[]) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before archiving selected secure messages.')
+      return
+    }
+
+    const numericMessageIds = messageIds
+      .map((messageId) => Number(messageId))
+      .filter((messageId) => Number.isInteger(messageId) && messageId > 0)
+    if (numericMessageIds.length === 0) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Select at least one secure message to archive.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const archiveResult = await archivePatientPortalMessages(patientPortalSessionId, {
+        messageIds: Array.from(new Set(numericMessageIds)),
+      })
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      const archivedIds = new Set([
+        ...messageIds,
+        ...archiveResult.messageIds,
+        ...archiveResult.archivedMessages.map((archivedMessage) => archivedMessage.id),
+      ])
+      setPatientPortalThreads((current) => {
+        const next = { ...current }
+        archivedIds.forEach((messageId) => {
+          delete next[messageId]
+        })
+        return next
+      })
+      setPatientPortalReplyBodies((current) => {
+        const next = { ...current }
+        archivedIds.forEach((messageId) => {
+          delete next[messageId]
+        })
+        return next
+      })
+      setPatientPortalStatus(archiveResult.archived ? 'ready' : 'rejected')
+      setPatientPortalMessage(archiveResult.archived
+        ? `Archived ${archiveResult.archivedMessageCount} secure message${archiveResult.archivedMessageCount === 1 ? '' : 's'}`
+        : archiveResult.failureReason ?? 'Selected secure messages were not archived.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal selected message archive failed')
+    }
+  }
+
   async function handlePatientPortalHomeLogout() {
     if (!patientPortalSessionId) {
       return
@@ -4140,6 +4197,7 @@ function App() {
             onLoadThread={handlePatientPortalThreadLoad}
             onMarkRead={handlePatientPortalMessageRead}
             onDeleteMessage={handlePatientPortalMessageDelete}
+            onArchiveMessages={handlePatientPortalMessagesArchive}
             onLogout={handlePatientPortalHomeLogout}
           />
         )}
@@ -4523,6 +4581,7 @@ function PatientPortalWorkspace({
   onLoadThread,
   onMarkRead,
   onDeleteMessage,
+  onArchiveMessages,
   onLogout,
 }: {
   username: string
@@ -4550,10 +4609,42 @@ function PatientPortalWorkspace({
   onLoadThread: (messageId: string) => Promise<void>
   onMarkRead: (messageId: string) => Promise<void>
   onDeleteMessage: (messageId: string) => Promise<void>
+  onArchiveMessages: (messageIds: string[]) => Promise<void>
   onLogout: () => Promise<void>
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
   const busy = status === 'loading' || status === 'ending'
+  const selectablePortalMessages = useMemo(
+    () => [...(portalMessages?.messages ?? []), ...(portalMessages?.sentMessages ?? [])],
+    [portalMessages],
+  )
+  const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
+  const selectedPortalMessageIdSet = useMemo(() => new Set(selectedPortalMessageIds), [selectedPortalMessageIds])
+  const selectedPortalMessageCount = selectedPortalMessageIds.length
+
+  useEffect(() => {
+    const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
+    setSelectedPortalMessageIds((current) => current.filter((messageId) => availableMessageIds.has(messageId)))
+  }, [selectablePortalMessages])
+
+  function togglePortalMessageSelection(messageId: string, checked: boolean) {
+    setSelectedPortalMessageIds((current) => {
+      if (checked) {
+        return current.includes(messageId) ? current : [...current, messageId]
+      }
+
+      return current.filter((selectedMessageId) => selectedMessageId !== messageId)
+    })
+  }
+
+  async function handleArchiveSelectedMessages() {
+    if (selectedPortalMessageIds.length === 0) {
+      return
+    }
+
+    await onArchiveMessages(selectedPortalMessageIds)
+    setSelectedPortalMessageIds([])
+  }
 
   return (
     <section className="scheduler-layout">
@@ -4644,6 +4735,18 @@ function PatientPortalWorkspace({
                   <span>Inbox</span>
                   <span>{portalMessages?.messageCount ?? 0} messages</span>
                 </div>
+                <div className="contact-actions portal-batch-actions" aria-label="Secure message batch actions">
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => void handleArchiveSelectedMessages()}
+                    disabled={!authenticated || busy || selectedPortalMessageCount === 0}
+                  >
+                    <Trash2 size={15} />
+                    <span>Archive selected</span>
+                  </button>
+                  <span className="message-selection-count">{selectedPortalMessageCount} selected</span>
+                </div>
                 <form className="contact-form portal-compose-form" aria-label="Compose secure message" onSubmit={onComposeSubmit}>
                   <label className="contact-field">
                     <span>To</span>
@@ -4688,6 +4791,15 @@ function PatientPortalWorkspace({
                   {(portalMessages?.messages ?? []).map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
+                        <label className="message-select-control">
+                          <input
+                            type="checkbox"
+                            checked={selectedPortalMessageIdSet.has(portalMessage.id)}
+                            onChange={(event) => togglePortalMessageSelection(portalMessage.id, event.target.checked)}
+                            disabled={!authenticated || busy}
+                            aria-label={`Select secure message ${portalMessage.title}`}
+                          />
+                        </label>
                         <div>
                           <strong>{portalMessage.title}</strong>
                           <span>
@@ -4779,6 +4891,15 @@ function PatientPortalWorkspace({
                   {(portalMessages?.sentMessages ?? []).map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
+                        <label className="message-select-control">
+                          <input
+                            type="checkbox"
+                            checked={selectedPortalMessageIdSet.has(portalMessage.id)}
+                            onChange={(event) => togglePortalMessageSelection(portalMessage.id, event.target.checked)}
+                            disabled={!authenticated || busy}
+                            aria-label={`Select secure message ${portalMessage.title}`}
+                          />
+                        </label>
                         <div>
                           <strong>{portalMessage.title}</strong>
                           <span>

@@ -1118,6 +1118,31 @@
   gap: 10px;
 }
 
+.message-select-control {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding-top: 1px;
+}
+
+.message-select-control input {
+  width: 16px;
+  height: 16px;
+  accent-color: #0f766e;
+}
+
+.portal-batch-actions {
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.message-selection-count {
+  color: #607280;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .message-item strong {
   color: #1d2a35;
   font-size: 14px;

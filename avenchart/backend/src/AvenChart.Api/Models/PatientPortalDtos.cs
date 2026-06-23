@@ -206,3 +206,24 @@ public sealed record PatientPortalDeleteMessageResponse(
     int SentMessageCount,
     string? FailureReason,
     string SessionSource);
+
+public sealed record PatientPortalArchiveMessagesRequest(
+    IReadOnlyList<int>? MessageIds);
+
+public sealed record PatientPortalArchiveMessagesResponse(
+    bool Authenticated,
+    bool Archived,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    IReadOnlyList<string> MessageIds,
+    IReadOnlyList<PatientPortalMessageItem> ArchivedMessages,
+    int ArchivedMessageCount,
+    int MessageCount,
+    int SentMessageCount,
+    string? FailureReason,
+    string SessionSource);

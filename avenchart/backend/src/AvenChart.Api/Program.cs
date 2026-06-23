@@ -234,6 +234,19 @@ patientPortal.MapPut("/messages/{messageId:int}/read", async (
     })
     .WithName("ReadPatientPortalMessage");
 
+patientPortal.MapPost("/messages/archive", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        PatientPortalArchiveMessagesRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.ArchiveMessagesAsync(sessionId, request, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderArchiveMessages());
+    })
+    .WithName("ArchivePatientPortalMessages");
+
 patientPortal.MapDelete("/messages/{messageId:int}", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

@@ -2492,6 +2492,29 @@ export type PatientPortalDeleteMessageResponse = {
   sessionSource: string
 }
 
+export type PatientPortalArchiveMessagesInput = {
+  messageIds: number[]
+}
+
+export type PatientPortalArchiveMessagesResponse = {
+  authenticated: boolean
+  archived: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  messageIds: string[]
+  archivedMessages: PatientPortalMessageItem[]
+  archivedMessageCount: number
+  messageCount: number
+  sentMessageCount: number
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -2716,6 +2739,27 @@ export async function deletePatientPortalMessage(
   })
   if (!response.ok) {
     throw new Error(`Patient portal message archive failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function archivePatientPortalMessages(
+  sessionId: string,
+  input: PatientPortalArchiveMessagesInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalArchiveMessagesResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/archive`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal selected message archive failed with ${response.status}`)
   }
 
   return response.json()

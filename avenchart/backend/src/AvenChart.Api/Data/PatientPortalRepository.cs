@@ -667,6 +667,96 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalArchiveMessagesResponse> ArchiveMessagesAsync(
+        Guid sessionId,
+        PatientPortalArchiveMessagesRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        var requestedMessageIds = (request.MessageIds ?? Array.Empty<int>())
+            .Where(messageId => messageId > 0)
+            .Distinct()
+            .ToArray();
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ArchiveMessagesFailure(
+                session,
+                requestedMessageIds.Select(messageId => messageId.ToString()).ToArray(),
+                session.FailureReason ?? "Session is not active.");
+        }
+
+        if (requestedMessageIds.Length == 0)
+        {
+            return ArchiveMessagesFailure(session, Array.Empty<string>(), "Select at least one secure message to archive.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            with selected as (
+              select distinct case when mail_chain > 0 then mail_chain else id end as archive_id
+              from portal_mailbox_messages
+              where deleted = 0
+                and owner = @portal_username
+                and (sender_id = @portal_username or recipient_id = @portal_username)
+                and (id = any(@message_ids) or mail_chain = any(@message_ids))
+            ),
+            updated as (
+              update portal_mailbox_messages messages
+              set message_status = 'Delete',
+                  activity = 1,
+                  deleted = 1
+              from selected
+              where messages.owner = @portal_username
+                and (messages.mail_chain = selected.archive_id or messages.id = selected.archive_id)
+              returning messages.id, messages.message_date, messages.title, messages.body, messages.message_status,
+                messages.assigned_to, messages.portal_relation, messages.mail_chain, messages.sender_id,
+                messages.sender_name, messages.recipient_id, messages.recipient_name, messages.reply_mail_chain,
+                messages.is_encrypted
+            )
+            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+              mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
+            from updated
+            order by message_date asc, id asc;
+            """;
+        command.Parameters.AddWithValue("portal_username", session.PortalUsername);
+        command.Parameters.Add("message_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = requestedMessageIds;
+
+        var archivedMessages = new List<PatientPortalMessageItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                archivedMessages.Add(ReadPortalMessageItem(reader));
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalArchiveMessagesResponse(
+            Authenticated: true,
+            Archived: archivedMessages.Count > 0,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            MessageIds: requestedMessageIds.Select(messageId => messageId.ToString()).ToArray(),
+            ArchivedMessages: archivedMessages,
+            ArchivedMessageCount: archivedMessages.Count,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: archivedMessages.Count > 0 ? null : "Selected secure messages were not archived.",
+            SessionSource: session.SessionSource);
+    }
+
     private static PatientPortalLoginResponse Failed(string username, string reason) => new(
         Authenticated: false,
         Username: username,
@@ -863,6 +953,25 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             FailureReason: "Patient portal session header was not supplied.",
             SessionSource: SessionSource);
 
+    public static PatientPortalArchiveMessagesResponse MissingSessionHeaderArchiveMessages() =>
+        new(
+            Authenticated: false,
+            Archived: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            MessageIds: Array.Empty<string>(),
+            ArchivedMessages: Array.Empty<PatientPortalMessageItem>(),
+            ArchivedMessageCount: 0,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     private static PatientPortalComposeMessageResponse ComposeFailure(
         PatientPortalSessionResponse session,
         string reason,
@@ -943,6 +1052,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         MessageId: messageId,
         DeletedMessage: null,
         DeletedMessageCount: 0,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalArchiveMessagesResponse ArchiveMessagesFailure(
+        PatientPortalSessionResponse session,
+        IReadOnlyList<string> messageIds,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        Archived: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        MessageIds: messageIds,
+        ArchivedMessages: Array.Empty<PatientPortalMessageItem>(),
+        ArchivedMessageCount: 0,
         MessageCount: 0,
         SentMessageCount: 0,
         FailureReason: reason,
