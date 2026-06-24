@@ -22,6 +22,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string PortalMessageArchivedEventType = "message_archived";
     private const string PortalMessagesArchivedEventType = "messages_archived";
     private const string ProtectedPortalMessageBody = "Encrypted secure message body is protected.";
+    private static readonly PatientPortalMessageSubjectOption[] PortalMessageSubjectOptions =
+    [
+        new("General", "General", true),
+        new("Insurance", "Insurance", false),
+        new("Prior Auth", "Prior Auth", false),
+        new("Bill/Collect", "Bill/Collect", false),
+        new("Referral", "Referral", false),
+        new("Pharmacy", "Pharmacy", false)
+    ];
     private static readonly JsonSerializerOptions GeneratedMedicalReportPackageJsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -1026,6 +1035,41 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessageComposeOptionsResponse> GetMessageComposeOptionsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyMessageComposeOptions(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var recipients = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
+
+        return new PatientPortalMessageComposeOptionsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            DefaultSubject: PortalMessageSubjectOptions.First(option => option.Default).Value,
+            SubjectCount: PortalMessageSubjectOptions.Length,
+            SubjectOptions: PortalMessageSubjectOptions,
+            RecipientCount: recipients.Count,
+            Recipients: recipients,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalDocumentsResponse> GetDocumentsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -2003,6 +2047,48 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalMessageComposeOptionsResponse EmptyMessageComposeOptions(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        DefaultSubject: PortalMessageSubjectOptions.First(option => option.Default).Value,
+        SubjectCount: PortalMessageSubjectOptions.Length,
+        SubjectOptions: PortalMessageSubjectOptions,
+        RecipientCount: 0,
+        Recipients: Array.Empty<PatientPortalMessageRecipientOption>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessageComposeOptionsResponse MissingSessionMessageComposeOptions(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        DefaultSubject: PortalMessageSubjectOptions.First(option => option.Default).Value,
+        SubjectCount: PortalMessageSubjectOptions.Length,
+        SubjectOptions: PortalMessageSubjectOptions,
+        RecipientCount: 0,
+        Recipients: Array.Empty<PatientPortalMessageRecipientOption>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     private static PatientPortalMessageAuditResponse EmptyMessageAudit(
         PatientPortalSessionResponse session,
         string reason) => new(
@@ -2340,6 +2426,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalMessageRecipientsResponse MissingSessionHeaderMessageRecipients() =>
         MissingSessionMessageRecipients("Patient portal session header was not supplied.");
+
+    public static PatientPortalMessageComposeOptionsResponse MissingSessionHeaderMessageComposeOptions() =>
+        MissingSessionMessageComposeOptions("Patient portal session header was not supplied.");
 
     public static PatientPortalMessageAuditResponse MissingSessionHeaderMessageAudit() =>
         MissingSessionMessageAudit("Patient portal session header was not supplied.");

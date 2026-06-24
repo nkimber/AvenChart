@@ -506,6 +506,31 @@ public sealed record PatientPortalMessageRecipientsResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalMessageComposeOptionsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string DefaultSubject,
+    int SubjectCount,
+    IReadOnlyList<PatientPortalMessageSubjectOption> SubjectOptions,
+    int RecipientCount,
+    IReadOnlyList<PatientPortalMessageRecipientOption> Recipients,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalMessageSubjectOption(
+    string Value,
+    string Label,
+    bool Default);
+
 public sealed record PatientPortalMessageRecipientOption(
     string Id,
     string DisplayName,

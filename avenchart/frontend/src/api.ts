@@ -2823,6 +2823,33 @@ export type PatientPortalMessageRecipientsResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMessageSubjectOption = {
+  value: string
+  label: string
+  default: boolean
+}
+
+export type PatientPortalMessageComposeOptionsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  defaultSubject: string
+  subjectCount: number
+  subjectOptions: PatientPortalMessageSubjectOption[]
+  recipientCount: number
+  recipients: PatientPortalMessageRecipientOption[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalDocumentItem = {
   id: number
   documentKey: string
@@ -3397,6 +3424,21 @@ export async function getPatientPortalMessageAudit(
   })
   if (!response.ok) {
     throw new Error(`Patient portal message audit check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMessageComposeOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageComposeOptionsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/compose-options`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message compose options check failed with ${response.status}`)
   }
 
   return response.json()
