@@ -69,6 +69,7 @@ import {
   getPatientPortalHome,
   getPatientPortalMessageThread,
   getPatientPortalMessages,
+  getPatientPortalMessageAudit,
   composePatientPortalMessage,
   replyPatientPortalMessage,
   readPatientPortalMessage,
@@ -308,6 +309,7 @@ import {
   type PatientMessageReplyInput,
   type PatientMessagesResponse,
   type PatientPortalHomeSummaryResponse,
+  type PatientPortalMessageAuditResponse,
   type PatientPortalMessageThreadResponse,
   type PatientPortalMessagesResponse,
   type PatientSearchResponse,
@@ -484,6 +486,7 @@ function App() {
   const [patientPortalReportEncounterFormIds, setPatientPortalReportEncounterFormIds] = useState<string[]>([])
   const [patientPortalReportProcedureOrderIds, setPatientPortalReportProcedureOrderIds] = useState<string[]>([])
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
+  const [patientPortalMessageAudit, setPatientPortalMessageAudit] = useState<PatientPortalMessageAuditResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
   const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
@@ -3839,6 +3842,14 @@ function App() {
     setPatientPortalReportProcedureOrderIds(getDefaultPatientPortalReportProcedureOrderIds(report))
   }
 
+  async function refreshPatientPortalMessagesAndAudit(sessionId: string) {
+    const messages = await getPatientPortalMessages(sessionId)
+    const messageAudit = await getPatientPortalMessageAudit(sessionId)
+    setPatientPortalMessages(messages)
+    setPatientPortalMessageAudit(messageAudit)
+    return { messages, messageAudit }
+  }
+
   async function handlePatientPortalHomeLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setPatientPortalStatus('loading')
@@ -3861,6 +3872,7 @@ function App() {
         syncPatientPortalMedicalReportSelection(null)
         setPatientPortalGeneratedMedicalReport(null)
         setPatientPortalMessages(null)
+        setPatientPortalMessageAudit(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
@@ -3876,6 +3888,7 @@ function App() {
       const medicalReport = home.authenticated ? await getPatientPortalMedicalReport(loginResult.sessionId) : null
       const generatedMedicalReport = home.authenticated ? await generatePatientPortalMedicalReport(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
+      const messageAudit = home.authenticated ? await getPatientPortalMessageAudit(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
@@ -3888,6 +3901,7 @@ function App() {
         syncPatientPortalMedicalReportSelection(medicalReport)
         setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
         setPatientPortalMessages(messages)
+        setPatientPortalMessageAudit(messageAudit)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
         setPatientPortalStatus('rejected')
@@ -3905,6 +3919,7 @@ function App() {
       syncPatientPortalMedicalReportSelection(medicalReport)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
+      setPatientPortalMessageAudit(messageAudit)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
       setPatientPortalStatus('ready')
@@ -3920,6 +3935,7 @@ function App() {
       syncPatientPortalMedicalReportSelection(null)
       setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
+      setPatientPortalMessageAudit(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
       setPatientPortalThreads({})
@@ -3944,6 +3960,7 @@ function App() {
       const medicalReport = home.authenticated ? await getPatientPortalMedicalReport(patientPortalSessionId) : null
       const generatedMedicalReport = home.authenticated ? await generatePatientPortalMedicalReport(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
+      const messageAudit = home.authenticated ? await getPatientPortalMessageAudit(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
@@ -3954,6 +3971,7 @@ function App() {
       syncPatientPortalMedicalReportSelection(medicalReport)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
+      setPatientPortalMessageAudit(messageAudit)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
       setPatientPortalMessage(home.authenticated
@@ -4109,7 +4127,7 @@ function App() {
       const home = await getPatientPortalHome(patientPortalSessionId)
       const appointments = await getPatientPortalAppointments(patientPortalSessionId)
       const appointmentOptions = await getPatientPortalAppointmentRequestOptions(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
@@ -4142,7 +4160,7 @@ function App() {
         body: patientPortalComposeBody,
       })
       const home = await getPatientPortalHome(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
       setPatientPortalStatus(composeResult.created ? 'ready' : 'rejected')
@@ -4179,7 +4197,7 @@ function App() {
     try {
       const replyResult = await replyPatientPortalMessage(patientPortalSessionId, messageId, { body })
       const home = await getPatientPortalHome(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
       setPatientPortalStatus(replyResult.created ? 'ready' : 'rejected')
@@ -4233,7 +4251,7 @@ function App() {
     try {
       const readResult = await readPatientPortalMessage(patientPortalSessionId, messageId)
       const home = await getPatientPortalHome(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
       if (patientPortalThreads[messageId]) {
@@ -4263,7 +4281,7 @@ function App() {
     try {
       const deleteResult = await deletePatientPortalMessage(patientPortalSessionId, messageId)
       const home = await getPatientPortalHome(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
       setPatientPortalThreads((current) => {
@@ -4310,7 +4328,7 @@ function App() {
         messageIds: Array.from(new Set(numericMessageIds)),
       })
       const home = await getPatientPortalHome(patientPortalSessionId)
-      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalMessages(messages)
       const archivedIds = new Set([
@@ -4399,6 +4417,7 @@ function App() {
       syncPatientPortalMedicalReportSelection(null)
       setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
+      setPatientPortalMessageAudit(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
       setPatientPortalStatus('idle')
@@ -4527,6 +4546,7 @@ function App() {
             selectedMedicalReportEncounterFormIds={patientPortalReportEncounterFormIds}
             selectedMedicalReportProcedureOrderIds={patientPortalReportProcedureOrderIds}
             portalMessages={patientPortalMessages}
+            portalMessageAudit={patientPortalMessageAudit}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
             composeTitle={patientPortalComposeTitle}
@@ -4935,6 +4955,7 @@ function PatientPortalWorkspace({
   selectedMedicalReportEncounterFormIds,
   selectedMedicalReportProcedureOrderIds,
   portalMessages,
+  portalMessageAudit,
   portalDocuments,
   composeRecipient,
   composeTitle,
@@ -4983,6 +5004,7 @@ function PatientPortalWorkspace({
   selectedMedicalReportEncounterFormIds: string[]
   selectedMedicalReportProcedureOrderIds: string[]
   portalMessages: PatientPortalMessagesResponse | null
+  portalMessageAudit: PatientPortalMessageAuditResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
   composeTitle: string
@@ -5719,6 +5741,23 @@ function PatientPortalWorkspace({
                 <div className="result-meta">
                   <span>Inbox</span>
                   <span>{portalMessages?.messageCount ?? 0} messages</span>
+                </div>
+                <div className="result-meta">
+                  <span>Message Audit</span>
+                  <span>Audit Events {portalMessageAudit?.auditEventCount ?? 0}</span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal message audit">
+                  {(portalMessageAudit?.auditEvents ?? []).map((event) => (
+                    <div className="message-meta-row" key={`${event.id}-${event.eventType}`}>
+                      <strong>{event.eventLabel}</strong>
+                      <span>{event.eventAt}</span>
+                      <span>{event.messageTitle}</span>
+                      <span>{event.summary}</span>
+                    </div>
+                  ))}
+                  {(portalMessageAudit?.auditEvents.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No message audit events recorded</div>
+                  )}
                 </div>
                 <div className="contact-actions portal-batch-actions" aria-label="Secure message batch actions">
                   <button

@@ -676,3 +676,36 @@ public sealed record PatientPortalArchiveMessagesResponse(
     int SentMessageCount,
     string? FailureReason,
     string SessionSource);
+
+public sealed record PatientPortalMessageAuditEvent(
+    long Id,
+    string EventType,
+    string EventLabel,
+    string EventAt,
+    string MessageId,
+    IReadOnlyList<string> RelatedMessageIds,
+    string MessageTitle,
+    string MessageStatus,
+    string? RecipientId,
+    string? RecipientName,
+    int ThreadId,
+    int ArchivedMessageCount,
+    string Summary,
+    string EventSource);
+
+public sealed record PatientPortalMessageAuditResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int AuditEventCount,
+    IReadOnlyList<PatientPortalMessageAuditEvent> AuditEvents,
+    string? FailureReason,
+    string SessionSource);

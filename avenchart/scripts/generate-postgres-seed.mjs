@@ -265,6 +265,7 @@ drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
 drop table if exists patient_histories;
 drop table if exists patient_employers;
+drop table if exists patient_portal_message_audit_events;
 drop table if exists patient_portal_report_audit_events;
 drop table if exists patient_portal_sessions;
 drop table if exists patient_portal_accounts;
@@ -478,6 +479,28 @@ create table patient_portal_report_audit_events (
   included_issue_ids text[] not null default '{}',
   included_encounter_form_ids text[] not null default '{}',
   included_procedure_order_ids text[] not null default '{}',
+  summary text not null,
+  created_at timestamptz not null default now(),
+  event_source text not null default 'avenchart-portal'
+);
+
+create table patient_portal_message_audit_events (
+  id bigserial primary key,
+  patient_id text not null references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  session_id uuid references patient_portal_sessions(id) on delete set null,
+  portal_username text not null,
+  portal_login_username text not null,
+  event_type text not null,
+  event_label text not null,
+  message_id text not null,
+  related_message_ids text[] not null default '{}',
+  message_title text not null,
+  message_status text not null,
+  recipient_id text,
+  recipient_name text,
+  thread_id integer not null default 0,
+  archived_message_count integer not null default 0,
   summary text not null,
   created_at timestamptz not null default now(),
   event_source text not null default 'avenchart-portal'
@@ -2208,6 +2231,9 @@ create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owne
 create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);
 create index idx_patient_portal_report_audit_patient_created on patient_portal_report_audit_events (patient_id, created_at desc, id desc);
 create index idx_patient_portal_report_audit_session on patient_portal_report_audit_events (session_id);
+create index idx_patient_portal_message_audit_patient_created on patient_portal_message_audit_events (patient_id, created_at desc, id desc);
+create index idx_patient_portal_message_audit_session on patient_portal_message_audit_events (session_id);
+create index idx_patient_portal_message_audit_message on patient_portal_message_audit_events (message_id);
 create index idx_patient_documents_pid_date on patient_documents (pid, doc_date);
 create index idx_patient_documents_category on patient_documents (category_name);
 create index idx_problems_pid on problems (pid);

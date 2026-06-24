@@ -15,6 +15,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string GeneratedMedicalReportCreatedEventType = "generated_report";
     private const string GeneratedMedicalReportPdfDownloadedEventType = "pdf_downloaded";
     private const string GeneratedMedicalReportPackageDownloadedEventType = "package_downloaded";
+    private const string PortalMessageComposedEventType = "message_composed";
+    private const string PortalMessageRepliedEventType = "message_replied";
+    private const string PortalMessageReadEventType = "message_read";
+    private const string PortalMessageArchivedEventType = "message_archived";
+    private const string PortalMessagesArchivedEventType = "messages_archived";
     private static readonly JsonSerializerOptions GeneratedMedicalReportPackageJsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -948,6 +953,38 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessageAuditResponse> GetMessageAuditAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyMessageAudit(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var auditEvents = await GetPortalMessageAuditEventsAsync(connection, session.CanonicalId, cancellationToken);
+
+        return new PatientPortalMessageAuditResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            AuditEventCount: auditEvents.Count,
+            AuditEvents: auditEvents,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalDocumentsResponse> GetDocumentsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1143,6 +1180,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             replyMailChain: nextId,
             transaction: transaction,
             cancellationToken: cancellationToken);
+        await RecordPortalMessageAuditEventAsync(
+            connection,
+            session,
+            PortalMessageComposedEventType,
+            sentMessage,
+            [sentMessage, recipientMessage],
+            archivedMessageCount: 0,
+            transaction,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -1249,6 +1295,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             replyMailChain: replyThreadId,
             transaction: transaction,
             cancellationToken: cancellationToken);
+        await RecordPortalMessageAuditEventAsync(
+            connection,
+            session,
+            PortalMessageRepliedEventType,
+            sentMessage,
+            [original.Item, sentMessage, recipientMessage],
+            archivedMessageCount: 0,
+            transaction,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -1317,6 +1372,19 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             {
                 readMessage = ReadPortalMessageItem(reader);
             }
+        }
+
+        if (readMessage is not null)
+        {
+            await RecordPortalMessageAuditEventAsync(
+                connection,
+                session,
+                PortalMessageReadEventType,
+                readMessage,
+                [readMessage],
+                archivedMessageCount: 0,
+                transaction: null,
+                cancellationToken);
         }
 
         var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
@@ -1390,6 +1458,19 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             {
                 deletedMessages.Add(ReadPortalMessageItem(reader));
             }
+        }
+
+        if (deletedMessages.Count > 0)
+        {
+            await RecordPortalMessageAuditEventAsync(
+                connection,
+                session,
+                PortalMessageArchivedEventType,
+                message.Item,
+                deletedMessages,
+                archivedMessageCount: deletedMessages.Count,
+                transaction,
+                cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -1480,6 +1561,19 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             {
                 archivedMessages.Add(ReadPortalMessageItem(reader));
             }
+        }
+
+        if (archivedMessages.Count > 0)
+        {
+            await RecordPortalMessageAuditEventAsync(
+                connection,
+                session,
+                PortalMessagesArchivedEventType,
+                archivedMessages.First(),
+                archivedMessages,
+                archivedMessageCount: archivedMessages.Count,
+                transaction,
+                cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -1719,6 +1813,42 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         SentMessages: Array.Empty<PatientPortalMessageItem>(),
         AllMessageCount: 0,
         AllMessages: Array.Empty<PatientPortalMessageItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessageAuditResponse EmptyMessageAudit(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalMessageAuditEvent>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessageAuditResponse MissingSessionMessageAudit(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalMessageAuditEvent>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -2020,6 +2150,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
+
+    public static PatientPortalMessageAuditResponse MissingSessionHeaderMessageAudit() =>
+        MissingSessionMessageAudit("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsResponse MissingSessionHeaderDocuments() =>
         MissingSessionDocuments("Patient portal session header was not supplied.");
@@ -3119,6 +3252,207 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ContentLength: 0,
         Report: report,
         FailureReason: reason);
+
+    private static async Task RecordPortalMessageAuditEventAsync(
+        NpgsqlConnection connection,
+        PatientPortalSessionResponse session,
+        string eventType,
+        PatientPortalMessageItem message,
+        IReadOnlyList<PatientPortalMessageItem> relatedMessages,
+        int archivedMessageCount,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return;
+        }
+
+        var relatedMessageIds = relatedMessages
+            .Select(relatedMessage => relatedMessage.Id)
+            .Where(relatedMessageId => !string.IsNullOrWhiteSpace(relatedMessageId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var status = relatedMessages.FirstOrDefault()?.Status ?? message.Status;
+        var threadId = GetPortalMessageAuditThreadId(message);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into patient_portal_message_audit_events (
+              patient_id,
+              pid,
+              session_id,
+              portal_username,
+              portal_login_username,
+              event_type,
+              event_label,
+              message_id,
+              related_message_ids,
+              message_title,
+              message_status,
+              recipient_id,
+              recipient_name,
+              thread_id,
+              archived_message_count,
+              summary,
+              event_source
+            )
+            values (
+              @patient_id,
+              @pid,
+              @session_id,
+              @portal_username,
+              @portal_login_username,
+              @event_type,
+              @event_label,
+              @message_id,
+              @related_message_ids,
+              @message_title,
+              @message_status,
+              @recipient_id,
+              @recipient_name,
+              @thread_id,
+              @archived_message_count,
+              @summary,
+              @event_source
+            );
+            """;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = session.CanonicalId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = session.LegacyPid.Value;
+        command.Parameters.Add("session_id", NpgsqlDbType.Uuid).Value = session.SessionId is { } sessionId
+            ? sessionId
+            : DBNull.Value;
+        command.Parameters.Add("portal_username", NpgsqlDbType.Text).Value = session.PortalUsername;
+        command.Parameters.Add("portal_login_username", NpgsqlDbType.Text).Value = session.Username;
+        command.Parameters.Add("event_type", NpgsqlDbType.Text).Value = eventType;
+        command.Parameters.Add("event_label", NpgsqlDbType.Text).Value = GetPortalMessageAuditEventLabel(eventType);
+        command.Parameters.Add("message_id", NpgsqlDbType.Text).Value = message.Id;
+        command.Parameters.Add("related_message_ids", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = relatedMessageIds;
+        command.Parameters.Add("message_title", NpgsqlDbType.Text).Value = message.Title;
+        command.Parameters.Add("message_status", NpgsqlDbType.Text).Value = status;
+        command.Parameters.Add("recipient_id", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(message.RecipientId)
+            ? DBNull.Value
+            : message.RecipientId;
+        command.Parameters.Add("recipient_name", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(message.RecipientName)
+            ? DBNull.Value
+            : message.RecipientName;
+        command.Parameters.Add("thread_id", NpgsqlDbType.Integer).Value = threadId;
+        command.Parameters.Add("archived_message_count", NpgsqlDbType.Integer).Value = archivedMessageCount;
+        command.Parameters.Add("summary", NpgsqlDbType.Text).Value =
+            BuildPortalMessageAuditSummary(eventType, message, relatedMessageIds.Length, archivedMessageCount);
+        command.Parameters.Add("event_source", NpgsqlDbType.Text).Value = session.SessionSource;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageAuditEvent>> GetPortalMessageAuditEventsAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id,
+              event_type,
+              event_label,
+              created_at,
+              message_id,
+              related_message_ids,
+              message_title,
+              message_status,
+              recipient_id,
+              recipient_name,
+              thread_id,
+              archived_message_count,
+              summary,
+              event_source
+            from patient_portal_message_audit_events
+            where patient_id = @patient_id
+            order by created_at, id;
+            """;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = canonicalId;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var events = new List<PatientPortalMessageAuditEvent>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var createdAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"));
+            events.Add(new PatientPortalMessageAuditEvent(
+                Id: reader.GetInt64(reader.GetOrdinal("id")),
+                EventType: reader.GetString(reader.GetOrdinal("event_type")),
+                EventLabel: reader.GetString(reader.GetOrdinal("event_label")),
+                EventAt: createdAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'"),
+                MessageId: reader.GetString(reader.GetOrdinal("message_id")),
+                RelatedMessageIds: ReadStringArray(reader, "related_message_ids"),
+                MessageTitle: reader.GetString(reader.GetOrdinal("message_title")),
+                MessageStatus: reader.GetString(reader.GetOrdinal("message_status")),
+                RecipientId: ReadNullableString(reader, "recipient_id"),
+                RecipientName: ReadNullableString(reader, "recipient_name"),
+                ThreadId: reader.GetInt32(reader.GetOrdinal("thread_id")),
+                ArchivedMessageCount: reader.GetInt32(reader.GetOrdinal("archived_message_count")),
+                Summary: reader.GetString(reader.GetOrdinal("summary")),
+                EventSource: reader.GetString(reader.GetOrdinal("event_source"))));
+        }
+
+        return events;
+    }
+
+    private static string GetPortalMessageAuditEventLabel(string eventType) => eventType switch
+    {
+        PortalMessageComposedEventType => "Message composed",
+        PortalMessageRepliedEventType => "Message replied",
+        PortalMessageReadEventType => "Message marked read",
+        PortalMessageArchivedEventType => "Message archived",
+        PortalMessagesArchivedEventType => "Messages archived",
+        _ => eventType
+    };
+
+    private static string BuildPortalMessageAuditSummary(
+        string eventType,
+        PatientPortalMessageItem message,
+        int relatedMessageCount,
+        int archivedMessageCount) => eventType switch
+        {
+            PortalMessageComposedEventType =>
+                $"Composed secure message \"{message.Title}\" to {FormatPortalMessageRecipient(message)} with {relatedMessageCount} mailbox rows.",
+            PortalMessageRepliedEventType =>
+                $"Replied to secure message \"{message.Title}\" in thread {GetPortalMessageAuditThreadId(message)}.",
+            PortalMessageReadEventType =>
+                $"Marked secure message \"{message.Title}\" read.",
+            PortalMessageArchivedEventType =>
+                $"Archived secure message \"{message.Title}\" with {archivedMessageCount} mailbox rows.",
+            PortalMessagesArchivedEventType =>
+                $"Archived {archivedMessageCount} selected secure-message mailbox rows starting from \"{message.Title}\".",
+            _ =>
+                $"{GetPortalMessageAuditEventLabel(eventType)} for secure message \"{message.Title}\"."
+        };
+
+    private static int GetPortalMessageAuditThreadId(PatientPortalMessageItem message)
+    {
+        if (message.ReplyMailChain > 0)
+        {
+            return message.ReplyMailChain;
+        }
+
+        if (message.MailChain > 0)
+        {
+            return message.MailChain;
+        }
+
+        return int.TryParse(message.Id, out var parsedId) ? parsedId : 0;
+    }
+
+    private static string FormatPortalMessageRecipient(PatientPortalMessageItem message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.RecipientName))
+        {
+            return message.RecipientName;
+        }
+
+        return string.IsNullOrWhiteSpace(message.RecipientId) ? "care team" : message.RecipientId;
+    }
 
     private static async Task RecordGeneratedMedicalReportAuditEventAsync(
         NpgsqlConnection connection,

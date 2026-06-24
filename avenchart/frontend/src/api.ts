@@ -2973,6 +2973,41 @@ export type PatientPortalArchiveMessagesResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMessageAuditEvent = {
+  id: number
+  eventType: string
+  eventLabel: string
+  eventAt: string
+  messageId: string
+  relatedMessageIds: string[]
+  messageTitle: string
+  messageStatus: string
+  recipientId?: string | null
+  recipientName?: string | null
+  threadId: number
+  archivedMessageCount: number
+  summary: string
+  eventSource: string
+}
+
+export type PatientPortalMessageAuditResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  auditEventCount: number
+  auditEvents: PatientPortalMessageAuditEvent[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type AuthAuditEventItem = {
   id: number
   occurredAt: string
@@ -3280,6 +3315,21 @@ export async function getPatientPortalMessages(
   })
   if (!response.ok) {
     throw new Error(`Patient portal messages check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMessageAudit(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageAuditResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/audit`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message audit check failed with ${response.status}`)
   }
 
   return response.json()
