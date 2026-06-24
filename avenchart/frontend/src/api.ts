@@ -2429,6 +2429,59 @@ export type PatientPortalClinicalSummaryResponse = {
   sessionSource: string
 }
 
+export type PatientPortalLabResultItem = {
+  id: string
+  resultCode?: string | null
+  resultName: string
+  abnormal?: string | null
+  value?: string | null
+  range?: string | null
+  units?: string | null
+  resultStatus?: string | null
+}
+
+export type PatientPortalLabReportItem = {
+  id: string
+  dateCollected?: string | null
+  reportDate?: string | null
+  specimenNumber?: string | null
+  reportStatus?: string | null
+  reviewStatus?: string | null
+  resultCount: number
+  results: PatientPortalLabResultItem[]
+}
+
+export type PatientPortalLabOrderItem = {
+  id: string
+  orderDate: string
+  procedureCode?: string | null
+  procedureName: string
+  orderStatus?: string | null
+  reportCount: number
+  resultCount: number
+  reports: PatientPortalLabReportItem[]
+}
+
+export type PatientPortalLabResultsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  orderCount: number
+  reportCount: number
+  resultCount: number
+  orders: PatientPortalLabOrderItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalAppointmentCategoryOption = {
   id: number
   name: string
@@ -2879,6 +2932,21 @@ export async function getPatientPortalClinicalSummary(
   })
   if (!response.ok) {
     throw new Error(`Patient portal clinical summary check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalLabResults(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalLabResultsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/lab-results`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal lab results check failed with ${response.status}`)
   }
 
   return response.json()

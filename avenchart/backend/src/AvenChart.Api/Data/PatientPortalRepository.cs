@@ -322,6 +322,82 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalLabResultsResponse> GetLabResultsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyLabResults(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var orders = await GetPortalLabOrdersAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var orderIds = orders.Select(order => order.Id).ToArray();
+        var reports = await GetPortalLabReportsAsync(connection, orderIds, cancellationToken);
+        var reportIds = reports.Select(report => report.Id).ToArray();
+        var results = await GetPortalLabResultsAsync(connection, reportIds, cancellationToken);
+
+        var resultsByReport = results
+            .GroupBy(result => result.ReportId)
+            .ToDictionary(group => group.Key, group => group.Select(result => result.Result).ToArray());
+        var reportsByOrder = reports
+            .GroupBy(report => report.OrderId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(report =>
+                    {
+                        var reportResults = resultsByReport.GetValueOrDefault(report.Id, []);
+                        return new PatientPortalLabReportItem(
+                            Id: report.Id.ToString(),
+                            DateCollected: report.DateCollected,
+                            ReportDate: report.ReportDate,
+                            SpecimenNumber: report.SpecimenNumber,
+                            ReportStatus: report.ReportStatus,
+                            ReviewStatus: report.ReviewStatus,
+                            ResultCount: reportResults.Count(),
+                            Results: reportResults);
+                    })
+                    .ToArray());
+        var orderItems = orders
+            .Select(order =>
+            {
+                var orderReports = reportsByOrder.GetValueOrDefault(order.Id, []);
+                return new PatientPortalLabOrderItem(
+                    Id: order.Id.ToString(),
+                    OrderDate: order.OrderDate,
+                    ProcedureCode: order.ProcedureCode,
+                    ProcedureName: order.ProcedureName,
+                    OrderStatus: order.OrderStatus,
+                    ReportCount: orderReports.Count(),
+                    ResultCount: orderReports.Sum(report => report.ResultCount),
+                    Reports: orderReports);
+            })
+            .ToArray();
+
+        return new PatientPortalLabResultsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            OrderCount: orderItems.Length,
+            ReportCount: orderItems.Sum(order => order.ReportCount),
+            ResultCount: orderItems.Sum(order => order.ResultCount),
+            Orders: orderItems,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1502,6 +1578,46 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalLabResultsResponse EmptyLabResults(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        OrderCount: 0,
+        ReportCount: 0,
+        ResultCount: 0,
+        Orders: Array.Empty<PatientPortalLabOrderItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalLabResultsResponse MissingSessionLabResults(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        OrderCount: 0,
+        ReportCount: 0,
+        ResultCount: 0,
+        Orders: Array.Empty<PatientPortalLabOrderItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
 
@@ -1510,6 +1626,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalClinicalSummaryResponse MissingSessionHeaderClinicalSummary() =>
         MissingSessionClinicalSummary("Patient portal session header was not supplied.");
+
+    public static PatientPortalLabResultsResponse MissingSessionHeaderLabResults() =>
+        MissingSessionLabResults("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
@@ -1905,6 +2024,110 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 Quantity: ReadNullableString(reader, "quantity"),
                 Route: ReadNullableString(reader, "route"),
                 Note: ReadNullableString(reader, "note")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PortalLabOrderRow>> GetPortalLabOrdersAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, order_date, code as procedure_code, name as procedure_name, order_status
+            from lab_orders
+            where pid = @pid
+            order by order_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<PortalLabOrderRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PortalLabOrderRow(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
+                ProcedureCode: ReadNullableString(reader, "procedure_code"),
+                ProcedureName: ReadNullableString(reader, "procedure_name") ?? string.Empty,
+                OrderStatus: ReadNullableString(reader, "order_status")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PortalLabReportRow>> GetPortalLabReportsAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken)
+    {
+        if (orderIds.Count == 0)
+        {
+            return Array.Empty<PortalLabReportRow>();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, order_id, date_collected, report_date, specimen_number, status as report_status, review_status
+            from lab_reports
+            where order_id = any(@orderIds)
+            order by order_id, id;
+            """;
+        command.Parameters.AddWithValue("orderIds", orderIds.ToArray());
+
+        var items = new List<PortalLabReportRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PortalLabReportRow(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                OrderId: reader.GetInt32(reader.GetOrdinal("order_id")),
+                DateCollected: ReadNullableDate(reader, "date_collected"),
+                ReportDate: ReadNullableDateTime(reader, "report_date"),
+                SpecimenNumber: ReadNullableString(reader, "specimen_number"),
+                ReportStatus: ReadNullableString(reader, "report_status"),
+                ReviewStatus: ReadNullableString(reader, "review_status")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PortalLabResultRow>> GetPortalLabResultsAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> reportIds,
+        CancellationToken cancellationToken)
+    {
+        if (reportIds.Count == 0)
+        {
+            return Array.Empty<PortalLabResultRow>();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, report_id, code as result_code, text as result_name, abnormal, result, range, units, result_status
+            from lab_results
+            where report_id = any(@reportIds)
+            order by report_id, id;
+            """;
+        command.Parameters.AddWithValue("reportIds", reportIds.ToArray());
+
+        var items = new List<PortalLabResultRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PortalLabResultRow(
+                ReportId: reader.GetInt32(reader.GetOrdinal("report_id")),
+                Result: new PatientPortalLabResultItem(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+                    ResultCode: ReadNullableString(reader, "result_code"),
+                    ResultName: ReadNullableString(reader, "result_name") ?? string.Empty,
+                    Abnormal: ReadNullableString(reader, "abnormal"),
+                    Value: ReadNullableString(reader, "result"),
+                    Range: ReadNullableString(reader, "range"),
+                    Units: ReadNullableString(reader, "units"),
+                    ResultStatus: ReadNullableString(reader, "result_status"))));
         }
 
         return items;
@@ -2697,7 +2920,24 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private static string? ReadNullableDate(NpgsqlDataReader reader, string column)
     {
         var ordinal = reader.GetOrdinal(column);
-        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            DateOnly date => date.ToString("yyyy-MM-dd"),
+            DateTime dateTime => dateTime.ToString("yyyy-MM-dd"),
+            _ => value.ToString()
+        };
+    }
+
+    private static string? ReadNullableDateTime(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal).ToString("yyyy-MM-dd HH:mm");
     }
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
@@ -2799,6 +3039,26 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record PatientAppointmentRequestDefaultsRow(int? ProviderId, int? FacilityId);
+
+    private sealed record PortalLabOrderRow(
+        int Id,
+        string OrderDate,
+        string? ProcedureCode,
+        string ProcedureName,
+        string? OrderStatus);
+
+    private sealed record PortalLabReportRow(
+        int Id,
+        int OrderId,
+        string? DateCollected,
+        string? ReportDate,
+        string? SpecimenNumber,
+        string? ReportStatus,
+        string? ReviewStatus);
+
+    private sealed record PortalLabResultRow(
+        int ReportId,
+        PatientPortalLabResultItem Result);
 
     private sealed record AppointmentSummaryRows(
         int TotalCount,

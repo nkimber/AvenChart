@@ -58,6 +58,7 @@ import {
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
   getPatientPortalClinicalSummary,
+  getPatientPortalLabResults,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -290,6 +291,7 @@ import {
   type PatientPortalAppointmentsResponse,
   type PatientPortalClinicalSummaryResponse,
   type PatientPortalDocumentsResponse,
+  type PatientPortalLabResultsResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
   type PatientMessageCreateInput,
@@ -427,6 +429,8 @@ function App() {
     useState<PatientPortalAppointmentRequestOptionsResponse | null>(null)
   const [patientPortalClinicalSummary, setPatientPortalClinicalSummary] =
     useState<PatientPortalClinicalSummaryResponse | null>(null)
+  const [patientPortalLabResults, setPatientPortalLabResults] =
+    useState<PatientPortalLabResultsResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3793,6 +3797,7 @@ function App() {
         setPatientPortalAppointments(null)
         setPatientPortalAppointmentOptions(null)
         setPatientPortalClinicalSummary(null)
+        setPatientPortalLabResults(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
@@ -3805,6 +3810,7 @@ function App() {
       const appointments = home.authenticated ? await getPatientPortalAppointments(loginResult.sessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(loginResult.sessionId) : null
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(loginResult.sessionId) : null
+      const labResults = home.authenticated ? await getPatientPortalLabResults(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
@@ -3813,6 +3819,7 @@ function App() {
         setPatientPortalAppointments(appointments)
         setPatientPortalAppointmentOptions(appointmentOptions)
         setPatientPortalClinicalSummary(clinicalSummary)
+        setPatientPortalLabResults(labResults)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
@@ -3826,6 +3833,7 @@ function App() {
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalClinicalSummary(clinicalSummary)
+      setPatientPortalLabResults(labResults)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
@@ -3837,6 +3845,7 @@ function App() {
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
       setPatientPortalClinicalSummary(null)
+      setPatientPortalLabResults(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
@@ -3858,12 +3867,14 @@ function App() {
       const appointments = home.authenticated ? await getPatientPortalAppointments(patientPortalSessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(patientPortalSessionId) : null
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(patientPortalSessionId) : null
+      const labResults = home.authenticated ? await getPatientPortalLabResults(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalClinicalSummary(clinicalSummary)
+      setPatientPortalLabResults(labResults)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
@@ -4176,6 +4187,7 @@ function App() {
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
       setPatientPortalClinicalSummary(null)
+      setPatientPortalLabResults(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
@@ -4297,6 +4309,7 @@ function App() {
             portalAppointments={patientPortalAppointments}
             portalAppointmentOptions={patientPortalAppointmentOptions}
             portalClinicalSummary={patientPortalClinicalSummary}
+            portalLabResults={patientPortalLabResults}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4687,6 +4700,7 @@ function PatientPortalWorkspace({
   portalAppointments,
   portalAppointmentOptions,
   portalClinicalSummary,
+  portalLabResults,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4721,6 +4735,7 @@ function PatientPortalWorkspace({
   portalAppointments: PatientPortalAppointmentsResponse | null
   portalAppointmentOptions: PatientPortalAppointmentRequestOptionsResponse | null
   portalClinicalSummary: PatientPortalClinicalSummaryResponse | null
+  portalLabResults: PatientPortalLabResultsResponse | null
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -5127,6 +5142,58 @@ function PatientPortalWorkspace({
                   ))}
                   {(portalClinicalSummary?.prescriptions.length ?? 0) === 0 && (
                     <div className="empty-state inline">No prescriptions recorded</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="info-panel messages-panel" aria-label="Patient portal lab results">
+                <div className="panel-heading">
+                  <FlaskConical size={17} />
+                  <h3>Lab Results</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Portal lab results</span>
+                  <span>
+                    {portalLabResults?.orderCount ?? 0} {(portalLabResults?.orderCount ?? 0) === 1 ? 'order' : 'orders'} /{' '}
+                    {portalLabResults?.resultCount ?? 0} {(portalLabResults?.resultCount ?? 0) === 1 ? 'result' : 'results'}
+                  </span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal lab result orders">
+                  {(portalLabResults?.orders ?? []).map((order) => (
+                    <article className="clinical-item" key={order.id}>
+                      <div>
+                        <strong>{order.procedureName}</strong>
+                        <span>{order.orderDate}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Code {order.procedureCode ?? 'Not recorded'}</span>
+                        <span>Status {order.orderStatus ?? 'Not recorded'}</span>
+                        <span>{order.reportCount} {order.reportCount === 1 ? 'report' : 'reports'}</span>
+                        <span>{order.resultCount} {order.resultCount === 1 ? 'result' : 'results'}</span>
+                      </div>
+                      {order.reports.map((report) => (
+                        <div className="clinical-list-body" role="region" aria-label={`Patient portal lab report ${report.id}`} key={report.id}>
+                          <div className="message-meta-row">
+                            <span>Report {report.reportDate ?? 'Date pending'}</span>
+                            <span>Collected {report.dateCollected ?? 'Not recorded'}</span>
+                            <span>Status {report.reportStatus ?? 'Not recorded'}</span>
+                            <span>Review {report.reviewStatus ?? 'Not recorded'}</span>
+                          </div>
+                          {report.results.map((result) => (
+                            <div className="message-meta-row" key={result.id}>
+                              <strong>{result.resultName}</strong>
+                              <span>{result.value ?? 'No value'} {result.units ?? ''}</span>
+                              <span>Range {result.range ?? 'Not recorded'}</span>
+                              <span>Abnormal {result.abnormal ?? 'Not recorded'}</span>
+                              <span>Status {result.resultStatus ?? 'Not recorded'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </article>
+                  ))}
+                  {(portalLabResults?.orders.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No lab results recorded</div>
                   )}
                 </div>
               </section>

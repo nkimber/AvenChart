@@ -147,6 +147,55 @@ public sealed record PatientPortalPrescriptionItem(
     string? Route,
     string? Note);
 
+public sealed record PatientPortalLabResultsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int OrderCount,
+    int ReportCount,
+    int ResultCount,
+    IReadOnlyList<PatientPortalLabOrderItem> Orders,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalLabOrderItem(
+    string Id,
+    string OrderDate,
+    string? ProcedureCode,
+    string ProcedureName,
+    string? OrderStatus,
+    int ReportCount,
+    int ResultCount,
+    IReadOnlyList<PatientPortalLabReportItem> Reports);
+
+public sealed record PatientPortalLabReportItem(
+    string Id,
+    string? DateCollected,
+    string? ReportDate,
+    string? SpecimenNumber,
+    string? ReportStatus,
+    string? ReviewStatus,
+    int ResultCount,
+    IReadOnlyList<PatientPortalLabResultItem> Results);
+
+public sealed record PatientPortalLabResultItem(
+    string Id,
+    string? ResultCode,
+    string ResultName,
+    string? Abnormal,
+    string? Value,
+    string? Range,
+    string? Units,
+    string? ResultStatus);
+
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,
     Guid? SessionId,

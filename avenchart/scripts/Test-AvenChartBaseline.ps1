@@ -599,6 +599,18 @@ try {
     $portalClinicalAllergy = @($portalClinicalSummary.allergies) | Where-Object { $_.title -eq "Latex" -and $_.reaction -eq "skin irritation" } | Select-Object -First 1
     $portalClinicalMedication = @($portalClinicalSummary.medications) | Where-Object { $_.title -eq "Sertraline 50 mg" } | Select-Object -First 1
     $portalClinicalPrescription = @($portalClinicalSummary.prescriptions) | Where-Object { $_.drug -eq "Sertraline" -and $_.dosage -eq "50 mg" } | Select-Object -First 1
+    $portalLabResults = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/lab-results" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+    $portalLabOrders = @($portalLabResults.orders)
+    $portalLabOrder = $portalLabOrders | Where-Object { $_.procedureName -eq "Hemoglobin A1c" -and $_.orderDate -eq "2026-02-21" } | Select-Object -First 1
+    $portalLabReports = @($portalLabOrder.reports)
+    $portalLabReport = $portalLabReports | Where-Object { $_.reportStatus -eq "complete" -and $_.reviewStatus -eq "reviewed" } | Select-Object -First 1
+    $portalLabResultRows = @($portalLabReport.results)
+    $portalLabA1c = $portalLabResultRows | Where-Object { $_.resultName -eq "Hemoglobin A1c" -and $_.value -eq "5.7" -and $_.units -eq "%" } | Select-Object -First 1
+    $portalLabGlucose = $portalLabResultRows | Where-Object { $_.resultName -eq "Glucose" -and $_.value -eq "102" -and $_.units -eq "mg/dL" } | Select-Object -First 1
 
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
@@ -646,6 +658,14 @@ try {
         -and $null -ne $portalClinicalAllergy `
         -and $null -ne $portalClinicalMedication `
         -and $null -ne $portalClinicalPrescription `
+        -and $portalLabResults.authenticated `
+        -and $portalLabResults.orderCount -eq 1 `
+        -and $portalLabResults.reportCount -eq 1 `
+        -and $portalLabResults.resultCount -eq 4 `
+        -and $null -ne $portalLabOrder `
+        -and $null -ne $portalLabReport `
+        -and $null -ne $portalLabA1c `
+        -and $null -ne $portalLabGlucose `
         -and -not $endedPortalSession.authenticated `
         -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
         -and $endedPortalSession.endedAt `
@@ -659,6 +679,7 @@ try {
         home = $portalHome
         messages = $portalMessages
         clinicalSummary = $portalClinicalSummary
+        labResults = $portalLabResults
         endedSession = $endedPortalSession
         inactiveSession = $inactivePortalSession
         invalidLogin = $invalidPortalLogin
