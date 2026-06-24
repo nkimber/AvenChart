@@ -273,7 +273,8 @@ public sealed record PatientPortalGeneratedMedicalReport(
 
 public sealed record PatientPortalMedicalReportGenerationRequest(
     IReadOnlyList<string>? SectionIds,
-    IReadOnlyList<string>? ProcedureOrderIds);
+    IReadOnlyList<string>? ProcedureOrderIds,
+    IReadOnlyList<string>? IssueIds);
 
 public sealed record PatientPortalGeneratedMedicalReportResponse(
     bool Authenticated,
@@ -291,6 +292,7 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     string GeneratedOn,
     IReadOnlyList<string> IncludedSectionIds,
     IReadOnlyList<string> IncludedProcedureOrderIds,
+    IReadOnlyList<string> IncludedIssueIds,
     bool PrintableVersionAvailable,
     bool PdfDownloadAvailable,
     int ReportSectionCount,

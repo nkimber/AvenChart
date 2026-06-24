@@ -296,6 +296,7 @@ import {
   type PatientPortalDocumentsResponse,
   type PatientPortalGeneratedMedicalReportResponse,
   type PatientPortalLabResultsResponse,
+  type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
@@ -376,6 +377,35 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
 
+function getDefaultPatientPortalReportSectionIds(report: PatientPortalMedicalReportResponse | null): string[] {
+  return report?.sections.filter((section) => section.selected).map((section) => section.id) ?? []
+}
+
+function getDefaultPatientPortalReportProcedureOrderIds(report: PatientPortalMedicalReportResponse | null): string[] {
+  return report?.procedureOrders.slice(0, 1).map((order) => order.id) ?? []
+}
+
+function buildPatientPortalMedicalReportGenerationInput(
+  report: PatientPortalMedicalReportResponse | null,
+  sectionIds: string[],
+  issueIds: string[],
+  procedureOrderIds: string[],
+): PatientPortalMedicalReportGenerationInput {
+  return {
+    sectionIds: report ? sectionIds : undefined,
+    issueIds,
+    procedureOrderIds: report ? procedureOrderIds : undefined,
+  }
+}
+
+function updateStringSelection(current: string[], id: string, selected: boolean): string[] {
+  if (selected) {
+    return current.includes(id) ? current : [...current, id]
+  }
+
+  return current.filter((value) => value !== id)
+}
+
 function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>('patients')
 
@@ -440,6 +470,9 @@ function App() {
     useState<PatientPortalMedicalReportResponse | null>(null)
   const [patientPortalGeneratedMedicalReport, setPatientPortalGeneratedMedicalReport] =
     useState<PatientPortalGeneratedMedicalReportResponse | null>(null)
+  const [patientPortalReportSectionIds, setPatientPortalReportSectionIds] = useState<string[]>([])
+  const [patientPortalReportIssueIds, setPatientPortalReportIssueIds] = useState<string[]>([])
+  const [patientPortalReportProcedureOrderIds, setPatientPortalReportProcedureOrderIds] = useState<string[]>([])
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3789,6 +3822,12 @@ function App() {
     }
   }
 
+  function syncPatientPortalMedicalReportSelection(report: PatientPortalMedicalReportResponse | null) {
+    setPatientPortalReportSectionIds(getDefaultPatientPortalReportSectionIds(report))
+    setPatientPortalReportIssueIds([])
+    setPatientPortalReportProcedureOrderIds(getDefaultPatientPortalReportProcedureOrderIds(report))
+  }
+
   async function handlePatientPortalHomeLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setPatientPortalStatus('loading')
@@ -3808,6 +3847,7 @@ function App() {
         setPatientPortalClinicalSummary(null)
         setPatientPortalLabResults(null)
         setPatientPortalMedicalReport(null)
+        syncPatientPortalMedicalReportSelection(null)
         setPatientPortalGeneratedMedicalReport(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
@@ -3834,6 +3874,7 @@ function App() {
         setPatientPortalClinicalSummary(clinicalSummary)
         setPatientPortalLabResults(labResults)
         setPatientPortalMedicalReport(medicalReport)
+        syncPatientPortalMedicalReportSelection(medicalReport)
         setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
@@ -3850,6 +3891,7 @@ function App() {
       setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalLabResults(labResults)
       setPatientPortalMedicalReport(medicalReport)
+      syncPatientPortalMedicalReportSelection(medicalReport)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
@@ -3864,6 +3906,7 @@ function App() {
       setPatientPortalClinicalSummary(null)
       setPatientPortalLabResults(null)
       setPatientPortalMedicalReport(null)
+      syncPatientPortalMedicalReportSelection(null)
       setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
@@ -3897,6 +3940,7 @@ function App() {
       setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalLabResults(labResults)
       setPatientPortalMedicalReport(medicalReport)
+      syncPatientPortalMedicalReportSelection(medicalReport)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
@@ -3921,7 +3965,13 @@ function App() {
     setPatientPortalMessage(null)
 
     try {
-      const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId)
+      const generationInput = buildPatientPortalMedicalReportGenerationInput(
+        patientPortalMedicalReport,
+        patientPortalReportSectionIds,
+        patientPortalReportIssueIds,
+        patientPortalReportProcedureOrderIds,
+      )
+      const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId, generationInput)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalStatus(generatedMedicalReport.authenticated ? 'ready' : 'rejected')
       setPatientPortalMessage(generatedMedicalReport.authenticated
@@ -3944,8 +3994,13 @@ function App() {
     setPatientPortalMessage(null)
 
     try {
-      const generatedMedicalReport = patientPortalGeneratedMedicalReport
-        ?? await generatePatientPortalMedicalReport(patientPortalSessionId)
+      const generationInput = buildPatientPortalMedicalReportGenerationInput(
+        patientPortalMedicalReport,
+        patientPortalReportSectionIds,
+        patientPortalReportIssueIds,
+        patientPortalReportProcedureOrderIds,
+      )
+      const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId, generationInput)
       setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       if (!generatedMedicalReport.authenticated || !generatedMedicalReport.pdfDownloadAvailable) {
         setPatientPortalStatus('rejected')
@@ -3953,7 +4008,7 @@ function App() {
         return
       }
 
-      const blob = await downloadPatientPortalGeneratedMedicalReportPdf(patientPortalSessionId)
+      const blob = await downloadPatientPortalGeneratedMedicalReportPdf(patientPortalSessionId, generationInput)
       const url = URL.createObjectURL(blob)
       const link = window.document.createElement('a')
       link.href = url
@@ -4272,6 +4327,7 @@ function App() {
       setPatientPortalClinicalSummary(null)
       setPatientPortalLabResults(null)
       setPatientPortalMedicalReport(null)
+      syncPatientPortalMedicalReportSelection(null)
       setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
@@ -4397,6 +4453,9 @@ function App() {
             portalLabResults={patientPortalLabResults}
             portalMedicalReport={patientPortalMedicalReport}
             portalGeneratedMedicalReport={patientPortalGeneratedMedicalReport}
+            selectedMedicalReportSectionIds={patientPortalReportSectionIds}
+            selectedMedicalReportIssueIds={patientPortalReportIssueIds}
+            selectedMedicalReportProcedureOrderIds={patientPortalReportProcedureOrderIds}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4414,6 +4473,12 @@ function App() {
             onRefresh={handlePatientPortalHomeRefresh}
             onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
             onDownloadGeneratedMedicalReportPdf={handlePatientPortalMedicalReportPdfDownload}
+            onToggleMedicalReportSection={(sectionId, selected) =>
+              setPatientPortalReportSectionIds((current) => updateStringSelection(current, sectionId, selected))}
+            onToggleMedicalReportIssue={(issueId, selected) =>
+              setPatientPortalReportIssueIds((current) => updateStringSelection(current, issueId, selected))}
+            onToggleMedicalReportProcedureOrder={(orderId, selected) =>
+              setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
@@ -4792,6 +4857,9 @@ function PatientPortalWorkspace({
   portalLabResults,
   portalMedicalReport,
   portalGeneratedMedicalReport,
+  selectedMedicalReportSectionIds,
+  selectedMedicalReportIssueIds,
+  selectedMedicalReportProcedureOrderIds,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4809,6 +4877,9 @@ function PatientPortalWorkspace({
   onRefresh,
   onGenerateMedicalReport,
   onDownloadGeneratedMedicalReportPdf,
+  onToggleMedicalReportSection,
+  onToggleMedicalReportIssue,
+  onToggleMedicalReportProcedureOrder,
   onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
@@ -4831,6 +4902,9 @@ function PatientPortalWorkspace({
   portalLabResults: PatientPortalLabResultsResponse | null
   portalMedicalReport: PatientPortalMedicalReportResponse | null
   portalGeneratedMedicalReport: PatientPortalGeneratedMedicalReportResponse | null
+  selectedMedicalReportSectionIds: string[]
+  selectedMedicalReportIssueIds: string[]
+  selectedMedicalReportProcedureOrderIds: string[]
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -4848,6 +4922,9 @@ function PatientPortalWorkspace({
   onRefresh: () => Promise<void>
   onGenerateMedicalReport: () => Promise<void>
   onDownloadGeneratedMedicalReportPdf: () => Promise<void>
+  onToggleMedicalReportSection: (sectionId: string, selected: boolean) => void
+  onToggleMedicalReportIssue: (issueId: string, selected: boolean) => void
+  onToggleMedicalReportProcedureOrder: (orderId: string, selected: boolean) => void
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
@@ -5309,7 +5386,16 @@ function PatientPortalWorkspace({
                 <div className="clinical-list-body" role="region" aria-label="Patient portal medical report sections">
                   {(portalMedicalReport?.sections ?? []).map((section) => (
                     <div className="message-meta-row" key={section.id}>
-                      <strong>{section.label}</strong>
+                      <label className="checkbox-row report-choice">
+                        <input
+                          type="checkbox"
+                          checked={selectedMedicalReportSectionIds.includes(section.id)}
+                          onChange={(event) => onToggleMedicalReportSection(section.id, event.currentTarget.checked)}
+                          disabled={!authenticated || busy}
+                          aria-label={`Include ${section.label} section in generated report`}
+                        />
+                        <strong>{section.label}</strong>
+                      </label>
                       <span>{section.group}</span>
                       <span>{section.selected ? 'Selected by default' : 'Available'}</span>
                     </div>
@@ -5323,10 +5409,19 @@ function PatientPortalWorkspace({
                   <span>{portalMedicalReport?.issueCount ?? 0} issue choices</span>
                 </div>
                 <div className="clinical-list-body" role="region" aria-label="Patient portal medical report issues">
-                  {(portalMedicalReport?.issues ?? []).slice(0, 6).map((issue) => (
+                  {(portalMedicalReport?.issues ?? []).map((issue) => (
                     <article className="clinical-item" key={issue.id}>
                       <div>
-                        <strong>{issue.title}</strong>
+                        <label className="checkbox-row report-choice">
+                          <input
+                            type="checkbox"
+                            checked={selectedMedicalReportIssueIds.includes(issue.id)}
+                            onChange={(event) => onToggleMedicalReportIssue(issue.id, event.currentTarget.checked)}
+                            disabled={!authenticated || busy}
+                            aria-label={`Include ${issue.title} in generated report`}
+                          />
+                          <strong>{issue.title}</strong>
+                        </label>
                         <span>{issue.typeLabel} / {issue.status}</span>
                       </div>
                       <div className="message-meta-row">
@@ -5368,7 +5463,16 @@ function PatientPortalWorkspace({
                   {(portalMedicalReport?.procedureOrders ?? []).map((order) => (
                     <article className="clinical-item" key={order.id}>
                       <div>
-                        <strong>{order.procedureName}</strong>
+                        <label className="checkbox-row report-choice">
+                          <input
+                            type="checkbox"
+                            checked={selectedMedicalReportProcedureOrderIds.includes(order.id)}
+                            onChange={(event) => onToggleMedicalReportProcedureOrder(order.id, event.currentTarget.checked)}
+                            disabled={!authenticated || busy}
+                            aria-label={`Include procedure order ${order.procedureName} in generated report`}
+                          />
+                          <strong>{order.procedureName}</strong>
+                        </label>
                         <span>{order.orderDate} / Encounter {order.encounter}</span>
                       </div>
                       <div className="message-meta-row">
@@ -5386,7 +5490,7 @@ function PatientPortalWorkspace({
                 </div>
                 <div className="result-meta">
                   <span>{portalGeneratedMedicalReport?.title ?? portalMedicalReport?.reportPreview.title ?? 'Generated report'}</span>
-                  <span>{portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections / {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines</span>
+                  <span>{portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections / {portalGeneratedMedicalReport?.includedIssueIds.length ?? 0} issues / {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines</span>
                 </div>
                 <div className="contact-actions">
                   <button

@@ -2541,6 +2541,7 @@ export type PatientPortalGeneratedMedicalReport = {
 export type PatientPortalMedicalReportGenerationInput = {
   sectionIds?: string[]
   procedureOrderIds?: string[]
+  issueIds?: string[]
 }
 
 export type PatientPortalGeneratedMedicalReportSection = {
@@ -2566,6 +2567,7 @@ export type PatientPortalGeneratedMedicalReportResponse = {
   generatedOn: string
   includedSectionIds: string[]
   includedProcedureOrderIds: string[]
+  includedIssueIds: string[]
   printableVersionAvailable: boolean
   pdfDownloadAvailable: boolean
   reportSectionCount: number

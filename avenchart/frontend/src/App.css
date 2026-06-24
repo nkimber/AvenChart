@@ -889,6 +889,18 @@
   font-weight: 700;
 }
 
+.report-choice {
+  min-width: 0;
+  color: #1d2a35;
+}
+
+.report-choice input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2f8d87;
+  flex: 0 0 auto;
+}
+
 .inline-toggle {
   display: inline-flex;
   align-items: center;

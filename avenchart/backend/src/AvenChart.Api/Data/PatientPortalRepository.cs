@@ -1807,6 +1807,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
         IncludedSectionIds: Array.Empty<string>(),
         IncludedProcedureOrderIds: Array.Empty<string>(),
+        IncludedIssueIds: Array.Empty<string>(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -1832,6 +1833,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
         IncludedSectionIds: Array.Empty<string>(),
         IncludedProcedureOrderIds: Array.Empty<string>(),
+        IncludedIssueIds: Array.Empty<string>(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -2675,26 +2677,44 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var validSectionIds = MedicalReportSections
             .Select(section => section.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var requestedSectionIds = (request.SectionIds ?? Array.Empty<string>())
+        var requestedSectionIds = request.SectionIds is null
+            ? null
+            : request.SectionIds
             .Select(sectionId => sectionId.Trim())
             .Where(sectionId => validSectionIds.Contains(sectionId))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var includedSectionIds = requestedSectionIds.Length == 0
+        var includedSectionIds = requestedSectionIds is null
             ? MedicalReportSections.Where(section => section.Selected).Select(section => section.Id).ToArray()
             : requestedSectionIds;
         var includedSectionIdSet = includedSectionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var requestedProcedureOrderIds = (request.ProcedureOrderIds ?? Array.Empty<string>())
+        var requestedProcedureOrderIds = request.ProcedureOrderIds is null
+            ? null
+            : request.ProcedureOrderIds
             .Select(orderId => orderId.Trim())
             .Where(orderId => !string.IsNullOrWhiteSpace(orderId))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var requestedProcedureOrderIdSet = requestedProcedureOrderIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var includedProcedureOrders = requestedProcedureOrderIds.Length == 0
+        var requestedProcedureOrderIdSet = requestedProcedureOrderIds?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var includedProcedureOrders = requestedProcedureOrderIds is null
             ? procedureOrders.Take(1).ToArray()
             : procedureOrders.Where(order => requestedProcedureOrderIdSet.Contains(order.Id)).ToArray();
         var includedProcedureOrderIds = includedProcedureOrders.Select(order => order.Id).ToArray();
+
+        var requestedIssueIds = request.IssueIds is null
+            ? Array.Empty<string>()
+            : request.IssueIds
+                .Select(issueId => issueId.Trim())
+                .Where(issueId => !string.IsNullOrWhiteSpace(issueId))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        var requestedIssueIdSet = requestedIssueIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var includedIssues = issues
+            .Where(issue => requestedIssueIdSet.Contains(issue.Id))
+            .ToArray();
+        var includedIssueIds = includedIssues.Select(issue => issue.Id).ToArray();
 
         var reportSections = new List<PatientPortalGeneratedMedicalReportSection>();
         foreach (var section in MedicalReportSections.Where(section => includedSectionIdSet.Contains(section.Id)))
@@ -2756,6 +2776,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             }
         }
 
+        if (includedIssues.Length > 0)
+        {
+            reportSections.Add(BuildSelectedIssuesGeneratedReportSection(includedIssues));
+        }
+
         foreach (var order in includedProcedureOrders)
         {
             reportSections.Add(BuildGeneratedReportSection(
@@ -2781,6 +2806,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         };
         summaryLines.AddRange(includedProcedureOrders.Select(order =>
             $"Procedure Order: {order.ProcedureName} ordered {order.OrderDate} with {order.ResultCount} result rows."));
+        if (includedIssues.Length > 0)
+        {
+            summaryLines.Add($"Issues: {includedIssues.Length} selected for this customized report.");
+        }
 
         return new PatientPortalGeneratedMedicalReportResponse(
             Authenticated: true,
@@ -2798,6 +2827,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrderIds,
+            IncludedIssueIds: includedIssueIds,
             PrintableVersionAvailable: true,
             PdfDownloadAvailable: true,
             ReportSectionCount: reportSections.Count,
@@ -2840,6 +2870,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             $"Dataset: {report.DatasetId} {report.DatasetVersion}",
             $"Included sections: {string.Join(", ", report.IncludedSectionIds)}",
             $"Included procedure orders: {string.Join(", ", report.IncludedProcedureOrderIds)}",
+            $"Included issues: {string.Join(", ", report.IncludedIssueIds)}",
             string.Empty,
             "Summary"
         };
@@ -2917,6 +2948,17 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("(", "\\(", StringComparison.Ordinal)
             .Replace(")", "\\)", StringComparison.Ordinal);
+    }
+
+    private static PatientPortalGeneratedMedicalReportSection BuildSelectedIssuesGeneratedReportSection(
+        IReadOnlyList<PatientPortalMedicalReportIssue> issues)
+    {
+        var lines = issues
+            .Select(issue =>
+                $"{issue.TypeLabel}: {issue.Title} ({issue.Status}; begin {issue.BeginDate ?? "Not recorded"}; end {issue.EndDate ?? "Active"})")
+            .ToArray();
+
+        return BuildGeneratedReportSection("issues", "Issues", lines);
     }
 
     private static PatientPortalGeneratedMedicalReportSection BuildIssueGeneratedReportSection(
