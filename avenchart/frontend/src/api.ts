@@ -2367,6 +2367,68 @@ export type PatientPortalAppointmentsResponse = {
   sessionSource: string
 }
 
+export type PatientPortalProblemItem = {
+  id: string
+  title: string
+  reportedDate?: string | null
+  startDate?: string | null
+  endDate?: string | null
+}
+
+export type PatientPortalAllergyItem = {
+  id: string
+  title: string
+  reportedDate?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  referredBy?: string | null
+  reaction?: string | null
+  severity?: string | null
+}
+
+export type PatientPortalMedicationItem = {
+  id: string
+  title: string
+  startDate?: string | null
+  modifiedDate?: string | null
+  endDate?: string | null
+}
+
+export type PatientPortalPrescriptionItem = {
+  id: string
+  drug: string
+  startDate?: string | null
+  endDate?: string | null
+  dosage?: string | null
+  quantity?: string | null
+  route?: string | null
+  note?: string | null
+}
+
+export type PatientPortalClinicalSummaryResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  problemCount: number
+  problems: PatientPortalProblemItem[]
+  allergyCount: number
+  allergies: PatientPortalAllergyItem[]
+  medicationCount: number
+  medications: PatientPortalMedicationItem[]
+  prescriptionCount: number
+  prescriptions: PatientPortalPrescriptionItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalAppointmentCategoryOption = {
   id: number
   name: string
@@ -2802,6 +2864,21 @@ export async function getPatientPortalAppointments(
   })
   if (!response.ok) {
     throw new Error(`Patient portal appointments check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalClinicalSummary(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalClinicalSummaryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/clinical-summary`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal clinical summary check failed with ${response.status}`)
   }
 
   return response.json()

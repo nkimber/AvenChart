@@ -281,6 +281,47 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalClinicalSummaryResponse> GetClinicalSummaryAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyClinicalSummary(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var problems = await GetPortalProblemsAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var allergies = await GetPortalAllergiesAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var medications = await GetPortalMedicationsAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var prescriptions = await GetPortalPrescriptionsAsync(connection, session.LegacyPid.Value, cancellationToken);
+
+        return new PatientPortalClinicalSummaryResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            ProblemCount: problems.Count,
+            Problems: problems,
+            AllergyCount: allergies.Count,
+            Allergies: allergies,
+            MedicationCount: medications.Count,
+            Medications: medications,
+            PrescriptionCount: prescriptions.Count,
+            Prescriptions: prescriptions,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1413,11 +1454,62 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalClinicalSummaryResponse EmptyClinicalSummary(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        ProblemCount: 0,
+        Problems: Array.Empty<PatientPortalProblemItem>(),
+        AllergyCount: 0,
+        Allergies: Array.Empty<PatientPortalAllergyItem>(),
+        MedicationCount: 0,
+        Medications: Array.Empty<PatientPortalMedicationItem>(),
+        PrescriptionCount: 0,
+        Prescriptions: Array.Empty<PatientPortalPrescriptionItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalClinicalSummaryResponse MissingSessionClinicalSummary(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        ProblemCount: 0,
+        Problems: Array.Empty<PatientPortalProblemItem>(),
+        AllergyCount: 0,
+        Allergies: Array.Empty<PatientPortalAllergyItem>(),
+        MedicationCount: 0,
+        Medications: Array.Empty<PatientPortalMedicationItem>(),
+        PrescriptionCount: 0,
+        Prescriptions: Array.Empty<PatientPortalPrescriptionItem>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsResponse MissingSessionHeaderDocuments() =>
         MissingSessionDocuments("Patient portal session header was not supplied.");
+
+    public static PatientPortalClinicalSummaryResponse MissingSessionHeaderClinicalSummary() =>
+        MissingSessionClinicalSummary("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
@@ -1681,6 +1773,142 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ThreadMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
+
+    private static async Task<IReadOnlyList<PatientPortalProblemItem>> GetPortalProblemsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id::text as id, title, problem_date as reported_date, problem_date as start_date, end_date
+            from problems
+            where pid = @pid
+              and type = 'medical_problem'
+              and activity = 1
+            order by problem_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<PatientPortalProblemItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PatientPortalProblemItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Title: ReadNullableString(reader, "title") ?? string.Empty,
+                ReportedDate: ReadNullableDate(reader, "reported_date"),
+                StartDate: ReadNullableDate(reader, "start_date"),
+                EndDate: ReadNullableDate(reader, "end_date")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalAllergyItem>> GetPortalAllergiesAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id::text as id,
+              title,
+              allergy_date as reported_date,
+              allergy_date as start_date,
+              end_date,
+              reaction,
+              severity
+            from allergies
+            where pid = @pid
+              and type = 'allergy'
+              and activity = 1
+            order by allergy_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<PatientPortalAllergyItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PatientPortalAllergyItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Title: ReadNullableString(reader, "title") ?? string.Empty,
+                ReportedDate: ReadNullableDate(reader, "reported_date"),
+                StartDate: ReadNullableDate(reader, "start_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
+                ReferredBy: null,
+                Reaction: ReadNullableString(reader, "reaction"),
+                Severity: ReadNullableString(reader, "severity")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMedicationItem>> GetPortalMedicationsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id::text as id, title, medication_date as start_date, medication_date as modified_date, end_date
+            from medications
+            where pid = @pid
+              and type = 'medication'
+              and activity = 1
+            order by medication_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<PatientPortalMedicationItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PatientPortalMedicationItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Title: ReadNullableString(reader, "title") ?? string.Empty,
+                StartDate: ReadNullableDate(reader, "start_date"),
+                ModifiedDate: ReadNullableDate(reader, "modified_date"),
+                EndDate: ReadNullableDate(reader, "end_date")));
+        }
+
+        return items;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalPrescriptionItem>> GetPortalPrescriptionsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id::text as id, drug, start_date, end_date, dosage, quantity::text as quantity, route, note
+            from prescriptions
+            where pid = @pid
+              and end_date is null
+            order by start_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var items = new List<PatientPortalPrescriptionItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PatientPortalPrescriptionItem(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Drug: ReadNullableString(reader, "drug") ?? string.Empty,
+                StartDate: ReadNullableDate(reader, "start_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
+                Dosage: ReadNullableString(reader, "dosage"),
+                Quantity: ReadNullableString(reader, "quantity"),
+                Route: ReadNullableString(reader, "route"),
+                Note: ReadNullableString(reader, "note")));
+        }
+
+        return items;
+    }
 
     private static async Task<PatientAppointmentRequestDefaultsRow> GetPatientAppointmentRequestDefaultsAsync(
         NpgsqlConnection connection,

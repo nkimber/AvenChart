@@ -590,6 +590,15 @@ try {
     $portalCareTeamMessage = $portalMessageItems | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
     $portalAllInboxMessage = $portalAllMessageItems | Where-Object { $_.title -eq "Portal message" -and $_.status -eq "Done" } | Select-Object -First 1
     $portalAllCareTeamMessage = $portalAllMessageItems | Where-Object { $_.title -eq "Care team follow-up" -and $_.status -eq "New" } | Select-Object -First 1
+    $portalClinicalSummary = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/clinical-summary" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
+    $portalClinicalProblem = @($portalClinicalSummary.problems) | Where-Object { $_.title -eq "Low back pain, unspecified" } | Select-Object -First 1
+    $portalClinicalAllergy = @($portalClinicalSummary.allergies) | Where-Object { $_.title -eq "Latex" -and $_.reaction -eq "skin irritation" } | Select-Object -First 1
+    $portalClinicalMedication = @($portalClinicalSummary.medications) | Where-Object { $_.title -eq "Sertraline 50 mg" } | Select-Object -First 1
+    $portalClinicalPrescription = @($portalClinicalSummary.prescriptions) | Where-Object { $_.drug -eq "Sertraline" -and $_.dosage -eq "50 mg" } | Select-Object -First 1
 
     $endedPortalSession = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/session" `
@@ -628,6 +637,15 @@ try {
         -and $portalCareTeamMessage.body -eq "Follow-up message for Nora Kim." `
         -and $null -ne $portalAllInboxMessage `
         -and $null -ne $portalAllCareTeamMessage `
+        -and $portalClinicalSummary.authenticated `
+        -and $portalClinicalSummary.problemCount -eq 2 `
+        -and $portalClinicalSummary.allergyCount -eq 1 `
+        -and $portalClinicalSummary.medicationCount -eq 3 `
+        -and $portalClinicalSummary.prescriptionCount -eq 3 `
+        -and $null -ne $portalClinicalProblem `
+        -and $null -ne $portalClinicalAllergy `
+        -and $null -ne $portalClinicalMedication `
+        -and $null -ne $portalClinicalPrescription `
         -and -not $endedPortalSession.authenticated `
         -and $endedPortalSession.sessionId -eq $validPortalLogin.sessionId `
         -and $endedPortalSession.endedAt `
@@ -640,6 +658,7 @@ try {
         session = $portalSession
         home = $portalHome
         messages = $portalMessages
+        clinicalSummary = $portalClinicalSummary
         endedSession = $endedPortalSession
         inactiveSession = $inactivePortalSession
         invalidLogin = $invalidPortalLogin

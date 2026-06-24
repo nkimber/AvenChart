@@ -57,6 +57,7 @@ import {
   getPatientMessages,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
+  getPatientPortalClinicalSummary,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -287,6 +288,7 @@ import {
   type PatientPortalAppointmentRequestInput,
   type PatientPortalAppointmentRequestOptionsResponse,
   type PatientPortalAppointmentsResponse,
+  type PatientPortalClinicalSummaryResponse,
   type PatientPortalDocumentsResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
@@ -423,6 +425,8 @@ function App() {
   const [patientPortalAppointments, setPatientPortalAppointments] = useState<PatientPortalAppointmentsResponse | null>(null)
   const [patientPortalAppointmentOptions, setPatientPortalAppointmentOptions] =
     useState<PatientPortalAppointmentRequestOptionsResponse | null>(null)
+  const [patientPortalClinicalSummary, setPatientPortalClinicalSummary] =
+    useState<PatientPortalClinicalSummaryResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3788,6 +3792,7 @@ function App() {
         setPatientPortalHome(null)
         setPatientPortalAppointments(null)
         setPatientPortalAppointmentOptions(null)
+        setPatientPortalClinicalSummary(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
@@ -3799,6 +3804,7 @@ function App() {
       const home = await getPatientPortalHome(loginResult.sessionId)
       const appointments = home.authenticated ? await getPatientPortalAppointments(loginResult.sessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(loginResult.sessionId) : null
+      const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
@@ -3806,6 +3812,7 @@ function App() {
         setPatientPortalHome(home)
         setPatientPortalAppointments(appointments)
         setPatientPortalAppointmentOptions(appointmentOptions)
+        setPatientPortalClinicalSummary(clinicalSummary)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
@@ -3818,6 +3825,7 @@ function App() {
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
+      setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
@@ -3828,6 +3836,7 @@ function App() {
       setPatientPortalHome(null)
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
+      setPatientPortalClinicalSummary(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
@@ -3848,11 +3857,13 @@ function App() {
       const home = await getPatientPortalHome(patientPortalSessionId)
       const appointments = home.authenticated ? await getPatientPortalAppointments(patientPortalSessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(patientPortalSessionId) : null
+      const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
+      setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
@@ -4164,6 +4175,7 @@ function App() {
       setPatientPortalHome(null)
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
+      setPatientPortalClinicalSummary(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
@@ -4284,6 +4296,7 @@ function App() {
             home={patientPortalHome}
             portalAppointments={patientPortalAppointments}
             portalAppointmentOptions={patientPortalAppointmentOptions}
+            portalClinicalSummary={patientPortalClinicalSummary}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4673,6 +4686,7 @@ function PatientPortalWorkspace({
   home,
   portalAppointments,
   portalAppointmentOptions,
+  portalClinicalSummary,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4706,6 +4720,7 @@ function PatientPortalWorkspace({
   home: PatientPortalHomeSummaryResponse | null
   portalAppointments: PatientPortalAppointmentsResponse | null
   portalAppointmentOptions: PatientPortalAppointmentRequestOptionsResponse | null
+  portalClinicalSummary: PatientPortalClinicalSummaryResponse | null
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -5018,6 +5033,102 @@ function PatientPortalWorkspace({
                 {(portalDocuments?.documentCount ?? 0) === 0 && (
                   <div className="timeline-placeholder">No patient documents recorded</div>
                 )}
+              </section>
+
+              <section className="info-panel messages-panel" aria-label="Patient portal clinical summary">
+                <div className="panel-heading">
+                  <HeartPulse size={17} />
+                  <h3>Clinical Summary</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Problems</span>
+                  <span>{portalClinicalSummary?.problemCount ?? 0} {(portalClinicalSummary?.problemCount ?? 0) === 1 ? 'problem' : 'problems'}</span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal problems">
+                  {(portalClinicalSummary?.problems ?? []).map((problem) => (
+                    <article className="clinical-item" key={problem.id}>
+                      <div>
+                        <strong>{problem.title}</strong>
+                        <span>{problem.startDate ?? problem.reportedDate ?? 'Date pending'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Reported {problem.reportedDate ?? 'Not recorded'}</span>
+                        <span>Start {problem.startDate ?? 'Not recorded'}</span>
+                        <span>End {problem.endDate ?? 'Active'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalClinicalSummary?.problems.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No problems recorded</div>
+                  )}
+                </div>
+                <div className="result-meta">
+                  <span>Allergies</span>
+                  <span>{portalClinicalSummary?.allergyCount ?? 0} {(portalClinicalSummary?.allergyCount ?? 0) === 1 ? 'allergy' : 'allergies'}</span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal allergies">
+                  {(portalClinicalSummary?.allergies ?? []).map((allergy) => (
+                    <article className="clinical-item" key={allergy.id}>
+                      <div>
+                        <strong>{allergy.title}</strong>
+                        <span>{allergy.startDate ?? allergy.reportedDate ?? 'Date pending'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Reaction {allergy.reaction ?? 'Not recorded'}</span>
+                        <span>Severity {allergy.severity ?? 'Not recorded'}</span>
+                        <span>End {allergy.endDate ?? 'Active'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalClinicalSummary?.allergies.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No allergies recorded</div>
+                  )}
+                </div>
+                <div className="result-meta">
+                  <span>Medications</span>
+                  <span>{portalClinicalSummary?.medicationCount ?? 0} {(portalClinicalSummary?.medicationCount ?? 0) === 1 ? 'medication' : 'medications'}</span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal medications">
+                  {(portalClinicalSummary?.medications ?? []).map((medication) => (
+                    <article className="clinical-item" key={medication.id}>
+                      <div>
+                        <strong>{medication.title}</strong>
+                        <span>{medication.startDate ?? 'Date pending'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Start {medication.startDate ?? 'Not recorded'}</span>
+                        <span>Modified {medication.modifiedDate ?? 'Not recorded'}</span>
+                        <span>End {medication.endDate ?? 'Active'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalClinicalSummary?.medications.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No medications recorded</div>
+                  )}
+                </div>
+                <div className="result-meta">
+                  <span>Prescriptions</span>
+                  <span>{portalClinicalSummary?.prescriptionCount ?? 0} {(portalClinicalSummary?.prescriptionCount ?? 0) === 1 ? 'prescription' : 'prescriptions'}</span>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal prescriptions">
+                  {(portalClinicalSummary?.prescriptions ?? []).map((prescription) => (
+                    <article className="clinical-item" key={prescription.id}>
+                      <div>
+                        <strong>{prescription.drug}</strong>
+                        <span>{prescription.startDate ?? 'Date pending'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Dosage {prescription.dosage ?? 'Not recorded'}</span>
+                        <span>Quantity {prescription.quantity ?? 'Not recorded'}</span>
+                        <span>Route {prescription.route ?? 'Not recorded'}</span>
+                        <span>End {prescription.endDate ?? 'Active'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(portalClinicalSummary?.prescriptions.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No prescriptions recorded</div>
+                  )}
+                </div>
               </section>
 
               <section className="info-panel messages-panel">

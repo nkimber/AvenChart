@@ -90,6 +90,63 @@ public sealed record PatientPortalAppointmentsResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalClinicalSummaryResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int ProblemCount,
+    IReadOnlyList<PatientPortalProblemItem> Problems,
+    int AllergyCount,
+    IReadOnlyList<PatientPortalAllergyItem> Allergies,
+    int MedicationCount,
+    IReadOnlyList<PatientPortalMedicationItem> Medications,
+    int PrescriptionCount,
+    IReadOnlyList<PatientPortalPrescriptionItem> Prescriptions,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalProblemItem(
+    string Id,
+    string Title,
+    string? ReportedDate,
+    string? StartDate,
+    string? EndDate);
+
+public sealed record PatientPortalAllergyItem(
+    string Id,
+    string Title,
+    string? ReportedDate,
+    string? StartDate,
+    string? EndDate,
+    string? ReferredBy,
+    string? Reaction,
+    string? Severity);
+
+public sealed record PatientPortalMedicationItem(
+    string Id,
+    string Title,
+    string? StartDate,
+    string? ModifiedDate,
+    string? EndDate);
+
+public sealed record PatientPortalPrescriptionItem(
+    string Id,
+    string Drug,
+    string? StartDate,
+    string? EndDate,
+    string? Dosage,
+    string? Quantity,
+    string? Route,
+    string? Note);
+
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,
     Guid? SessionId,
