@@ -394,6 +394,20 @@ patientPortal.MapPost("/messages/{messageId:int}/reply", async (
     })
     .WithName("ReplyToPatientPortalMessage");
 
+patientPortal.MapPost("/messages/{messageId:int}/forward", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        int messageId,
+        PatientPortalForwardMessageRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.ForwardMessageAsync(sessionId, messageId, request, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderForwardMessage(messageId.ToString()));
+    })
+    .WithName("ForwardPatientPortalMessage");
+
 patientPortal.MapPut("/messages/{messageId:int}/read", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

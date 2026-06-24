@@ -15,6 +15,7 @@ import {
   FileText,
   FlaskConical,
   FolderOpen,
+  Forward,
   HeartPulse,
   KeyRound,
   LogIn,
@@ -72,6 +73,7 @@ import {
   getPatientPortalMessageAudit,
   composePatientPortalMessage,
   replyPatientPortalMessage,
+  forwardPatientPortalMessage,
   readPatientPortalMessage,
   deletePatientPortalMessage,
   archivePatientPortalMessages,
@@ -492,6 +494,7 @@ function App() {
   const [patientPortalComposeTitle, setPatientPortalComposeTitle] = useState('Portal follow-up request')
   const [patientPortalComposeBody, setPatientPortalComposeBody] = useState('Please review my latest care-team follow-up when available.')
   const [patientPortalReplyBodies, setPatientPortalReplyBodies] = useState<Record<string, string>>({})
+  const [patientPortalForwardBodies, setPatientPortalForwardBodies] = useState<Record<string, string>>({})
   const [patientPortalThreads, setPatientPortalThreads] = useState<Record<string, PatientPortalMessageThreadResponse>>({})
   const [patientPortalStatus, setPatientPortalStatus] =
     useState<'idle' | 'loading' | 'ready' | 'rejected' | 'ending' | 'error'>('idle')
@@ -3875,6 +3878,8 @@ function App() {
         setPatientPortalMessageAudit(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
+        setPatientPortalReplyBodies({})
+        setPatientPortalForwardBodies({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(loginResult.failureReason ?? 'Patient portal sign-in was rejected.')
         return
@@ -3904,6 +3909,8 @@ function App() {
         setPatientPortalMessageAudit(messageAudit)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
+        setPatientPortalReplyBodies({})
+        setPatientPortalForwardBodies({})
         setPatientPortalStatus('rejected')
         setPatientPortalMessage(home.failureReason ?? 'Patient portal home was not available.')
         return
@@ -3922,6 +3929,8 @@ function App() {
       setPatientPortalMessageAudit(messageAudit)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
+      setPatientPortalReplyBodies({})
+      setPatientPortalForwardBodies({})
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Portal home ready for ${home.displayName}`)
     } catch (portalError) {
@@ -3939,6 +3948,8 @@ function App() {
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
       setPatientPortalThreads({})
+      setPatientPortalReplyBodies({})
+      setPatientPortalForwardBodies({})
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home failed')
     }
   }
@@ -4215,6 +4226,49 @@ function App() {
     }
   }
 
+  async function handlePatientPortalForwardSubmit(messageId: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before forwarding a secure message to the practice.')
+      return
+    }
+
+    const body = (patientPortalForwardBodies[messageId] ?? '').trim()
+    if (!body) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Secure message forward text is required.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const forwardResult = await forwardPatientPortalMessage(patientPortalSessionId, messageId, {
+        body,
+        assignedTo: 'admin',
+      })
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalMessages(messages)
+      setPatientPortalStatus(forwardResult.forwarded ? 'ready' : 'rejected')
+      setPatientPortalMessage(forwardResult.forwarded
+        ? `Forwarded secure message to ${forwardResult.forwardedPatientMessage?.assignedTo || 'the practice'}`
+        : forwardResult.failureReason ?? 'Secure message was not forwarded to the practice.')
+      if (forwardResult.forwarded) {
+        setPatientPortalForwardBodies((current) => ({ ...current, [messageId]: '' }))
+        if (patientPortalThreads[messageId]) {
+          const thread = await getPatientPortalMessageThread(patientPortalSessionId, messageId)
+          setPatientPortalThreads((current) => ({ ...current, [messageId]: thread }))
+        }
+      }
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal message forward failed')
+    }
+  }
+
   async function handlePatientPortalThreadLoad(messageId: string) {
     if (!patientPortalSessionId) {
       setPatientPortalStatus('rejected')
@@ -4294,6 +4348,11 @@ function App() {
         delete next[messageId]
         return next
       })
+      setPatientPortalForwardBodies((current) => {
+        const next = { ...current }
+        delete next[messageId]
+        return next
+      })
       setPatientPortalStatus(deleteResult.deleted ? 'ready' : 'rejected')
       setPatientPortalMessage(deleteResult.deleted
         ? `Secure message archived for ${deleteResult.deletedMessage?.title || deleteResult.messageId}`
@@ -4344,6 +4403,13 @@ function App() {
         return next
       })
       setPatientPortalReplyBodies((current) => {
+        const next = { ...current }
+        archivedIds.forEach((messageId) => {
+          delete next[messageId]
+        })
+        return next
+      })
+      setPatientPortalForwardBodies((current) => {
         const next = { ...current }
         archivedIds.forEach((messageId) => {
           delete next[messageId]
@@ -4420,6 +4486,8 @@ function App() {
       setPatientPortalMessageAudit(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
+      setPatientPortalReplyBodies({})
+      setPatientPortalForwardBodies({})
       setPatientPortalStatus('idle')
       setPatientPortalMessage(`Portal session ended for ${result.displayName || patientPortalUsername}`)
     } catch (portalError) {
@@ -4552,6 +4620,7 @@ function App() {
             composeTitle={patientPortalComposeTitle}
             composeBody={patientPortalComposeBody}
             replyBodies={patientPortalReplyBodies}
+            forwardBodies={patientPortalForwardBodies}
             threads={patientPortalThreads}
             onUsernameChange={setPatientPortalUsername}
             onPasswordChange={setPatientPortalPassword}
@@ -4559,6 +4628,7 @@ function App() {
             onComposeTitleChange={setPatientPortalComposeTitle}
             onComposeBodyChange={setPatientPortalComposeBody}
             onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
+            onForwardBodyChange={(messageId, value) => setPatientPortalForwardBodies((current) => ({ ...current, [messageId]: value }))}
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
             onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
@@ -4575,6 +4645,7 @@ function App() {
             onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
+            onForwardSubmit={handlePatientPortalForwardSubmit}
             onLoadThread={handlePatientPortalThreadLoad}
             onMarkRead={handlePatientPortalMessageRead}
             onDeleteMessage={handlePatientPortalMessageDelete}
@@ -4961,6 +5032,7 @@ function PatientPortalWorkspace({
   composeTitle,
   composeBody,
   replyBodies,
+  forwardBodies,
   threads,
   onUsernameChange,
   onPasswordChange,
@@ -4968,6 +5040,7 @@ function PatientPortalWorkspace({
   onComposeTitleChange,
   onComposeBodyChange,
   onReplyBodyChange,
+  onForwardBodyChange,
   onLogin,
   onRefresh,
   onGenerateMedicalReport,
@@ -4980,6 +5053,7 @@ function PatientPortalWorkspace({
   onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
+  onForwardSubmit,
   onLoadThread,
   onMarkRead,
   onDeleteMessage,
@@ -5010,6 +5084,7 @@ function PatientPortalWorkspace({
   composeTitle: string
   composeBody: string
   replyBodies: Record<string, string>
+  forwardBodies: Record<string, string>
   threads: Record<string, PatientPortalMessageThreadResponse>
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
@@ -5017,6 +5092,7 @@ function PatientPortalWorkspace({
   onComposeTitleChange: (value: string) => void
   onComposeBodyChange: (value: string) => void
   onReplyBodyChange: (messageId: string, value: string) => void
+  onForwardBodyChange: (messageId: string, value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
   onGenerateMedicalReport: () => Promise<void>
@@ -5029,6 +5105,7 @@ function PatientPortalWorkspace({
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
+  onForwardSubmit: (messageId: string) => Promise<void>
   onLoadThread: (messageId: string) => Promise<void>
   onMarkRead: (messageId: string) => Promise<void>
   onDeleteMessage: (messageId: string) => Promise<void>
@@ -5901,6 +5978,37 @@ function PatientPortalWorkspace({
                           </button>
                         </div>
                       </form>
+                      {portalMessage.senderId !== home.portalUsername && (
+                        <form
+                          className="contact-form portal-reply-form"
+                          aria-label={`Forward ${portalMessage.title} to practice`}
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            void onForwardSubmit(portalMessage.id)
+                          }}
+                        >
+                          <label className="contact-field">
+                            <span>Forward to practice</span>
+                            <textarea
+                              value={forwardBodies[portalMessage.id] ?? ''}
+                              onChange={(event) => onForwardBodyChange(portalMessage.id, event.target.value)}
+                              aria-label={`Forward ${portalMessage.title} to practice`}
+                              disabled={!authenticated || busy}
+                              rows={3}
+                            />
+                          </label>
+                          <div className="contact-actions">
+                            <button
+                              className="icon-text-button"
+                              type="submit"
+                              disabled={!authenticated || busy || (forwardBodies[portalMessage.id] ?? '').trim() === ''}
+                            >
+                              <Forward size={15} />
+                              <span>Forward to practice</span>
+                            </button>
+                          </div>
+                        </form>
+                      )}
                     </article>
                   ))}
                   {(portalMessages?.messages.length ?? 0) === 0 && (

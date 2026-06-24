@@ -17,6 +17,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string GeneratedMedicalReportPackageDownloadedEventType = "package_downloaded";
     private const string PortalMessageComposedEventType = "message_composed";
     private const string PortalMessageRepliedEventType = "message_replied";
+    private const string PortalMessageForwardedEventType = "message_forwarded";
     private const string PortalMessageReadEventType = "message_read";
     private const string PortalMessageArchivedEventType = "message_archived";
     private const string PortalMessagesArchivedEventType = "messages_archived";
@@ -1331,6 +1332,103 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalForwardMessageResponse> ForwardMessageAsync(
+        Guid sessionId,
+        int messageId,
+        PatientPortalForwardMessageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ForwardFailure(session, messageId.ToString(), session.FailureReason ?? "Session is not active.");
+        }
+
+        var body = NormalizeText(request.Body);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return ForwardFailure(session, messageId.ToString(), "Secure message forward body is required.");
+        }
+
+        var assignedTo = NormalizeText(request.AssignedTo) ?? "admin";
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var original = await GetPortalInboxMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
+        if (original is null)
+        {
+            return ForwardFailure(session, messageId.ToString(), "Secure message was not found in the signed-in portal inbox.");
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var forwardedMessage = await InsertForwardedPatientMessageAsync(
+            connection,
+            session,
+            original.Item,
+            body,
+            assignedTo,
+            transaction,
+            cancellationToken);
+        var forwardedPortalMessage = original.Item with
+        {
+            Status = "Sent",
+            AssignedTo = assignedTo,
+            PortalRelation = "portal:forwarded"
+        };
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update portal_mailbox_messages
+                set message_status = 'Sent',
+                    assigned_to = @assigned_to,
+                    portal_relation = 'portal:forwarded',
+                    activity = 1
+                where deleted = 0
+                  and owner = @portal_username
+                  and recipient_id = @portal_username
+                  and id = @message_id;
+                """;
+            command.Parameters.Add("assigned_to", NpgsqlDbType.Text).Value = assignedTo;
+            command.Parameters.Add("portal_username", NpgsqlDbType.Text).Value = session.PortalUsername;
+            command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await RecordPortalMessageAuditEventAsync(
+            connection,
+            session,
+            PortalMessageForwardedEventType,
+            forwardedPortalMessage,
+            [forwardedPortalMessage],
+            archivedMessageCount: 0,
+            transaction,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalForwardMessageResponse(
+            Authenticated: true,
+            Forwarded: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            OriginalMessageId: forwardedPortalMessage.Id,
+            OriginalMessage: forwardedPortalMessage,
+            ForwardedPatientMessage: forwardedMessage,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalReadMessageResponse> MarkMessageReadAsync(
         Guid sessionId,
         int messageId,
@@ -2255,6 +2353,25 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             FailureReason: "Patient portal session header was not supplied.",
             SessionSource: SessionSource);
 
+    public static PatientPortalForwardMessageResponse MissingSessionHeaderForwardMessage(string messageId) =>
+        new(
+            Authenticated: false,
+            Forwarded: false,
+            SessionId: null,
+            Username: string.Empty,
+            PortalUsername: string.Empty,
+            CanonicalId: string.Empty,
+            LegacyPid: null,
+            Pubpid: string.Empty,
+            DisplayName: string.Empty,
+            OriginalMessageId: messageId,
+            OriginalMessage: null,
+            ForwardedPatientMessage: null,
+            MessageCount: 0,
+            SentMessageCount: 0,
+            FailureReason: "Patient portal session header was not supplied.",
+            SessionSource: SessionSource);
+
     public static PatientPortalReadMessageResponse MissingSessionHeaderReadMessage(string messageId) =>
         new(
             Authenticated: false,
@@ -2350,6 +2467,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         OriginalMessage: null,
         SentMessage: null,
         RecipientMessage: null,
+        MessageCount: 0,
+        SentMessageCount: 0,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalForwardMessageResponse ForwardFailure(
+        PatientPortalSessionResponse session,
+        string originalMessageId,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        Forwarded: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        OriginalMessageId: originalMessageId,
+        OriginalMessage: null,
+        ForwardedPatientMessage: null,
         MessageCount: 0,
         SentMessageCount: 0,
         FailureReason: reason,
@@ -3404,6 +3542,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         PortalMessageComposedEventType => "Message composed",
         PortalMessageRepliedEventType => "Message replied",
+        PortalMessageForwardedEventType => "Message forwarded",
         PortalMessageReadEventType => "Message marked read",
         PortalMessageArchivedEventType => "Message archived",
         PortalMessagesArchivedEventType => "Messages archived",
@@ -3420,6 +3559,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 $"Composed secure message \"{message.Title}\" to {FormatPortalMessageRecipient(message)} with {relatedMessageCount} mailbox rows.",
             PortalMessageRepliedEventType =>
                 $"Replied to secure message \"{message.Title}\" in thread {GetPortalMessageAuditThreadId(message)}.",
+            PortalMessageForwardedEventType =>
+                $"Forwarded secure message \"{message.Title}\" to {FormatPortalMessageForwardAssignee(message)}.",
             PortalMessageReadEventType =>
                 $"Marked secure message \"{message.Title}\" read.",
             PortalMessageArchivedEventType =>
@@ -3454,6 +3595,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         return string.IsNullOrWhiteSpace(message.RecipientId) ? "care team" : message.RecipientId;
     }
+
+    private static string FormatPortalMessageForwardAssignee(PatientPortalMessageItem message) =>
+        string.IsNullOrWhiteSpace(message.AssignedTo) ? "care team" : message.AssignedTo;
 
     private static async Task RecordGeneratedMedicalReportAuditEventAsync(
         NpgsqlConnection connection,
@@ -4545,6 +4689,49 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         return message.MailChain > 0 ? message.MailChain : fallbackMessageId;
+    }
+
+    private static async Task<PatientMessageItem> InsertForwardedPatientMessageAsync(
+        NpgsqlConnection connection,
+        PatientPortalSessionResponse session,
+        PatientPortalMessageItem originalMessage,
+        string body,
+        string assignedTo,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var id = $"MSG-PORTAL-FWD-{Guid.NewGuid():N}";
+        var messageDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into messages
+                (id, patient_id, pid, message_date, title, body, status, assigned_to, portal_relation, is_encrypted, updated_by, updated_at, deleted, activity)
+            values
+                (@id, @patient_id, @pid, @message_date, @title, @body, 'New', @assigned_to, 'portal:forwarded', false, null, null, 0, 1);
+            """;
+        command.Parameters.Add("id", NpgsqlDbType.Text).Value = id;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = session.CanonicalId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = session.LegacyPid ?? 0;
+        command.Parameters.Add("message_date", NpgsqlDbType.Date).Value = messageDate;
+        command.Parameters.Add("title", NpgsqlDbType.Text).Value = originalMessage.Title;
+        command.Parameters.Add("body", NpgsqlDbType.Text).Value = body;
+        command.Parameters.Add("assigned_to", NpgsqlDbType.Text).Value = assignedTo;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return new PatientMessageItem(
+            Id: id,
+            Date: messageDate.ToString("yyyy-MM-dd"),
+            Title: originalMessage.Title,
+            Body: body,
+            Status: "New",
+            AssignedTo: assignedTo,
+            PortalRelation: "portal:forwarded",
+            IsEncrypted: false,
+            UpdatedBy: null,
+            UpdatedAt: null,
+            Deleted: 0);
     }
 
     private static async Task<int> GetNextPortalMailboxIdAsync(

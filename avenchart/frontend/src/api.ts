@@ -2913,6 +2913,30 @@ export type PatientPortalReplyMessageResponse = {
   sessionSource: string
 }
 
+export type PatientPortalForwardMessageInput = {
+  body: string
+  assignedTo?: string | null
+}
+
+export type PatientPortalForwardMessageResponse = {
+  authenticated: boolean
+  forwarded: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  originalMessageId: string
+  originalMessage?: PatientPortalMessageItem | null
+  forwardedPatientMessage?: PatientMessageItem | null
+  messageCount: number
+  sentMessageCount: number
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalReadMessageResponse = {
   authenticated: boolean
   markedRead: boolean
@@ -3426,6 +3450,28 @@ export async function replyPatientPortalMessage(
   })
   if (!response.ok) {
     throw new Error(`Patient portal message reply failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function forwardPatientPortalMessage(
+  sessionId: string,
+  messageId: string,
+  input: PatientPortalForwardMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalForwardMessageResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/forward`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message forward failed with ${response.status}`)
   }
 
   return response.json()

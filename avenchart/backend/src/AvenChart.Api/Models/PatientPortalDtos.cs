@@ -621,6 +621,28 @@ public sealed record PatientPortalReplyMessageResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalForwardMessageRequest(
+    string? Body,
+    string? AssignedTo);
+
+public sealed record PatientPortalForwardMessageResponse(
+    bool Authenticated,
+    bool Forwarded,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string OriginalMessageId,
+    PatientPortalMessageItem? OriginalMessage,
+    PatientMessageItem? ForwardedPatientMessage,
+    int MessageCount,
+    int SentMessageCount,
+    string? FailureReason,
+    string SessionSource);
+
 public sealed record PatientPortalReadMessageResponse(
     bool Authenticated,
     bool MarkedRead,
