@@ -5546,9 +5546,9 @@ function PatientPortalWorkspace({
                         <span>{problem.startDate ?? problem.reportedDate ?? 'Date pending'}</span>
                       </div>
                       <div className="message-meta-row">
-                        <span>Reported {problem.reportedDate ?? 'Not recorded'}</span>
-                        <span>Start {problem.startDate ?? 'Not recorded'}</span>
-                        <span>End {problem.endDate ?? 'Active'}</span>
+                        <span>Reported Date {problem.reportedDate ?? 'Not recorded'}</span>
+                        <span>Start Date {problem.startDate ?? 'Not recorded'}</span>
+                        <span>End Date {problem.endDate ?? 'Active'}</span>
                       </div>
                     </article>
                   ))}

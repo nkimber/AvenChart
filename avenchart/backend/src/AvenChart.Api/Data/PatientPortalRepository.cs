@@ -2771,7 +2771,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             from problems
             where pid = @pid
               and type = 'medical_problem'
-              and activity = 1
             order by problem_date, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
