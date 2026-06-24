@@ -1,8 +1,19 @@
+import { useEffect, useState } from 'react'
 import { useNavigate, useOutletContext, Link } from 'react-router-dom'
 import { CalendarClock, Download, FolderOpen, Mail, PenLine } from 'lucide-react'
-import { useState } from 'react'
-import { downloadPatientPortalGeneratedMedicalReportPdf } from '../../api.ts'
+import {
+  downloadPatientPortalGeneratedMedicalReportPdf,
+  getPatientPortalMessages,
+  type PatientPortalMessagesResponse,
+} from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
+import { showToast } from '../../components/Toast.tsx'
+
+type AsyncState<T> =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: T }
+  | { status: 'error' }
 
 function formatTime(value?: string | null) {
   if (!value) return ''
@@ -17,6 +28,21 @@ function formatApptDate(dateStr: string) {
     day: date.getDate(),
     weekday: date.toLocaleString('en-US', { weekday: 'short' }),
   }
+}
+
+function relativeDate(dateStr: string): string {
+  if (!dateStr) return dateStr
+  const [datePart] = dateStr.split(' ')
+  const [y, m, d] = datePart.split('-').map(Number)
+  if (!y || !m || !d) return dateStr
+  const msgDate = new Date(y, m - 1, d)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.round((today.getTime() - msgDate.getTime()) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  if (diff < 7) return msgDate.toLocaleDateString('en-US', { weekday: 'long' })
+  return msgDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function triggerBlobDownload(blob: Blob, fileName: string) {
@@ -34,14 +60,24 @@ export default function PortalDashboard() {
   const { session, home, homeLoading } = useOutletContext<PortalOutletContext>()
   const navigate = useNavigate()
   const [reportDownloading, setReportDownloading] = useState(false)
-  const [reportError, setReportError] = useState<string | null>(null)
+  const [messagesState, setMessagesState] = useState<AsyncState<PatientPortalMessagesResponse>>({
+    status: 'idle',
+  })
+
+  // Lazy-load recent messages for the dashboard preview (#4)
+  useEffect(() => {
+    if (!session) return
+    setMessagesState({ status: 'loading' })
+    getPatientPortalMessages(session.sessionId)
+      .then((data) => setMessagesState({ status: 'ready', data }))
+      .catch(() => setMessagesState({ status: 'error' }))
+  }, [session])
 
   function handleDownloadReport() {
     setReportDownloading(true)
-    setReportError(null)
     downloadPatientPortalGeneratedMedicalReportPdf(session.sessionId)
       .then((blob) => triggerBlobDownload(blob, `medical-report-${session.portalUsername}.pdf`))
-      .catch((err) => setReportError(err instanceof Error ? err.message : 'Could not generate the report.'))
+      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not generate the report.', 'error'))
       .finally(() => setReportDownloading(false))
   }
 
@@ -73,6 +109,11 @@ export default function PortalDashboard() {
     },
   ]
 
+  const recentMessages =
+    messagesState.status === 'ready'
+      ? messagesState.data.messages.slice(0, 3)
+      : []
+
   return (
     <div className="portal-page">
       {/* Quick actions */}
@@ -91,7 +132,7 @@ export default function PortalDashboard() {
                 disabled={qa.disabled}
                 type="button"
               >
-                <span className="quick-action-icon">
+                <span className="quick-action-icon" aria-hidden="true">
                   <Icon size={20} />
                 </span>
                 <span className="quick-action-title">{qa.title}</span>
@@ -100,7 +141,6 @@ export default function PortalDashboard() {
             )
           })}
         </div>
-        {reportError && <div className="error-banner" style={{ marginTop: 12 }}>{reportError}</div>}
       </section>
 
       {/* Upcoming appointments */}
@@ -118,9 +158,15 @@ export default function PortalDashboard() {
           </div>
         ) : !home || home.upcomingAppointments.length === 0 ? (
           <div className="empty-state">
-            <CalendarClock size={32} className="empty-state-icon" />
+            <CalendarClock size={32} style={{ color: 'var(--teal)', opacity: 0.6 }} />
             <p className="empty-state-text">No upcoming appointments.</p>
-            <Link to="/portal/appointments" className="button-secondary" style={{ display: 'inline-flex', width: 'auto' }}>
+            {/* Pass openRequest state so PortalAppointments auto-opens the modal (#5) */}
+            <Link
+              to="/portal/appointments"
+              state={{ openRequest: true }}
+              className="button-secondary"
+              style={{ display: 'inline-flex', width: 'auto' }}
+            >
               Request an appointment
             </Link>
           </div>
@@ -130,7 +176,7 @@ export default function PortalDashboard() {
               const { month, day, weekday } = formatApptDate(appt.date)
               return (
                 <li key={appt.id} className="appt-card">
-                  <div className="appt-date-block">
+                  <div className="appt-date-block" aria-label={`${month} ${day}, ${weekday}`}>
                     <p className="appt-date-month">{month}</p>
                     <p className="appt-date-day">{day}</p>
                     <p className="appt-date-weekday">{weekday}</p>
@@ -155,37 +201,26 @@ export default function PortalDashboard() {
         )}
       </section>
 
-      {/* Messages summary */}
+      {/* Messages preview — live list instead of stat counts (#4) */}
       <section className="portal-section">
         <div className="portal-section-header">
-          <h2 className="portal-section-title">Messages</h2>
+          <h2 className="portal-section-title">Recent messages</h2>
           <Link to="/portal/messages" className="portal-section-link">
             View inbox
           </Link>
         </div>
 
-        {homeLoading ? (
+        {messagesState.status === 'loading' && (
           <div className="skeleton-list">
-            <div className="skeleton-row" />
+            {[0, 1].map((i) => <div key={i} className="skeleton-row" style={{ height: 56 }} />)}
           </div>
-        ) : !home ? null : (
-          <div className="message-summary-row">
-            <div className="message-summary-stats">
-              <div className="message-summary-stat">
-                <span className="message-summary-value">{home.messages.newMessages}</span>
-                <span className="message-summary-label">New</span>
-              </div>
-              <div className="message-summary-stat">
-                <span className="message-summary-value">{home.messages.totalMessages}</span>
-                <span className="message-summary-label">Total</span>
-              </div>
-            </div>
-            {home.messages.latestMessageTitle && (
-              <p className="message-summary-latest">
-                Latest: "{home.messages.latestMessageTitle}"
-                {home.messages.latestMessageDate ? ` · ${home.messages.latestMessageDate}` : ''}
-              </p>
-            )}
+        )}
+        {messagesState.status === 'error' && (
+          <p className="muted" style={{ fontSize: 13 }}>Could not load messages.</p>
+        )}
+        {messagesState.status === 'ready' && recentMessages.length === 0 && (
+          <div className="empty-state" style={{ padding: '16px 0' }}>
+            <p className="empty-state-text">No messages yet.</p>
             <button
               className="button-secondary"
               style={{ width: 'auto' }}
@@ -196,6 +231,47 @@ export default function PortalDashboard() {
               Message your care team
             </button>
           </div>
+        )}
+        {messagesState.status === 'ready' && recentMessages.length > 0 && (
+          <>
+            <ul className="message-list" role="list" style={{ marginBottom: 12 }}>
+              {recentMessages.map((msg) => {
+                const isUnread = msg.status === 'New'
+                return (
+                  <li key={msg.id}>
+                    <button
+                      className={`message-row${isUnread ? ' message-row-unread' : ''}`}
+                      type="button"
+                      onClick={() => navigate('/portal/messages')}
+                      aria-label={`${isUnread ? 'Unread: ' : ''}${msg.title}`}
+                    >
+                      {isUnread && <span className="unread-dot" aria-hidden="true" />}
+                      <div className="message-row-body">
+                        <div className="message-row-top">
+                          <span className="message-row-title">{msg.title}</span>
+                          <time className="message-row-date" dateTime={msg.date}>
+                            {relativeDate(msg.date)}
+                          </time>
+                        </div>
+                        <p className="message-row-preview">
+                          {msg.senderName} · {msg.body.slice(0, 60)}{msg.body.length > 60 ? '…' : ''}
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            <button
+              className="button-secondary"
+              style={{ width: 'auto' }}
+              type="button"
+              onClick={() => navigate('/portal/messages', { state: { compose: true } })}
+            >
+              <PenLine size={15} style={{ marginRight: 6 }} />
+              New message
+            </button>
+          </>
         )}
       </section>
     </div>

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import { CalendarClock, CalendarPlus } from 'lucide-react'
 import {
   getPatientPortalAppointmentRequestOptions,
@@ -8,6 +8,7 @@ import {
   type PatientPortalHomeAppointmentSummary,
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
+import { showToast } from '../../components/Toast.tsx'
 
 type AsyncState<T> =
   | { status: 'idle' }
@@ -68,7 +69,11 @@ function downloadIcs(appt: PatientPortalHomeAppointmentSummary) {
 
 export default function PortalAppointments() {
   const { session, home, homeLoading, refreshHome } = useOutletContext<PortalOutletContext>()
-  const [requestOpen, setRequestOpen] = useState(false)
+  const location = useLocation()
+  const modalPanelRef = useRef<HTMLDivElement>(null)
+  const [requestOpen, setRequestOpen] = useState(
+    () => location.state?.openRequest === true,
+  )
   const [optionsState, setOptionsState] = useState<
     AsyncState<PatientPortalAppointmentRequestOptionsResponse>
   >({ status: 'idle' })
@@ -84,6 +89,37 @@ export default function PortalAppointments() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Focus trap + Escape key for modal (#1)
+  useEffect(() => {
+    if (!requestOpen) return
+    // Move focus into modal
+    const firstFocusable = modalPanelRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )
+    firstFocusable?.focus()
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { toggleRequest(); return }
+      if (e.key !== 'Tab' || !modalPanelRef.current) return
+      const focusable = Array.from(
+        modalPanelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestOpen])
 
   function toggleRequest() {
     setRequestOpen((open) => !open)
@@ -132,12 +168,16 @@ export default function PortalAppointments() {
           return
         }
         const appt = res.appointment
-        setResult(
-          `Request submitted: ${appt.title} on ${appt.date} at ${formatTime(appt.startTime)}.`,
-        )
+        const msg = `Request submitted: ${appt.title} on ${appt.date} at ${formatTime(appt.startTime)}.`
+        setResult(msg)
+        showToast(msg)
         refreshHome()
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not submit the request.'))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Could not submit the request.'
+        setError(msg)
+        showToast(msg, 'error')
+      })
       .finally(() => setSubmitting(false))
   }
 
@@ -148,7 +188,7 @@ export default function PortalAppointments() {
       {/* ─── Request appointment modal ─── */}
       {requestOpen && (
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) toggleRequest() }}>
-          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="appt-modal-title">
+          <div className="modal-panel" ref={modalPanelRef} role="dialog" aria-modal="true" aria-labelledby="appt-modal-title">
             <div className="modal-header">
               <h2 id="appt-modal-title" className="modal-title">Request an appointment</h2>
               <button className="modal-close" type="button" onClick={toggleRequest} aria-label="Close">×</button>

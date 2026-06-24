@@ -1,4 +1,5 @@
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
+import { ToastContainer } from './components/Toast.tsx'
 import EntryChooser from './pages/EntryChooser.tsx'
 import ClinicianLogin from './pages/ClinicianLogin.tsx'
 import ClinicianHome from './pages/ClinicianHome.tsx'
@@ -13,6 +14,7 @@ import PortalAccount from './pages/portal/PortalAccount.tsx'
 export default function App() {
   return (
     <BrowserRouter>
+      <ToastContainer />
       <Routes>
         <Route path="/" element={<EntryChooser />} />
         <Route path="/login" element={<ClinicianLogin />} />

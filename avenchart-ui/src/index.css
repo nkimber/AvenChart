@@ -2119,3 +2119,118 @@ a {
   color: var(--text-muted);
   margin: 0;
 }
+
+/* ─── Toast notifications ─────────────────────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+  max-width: calc(100vw - 40px);
+}
+
+.toast {
+  background: var(--text);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  animation: toast-in 0.22s ease-out, toast-out 0.3s ease-in 3.1s forwards;
+  pointer-events: auto;
+  max-width: 360px;
+}
+
+.toast-error {
+  background: var(--coral);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(6px); }
+}
+
+/* ─── Medical report contents box ─────────────────────────────────────── */
+
+.report-contents-box {
+  background: var(--teal-soft);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  max-width: 380px;
+}
+
+.report-contents-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal-deep);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 8px;
+}
+
+.report-contents-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.report-contents-list li {
+  font-size: 13px;
+  color: var(--teal-deep);
+}
+
+/* ─── Mobile bottom nav ────────────────────────────────────────────────── */
+
+@media (max-width: 560px) {
+  /* Hide text labels on tab nav — become icon-only bottom bar */
+  .portal-tab-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    border-bottom: none;
+    border-top: 0.5px solid var(--border);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+    z-index: 50;
+  }
+
+  .portal-tab-inner {
+    justify-content: space-around;
+  }
+
+  .portal-tab {
+    flex: 1;
+    padding: 8px 4px 10px;
+    min-width: 48px;
+  }
+
+  .portal-tab-label {
+    display: none;
+  }
+
+  /* Give content area bottom padding so it clears the nav bar */
+  .portal-content {
+    padding-bottom: 80px;
+  }
+
+  /* Move toast container up above nav bar on mobile */
+  .toast-container {
+    bottom: 76px;
+  }
+}

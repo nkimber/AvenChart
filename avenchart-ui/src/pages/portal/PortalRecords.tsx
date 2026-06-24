@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import {
   ChevronDown,
   ChevronRight,
@@ -23,6 +23,7 @@ import {
   type PatientPortalLabResultsResponse,
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
+import { showToast } from '../../components/Toast.tsx'
 
 type AsyncState<T> =
   | { status: 'idle' }
@@ -160,9 +161,26 @@ function LabOrder({ order }: { order: PatientPortalLabOrderItem }) {
   )
 }
 
+const SESSION_TAB_KEY = 'portal-records-tab'
+
 export default function PortalRecords() {
   const { session } = useOutletContext<PortalOutletContext>()
-  const [activeTab, setActiveTab] = useState<RecordsTab>('documents')
+  const location = useLocation()
+
+  // Persist active tab across navigations within the session (#3)
+  const [activeTab, setActiveTab] = useState<RecordsTab>(() => {
+    // Allow link state to override (e.g., Account "medical report" link)
+    if (location.state?.tab && ['documents','lab','health','report'].includes(location.state.tab)) {
+      return location.state.tab as RecordsTab
+    }
+    const saved = sessionStorage.getItem(SESSION_TAB_KEY)
+    return (saved as RecordsTab | null) ?? 'documents'
+  })
+
+  function switchTab(tab: RecordsTab) {
+    setActiveTab(tab)
+    sessionStorage.setItem(SESSION_TAB_KEY, tab)
+  }
 
   const [docsState, setDocsState] = useState<AsyncState<PatientPortalDocumentsResponse>>({
     status: 'idle',
@@ -178,7 +196,6 @@ export default function PortalRecords() {
   )
 
   const [reportDownloading, setReportDownloading] = useState(false)
-  const [reportError, setReportError] = useState<string | null>(null)
 
   // Prefetch all three data tabs in parallel on mount (#10)
   useEffect(() => {
@@ -228,23 +245,23 @@ export default function PortalRecords() {
     setDownloadError(null)
     setDownloadingId(doc.id)
     downloadPatientPortalDocuments(session.sessionId, { documentIds: [doc.id] })
-      .then((blob) => triggerBlobDownload(blob, doc.name))
-      .catch((err) =>
-        setDownloadError(
-          err instanceof Error ? err.message : 'Could not download that document.',
-        ),
-      )
+      .then((blob) => { triggerBlobDownload(blob, doc.name); showToast(`Downloaded: ${doc.name}`) })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Could not download that document.'
+        setDownloadError(msg)
+        showToast(msg, 'error')
+      })
       .finally(() => setDownloadingId(null))
   }
 
   function handleDownloadReport() {
     setReportDownloading(true)
-    setReportError(null)
     downloadPatientPortalGeneratedMedicalReportPdf(session.sessionId)
-      .then((blob) => triggerBlobDownload(blob, `medical-report-${session.portalUsername}.pdf`))
-      .catch((err) =>
-        setReportError(err instanceof Error ? err.message : 'Could not generate the report.'),
-      )
+      .then((blob) => {
+        triggerBlobDownload(blob, `medical-report-${session.portalUsername}.pdf`)
+        showToast('Medical report downloaded.')
+      })
+      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not generate the report.', 'error'))
       .finally(() => setReportDownloading(false))
   }
 
@@ -258,7 +275,7 @@ export default function PortalRecords() {
               key={tab.key}
               className={`records-tab${activeTab === tab.key ? ' records-tab-active' : ''}`}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => switchTab(tab.key)}
             >
               <Icon size={15} />
               {tab.label}
@@ -468,15 +485,38 @@ export default function PortalRecords() {
       {activeTab === 'report' && (
         <section className="portal-section">
           <h2 className="portal-section-title" style={{ marginBottom: 8 }}>Medical report</h2>
-          <p className="muted" style={{ marginBottom: 24 }}>
-            Generate a comprehensive PDF summary of your medical record including problems,
-            medications, lab results, and more.
+          <p className="muted" style={{ marginBottom: 20 }}>
+            Download a comprehensive PDF summary of your medical record, generated fresh on demand.
           </p>
-          {reportError && <div className="error-banner">{reportError}</div>}
+
+          {/* Report content summary from already-loaded health state (#9) */}
+          {healthState.status === 'ready' && (() => {
+            const s = healthState.data
+            const bullets = [
+              s.problemCount > 0 && `${s.problemCount} problem${s.problemCount === 1 ? '' : 's'}`,
+              s.allergyCount > 0 && `${s.allergyCount} ${s.allergyCount === 1 ? 'allergy' : 'allergies'}`,
+              s.medicationCount > 0 && `${s.medicationCount} medication${s.medicationCount === 1 ? '' : 's'}`,
+              s.prescriptionCount > 0 && `${s.prescriptionCount} prescription${s.prescriptionCount === 1 ? '' : 's'}`,
+              labState.status === 'ready' && labState.data.orders.length > 0
+                && `${labState.data.orders.length} lab order${labState.data.orders.length === 1 ? '' : 's'}`,
+              docsState.status === 'ready' && docsState.data.documents.length > 0
+                && `${docsState.data.documents.length} document${docsState.data.documents.length === 1 ? '' : 's'}`,
+            ].filter(Boolean) as string[]
+            if (bullets.length === 0) return null
+            return (
+              <div className="report-contents-box">
+                <p className="report-contents-label">This report will include:</p>
+                <ul className="report-contents-list">
+                  {bullets.map((b) => <li key={b}>{b}</li>)}
+                </ul>
+              </div>
+            )
+          })()}
+
           <button
             className="button-primary"
             type="button"
-            style={{ maxWidth: 280 }}
+            style={{ maxWidth: 300 }}
             onClick={handleDownloadReport}
             disabled={reportDownloading}
           >
@@ -484,7 +524,7 @@ export default function PortalRecords() {
             {reportDownloading ? 'Preparing your report…' : 'Download medical report (PDF)'}
           </button>
           <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-            The report is generated fresh each time and may take a few seconds to prepare.
+            Generation may take a few seconds.
           </p>
         </section>
       )}

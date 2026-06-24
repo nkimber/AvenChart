@@ -13,6 +13,8 @@ export type PortalOutletContext = {
   session: PortalSession
   home: PatientPortalHomeSummaryResponse | null
   homeLoading: boolean
+  /** Call to immediately decrement the unread badge (optimistic read) */
+  markReadOptimistic: (id: string) => void
   refreshHome: () => void
   signOut: () => void
 }
@@ -49,6 +51,8 @@ export default function PortalShell() {
   const [home, setHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [homeLoading, setHomeLoading] = useState(true)
   const [homeError, setHomeError] = useState<string | null>(null)
+  // Optimistic unread IDs — message IDs the patient has opened this session
+  const [optimisticReadIds, setOptimisticReadIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     if (!session) {
@@ -71,7 +75,11 @@ export default function PortalShell() {
       })
       .catch((err) => {
         if ((err as Error)?.name === 'AbortError') return
-        setHomeError(err instanceof Error ? err.message : 'Could not load your portal. Please try refreshing.')
+        setHomeError(
+          err instanceof Error
+            ? err.message
+            : 'Could not load your portal. Please try refreshing.',
+        )
         setHomeLoading(false)
       })
     return () => controller.abort()
@@ -89,23 +97,44 @@ export default function PortalShell() {
     if (!session) return
     getPatientPortalHome(session.sessionId)
       .then((result) => {
-        if (result.authenticated) setHome(result)
+        if (result.authenticated) {
+          setHome(result)
+          // Clear optimistic reads once server confirms new counts
+          setOptimisticReadIds(new Set())
+        }
       })
       .catch(() => {})
   }
 
-  const context: PortalOutletContext = { session, home, homeLoading, refreshHome, signOut }
+  function markReadOptimistic(id: string) {
+    setOptimisticReadIds((prev) => new Set([...prev, id]))
+  }
+
+  // Effective unread count subtracts optimistically-read messages
+  const serverUnread = home?.messages.newMessages ?? 0
+  const effectiveUnread = Math.max(0, serverUnread - optimisticReadIds.size)
+
+  const context: PortalOutletContext = {
+    session,
+    home,
+    homeLoading,
+    markReadOptimistic,
+    refreshHome,
+    signOut,
+  }
 
   return (
     <div className="portal-shell">
       <header className="portal-hero">
-        <div className="portal-hero-illustration">
+        <div className="portal-hero-illustration" aria-hidden="true">
           <PulseBadgeIllustration />
         </div>
         <div className="portal-hero-inner">
           <div className="portal-hero-top">
             <div className="row">
-              <div className="avatar avatar-on-dark">{initials(session.displayName)}</div>
+              <div className="avatar avatar-on-dark" aria-hidden="true">
+                {initials(session.displayName)}
+              </div>
               <div>
                 <p className="dashboard-hero-greeting">Hello, {session.displayName.split(' ')[0]}</p>
                 <p className="dashboard-hero-sub">Patient portal</p>
@@ -116,7 +145,7 @@ export default function PortalShell() {
             </button>
           </div>
 
-          <div className="hero-stat-row">
+          <div className="hero-stat-row" aria-label="Portal summary">
             {homeLoading ? (
               <>
                 <div className="hero-stat-chip"><div className="skeleton-chip" /></div>
@@ -128,7 +157,7 @@ export default function PortalShell() {
             ) : (
               <>
                 <Link to="/portal/appointments" className="hero-stat-chip hero-stat-link">
-                  <span className="hero-stat-icon">
+                  <span className="hero-stat-icon" aria-hidden="true">
                     <CalendarClock size={16} />
                   </span>
                   <div>
@@ -137,16 +166,16 @@ export default function PortalShell() {
                   </div>
                 </Link>
                 <Link to="/portal/messages" className="hero-stat-chip hero-stat-link">
-                  <span className="hero-stat-icon">
+                  <span className="hero-stat-icon" aria-hidden="true">
                     <Mail size={16} />
                   </span>
                   <div>
-                    <p className="hero-stat-value">{home?.messages.newMessages ?? 0}</p>
+                    <p className="hero-stat-value">{effectiveUnread}</p>
                     <p className="hero-stat-label">New messages</p>
                   </div>
                 </Link>
                 <Link to="/portal/appointments" className="hero-stat-chip hero-stat-link">
-                  <span className="hero-stat-icon">
+                  <span className="hero-stat-icon" aria-hidden="true">
                     <CalendarClock size={16} />
                   </span>
                   <div>
@@ -160,7 +189,7 @@ export default function PortalShell() {
         </div>
       </header>
 
-      <nav className="portal-tab-nav">
+      <nav className="portal-tab-nav" aria-label="Portal sections">
         <div className="portal-tab-inner">
           {TABS.map((tab) => {
             const Icon = tab.icon
@@ -168,18 +197,21 @@ export default function PortalShell() {
               location.pathname === tab.path ||
               (tab.path !== '/portal/home' && location.pathname.startsWith(tab.path))
             const badge =
-              tab.path === '/portal/messages' && (home?.messages.newMessages ?? 0) > 0
-                ? home!.messages.newMessages
-                : null
+              tab.path === '/portal/messages' && effectiveUnread > 0 ? effectiveUnread : null
             return (
               <Link
                 key={tab.path}
                 to={tab.path}
                 className={`portal-tab${isActive ? ' portal-tab-active' : ''}`}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <span className="portal-tab-icon-wrap">
-                  <Icon size={18} />
-                  {badge != null && <span className="portal-tab-badge">{badge}</span>}
+                  <Icon size={18} aria-hidden="true" />
+                  {badge != null && (
+                    <span className="portal-tab-badge" aria-label={`${badge} unread`}>
+                      {badge}
+                    </span>
+                  )}
                 </span>
                 <span className="portal-tab-label">{tab.label}</span>
               </Link>
@@ -190,7 +222,6 @@ export default function PortalShell() {
 
       <div className="portal-content">
         {homeLoading ? (
-          /* Content-area skeleton while session + home data loads */
           <div className="portal-page">
             <div className="portal-section">
               <div className="skeleton-list">

@@ -12,6 +12,7 @@ import {
   type PatientPortalMessageThreadResponse,
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
+import { showToast } from '../../components/Toast.tsx'
 
 type View = 'list' | 'compose' | 'thread'
 
@@ -23,8 +24,24 @@ type AsyncState<T> =
 
 const SUBJECT_PRESETS = ['General', 'Insurance', 'Prior Auth', 'Bill/Collect', 'Referral', 'Pharmacy']
 
+function relativeDate(dateStr: string): string {
+  if (!dateStr) return dateStr
+  // Try to parse "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"
+  const [datePart] = dateStr.split(' ')
+  const [y, m, d] = datePart.split('-').map(Number)
+  if (!y || !m || !d) return dateStr
+  const msgDate = new Date(y, m - 1, d)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.round((today.getTime() - msgDate.getTime()) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  if (diff < 7) return msgDate.toLocaleDateString('en-US', { weekday: 'long' })
+  return msgDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export default function PortalMessages() {
-  const { session, refreshHome } = useOutletContext<PortalOutletContext>()
+  const { session, refreshHome, markReadOptimistic } = useOutletContext<PortalOutletContext>()
   const location = useLocation()
   const threadEndRef = useRef<HTMLDivElement>(null)
 
@@ -34,6 +51,8 @@ export default function PortalMessages() {
   const [messagesState, setMessagesState] = useState<AsyncState<PatientPortalMessagesResponse>>({
     status: 'idle',
   })
+  // Local optimistic set — for per-row unread styling (shell handles badge)
+  const [readOptimistic, setReadOptimistic] = useState<Set<string>>(() => new Set())
   const [selectedMessage, setSelectedMessage] = useState<PatientPortalMessageItem | null>(null)
   const [threadState, setThreadState] = useState<AsyncState<PatientPortalMessageThreadResponse>>({
     status: 'idle',
@@ -43,34 +62,27 @@ export default function PortalMessages() {
   const [composeTitle, setComposeTitle] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSubmitting, setComposeSubmitting] = useState(false)
-  const [composeResult, setComposeResult] = useState<string | null>(null)
-  const [composeError, setComposeError] = useState<string | null>(null)
+  const [composeDone, setComposeDone] = useState(false)
 
   const [replyBody, setReplyBody] = useState('')
   const [replySubmitting, setReplySubmitting] = useState(false)
-  const [replyResult, setReplyResult] = useState<string | null>(null)
-  const [replyError, setReplyError] = useState<string | null>(null)
 
   useEffect(() => {
     loadMessages()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Scroll to bottom whenever the thread finishes loading or a reply is sent
   useEffect(() => {
     if (threadState.status === 'ready') {
       threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [threadState])
 
-  // Compose navigation guard — warn before leaving a draft in progress
   useEffect(() => {
     if (view !== 'compose') return
     const hasDraft = composeTitle !== '' || composeBody !== ''
     if (!hasDraft) return
-    function handleBeforeUnload(e: BeforeUnloadEvent) {
-      e.preventDefault()
-    }
+    function handleBeforeUnload(e: BeforeUnloadEvent) { e.preventDefault() }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [view, composeTitle, composeBody])
@@ -90,19 +102,19 @@ export default function PortalMessages() {
   function openThread(msg: PatientPortalMessageItem) {
     setSelectedMessage(msg)
     setReplyBody('')
-    setReplyResult(null)
-    setReplyError(null)
     setView('thread')
     setThreadState({ status: 'loading' })
+    // Optimistically mark read so badge drops immediately (#2)
+    if (msg.status === 'New') {
+      setReadOptimistic((prev) => new Set([...prev, msg.id]))
+      markReadOptimistic(msg.id)
+    }
     getPatientPortalMessageThread(session.sessionId, msg.id)
       .then((data) => {
         setThreadState({ status: 'ready', data })
         if (msg.status === 'New') {
           markPatientPortalMessageRead(session.sessionId, msg.id)
-            .then(() => {
-              loadMessages()
-              refreshHome()
-            })
+            .then(() => { loadMessages(); refreshHome() })
             .catch(() => {})
         }
       })
@@ -126,43 +138,44 @@ export default function PortalMessages() {
     setView('list')
     setComposeTitle('')
     setComposeBody('')
-    setComposeResult(null)
-    setComposeError(null)
+    setComposeDone(false)
   }
 
   function markAllRead() {
     if (messagesState.status !== 'ready') return
-    const unread = messagesState.data.messages.filter((m) => m.status === 'New')
+    const unread = messagesState.data.messages.filter(
+      (m) => m.status === 'New' && !readOptimistic.has(m.id),
+    )
     if (unread.length === 0) return
     setMarkingAllRead(true)
+    setReadOptimistic((prev) => new Set([...prev, ...unread.map((m) => m.id)]))
     Promise.all(
       unread.map((m) => markPatientPortalMessageRead(session.sessionId, m.id).catch(() => {})),
     ).finally(() => {
       setMarkingAllRead(false)
       loadMessages()
       refreshHome()
+      showToast('All messages marked as read')
     })
   }
 
   function submitCompose(event: FormEvent) {
     event.preventDefault()
     setComposeSubmitting(true)
-    setComposeError(null)
     composePatientPortalMessage(session.sessionId, { title: composeTitle, body: composeBody })
       .then((result) => {
         if (!result.created) {
-          setComposeError(result.failureReason ?? 'The message was not sent.')
+          showToast(result.failureReason ?? 'The message was not sent.', 'error')
           return
         }
-        setComposeResult(`Sent to ${result.recipientName}.`)
+        showToast(`Message sent to ${result.recipientName}.`)
+        setComposeDone(true)
         setComposeTitle('')
         setComposeBody('')
         loadMessages()
         refreshHome()
       })
-      .catch((err) =>
-        setComposeError(err instanceof Error ? err.message : 'Could not send the message.'),
-      )
+      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not send the message.', 'error'))
       .finally(() => setComposeSubmitting(false))
   }
 
@@ -170,26 +183,29 @@ export default function PortalMessages() {
     event.preventDefault()
     if (!selectedMessage) return
     setReplySubmitting(true)
-    setReplyError(null)
     replyToPatientPortalMessage(session.sessionId, selectedMessage.id, { body: replyBody })
       .then((result) => {
         if (!result.created) {
-          setReplyError(result.failureReason ?? 'The reply was not sent.')
+          showToast(result.failureReason ?? 'The reply was not sent.', 'error')
           return
         }
-        setReplyResult('Reply sent.')
+        showToast('Reply sent.')
         setReplyBody('')
         return getPatientPortalMessageThread(session.sessionId, selectedMessage.id).then((data) =>
           setThreadState({ status: 'ready', data }),
         )
       })
-      .catch((err) => setReplyError(err instanceof Error ? err.message : 'Could not send the reply.'))
+      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not send the reply.', 'error'))
       .finally(() => setReplySubmitting(false))
   }
 
-  // Determine bubble direction using the session's own display name (#1 bug fix)
   function isSentByPatient(msg: PatientPortalMessageItem): boolean {
     return msg.senderName === session.displayName
+  }
+
+  // Compute effective unread status considering optimistic reads
+  function isUnread(msg: PatientPortalMessageItem): boolean {
+    return msg.status === 'New' && !readOptimistic.has(msg.id)
   }
 
   return (
@@ -198,7 +214,8 @@ export default function PortalMessages() {
       {view === 'thread' && selectedMessage && (
         <section className="portal-section">
           <div className="portal-section-header">
-            <button className="back-button" type="button" onClick={backToList}>
+            <button className="back-button" type="button" onClick={backToList}
+              aria-label="Back to inbox">
               <ArrowLeft size={16} />
               Back to inbox
             </button>
@@ -215,20 +232,21 @@ export default function PortalMessages() {
           {threadState.status === 'ready' && (
             <>
               <h2 className="thread-title">{selectedMessage.title}</h2>
-              <ul className="thread-list">
+              <ul className="thread-list" role="list" aria-label="Conversation thread">
                 {threadState.data.threadMessages.map((m) => (
                   <li
                     key={m.id}
                     className={`thread-bubble ${isSentByPatient(m) ? 'thread-bubble-sent' : 'thread-bubble-received'}`}
                   >
                     <div className="thread-bubble-meta">
-                      {m.senderName} · {m.date}
+                      <span>{m.senderName}</span>
+                      <span>·</span>
+                      <time dateTime={m.date}>{relativeDate(m.date)}</time>
                     </div>
                     <div className="thread-bubble-body">{m.body}</div>
                   </li>
                 ))}
               </ul>
-              {/* Scroll anchor — useEffect scrolls here when thread loads or reply sent */}
               <div ref={threadEndRef} />
 
               <form className="reply-form" onSubmit={submitReply}>
@@ -240,17 +258,17 @@ export default function PortalMessages() {
                     onChange={(e) => setReplyBody(e.target.value)}
                     required
                     rows={3}
+                    aria-label="Reply text"
                   />
                   <button
                     className="reply-send-button"
                     type="submit"
                     disabled={replySubmitting || !replyBody.trim()}
+                    aria-label="Send reply"
                   >
                     <Send size={16} />
                   </button>
                 </div>
-                {replyError && <div className="error-banner" style={{ marginTop: 8 }}>{replyError}</div>}
-                {replyResult && <div className="hint-banner" style={{ marginTop: 8 }}>{replyResult}</div>}
               </form>
             </>
           )}
@@ -268,14 +286,14 @@ export default function PortalMessages() {
           </div>
           <h2 className="portal-section-title" style={{ marginBottom: 20 }}>New message</h2>
 
-          {composeResult ? (
+          {composeDone ? (
             <div className="compose-success">
-              <div className="hint-banner">{composeResult}</div>
+              <p style={{ color: 'var(--teal)', fontWeight: 500 }}>Message sent successfully.</p>
               <button
                 className="button-secondary"
                 style={{ width: 'auto' }}
                 type="button"
-                onClick={() => { setView('list'); setComposeResult(null) }}
+                onClick={() => { setView('list'); setComposeDone(false) }}
               >
                 Back to inbox
               </button>
@@ -308,7 +326,6 @@ export default function PortalMessages() {
                   required
                 />
               </div>
-              {composeError && <div className="error-banner">{composeError}</div>}
               <div className="button-row">
                 <button className="button-primary" type="submit" disabled={composeSubmitting}>
                   {composeSubmitting ? 'Sending…' : 'Send message'}
@@ -334,7 +351,7 @@ export default function PortalMessages() {
             <h2 className="portal-section-title">Inbox</h2>
             <div className="inbox-actions">
               {messagesState.status === 'ready' &&
-                messagesState.data.messages.some((m) => m.status === 'New') && (
+                messagesState.data.messages.some((m) => isUnread(m)) && (
                   <button
                     className="inbox-action-button"
                     type="button"
@@ -359,7 +376,7 @@ export default function PortalMessages() {
               <button
                 className="compose-button"
                 type="button"
-                onClick={() => { setView('compose'); setComposeResult(null); setComposeError(null) }}
+                onClick={() => { setView('compose'); setComposeDone(false) }}
               >
                 <PenLine size={15} />
                 New message
@@ -392,21 +409,24 @@ export default function PortalMessages() {
                 </button>
               </div>
             ) : (
-              <ul className="message-list">
+              <ul className="message-list" role="list" aria-label="Inbox messages">
                 {messagesState.data.messages.map((msg) => {
-                  const isUnread = msg.status === 'New'
+                  const unread = isUnread(msg)
                   return (
                     <li key={msg.id}>
                       <button
-                        className={`message-row${isUnread ? ' message-row-unread' : ''}`}
+                        className={`message-row${unread ? ' message-row-unread' : ''}`}
                         type="button"
                         onClick={() => openThread(msg)}
+                        aria-label={`${unread ? 'Unread: ' : ''}${msg.title}, from ${msg.senderName}`}
                       >
-                        {isUnread && <span className="unread-dot" />}
+                        {unread && <span className="unread-dot" aria-hidden="true" />}
                         <div className="message-row-body">
                           <div className="message-row-top">
                             <span className="message-row-title">{msg.title}</span>
-                            <span className="message-row-date">{msg.date}</span>
+                            <time className="message-row-date" dateTime={msg.date}>
+                              {relativeDate(msg.date)}
+                            </time>
                           </div>
                           <p className="message-row-preview">
                             {msg.senderName} · {msg.body.slice(0, 80)}{msg.body.length > 80 ? '…' : ''}
