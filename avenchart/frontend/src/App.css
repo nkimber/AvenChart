@@ -1205,6 +1205,24 @@
   padding: 0 12px;
 }
 
+.secure-message-pager {
+  align-items: center;
+  color: #607280;
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: flex-end;
+  min-height: 32px;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+.secure-message-pager-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
 .message-selection-count {
   color: #607280;
   font-size: 12px;

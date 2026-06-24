@@ -7,6 +7,8 @@ import {
   CalendarDays,
   CalendarPlus,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Clock,
   Download,
@@ -318,6 +320,7 @@ import {
   type PatientPortalMessageComposeOptionsResponse,
   type PatientPortalMessageRecipientsResponse,
   type PatientPortalMessageThreadResponse,
+  type PatientPortalMessageItem,
   type PatientPortalMessagesResponse,
   type PatientSearchResponse,
   type PatientRegistrationInput,
@@ -374,6 +377,10 @@ type EncounterProcedureResultSetInput = {
   report: ProcedureReportCreateInput
   result: Omit<ProcedureResultCreateInput, 'reportId'>
 }
+
+const secureMessagePageSize = 20
+
+type SecureMessageFolderKey = 'inbox' | 'sent' | 'all' | 'deleted'
 
 const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemented?: ModuleId }> = [
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
@@ -5189,6 +5196,20 @@ function PatientPortalWorkspace({
   const selectedPortalMessageCount = selectedPortalMessageIds.length
   const messageRecipientOptions = portalMessageRecipients?.recipients ?? []
   const messageSubjectOptions = portalMessageComposeOptions?.subjectOptions ?? []
+  const inboxPortalMessages = portalMessages?.messages ?? []
+  const sentPortalMessages = portalMessages?.sentMessages ?? []
+  const allPortalMessages = portalMessages?.allMessages ?? []
+  const deletedPortalMessages = portalMessages?.deletedMessages ?? []
+  const [portalMessagePages, setPortalMessagePages] = useState<Record<SecureMessageFolderKey, number>>({
+    inbox: 0,
+    sent: 0,
+    all: 0,
+    deleted: 0,
+  })
+  const visibleInboxPortalMessages = getSecureMessagePage(inboxPortalMessages, portalMessagePages.inbox)
+  const visibleSentPortalMessages = getSecureMessagePage(sentPortalMessages, portalMessagePages.sent)
+  const visibleAllPortalMessages = getSecureMessagePage(allPortalMessages, portalMessagePages.all)
+  const visibleDeletedPortalMessages = getSecureMessagePage(deletedPortalMessages, portalMessagePages.deleted)
   const selectablePortalDocuments = useMemo(
     () => portalDocuments?.documents.filter((document) => document.canDownload) ?? [],
     [portalDocuments],
@@ -5226,6 +5247,15 @@ function PatientPortalWorkspace({
   }, [selectablePortalMessages])
 
   useEffect(() => {
+    setPortalMessagePages((current) => ({
+      inbox: clampSecureMessagePage(current.inbox, inboxPortalMessages.length),
+      sent: clampSecureMessagePage(current.sent, sentPortalMessages.length),
+      all: clampSecureMessagePage(current.all, allPortalMessages.length),
+      deleted: clampSecureMessagePage(current.deleted, deletedPortalMessages.length),
+    }))
+  }, [inboxPortalMessages.length, sentPortalMessages.length, allPortalMessages.length, deletedPortalMessages.length])
+
+  useEffect(() => {
     const availableDocumentIds = new Set(selectablePortalDocuments.map((document) => document.id))
     setSelectedPortalDocumentIds((current) => current.filter((documentId) => availableDocumentIds.has(documentId)))
   }, [selectablePortalDocuments])
@@ -5261,6 +5291,20 @@ function PatientPortalWorkspace({
 
     await onArchiveMessages(selectedPortalMessageIds)
     setSelectedPortalMessageIds([])
+  }
+
+  function handleSecureMessagePageChange(folder: SecureMessageFolderKey, requestedPage: number) {
+    const folderCounts: Record<SecureMessageFolderKey, number> = {
+      inbox: inboxPortalMessages.length,
+      sent: sentPortalMessages.length,
+      all: allPortalMessages.length,
+      deleted: deletedPortalMessages.length,
+    }
+
+    setPortalMessagePages((current) => ({
+      ...current,
+      [folder]: clampSecureMessagePage(requestedPage, folderCounts[folder]),
+    }))
   }
 
   function togglePortalDocumentSelection(documentId: number, checked: boolean) {
@@ -5975,8 +6019,14 @@ function PatientPortalWorkspace({
                     </button>
                   </div>
                 </form>
+                <SecureMessagePager
+                  folderLabel="Inbox secure messages"
+                  messageCount={inboxPortalMessages.length}
+                  pageIndex={clampSecureMessagePage(portalMessagePages.inbox, inboxPortalMessages.length)}
+                  onPageChange={(pageIndex) => handleSecureMessagePageChange('inbox', pageIndex)}
+                />
                 <div className="message-list-body" role="region" aria-label="Inbox secure messages">
-                  {(portalMessages?.messages ?? []).map((portalMessage) => (
+                  {visibleInboxPortalMessages.map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
                         <label className="message-select-control">
@@ -6098,7 +6148,7 @@ function PatientPortalWorkspace({
                       )}
                     </article>
                   ))}
-                  {(portalMessages?.messages.length ?? 0) === 0 && (
+                  {inboxPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No secure messages recorded</div>
                   )}
                 </div>
@@ -6106,8 +6156,14 @@ function PatientPortalWorkspace({
                   <span>Sent</span>
                   <span>{portalMessages?.sentMessageCount ?? 0} messages</span>
                 </div>
+                <SecureMessagePager
+                  folderLabel="Sent secure messages"
+                  messageCount={sentPortalMessages.length}
+                  pageIndex={clampSecureMessagePage(portalMessagePages.sent, sentPortalMessages.length)}
+                  onPageChange={(pageIndex) => handleSecureMessagePageChange('sent', pageIndex)}
+                />
                 <div className="message-list-body" role="region" aria-label="Sent secure messages">
-                  {(portalMessages?.sentMessages ?? []).map((portalMessage) => (
+                  {visibleSentPortalMessages.map((portalMessage) => (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
                         <label className="message-select-control">
@@ -6169,7 +6225,7 @@ function PatientPortalWorkspace({
                       <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
                     </article>
                   ))}
-                  {(portalMessages?.sentMessages?.length ?? 0) === 0 && (
+                  {sentPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No sent secure messages recorded</div>
                   )}
                 </div>
@@ -6177,8 +6233,14 @@ function PatientPortalWorkspace({
                   <span>All</span>
                   <span>{portalMessages?.allMessageCount ?? 0} messages</span>
                 </div>
+                <SecureMessagePager
+                  folderLabel="All secure messages"
+                  messageCount={allPortalMessages.length}
+                  pageIndex={clampSecureMessagePage(portalMessagePages.all, allPortalMessages.length)}
+                  onPageChange={(pageIndex) => handleSecureMessagePageChange('all', pageIndex)}
+                />
                 <div className="message-list-body" role="region" aria-label="All secure messages">
-                  {(portalMessages?.allMessages ?? []).map((portalMessage) => {
+                  {visibleAllPortalMessages.map((portalMessage) => {
                     const patientAuthored = portalMessage.senderId === home.portalUsername
                     return (
                       <article className="message-item" key={portalMessage.id}>
@@ -6245,7 +6307,7 @@ function PatientPortalWorkspace({
                       </article>
                     )
                   })}
-                  {(portalMessages?.allMessages?.length ?? 0) === 0 && (
+                  {allPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No active secure messages recorded</div>
                   )}
                 </div>
@@ -6253,8 +6315,14 @@ function PatientPortalWorkspace({
                   <span>Deleted</span>
                   <span>{portalMessages?.deletedMessageCount ?? 0} messages</span>
                 </div>
+                <SecureMessagePager
+                  folderLabel="Deleted secure messages"
+                  messageCount={deletedPortalMessages.length}
+                  pageIndex={clampSecureMessagePage(portalMessagePages.deleted, deletedPortalMessages.length)}
+                  onPageChange={(pageIndex) => handleSecureMessagePageChange('deleted', pageIndex)}
+                />
                 <div className="message-list-body" role="region" aria-label="Deleted secure messages">
-                  {(portalMessages?.deletedMessages ?? []).map((portalMessage) => {
+                  {visibleDeletedPortalMessages.map((portalMessage) => {
                     const patientAuthored = portalMessage.senderId === home.portalUsername
                     return (
                       <article className="message-item" key={portalMessage.id}>
@@ -6278,7 +6346,7 @@ function PatientPortalWorkspace({
                       </article>
                     )
                   })}
-                  {(portalMessages?.deletedMessages?.length ?? 0) === 0 && (
+                  {deletedPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No deleted secure messages recorded</div>
                   )}
                 </div>
@@ -6510,6 +6578,66 @@ function SecureMessageBody({ body, compact = false }: { body: string; compact?: 
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
     />
   )
+}
+
+function SecureMessagePager({
+  folderLabel,
+  messageCount,
+  pageIndex,
+  onPageChange,
+}: {
+  folderLabel: string
+  messageCount: number
+  pageIndex: number
+  onPageChange: (pageIndex: number) => void
+}) {
+  const pageCount = getSecureMessagePageCount(messageCount)
+  const pageStart = messageCount === 0 ? 0 : pageIndex * secureMessagePageSize + 1
+  const pageEnd = Math.min((pageIndex + 1) * secureMessagePageSize, messageCount)
+
+  return (
+    <div className="secure-message-pager" aria-label={`${folderLabel} pagination`}>
+      <span>
+        {pageStart}-{pageEnd} of {messageCount}
+      </span>
+      {messageCount > secureMessagePageSize && (
+        <div className="secure-message-pager-actions">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={`Previous ${folderLabel} page`}
+            onClick={() => onPageChange(pageIndex - 1)}
+            disabled={pageIndex <= 0}
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={`Next ${folderLabel} page`}
+            onClick={() => onPageChange(pageIndex + 1)}
+            disabled={pageIndex >= pageCount - 1}
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function getSecureMessagePage(messages: PatientPortalMessageItem[], pageIndex: number) {
+  const safePage = clampSecureMessagePage(pageIndex, messages.length)
+  const pageStart = safePage * secureMessagePageSize
+  return messages.slice(pageStart, pageStart + secureMessagePageSize)
+}
+
+function getSecureMessagePageCount(messageCount: number) {
+  return Math.max(1, Math.ceil(messageCount / secureMessagePageSize))
+}
+
+function clampSecureMessagePage(pageIndex: number, messageCount: number) {
+  return Math.min(Math.max(pageIndex, 0), getSecureMessagePageCount(messageCount) - 1)
 }
 
 function PatientWorkspace({
