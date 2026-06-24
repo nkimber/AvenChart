@@ -994,6 +994,38 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessageRecipientsResponse> GetMessageRecipientsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyMessageRecipients(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var recipients = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
+
+        return new PatientPortalMessageRecipientsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            RecipientCount: recipients.Count,
+            Recipients: recipients,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalDocumentsResponse> GetDocumentsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1142,7 +1174,16 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var recipientName = await GetRecipientDisplayNameAsync(connection, recipientId, cancellationToken);
+        var recipientOptions = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
+        var recipientOption = recipientOptions.FirstOrDefault(
+            recipient => string.Equals(recipient.Id, recipientId, StringComparison.OrdinalIgnoreCase));
+        if (recipientOption is null)
+        {
+            return ComposeFailure(session, "Secure message recipient was not found in the patient portal recipient directory.", recipientId);
+        }
+
+        recipientId = recipientOption.Id;
+        var recipientName = recipientOption.DisplayName;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
@@ -1926,6 +1967,42 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalMessageRecipientsResponse EmptyMessageRecipients(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: session.Authenticated,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        RecipientCount: 0,
+        Recipients: Array.Empty<PatientPortalMessageRecipientOption>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMessageRecipientsResponse MissingSessionMessageRecipients(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        RecipientCount: 0,
+        Recipients: Array.Empty<PatientPortalMessageRecipientOption>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     private static PatientPortalMessageAuditResponse EmptyMessageAudit(
         PatientPortalSessionResponse session,
         string reason) => new(
@@ -2260,6 +2337,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
+
+    public static PatientPortalMessageRecipientsResponse MissingSessionHeaderMessageRecipients() =>
+        MissingSessionMessageRecipients("Patient portal session header was not supplied.");
 
     public static PatientPortalMessageAuditResponse MissingSessionHeaderMessageAudit() =>
         MissingSessionMessageAudit("Patient portal session header was not supplied.");
@@ -4855,6 +4935,50 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return value?.ToString() ?? recipientId;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageRecipientOption>> GetPortalMessageRecipientOptionsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var recipients = new List<PatientPortalMessageRecipientOption>();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              username as id,
+              display_name,
+              active
+            from auth_accounts
+            where username = 'admin'
+            order by username
+            limit 1;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetString(reader.GetOrdinal("id"));
+            var displayName = ReadNullableString(reader, "display_name")?.Trim();
+            recipients.Add(new PatientPortalMessageRecipientOption(
+                Id: id,
+                DisplayName: string.IsNullOrWhiteSpace(displayName) ? id : displayName,
+                Type: "user",
+                Active: reader.GetBoolean(reader.GetOrdinal("active")),
+                Fallback: true));
+        }
+
+        if (recipients.Count == 0)
+        {
+            recipients.Add(new PatientPortalMessageRecipientOption(
+                Id: "admin",
+                DisplayName: "Administrator",
+                Type: "user",
+                Active: true,
+                Fallback: true));
+        }
+
+        return recipients;
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(

@@ -2797,6 +2797,32 @@ export type PatientPortalMessagesResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMessageRecipientOption = {
+  id: string
+  displayName: string
+  type: string
+  active: boolean
+  fallback: boolean
+}
+
+export type PatientPortalMessageRecipientsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  recipientCount: number
+  recipients: PatientPortalMessageRecipientOption[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalDocumentItem = {
   id: number
   documentKey: string
@@ -3341,6 +3367,21 @@ export async function getPatientPortalMessages(
   })
   if (!response.ok) {
     throw new Error(`Patient portal messages check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMessageRecipients(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageRecipientsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/recipients`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal message recipients check failed with ${response.status}`)
   }
 
   return response.json()

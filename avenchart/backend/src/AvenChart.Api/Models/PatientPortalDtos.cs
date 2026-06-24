@@ -489,6 +489,30 @@ public sealed record PatientPortalMessagesResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalMessageRecipientsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int RecipientCount,
+    IReadOnlyList<PatientPortalMessageRecipientOption> Recipients,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalMessageRecipientOption(
+    string Id,
+    string DisplayName,
+    string Type,
+    bool Active,
+    bool Fallback);
+
 public sealed record PatientPortalDocumentsResponse(
     bool Authenticated,
     Guid? SessionId,
