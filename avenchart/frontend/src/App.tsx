@@ -5697,6 +5697,7 @@ function PatientPortalWorkspace({
                     {portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections /{' '}
                     {portalGeneratedMedicalReport?.includedIssueIds.length ?? 0} issues /{' '}
                     {portalGeneratedMedicalReport?.includedEncounterFormIds.length ?? 0} forms /{' '}
+                    {portalGeneratedMedicalReport?.includedProcedureOrderIds.length ?? 0} procedure orders /{' '}
                     {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines
                   </span>
                 </div>
