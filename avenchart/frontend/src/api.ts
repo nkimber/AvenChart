@@ -2367,6 +2367,43 @@ export type PatientPortalAppointmentsResponse = {
   sessionSource: string
 }
 
+export type PatientPortalAppointmentRequestInput = {
+  providerId?: number | null
+  facilityId?: number | null
+  categoryId?: number | null
+  date: string
+  startTime: string
+  durationMinutes: number
+  reason?: string | null
+}
+
+export type PatientPortalAppointmentReminder = {
+  id: string
+  title: string
+  body: string
+  assignedTo: string
+  status: string
+}
+
+export type PatientPortalAppointmentRequestResponse = {
+  authenticated: boolean
+  created: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  appointment?: PatientPortalHomeAppointmentSummary | null
+  reminder?: PatientPortalAppointmentReminder | null
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalMessageItem = {
   id: string
   date: string
@@ -2715,6 +2752,27 @@ export async function getPatientPortalAppointments(
   })
   if (!response.ok) {
     throw new Error(`Patient portal appointments check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function requestPatientPortalAppointment(
+  sessionId: string,
+  input: PatientPortalAppointmentRequestInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentRequestResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/requests`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal appointment request failed with ${response.status}`)
   }
 
   return response.json()

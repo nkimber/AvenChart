@@ -272,6 +272,222 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalAppointmentRequestResponse> RequestAppointmentAsync(
+        Guid sessionId,
+        PatientPortalAppointmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return AppointmentRequestFailure(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+
+        if (!DateOnly.TryParse(request.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(request.StartTime, out var appointmentStart)
+            || request.DurationMinutes is null
+            || request.DurationMinutes <= 0)
+        {
+            return AppointmentRequestFailure(session, "Appointment request needs a valid date, start time, and duration.", metadata);
+        }
+
+        if (appointmentDate < metadata.BaseDate)
+        {
+            return AppointmentRequestFailure(session, "Appointment request date must be today or later.", metadata);
+        }
+
+        var categoryId = request.CategoryId ?? 9;
+        var title = GetPortalAppointmentRequestTitle(categoryId);
+        var reason = NormalizeText(request.Reason);
+        var appointmentId = $"APPT-PORTAL-{Guid.NewGuid():N}";
+        var reminderId = $"MSG-PORTAL-APPT-{Guid.NewGuid():N}";
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            with patient_match as (
+                select canonical_id, legacy_pid, provider_id, facility_id
+                from patients
+                where canonical_id = @patient_id
+                limit 1
+            ),
+            provider_match as (
+                select id, username, trim(concat(first_name, ' ', last_name)) as provider_name
+                from staff
+                where active = true
+                  and id = coalesce(@provider_id, (select provider_id from patient_match))
+                limit 1
+            ),
+            facility_match as (
+                select id, name
+                from facilities
+                where inactive = false
+                  and id = coalesce(@facility_id, (select facility_id from patient_match))
+                limit 1
+            ),
+            inserted as (
+                insert into appointments (
+                    id,
+                    patient_id,
+                    pid,
+                    provider_id,
+                    facility_id,
+                    billing_location_id,
+                    appointment_date,
+                    start_time,
+                    duration_minutes,
+                    category_id,
+                    title,
+                    status,
+                    comments,
+                    recurrence_type
+                )
+                select
+                    @appointment_id,
+                    patient_match.canonical_id,
+                    patient_match.legacy_pid,
+                    provider_match.id,
+                    coalesce(facility_match.id, patient_match.facility_id),
+                    coalesce(facility_match.id, patient_match.facility_id),
+                    @appointment_date,
+                    @start_time,
+                    @duration_minutes,
+                    @category_id,
+                    @title,
+                    '^',
+                    @reason,
+                    0
+                from patient_match
+                join provider_match on true
+                left join facility_match on true
+                returning *
+            )
+            select
+                inserted.id,
+                inserted.appointment_date,
+                inserted.start_time,
+                inserted.title,
+                inserted.status,
+                inserted.category_id,
+                inserted.comments,
+                provider_match.username as provider_username,
+                provider_match.provider_name,
+                facility_match.name as facility_name
+            from inserted
+            join provider_match on provider_match.id = inserted.provider_id
+            left join facility_match on facility_match.id = inserted.facility_id;
+            """;
+        command.Parameters.AddWithValue("patient_id", session.CanonicalId);
+        command.Parameters.Add("provider_id", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        command.Parameters.Add("facility_id", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+        command.Parameters.AddWithValue("appointment_id", appointmentId);
+        command.Parameters.Add("appointment_date", NpgsqlDbType.Date).Value = appointmentDate;
+        command.Parameters.Add("start_time", NpgsqlDbType.Time).Value = appointmentStart;
+        command.Parameters.AddWithValue("duration_minutes", request.DurationMinutes.Value);
+        command.Parameters.AddWithValue("category_id", categoryId);
+        command.Parameters.AddWithValue("title", title);
+        command.Parameters.Add("reason", NpgsqlDbType.Text).Value = reason ?? (object)DBNull.Value;
+
+        PatientPortalHomeAppointmentSummary? appointment = null;
+        var assignedTo = string.Empty;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return AppointmentRequestFailure(session, "Appointment request could not be created for the selected provider and facility.", metadata);
+            }
+
+            assignedTo = ReadNullableString(reader, "provider_username") ?? string.Empty;
+            appointment = new PatientPortalHomeAppointmentSummary(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date")).ToString("yyyy-MM-dd"),
+                StartTime: reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time")).ToString("HH:mm"),
+                Title: ReadNullableString(reader, "title") ?? title,
+                Status: ReadNullableString(reader, "status"),
+                CategoryId: ReadNullableInt(reader, "category_id"),
+                CategoryName: GetAppointmentCategoryName(ReadNullableInt(reader, "category_id")),
+                ProviderName: ReadNullableString(reader, "provider_name"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                Comments: ReadNullableString(reader, "comments"));
+        }
+
+        if (appointment is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AppointmentRequestFailure(session, "Appointment request could not be created.", metadata);
+        }
+
+        var reminderBody = BuildPortalAppointmentReminderBody(session, appointment, reason);
+        await using var reminderCommand = connection.CreateCommand();
+        reminderCommand.Transaction = transaction;
+        reminderCommand.CommandText = """
+            insert into messages (
+                id,
+                patient_id,
+                pid,
+                message_date,
+                title,
+                body,
+                status,
+                assigned_to,
+                portal_relation,
+                is_encrypted,
+                deleted,
+                activity
+            )
+            values (
+                @id,
+                @patient_id,
+                @pid,
+                current_date,
+                'Patient Reminders',
+                @body,
+                'New',
+                @assigned_to,
+                @portal_relation,
+                false,
+                0,
+                1
+            );
+            """;
+        reminderCommand.Parameters.AddWithValue("id", reminderId);
+        reminderCommand.Parameters.AddWithValue("patient_id", session.CanonicalId);
+        reminderCommand.Parameters.AddWithValue("pid", session.LegacyPid.Value);
+        reminderCommand.Parameters.AddWithValue("body", reminderBody);
+        reminderCommand.Parameters.AddWithValue("assigned_to", assignedTo);
+        reminderCommand.Parameters.AddWithValue("portal_relation", $"portal:appointment-request:{appointment.Id}");
+        await reminderCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new PatientPortalAppointmentRequestResponse(
+            Authenticated: true,
+            Created: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Appointment: appointment,
+            Reminder: new PatientPortalAppointmentReminder(
+                Id: reminderId,
+                Title: "Patient Reminders",
+                Body: reminderBody,
+                AssignedTo: assignedTo,
+                Status: "New"),
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalMessagesResponse> GetMessagesAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -972,6 +1188,45 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalAppointmentRequestResponse AppointmentRequestFailure(
+        PatientPortalSessionResponse session,
+        string reason,
+        DatasetMetadata? metadata = null) => new(
+        Authenticated: session.Authenticated,
+        Created: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: metadata?.DatasetId ?? "unseeded",
+        DatasetVersion: metadata?.DatasetVersion ?? "unknown",
+        AsOfDate: (metadata?.BaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow)).ToString("yyyy-MM-dd"),
+        Appointment: null,
+        Reminder: null,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalAppointmentRequestResponse MissingSessionAppointmentRequest(string reason) => new(
+        Authenticated: false,
+        Created: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Appointment: null,
+        Reminder: null,
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     private static PatientPortalMessagesResponse EmptyMessages(
         PatientPortalSessionResponse session,
         string reason) => new(
@@ -1089,6 +1344,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalAppointmentsResponse MissingSessionHeaderAppointments() =>
         MissingSessionAppointments("Patient portal session header was not supplied.");
+
+    public static PatientPortalAppointmentRequestResponse MissingSessionHeaderAppointmentRequest() =>
+        MissingSessionAppointmentRequest("Patient portal session header was not supplied.");
 
     public static PatientPortalComposeMessageResponse MissingSessionHeaderComposeMessage() =>
         new(
@@ -2030,6 +2288,40 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         null => null,
         _ => $"Category {categoryId.Value}"
     };
+
+    private static string GetPortalAppointmentRequestTitle(int categoryId) => categoryId switch
+    {
+        9 => "Established Patient",
+        10 => "New Patient",
+        13 => "Preventive Care",
+        _ => GetAppointmentCategoryName(categoryId) ?? "Office Visit"
+    };
+
+    private static string BuildPortalAppointmentReminderBody(
+        PatientPortalSessionResponse session,
+        PatientPortalHomeAppointmentSummary appointment,
+        string? reason)
+    {
+        var appointmentTime = appointment.StartTime.Length == 5
+            ? $"{appointment.StartTime}:00"
+            : appointment.StartTime;
+        var body = new StringBuilder()
+            .Append("A New Appointment request was received from portal patient ")
+            .Append(session.DisplayName)
+            .Append(" regarding appointment dated ")
+            .Append(appointment.Date)
+            .Append(' ')
+            .Append(appointmentTime)
+            .Append('.');
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            body.Append(" Reason ").Append(reason).Append('.');
+        }
+
+        body.Append(" Use Portal Dashboard to confirm with patient.");
+        return body.ToString();
+    }
 
     private static string? NormalizeText(string? value)
     {

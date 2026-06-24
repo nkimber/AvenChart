@@ -56,6 +56,7 @@ import {
   getPatientDocuments,
   getPatientMessages,
   getPatientPortalAppointments,
+  requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalMessageThread,
@@ -282,6 +283,7 @@ import {
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
+  type PatientPortalAppointmentRequestInput,
   type PatientPortalAppointmentsResponse,
   type PatientPortalDocumentsResponse,
   type PatientMessageAssignmentUpdateInput,
@@ -3852,6 +3854,34 @@ function App() {
     }
   }
 
+  async function handlePatientPortalAppointmentRequest(input: PatientPortalAppointmentRequestInput) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before requesting an appointment.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const requestResult = await requestPatientPortalAppointment(patientPortalSessionId, input)
+      const home = await getPatientPortalHome(patientPortalSessionId)
+      const appointments = await getPatientPortalAppointments(patientPortalSessionId)
+      const messages = await getPatientPortalMessages(patientPortalSessionId)
+      setPatientPortalHome(home)
+      setPatientPortalAppointments(appointments)
+      setPatientPortalMessages(messages)
+      setPatientPortalStatus(requestResult.created ? 'ready' : 'rejected')
+      setPatientPortalMessage(requestResult.created
+        ? `Appointment request created for ${requestResult.appointment?.date ?? input.date}`
+        : requestResult.failureReason ?? 'Appointment request was not created.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal appointment request failed')
+    }
+  }
+
   async function handlePatientPortalComposeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!patientPortalSessionId) {
@@ -4254,6 +4284,7 @@ function App() {
             onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
+            onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
             onLoadThread={handlePatientPortalThreadLoad}
@@ -4641,6 +4672,7 @@ function PatientPortalWorkspace({
   onReplyBodyChange,
   onLogin,
   onRefresh,
+  onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
   onLoadThread,
@@ -4672,6 +4704,7 @@ function PatientPortalWorkspace({
   onReplyBodyChange: (messageId: string, value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
+  onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
   onLoadThread: (messageId: string) => Promise<void>
@@ -4705,6 +4738,15 @@ function PatientPortalWorkspace({
   const pastPortalAppointments = portalAppointments?.pastAppointments ?? []
   const upcomingPortalAppointmentCount = portalAppointments?.upcomingAppointmentCount ?? home?.upcomingAppointmentCount ?? 0
   const pastPortalAppointmentCount = portalAppointments?.pastAppointmentCount ?? 0
+  const [portalAppointmentDate, setPortalAppointmentDate] = useState('2026-09-22')
+  const [portalAppointmentStartTime, setPortalAppointmentStartTime] = useState('09:30')
+  const [portalAppointmentDuration, setPortalAppointmentDuration] = useState('30')
+  const [portalAppointmentCategoryId, setPortalAppointmentCategoryId] = useState('9')
+  const [portalAppointmentProviderId, setPortalAppointmentProviderId] = useState('105')
+  const [portalAppointmentFacilityId, setPortalAppointmentFacilityId] = useState('11')
+  const [portalAppointmentReason, setPortalAppointmentReason] = useState('Portal appointment request for parity validation.')
+  const [portalAppointmentRequestStatus, setPortalAppointmentRequestStatus] =
+    useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
@@ -4752,6 +4794,30 @@ function PatientPortalWorkspace({
 
     await onDownloadDocuments(selectedPortalDocumentIds)
     setSelectedPortalDocumentIds([])
+  }
+
+  async function handlePortalAppointmentRequestSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!authenticated) {
+      setPortalAppointmentRequestStatus('error')
+      return
+    }
+
+    setPortalAppointmentRequestStatus('saving')
+    try {
+      await onRequestAppointment({
+        providerId: numberOrNull(portalAppointmentProviderId),
+        facilityId: numberOrNull(portalAppointmentFacilityId),
+        categoryId: numberOrNull(portalAppointmentCategoryId),
+        date: portalAppointmentDate,
+        startTime: portalAppointmentStartTime,
+        durationMinutes: Number(portalAppointmentDuration),
+        reason: portalAppointmentReason,
+      })
+      setPortalAppointmentRequestStatus('saved')
+    } catch {
+      setPortalAppointmentRequestStatus('error')
+    }
   }
 
   return (
@@ -5208,6 +5274,96 @@ function PatientPortalWorkspace({
                   <CalendarDays size={17} />
                   <h3>Appointments</h3>
                 </div>
+                <form className="portal-appointment-form" onSubmit={handlePortalAppointmentRequestSubmit}>
+                  <div className="panel-heading compact">
+                    <CalendarPlus size={16} />
+                    <h4>Schedule A New Appointment</h4>
+                  </div>
+                  <div className="form-grid two-column">
+                    <label>
+                      Date
+                      <input
+                        aria-label="Portal appointment date"
+                        type="date"
+                        value={portalAppointmentDate}
+                        onChange={(event) => setPortalAppointmentDate(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label>
+                      Time
+                      <input
+                        aria-label="Portal appointment time"
+                        type="time"
+                        value={portalAppointmentStartTime}
+                        onChange={(event) => setPortalAppointmentStartTime(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label>
+                      Visit
+                      <select
+                        aria-label="Portal appointment visit"
+                        value={portalAppointmentCategoryId}
+                        onChange={(event) => setPortalAppointmentCategoryId(event.target.value)}
+                        disabled={!authenticated || busy}
+                      >
+                        {appointmentCategoryOptions.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Duration
+                      <input
+                        aria-label="Portal appointment duration"
+                        type="number"
+                        min="5"
+                        step="5"
+                        value={portalAppointmentDuration}
+                        onChange={(event) => setPortalAppointmentDuration(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label>
+                      Provider
+                      <input
+                        aria-label="Portal appointment provider ID"
+                        value={portalAppointmentProviderId}
+                        onChange={(event) => setPortalAppointmentProviderId(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label>
+                      Facility
+                      <input
+                        aria-label="Portal appointment facility ID"
+                        value={portalAppointmentFacilityId}
+                        onChange={(event) => setPortalAppointmentFacilityId(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Reason
+                    <textarea
+                      aria-label="Portal appointment reason"
+                      value={portalAppointmentReason}
+                      onChange={(event) => setPortalAppointmentReason(event.target.value)}
+                      disabled={!authenticated || busy}
+                    />
+                  </label>
+                  <div className="contact-actions">
+                    <button className="icon-text-button primary" type="submit" disabled={!authenticated || busy}>
+                      <CalendarPlus size={15} />
+                      <span>{portalAppointmentRequestStatus === 'saving' ? 'Requesting' : 'Request appointment'}</span>
+                    </button>
+                    {portalAppointmentRequestStatus === 'saved' && <span className="save-note">Request created</span>}
+                    {portalAppointmentRequestStatus === 'error' && <span className="save-note error">Request failed</span>}
+                  </div>
+                </form>
                 <div className="result-meta">
                   <span>Upcoming</span>
                   <span>{upcomingPortalAppointmentCount} appointments</span>

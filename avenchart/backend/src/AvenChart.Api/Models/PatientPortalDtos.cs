@@ -90,6 +90,40 @@ public sealed record PatientPortalAppointmentsResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalAppointmentRequest(
+    int? ProviderId,
+    int? FacilityId,
+    int? CategoryId,
+    string? Date,
+    string? StartTime,
+    int? DurationMinutes,
+    string? Reason);
+
+public sealed record PatientPortalAppointmentRequestResponse(
+    bool Authenticated,
+    bool Created,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    PatientPortalHomeAppointmentSummary? Appointment,
+    PatientPortalAppointmentReminder? Reminder,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalAppointmentReminder(
+    string Id,
+    string Title,
+    string Body,
+    string AssignedTo,
+    string Status);
+
 public sealed record PatientPortalMessagesResponse(
     bool Authenticated,
     Guid? SessionId,
