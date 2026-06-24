@@ -2839,11 +2839,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id::text as id, title, medication_date as start_date, medication_date as modified_date, end_date
+            select id::text as id, title, medication_date as start_date, modified_date, end_date
             from medications
             where pid = @pid
               and type = 'medication'
-              and activity = 1
             order by medication_date, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);

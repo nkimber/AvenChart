@@ -1074,6 +1074,7 @@ create table medications (
   title text,
   diagnosis text,
   medication_date date,
+  modified_date date,
   comments text,
   activity integer not null default 1,
   end_date date
@@ -2194,7 +2195,7 @@ copyRows('allergies', ['id', 'patient_id', 'pid', 'type', 'title', 'reaction', '
     allergy.listOptionId,
   ]))
 
-copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'medication_date', 'comments', 'activity', 'end_date'],
+copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis', 'medication_date', 'modified_date', 'comments', 'activity', 'end_date'],
   dataset.medicationLists.map((medication) => [
     medication.id,
     medication.patientId,
@@ -2203,6 +2204,7 @@ copyRows('medications', ['id', 'patient_id', 'pid', 'type', 'title', 'diagnosis'
     medication.title,
     medication.diagnosis,
     medication.date,
+    medication.modifiedDate ?? medication.date,
     medication.comments,
     1,
     null,

@@ -5591,8 +5591,8 @@ function PatientPortalWorkspace({
                       </div>
                       <div className="message-meta-row">
                         <span>Start {medication.startDate ?? 'Not recorded'}</span>
-                        <span>Modified {medication.modifiedDate ?? 'Not recorded'}</span>
-                        <span>End {medication.endDate ?? 'Active'}</span>
+                        <span>Last Modified {medication.modifiedDate ?? 'Not recorded'}</span>
+                        <span>End Date {medication.endDate ?? 'Active'}</span>
                       </div>
                     </article>
                   ))}
