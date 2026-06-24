@@ -296,6 +296,7 @@ import {
   type PatientPortalDocumentsResponse,
   type PatientPortalGeneratedMedicalReportResponse,
   type PatientPortalLabResultsResponse,
+  type PatientPortalMedicalReportEncounterForm,
   type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
   type PatientMessageAssignmentUpdateInput,
@@ -385,15 +386,21 @@ function getDefaultPatientPortalReportProcedureOrderIds(report: PatientPortalMed
   return report?.procedureOrders.slice(0, 1).map((order) => order.id) ?? []
 }
 
+function getPatientPortalEncounterFormSelectionId(form: PatientPortalMedicalReportEncounterForm): string {
+  return `${form.formDirectory}_${form.id}`
+}
+
 function buildPatientPortalMedicalReportGenerationInput(
   report: PatientPortalMedicalReportResponse | null,
   sectionIds: string[],
   issueIds: string[],
+  encounterFormIds: string[],
   procedureOrderIds: string[],
 ): PatientPortalMedicalReportGenerationInput {
   return {
     sectionIds: report ? sectionIds : undefined,
     issueIds,
+    encounterFormIds,
     procedureOrderIds: report ? procedureOrderIds : undefined,
   }
 }
@@ -472,6 +479,7 @@ function App() {
     useState<PatientPortalGeneratedMedicalReportResponse | null>(null)
   const [patientPortalReportSectionIds, setPatientPortalReportSectionIds] = useState<string[]>([])
   const [patientPortalReportIssueIds, setPatientPortalReportIssueIds] = useState<string[]>([])
+  const [patientPortalReportEncounterFormIds, setPatientPortalReportEncounterFormIds] = useState<string[]>([])
   const [patientPortalReportProcedureOrderIds, setPatientPortalReportProcedureOrderIds] = useState<string[]>([])
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
@@ -3825,6 +3833,7 @@ function App() {
   function syncPatientPortalMedicalReportSelection(report: PatientPortalMedicalReportResponse | null) {
     setPatientPortalReportSectionIds(getDefaultPatientPortalReportSectionIds(report))
     setPatientPortalReportIssueIds([])
+    setPatientPortalReportEncounterFormIds([])
     setPatientPortalReportProcedureOrderIds(getDefaultPatientPortalReportProcedureOrderIds(report))
   }
 
@@ -3969,6 +3978,7 @@ function App() {
         patientPortalMedicalReport,
         patientPortalReportSectionIds,
         patientPortalReportIssueIds,
+        patientPortalReportEncounterFormIds,
         patientPortalReportProcedureOrderIds,
       )
       const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId, generationInput)
@@ -3998,6 +4008,7 @@ function App() {
         patientPortalMedicalReport,
         patientPortalReportSectionIds,
         patientPortalReportIssueIds,
+        patientPortalReportEncounterFormIds,
         patientPortalReportProcedureOrderIds,
       )
       const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId, generationInput)
@@ -4455,6 +4466,7 @@ function App() {
             portalGeneratedMedicalReport={patientPortalGeneratedMedicalReport}
             selectedMedicalReportSectionIds={patientPortalReportSectionIds}
             selectedMedicalReportIssueIds={patientPortalReportIssueIds}
+            selectedMedicalReportEncounterFormIds={patientPortalReportEncounterFormIds}
             selectedMedicalReportProcedureOrderIds={patientPortalReportProcedureOrderIds}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
@@ -4477,6 +4489,8 @@ function App() {
               setPatientPortalReportSectionIds((current) => updateStringSelection(current, sectionId, selected))}
             onToggleMedicalReportIssue={(issueId, selected) =>
               setPatientPortalReportIssueIds((current) => updateStringSelection(current, issueId, selected))}
+            onToggleMedicalReportEncounterForm={(formId, selected) =>
+              setPatientPortalReportEncounterFormIds((current) => updateStringSelection(current, formId, selected))}
             onToggleMedicalReportProcedureOrder={(orderId, selected) =>
               setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
@@ -4859,6 +4873,7 @@ function PatientPortalWorkspace({
   portalGeneratedMedicalReport,
   selectedMedicalReportSectionIds,
   selectedMedicalReportIssueIds,
+  selectedMedicalReportEncounterFormIds,
   selectedMedicalReportProcedureOrderIds,
   portalMessages,
   portalDocuments,
@@ -4879,6 +4894,7 @@ function PatientPortalWorkspace({
   onDownloadGeneratedMedicalReportPdf,
   onToggleMedicalReportSection,
   onToggleMedicalReportIssue,
+  onToggleMedicalReportEncounterForm,
   onToggleMedicalReportProcedureOrder,
   onRequestAppointment,
   onComposeSubmit,
@@ -4904,6 +4920,7 @@ function PatientPortalWorkspace({
   portalGeneratedMedicalReport: PatientPortalGeneratedMedicalReportResponse | null
   selectedMedicalReportSectionIds: string[]
   selectedMedicalReportIssueIds: string[]
+  selectedMedicalReportEncounterFormIds: string[]
   selectedMedicalReportProcedureOrderIds: string[]
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
@@ -4924,6 +4941,7 @@ function PatientPortalWorkspace({
   onDownloadGeneratedMedicalReportPdf: () => Promise<void>
   onToggleMedicalReportSection: (sectionId: string, selected: boolean) => void
   onToggleMedicalReportIssue: (issueId: string, selected: boolean) => void
+  onToggleMedicalReportEncounterForm: (formId: string, selected: boolean) => void
   onToggleMedicalReportProcedureOrder: (orderId: string, selected: boolean) => void
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
@@ -5439,7 +5457,7 @@ function PatientPortalWorkspace({
                   <span>{portalMedicalReport?.encounterCount ?? 0} encounters</span>
                 </div>
                 <div className="clinical-list-body" role="region" aria-label="Patient portal medical report encounters">
-                  {(portalMedicalReport?.encounters ?? []).slice(0, 4).map((encounter) => (
+                  {(portalMedicalReport?.encounters ?? []).map((encounter) => (
                     <article className="clinical-item" key={encounter.encounter}>
                       <div>
                         <strong>{encounter.display}</strong>
@@ -5447,8 +5465,33 @@ function PatientPortalWorkspace({
                       </div>
                       <div className="message-meta-row">
                         <span>{encounter.formCount} forms</span>
-                        <span>{encounter.forms.map((form) => form.display).join(', ') || 'No forms'}</span>
+                        <span>{encounter.reason ?? 'Reason not recorded'}</span>
                       </div>
+                      {encounter.forms.map((form) => {
+                        const formSelectionId = getPatientPortalEncounterFormSelectionId(form)
+                        return (
+                          <div className="message-meta-row" key={formSelectionId}>
+                            <label className="checkbox-row report-choice">
+                              <input
+                                type="checkbox"
+                                checked={selectedMedicalReportEncounterFormIds.includes(formSelectionId)}
+                                onChange={(event) =>
+                                  onToggleMedicalReportEncounterForm(formSelectionId, event.currentTarget.checked)}
+                                disabled={!authenticated || busy}
+                                aria-label={`Include ${form.display} form ${form.id} from encounter ${encounter.encounter} in generated report`}
+                              />
+                              <strong>{form.display}</strong>
+                            </label>
+                            <span>{form.formDirectory}_{form.id}</span>
+                            <span>Encounter {form.encounter}</span>
+                          </div>
+                        )
+                      })}
+                      {encounter.forms.length === 0 && (
+                        <div className="message-meta-row">
+                          <span>No forms recorded for this encounter</span>
+                        </div>
+                      )}
                     </article>
                   ))}
                   {(portalMedicalReport?.encounters.length ?? 0) === 0 && (
@@ -5490,7 +5533,12 @@ function PatientPortalWorkspace({
                 </div>
                 <div className="result-meta">
                   <span>{portalGeneratedMedicalReport?.title ?? portalMedicalReport?.reportPreview.title ?? 'Generated report'}</span>
-                  <span>{portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections / {portalGeneratedMedicalReport?.includedIssueIds.length ?? 0} issues / {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines</span>
+                  <span>
+                    {portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections /{' '}
+                    {portalGeneratedMedicalReport?.includedIssueIds.length ?? 0} issues /{' '}
+                    {portalGeneratedMedicalReport?.includedEncounterFormIds.length ?? 0} forms /{' '}
+                    {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines
+                  </span>
                 </div>
                 <div className="contact-actions">
                   <button

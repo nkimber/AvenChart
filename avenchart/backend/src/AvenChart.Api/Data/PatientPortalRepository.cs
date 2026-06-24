@@ -1754,6 +1754,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             string.Empty,
             Array.Empty<string>(),
             Array.Empty<string>(),
+            Array.Empty<string>(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1784,6 +1785,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             string.Empty,
             Array.Empty<string>(),
             Array.Empty<string>(),
+            Array.Empty<string>(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1808,6 +1810,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         IncludedSectionIds: Array.Empty<string>(),
         IncludedProcedureOrderIds: Array.Empty<string>(),
         IncludedIssueIds: Array.Empty<string>(),
+        IncludedEncounterFormIds: Array.Empty<string>(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -1834,6 +1837,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         IncludedSectionIds: Array.Empty<string>(),
         IncludedProcedureOrderIds: Array.Empty<string>(),
         IncludedIssueIds: Array.Empty<string>(),
+        IncludedEncounterFormIds: Array.Empty<string>(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -2716,6 +2720,25 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             .ToArray();
         var includedIssueIds = includedIssues.Select(issue => issue.Id).ToArray();
 
+        var requestedEncounterFormIds = request.EncounterFormIds is null
+            ? Array.Empty<string>()
+            : request.EncounterFormIds
+                .Select(formId => formId.Trim())
+                .Where(formId => !string.IsNullOrWhiteSpace(formId))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        var requestedEncounterFormIdSet = requestedEncounterFormIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var availableEncounterForms = encounters
+            .SelectMany(encounter => encounter.Forms.Select(form => (
+                Encounter: encounter,
+                Form: form,
+                SelectionId: BuildEncounterFormSelectionId(form))))
+            .ToArray();
+        var includedEncounterForms = availableEncounterForms
+            .Where(item => requestedEncounterFormIdSet.Contains(item.SelectionId))
+            .ToArray();
+        var includedEncounterFormIds = includedEncounterForms.Select(item => item.SelectionId).ToArray();
+
         var reportSections = new List<PatientPortalGeneratedMedicalReportSection>();
         foreach (var section in MedicalReportSections.Where(section => includedSectionIdSet.Contains(section.Id)))
         {
@@ -2781,6 +2804,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             reportSections.Add(BuildSelectedIssuesGeneratedReportSection(includedIssues));
         }
 
+        if (includedEncounterForms.Length > 0)
+        {
+            reportSections.Add(BuildSelectedEncounterFormsGeneratedReportSection(includedEncounterForms));
+        }
+
         foreach (var order in includedProcedureOrders)
         {
             reportSections.Add(BuildGeneratedReportSection(
@@ -2810,6 +2838,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         {
             summaryLines.Add($"Issues: {includedIssues.Length} selected for this customized report.");
         }
+        if (includedEncounterForms.Length > 0)
+        {
+            summaryLines.Add($"Encounter Forms: {includedEncounterForms.Length} selected for this customized report.");
+        }
 
         return new PatientPortalGeneratedMedicalReportResponse(
             Authenticated: true,
@@ -2828,6 +2860,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrderIds,
             IncludedIssueIds: includedIssueIds,
+            IncludedEncounterFormIds: includedEncounterFormIds,
             PrintableVersionAvailable: true,
             PdfDownloadAvailable: true,
             ReportSectionCount: reportSections.Count,
@@ -2871,6 +2904,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             $"Included sections: {string.Join(", ", report.IncludedSectionIds)}",
             $"Included procedure orders: {string.Join(", ", report.IncludedProcedureOrderIds)}",
             $"Included issues: {string.Join(", ", report.IncludedIssueIds)}",
+            $"Included encounter forms: {string.Join(", ", report.IncludedEncounterFormIds)}",
             string.Empty,
             "Summary"
         };
@@ -2961,6 +2995,23 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return BuildGeneratedReportSection("issues", "Issues", lines);
     }
 
+    private static PatientPortalGeneratedMedicalReportSection BuildSelectedEncounterFormsGeneratedReportSection(
+        IReadOnlyList<(PatientPortalMedicalReportEncounter Encounter, PatientPortalMedicalReportEncounterForm Form, string SelectionId)> encounterForms)
+    {
+        var lines = encounterForms
+            .Select(item =>
+                $"{item.Form.Display}: Encounter {item.Encounter.Encounter} on {item.Encounter.Date}; form {item.Form.Id}; directory {item.Form.FormDirectory}; reason {FormatEncounterReason(item.Encounter)}")
+            .ToArray();
+
+        return BuildGeneratedReportSection("encounter-forms", "Encounter Forms", lines);
+    }
+
+    private static string BuildEncounterFormSelectionId(PatientPortalMedicalReportEncounterForm form) =>
+        $"{form.FormDirectory}_{form.Id}";
+
+    private static string FormatEncounterReason(PatientPortalMedicalReportEncounter encounter) =>
+        string.IsNullOrWhiteSpace(encounter.Reason) ? "Not recorded" : encounter.Reason;
+
     private static PatientPortalGeneratedMedicalReportSection BuildIssueGeneratedReportSection(
         string id,
         string title,
@@ -3025,6 +3076,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Title: "Customized Medical History Report",
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrders,
+            IncludedEncounterFormIds: Array.Empty<string>(),
             SummaryLineCount: summaryLines.Count,
             SummaryLines: summaryLines);
     }

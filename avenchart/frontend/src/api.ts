@@ -2534,6 +2534,7 @@ export type PatientPortalGeneratedMedicalReport = {
   title: string
   includedSectionIds: string[]
   includedProcedureOrderIds: string[]
+  includedEncounterFormIds: string[]
   summaryLineCount: number
   summaryLines: string[]
 }
@@ -2542,6 +2543,7 @@ export type PatientPortalMedicalReportGenerationInput = {
   sectionIds?: string[]
   procedureOrderIds?: string[]
   issueIds?: string[]
+  encounterFormIds?: string[]
 }
 
 export type PatientPortalGeneratedMedicalReportSection = {
@@ -2568,6 +2570,7 @@ export type PatientPortalGeneratedMedicalReportResponse = {
   includedSectionIds: string[]
   includedProcedureOrderIds: string[]
   includedIssueIds: string[]
+  includedEncounterFormIds: string[]
   printableVersionAvailable: boolean
   pdfDownloadAvailable: boolean
   reportSectionCount: number
