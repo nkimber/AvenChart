@@ -5194,6 +5194,14 @@ function PatientPortalWorkspace({
   const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
   const selectedPortalMessageIdSet = useMemo(() => new Set(selectedPortalMessageIds), [selectedPortalMessageIds])
   const selectedPortalMessageCount = selectedPortalMessageIds.length
+  const [locallyReadPortalMessageIds, setLocallyReadPortalMessageIds] = useState<string[]>([])
+  const locallyReadPortalMessageIdSet = useMemo(() => new Set(locallyReadPortalMessageIds), [locallyReadPortalMessageIds])
+  const newSelectablePortalMessageIds = useMemo(
+    () => Array.from(new Set(selectablePortalMessages
+      .filter((portalMessage) => getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet) === 'New')
+      .map((portalMessage) => portalMessage.id))),
+    [selectablePortalMessages, locallyReadPortalMessageIdSet],
+  )
   const messageRecipientOptions = portalMessageRecipients?.recipients ?? []
   const messageSubjectOptions = portalMessageComposeOptions?.subjectOptions ?? []
   const inboxPortalMessages = portalMessages?.messages ?? []
@@ -5247,6 +5255,10 @@ function PatientPortalWorkspace({
   }, [selectablePortalMessages])
 
   useEffect(() => {
+    setLocallyReadPortalMessageIds([])
+  }, [portalMessages])
+
+  useEffect(() => {
     setPortalMessagePages((current) => ({
       inbox: clampSecureMessagePage(current.inbox, inboxPortalMessages.length),
       sent: clampSecureMessagePage(current.sent, sentPortalMessages.length),
@@ -5291,6 +5303,14 @@ function PatientPortalWorkspace({
 
     await onArchiveMessages(selectedPortalMessageIds)
     setSelectedPortalMessageIds([])
+  }
+
+  function handleMarkAllPortalMessagesRead() {
+    if (newSelectablePortalMessageIds.length === 0) {
+      return
+    }
+
+    setLocallyReadPortalMessageIds((current) => Array.from(new Set([...current, ...newSelectablePortalMessageIds])))
   }
 
   function handleSecureMessagePageChange(folder: SecureMessageFolderKey, requestedPage: number) {
@@ -5956,6 +5976,15 @@ function PatientPortalWorkspace({
                   <button
                     className="icon-text-button"
                     type="button"
+                    onClick={handleMarkAllPortalMessagesRead}
+                    disabled={!authenticated || busy || newSelectablePortalMessageIds.length === 0}
+                  >
+                    <Check size={15} />
+                    <span>Mark all as read</span>
+                  </button>
+                  <button
+                    className="icon-text-button"
+                    type="button"
                     onClick={() => void handleArchiveSelectedMessages()}
                     disabled={!authenticated || busy || selectedPortalMessageCount === 0}
                   >
@@ -6026,7 +6055,9 @@ function PatientPortalWorkspace({
                   onPageChange={(pageIndex) => handleSecureMessagePageChange('inbox', pageIndex)}
                 />
                 <div className="message-list-body" role="region" aria-label="Inbox secure messages">
-                  {visibleInboxPortalMessages.map((portalMessage) => (
+                  {visibleInboxPortalMessages.map((portalMessage) => {
+                    const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
+                    return (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
                         <label className="message-select-control">
@@ -6044,8 +6075,8 @@ function PatientPortalWorkspace({
                             {portalMessage.date} / {portalMessage.senderName || portalMessage.assignedTo || 'Care team'}
                           </span>
                         </div>
-                        <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
-                          {portalMessage.status || 'Status pending'}
+                        <span className={status === 'New' ? 'status-pill active' : 'status-pill'}>
+                          {status || 'Status pending'}
                         </span>
                       </div>
                       <SecureMessageBody body={portalMessage.body} />
@@ -6064,7 +6095,7 @@ function PatientPortalWorkspace({
                           <Mail size={15} />
                           <span>View thread</span>
                         </button>
-                        {portalMessage.status === 'New' && (
+                        {status === 'New' && (
                           <button
                             className="icon-text-button"
                             type="button"
@@ -6147,7 +6178,8 @@ function PatientPortalWorkspace({
                         </form>
                       )}
                     </article>
-                  ))}
+                    )
+                  })}
                   {inboxPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No secure messages recorded</div>
                   )}
@@ -6163,7 +6195,9 @@ function PatientPortalWorkspace({
                   onPageChange={(pageIndex) => handleSecureMessagePageChange('sent', pageIndex)}
                 />
                 <div className="message-list-body" role="region" aria-label="Sent secure messages">
-                  {visibleSentPortalMessages.map((portalMessage) => (
+                  {visibleSentPortalMessages.map((portalMessage) => {
+                    const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
+                    return (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
                         <label className="message-select-control">
@@ -6181,8 +6215,8 @@ function PatientPortalWorkspace({
                             {portalMessage.date} / To {portalMessage.recipientName || portalMessage.recipientId || 'Care team'}
                           </span>
                         </div>
-                        <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
-                          {portalMessage.status || 'Status pending'}
+                        <span className={status === 'New' ? 'status-pill active' : 'status-pill'}>
+                          {status || 'Status pending'}
                         </span>
                       </div>
                       <SecureMessageBody body={portalMessage.body} />
@@ -6201,7 +6235,7 @@ function PatientPortalWorkspace({
                           <Mail size={15} />
                           <span>View thread</span>
                         </button>
-                        {portalMessage.status === 'New' && (
+                        {status === 'New' && (
                           <button
                             className="icon-text-button"
                             type="button"
@@ -6224,7 +6258,8 @@ function PatientPortalWorkspace({
                       </div>
                       <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
                     </article>
-                  ))}
+                    )
+                  })}
                   {sentPortalMessages.length === 0 && (
                     <div className="timeline-placeholder">No sent secure messages recorded</div>
                   )}
@@ -6242,6 +6277,7 @@ function PatientPortalWorkspace({
                 <div className="message-list-body" role="region" aria-label="All secure messages">
                   {visibleAllPortalMessages.map((portalMessage) => {
                     const patientAuthored = portalMessage.senderId === home.portalUsername
+                    const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
                     return (
                       <article className="message-item" key={portalMessage.id}>
                         <div className="message-item-header">
@@ -6262,8 +6298,8 @@ function PatientPortalWorkspace({
                                 : `From ${portalMessage.senderName || portalMessage.senderId || 'Care team'}`}
                             </span>
                           </div>
-                          <span className={portalMessage.status === 'New' ? 'status-pill active' : 'status-pill'}>
-                            {portalMessage.status || 'Status pending'}
+                          <span className={status === 'New' ? 'status-pill active' : 'status-pill'}>
+                            {status || 'Status pending'}
                           </span>
                         </div>
                         <SecureMessageBody body={portalMessage.body} />
@@ -6282,7 +6318,7 @@ function PatientPortalWorkspace({
                             <Mail size={15} />
                             <span>View thread</span>
                           </button>
-                          {portalMessage.status === 'New' && (
+                          {status === 'New' && (
                             <button
                               className="icon-text-button"
                               type="button"
@@ -6324,6 +6360,7 @@ function PatientPortalWorkspace({
                 <div className="message-list-body" role="region" aria-label="Deleted secure messages">
                   {visibleDeletedPortalMessages.map((portalMessage) => {
                     const patientAuthored = portalMessage.senderId === home.portalUsername
+                    const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
                     return (
                       <article className="message-item" key={portalMessage.id}>
                         <div className="message-item-header">
@@ -6335,7 +6372,7 @@ function PatientPortalWorkspace({
                                 : `From ${portalMessage.senderName || portalMessage.senderId || 'Care team'}`}
                             </span>
                           </div>
-                          <span className="status-pill danger">{portalMessage.status || 'Deleted'}</span>
+                          <span className="status-pill danger">{status || 'Deleted'}</span>
                         </div>
                         <SecureMessageBody body={portalMessage.body} />
                         <div className="message-meta-row">
@@ -6630,6 +6667,14 @@ function getSecureMessagePage(messages: PatientPortalMessageItem[], pageIndex: n
   const safePage = clampSecureMessagePage(pageIndex, messages.length)
   const pageStart = safePage * secureMessagePageSize
   return messages.slice(pageStart, pageStart + secureMessagePageSize)
+}
+
+function getPortalMessageStatus(message: PatientPortalMessageItem, locallyReadMessageIds: Set<string>) {
+  if (message.status === 'New' && locallyReadMessageIds.has(message.id)) {
+    return 'Read'
+  }
+
+  return message.status || ''
 }
 
 function getSecureMessagePageCount(messageCount: number) {
