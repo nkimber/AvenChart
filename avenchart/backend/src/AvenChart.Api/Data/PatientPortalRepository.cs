@@ -2870,7 +2870,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id::text as id, drug, start_date, end_date, dosage, quantity::text as quantity, route, note
+            select id::text as id, drug, start_date, modified_date, end_date, dosage, quantity::text as quantity, route, note
             from prescriptions
             where pid = @pid
               and end_date is null
@@ -2886,6 +2886,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 Id: reader.GetString(reader.GetOrdinal("id")),
                 Drug: ReadNullableString(reader, "drug") ?? string.Empty,
                 StartDate: ReadNullableDate(reader, "start_date"),
+                ModifiedDate: ReadNullableDate(reader, "modified_date"),
                 EndDate: ReadNullableDate(reader, "end_date"),
                 Dosage: ReadNullableString(reader, "dosage"),
                 Quantity: ReadNullableString(reader, "quantity"),

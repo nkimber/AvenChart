@@ -141,6 +141,7 @@ public sealed record PatientPortalPrescriptionItem(
     string Id,
     string Drug,
     string? StartDate,
+    string? ModifiedDate,
     string? EndDate,
     string? Dosage,
     string? Quantity,

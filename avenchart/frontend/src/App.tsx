@@ -5615,6 +5615,7 @@ function PatientPortalWorkspace({
                         <span>Dosage {prescription.dosage ?? 'Not recorded'}</span>
                         <span>Quantity {prescription.quantity ?? 'Not recorded'}</span>
                         <span>Route {prescription.route ?? 'Not recorded'}</span>
+                        <span>Modified {prescription.modifiedDate ?? 'Not recorded'}</span>
                         <span>End {prescription.endDate ?? 'Active'}</span>
                       </div>
                     </article>

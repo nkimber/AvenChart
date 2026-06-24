@@ -2398,6 +2398,7 @@ export type PatientPortalPrescriptionItem = {
   id: string
   drug: string
   startDate?: string | null
+  modifiedDate?: string | null
   endDate?: string | null
   dosage?: string | null
   quantity?: string | null
