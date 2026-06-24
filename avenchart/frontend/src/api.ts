@@ -2536,6 +2536,7 @@ export type PatientPortalGeneratedMedicalReport = {
   includedProcedureOrderIds: string[]
   includedEncounterFormIds: string[]
   templateMetadata: PatientPortalGeneratedMedicalReportTemplateMetadata
+  packageMetadata: PatientPortalGeneratedMedicalReportPackageMetadata
   summaryLineCount: number
   summaryLines: string[]
 }
@@ -2565,6 +2566,15 @@ export type PatientPortalGeneratedMedicalReportTemplateMetadata = {
   signatureLineAvailable: boolean
 }
 
+export type PatientPortalGeneratedMedicalReportPackageMetadata = {
+  fileName: string
+  contentType: string
+  entryNames: string[]
+  manifestAvailable: boolean
+  pdfAvailable: boolean
+  summaryAvailable: boolean
+}
+
 export type PatientPortalGeneratedMedicalReportResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2586,6 +2596,8 @@ export type PatientPortalGeneratedMedicalReportResponse = {
   includedEncounterFormIds: string[]
   printableVersionAvailable: boolean
   pdfDownloadAvailable: boolean
+  packageDownloadAvailable: boolean
+  packageMetadata: PatientPortalGeneratedMedicalReportPackageMetadata
   reportSectionCount: number
   reportSections: PatientPortalGeneratedMedicalReportSection[]
   summaryLineCount: number
@@ -3143,6 +3155,28 @@ export async function downloadPatientPortalGeneratedMedicalReportPdf(
   if (!response.ok) {
     const errorText = await response.text()
     throw new Error(errorText || `Patient portal medical report PDF download failed with ${response.status}`)
+  }
+
+  return response.blob()
+}
+
+export async function downloadPatientPortalGeneratedMedicalReportPackage(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput = {},
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/package`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Patient portal medical report package download failed with ${response.status}`)
   }
 
   return response.blob()

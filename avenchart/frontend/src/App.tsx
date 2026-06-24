@@ -62,6 +62,7 @@ import {
   getPatientPortalMedicalReport,
   generatePatientPortalMedicalReport,
   downloadPatientPortalGeneratedMedicalReportPdf,
+  downloadPatientPortalGeneratedMedicalReportPackage,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -4036,6 +4037,50 @@ function App() {
     }
   }
 
+  async function handlePatientPortalMedicalReportPackageDownload() {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before downloading a medical report package.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const generationInput = buildPatientPortalMedicalReportGenerationInput(
+        patientPortalMedicalReport,
+        patientPortalReportSectionIds,
+        patientPortalReportIssueIds,
+        patientPortalReportEncounterFormIds,
+        patientPortalReportProcedureOrderIds,
+      )
+      const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId, generationInput)
+      setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
+      if (!generatedMedicalReport.authenticated || !generatedMedicalReport.packageDownloadAvailable) {
+        setPatientPortalStatus('rejected')
+        setPatientPortalMessage(generatedMedicalReport.failureReason ?? 'Patient portal medical report package is not available.')
+        return
+      }
+
+      const blob = await downloadPatientPortalGeneratedMedicalReportPackage(patientPortalSessionId, generationInput)
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = generatedMedicalReport.packageMetadata.fileName
+        || `medical-report-${generatedMedicalReport.pubpid}-${generatedMedicalReport.generatedOn.replaceAll('-', '')}.zip`
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      setPatientPortalStatus('ready')
+      setPatientPortalMessage(`Downloaded ${generatedMedicalReport.title} package for ${generatedMedicalReport.displayName}`)
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal medical report package download failed')
+    }
+  }
+
   async function handlePatientPortalAppointmentRequest(input: PatientPortalAppointmentRequestInput) {
     if (!patientPortalSessionId) {
       setPatientPortalStatus('rejected')
@@ -4485,6 +4530,7 @@ function App() {
             onRefresh={handlePatientPortalHomeRefresh}
             onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
             onDownloadGeneratedMedicalReportPdf={handlePatientPortalMedicalReportPdfDownload}
+            onDownloadGeneratedMedicalReportPackage={handlePatientPortalMedicalReportPackageDownload}
             onToggleMedicalReportSection={(sectionId, selected) =>
               setPatientPortalReportSectionIds((current) => updateStringSelection(current, sectionId, selected))}
             onToggleMedicalReportIssue={(issueId, selected) =>
@@ -4892,6 +4938,7 @@ function PatientPortalWorkspace({
   onRefresh,
   onGenerateMedicalReport,
   onDownloadGeneratedMedicalReportPdf,
+  onDownloadGeneratedMedicalReportPackage,
   onToggleMedicalReportSection,
   onToggleMedicalReportIssue,
   onToggleMedicalReportEncounterForm,
@@ -4939,6 +4986,7 @@ function PatientPortalWorkspace({
   onRefresh: () => Promise<void>
   onGenerateMedicalReport: () => Promise<void>
   onDownloadGeneratedMedicalReportPdf: () => Promise<void>
+  onDownloadGeneratedMedicalReportPackage: () => Promise<void>
   onToggleMedicalReportSection: (sectionId: string, selected: boolean) => void
   onToggleMedicalReportIssue: (issueId: string, selected: boolean) => void
   onToggleMedicalReportEncounterForm: (formId: string, selected: boolean) => void
@@ -5559,6 +5607,15 @@ function PatientPortalWorkspace({
                     <Download size={15} />
                     <span>Download report PDF</span>
                   </button>
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => void onDownloadGeneratedMedicalReportPackage()}
+                    disabled={!authenticated || busy || portalGeneratedMedicalReport?.packageDownloadAvailable !== true}
+                  >
+                    <Download size={15} />
+                    <span>Download report package</span>
+                  </button>
                 </div>
                 <div className="clinical-list-body" role="region" aria-label="Patient portal generated medical report">
                   {portalGeneratedMedicalReport !== null && (
@@ -5609,7 +5666,14 @@ function PatientPortalWorkspace({
                     <div className="message-meta-row">
                       <span>Printable Version {portalGeneratedMedicalReport.printableVersionAvailable ? 'available' : 'not available'}</span>
                       <span>PDF Download {portalGeneratedMedicalReport.pdfDownloadAvailable ? 'available' : 'pending'}</span>
+                      <span>Package Download {portalGeneratedMedicalReport.packageDownloadAvailable ? 'available' : 'pending'}</span>
                       <span>Signature Line {portalGeneratedMedicalReport.templateMetadata.signatureLineAvailable ? 'available' : 'not available'}</span>
+                    </div>
+                  )}
+                  {portalGeneratedMedicalReport?.packageDownloadAvailable === true && (
+                    <div className="message-meta-row">
+                      <span>{portalGeneratedMedicalReport.packageMetadata.fileName}</span>
+                      <span>{portalGeneratedMedicalReport.packageMetadata.entryNames.join(', ')}</span>
                     </div>
                   )}
                 </div>

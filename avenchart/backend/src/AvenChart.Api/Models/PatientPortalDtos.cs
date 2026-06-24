@@ -270,6 +270,7 @@ public sealed record PatientPortalGeneratedMedicalReport(
     IReadOnlyList<string> IncludedProcedureOrderIds,
     IReadOnlyList<string> IncludedEncounterFormIds,
     PatientPortalGeneratedMedicalReportTemplateMetadata TemplateMetadata,
+    PatientPortalGeneratedMedicalReportPackageMetadata PackageMetadata,
     int SummaryLineCount,
     IReadOnlyList<string> SummaryLines);
 
@@ -300,6 +301,8 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     IReadOnlyList<string> IncludedEncounterFormIds,
     bool PrintableVersionAvailable,
     bool PdfDownloadAvailable,
+    bool PackageDownloadAvailable,
+    PatientPortalGeneratedMedicalReportPackageMetadata PackageMetadata,
     int ReportSectionCount,
     IReadOnlyList<PatientPortalGeneratedMedicalReportSection> ReportSections,
     int SummaryLineCount,
@@ -308,6 +311,15 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     string SessionSource);
 
 public sealed record PatientPortalGeneratedMedicalReportPdfPackage(
+    bool Downloadable,
+    string FileName,
+    string ContentType,
+    byte[] Content,
+    int ContentLength,
+    PatientPortalGeneratedMedicalReportResponse? Report,
+    string? FailureReason);
+
+public sealed record PatientPortalGeneratedMedicalReportPackageDownload(
     bool Downloadable,
     string FileName,
     string ContentType,
@@ -331,6 +343,14 @@ public sealed record PatientPortalGeneratedMedicalReportTemplateMetadata(
     string PatientHeaderLine,
     string GeneratedOnLabel,
     bool SignatureLineAvailable);
+
+public sealed record PatientPortalGeneratedMedicalReportPackageMetadata(
+    string FileName,
+    string ContentType,
+    IReadOnlyList<string> EntryNames,
+    bool ManifestAvailable,
+    bool PdfAvailable,
+    bool SummaryAvailable);
 
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,

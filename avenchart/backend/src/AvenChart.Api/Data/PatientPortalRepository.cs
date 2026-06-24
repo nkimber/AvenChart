@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -11,6 +12,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 {
     private const string InvalidCredentialsMessage = "Invalid username or password.";
     private const string SessionSource = "avenchart-portal";
+    private static readonly JsonSerializerOptions GeneratedMedicalReportPackageJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    };
     private static readonly PatientPortalAppointmentCategoryOption[] AppointmentRequestCategoryOptions =
     [
         new(5, "Office Visit", "office_visit", 15),
@@ -503,6 +508,28 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Downloadable: true,
             FileName: BuildGeneratedMedicalReportPdfFileName(report),
             ContentType: "application/pdf",
+            Content: content,
+            ContentLength: content.Length,
+            Report: report,
+            FailureReason: null);
+    }
+
+    public async Task<PatientPortalGeneratedMedicalReportPackageDownload> DownloadGeneratedMedicalReportPackageAsync(
+        Guid sessionId,
+        PatientPortalMedicalReportGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var report = await GenerateMedicalReportAsync(sessionId, request, cancellationToken);
+        if (!report.Authenticated)
+        {
+            return GeneratedMedicalReportPackageFailure(report.FailureReason ?? "Session is not active.", report);
+        }
+
+        var content = BuildGeneratedMedicalReportPackage(report);
+        return new PatientPortalGeneratedMedicalReportPackageDownload(
+            Downloadable: true,
+            FileName: BuildGeneratedMedicalReportPackageFileName(report),
+            ContentType: "application/zip",
             Content: content,
             ContentLength: content.Length,
             Report: report,
@@ -1758,6 +1785,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Array.Empty<string>(),
             Array.Empty<string>(),
             EmptyGeneratedMedicalReportTemplateMetadata(),
+            EmptyGeneratedMedicalReportPackageMetadata(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1790,6 +1818,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Array.Empty<string>(),
             Array.Empty<string>(),
             EmptyGeneratedMedicalReportTemplateMetadata(),
+            EmptyGeneratedMedicalReportPackageMetadata(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1818,6 +1847,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
+        PackageDownloadAvailable: false,
+        PackageMetadata: EmptyGeneratedMedicalReportPackageMetadata(),
         ReportSectionCount: 0,
         ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
         SummaryLineCount: 0,
@@ -1846,6 +1877,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
+        PackageDownloadAvailable: false,
+        PackageMetadata: EmptyGeneratedMedicalReportPackageMetadata(),
         ReportSectionCount: 0,
         ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
         SummaryLineCount: 0,
@@ -1873,6 +1906,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalGeneratedMedicalReportPdfPackage MissingSessionHeaderGeneratedMedicalReportPdf() =>
         GeneratedMedicalReportPdfFailure("Patient portal session header was not supplied.");
+
+    public static PatientPortalGeneratedMedicalReportPackageDownload MissingSessionHeaderGeneratedMedicalReportPackage() =>
+        GeneratedMedicalReportPackageFailure("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
@@ -2892,6 +2928,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         var generatedOn = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
         var templateMetadata = BuildGeneratedMedicalReportTemplateMetadata(patient, facility, generatedOn);
+        var packageMetadata = BuildGeneratedMedicalReportPackageMetadata(session.Pubpid, session.CanonicalId, generatedOn);
 
         return new PatientPortalGeneratedMedicalReportResponse(
             Authenticated: true,
@@ -2914,6 +2951,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IncludedEncounterFormIds: includedEncounterFormIds,
             PrintableVersionAvailable: true,
             PdfDownloadAvailable: true,
+            PackageDownloadAvailable: true,
+            PackageMetadata: packageMetadata,
             ReportSectionCount: reportSections.Count,
             ReportSections: reportSections,
             SummaryLineCount: summaryLines.Count,
@@ -2933,13 +2972,176 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Report: report,
         FailureReason: reason);
 
+    private static PatientPortalGeneratedMedicalReportPackageDownload GeneratedMedicalReportPackageFailure(
+        string reason,
+        PatientPortalGeneratedMedicalReportResponse? report = null) => new(
+        Downloadable: false,
+        FileName: "customized-medical-history-report.zip",
+        ContentType: "application/zip",
+        Content: Array.Empty<byte>(),
+        ContentLength: 0,
+        Report: report,
+        FailureReason: reason);
+
     private static string BuildGeneratedMedicalReportPdfFileName(PatientPortalGeneratedMedicalReportResponse report)
     {
-        var patientId = string.IsNullOrWhiteSpace(report.Pubpid) ? report.CanonicalId : report.Pubpid;
-        var generatedDate = string.IsNullOrWhiteSpace(report.GeneratedOn)
+        return $"{BuildGeneratedMedicalReportFileStem(report.Pubpid, report.CanonicalId, report.GeneratedOn)}.pdf";
+    }
+
+    private static string BuildGeneratedMedicalReportPackageFileName(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        return $"{BuildGeneratedMedicalReportFileStem(report.Pubpid, report.CanonicalId, report.GeneratedOn)}.zip";
+    }
+
+    private static string BuildGeneratedMedicalReportFileStem(string pubpid, string canonicalId, string generatedOn)
+    {
+        var patientId = string.IsNullOrWhiteSpace(pubpid) ? canonicalId : pubpid;
+        var generatedDate = string.IsNullOrWhiteSpace(generatedOn)
             ? DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyyMMdd")
-            : report.GeneratedOn.Replace("-", string.Empty, StringComparison.Ordinal);
-        return $"medical-report-{patientId}-{generatedDate}.pdf";
+            : generatedOn.Replace("-", string.Empty, StringComparison.Ordinal);
+        return $"medical-report-{patientId}-{generatedDate}";
+    }
+
+    private static PatientPortalGeneratedMedicalReportPackageMetadata EmptyGeneratedMedicalReportPackageMetadata() => new(
+        FileName: string.Empty,
+        ContentType: string.Empty,
+        EntryNames: Array.Empty<string>(),
+        ManifestAvailable: false,
+        PdfAvailable: false,
+        SummaryAvailable: false);
+
+    private static PatientPortalGeneratedMedicalReportPackageMetadata BuildGeneratedMedicalReportPackageMetadata(
+        string pubpid,
+        string canonicalId,
+        string generatedOn)
+    {
+        var pdfFileName = $"{BuildGeneratedMedicalReportFileStem(pubpid, canonicalId, generatedOn)}.pdf";
+        return new PatientPortalGeneratedMedicalReportPackageMetadata(
+            FileName: $"{BuildGeneratedMedicalReportFileStem(pubpid, canonicalId, generatedOn)}.zip",
+            ContentType: "application/zip",
+            EntryNames:
+            [
+                "manifest.json",
+                pdfFileName,
+                "summary.txt"
+            ],
+            ManifestAvailable: true,
+            PdfAvailable: true,
+            SummaryAvailable: true);
+    }
+
+    private static byte[] BuildGeneratedMedicalReportPackage(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var timestamp = BuildGeneratedMedicalReportPackageTimestamp(report.GeneratedOn);
+            AddGeneratedMedicalReportPackageEntry(
+                archive,
+                "manifest.json",
+                Encoding.UTF8.GetBytes(BuildGeneratedMedicalReportPackageManifest(report)),
+                timestamp);
+            AddGeneratedMedicalReportPackageEntry(
+                archive,
+                BuildGeneratedMedicalReportPdfFileName(report),
+                BuildGeneratedMedicalReportPdf(report),
+                timestamp);
+            AddGeneratedMedicalReportPackageEntry(
+                archive,
+                "summary.txt",
+                Encoding.UTF8.GetBytes(BuildGeneratedMedicalReportPackageSummary(report)),
+                timestamp);
+        }
+
+        return stream.ToArray();
+    }
+
+    private static DateTimeOffset BuildGeneratedMedicalReportPackageTimestamp(string generatedOn)
+    {
+        if (DateOnly.TryParse(generatedOn, out var generatedDate))
+        {
+            return new DateTimeOffset(generatedDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        }
+
+        return DateTimeOffset.UtcNow;
+    }
+
+    private static void AddGeneratedMedicalReportPackageEntry(
+        ZipArchive archive,
+        string entryName,
+        byte[] content,
+        DateTimeOffset timestamp)
+    {
+        var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+        entry.LastWriteTime = timestamp;
+        using var entryStream = entry.Open();
+        entryStream.Write(content);
+    }
+
+    private static string BuildGeneratedMedicalReportPackageManifest(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        var manifest = new
+        {
+            packageId = Path.GetFileNameWithoutExtension(BuildGeneratedMedicalReportPackageFileName(report)),
+            packageFileName = BuildGeneratedMedicalReportPackageFileName(report),
+            contentType = "application/zip",
+            generatedOn = report.GeneratedOn,
+            dataset = new
+            {
+                report.DatasetId,
+                report.DatasetVersion,
+                report.AsOfDate
+            },
+            patient = new
+            {
+                report.CanonicalId,
+                report.LegacyPid,
+                report.Pubpid,
+                report.DisplayName,
+                report.PortalUsername
+            },
+            report = new
+            {
+                report.Title,
+                report.TemplateMetadata,
+                report.IncludedSectionIds,
+                report.IncludedProcedureOrderIds,
+                report.IncludedIssueIds,
+                report.IncludedEncounterFormIds,
+                report.ReportSectionCount,
+                report.SummaryLineCount
+            },
+            entries = report.PackageMetadata.EntryNames.Select(entryName => new
+            {
+                name = entryName,
+                kind = entryName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                    ? "generated-report-pdf"
+                    : Path.GetFileNameWithoutExtension(entryName)
+            }).ToArray()
+        };
+
+        return JsonSerializer.Serialize(manifest, GeneratedMedicalReportPackageJsonOptions);
+    }
+
+    private static string BuildGeneratedMedicalReportPackageSummary(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        var summary = new StringBuilder();
+        summary.AppendLine(report.Title);
+        summary.AppendLine($"Patient: {report.DisplayName} ({report.Pubpid})");
+        summary.AppendLine($"Generated on: {report.GeneratedOn}");
+        summary.AppendLine($"Dataset: {report.DatasetId} {report.DatasetVersion}");
+        summary.AppendLine($"Included sections: {string.Join(", ", report.IncludedSectionIds)}");
+        summary.AppendLine($"Included procedure orders: {string.Join(", ", report.IncludedProcedureOrderIds)}");
+        summary.AppendLine($"Included issues: {string.Join(", ", report.IncludedIssueIds)}");
+        summary.AppendLine($"Included encounter forms: {string.Join(", ", report.IncludedEncounterFormIds)}");
+        summary.AppendLine();
+        summary.AppendLine("Summary");
+        foreach (var line in report.SummaryLines)
+        {
+            summary.AppendLine(line);
+        }
+
+        return summary.ToString();
     }
 
     private static byte[] BuildGeneratedMedicalReportPdf(PatientPortalGeneratedMedicalReportResponse report)
@@ -3193,6 +3395,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IncludedProcedureOrderIds: includedProcedureOrders,
             IncludedEncounterFormIds: Array.Empty<string>(),
             TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
+            PackageMetadata: EmptyGeneratedMedicalReportPackageMetadata(),
             SummaryLineCount: summaryLines.Count,
             SummaryLines: summaryLines);
     }
