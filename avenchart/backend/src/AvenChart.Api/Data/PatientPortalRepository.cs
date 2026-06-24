@@ -455,6 +455,36 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalGeneratedMedicalReportResponse> GenerateMedicalReportAsync(
+        Guid sessionId,
+        PatientPortalMedicalReportGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyGeneratedMedicalReport(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var patient = await GetGeneratedMedicalReportPatientAsync(connection, session.CanonicalId, cancellationToken);
+        var billing = await GetGeneratedMedicalReportBillingAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var issues = await GetMedicalReportIssuesAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var encounters = await GetMedicalReportEncountersAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var procedureOrders = await GetMedicalReportProcedureOrdersAsync(connection, session.LegacyPid.Value, cancellationToken);
+
+        return BuildGeneratedMedicalReportResponse(
+            session,
+            metadata,
+            patient,
+            billing,
+            issues,
+            encounters,
+            procedureOrders,
+            request);
+    }
+
     public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1737,6 +1767,58 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalGeneratedMedicalReportResponse EmptyGeneratedMedicalReport(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Title: string.Empty,
+        GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        IncludedSectionIds: Array.Empty<string>(),
+        IncludedProcedureOrderIds: Array.Empty<string>(),
+        PrintableVersionAvailable: false,
+        PdfDownloadAvailable: false,
+        ReportSectionCount: 0,
+        ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
+        SummaryLineCount: 0,
+        SummaryLines: Array.Empty<string>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalGeneratedMedicalReportResponse MissingSessionGeneratedMedicalReport(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Title: string.Empty,
+        GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        IncludedSectionIds: Array.Empty<string>(),
+        IncludedProcedureOrderIds: Array.Empty<string>(),
+        PrintableVersionAvailable: false,
+        PdfDownloadAvailable: false,
+        ReportSectionCount: 0,
+        ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
+        SummaryLineCount: 0,
+        SummaryLines: Array.Empty<string>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
 
@@ -1751,6 +1833,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalMedicalReportResponse MissingSessionHeaderMedicalReport() =>
         MissingSessionMedicalReport("Patient portal session header was not supplied.");
+
+    public static PatientPortalGeneratedMedicalReportResponse MissingSessionHeaderGeneratedMedicalReport() =>
+        MissingSessionGeneratedMedicalReport("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
@@ -2440,6 +2525,300 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         return orders;
     }
+
+    private static async Task<GeneratedMedicalReportPatientRow> GetGeneratedMedicalReportPatientAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              canonical_id,
+              pubpid,
+              first_name,
+              last_name,
+              sex,
+              date_of_birth,
+              street,
+              city,
+              state,
+              postal_code,
+              email,
+              coalesce(phone_cell, phone_home, phone) as phone
+            from patients
+            where canonical_id = @canonicalId
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("canonicalId", canonicalId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new GeneratedMedicalReportPatientRow(
+                CanonicalId: canonicalId,
+                Pubpid: string.Empty,
+                FirstName: string.Empty,
+                LastName: string.Empty,
+                Sex: null,
+                DateOfBirth: null,
+                Street: null,
+                City: null,
+                State: null,
+                PostalCode: null,
+                Email: null,
+                Phone: null);
+        }
+
+        return new GeneratedMedicalReportPatientRow(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            Pubpid: ReadNullableString(reader, "pubpid") ?? string.Empty,
+            FirstName: ReadNullableString(reader, "first_name") ?? string.Empty,
+            LastName: ReadNullableString(reader, "last_name") ?? string.Empty,
+            Sex: ReadNullableString(reader, "sex"),
+            DateOfBirth: ReadNullableDate(reader, "date_of_birth"),
+            Street: ReadNullableString(reader, "street"),
+            City: ReadNullableString(reader, "city"),
+            State: ReadNullableString(reader, "state"),
+            PostalCode: ReadNullableString(reader, "postal_code"),
+            Email: ReadNullableString(reader, "email"),
+            Phone: ReadNullableString(reader, "phone"));
+    }
+
+    private static async Task<GeneratedMedicalReportBillingRow> GetGeneratedMedicalReportBillingAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with charges as (
+              select
+                count(*)::int as line_count,
+                coalesce(sum(coalesce(fee, 0)), 0)::numeric(12,2) as charge_amount,
+                max(billing_date) as last_billing_date
+              from billing
+              where pid = @pid and activity = 1
+            ),
+            payments as (
+              select
+                count(*)::int as payment_count,
+                coalesce(sum(pay_amount), 0)::numeric(12,2) as payment_amount,
+                coalesce(sum(adj_amount), 0)::numeric(12,2) as adjustment_amount
+              from payment_activities
+              where pid = @pid and deleted is null
+            )
+            select
+              charges.line_count,
+              payments.payment_count,
+              charges.charge_amount,
+              payments.payment_amount,
+              payments.adjustment_amount,
+              (charges.charge_amount - payments.payment_amount - payments.adjustment_amount)::numeric(12,2) as balance_amount,
+              charges.last_billing_date
+            from charges
+            cross join payments;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new GeneratedMedicalReportBillingRow(0, 0, 0m, 0m, 0m, 0m, null);
+        }
+
+        return new GeneratedMedicalReportBillingRow(
+            LineCount: reader.GetInt32(reader.GetOrdinal("line_count")),
+            PaymentCount: reader.GetInt32(reader.GetOrdinal("payment_count")),
+            ChargeAmount: reader.GetDecimal(reader.GetOrdinal("charge_amount")),
+            PaymentAmount: reader.GetDecimal(reader.GetOrdinal("payment_amount")),
+            AdjustmentAmount: reader.GetDecimal(reader.GetOrdinal("adjustment_amount")),
+            BalanceAmount: reader.GetDecimal(reader.GetOrdinal("balance_amount")),
+            LastBillingDate: ReadNullableDate(reader, "last_billing_date"));
+    }
+
+    private static PatientPortalGeneratedMedicalReportResponse BuildGeneratedMedicalReportResponse(
+        PatientPortalSessionResponse session,
+        DatasetMetadata metadata,
+        GeneratedMedicalReportPatientRow patient,
+        GeneratedMedicalReportBillingRow billing,
+        IReadOnlyList<PatientPortalMedicalReportIssue> issues,
+        IReadOnlyList<PatientPortalMedicalReportEncounter> encounters,
+        IReadOnlyList<PatientPortalMedicalReportProcedureOrder> procedureOrders,
+        PatientPortalMedicalReportGenerationRequest request)
+    {
+        var validSectionIds = MedicalReportSections
+            .Select(section => section.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var requestedSectionIds = (request.SectionIds ?? Array.Empty<string>())
+            .Select(sectionId => sectionId.Trim())
+            .Where(sectionId => validSectionIds.Contains(sectionId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var includedSectionIds = requestedSectionIds.Length == 0
+            ? MedicalReportSections.Where(section => section.Selected).Select(section => section.Id).ToArray()
+            : requestedSectionIds;
+        var includedSectionIdSet = includedSectionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var requestedProcedureOrderIds = (request.ProcedureOrderIds ?? Array.Empty<string>())
+            .Select(orderId => orderId.Trim())
+            .Where(orderId => !string.IsNullOrWhiteSpace(orderId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var requestedProcedureOrderIdSet = requestedProcedureOrderIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var includedProcedureOrders = requestedProcedureOrderIds.Length == 0
+            ? procedureOrders.Take(1).ToArray()
+            : procedureOrders.Where(order => requestedProcedureOrderIdSet.Contains(order.Id)).ToArray();
+        var includedProcedureOrderIds = includedProcedureOrders.Select(order => order.Id).ToArray();
+
+        var reportSections = new List<PatientPortalGeneratedMedicalReportSection>();
+        foreach (var section in MedicalReportSections.Where(section => includedSectionIdSet.Contains(section.Id)))
+        {
+            switch (section.Id)
+            {
+                case "demographics":
+                    reportSections.Add(BuildGeneratedReportSection(
+                        section.Id,
+                        "Patient Data",
+                        [
+                            $"Patient: {session.DisplayName}",
+                            $"Patient ID: {session.Pubpid}",
+                            $"Date of birth: {patient.DateOfBirth ?? "Not recorded"}",
+                            $"Sex: {patient.Sex ?? "Not recorded"}",
+                            $"Address: {FormatAddress(patient)}",
+                            $"Phone: {patient.Phone ?? "Not recorded"}",
+                            $"Email: {patient.Email ?? "Not recorded"}"
+                        ]));
+                    break;
+                case "billing":
+                    reportSections.Add(BuildGeneratedReportSection(
+                        section.Id,
+                        "Billing Information",
+                        [
+                            $"Billing lines: {billing.LineCount}",
+                            $"Payment rows: {billing.PaymentCount}",
+                            $"Total charges: {FormatMoney(billing.ChargeAmount)}",
+                            $"Payments: {FormatMoney(billing.PaymentAmount)}",
+                            $"Adjustments: {FormatMoney(billing.AdjustmentAmount)}",
+                            $"Balance: {FormatMoney(billing.BalanceAmount)}",
+                            $"Last billing date: {billing.LastBillingDate ?? "Not recorded"}"
+                        ]));
+                    break;
+                case "allergies":
+                    reportSections.Add(BuildIssueGeneratedReportSection(section.Id, "Patient Allergies", issues, "allergy"));
+                    break;
+                case "medications":
+                    reportSections.Add(BuildIssueGeneratedReportSection(section.Id, "Patient Medications", issues, "medication"));
+                    break;
+                case "medical_problems":
+                    reportSections.Add(BuildIssueGeneratedReportSection(section.Id, "Patient Medical Problems", issues, "medical_problem"));
+                    break;
+                case "history":
+                    reportSections.Add(BuildGeneratedReportSection(
+                        section.Id,
+                        "History Data",
+                        [
+                            $"Issues available: {issues.Count}",
+                            $"Encounters available: {encounters.Count}"
+                        ]));
+                    break;
+                default:
+                    reportSections.Add(BuildGeneratedReportSection(
+                        section.Id,
+                        section.Label,
+                        [$"{section.Label} was selected for the customized medical history report."]));
+                    break;
+            }
+        }
+
+        foreach (var order in includedProcedureOrders)
+        {
+            reportSections.Add(BuildGeneratedReportSection(
+                $"procedure-{order.Id}",
+                "Procedure Order",
+                [
+                    $"Order: {order.ProcedureName}",
+                    $"Order date: {order.OrderDate}",
+                    $"Encounter: {(order.Encounter == 0 ? "Not linked" : order.Encounter.ToString())}",
+                    $"Code: {order.ProcedureCode ?? "Not recorded"}",
+                    $"Diagnosis: {order.Diagnosis ?? "Not recorded"}",
+                    $"Status: {order.OrderStatus ?? "Not recorded"}",
+                    $"Reports: {order.ReportCount}",
+                    $"Results: {string.Join(", ", order.ResultNames)}"
+                ]));
+        }
+
+        var summaryLines = new List<string>
+        {
+            $"Patient Data: {session.DisplayName} ({session.Pubpid})",
+            $"Billing Information: {billing.LineCount} lines; balance {FormatMoney(billing.BalanceAmount)}.",
+            $"Issues available: {issues.Count}; Encounters available: {encounters.Count}."
+        };
+        summaryLines.AddRange(includedProcedureOrders.Select(order =>
+            $"Procedure Order: {order.ProcedureName} ordered {order.OrderDate} with {order.ResultCount} result rows."));
+
+        return new PatientPortalGeneratedMedicalReportResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Title: "Customized Medical History Report",
+            GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+            IncludedSectionIds: includedSectionIds,
+            IncludedProcedureOrderIds: includedProcedureOrderIds,
+            PrintableVersionAvailable: true,
+            PdfDownloadAvailable: false,
+            ReportSectionCount: reportSections.Count,
+            ReportSections: reportSections,
+            SummaryLineCount: summaryLines.Count,
+            SummaryLines: summaryLines,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    private static PatientPortalGeneratedMedicalReportSection BuildIssueGeneratedReportSection(
+        string id,
+        string title,
+        IReadOnlyList<PatientPortalMedicalReportIssue> issues,
+        string issueType)
+    {
+        var lines = issues
+            .Where(issue => string.Equals(issue.Type, issueType, StringComparison.OrdinalIgnoreCase))
+            .Select(issue => $"{issue.Title} ({issue.Status}; begin {issue.BeginDate ?? "Not recorded"})")
+            .DefaultIfEmpty("None recorded")
+            .ToArray();
+
+        return BuildGeneratedReportSection(id, title, lines);
+    }
+
+    private static PatientPortalGeneratedMedicalReportSection BuildGeneratedReportSection(
+        string id,
+        string title,
+        IReadOnlyList<string> lines) => new(
+        Id: id,
+        Title: title,
+        LineCount: lines.Count,
+        Lines: lines);
+
+    private static string FormatAddress(GeneratedMedicalReportPatientRow patient)
+    {
+        var locality = string.Join(
+            " ",
+            new[] { patient.City, patient.State, patient.PostalCode }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var address = string.Join(
+            ", ",
+            new[] { patient.Street, locality }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.IsNullOrWhiteSpace(address) ? "Not recorded" : address;
+    }
+
+    private static string FormatMoney(decimal amount) => FormattableString.Invariant($"${amount:0.00}");
 
     private static PatientPortalGeneratedMedicalReport BuildMedicalReportPreview(
         PatientPortalSessionResponse session,
@@ -3408,6 +3787,29 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private sealed record PortalLabResultRow(
         int ReportId,
         PatientPortalLabResultItem Result);
+
+    private sealed record GeneratedMedicalReportPatientRow(
+        string CanonicalId,
+        string Pubpid,
+        string FirstName,
+        string LastName,
+        string? Sex,
+        string? DateOfBirth,
+        string? Street,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string? Email,
+        string? Phone);
+
+    private sealed record GeneratedMedicalReportBillingRow(
+        int LineCount,
+        int PaymentCount,
+        decimal ChargeAmount,
+        decimal PaymentAmount,
+        decimal AdjustmentAmount,
+        decimal BalanceAmount,
+        string? LastBillingDate);
 
     private sealed record AppointmentSummaryRows(
         int TotalCount,

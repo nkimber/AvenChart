@@ -271,6 +271,41 @@ public sealed record PatientPortalGeneratedMedicalReport(
     int SummaryLineCount,
     IReadOnlyList<string> SummaryLines);
 
+public sealed record PatientPortalMedicalReportGenerationRequest(
+    IReadOnlyList<string>? SectionIds,
+    IReadOnlyList<string>? ProcedureOrderIds);
+
+public sealed record PatientPortalGeneratedMedicalReportResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string Title,
+    string GeneratedOn,
+    IReadOnlyList<string> IncludedSectionIds,
+    IReadOnlyList<string> IncludedProcedureOrderIds,
+    bool PrintableVersionAvailable,
+    bool PdfDownloadAvailable,
+    int ReportSectionCount,
+    IReadOnlyList<PatientPortalGeneratedMedicalReportSection> ReportSections,
+    int SummaryLineCount,
+    IReadOnlyList<string> SummaryLines,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalGeneratedMedicalReportSection(
+    string Id,
+    string Title,
+    int LineCount,
+    IReadOnlyList<string> Lines);
+
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,
     Guid? SessionId,

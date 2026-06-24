@@ -2538,6 +2538,44 @@ export type PatientPortalGeneratedMedicalReport = {
   summaryLines: string[]
 }
 
+export type PatientPortalMedicalReportGenerationInput = {
+  sectionIds?: string[]
+  procedureOrderIds?: string[]
+}
+
+export type PatientPortalGeneratedMedicalReportSection = {
+  id: string
+  title: string
+  lineCount: number
+  lines: string[]
+}
+
+export type PatientPortalGeneratedMedicalReportResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  title: string
+  generatedOn: string
+  includedSectionIds: string[]
+  includedProcedureOrderIds: string[]
+  printableVersionAvailable: boolean
+  pdfDownloadAvailable: boolean
+  reportSectionCount: number
+  reportSections: PatientPortalGeneratedMedicalReportSection[]
+  summaryLineCount: number
+  summaryLines: string[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalMedicalReportResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -3044,6 +3082,27 @@ export async function getPatientPortalMedicalReport(
   })
   if (!response.ok) {
     throw new Error(`Patient portal medical report check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function generatePatientPortalMedicalReport(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput = {},
+  signal?: AbortSignal,
+): Promise<PatientPortalGeneratedMedicalReportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal medical report generation failed with ${response.status}`)
   }
 
   return response.json()

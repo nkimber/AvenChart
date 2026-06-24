@@ -60,6 +60,7 @@ import {
   getPatientPortalClinicalSummary,
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
+  generatePatientPortalMedicalReport,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -292,6 +293,7 @@ import {
   type PatientPortalAppointmentsResponse,
   type PatientPortalClinicalSummaryResponse,
   type PatientPortalDocumentsResponse,
+  type PatientPortalGeneratedMedicalReportResponse,
   type PatientPortalLabResultsResponse,
   type PatientPortalMedicalReportResponse,
   type PatientMessageAssignmentUpdateInput,
@@ -435,6 +437,8 @@ function App() {
     useState<PatientPortalLabResultsResponse | null>(null)
   const [patientPortalMedicalReport, setPatientPortalMedicalReport] =
     useState<PatientPortalMedicalReportResponse | null>(null)
+  const [patientPortalGeneratedMedicalReport, setPatientPortalGeneratedMedicalReport] =
+    useState<PatientPortalGeneratedMedicalReportResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3803,6 +3807,7 @@ function App() {
         setPatientPortalClinicalSummary(null)
         setPatientPortalLabResults(null)
         setPatientPortalMedicalReport(null)
+        setPatientPortalGeneratedMedicalReport(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
@@ -3817,6 +3822,7 @@ function App() {
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(loginResult.sessionId) : null
       const labResults = home.authenticated ? await getPatientPortalLabResults(loginResult.sessionId) : null
       const medicalReport = home.authenticated ? await getPatientPortalMedicalReport(loginResult.sessionId) : null
+      const generatedMedicalReport = home.authenticated ? await generatePatientPortalMedicalReport(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
@@ -3827,6 +3833,7 @@ function App() {
         setPatientPortalClinicalSummary(clinicalSummary)
         setPatientPortalLabResults(labResults)
         setPatientPortalMedicalReport(medicalReport)
+        setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
@@ -3842,6 +3849,7 @@ function App() {
       setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalLabResults(labResults)
       setPatientPortalMedicalReport(medicalReport)
+      setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
@@ -3855,6 +3863,7 @@ function App() {
       setPatientPortalClinicalSummary(null)
       setPatientPortalLabResults(null)
       setPatientPortalMedicalReport(null)
+      setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
@@ -3878,6 +3887,7 @@ function App() {
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(patientPortalSessionId) : null
       const labResults = home.authenticated ? await getPatientPortalLabResults(patientPortalSessionId) : null
       const medicalReport = home.authenticated ? await getPatientPortalMedicalReport(patientPortalSessionId) : null
+      const generatedMedicalReport = home.authenticated ? await generatePatientPortalMedicalReport(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
@@ -3886,6 +3896,7 @@ function App() {
       setPatientPortalClinicalSummary(clinicalSummary)
       setPatientPortalLabResults(labResults)
       setPatientPortalMedicalReport(medicalReport)
+      setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
@@ -3895,6 +3906,29 @@ function App() {
     } catch (portalError) {
       setPatientPortalStatus('error')
       setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal home refresh failed')
+    }
+  }
+
+  async function handlePatientPortalMedicalReportGenerate() {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before generating a medical report.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const generatedMedicalReport = await generatePatientPortalMedicalReport(patientPortalSessionId)
+      setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
+      setPatientPortalStatus(generatedMedicalReport.authenticated ? 'ready' : 'rejected')
+      setPatientPortalMessage(generatedMedicalReport.authenticated
+        ? `Generated ${generatedMedicalReport.title} for ${generatedMedicalReport.displayName}`
+        : generatedMedicalReport.failureReason ?? 'Patient portal medical report generation was rejected.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal medical report generation failed')
     }
   }
 
@@ -4200,6 +4234,7 @@ function App() {
       setPatientPortalClinicalSummary(null)
       setPatientPortalLabResults(null)
       setPatientPortalMedicalReport(null)
+      setPatientPortalGeneratedMedicalReport(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
@@ -4323,6 +4358,7 @@ function App() {
             portalClinicalSummary={patientPortalClinicalSummary}
             portalLabResults={patientPortalLabResults}
             portalMedicalReport={patientPortalMedicalReport}
+            portalGeneratedMedicalReport={patientPortalGeneratedMedicalReport}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4338,6 +4374,7 @@ function App() {
             onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
+            onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
@@ -4715,6 +4752,7 @@ function PatientPortalWorkspace({
   portalClinicalSummary,
   portalLabResults,
   portalMedicalReport,
+  portalGeneratedMedicalReport,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4730,6 +4768,7 @@ function PatientPortalWorkspace({
   onReplyBodyChange,
   onLogin,
   onRefresh,
+  onGenerateMedicalReport,
   onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
@@ -4751,6 +4790,7 @@ function PatientPortalWorkspace({
   portalClinicalSummary: PatientPortalClinicalSummaryResponse | null
   portalLabResults: PatientPortalLabResultsResponse | null
   portalMedicalReport: PatientPortalMedicalReportResponse | null
+  portalGeneratedMedicalReport: PatientPortalGeneratedMedicalReportResponse | null
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -4766,6 +4806,7 @@ function PatientPortalWorkspace({
   onReplyBodyChange: (messageId: string, value: string) => void
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
+  onGenerateMedicalReport: () => Promise<void>
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
@@ -5303,15 +5344,56 @@ function PatientPortalWorkspace({
                   )}
                 </div>
                 <div className="result-meta">
-                  <span>{portalMedicalReport?.reportPreview.title ?? 'Report preview'}</span>
-                  <span>{portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines</span>
+                  <span>{portalGeneratedMedicalReport?.title ?? portalMedicalReport?.reportPreview.title ?? 'Generated report'}</span>
+                  <span>{portalGeneratedMedicalReport?.reportSectionCount ?? 0} sections / {portalGeneratedMedicalReport?.summaryLineCount ?? portalMedicalReport?.reportPreview.summaryLineCount ?? 0} lines</span>
                 </div>
-                <div className="clinical-list-body" role="region" aria-label="Patient portal generated medical report preview">
-                  {(portalMedicalReport?.reportPreview.summaryLines ?? []).map((line) => (
+                <div className="contact-actions">
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => void onGenerateMedicalReport()}
+                    disabled={!authenticated || busy}
+                  >
+                    <FileCheck2 size={15} />
+                    <span>Generate report</span>
+                  </button>
+                </div>
+                <div className="clinical-list-body" role="region" aria-label="Patient portal generated medical report">
+                  {portalGeneratedMedicalReport !== null && (
+                    <div className="message-meta-row">
+                      <strong>{portalGeneratedMedicalReport.title}</strong>
+                      <span>Generated {portalGeneratedMedicalReport.generatedOn}</span>
+                    </div>
+                  )}
+                  {(portalGeneratedMedicalReport?.summaryLines ?? []).map((line) => (
                     <div className="message-meta-row" key={line}>
                       <span>{line}</span>
                     </div>
                   ))}
+                  {(portalGeneratedMedicalReport?.reportSections ?? []).map((section) => (
+                    <article className="clinical-item" key={section.id}>
+                      <div>
+                        <strong>{section.title}</strong>
+                        <span>{section.lineCount} lines</span>
+                      </div>
+                      {section.lines.map((line) => (
+                        <div className="message-meta-row" key={line}>
+                          <span>{line}</span>
+                        </div>
+                      ))}
+                    </article>
+                  ))}
+                  {portalGeneratedMedicalReport === null && (portalMedicalReport?.reportPreview.summaryLines ?? []).map((line) => (
+                    <div className="message-meta-row" key={line}>
+                      <span>{line}</span>
+                    </div>
+                  ))}
+                  {portalGeneratedMedicalReport !== null && (
+                    <div className="message-meta-row">
+                      <span>Printable Version {portalGeneratedMedicalReport.printableVersionAvailable ? 'available' : 'not available'}</span>
+                      <span>PDF Download {portalGeneratedMedicalReport.pdfDownloadAvailable ? 'available' : 'pending'}</span>
+                    </div>
+                  )}
                 </div>
               </section>
 
