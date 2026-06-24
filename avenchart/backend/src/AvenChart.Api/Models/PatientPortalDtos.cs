@@ -196,6 +196,81 @@ public sealed record PatientPortalLabResultItem(
     string? Units,
     string? ResultStatus);
 
+public sealed record PatientPortalMedicalReportResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int SectionCount,
+    int SelectedSectionCount,
+    IReadOnlyList<PatientPortalMedicalReportSection> Sections,
+    int IssueCount,
+    IReadOnlyList<PatientPortalMedicalReportIssue> Issues,
+    int EncounterCount,
+    IReadOnlyList<PatientPortalMedicalReportEncounter> Encounters,
+    int ProcedureOrderCount,
+    IReadOnlyList<PatientPortalMedicalReportProcedureOrder> ProcedureOrders,
+    PatientPortalGeneratedMedicalReport ReportPreview,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalMedicalReportSection(
+    string Id,
+    string Label,
+    string Group,
+    bool Selected);
+
+public sealed record PatientPortalMedicalReportIssue(
+    string Id,
+    string Type,
+    string TypeLabel,
+    string Title,
+    string? BeginDate,
+    string? EndDate,
+    string Status,
+    IReadOnlyList<int> EncounterIds);
+
+public sealed record PatientPortalMedicalReportEncounter(
+    int Encounter,
+    string Date,
+    string Display,
+    string? Reason,
+    int FormCount,
+    IReadOnlyList<PatientPortalMedicalReportEncounterForm> Forms);
+
+public sealed record PatientPortalMedicalReportEncounterForm(
+    string Id,
+    string FormDirectory,
+    string Display,
+    int Encounter);
+
+public sealed record PatientPortalMedicalReportProcedureOrder(
+    string Id,
+    int Encounter,
+    string OrderDate,
+    string? EncounterDate,
+    string? ProcedureCode,
+    string ProcedureName,
+    string? Diagnosis,
+    string? OrderStatus,
+    int ReportCount,
+    int ResultCount,
+    IReadOnlyList<string> ResultNames);
+
+public sealed record PatientPortalGeneratedMedicalReport(
+    string Title,
+    IReadOnlyList<string> IncludedSectionIds,
+    IReadOnlyList<string> IncludedProcedureOrderIds,
+    int SummaryLineCount,
+    IReadOnlyList<string> SummaryLines);
+
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,
     Guid? SessionId,

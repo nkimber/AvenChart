@@ -2482,6 +2482,88 @@ export type PatientPortalLabResultsResponse = {
   sessionSource: string
 }
 
+export type PatientPortalMedicalReportSection = {
+  id: string
+  label: string
+  group: string
+  selected: boolean
+}
+
+export type PatientPortalMedicalReportIssue = {
+  id: string
+  type: string
+  typeLabel: string
+  title: string
+  beginDate?: string | null
+  endDate?: string | null
+  status: string
+  encounterIds: number[]
+}
+
+export type PatientPortalMedicalReportEncounterForm = {
+  id: string
+  formDirectory: string
+  display: string
+  encounter: number
+}
+
+export type PatientPortalMedicalReportEncounter = {
+  encounter: number
+  date: string
+  display: string
+  reason?: string | null
+  formCount: number
+  forms: PatientPortalMedicalReportEncounterForm[]
+}
+
+export type PatientPortalMedicalReportProcedureOrder = {
+  id: string
+  encounter: number
+  orderDate: string
+  encounterDate?: string | null
+  procedureCode?: string | null
+  procedureName: string
+  diagnosis?: string | null
+  orderStatus?: string | null
+  reportCount: number
+  resultCount: number
+  resultNames: string[]
+}
+
+export type PatientPortalGeneratedMedicalReport = {
+  title: string
+  includedSectionIds: string[]
+  includedProcedureOrderIds: string[]
+  summaryLineCount: number
+  summaryLines: string[]
+}
+
+export type PatientPortalMedicalReportResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  sectionCount: number
+  selectedSectionCount: number
+  sections: PatientPortalMedicalReportSection[]
+  issueCount: number
+  issues: PatientPortalMedicalReportIssue[]
+  encounterCount: number
+  encounters: PatientPortalMedicalReportEncounter[]
+  procedureOrderCount: number
+  procedureOrders: PatientPortalMedicalReportProcedureOrder[]
+  reportPreview: PatientPortalGeneratedMedicalReport
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalAppointmentCategoryOption = {
   id: number
   name: string
@@ -2947,6 +3029,21 @@ export async function getPatientPortalLabResults(
   })
   if (!response.ok) {
     throw new Error(`Patient portal lab results check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalMedicalReport(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMedicalReportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal medical report check failed with ${response.status}`)
   }
 
   return response.json()

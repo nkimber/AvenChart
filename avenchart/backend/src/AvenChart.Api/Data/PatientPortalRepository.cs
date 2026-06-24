@@ -20,6 +20,20 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         new(13, "Preventive Care Services", "preventive_care_services", 15),
         new(14, "Ophthalmological Services", "ophthalmological_services", 15)
     ];
+    private static readonly PatientPortalMedicalReportSection[] MedicalReportSections =
+    [
+        new("demographics", "Demographics", "Core", true),
+        new("history", "History", "Core", false),
+        new("insurance", "Insurance", "Core", false),
+        new("billing", "Billing", "Core", true),
+        new("allergies", "Allergies", "Clinical", false),
+        new("medications", "Medications", "Clinical", false),
+        new("immunizations", "Immunizations", "Clinical", false),
+        new("medical_problems", "Medical Problems", "Clinical", false),
+        new("notes", "Patient Notes", "Clinical", false),
+        new("transactions", "Transactions", "Clinical", false),
+        new("batchcom", "Communications", "Clinical", false)
+    ];
 
     public async Task<PatientPortalLoginResponse> LoginAsync(
         PatientPortalLoginRequest request,
@@ -394,6 +408,49 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             ReportCount: orderItems.Sum(order => order.ReportCount),
             ResultCount: orderItems.Sum(order => order.ResultCount),
             Orders: orderItems,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalMedicalReportResponse> GetMedicalReportAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyMedicalReport(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var issues = await GetMedicalReportIssuesAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var encounters = await GetMedicalReportEncountersAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var procedureOrders = await GetMedicalReportProcedureOrdersAsync(connection, session.LegacyPid.Value, cancellationToken);
+        var reportPreview = BuildMedicalReportPreview(session, issues, encounters, procedureOrders);
+
+        return new PatientPortalMedicalReportResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            SectionCount: MedicalReportSections.Length,
+            SelectedSectionCount: MedicalReportSections.Count(section => section.Selected),
+            Sections: MedicalReportSections,
+            IssueCount: issues.Count,
+            Issues: issues,
+            EncounterCount: encounters.Count,
+            Encounters: encounters,
+            ProcedureOrderCount: procedureOrders.Count,
+            ProcedureOrders: procedureOrders,
+            ReportPreview: reportPreview,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -1618,6 +1675,68 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalMedicalReportResponse EmptyMedicalReport(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        SectionCount: 0,
+        SelectedSectionCount: 0,
+        Sections: Array.Empty<PatientPortalMedicalReportSection>(),
+        IssueCount: 0,
+        Issues: Array.Empty<PatientPortalMedicalReportIssue>(),
+        EncounterCount: 0,
+        Encounters: Array.Empty<PatientPortalMedicalReportEncounter>(),
+        ProcedureOrderCount: 0,
+        ProcedureOrders: Array.Empty<PatientPortalMedicalReportProcedureOrder>(),
+        ReportPreview: new PatientPortalGeneratedMedicalReport(
+            string.Empty,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            0,
+            Array.Empty<string>()),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalMedicalReportResponse MissingSessionMedicalReport(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        SectionCount: 0,
+        SelectedSectionCount: 0,
+        Sections: Array.Empty<PatientPortalMedicalReportSection>(),
+        IssueCount: 0,
+        Issues: Array.Empty<PatientPortalMedicalReportIssue>(),
+        EncounterCount: 0,
+        Encounters: Array.Empty<PatientPortalMedicalReportEncounter>(),
+        ProcedureOrderCount: 0,
+        ProcedureOrders: Array.Empty<PatientPortalMedicalReportProcedureOrder>(),
+        ReportPreview: new PatientPortalGeneratedMedicalReport(
+            string.Empty,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            0,
+            Array.Empty<string>()),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     public static PatientPortalMessagesResponse MissingSessionHeaderMessages() =>
         MissingSessionMessages("Patient portal session header was not supplied.");
 
@@ -1629,6 +1748,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalLabResultsResponse MissingSessionHeaderLabResults() =>
         MissingSessionLabResults("Patient portal session header was not supplied.");
+
+    public static PatientPortalMedicalReportResponse MissingSessionHeaderMedicalReport() =>
+        MissingSessionMedicalReport("Patient portal session header was not supplied.");
 
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
@@ -2131,6 +2253,233 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         return items;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMedicalReportIssue>> GetMedicalReportIssuesAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, type, type_label, title, begin_date, end_date, status
+            from (
+              select id, type, 'Medical Problem' as type_label, title, problem_date as begin_date, end_date,
+                case when end_date is null then 'active' else 'inactive' end as status
+              from problems
+              where pid = @pid and activity = 1
+              union all
+              select id, type, 'Allergy' as type_label, title, allergy_date as begin_date, end_date,
+                case when end_date is null then 'active' else 'inactive' end as status
+              from allergies
+              where pid = @pid and activity = 1
+              union all
+              select id, type, 'Medication' as type_label, title, medication_date as begin_date, end_date,
+                case when end_date is null then 'active' else 'inactive' end as status
+              from medications
+              where pid = @pid and activity = 1
+            ) report_issues
+            order by type, begin_date, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var issues = new List<PatientPortalMedicalReportIssue>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            issues.Add(new PatientPortalMedicalReportIssue(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                Type: ReadNullableString(reader, "type") ?? string.Empty,
+                TypeLabel: ReadNullableString(reader, "type_label") ?? string.Empty,
+                Title: ReadNullableString(reader, "title") ?? string.Empty,
+                BeginDate: ReadNullableDate(reader, "begin_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
+                Status: ReadNullableString(reader, "status") ?? "active",
+                EncounterIds: Array.Empty<int>()));
+        }
+
+        return issues;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMedicalReportEncounter>> GetMedicalReportEncountersAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        var formsByEncounter = await GetMedicalReportEncounterFormsAsync(connection, legacyPid, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select encounter, encounter_date, reason
+            from encounters
+            where pid = @pid
+            order by encounter_date desc, encounter desc;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var encounters = new List<PatientPortalMedicalReportEncounter>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var encounter = reader.GetInt32(reader.GetOrdinal("encounter"));
+            var reason = ReadNullableString(reader, "reason");
+            var forms = formsByEncounter.GetValueOrDefault(encounter, Array.Empty<PatientPortalMedicalReportEncounterForm>());
+            encounters.Add(new PatientPortalMedicalReportEncounter(
+                Encounter: encounter,
+                Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("encounter_date")).ToString("yyyy-MM-dd"),
+                Display: BuildEncounterDisplay(reason),
+                Reason: reason,
+                FormCount: forms.Count,
+                Forms: forms));
+        }
+
+        return encounters;
+    }
+
+    private static async Task<Dictionary<int, IReadOnlyList<PatientPortalMedicalReportEncounterForm>>> GetMedicalReportEncounterFormsAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, encounter, form_directory, display
+            from (
+              select id::text as id, encounter, 'vitals' as form_directory, 'Vitals' as display, vital_datetime as sort_date
+              from vitals
+              where pid = @pid and encounter is not null
+              union all
+              select id::text as id, encounter, 'soap' as form_directory, 'SOAP' as display, note_datetime as sort_date
+              from clinical_notes
+              where pid = @pid and encounter is not null
+              union all
+              select id::text as id, encounter, 'procedure_order' as form_directory, 'Procedure Order' as display, order_date::timestamp as sort_date
+              from lab_orders
+              where pid = @pid and encounter is not null
+            ) encounter_forms
+            order by encounter, sort_date, form_directory, id;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var formsByEncounter = new Dictionary<int, List<PatientPortalMedicalReportEncounterForm>>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var encounter = reader.GetInt32(reader.GetOrdinal("encounter"));
+            if (!formsByEncounter.TryGetValue(encounter, out var forms))
+            {
+                forms = [];
+                formsByEncounter[encounter] = forms;
+            }
+
+            forms.Add(new PatientPortalMedicalReportEncounterForm(
+                Id: reader.GetString(reader.GetOrdinal("id")),
+                FormDirectory: ReadNullableString(reader, "form_directory") ?? string.Empty,
+                Display: ReadNullableString(reader, "display") ?? string.Empty,
+                Encounter: encounter));
+        }
+
+        return formsByEncounter.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<PatientPortalMedicalReportEncounterForm>)pair.Value);
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMedicalReportProcedureOrder>> GetMedicalReportProcedureOrdersAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              lo.id,
+              0 as encounter,
+              lo.order_date,
+              null::date as encounter_date,
+              lo.code as procedure_code,
+              lo.name as procedure_name,
+              case
+                when nullif(btrim(coalesce(lo.diagnosis, '')), '') is null then null
+                when position(':' in lo.diagnosis) > 0 then lo.diagnosis
+                else 'ICD10:' || lo.diagnosis
+              end as diagnosis,
+              lo.order_status,
+              count(distinct lr.id)::int as report_count,
+              count(lres.id)::int as result_count,
+              array_remove(array_agg(lres.text order by lres.id), null) as result_names
+            from lab_orders lo
+            left join lab_reports lr on lr.order_id = lo.id
+            left join lab_results lres on lres.report_id = lr.id
+            where lo.pid = @pid
+            group by lo.id, lo.order_date, lo.code, lo.name, lo.diagnosis, lo.order_status
+            order by lo.order_date desc, lo.id desc;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+
+        var orders = new List<PatientPortalMedicalReportProcedureOrder>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var resultNames = reader.IsDBNull(reader.GetOrdinal("result_names"))
+                ? Array.Empty<string>()
+                : reader.GetFieldValue<string[]>(reader.GetOrdinal("result_names"));
+
+            orders.Add(new PatientPortalMedicalReportProcedureOrder(
+                Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+                Encounter: reader.GetInt32(reader.GetOrdinal("encounter")),
+                OrderDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("order_date")).ToString("yyyy-MM-dd"),
+                EncounterDate: ReadNullableDate(reader, "encounter_date"),
+                ProcedureCode: ReadNullableString(reader, "procedure_code"),
+                ProcedureName: ReadNullableString(reader, "procedure_name") ?? string.Empty,
+                Diagnosis: ReadNullableString(reader, "diagnosis"),
+                OrderStatus: ReadNullableString(reader, "order_status"),
+                ReportCount: reader.GetInt32(reader.GetOrdinal("report_count")),
+                ResultCount: reader.GetInt32(reader.GetOrdinal("result_count")),
+                ResultNames: resultNames));
+        }
+
+        return orders;
+    }
+
+    private static PatientPortalGeneratedMedicalReport BuildMedicalReportPreview(
+        PatientPortalSessionResponse session,
+        IReadOnlyList<PatientPortalMedicalReportIssue> issues,
+        IReadOnlyList<PatientPortalMedicalReportEncounter> encounters,
+        IReadOnlyList<PatientPortalMedicalReportProcedureOrder> procedureOrders)
+    {
+        var includedSectionIds = MedicalReportSections
+            .Where(section => section.Selected)
+            .Select(section => section.Id)
+            .ToArray();
+        var includedProcedureOrders = procedureOrders.Take(1).Select(order => order.Id).ToArray();
+        var summaryLines = new List<string>
+        {
+            $"Patient Data: {session.DisplayName} ({session.Pubpid})",
+            $"Billing Information: {session.DisplayName} has billing detail available through the medical history report.",
+            $"Issues available: {issues.Count}; Encounters available: {encounters.Count}."
+        };
+
+        foreach (var order in procedureOrders.Take(1))
+        {
+            summaryLines.Add($"Procedure Order: {order.ProcedureName} ordered {order.OrderDate} with {order.ResultCount} result rows.");
+        }
+
+        return new PatientPortalGeneratedMedicalReport(
+            Title: "Customized Medical History Report",
+            IncludedSectionIds: includedSectionIds,
+            IncludedProcedureOrderIds: includedProcedureOrders,
+            SummaryLineCount: summaryLines.Count,
+            SummaryLines: summaryLines);
+    }
+
+    private static string BuildEncounterDisplay(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return "Encounter";
+        }
+
+        return reason.Length > 20 ? $"{reason[..20]} ... " : reason;
     }
 
     private static async Task<PatientAppointmentRequestDefaultsRow> GetPatientAppointmentRequestDefaultsAsync(
