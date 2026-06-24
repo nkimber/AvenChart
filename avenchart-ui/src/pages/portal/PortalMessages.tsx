@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
-import { ArrowLeft, PenLine, Send } from 'lucide-react'
+import { ArrowLeft, CheckCheck, PenLine, RefreshCw, Send } from 'lucide-react'
 import {
   composePatientPortalMessage,
   getPatientPortalMessages,
@@ -26,7 +26,7 @@ const SUBJECT_PRESETS = ['General', 'Insurance', 'Prior Auth', 'Bill/Collect', '
 export default function PortalMessages() {
   const { session, refreshHome } = useOutletContext<PortalOutletContext>()
   const location = useLocation()
-  const listRef = useRef<HTMLUListElement>(null)
+  const threadEndRef = useRef<HTMLDivElement>(null)
 
   const [view, setView] = useState<View>(() =>
     location.state?.compose === true ? 'compose' : 'list',
@@ -38,6 +38,7 @@ export default function PortalMessages() {
   const [threadState, setThreadState] = useState<AsyncState<PatientPortalMessageThreadResponse>>({
     status: 'idle',
   })
+  const [markingAllRead, setMarkingAllRead] = useState(false)
 
   const [composeTitle, setComposeTitle] = useState('')
   const [composeBody, setComposeBody] = useState('')
@@ -54,6 +55,25 @@ export default function PortalMessages() {
     loadMessages()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Scroll to bottom whenever the thread finishes loading or a reply is sent
+  useEffect(() => {
+    if (threadState.status === 'ready') {
+      threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [threadState])
+
+  // Compose navigation guard — warn before leaving a draft in progress
+  useEffect(() => {
+    if (view !== 'compose') return
+    const hasDraft = composeTitle !== '' || composeBody !== ''
+    if (!hasDraft) return
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault()
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [view, composeTitle, composeBody])
 
   function loadMessages() {
     setMessagesState({ status: 'loading' })
@@ -100,6 +120,30 @@ export default function PortalMessages() {
     setThreadState({ status: 'idle' })
   }
 
+  function leaveCompose() {
+    const hasDraft = composeTitle !== '' || composeBody !== ''
+    if (hasDraft && !window.confirm('Discard this message draft?')) return
+    setView('list')
+    setComposeTitle('')
+    setComposeBody('')
+    setComposeResult(null)
+    setComposeError(null)
+  }
+
+  function markAllRead() {
+    if (messagesState.status !== 'ready') return
+    const unread = messagesState.data.messages.filter((m) => m.status === 'New')
+    if (unread.length === 0) return
+    setMarkingAllRead(true)
+    Promise.all(
+      unread.map((m) => markPatientPortalMessageRead(session.sessionId, m.id).catch(() => {})),
+    ).finally(() => {
+      setMarkingAllRead(false)
+      loadMessages()
+      refreshHome()
+    })
+  }
+
   function submitCompose(event: FormEvent) {
     event.preventDefault()
     setComposeSubmitting(true)
@@ -143,6 +187,11 @@ export default function PortalMessages() {
       .finally(() => setReplySubmitting(false))
   }
 
+  // Determine bubble direction using the session's own display name (#1 bug fix)
+  function isSentByPatient(msg: PatientPortalMessageItem): boolean {
+    return msg.senderName === session.displayName
+  }
+
   return (
     <div className="portal-page">
       {/* ─── Thread view ─── */}
@@ -167,18 +216,20 @@ export default function PortalMessages() {
             <>
               <h2 className="thread-title">{selectedMessage.title}</h2>
               <ul className="thread-list">
-                {threadState.data.threadMessages.map((m) => {
-                  const isPatient = m.senderName === selectedMessage.senderName || m.recipientName !== selectedMessage.recipientName
-                  return (
-                    <li key={m.id} className={`thread-bubble ${isPatient ? 'thread-bubble-sent' : 'thread-bubble-received'}`}>
-                      <div className="thread-bubble-meta">
-                        {m.senderName} · {m.date}
-                      </div>
-                      <div className="thread-bubble-body">{m.body}</div>
-                    </li>
-                  )
-                })}
+                {threadState.data.threadMessages.map((m) => (
+                  <li
+                    key={m.id}
+                    className={`thread-bubble ${isSentByPatient(m) ? 'thread-bubble-sent' : 'thread-bubble-received'}`}
+                  >
+                    <div className="thread-bubble-meta">
+                      {m.senderName} · {m.date}
+                    </div>
+                    <div className="thread-bubble-body">{m.body}</div>
+                  </li>
+                ))}
               </ul>
+              {/* Scroll anchor — useEffect scrolls here when thread loads or reply sent */}
+              <div ref={threadEndRef} />
 
               <form className="reply-form" onSubmit={submitReply}>
                 <div className="reply-input-row">
@@ -190,7 +241,11 @@ export default function PortalMessages() {
                     required
                     rows={3}
                   />
-                  <button className="reply-send-button" type="submit" disabled={replySubmitting || !replyBody.trim()}>
+                  <button
+                    className="reply-send-button"
+                    type="submit"
+                    disabled={replySubmitting || !replyBody.trim()}
+                  >
                     <Send size={16} />
                   </button>
                 </div>
@@ -206,7 +261,7 @@ export default function PortalMessages() {
       {view === 'compose' && (
         <section className="portal-section">
           <div className="portal-section-header">
-            <button className="back-button" type="button" onClick={() => { setView('list'); setComposeResult(null); setComposeError(null) }}>
+            <button className="back-button" type="button" onClick={leaveCompose}>
               <ArrowLeft size={16} />
               Back to inbox
             </button>
@@ -216,7 +271,12 @@ export default function PortalMessages() {
           {composeResult ? (
             <div className="compose-success">
               <div className="hint-banner">{composeResult}</div>
-              <button className="button-secondary" style={{ width: 'auto' }} type="button" onClick={() => { setView('list'); setComposeResult(null) }}>
+              <button
+                className="button-secondary"
+                style={{ width: 'auto' }}
+                type="button"
+                onClick={() => { setView('list'); setComposeResult(null) }}
+              >
                 Back to inbox
               </button>
             </div>
@@ -256,7 +316,7 @@ export default function PortalMessages() {
                 <button
                   className="button-secondary"
                   type="button"
-                  onClick={() => { setView('list'); setComposeError(null) }}
+                  onClick={leaveCompose}
                   style={{ width: 'auto', flex: 'none' }}
                 >
                   Cancel
@@ -272,14 +332,39 @@ export default function PortalMessages() {
         <>
           <div className="inbox-header">
             <h2 className="portal-section-title">Inbox</h2>
-            <button
-              className="compose-button"
-              type="button"
-              onClick={() => { setView('compose'); setComposeResult(null); setComposeError(null) }}
-            >
-              <PenLine size={15} />
-              New message
-            </button>
+            <div className="inbox-actions">
+              {messagesState.status === 'ready' &&
+                messagesState.data.messages.some((m) => m.status === 'New') && (
+                  <button
+                    className="inbox-action-button"
+                    type="button"
+                    disabled={markingAllRead}
+                    onClick={markAllRead}
+                    title="Mark all messages as read"
+                  >
+                    <CheckCheck size={14} />
+                    {markingAllRead ? 'Marking…' : 'Mark all read'}
+                  </button>
+                )}
+              <button
+                className="inbox-action-button"
+                type="button"
+                disabled={messagesState.status === 'loading'}
+                onClick={loadMessages}
+                title="Refresh inbox"
+              >
+                <RefreshCw size={14} className={messagesState.status === 'loading' ? 'spin' : ''} />
+                Refresh
+              </button>
+              <button
+                className="compose-button"
+                type="button"
+                onClick={() => { setView('compose'); setComposeResult(null); setComposeError(null) }}
+              >
+                <PenLine size={15} />
+                New message
+              </button>
+            </div>
           </div>
 
           {messagesState.status === 'loading' && (
@@ -307,7 +392,7 @@ export default function PortalMessages() {
                 </button>
               </div>
             ) : (
-              <ul className="message-list" ref={listRef}>
+              <ul className="message-list">
                 {messagesState.data.messages.map((msg) => {
                   const isUnread = msg.status === 'New'
                   return (

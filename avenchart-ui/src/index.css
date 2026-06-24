@@ -1935,3 +1935,187 @@ a {
 .button-sign-out:hover {
   background: #f5d5cc;
 }
+
+/* ─── Modal overlay (appointment request) ──────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.38);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px 40px;
+  overflow-y: auto;
+}
+
+.modal-panel {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 540px;
+  position: relative;
+  animation: modal-in 0.18s ease-out;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  font-family: inherit;
+  transition: color 0.12s;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+/* ─── Inbox toolbar actions ─────────────────────────────────────────────── */
+
+.inbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inbox-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.inbox-action-button:hover:not(:disabled) {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+
+.inbox-action-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ─── Spinning refresh icon ─────────────────────────────────────────────── */
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* ─── Hero error text (shell load failure) ──────────────────────────────── */
+
+.hero-error-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin: 0;
+  max-width: 480px;
+}
+
+/* ─── Health summary "as of" date ───────────────────────────────────────── */
+
+.health-as-of {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ─── Document icon variants ────────────────────────────────────────────── */
+
+.doc-icon-pdf {
+  background: var(--coral-soft);
+  color: var(--coral);
+}
+
+.doc-icon-image {
+  background: #e8f0fe;
+  color: #1a56a0;
+}
+
+/* ─── Account quick-link rows ───────────────────────────────────────────── */
+
+.account-quick-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.account-quick-link:hover {
+  border-color: var(--teal);
+  box-shadow: 0 2px 8px rgba(15, 110, 86, 0.1);
+}
+
+.account-quick-link-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.account-quick-link-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 2px;
+  color: var(--text);
+}
+
+.account-quick-link-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}

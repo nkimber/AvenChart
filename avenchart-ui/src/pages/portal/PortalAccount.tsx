@@ -1,5 +1,6 @@
+import { Link } from 'react-router-dom'
+import { Download, LogOut } from 'lucide-react'
 import { useOutletContext } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
 import type { PortalOutletContext } from './PortalShell.tsx'
 
 export default function PortalAccount() {
@@ -42,12 +43,35 @@ export default function PortalAccount() {
                 <span>{home.upcomingAppointmentCount}</span>
               </li>
               <li className="fact-row">
-                <span>Inbox messages</span>
+                <span>Unread messages</span>
+                <span>{home.messages.newMessages}</span>
+              </li>
+              <li className="fact-row">
+                <span>Total inbox messages</span>
                 <span>{home.messages.totalMessages}</span>
               </li>
             </>
           )}
         </ul>
+      </section>
+
+      <section className="portal-section">
+        <h2 className="portal-section-title" style={{ marginBottom: 14 }}>Quick actions</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Link
+            to="/portal/records"
+            state={{ tab: 'report' }}
+            className="account-quick-link"
+          >
+            <div className="account-quick-link-icon">
+              <Download size={16} />
+            </div>
+            <div>
+              <p className="account-quick-link-title">Download medical report</p>
+              <p className="account-quick-link-desc">Generate a PDF summary of your full record</p>
+            </div>
+          </Link>
+        </div>
       </section>
 
       <section className="portal-section">

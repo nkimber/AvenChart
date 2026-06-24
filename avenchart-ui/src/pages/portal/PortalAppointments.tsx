@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { CalendarClock, CalendarPlus, ChevronDown, ChevronUp } from 'lucide-react'
+import { CalendarClock, CalendarPlus } from 'lucide-react'
 import {
   getPatientPortalAppointmentRequestOptions,
   requestPatientPortalAppointment,
@@ -145,34 +145,31 @@ export default function PortalAppointments() {
 
   return (
     <div className="portal-page">
-      <section className="portal-section">
-        <div className="portal-section-header">
-          <h2 className="portal-section-title">Upcoming appointments</h2>
-          <button
-            className={`toggle-button${requestOpen ? ' toggle-button-active' : ''}`}
-            type="button"
-            onClick={toggleRequest}
-          >
-            <CalendarPlus size={15} />
-            {requestOpen ? 'Close' : 'Request an appointment'}
-            {requestOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-        </div>
+      {/* ─── Request appointment modal ─── */}
+      {requestOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) toggleRequest() }}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="appt-modal-title">
+            <div className="modal-header">
+              <h2 id="appt-modal-title" className="modal-title">Request an appointment</h2>
+              <button className="modal-close" type="button" onClick={toggleRequest} aria-label="Close">×</button>
+            </div>
 
-        {/* Request form */}
-        {requestOpen && (
-          <div className="inline-panel" style={{ marginBottom: 20 }}>
-            <h3 className="inline-panel-title">Appointment request</h3>
             {optionsState.status === 'loading' && (
               <div className="skeleton-list">
-                {[0, 1].map((i) => <div key={i} className="skeleton-row" />)}
+                {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" />)}
               </div>
             )}
             {optionsState.status === 'error' && (
               <div className="error-banner">{optionsState.message}</div>
             )}
-            {result && <div className="hint-banner">{result}</div>}
-            {optionsState.status === 'ready' && !result && (
+            {result ? (
+              <div>
+                <div className="hint-banner">{result}</div>
+                <button className="button-secondary" style={{ width: 'auto' }} type="button" onClick={toggleRequest}>
+                  Close
+                </button>
+              </div>
+            ) : optionsState.status === 'ready' ? (
               <form onSubmit={handleSubmit}>
                 <div className="form-row">
                   <div className="field">
@@ -237,13 +234,37 @@ export default function PortalAppointments() {
                   />
                 </div>
                 {error && <div className="error-banner">{error}</div>}
-                <button className="button-primary" type="submit" disabled={submitting}>
-                  {submitting ? 'Sending request…' : 'Send request'}
-                </button>
+                <div className="button-row">
+                  <button className="button-primary" type="submit" disabled={submitting}>
+                    {submitting ? 'Sending request…' : 'Send request'}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={toggleRequest}
+                    style={{ width: 'auto', flex: 'none' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </form>
-            )}
+            ) : null}
           </div>
-        )}
+        </div>
+      )}
+
+      <section className="portal-section">
+        <div className="portal-section-header">
+          <h2 className="portal-section-title">Upcoming appointments</h2>
+          <button
+            className="toggle-button"
+            type="button"
+            onClick={toggleRequest}
+          >
+            <CalendarPlus size={15} />
+            Request an appointment
+          </button>
+        </div>
 
         {/* Appointment list */}
         {homeLoading ? (

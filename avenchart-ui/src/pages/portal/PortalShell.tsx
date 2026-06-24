@@ -48,6 +48,7 @@ export default function PortalShell() {
   const [session] = useState(() => loadPortalSession())
   const [home, setHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [homeLoading, setHomeLoading] = useState(true)
+  const [homeError, setHomeError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!session) {
@@ -68,7 +69,11 @@ export default function PortalShell() {
         setHome(homeResult)
         setHomeLoading(false)
       })
-      .catch(() => setHomeLoading(false))
+      .catch((err) => {
+        if ((err as Error)?.name === 'AbortError') return
+        setHomeError(err instanceof Error ? err.message : 'Could not load your portal. Please try refreshing.')
+        setHomeLoading(false)
+      })
     return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -118,6 +123,8 @@ export default function PortalShell() {
                 <div className="hero-stat-chip"><div className="skeleton-chip" /></div>
                 <div className="hero-stat-chip"><div className="skeleton-chip" /></div>
               </>
+            ) : homeError ? (
+              <p className="hero-error-text">{homeError}</p>
             ) : (
               <>
                 <Link to="/portal/appointments" className="hero-stat-chip hero-stat-link">
@@ -182,7 +189,37 @@ export default function PortalShell() {
       </nav>
 
       <div className="portal-content">
-        <Outlet context={context} />
+        {homeLoading ? (
+          /* Content-area skeleton while session + home data loads */
+          <div className="portal-page">
+            <div className="portal-section">
+              <div className="skeleton-list">
+                {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" style={{ height: 64 }} />)}
+              </div>
+            </div>
+            <div className="portal-section">
+              <div className="skeleton-list">
+                {[0, 1].map((i) => <div key={i} className="skeleton-row" style={{ height: 80 }} />)}
+              </div>
+            </div>
+          </div>
+        ) : homeError ? (
+          <div className="portal-page">
+            <div className="portal-section">
+              <div className="error-banner" style={{ marginBottom: 0 }}>{homeError}</div>
+              <button
+                className="button-secondary"
+                style={{ marginTop: 16, width: 'auto' }}
+                type="button"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Outlet context={context} />
+        )}
       </div>
     </div>
   )
