@@ -230,6 +230,23 @@ patientPortal.MapPost("/medical-report/generate", async (
     })
     .WithName("GeneratePatientPortalMedicalReport");
 
+patientPortal.MapPost("/medical-report/pdf", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        PatientPortalMedicalReportGenerationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var package = Guid.TryParse(header, out var sessionId)
+            ? await repository.DownloadGeneratedMedicalReportPdfAsync(sessionId, request, cancellationToken)
+            : PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReportPdf();
+
+        return package.Downloadable
+            ? Results.File(package.Content, package.ContentType, package.FileName)
+            : Results.BadRequest(new { package.FailureReason });
+    })
+    .WithName("DownloadPatientPortalMedicalReportPdf");
+
 patientPortal.MapGet("/appointments/request-options", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

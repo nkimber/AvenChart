@@ -485,6 +485,28 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             request);
     }
 
+    public async Task<PatientPortalGeneratedMedicalReportPdfPackage> DownloadGeneratedMedicalReportPdfAsync(
+        Guid sessionId,
+        PatientPortalMedicalReportGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var report = await GenerateMedicalReportAsync(sessionId, request, cancellationToken);
+        if (!report.Authenticated)
+        {
+            return GeneratedMedicalReportPdfFailure(report.FailureReason ?? "Session is not active.", report);
+        }
+
+        var content = BuildGeneratedMedicalReportPdf(report);
+        return new PatientPortalGeneratedMedicalReportPdfPackage(
+            Downloadable: true,
+            FileName: BuildGeneratedMedicalReportPdfFileName(report),
+            ContentType: "application/pdf",
+            Content: content,
+            ContentLength: content.Length,
+            Report: report,
+            FailureReason: null);
+    }
+
     public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1837,6 +1859,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     public static PatientPortalGeneratedMedicalReportResponse MissingSessionHeaderGeneratedMedicalReport() =>
         MissingSessionGeneratedMedicalReport("Patient portal session header was not supplied.");
 
+    public static PatientPortalGeneratedMedicalReportPdfPackage MissingSessionHeaderGeneratedMedicalReportPdf() =>
+        GeneratedMedicalReportPdfFailure("Patient portal session header was not supplied.");
+
     public static PatientPortalDocumentsDownloadPackage MissingSessionHeaderDocumentsDownload() =>
         DownloadFailure("Patient portal session header was not supplied.");
 
@@ -2774,13 +2799,124 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrderIds,
             PrintableVersionAvailable: true,
-            PdfDownloadAvailable: false,
+            PdfDownloadAvailable: true,
             ReportSectionCount: reportSections.Count,
             ReportSections: reportSections,
             SummaryLineCount: summaryLines.Count,
             SummaryLines: summaryLines,
             FailureReason: null,
             SessionSource: session.SessionSource);
+    }
+
+    private static PatientPortalGeneratedMedicalReportPdfPackage GeneratedMedicalReportPdfFailure(
+        string reason,
+        PatientPortalGeneratedMedicalReportResponse? report = null) => new(
+        Downloadable: false,
+        FileName: "customized-medical-history-report.pdf",
+        ContentType: "application/pdf",
+        Content: Array.Empty<byte>(),
+        ContentLength: 0,
+        Report: report,
+        FailureReason: reason);
+
+    private static string BuildGeneratedMedicalReportPdfFileName(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        var patientId = string.IsNullOrWhiteSpace(report.Pubpid) ? report.CanonicalId : report.Pubpid;
+        var generatedDate = string.IsNullOrWhiteSpace(report.GeneratedOn)
+            ? DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyyMMdd")
+            : report.GeneratedOn.Replace("-", string.Empty, StringComparison.Ordinal);
+        return $"medical-report-{patientId}-{generatedDate}.pdf";
+    }
+
+    private static byte[] BuildGeneratedMedicalReportPdf(PatientPortalGeneratedMedicalReportResponse report)
+    {
+        var lines = new List<string>
+        {
+            report.Title,
+            $"Patient: {report.DisplayName}",
+            $"Patient ID: {report.Pubpid}",
+            $"Portal username: {report.PortalUsername}",
+            $"Generated on: {report.GeneratedOn}",
+            $"Dataset: {report.DatasetId} {report.DatasetVersion}",
+            $"Included sections: {string.Join(", ", report.IncludedSectionIds)}",
+            $"Included procedure orders: {string.Join(", ", report.IncludedProcedureOrderIds)}",
+            string.Empty,
+            "Summary"
+        };
+        lines.AddRange(report.SummaryLines);
+
+        foreach (var section in report.ReportSections)
+        {
+            lines.Add(string.Empty);
+            lines.Add(section.Title);
+            lines.AddRange(section.Lines);
+        }
+
+        return BuildSimplePdf(lines);
+    }
+
+    private static byte[] BuildSimplePdf(IReadOnlyList<string> lines)
+    {
+        var contentBuilder = new StringBuilder();
+        contentBuilder.AppendLine("BT");
+        contentBuilder.AppendLine("/F1 10 Tf");
+        contentBuilder.AppendLine("50 760 Td");
+        foreach (var line in lines)
+        {
+            contentBuilder.Append('(');
+            contentBuilder.Append(EscapePdfText(line));
+            contentBuilder.AppendLine(") Tj");
+            contentBuilder.AppendLine("0 -14 Td");
+        }
+        contentBuilder.AppendLine("ET");
+
+        var content = contentBuilder.ToString();
+        var contentLength = Encoding.ASCII.GetByteCount(content);
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            $"<< /Length {contentLength} >>\nstream\n{content}endstream"
+        };
+
+        var pdf = new StringBuilder();
+        var offsets = new List<int>();
+        pdf.AppendLine("%PDF-1.4");
+        for (var i = 0; i < objects.Length; i++)
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+            pdf.Append(i + 1);
+            pdf.AppendLine(" 0 obj");
+            pdf.AppendLine(objects[i]);
+            pdf.AppendLine("endobj");
+        }
+
+        var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+        pdf.AppendLine("xref");
+        pdf.AppendLine($"0 {objects.Length + 1}");
+        pdf.AppendLine("0000000000 65535 f ");
+        foreach (var offset in offsets)
+        {
+            pdf.AppendLine($"{offset:0000000000} 00000 n ");
+        }
+
+        pdf.AppendLine("trailer");
+        pdf.AppendLine($"<< /Size {objects.Length + 1} /Root 1 0 R >>");
+        pdf.AppendLine("startxref");
+        pdf.AppendLine(xrefOffset.ToString());
+        pdf.Append("%%EOF");
+
+        return Encoding.ASCII.GetBytes(pdf.ToString());
+    }
+
+    private static string EscapePdfText(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
     }
 
     private static PatientPortalGeneratedMedicalReportSection BuildIssueGeneratedReportSection(

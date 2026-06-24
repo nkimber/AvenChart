@@ -3108,6 +3108,28 @@ export async function generatePatientPortalMedicalReport(
   return response.json()
 }
 
+export async function downloadPatientPortalGeneratedMedicalReportPdf(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput = {},
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/pdf`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Patient portal medical report PDF download failed with ${response.status}`)
+  }
+
+  return response.blob()
+}
+
 export async function getPatientPortalAppointmentRequestOptions(
   sessionId: string,
   signal?: AbortSignal,

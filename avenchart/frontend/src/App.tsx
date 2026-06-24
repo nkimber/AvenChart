@@ -61,6 +61,7 @@ import {
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
   generatePatientPortalMedicalReport,
+  downloadPatientPortalGeneratedMedicalReportPdf,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -3932,6 +3933,43 @@ function App() {
     }
   }
 
+  async function handlePatientPortalMedicalReportPdfDownload() {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before downloading a medical report PDF.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const generatedMedicalReport = patientPortalGeneratedMedicalReport
+        ?? await generatePatientPortalMedicalReport(patientPortalSessionId)
+      setPatientPortalGeneratedMedicalReport(generatedMedicalReport)
+      if (!generatedMedicalReport.authenticated || !generatedMedicalReport.pdfDownloadAvailable) {
+        setPatientPortalStatus('rejected')
+        setPatientPortalMessage(generatedMedicalReport.failureReason ?? 'Patient portal medical report PDF is not available.')
+        return
+      }
+
+      const blob = await downloadPatientPortalGeneratedMedicalReportPdf(patientPortalSessionId)
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = `medical-report-${generatedMedicalReport.pubpid}-${generatedMedicalReport.generatedOn.replaceAll('-', '')}.pdf`
+      window.document.body.appendChild(link)
+      link.click()
+      window.document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      setPatientPortalStatus('ready')
+      setPatientPortalMessage(`Downloaded ${generatedMedicalReport.title} PDF for ${generatedMedicalReport.displayName}`)
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal medical report PDF download failed')
+    }
+  }
+
   async function handlePatientPortalAppointmentRequest(input: PatientPortalAppointmentRequestInput) {
     if (!patientPortalSessionId) {
       setPatientPortalStatus('rejected')
@@ -4375,6 +4413,7 @@ function App() {
             onLogin={handlePatientPortalHomeLogin}
             onRefresh={handlePatientPortalHomeRefresh}
             onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
+            onDownloadGeneratedMedicalReportPdf={handlePatientPortalMedicalReportPdfDownload}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
@@ -4769,6 +4808,7 @@ function PatientPortalWorkspace({
   onLogin,
   onRefresh,
   onGenerateMedicalReport,
+  onDownloadGeneratedMedicalReportPdf,
   onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
@@ -4807,6 +4847,7 @@ function PatientPortalWorkspace({
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onRefresh: () => Promise<void>
   onGenerateMedicalReport: () => Promise<void>
+  onDownloadGeneratedMedicalReportPdf: () => Promise<void>
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
@@ -5356,6 +5397,15 @@ function PatientPortalWorkspace({
                   >
                     <FileCheck2 size={15} />
                     <span>Generate report</span>
+                  </button>
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={() => void onDownloadGeneratedMedicalReportPdf()}
+                    disabled={!authenticated || busy || portalGeneratedMedicalReport?.pdfDownloadAvailable !== true}
+                  >
+                    <Download size={15} />
+                    <span>Download report PDF</span>
                   </button>
                 </div>
                 <div className="clinical-list-body" role="region" aria-label="Patient portal generated medical report">

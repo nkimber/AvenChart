@@ -300,6 +300,15 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalGeneratedMedicalReportPdfPackage(
+    bool Downloadable,
+    string FileName,
+    string ContentType,
+    byte[] Content,
+    int ContentLength,
+    PatientPortalGeneratedMedicalReportResponse? Report,
+    string? FailureReason);
+
 public sealed record PatientPortalGeneratedMedicalReportSection(
     string Id,
     string Title,
