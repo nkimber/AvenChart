@@ -2791,6 +2791,8 @@ export type PatientPortalMessagesResponse = {
   sentMessages: PatientPortalMessageItem[]
   allMessageCount: number
   allMessages: PatientPortalMessageItem[]
+  deletedMessageCount: number
+  deletedMessages: PatientPortalMessageItem[]
   failureReason?: string | null
   sessionSource: string
 }

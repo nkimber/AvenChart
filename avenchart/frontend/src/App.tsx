@@ -6162,6 +6162,39 @@ function PatientPortalWorkspace({
                     <div className="timeline-placeholder">No active secure messages recorded</div>
                   )}
                 </div>
+                <div className="result-meta">
+                  <span>Deleted</span>
+                  <span>{portalMessages?.deletedMessageCount ?? 0} messages</span>
+                </div>
+                <div className="message-list-body" role="region" aria-label="Deleted secure messages">
+                  {(portalMessages?.deletedMessages ?? []).map((portalMessage) => {
+                    const patientAuthored = portalMessage.senderId === home.portalUsername
+                    return (
+                      <article className="message-item" key={portalMessage.id}>
+                        <div className="message-item-header">
+                          <div>
+                            <strong>{portalMessage.title}</strong>
+                            <span>
+                              {portalMessage.date} / {patientAuthored
+                                ? `To ${portalMessage.recipientName || portalMessage.recipientId || 'Care team'}`
+                                : `From ${portalMessage.senderName || portalMessage.senderId || 'Care team'}`}
+                            </span>
+                          </div>
+                          <span className="status-pill danger">{portalMessage.status || 'Deleted'}</span>
+                        </div>
+                        <p>{portalMessage.body}</p>
+                        <div className="message-meta-row">
+                          <span>{patientAuthored ? 'Archived patient sent message' : 'Archived care team message'}</span>
+                          <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                          <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
+                        </div>
+                      </article>
+                    )
+                  })}
+                  {(portalMessages?.deletedMessages?.length ?? 0) === 0 && (
+                    <div className="timeline-placeholder">No deleted secure messages recorded</div>
+                  )}
+                </div>
               </section>
 
               <section className="info-panel messages-panel" aria-label="Patient portal appointments">

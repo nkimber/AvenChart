@@ -484,6 +484,8 @@ public sealed record PatientPortalMessagesResponse(
     IReadOnlyList<PatientPortalMessageItem> SentMessages,
     int AllMessageCount,
     IReadOnlyList<PatientPortalMessageItem> AllMessages,
+    int DeletedMessageCount,
+    IReadOnlyList<PatientPortalMessageItem> DeletedMessages,
     string? FailureReason,
     string SessionSource);
 

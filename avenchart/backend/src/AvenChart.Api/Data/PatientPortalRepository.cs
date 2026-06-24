@@ -932,6 +932,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             session.PortalUsername,
             PortalMessageFolder.All,
             cancellationToken);
+        var deletedMessages = await GetPortalMessagesAsync(
+            connection,
+            session.PortalUsername,
+            PortalMessageFolder.Deleted,
+            cancellationToken);
 
         return new PatientPortalMessagesResponse(
             Authenticated: true,
@@ -951,6 +956,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SentMessages: sentMessages,
             AllMessageCount: allMessages.Count,
             AllMessages: allMessages,
+            DeletedMessageCount: deletedMessages.Count,
+            DeletedMessages: deletedMessages,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -1891,6 +1898,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         SentMessages: Array.Empty<PatientPortalMessageItem>(),
         AllMessageCount: 0,
         AllMessages: Array.Empty<PatientPortalMessageItem>(),
+        DeletedMessageCount: 0,
+        DeletedMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1912,6 +1921,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         SentMessages: Array.Empty<PatientPortalMessageItem>(),
         AllMessageCount: 0,
         AllMessages: Array.Empty<PatientPortalMessageItem>(),
+        DeletedMessageCount: 0,
+        DeletedMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -4549,11 +4560,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         var folderPredicate = GetPortalMessageFolderPredicate(folder);
+        var deletedPredicate = folder == PortalMessageFolder.Deleted ? "deleted = 1" : "deleted = 0";
         command.CommandText = $"""
             select id, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
-            where deleted = 0 and {folderPredicate}
+            where {deletedPredicate} and {folderPredicate}
             order by message_date desc, id desc;
             """;
         command.Parameters.AddWithValue("portal_username", portalUsername);
@@ -4758,10 +4770,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         var folderPredicate = GetPortalMessageFolderPredicate(folder);
+        var deletedPredicate = folder == PortalMessageFolder.Deleted ? "deleted = 1" : "deleted = 0";
         command.CommandText = $"""
             select count(*)::int
             from portal_mailbox_messages
-            where deleted = 0 and {folderPredicate};
+            where {deletedPredicate} and {folderPredicate};
             """;
         command.Parameters.AddWithValue("portal_username", portalUsername);
 
@@ -4773,6 +4786,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         PortalMessageFolder.Sent => "owner = @portal_username and sender_id = @portal_username",
         PortalMessageFolder.All => "owner = @portal_username",
+        PortalMessageFolder.Deleted => "owner = @portal_username",
         _ => "owner = @portal_username and recipient_id = @portal_username"
     };
 
@@ -5125,7 +5139,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         Inbox,
         Sent,
-        All
+        All,
+        Deleted
     }
 
     private enum PortalAppointmentWindow

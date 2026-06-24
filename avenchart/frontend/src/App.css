@@ -2040,6 +2040,11 @@
   color: #315746;
 }
 
+.status-pill.danger {
+  background: #fff0f0;
+  color: #7f1f1f;
+}
+
 .segmented-control {
   display: inline-flex;
   align-items: stretch;
