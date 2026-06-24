@@ -20,6 +20,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string PortalMessageReadEventType = "message_read";
     private const string PortalMessageArchivedEventType = "message_archived";
     private const string PortalMessagesArchivedEventType = "messages_archived";
+    private const string ProtectedPortalMessageBody = "Encrypted secure message body is protected.";
     private static readonly JsonSerializerOptions GeneratedMedicalReportPackageJsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -4512,21 +4513,29 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return new PortalMailboxMessageRow(item);
     }
 
-    private static PatientPortalMessageItem ReadPortalMessageItem(NpgsqlDataReader reader) => new(
-        Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
-        Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
-        Title: ReadNullableString(reader, "title") ?? string.Empty,
-        Body: ReadNullableString(reader, "body") ?? string.Empty,
-        Status: ReadNullableString(reader, "message_status") ?? string.Empty,
-        AssignedTo: ReadNullableString(reader, "assigned_to") ?? string.Empty,
-        SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
-        SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
-        RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
-        RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
-        MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
-        ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
-        PortalRelation: ReadNullableString(reader, "portal_relation"),
-        IsEncrypted: reader.GetBoolean(reader.GetOrdinal("is_encrypted")));
+    private static PatientPortalMessageItem ReadPortalMessageItem(NpgsqlDataReader reader)
+    {
+        var isEncrypted = reader.GetBoolean(reader.GetOrdinal("is_encrypted"));
+        var body = isEncrypted
+            ? ProtectedPortalMessageBody
+            : ReadNullableString(reader, "body") ?? string.Empty;
+
+        return new PatientPortalMessageItem(
+            Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+            Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
+            Title: ReadNullableString(reader, "title") ?? string.Empty,
+            Body: body,
+            Status: ReadNullableString(reader, "message_status") ?? string.Empty,
+            AssignedTo: ReadNullableString(reader, "assigned_to") ?? string.Empty,
+            SenderId: ReadNullableString(reader, "sender_id") ?? string.Empty,
+            SenderName: ReadNullableString(reader, "sender_name") ?? string.Empty,
+            RecipientId: ReadNullableString(reader, "recipient_id") ?? string.Empty,
+            RecipientName: ReadNullableString(reader, "recipient_name") ?? string.Empty,
+            MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
+            ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
+            PortalRelation: ReadNullableString(reader, "portal_relation"),
+            IsEncrypted: isEncrypted);
+    }
 
     private static int ResolvePortalThreadId(PatientPortalMessageItem message, int fallbackMessageId)
     {
