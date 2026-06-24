@@ -2535,6 +2535,7 @@ export type PatientPortalGeneratedMedicalReport = {
   includedSectionIds: string[]
   includedProcedureOrderIds: string[]
   includedEncounterFormIds: string[]
+  templateMetadata: PatientPortalGeneratedMedicalReportTemplateMetadata
   summaryLineCount: number
   summaryLines: string[]
 }
@@ -2553,6 +2554,17 @@ export type PatientPortalGeneratedMedicalReportSection = {
   lines: string[]
 }
 
+export type PatientPortalGeneratedMedicalReportTemplateMetadata = {
+  facilityName: string
+  facilityStreet: string
+  facilityCityStatePostal: string
+  facilityPhone: string
+  printablePatientName: string
+  patientHeaderLine: string
+  generatedOnLabel: string
+  signatureLineAvailable: boolean
+}
+
 export type PatientPortalGeneratedMedicalReportResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2567,6 +2579,7 @@ export type PatientPortalGeneratedMedicalReportResponse = {
   asOfDate: string
   title: string
   generatedOn: string
+  templateMetadata: PatientPortalGeneratedMedicalReportTemplateMetadata
   includedSectionIds: string[]
   includedProcedureOrderIds: string[]
   includedIssueIds: string[]

@@ -469,6 +469,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var patient = await GetGeneratedMedicalReportPatientAsync(connection, session.CanonicalId, cancellationToken);
+        var facility = await GetGeneratedMedicalReportFacilityAsync(connection, cancellationToken);
         var billing = await GetGeneratedMedicalReportBillingAsync(connection, session.LegacyPid.Value, cancellationToken);
         var issues = await GetMedicalReportIssuesAsync(connection, session.LegacyPid.Value, cancellationToken);
         var encounters = await GetMedicalReportEncountersAsync(connection, session.LegacyPid.Value, cancellationToken);
@@ -478,6 +479,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             session,
             metadata,
             patient,
+            facility,
             billing,
             issues,
             encounters,
@@ -1755,6 +1757,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Array.Empty<string>(),
             Array.Empty<string>(),
             Array.Empty<string>(),
+            EmptyGeneratedMedicalReportTemplateMetadata(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1786,6 +1789,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Array.Empty<string>(),
             Array.Empty<string>(),
             Array.Empty<string>(),
+            EmptyGeneratedMedicalReportTemplateMetadata(),
             0,
             Array.Empty<string>()),
         FailureReason: reason,
@@ -1811,6 +1815,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         IncludedProcedureOrderIds: Array.Empty<string>(),
         IncludedIssueIds: Array.Empty<string>(),
         IncludedEncounterFormIds: Array.Empty<string>(),
+        TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -1838,6 +1843,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         IncludedProcedureOrderIds: Array.Empty<string>(),
         IncludedIssueIds: Array.Empty<string>(),
         IncludedEncounterFormIds: Array.Empty<string>(),
+        TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
         PrintableVersionAvailable: false,
         PdfDownloadAvailable: false,
         ReportSectionCount: 0,
@@ -2668,10 +2674,51 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             LastBillingDate: ReadNullableDate(reader, "last_billing_date"));
     }
 
+    private static async Task<GeneratedMedicalReportFacilityRow> GetGeneratedMedicalReportFacilityAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              name,
+              phone,
+              street,
+              city,
+              state,
+              postal_code
+            from facilities
+            where inactive = false
+            order by case when code = 'MAIN' then 0 else 1 end, id
+            limit 1;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new GeneratedMedicalReportFacilityRow(
+                Name: string.Empty,
+                Phone: string.Empty,
+                Street: string.Empty,
+                City: string.Empty,
+                State: string.Empty,
+                PostalCode: string.Empty);
+        }
+
+        return new GeneratedMedicalReportFacilityRow(
+            Name: ReadNullableString(reader, "name") ?? string.Empty,
+            Phone: ReadNullableString(reader, "phone") ?? string.Empty,
+            Street: ReadNullableString(reader, "street") ?? string.Empty,
+            City: ReadNullableString(reader, "city") ?? string.Empty,
+            State: ReadNullableString(reader, "state") ?? string.Empty,
+            PostalCode: ReadNullableString(reader, "postal_code") ?? string.Empty);
+    }
+
     private static PatientPortalGeneratedMedicalReportResponse BuildGeneratedMedicalReportResponse(
         PatientPortalSessionResponse session,
         DatasetMetadata metadata,
         GeneratedMedicalReportPatientRow patient,
+        GeneratedMedicalReportFacilityRow facility,
         GeneratedMedicalReportBillingRow billing,
         IReadOnlyList<PatientPortalMedicalReportIssue> issues,
         IReadOnlyList<PatientPortalMedicalReportEncounter> encounters,
@@ -2843,6 +2890,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             summaryLines.Add($"Encounter Forms: {includedEncounterForms.Length} selected for this customized report.");
         }
 
+        var generatedOn = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        var templateMetadata = BuildGeneratedMedicalReportTemplateMetadata(patient, facility, generatedOn);
+
         return new PatientPortalGeneratedMedicalReportResponse(
             Authenticated: true,
             SessionId: session.SessionId,
@@ -2856,7 +2906,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             DatasetVersion: metadata.DatasetVersion,
             AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
             Title: "Customized Medical History Report",
-            GeneratedOn: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+            GeneratedOn: generatedOn,
+            TemplateMetadata: templateMetadata,
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrderIds,
             IncludedIssueIds: includedIssueIds,
@@ -2901,6 +2952,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             $"Portal username: {report.PortalUsername}",
             $"Generated on: {report.GeneratedOn}",
             $"Dataset: {report.DatasetId} {report.DatasetVersion}",
+            $"Facility: {report.TemplateMetadata.FacilityName}",
+            $"Facility address: {report.TemplateMetadata.FacilityStreet}; {report.TemplateMetadata.FacilityCityStatePostal}",
+            $"Facility phone: {report.TemplateMetadata.FacilityPhone}",
+            $"Printable patient: {report.TemplateMetadata.PrintablePatientName}",
+            report.TemplateMetadata.PatientHeaderLine,
+            report.TemplateMetadata.GeneratedOnLabel,
             $"Included sections: {string.Join(", ", report.IncludedSectionIds)}",
             $"Included procedure orders: {string.Join(", ", report.IncludedProcedureOrderIds)}",
             $"Included issues: {string.Join(", ", report.IncludedIssueIds)}",
@@ -2909,6 +2966,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             "Summary"
         };
         lines.AddRange(report.SummaryLines);
+        if (report.TemplateMetadata.SignatureLineAvailable)
+        {
+            lines.Add("Signature: _______________________________");
+        }
 
         foreach (var section in report.ReportSections)
         {
@@ -3049,6 +3110,60 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     private static string FormatMoney(decimal amount) => FormattableString.Invariant($"${amount:0.00}");
 
+    private static PatientPortalGeneratedMedicalReportTemplateMetadata EmptyGeneratedMedicalReportTemplateMetadata() => new(
+        FacilityName: string.Empty,
+        FacilityStreet: string.Empty,
+        FacilityCityStatePostal: string.Empty,
+        FacilityPhone: string.Empty,
+        PrintablePatientName: string.Empty,
+        PatientHeaderLine: string.Empty,
+        GeneratedOnLabel: string.Empty,
+        SignatureLineAvailable: false);
+
+    private static PatientPortalGeneratedMedicalReportTemplateMetadata BuildGeneratedMedicalReportTemplateMetadata(
+        GeneratedMedicalReportPatientRow patient,
+        GeneratedMedicalReportFacilityRow facility,
+        string generatedOn)
+    {
+        var printablePatientName = string.Join(
+            " ",
+            new[] { patient.FirstName, patient.LastName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var headerPatientName = string.Join(
+            ", ",
+            new[] { patient.LastName, patient.FirstName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var formattedDateOfBirth = FormatGeneratedReportShortDate(patient.DateOfBirth);
+        var cityStatePostal = FormatGeneratedReportCityStatePostal(facility.City, facility.State, facility.PostalCode);
+
+        return new PatientPortalGeneratedMedicalReportTemplateMetadata(
+            FacilityName: facility.Name,
+            FacilityStreet: facility.Street,
+            FacilityCityStatePostal: cityStatePostal,
+            FacilityPhone: facility.Phone,
+            PrintablePatientName: string.IsNullOrWhiteSpace(printablePatientName) ? patient.Pubpid : printablePatientName,
+            PatientHeaderLine: $"PATIENT:{headerPatientName} - {formattedDateOfBirth}",
+            GeneratedOnLabel: $"Generated on: {FormatGeneratedReportShortDate(generatedOn)}",
+            SignatureLineAvailable: true);
+    }
+
+    private static string FormatGeneratedReportCityStatePostal(string? city, string? state, string? postalCode)
+    {
+        var statePostal = string.Join(" ", new[] { state, postalCode }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var value = string.Join(", ", new[] { city, statePostal }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        return string.IsNullOrWhiteSpace(value) ? "Not recorded" : value;
+    }
+
+    private static string FormatGeneratedReportShortDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Not recorded";
+        }
+
+        return DateOnly.TryParse(value, out var date)
+            ? $"{date.Month:D2}/{date.Day:D2}/{date.Year:D4}"
+            : value;
+    }
+
     private static PatientPortalGeneratedMedicalReport BuildMedicalReportPreview(
         PatientPortalSessionResponse session,
         IReadOnlyList<PatientPortalMedicalReportIssue> issues,
@@ -3077,6 +3192,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IncludedSectionIds: includedSectionIds,
             IncludedProcedureOrderIds: includedProcedureOrders,
             IncludedEncounterFormIds: Array.Empty<string>(),
+            TemplateMetadata: EmptyGeneratedMedicalReportTemplateMetadata(),
             SummaryLineCount: summaryLines.Count,
             SummaryLines: summaryLines);
     }
@@ -4031,6 +4147,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         string? PostalCode,
         string? Email,
         string? Phone);
+
+    private sealed record GeneratedMedicalReportFacilityRow(
+        string Name,
+        string Phone,
+        string Street,
+        string City,
+        string State,
+        string PostalCode);
 
     private sealed record GeneratedMedicalReportBillingRow(
         int LineCount,

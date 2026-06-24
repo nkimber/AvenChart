@@ -5567,6 +5567,21 @@ function PatientPortalWorkspace({
                       <span>Generated {portalGeneratedMedicalReport.generatedOn}</span>
                     </div>
                   )}
+                  {portalGeneratedMedicalReport !== null && (
+                    <div className="message-meta-row">
+                      <span>{portalGeneratedMedicalReport.templateMetadata.facilityName}</span>
+                      <span>{portalGeneratedMedicalReport.templateMetadata.facilityPhone}</span>
+                      <span>{portalGeneratedMedicalReport.templateMetadata.facilityStreet}</span>
+                      <span>{portalGeneratedMedicalReport.templateMetadata.facilityCityStatePostal}</span>
+                    </div>
+                  )}
+                  {portalGeneratedMedicalReport !== null && (
+                    <div className="message-meta-row">
+                      <span>{portalGeneratedMedicalReport.templateMetadata.printablePatientName}</span>
+                      <span>{portalGeneratedMedicalReport.templateMetadata.patientHeaderLine}</span>
+                      <span>{portalGeneratedMedicalReport.templateMetadata.generatedOnLabel}</span>
+                    </div>
+                  )}
                   {(portalGeneratedMedicalReport?.summaryLines ?? []).map((line) => (
                     <div className="message-meta-row" key={line}>
                       <span>{line}</span>
@@ -5594,6 +5609,7 @@ function PatientPortalWorkspace({
                     <div className="message-meta-row">
                       <span>Printable Version {portalGeneratedMedicalReport.printableVersionAvailable ? 'available' : 'not available'}</span>
                       <span>PDF Download {portalGeneratedMedicalReport.pdfDownloadAvailable ? 'available' : 'pending'}</span>
+                      <span>Signature Line {portalGeneratedMedicalReport.templateMetadata.signatureLineAvailable ? 'available' : 'not available'}</span>
                     </div>
                   )}
                 </div>

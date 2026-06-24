@@ -269,6 +269,7 @@ public sealed record PatientPortalGeneratedMedicalReport(
     IReadOnlyList<string> IncludedSectionIds,
     IReadOnlyList<string> IncludedProcedureOrderIds,
     IReadOnlyList<string> IncludedEncounterFormIds,
+    PatientPortalGeneratedMedicalReportTemplateMetadata TemplateMetadata,
     int SummaryLineCount,
     IReadOnlyList<string> SummaryLines);
 
@@ -292,6 +293,7 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     string AsOfDate,
     string Title,
     string GeneratedOn,
+    PatientPortalGeneratedMedicalReportTemplateMetadata TemplateMetadata,
     IReadOnlyList<string> IncludedSectionIds,
     IReadOnlyList<string> IncludedProcedureOrderIds,
     IReadOnlyList<string> IncludedIssueIds,
@@ -319,6 +321,16 @@ public sealed record PatientPortalGeneratedMedicalReportSection(
     string Title,
     int LineCount,
     IReadOnlyList<string> Lines);
+
+public sealed record PatientPortalGeneratedMedicalReportTemplateMetadata(
+    string FacilityName,
+    string FacilityStreet,
+    string FacilityCityStatePostal,
+    string FacilityPhone,
+    string PrintablePatientName,
+    string PatientHeaderLine,
+    string GeneratedOnLabel,
+    bool SignatureLineAvailable);
 
 public sealed record PatientPortalAppointmentRequestOptionsResponse(
     bool Authenticated,
