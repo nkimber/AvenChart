@@ -2575,6 +2575,23 @@ export type PatientPortalGeneratedMedicalReportPackageMetadata = {
   summaryAvailable: boolean
 }
 
+export type PatientPortalGeneratedMedicalReportAuditEvent = {
+  id: number
+  eventType: string
+  eventLabel: string
+  eventAt: string
+  reportTitle: string
+  generatedOn: string
+  artifactName?: string | null
+  artifactContentType?: string | null
+  includedSectionIds: string[]
+  includedIssueIds: string[]
+  includedEncounterFormIds: string[]
+  includedProcedureOrderIds: string[]
+  summary: string
+  eventSource: string
+}
+
 export type PatientPortalGeneratedMedicalReportResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2602,6 +2619,26 @@ export type PatientPortalGeneratedMedicalReportResponse = {
   reportSections: PatientPortalGeneratedMedicalReportSection[]
   summaryLineCount: number
   summaryLines: string[]
+  auditEventCount: number
+  auditEvents: PatientPortalGeneratedMedicalReportAuditEvent[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
+export type PatientPortalGeneratedMedicalReportAuditResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  auditEventCount: number
+  auditEvents: PatientPortalGeneratedMedicalReportAuditEvent[]
   failureReason?: string | null
   sessionSource: string
 }
@@ -3133,6 +3170,21 @@ export async function generatePatientPortalMedicalReport(
   })
   if (!response.ok) {
     throw new Error(`Patient portal medical report generation failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalGeneratedMedicalReportAudit(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalGeneratedMedicalReportAuditResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/audit`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal medical report audit check failed with ${response.status}`)
   }
 
   return response.json()

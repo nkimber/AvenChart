@@ -61,6 +61,7 @@ import {
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
   generatePatientPortalMedicalReport,
+  getPatientPortalGeneratedMedicalReportAudit,
   downloadPatientPortalGeneratedMedicalReportPdf,
   downloadPatientPortalGeneratedMedicalReportPackage,
   requestPatientPortalAppointment,
@@ -4029,6 +4030,12 @@ function App() {
       link.click()
       window.document.body.removeChild(link)
       URL.revokeObjectURL(url)
+      const audit = await getPatientPortalGeneratedMedicalReportAudit(patientPortalSessionId)
+      setPatientPortalGeneratedMedicalReport({
+        ...generatedMedicalReport,
+        auditEventCount: audit.auditEventCount,
+        auditEvents: audit.auditEvents,
+      })
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Downloaded ${generatedMedicalReport.title} PDF for ${generatedMedicalReport.displayName}`)
     } catch (portalError) {
@@ -4073,6 +4080,12 @@ function App() {
       link.click()
       window.document.body.removeChild(link)
       URL.revokeObjectURL(url)
+      const audit = await getPatientPortalGeneratedMedicalReportAudit(patientPortalSessionId)
+      setPatientPortalGeneratedMedicalReport({
+        ...generatedMedicalReport,
+        auditEventCount: audit.auditEventCount,
+        auditEvents: audit.auditEvents,
+      })
       setPatientPortalStatus('ready')
       setPatientPortalMessage(`Downloaded ${generatedMedicalReport.title} package for ${generatedMedicalReport.displayName}`)
     } catch (portalError) {
@@ -5675,6 +5688,25 @@ function PatientPortalWorkspace({
                       <span>{portalGeneratedMedicalReport.packageMetadata.fileName}</span>
                       <span>{portalGeneratedMedicalReport.packageMetadata.entryNames.join(', ')}</span>
                     </div>
+                  )}
+                  {portalGeneratedMedicalReport !== null && (
+                    <article className="clinical-item">
+                      <div>
+                        <strong>Report Audit</strong>
+                        <span>Audit Events {portalGeneratedMedicalReport.auditEventCount}</span>
+                      </div>
+                      {portalGeneratedMedicalReport.auditEvents.map((event) => (
+                        <div className="message-meta-row" key={`${event.id}-${event.eventType}`}>
+                          <span>{event.eventLabel}</span>
+                          <span>{event.eventAt}</span>
+                          <span>{event.artifactName ?? event.reportTitle}</span>
+                          <span>{event.summary}</span>
+                        </div>
+                      ))}
+                      {portalGeneratedMedicalReport.auditEvents.length === 0 && (
+                        <div className="empty-state inline">No report audit events recorded</div>
+                      )}
+                    </article>
                   )}
                 </div>
               </section>

@@ -265,6 +265,7 @@ drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
 drop table if exists patient_histories;
 drop table if exists patient_employers;
+drop table if exists patient_portal_report_audit_events;
 drop table if exists patient_portal_sessions;
 drop table if exists patient_portal_accounts;
 drop table if exists patients;
@@ -458,6 +459,28 @@ create table patient_portal_sessions (
   expires_at timestamptz not null,
   ended_at timestamptz,
   session_source text not null default 'avenchart-portal'
+);
+
+create table patient_portal_report_audit_events (
+  id bigserial primary key,
+  patient_id text not null references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  session_id uuid references patient_portal_sessions(id) on delete set null,
+  portal_username text not null,
+  portal_login_username text not null,
+  event_type text not null,
+  event_label text not null,
+  report_title text not null,
+  generated_on date not null,
+  artifact_name text,
+  artifact_content_type text,
+  included_section_ids text[] not null default '{}',
+  included_issue_ids text[] not null default '{}',
+  included_encounter_form_ids text[] not null default '{}',
+  included_procedure_order_ids text[] not null default '{}',
+  summary text not null,
+  created_at timestamptz not null default now(),
+  event_source text not null default 'avenchart-portal'
 );
 
 create table patient_employers (
@@ -2183,6 +2206,8 @@ create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);
 create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);
 create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);
+create index idx_patient_portal_report_audit_patient_created on patient_portal_report_audit_events (patient_id, created_at desc, id desc);
+create index idx_patient_portal_report_audit_session on patient_portal_report_audit_events (session_id);
 create index idx_patient_documents_pid_date on patient_documents (pid, doc_date);
 create index idx_patient_documents_category on patient_documents (category_name);
 create index idx_problems_pid on problems (pid);

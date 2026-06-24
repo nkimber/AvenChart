@@ -12,6 +12,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 {
     private const string InvalidCredentialsMessage = "Invalid username or password.";
     private const string SessionSource = "avenchart-portal";
+    private const string GeneratedMedicalReportCreatedEventType = "generated_report";
+    private const string GeneratedMedicalReportPdfDownloadedEventType = "pdf_downloaded";
+    private const string GeneratedMedicalReportPackageDownloadedEventType = "package_downloaded";
     private static readonly JsonSerializerOptions GeneratedMedicalReportPackageJsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -463,6 +466,13 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     public async Task<PatientPortalGeneratedMedicalReportResponse> GenerateMedicalReportAsync(
         Guid sessionId,
         PatientPortalMedicalReportGenerationRequest request,
+        CancellationToken cancellationToken) =>
+        await GenerateMedicalReportCoreAsync(sessionId, request, recordGeneratedEvent: true, cancellationToken);
+
+    private async Task<PatientPortalGeneratedMedicalReportResponse> GenerateMedicalReportCoreAsync(
+        Guid sessionId,
+        PatientPortalMedicalReportGenerationRequest request,
+        bool recordGeneratedEvent,
         CancellationToken cancellationToken)
     {
         var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
@@ -480,7 +490,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var encounters = await GetMedicalReportEncountersAsync(connection, session.LegacyPid.Value, cancellationToken);
         var procedureOrders = await GetMedicalReportProcedureOrdersAsync(connection, session.LegacyPid.Value, cancellationToken);
 
-        return BuildGeneratedMedicalReportResponse(
+        var report = BuildGeneratedMedicalReportResponse(
             session,
             metadata,
             patient,
@@ -490,6 +500,24 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             encounters,
             procedureOrders,
             request);
+
+        if (recordGeneratedEvent)
+        {
+            await RecordGeneratedMedicalReportAuditEventAsync(
+                connection,
+                report,
+                GeneratedMedicalReportCreatedEventType,
+                artifactName: "generated-medical-report.json",
+                artifactContentType: "application/json",
+                cancellationToken);
+        }
+
+        var auditEvents = await GetGeneratedMedicalReportAuditEventsAsync(connection, session.CanonicalId, cancellationToken);
+        return report with
+        {
+            AuditEventCount = auditEvents.Count,
+            AuditEvents = auditEvents
+        };
     }
 
     public async Task<PatientPortalGeneratedMedicalReportPdfPackage> DownloadGeneratedMedicalReportPdfAsync(
@@ -497,16 +525,32 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         PatientPortalMedicalReportGenerationRequest request,
         CancellationToken cancellationToken)
     {
-        var report = await GenerateMedicalReportAsync(sessionId, request, cancellationToken);
+        var report = await GenerateMedicalReportCoreAsync(sessionId, request, recordGeneratedEvent: false, cancellationToken);
         if (!report.Authenticated)
         {
             return GeneratedMedicalReportPdfFailure(report.FailureReason ?? "Session is not active.", report);
         }
 
         var content = BuildGeneratedMedicalReportPdf(report);
+        var fileName = BuildGeneratedMedicalReportPdfFileName(report);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await RecordGeneratedMedicalReportAuditEventAsync(
+            connection,
+            report,
+            GeneratedMedicalReportPdfDownloadedEventType,
+            fileName,
+            "application/pdf",
+            cancellationToken);
+        var auditEvents = await GetGeneratedMedicalReportAuditEventsAsync(connection, report.CanonicalId, cancellationToken);
+        report = report with
+        {
+            AuditEventCount = auditEvents.Count,
+            AuditEvents = auditEvents
+        };
+
         return new PatientPortalGeneratedMedicalReportPdfPackage(
             Downloadable: true,
-            FileName: BuildGeneratedMedicalReportPdfFileName(report),
+            FileName: fileName,
             ContentType: "application/pdf",
             Content: content,
             ContentLength: content.Length,
@@ -519,21 +563,69 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         PatientPortalMedicalReportGenerationRequest request,
         CancellationToken cancellationToken)
     {
-        var report = await GenerateMedicalReportAsync(sessionId, request, cancellationToken);
+        var report = await GenerateMedicalReportCoreAsync(sessionId, request, recordGeneratedEvent: false, cancellationToken);
         if (!report.Authenticated)
         {
             return GeneratedMedicalReportPackageFailure(report.FailureReason ?? "Session is not active.", report);
         }
 
         var content = BuildGeneratedMedicalReportPackage(report);
+        var fileName = BuildGeneratedMedicalReportPackageFileName(report);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await RecordGeneratedMedicalReportAuditEventAsync(
+            connection,
+            report,
+            GeneratedMedicalReportPackageDownloadedEventType,
+            fileName,
+            "application/zip",
+            cancellationToken);
+        var auditEvents = await GetGeneratedMedicalReportAuditEventsAsync(connection, report.CanonicalId, cancellationToken);
+        report = report with
+        {
+            AuditEventCount = auditEvents.Count,
+            AuditEvents = auditEvents
+        };
+
         return new PatientPortalGeneratedMedicalReportPackageDownload(
             Downloadable: true,
-            FileName: BuildGeneratedMedicalReportPackageFileName(report),
+            FileName: fileName,
             ContentType: "application/zip",
             Content: content,
             ContentLength: content.Length,
             Report: report,
             FailureReason: null);
+    }
+
+    public async Task<PatientPortalGeneratedMedicalReportAuditResponse> GetMedicalReportAuditAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyGeneratedMedicalReportAudit(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var auditEvents = await GetGeneratedMedicalReportAuditEventsAsync(connection, session.CanonicalId, cancellationToken);
+
+        return new PatientPortalGeneratedMedicalReportAuditResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            AuditEventCount: auditEvents.Count,
+            AuditEvents: auditEvents,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
     }
 
     public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
@@ -1853,6 +1945,27 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
         SummaryLineCount: 0,
         SummaryLines: Array.Empty<string>(),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalGeneratedMedicalReportAuditEvent>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalGeneratedMedicalReportAuditResponse EmptyGeneratedMedicalReportAudit(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalGeneratedMedicalReportAuditEvent>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1883,6 +1996,25 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ReportSections: Array.Empty<PatientPortalGeneratedMedicalReportSection>(),
         SummaryLineCount: 0,
         SummaryLines: Array.Empty<string>(),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalGeneratedMedicalReportAuditEvent>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalGeneratedMedicalReportAuditResponse MissingSessionGeneratedMedicalReportAudit(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        AuditEventCount: 0,
+        AuditEvents: Array.Empty<PatientPortalGeneratedMedicalReportAuditEvent>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1903,6 +2035,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalGeneratedMedicalReportResponse MissingSessionHeaderGeneratedMedicalReport() =>
         MissingSessionGeneratedMedicalReport("Patient portal session header was not supplied.");
+
+    public static PatientPortalGeneratedMedicalReportAuditResponse MissingSessionHeaderGeneratedMedicalReportAudit() =>
+        MissingSessionGeneratedMedicalReportAudit("Patient portal session header was not supplied.");
 
     public static PatientPortalGeneratedMedicalReportPdfPackage MissingSessionHeaderGeneratedMedicalReportPdf() =>
         GeneratedMedicalReportPdfFailure("Patient portal session header was not supplied.");
@@ -2957,6 +3092,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             ReportSections: reportSections,
             SummaryLineCount: summaryLines.Count,
             SummaryLines: summaryLines,
+            AuditEventCount: 0,
+            AuditEvents: Array.Empty<PatientPortalGeneratedMedicalReportAuditEvent>(),
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -2982,6 +3119,174 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ContentLength: 0,
         Report: report,
         FailureReason: reason);
+
+    private static async Task RecordGeneratedMedicalReportAuditEventAsync(
+        NpgsqlConnection connection,
+        PatientPortalGeneratedMedicalReportResponse report,
+        string eventType,
+        string? artifactName,
+        string? artifactContentType,
+        CancellationToken cancellationToken)
+    {
+        if (!report.Authenticated || report.LegacyPid is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into patient_portal_report_audit_events (
+              patient_id,
+              pid,
+              session_id,
+              portal_username,
+              portal_login_username,
+              event_type,
+              event_label,
+              report_title,
+              generated_on,
+              artifact_name,
+              artifact_content_type,
+              included_section_ids,
+              included_issue_ids,
+              included_encounter_form_ids,
+              included_procedure_order_ids,
+              summary,
+              event_source
+            )
+            values (
+              @patient_id,
+              @pid,
+              @session_id,
+              @portal_username,
+              @portal_login_username,
+              @event_type,
+              @event_label,
+              @report_title,
+              @generated_on,
+              @artifact_name,
+              @artifact_content_type,
+              @included_section_ids,
+              @included_issue_ids,
+              @included_encounter_form_ids,
+              @included_procedure_order_ids,
+              @summary,
+              @event_source
+            );
+            """;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = report.CanonicalId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = report.LegacyPid.Value;
+        command.Parameters.Add("session_id", NpgsqlDbType.Uuid).Value = report.SessionId is { } sessionId
+            ? sessionId
+            : DBNull.Value;
+        command.Parameters.Add("portal_username", NpgsqlDbType.Text).Value = report.PortalUsername;
+        command.Parameters.Add("portal_login_username", NpgsqlDbType.Text).Value = report.Username;
+        command.Parameters.Add("event_type", NpgsqlDbType.Text).Value = eventType;
+        command.Parameters.Add("event_label", NpgsqlDbType.Text).Value = GetGeneratedMedicalReportAuditEventLabel(eventType);
+        command.Parameters.Add("report_title", NpgsqlDbType.Text).Value = report.Title;
+        command.Parameters.Add("generated_on", NpgsqlDbType.Date).Value = DateOnly.TryParse(report.GeneratedOn, out var generatedOn)
+            ? generatedOn
+            : DateOnly.FromDateTime(DateTime.UtcNow);
+        command.Parameters.Add("artifact_name", NpgsqlDbType.Text).Value = artifactName is null
+            ? DBNull.Value
+            : artifactName;
+        command.Parameters.Add("artifact_content_type", NpgsqlDbType.Text).Value = artifactContentType is null
+            ? DBNull.Value
+            : artifactContentType;
+        command.Parameters.Add("included_section_ids", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            .Value = report.IncludedSectionIds.ToArray();
+        command.Parameters.Add("included_issue_ids", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            .Value = report.IncludedIssueIds.ToArray();
+        command.Parameters.Add("included_encounter_form_ids", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            .Value = report.IncludedEncounterFormIds.ToArray();
+        command.Parameters.Add("included_procedure_order_ids", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            .Value = report.IncludedProcedureOrderIds.ToArray();
+        command.Parameters.Add("summary", NpgsqlDbType.Text)
+            .Value = BuildGeneratedMedicalReportAuditSummary(eventType, report, artifactName);
+        command.Parameters.Add("event_source", NpgsqlDbType.Text).Value = report.SessionSource;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalGeneratedMedicalReportAuditEvent>> GetGeneratedMedicalReportAuditEventsAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id,
+              event_type,
+              event_label,
+              created_at,
+              report_title,
+              generated_on,
+              artifact_name,
+              artifact_content_type,
+              included_section_ids,
+              included_issue_ids,
+              included_encounter_form_ids,
+              included_procedure_order_ids,
+              summary,
+              event_source
+            from patient_portal_report_audit_events
+            where patient_id = @patient_id
+            order by created_at, id;
+            """;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = canonicalId;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var events = new List<PatientPortalGeneratedMedicalReportAuditEvent>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var createdAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"));
+            events.Add(new PatientPortalGeneratedMedicalReportAuditEvent(
+                Id: reader.GetInt64(reader.GetOrdinal("id")),
+                EventType: reader.GetString(reader.GetOrdinal("event_type")),
+                EventLabel: reader.GetString(reader.GetOrdinal("event_label")),
+                EventAt: createdAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'"),
+                ReportTitle: reader.GetString(reader.GetOrdinal("report_title")),
+                GeneratedOn: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("generated_on")).ToString("yyyy-MM-dd"),
+                ArtifactName: ReadNullableString(reader, "artifact_name"),
+                ArtifactContentType: ReadNullableString(reader, "artifact_content_type"),
+                IncludedSectionIds: ReadStringArray(reader, "included_section_ids"),
+                IncludedIssueIds: ReadStringArray(reader, "included_issue_ids"),
+                IncludedEncounterFormIds: ReadStringArray(reader, "included_encounter_form_ids"),
+                IncludedProcedureOrderIds: ReadStringArray(reader, "included_procedure_order_ids"),
+                Summary: reader.GetString(reader.GetOrdinal("summary")),
+                EventSource: reader.GetString(reader.GetOrdinal("event_source"))));
+        }
+
+        return events;
+    }
+
+    private static string GetGeneratedMedicalReportAuditEventLabel(string eventType) => eventType switch
+    {
+        GeneratedMedicalReportCreatedEventType => "Generated report",
+        GeneratedMedicalReportPdfDownloadedEventType => "PDF downloaded",
+        GeneratedMedicalReportPackageDownloadedEventType => "Package downloaded",
+        _ => eventType
+    };
+
+    private static string BuildGeneratedMedicalReportAuditSummary(
+        string eventType,
+        PatientPortalGeneratedMedicalReportResponse report,
+        string? artifactName)
+    {
+        var selectionSummary = $"{report.IncludedSectionIds.Count} sections, {report.IncludedIssueIds.Count} issues, "
+            + $"{report.IncludedEncounterFormIds.Count} forms, {report.IncludedProcedureOrderIds.Count} procedure orders";
+        return eventType switch
+        {
+            GeneratedMedicalReportCreatedEventType =>
+                $"Generated {report.Title} with {selectionSummary}.",
+            GeneratedMedicalReportPdfDownloadedEventType =>
+                $"Downloaded PDF {artifactName ?? BuildGeneratedMedicalReportPdfFileName(report)} for {report.Title} with {selectionSummary}.",
+            GeneratedMedicalReportPackageDownloadedEventType =>
+                $"Downloaded package {artifactName ?? BuildGeneratedMedicalReportPackageFileName(report)} for {report.Title} with {selectionSummary}.",
+            _ => $"{GetGeneratedMedicalReportAuditEventLabel(eventType)} for {report.Title} with {selectionSummary}."
+        };
+    }
 
     private static string BuildGeneratedMedicalReportPdfFileName(PatientPortalGeneratedMedicalReportResponse report)
     {
@@ -4186,6 +4491,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         var value = reader.GetString(ordinal).Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal)
+            ? Array.Empty<string>()
+            : reader.GetFieldValue<string[]>(ordinal);
     }
 
     private static int? ReadNullableInt(NpgsqlDataReader reader, string column)

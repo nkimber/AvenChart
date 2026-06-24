@@ -264,6 +264,18 @@ patientPortal.MapPost("/medical-report/package", async (
     })
     .WithName("DownloadPatientPortalMedicalReportPackage");
 
+patientPortal.MapGet("/medical-report/audit", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetMedicalReportAuditAsync(sessionId, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderGeneratedMedicalReportAudit());
+    })
+    .WithName("GetPatientPortalMedicalReportAudit");
+
 patientPortal.MapGet("/appointments/request-options", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

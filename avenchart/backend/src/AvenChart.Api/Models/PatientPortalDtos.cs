@@ -307,8 +307,43 @@ public sealed record PatientPortalGeneratedMedicalReportResponse(
     IReadOnlyList<PatientPortalGeneratedMedicalReportSection> ReportSections,
     int SummaryLineCount,
     IReadOnlyList<string> SummaryLines,
+    int AuditEventCount,
+    IReadOnlyList<PatientPortalGeneratedMedicalReportAuditEvent> AuditEvents,
     string? FailureReason,
     string SessionSource);
+
+public sealed record PatientPortalGeneratedMedicalReportAuditResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int AuditEventCount,
+    IReadOnlyList<PatientPortalGeneratedMedicalReportAuditEvent> AuditEvents,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalGeneratedMedicalReportAuditEvent(
+    long Id,
+    string EventType,
+    string EventLabel,
+    string EventAt,
+    string ReportTitle,
+    string GeneratedOn,
+    string? ArtifactName,
+    string? ArtifactContentType,
+    IReadOnlyList<string> IncludedSectionIds,
+    IReadOnlyList<string> IncludedIssueIds,
+    IReadOnlyList<string> IncludedEncounterFormIds,
+    IReadOnlyList<string> IncludedProcedureOrderIds,
+    string Summary,
+    string EventSource);
 
 public sealed record PatientPortalGeneratedMedicalReportPdfPackage(
     bool Downloadable,
