@@ -181,6 +181,18 @@ patientPortal.MapGet("/appointments", async (
     })
     .WithName("GetPatientPortalAppointments");
 
+patientPortal.MapGet("/appointments/request-options", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetAppointmentRequestOptionsAsync(sessionId, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderAppointmentRequestOptions());
+    })
+    .WithName("GetPatientPortalAppointmentRequestOptions");
+
 patientPortal.MapPost("/appointments/requests", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

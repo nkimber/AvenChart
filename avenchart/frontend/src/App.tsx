@@ -56,6 +56,7 @@ import {
   getPatientDocuments,
   getPatientMessages,
   getPatientPortalAppointments,
+  getPatientPortalAppointmentRequestOptions,
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
@@ -284,6 +285,7 @@ import {
   type PatientDocumentMetadataUpdateInput,
   type PatientDocumentsResponse,
   type PatientPortalAppointmentRequestInput,
+  type PatientPortalAppointmentRequestOptionsResponse,
   type PatientPortalAppointmentsResponse,
   type PatientPortalDocumentsResponse,
   type PatientMessageAssignmentUpdateInput,
@@ -419,6 +421,8 @@ function App() {
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [patientPortalAppointments, setPatientPortalAppointments] = useState<PatientPortalAppointmentsResponse | null>(null)
+  const [patientPortalAppointmentOptions, setPatientPortalAppointmentOptions] =
+    useState<PatientPortalAppointmentRequestOptionsResponse | null>(null)
   const [patientPortalMessages, setPatientPortalMessages] = useState<PatientPortalMessagesResponse | null>(null)
   const [patientPortalDocuments, setPatientPortalDocuments] = useState<PatientPortalDocumentsResponse | null>(null)
   const [patientPortalComposeRecipient, setPatientPortalComposeRecipient] = useState('admin')
@@ -3783,6 +3787,7 @@ function App() {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
         setPatientPortalAppointments(null)
+        setPatientPortalAppointmentOptions(null)
         setPatientPortalMessages(null)
         setPatientPortalDocuments(null)
         setPatientPortalThreads({})
@@ -3793,12 +3798,14 @@ function App() {
 
       const home = await getPatientPortalHome(loginResult.sessionId)
       const appointments = home.authenticated ? await getPatientPortalAppointments(loginResult.sessionId) : null
+      const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(loginResult.sessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(loginResult.sessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(loginResult.sessionId) : null
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
         setPatientPortalAppointments(appointments)
+        setPatientPortalAppointmentOptions(appointmentOptions)
         setPatientPortalMessages(messages)
         setPatientPortalDocuments(documents)
         setPatientPortalThreads({})
@@ -3810,6 +3817,7 @@ function App() {
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
+      setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalThreads({})
@@ -3819,6 +3827,7 @@ function App() {
       setPatientPortalStatus('error')
       setPatientPortalHome(null)
       setPatientPortalAppointments(null)
+      setPatientPortalAppointmentOptions(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalSessionId(null)
@@ -3838,10 +3847,12 @@ function App() {
     try {
       const home = await getPatientPortalHome(patientPortalSessionId)
       const appointments = home.authenticated ? await getPatientPortalAppointments(patientPortalSessionId) : null
+      const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(patientPortalSessionId) : null
       const messages = home.authenticated ? await getPatientPortalMessages(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
+      setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalMessages(messages)
       setPatientPortalDocuments(documents)
       setPatientPortalStatus(home.authenticated ? 'ready' : 'rejected')
@@ -3868,9 +3879,11 @@ function App() {
       const requestResult = await requestPatientPortalAppointment(patientPortalSessionId, input)
       const home = await getPatientPortalHome(patientPortalSessionId)
       const appointments = await getPatientPortalAppointments(patientPortalSessionId)
+      const appointmentOptions = await getPatientPortalAppointmentRequestOptions(patientPortalSessionId)
       const messages = await getPatientPortalMessages(patientPortalSessionId)
       setPatientPortalHome(home)
       setPatientPortalAppointments(appointments)
+      setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalMessages(messages)
       setPatientPortalStatus(requestResult.created ? 'ready' : 'rejected')
       setPatientPortalMessage(requestResult.created
@@ -4150,6 +4163,7 @@ function App() {
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
       setPatientPortalAppointments(null)
+      setPatientPortalAppointmentOptions(null)
       setPatientPortalMessages(null)
       setPatientPortalDocuments(null)
       setPatientPortalThreads({})
@@ -4269,6 +4283,7 @@ function App() {
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
             portalAppointments={patientPortalAppointments}
+            portalAppointmentOptions={patientPortalAppointmentOptions}
             portalMessages={patientPortalMessages}
             portalDocuments={patientPortalDocuments}
             composeRecipient={patientPortalComposeRecipient}
@@ -4657,6 +4672,7 @@ function PatientPortalWorkspace({
   sessionId,
   home,
   portalAppointments,
+  portalAppointmentOptions,
   portalMessages,
   portalDocuments,
   composeRecipient,
@@ -4689,6 +4705,7 @@ function PatientPortalWorkspace({
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
   portalAppointments: PatientPortalAppointmentsResponse | null
+  portalAppointmentOptions: PatientPortalAppointmentRequestOptionsResponse | null
   portalMessages: PatientPortalMessagesResponse | null
   portalDocuments: PatientPortalDocumentsResponse | null
   composeRecipient: string
@@ -4738,6 +4755,16 @@ function PatientPortalWorkspace({
   const pastPortalAppointments = portalAppointments?.pastAppointments ?? []
   const upcomingPortalAppointmentCount = portalAppointments?.upcomingAppointmentCount ?? home?.upcomingAppointmentCount ?? 0
   const pastPortalAppointmentCount = portalAppointments?.pastAppointmentCount ?? 0
+  const portalAppointmentCategoryOptions = portalAppointmentOptions?.categories.length
+    ? portalAppointmentOptions.categories
+    : appointmentCategoryOptions.map((category) => ({
+        id: category.id,
+        name: category.label,
+        constantId: category.constantId,
+        durationMinutes: category.durationMinutes,
+      }))
+  const portalAppointmentProviderOptions = portalAppointmentOptions?.providers ?? []
+  const portalAppointmentFacilityOptions = portalAppointmentOptions?.facilities ?? []
   const [portalAppointmentDate, setPortalAppointmentDate] = useState('2026-09-22')
   const [portalAppointmentStartTime, setPortalAppointmentStartTime] = useState('09:30')
   const [portalAppointmentDuration, setPortalAppointmentDuration] = useState('30')
@@ -4757,6 +4784,20 @@ function PatientPortalWorkspace({
     const availableDocumentIds = new Set(selectablePortalDocuments.map((document) => document.id))
     setSelectedPortalDocumentIds((current) => current.filter((documentId) => availableDocumentIds.has(documentId)))
   }, [selectablePortalDocuments])
+
+  useEffect(() => {
+    if (!portalAppointmentOptions?.authenticated) {
+      return
+    }
+
+    const defaults = portalAppointmentOptions.defaults
+    setPortalAppointmentDate(defaults.date || '2026-09-22')
+    setPortalAppointmentStartTime(defaults.startTime || '09:30')
+    setPortalAppointmentCategoryId(String(defaults.categoryId ?? portalAppointmentCategoryOptions[0]?.id ?? 9))
+    setPortalAppointmentDuration(String(defaults.durationMinutes || portalAppointmentCategoryOptions[0]?.durationMinutes || 30))
+    setPortalAppointmentProviderId(defaults.providerId ? String(defaults.providerId) : '')
+    setPortalAppointmentFacilityId(defaults.facilityId ? String(defaults.facilityId) : '')
+  }, [portalAppointmentOptions])
 
   function togglePortalMessageSelection(messageId: string, checked: boolean) {
     setSelectedPortalMessageIds((current) => {
@@ -4794,6 +4835,22 @@ function PatientPortalWorkspace({
 
     await onDownloadDocuments(selectedPortalDocumentIds)
     setSelectedPortalDocumentIds([])
+  }
+
+  function handlePortalAppointmentCategoryChange(categoryId: string) {
+    setPortalAppointmentCategoryId(categoryId)
+    const category = portalAppointmentCategoryOptions.find((option) => String(option.id) === categoryId)
+    if (category) {
+      setPortalAppointmentDuration(String(category.durationMinutes))
+    }
+  }
+
+  function handlePortalAppointmentProviderChange(providerId: string) {
+    setPortalAppointmentProviderId(providerId)
+    const provider = portalAppointmentProviderOptions.find((option) => String(option.id) === providerId)
+    if (provider?.facilityId) {
+      setPortalAppointmentFacilityId(String(provider.facilityId))
+    }
   }
 
   async function handlePortalAppointmentRequestSubmit(event: FormEvent<HTMLFormElement>) {
@@ -5305,12 +5362,12 @@ function PatientPortalWorkspace({
                       <select
                         aria-label="Portal appointment visit"
                         value={portalAppointmentCategoryId}
-                        onChange={(event) => setPortalAppointmentCategoryId(event.target.value)}
+                        onChange={(event) => handlePortalAppointmentCategoryChange(event.target.value)}
                         disabled={!authenticated || busy}
                       >
-                        {appointmentCategoryOptions.map((category) => (
+                        {portalAppointmentCategoryOptions.map((category) => (
                           <option key={category.id} value={category.id}>
-                            {category.label}
+                            {category.name}
                           </option>
                         ))}
                       </select>
@@ -5329,21 +5386,35 @@ function PatientPortalWorkspace({
                     </label>
                     <label>
                       Provider
-                      <input
-                        aria-label="Portal appointment provider ID"
+                      <select
+                        aria-label="Portal appointment provider"
                         value={portalAppointmentProviderId}
-                        onChange={(event) => setPortalAppointmentProviderId(event.target.value)}
+                        onChange={(event) => handlePortalAppointmentProviderChange(event.target.value)}
                         disabled={!authenticated || busy}
-                      />
+                      >
+                        {portalAppointmentProviderOptions.length === 0 && <option value="">No providers available</option>}
+                        {portalAppointmentProviderOptions.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.displayName || provider.username}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label>
                       Facility
-                      <input
-                        aria-label="Portal appointment facility ID"
+                      <select
+                        aria-label="Portal appointment facility"
                         value={portalAppointmentFacilityId}
                         onChange={(event) => setPortalAppointmentFacilityId(event.target.value)}
                         disabled={!authenticated || busy}
-                      />
+                      >
+                        {portalAppointmentFacilityOptions.length === 0 && <option value="">No facilities available</option>}
+                        {portalAppointmentFacilityOptions.map((facility) => (
+                          <option key={facility.id} value={facility.id}>
+                            {facility.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                   </div>
                   <label>
@@ -7683,9 +7754,17 @@ function PatientWorkspace({
 }
 
 const appointmentCategoryOptions = [
-  { id: 9, label: 'Established Patient' },
-  { id: 10, label: 'New Patient' },
-  { id: 13, label: 'Preventive Care Services' },
+  { id: 5, label: 'Office Visit', constantId: 'office_visit', durationMinutes: 15 },
+  { id: 9, label: 'Established Patient', constantId: 'established_patient', durationMinutes: 15 },
+  { id: 10, label: 'New Patient', constantId: 'new_patient', durationMinutes: 30 },
+  {
+    id: 12,
+    label: 'Health and Behavioral Assessment',
+    constantId: 'health_and_behavioral_assessment',
+    durationMinutes: 15,
+  },
+  { id: 13, label: 'Preventive Care Services', constantId: 'preventive_care_services', durationMinutes: 15 },
+  { id: 14, label: 'Ophthalmological Services', constantId: 'ophthalmological_services', durationMinutes: 15 },
 ] as const
 
 const careTeamRoleOptions = [

@@ -90,6 +90,51 @@ public sealed record PatientPortalAppointmentsResponse(
     string? FailureReason,
     string SessionSource);
 
+public sealed record PatientPortalAppointmentRequestOptionsResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    IReadOnlyList<PatientPortalAppointmentCategoryOption> Categories,
+    IReadOnlyList<PatientPortalAppointmentProviderOption> Providers,
+    IReadOnlyList<PatientPortalAppointmentFacilityOption> Facilities,
+    PatientPortalAppointmentRequestDefaults Defaults,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalAppointmentCategoryOption(
+    int Id,
+    string Name,
+    string ConstantId,
+    int DurationMinutes);
+
+public sealed record PatientPortalAppointmentProviderOption(
+    int Id,
+    string Username,
+    string DisplayName,
+    int? FacilityId,
+    string? FacilityName);
+
+public sealed record PatientPortalAppointmentFacilityOption(
+    int Id,
+    string Name,
+    string? Code);
+
+public sealed record PatientPortalAppointmentRequestDefaults(
+    int? CategoryId,
+    int? ProviderId,
+    int? FacilityId,
+    int DurationMinutes,
+    string Date,
+    string StartTime);
+
 public sealed record PatientPortalAppointmentRequest(
     int? ProviderId,
     int? FacilityId,

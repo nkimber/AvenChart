@@ -2367,6 +2367,56 @@ export type PatientPortalAppointmentsResponse = {
   sessionSource: string
 }
 
+export type PatientPortalAppointmentCategoryOption = {
+  id: number
+  name: string
+  constantId: string
+  durationMinutes: number
+}
+
+export type PatientPortalAppointmentProviderOption = {
+  id: number
+  username: string
+  displayName: string
+  facilityId?: number | null
+  facilityName?: string | null
+}
+
+export type PatientPortalAppointmentFacilityOption = {
+  id: number
+  name: string
+  code?: string | null
+}
+
+export type PatientPortalAppointmentRequestDefaults = {
+  categoryId?: number | null
+  providerId?: number | null
+  facilityId?: number | null
+  durationMinutes: number
+  date: string
+  startTime: string
+}
+
+export type PatientPortalAppointmentRequestOptionsResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  categories: PatientPortalAppointmentCategoryOption[]
+  providers: PatientPortalAppointmentProviderOption[]
+  facilities: PatientPortalAppointmentFacilityOption[]
+  defaults: PatientPortalAppointmentRequestDefaults
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalAppointmentRequestInput = {
   providerId?: number | null
   facilityId?: number | null
@@ -2752,6 +2802,21 @@ export async function getPatientPortalAppointments(
   })
   if (!response.ok) {
     throw new Error(`Patient portal appointments check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalAppointmentRequestOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentRequestOptionsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/request-options`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal appointment request options failed with ${response.status}`)
   }
 
   return response.json()

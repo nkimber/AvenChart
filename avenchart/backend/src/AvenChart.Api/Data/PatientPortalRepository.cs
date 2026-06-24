@@ -11,6 +11,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 {
     private const string InvalidCredentialsMessage = "Invalid username or password.";
     private const string SessionSource = "avenchart-portal";
+    private static readonly PatientPortalAppointmentCategoryOption[] AppointmentRequestCategoryOptions =
+    [
+        new(5, "Office Visit", "office_visit", 15),
+        new(9, "Established Patient", "established_patient", 15),
+        new(10, "New Patient", "new_patient", 30),
+        new(12, "Health and Behavioral Assessment", "health_and_behavioral_assessment", 15),
+        new(13, "Preventive Care Services", "preventive_care_services", 15),
+        new(14, "Ophthalmological Services", "ophthalmological_services", 15)
+    ];
 
     public async Task<PatientPortalLoginResponse> LoginAsync(
         PatientPortalLoginRequest request,
@@ -268,6 +277,60 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             UpcomingAppointments: upcomingAppointments.Items,
             PastAppointmentCount: pastAppointments.TotalCount,
             PastAppointments: pastAppointments.Items,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalAppointmentRequestOptionsResponse> GetAppointmentRequestOptionsAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return AppointmentRequestOptionsFailure(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var patientDefaults = await GetPatientAppointmentRequestDefaultsAsync(connection, session.CanonicalId, cancellationToken);
+        var providers = await GetAppointmentRequestProvidersAsync(connection, cancellationToken);
+        var facilities = await GetAppointmentRequestFacilitiesAsync(connection, cancellationToken);
+
+        var defaultCategory = AppointmentRequestCategoryOptions.First(category => category.Id == 9);
+        var defaultProviderId = providers.Any(provider => provider.Id == patientDefaults.ProviderId)
+            ? patientDefaults.ProviderId
+            : providers.FirstOrDefault()?.Id;
+        var defaultProvider = providers.FirstOrDefault(provider => provider.Id == defaultProviderId);
+        var providerFacilityId = defaultProvider?.FacilityId;
+        var defaultFacilityId = facilities.Any(facility => facility.Id == providerFacilityId)
+            ? providerFacilityId
+            : facilities.Any(facility => facility.Id == patientDefaults.FacilityId)
+                ? patientDefaults.FacilityId
+                : facilities.FirstOrDefault()?.Id;
+
+        return new PatientPortalAppointmentRequestOptionsResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Categories: AppointmentRequestCategoryOptions,
+            Providers: providers,
+            Facilities: facilities,
+            Defaults: new PatientPortalAppointmentRequestDefaults(
+                CategoryId: defaultCategory.Id,
+                ProviderId: defaultProviderId,
+                FacilityId: defaultFacilityId,
+                DurationMinutes: defaultCategory.DurationMinutes,
+                Date: metadata.BaseDate.AddDays(96).ToString("yyyy-MM-dd"),
+                StartTime: "09:30"),
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -1188,6 +1251,47 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalAppointmentRequestOptionsResponse AppointmentRequestOptionsFailure(
+        PatientPortalSessionResponse session,
+        string reason,
+        DatasetMetadata? metadata = null) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: metadata?.DatasetId ?? "unseeded",
+        DatasetVersion: metadata?.DatasetVersion ?? "unknown",
+        AsOfDate: (metadata?.BaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow)).ToString("yyyy-MM-dd"),
+        Categories: Array.Empty<PatientPortalAppointmentCategoryOption>(),
+        Providers: Array.Empty<PatientPortalAppointmentProviderOption>(),
+        Facilities: Array.Empty<PatientPortalAppointmentFacilityOption>(),
+        Defaults: new PatientPortalAppointmentRequestDefaults(null, null, null, 0, string.Empty, string.Empty),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalAppointmentRequestOptionsResponse MissingSessionAppointmentRequestOptions(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        Categories: Array.Empty<PatientPortalAppointmentCategoryOption>(),
+        Providers: Array.Empty<PatientPortalAppointmentProviderOption>(),
+        Facilities: Array.Empty<PatientPortalAppointmentFacilityOption>(),
+        Defaults: new PatientPortalAppointmentRequestDefaults(null, null, null, 0, string.Empty, string.Empty),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
     private static PatientPortalAppointmentRequestResponse AppointmentRequestFailure(
         PatientPortalSessionResponse session,
         string reason,
@@ -1344,6 +1448,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalAppointmentsResponse MissingSessionHeaderAppointments() =>
         MissingSessionAppointments("Patient portal session header was not supplied.");
+
+    public static PatientPortalAppointmentRequestOptionsResponse MissingSessionHeaderAppointmentRequestOptions() =>
+        MissingSessionAppointmentRequestOptions("Patient portal session header was not supplied.");
 
     public static PatientPortalAppointmentRequestResponse MissingSessionHeaderAppointmentRequest() =>
         MissingSessionAppointmentRequest("Patient portal session header was not supplied.");
@@ -1574,6 +1681,91 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         ThreadMessages: Array.Empty<PatientPortalMessageItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
+
+    private static async Task<PatientAppointmentRequestDefaultsRow> GetPatientAppointmentRequestDefaultsAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select provider_id, facility_id
+            from patients
+            where canonical_id = @patient_id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("patient_id", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new PatientAppointmentRequestDefaultsRow(null, null);
+        }
+
+        return new PatientAppointmentRequestDefaultsRow(
+            ReadNullableInt(reader, "provider_id"),
+            ReadNullableInt(reader, "facility_id"));
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalAppointmentProviderOption>> GetAppointmentRequestProvidersAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              s.id,
+              s.username,
+              trim(concat(s.last_name, ', ', s.first_name)) as display_name,
+              s.facility_id,
+              f.name as facility_name
+            from staff s
+            left join facilities f on f.id = s.facility_id
+            where s.active = true
+              and s.calendar = true
+              and s.username <> ''
+            order by s.last_name, s.first_name, s.id;
+            """;
+
+        var providers = new List<PatientPortalAppointmentProviderOption>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            providers.Add(new PatientPortalAppointmentProviderOption(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                Username: ReadNullableString(reader, "username") ?? string.Empty,
+                DisplayName: ReadNullableString(reader, "display_name") ?? string.Empty,
+                FacilityId: ReadNullableInt(reader, "facility_id"),
+                FacilityName: ReadNullableString(reader, "facility_name")));
+        }
+
+        return providers;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalAppointmentFacilityOption>> GetAppointmentRequestFacilitiesAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, name, code
+            from facilities
+            where inactive = false
+            order by name, id;
+            """;
+
+        var facilities = new List<PatientPortalAppointmentFacilityOption>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            facilities.Add(new PatientPortalAppointmentFacilityOption(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                Name: ReadNullableString(reader, "name") ?? string.Empty,
+                Code: ReadNullableString(reader, "code")));
+        }
+
+        return facilities;
+    }
 
     private static async Task<DatasetMetadata> GetMetadataAsync(
         NpgsqlConnection connection,
@@ -2282,18 +2474,24 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     private static string? GetAppointmentCategoryName(int? categoryId) => categoryId switch
     {
+        5 => "Office Visit",
         9 => "Established Patient",
         10 => "New Patient",
+        12 => "Health and Behavioral Assessment",
         13 => "Preventive Care Services",
+        14 => "Ophthalmological Services",
         null => null,
         _ => $"Category {categoryId.Value}"
     };
 
     private static string GetPortalAppointmentRequestTitle(int categoryId) => categoryId switch
     {
+        5 => "Office Visit",
         9 => "Established Patient",
         10 => "New Patient",
+        12 => "Health and Behavioral Assessment",
         13 => "Preventive Care",
+        14 => "Ophthalmological Services",
         _ => GetAppointmentCategoryName(categoryId) ?? "Office Visit"
     };
 
@@ -2371,6 +2569,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         DateTimeOffset ExpiresAt);
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record PatientAppointmentRequestDefaultsRow(int? ProviderId, int? FacilityId);
 
     private sealed record AppointmentSummaryRows(
         int TotalCount,
