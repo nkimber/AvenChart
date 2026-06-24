@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import DOMPurify from 'dompurify'
 import {
   Activity,
   Building2,
@@ -5997,7 +5998,7 @@ function PatientPortalWorkspace({
                           {portalMessage.status || 'Status pending'}
                         </span>
                       </div>
-                      <p>{portalMessage.body}</p>
+                      <SecureMessageBody body={portalMessage.body} />
                       <div className="message-meta-row">
                         <span>{portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
@@ -6128,7 +6129,7 @@ function PatientPortalWorkspace({
                           {portalMessage.status || 'Status pending'}
                         </span>
                       </div>
-                      <p>{portalMessage.body}</p>
+                      <SecureMessageBody body={portalMessage.body} />
                       <div className="message-meta-row">
                         <span>Recipient {portalMessage.recipientId || portalMessage.assignedTo || 'care team'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
@@ -6203,7 +6204,7 @@ function PatientPortalWorkspace({
                             {portalMessage.status || 'Status pending'}
                           </span>
                         </div>
-                        <p>{portalMessage.body}</p>
+                        <SecureMessageBody body={portalMessage.body} />
                         <div className="message-meta-row">
                           <span>{patientAuthored ? 'Patient sent message' : 'Care team message'}</span>
                           <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
@@ -6268,7 +6269,7 @@ function PatientPortalWorkspace({
                           </div>
                           <span className="status-pill danger">{portalMessage.status || 'Deleted'}</span>
                         </div>
-                        <p>{portalMessage.body}</p>
+                        <SecureMessageBody body={portalMessage.body} />
                         <div className="message-meta-row">
                           <span>{patientAuthored ? 'Archived patient sent message' : 'Archived care team message'}</span>
                           <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
@@ -6489,11 +6490,25 @@ function PatientPortalThreadPanel({
                   : `From ${threadMessage.senderName || threadMessage.senderId || threadMessage.assignedTo || 'Care team'}`}
               </span>
             </div>
-            <p>{threadMessage.body}</p>
+            <SecureMessageBody body={threadMessage.body} compact />
           </article>
         )
       })}
     </section>
+  )
+}
+
+function SecureMessageBody({ body, compact = false }: { body: string; compact?: boolean }) {
+  const sanitizedHtml = DOMPurify.sanitize(body, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['a', 'img'],
+  })
+
+  return (
+    <div
+      className={compact ? 'secure-message-body compact' : 'secure-message-body'}
+      dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+    />
   )
 }
 

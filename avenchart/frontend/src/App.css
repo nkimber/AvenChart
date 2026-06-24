@@ -1149,7 +1149,8 @@
 }
 
 .portal-thread-message span,
-.portal-thread-message p {
+.portal-thread-message p,
+.portal-thread-message .secure-message-body {
   color: #4d5f68;
   font-size: 12px;
   margin: 0;
@@ -1216,11 +1217,35 @@
   font-size: 14px;
 }
 
-.message-item p {
+.message-item p,
+.secure-message-body {
   margin: 0;
   color: #344657;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.secure-message-body {
+  overflow-wrap: anywhere;
+}
+
+.secure-message-body p,
+.secure-message-body ul,
+.secure-message-body ol {
+  margin: 0 0 6px;
+}
+
+.secure-message-body p:last-child,
+.secure-message-body ul:last-child,
+.secure-message-body ol:last-child {
+  margin-bottom: 0;
+}
+
+.secure-message-body.compact,
+.secure-message-body.compact p,
+.secure-message-body.compact ul,
+.secure-message-body.compact ol {
+  font-size: 12px;
 }
 
 .message-item > span {
