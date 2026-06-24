@@ -5609,7 +5609,7 @@ function PatientPortalWorkspace({
                     <article className="clinical-item" key={prescription.id}>
                       <div>
                         <strong>{prescription.drug}</strong>
-                        <span>{prescription.startDate ?? 'Date pending'}</span>
+                        <span>Start {prescription.startDate ?? 'Date pending'}</span>
                       </div>
                       <div className="message-meta-row">
                         <span>Dosage {prescription.dosage ?? 'Not recorded'}</span>

@@ -347,10 +347,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into prescriptions
-                (id, patient_id, pid, provider_id, encounter, start_date, modified_date, end_date, drug, rx_norm_code,
+                (id, patient_id, pid, provider_id, encounter, start_date, date_added, modified_date, end_date, drug, rx_norm_code,
                  dosage, quantity, route, refills, diagnosis, note, active)
             values
-                (@id, @patientId, @pid, @providerId, 0, @startDate, @startDate, null, @drug, @rxNormCode,
+                (@id, @patientId, @pid, @providerId, 0, @startDate, @startDate + time '10:00:00', @startDate, null, @drug, @rxNormCode,
                  @dosage, @quantity, @route, @refills, @diagnosis, @note, 1);
             """;
         command.Parameters.AddWithValue("id", id);
