@@ -220,6 +220,7 @@ import {
   type AdministrationAccessGroupPermissionItem,
   type AdministrationAccessUserMembershipItem,
   type AdministrationAccessUserMembershipMutationInput,
+  type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
   type AuthAuditResponse,
@@ -18660,6 +18661,8 @@ function AdministrationWorkspace({
             <MetricRow label="Providers" value={directory.counts.providers} />
             <MetricRow label="Calendar users" value={directory.counts.calendarUsers} />
             <MetricRow label="Facilities" value={directory.counts.facilities} />
+            <MetricRow label="Portal audits" value={directory.counts.waitingPortalAudits} />
+            <MetricRow label="Profile reviews" value={directory.counts.waitingProfileReviews} />
           </div>
         ) : (
           <div className="empty-state">No administration directory loaded</div>
@@ -18687,6 +18690,32 @@ function AdministrationWorkspace({
               <Field label="Permission entries" value={String(directory.counts.accessGroupPermissions)} />
               <Field label="Access memberships" value={String(directory.counts.accessUserMemberships)} />
             </>
+          )}
+        </div>
+
+        <div className="access-scope-panel" role="region" aria-label="Portal activity review queue">
+          <div className="panel-heading">
+            <ClipboardList size={17} />
+            <h3>Portal Activity Review</h3>
+          </div>
+          {directory ? (
+            <>
+              <div className="list-counts">
+                <MetricRow label="Waiting audits" value={directory.portalActivity.waitingAuditCount} />
+                <MetricRow label="Profile changes" value={directory.portalActivity.waitingProfileReviewCount} />
+              </div>
+              {directory.portalActivity.profileReviewRequests.length > 0 ? (
+                <div className="review-queue-list">
+                  {directory.portalActivity.profileReviewRequests.map((request) => (
+                    <PortalProfileReviewCard key={request.id} request={request} />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">No waiting profile review requests</div>
+              )}
+            </>
+          ) : (
+            <div className="empty-state">Sign in to load portal review activity</div>
           )}
         </div>
 
@@ -21637,6 +21666,38 @@ function Field({ label, value }: { label: string; value?: string | number | null
       <strong>{value || 'Not recorded'}</strong>
     </div>
   )
+}
+
+function PortalProfileReviewCard({ request }: { request: AdministrationPortalProfileReviewRequest }) {
+  return (
+    <article className="review-queue-card">
+      <div className="review-queue-card-main">
+        <div>
+          <p className="eyebrow">{request.narrative}</p>
+          <h4>{request.patientName}</h4>
+          <p>{request.pubpid} - PID {request.legacyPid}</p>
+        </div>
+        <span className="status-pill">{request.status}</span>
+      </div>
+      <div className="review-queue-card-grid">
+        <Field label="Requested" value={request.requestedAt} />
+        <Field label="Activity" value={request.activity} />
+        <Field label="Pending action" value={request.pendingAction} />
+        <Field label="Require audit" value={request.requireAudit === 1 ? 'Yes' : 'No'} />
+        <Field label="Requested email" value={request.requestedDemographics.email} />
+        <Field label="Requested phone" value={request.requestedDemographics.phoneHome} />
+        <Field label="Requested cell" value={request.requestedDemographics.phoneCell} />
+        <Field label="Requested address" value={formatPortalProfileReviewAddress(request)} />
+      </div>
+    </article>
+  )
+}
+
+function formatPortalProfileReviewAddress(request: AdministrationPortalProfileReviewRequest) {
+  const demographics = request.requestedDemographics
+  return [demographics.street, demographics.city, demographics.state, demographics.postalCode]
+    .filter((part) => part && part.trim().length > 0)
+    .join(', ') || null
 }
 
 function formatPercent(value?: number | null) {

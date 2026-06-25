@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -9,6 +10,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 {
     private const string DefaultFacilityColor = "#246b73";
     private const string DefaultUserEmailDomain = "example.test";
+    private static readonly JsonSerializerOptions PortalProfileChangeJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> ValidAccessReturnValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "addonly",
@@ -25,6 +27,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         var users = await GetUsersAsync(connection, cancellationToken);
         var facilities = await GetFacilitiesAsync(connection, cancellationToken);
         var accessControl = await GetAccessControlAsync(connection, cancellationToken);
+        var portalActivity = await GetPortalActivityAsync(connection, cancellationToken);
 
         return new AdministrationDirectoryResponse(
             DatasetId: metadata.DatasetId,
@@ -37,10 +40,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 AccessGroups: accessControl.Groups.Count,
                 AccessPermissions: accessControl.Permissions.Count,
                 AccessGroupPermissions: accessControl.GroupPermissions.Count,
-                AccessUserMemberships: accessControl.UserMemberships.Count),
+                AccessUserMemberships: accessControl.UserMemberships.Count,
+                WaitingPortalAudits: portalActivity.WaitingAuditCount,
+                WaitingProfileReviews: portalActivity.WaitingProfileReviewCount),
             Users: users,
             Facilities: facilities,
-            AccessControl: accessControl);
+            AccessControl: accessControl,
+            PortalActivity: portalActivity);
     }
 
     public async Task<AdministrationUserMutationResponse> CreateUserAsync(
@@ -565,6 +571,114 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new AdministrationAccessControlSummary(groups, permissions, groupPermissions, userMemberships);
     }
 
+    private static async Task<AdministrationPortalActivitySummary> GetPortalActivityAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var waitingAuditCount = 0;
+        var waitingProfileReviewCount = 0;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = """
+                select
+                    count(*) filter (where status = 'waiting') as waiting_audit_count,
+                    count(*) filter (
+                        where status = 'waiting'
+                          and activity = 'profile'
+                          and require_audit = 1
+                          and pending_action = 'review'
+                    ) as waiting_profile_review_count
+                from patient_portal_profile_change_requests;
+                """;
+
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                waitingAuditCount = (int)reader.GetInt64(reader.GetOrdinal("waiting_audit_count"));
+                waitingProfileReviewCount = (int)reader.GetInt64(reader.GetOrdinal("waiting_profile_review_count"));
+            }
+        }
+
+        var requests = new List<AdministrationPortalProfileReviewRequest>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    r.id::text,
+                    to_char(r.created_at, 'YYYY-MM-DD HH24:MI:SS') as requested_at,
+                    r.patient_id,
+                    r.pid,
+                    p.pubpid,
+                    p.first_name,
+                    '' as middle_name,
+                    p.last_name,
+                    r.activity,
+                    r.require_audit,
+                    r.pending_action,
+                    r.action_taken,
+                    r.status,
+                    r.narrative,
+                    r.table_action,
+                    nullif(r.action_user, '') as action_user,
+                    case
+                        when r.action_taken_at is null then null
+                        else to_char(r.action_taken_at, 'YYYY-MM-DD HH24:MI:SS')
+                    end as action_taken_at,
+                    r.checksum,
+                    r.requested_changes::text as requested_changes
+                from patient_portal_profile_change_requests r
+                join patients p on p.canonical_id = r.patient_id
+                where r.status = 'waiting'
+                  and r.activity = 'profile'
+                  and r.require_audit = 1
+                  and r.pending_action = 'review'
+                order by r.created_at desc, r.id desc;
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var requestedChanges = reader.GetString(reader.GetOrdinal("requested_changes"));
+                var demographics = JsonSerializer.Deserialize<PatientPortalProfileDemographics>(
+                    requestedChanges,
+                    PortalProfileChangeJsonOptions) ?? EmptyRequestedDemographics();
+                var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+                var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+                var middleName = reader.GetString(reader.GetOrdinal("middle_name"));
+                var patientName = string.Join(
+                    " ",
+                    new[] { firstName, middleName, lastName }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+                requests.Add(new AdministrationPortalProfileReviewRequest(
+                    Id: reader.GetString(reader.GetOrdinal("id")),
+                    RequestedAt: reader.GetString(reader.GetOrdinal("requested_at")),
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+                    Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                    FirstName: firstName,
+                    MiddleName: middleName,
+                    LastName: lastName,
+                    PatientName: patientName,
+                    Activity: reader.GetString(reader.GetOrdinal("activity")),
+                    RequireAudit: reader.GetInt32(reader.GetOrdinal("require_audit")),
+                    PendingAction: reader.GetString(reader.GetOrdinal("pending_action")),
+                    ActionTaken: reader.GetString(reader.GetOrdinal("action_taken")),
+                    Status: reader.GetString(reader.GetOrdinal("status")),
+                    Narrative: reader.GetString(reader.GetOrdinal("narrative")),
+                    TableAction: reader.GetString(reader.GetOrdinal("table_action")),
+                    ActionUser: ReadNullableString(reader, "action_user"),
+                    ActionTakenAt: ReadNullableString(reader, "action_taken_at"),
+                    Checksum: reader.GetString(reader.GetOrdinal("checksum")),
+                    RequestedDemographics: demographics));
+            }
+        }
+
+        return new AdministrationPortalActivitySummary(
+            WaitingAuditCount: waitingAuditCount,
+            WaitingProfileReviewCount: waitingProfileReviewCount,
+            ProfileReviewRequests: requests);
+    }
+
     private async Task<int> GetNextStaffIdAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -720,6 +834,28 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             ? returnValue
             : throw new ArgumentException($"Return value '{returnValue}' is not supported.");
     }
+
+    private static PatientPortalProfileDemographics EmptyRequestedDemographics() =>
+        new(
+            FirstName: string.Empty,
+            LastName: string.Empty,
+            PreferredName: null,
+            DateOfBirth: null,
+            Sex: null,
+            Email: null,
+            Street: null,
+            City: null,
+            State: null,
+            PostalCode: null,
+            PhoneHome: null,
+            PhoneCell: null,
+            PhoneContact: null,
+            ContactRelationship: null,
+            MotherName: null,
+            GuardianName: null,
+            GuardianRelationship: null,
+            GuardianPhone: null,
+            GuardianEmail: null);
 
     private static string NormalizeRequired(string? value, string label)
     {

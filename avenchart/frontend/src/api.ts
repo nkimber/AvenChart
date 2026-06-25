@@ -2046,6 +2046,8 @@ export type AdministrationDirectoryCounts = {
   accessPermissions: number
   accessGroupPermissions: number
   accessUserMemberships: number
+  waitingPortalAudits: number
+  waitingProfileReviews: number
 }
 
 export type AdministrationUserItem = {
@@ -2150,6 +2152,35 @@ export type AdministrationAccessControlSummary = {
   userMemberships: AdministrationAccessUserMembershipItem[]
 }
 
+export type AdministrationPortalProfileReviewRequest = {
+  id: string
+  requestedAt: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  firstName: string
+  middleName: string
+  lastName: string
+  patientName: string
+  activity: string
+  requireAudit: number
+  pendingAction: string
+  actionTaken: string
+  status: string
+  narrative: string
+  tableAction: string
+  actionUser?: string | null
+  actionTakenAt?: string | null
+  checksum: string
+  requestedDemographics: PatientPortalProfileDemographics
+}
+
+export type AdministrationPortalActivitySummary = {
+  waitingAuditCount: number
+  waitingProfileReviewCount: number
+  profileReviewRequests: AdministrationPortalProfileReviewRequest[]
+}
+
 export type AdministrationDirectoryResponse = {
   datasetId: string
   datasetVersion: string
@@ -2157,6 +2188,7 @@ export type AdministrationDirectoryResponse = {
   users: AdministrationUserItem[]
   facilities: AdministrationFacilityItem[]
   accessControl: AdministrationAccessControlSummary
+  portalActivity: AdministrationPortalActivitySummary
 }
 
 export type AdministrationFacilityMutationResponse = {
