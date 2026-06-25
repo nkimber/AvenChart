@@ -1395,6 +1395,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
         var sentMessage = new PatientPortalMessageItem(
             Id: nextId.ToString(),
+            Type: "Message",
             Date: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
             Title: title,
             Body: body,
@@ -1512,6 +1513,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var messageDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
         var sentMessage = new PatientPortalMessageItem(
             Id: nextId.ToString(),
+            Type: "Message",
             Date: messageDate,
             Title: original.Item.Title,
             Body: body,
@@ -1712,7 +1714,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             where id = @message_id
               and owner = @portal_username
               and deleted = 0
-            returning id, message_date, title, body, message_status, assigned_to, portal_relation,
+            returning id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted;
             """;
         command.Parameters.Add("message_id", NpgsqlDbType.Integer).Value = messageId;
@@ -1793,10 +1795,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                   deleted = 1
               where owner = @portal_username
                 and (mail_chain = @message_id or id = @message_id)
-              returning id, message_date, title, body, message_status, assigned_to, portal_relation,
+              returning id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
                 mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             )
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from updated
             order by message_date asc, id asc;
@@ -1894,12 +1896,12 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
               from selected
               where messages.owner = @portal_username
                 and (messages.mail_chain = selected.archive_id or messages.id = selected.archive_id)
-              returning messages.id, messages.message_date, messages.title, messages.body, messages.message_status,
+              returning messages.id, 'Message' as type, messages.message_date, messages.title, messages.body, messages.message_status,
                 messages.assigned_to, messages.portal_relation, messages.mail_chain, messages.sender_id,
                 messages.sender_name, messages.recipient_id, messages.recipient_name, messages.reply_mail_chain,
                 messages.is_encrypted
             )
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from updated
             order by message_date asc, id asc;
@@ -4970,7 +4972,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var folderPredicate = GetPortalMessageFolderPredicate(folder);
         var deletedPredicate = folder == PortalMessageFolder.Deleted ? "deleted = 1" : "deleted = 0";
         command.CommandText = $"""
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
             where {deletedPredicate} and {folderPredicate}
@@ -4979,13 +4981,89 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("portal_username", portalUsername);
 
         var messages = new List<PatientPortalMessageItem>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                messages.Add(ReadPortalMessageItem(reader));
+            }
+        }
+
+        if (folder is PortalMessageFolder.Inbox or PortalMessageFolder.All)
+        {
+            var notifications = await GetPortalNotificationMessagesAsync(connection, portalUsername, cancellationToken);
+            messages.AddRange(notifications);
+        }
+
+        return messages
+            .OrderByDescending(message => message.Date, StringComparer.Ordinal)
+            .ThenByDescending(message => int.TryParse(message.Id, out var id) ? id : 0)
+            .ToArray();
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageItem>> GetPortalNotificationMessagesAsync(
+        NpgsqlConnection connection,
+        string portalUsername,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              pr.id::int as id,
+              'Notification' as type,
+              pr.date_created::date as message_date,
+              coalesce(nullif(pr.due_status, ''), 'Reminder') as title,
+              concat(
+                case pr.category
+                  when 'act_cat_assess' then 'Assessment'
+                  when 'act_cat_edu' then 'Education'
+                  when 'act_cat_exam' then 'Examination'
+                  when 'act_cat_inter' then 'Intervention'
+                  when 'act_cat_measure' then 'Measurement'
+                  when 'act_cat_treat' then 'Treatment'
+                  when 'act_cat_remind' then 'Reminder'
+                  else pr.category
+                end,
+                ':',
+                case pr.item
+                  when 'act_appointment' then 'Appointment'
+                  when 'act_bp' then 'Blood Pressure'
+                  when 'act_influvacc' then 'Influenza Vaccine'
+                  when 'act_tobacco' then 'Tobacco'
+                  when 'act_wt' then 'Weight'
+                  when 'act_bmi' then 'BMI'
+                  when 'act_nutrition' then 'Nutrition'
+                  when 'act_exercise' then 'Exercise'
+                  else pr.item
+                end
+              ) as body,
+              '' as message_status,
+              '' as assigned_to,
+              'portal:patient-reminder' as portal_relation,
+              pr.id::int as mail_chain,
+              '' as sender_id,
+              'Patient Reminders' as sender_name,
+              @portal_username as recipient_id,
+              '' as recipient_name,
+              pr.id::int as reply_mail_chain,
+              false as is_encrypted
+            from patient_reminders pr
+            join patient_portal_accounts ppa on ppa.pid = pr.pid
+            where ppa.portal_username = @portal_username
+              and pr.active = 1
+              and pr.date_created > current_timestamp - interval '1 month'
+            order by pr.date_created desc, pr.id desc;
+            """;
+        command.Parameters.AddWithValue("portal_username", portalUsername);
+
+        var notifications = new List<PatientPortalMessageItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            messages.Add(ReadPortalMessageItem(reader));
+            notifications.Add(ReadPortalMessageItem(reader));
         }
 
-        return messages;
+        return notifications;
     }
 
     private static async Task<PortalMailboxMessageRow?> GetPortalOwnedMessageAsync(
@@ -4996,7 +5074,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
             where deleted = 0
@@ -5023,7 +5101,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
             where deleted = 0
@@ -5054,7 +5132,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, message_date, title, body, message_status, assigned_to, portal_relation,
+            select id, 'Message' as type, message_date, title, body, message_status, assigned_to, portal_relation,
               mail_chain, sender_id, sender_name, recipient_id, recipient_name, reply_mail_chain, is_encrypted
             from portal_mailbox_messages
             where deleted = 0
@@ -5086,6 +5164,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         return new PatientPortalMessageItem(
             Id: reader.GetInt32(reader.GetOrdinal("id")).ToString(),
+            Type: ReadNullableString(reader, "type") ?? "Message",
             Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("message_date")).ToString("yyyy-MM-dd"),
             Title: ReadNullableString(reader, "title") ?? string.Empty,
             Body: body,
@@ -5176,6 +5255,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         PortalMessageFolder folder,
         CancellationToken cancellationToken)
     {
+        if (folder is PortalMessageFolder.Inbox or PortalMessageFolder.All)
+        {
+            return (await GetPortalMessagesAsync(connection, portalUsername, folder, cancellationToken)).Count;
+        }
+
         await using var command = connection.CreateCommand();
         var folderPredicate = GetPortalMessageFolderPredicate(folder);
         var deletedPredicate = folder == PortalMessageFolder.Deleted ? "deleted = 1" : "deleted = 0";

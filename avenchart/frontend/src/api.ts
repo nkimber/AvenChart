@@ -2896,6 +2896,7 @@ export type PatientPortalAppointmentRequestResponse = {
 
 export type PatientPortalMessageItem = {
   id: string
+  type: string
   date: string
   title: string
   body: string

@@ -5274,7 +5274,7 @@ function PatientPortalWorkspace({
       ...(portalMessages?.messages ?? []),
       ...(portalMessages?.sentMessages ?? []),
       ...(portalMessages?.allMessages ?? []),
-    ],
+    ].filter(isPatientPortalMailboxMessage),
     [portalMessages],
   )
   const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
@@ -6412,6 +6412,8 @@ function PatientPortalWorkspace({
                 <div className="message-list-body" role="region" aria-label="Inbox secure messages">
                   {visibleInboxPortalMessages.map((portalMessage) => {
                     const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
+                    const isMailboxMessage = isPatientPortalMailboxMessage(portalMessage)
+                    const messageTypeLabel = getPortalMessageTypeLabel(portalMessage)
                     return (
                     <article className="message-item" key={portalMessage.id}>
                       <div className="message-item-header">
@@ -6420,7 +6422,7 @@ function PatientPortalWorkspace({
                             type="checkbox"
                             checked={selectedPortalMessageIdSet.has(portalMessage.id)}
                             onChange={(event) => togglePortalMessageSelection(portalMessage.id, event.target.checked)}
-                            disabled={!authenticated || busy}
+                            disabled={!authenticated || busy || !isMailboxMessage}
                             aria-label={`Select secure message ${portalMessage.title}`}
                           />
                         </label>
@@ -6431,106 +6433,117 @@ function PatientPortalWorkspace({
                           </span>
                         </div>
                         <span className={status === 'New' ? 'status-pill active' : 'status-pill'}>
-                          {status || 'Status pending'}
+                          {isMailboxMessage ? (status || 'Status pending') : messageTypeLabel}
                         </span>
                       </div>
                       <SecureMessageBody body={portalMessage.body} />
                       <div className="message-meta-row">
-                        <span>{portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message'}</span>
+                        <span>{isMailboxMessage
+                          ? (portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message')
+                          : 'Patient reminder notification'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
                         <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                       </div>
-                      <div className="contact-actions">
-                        <button
-                          className="icon-text-button"
-                          type="button"
-                          onClick={() => void onLoadThread(portalMessage.id)}
-                          disabled={!authenticated || busy}
-                        >
-                          <Mail size={15} />
-                          <span>View thread</span>
-                        </button>
-                        {status === 'New' && (
-                          <button
-                            className="icon-text-button"
-                            type="button"
-                            onClick={() => void onMarkRead(portalMessage.id)}
-                            disabled={!authenticated || busy}
-                          >
-                            <Check size={15} />
-                            <span>Mark read</span>
-                          </button>
-                        )}
-                        <button
-                          className="icon-text-button"
-                          type="button"
-                          onClick={() => void onDeleteMessage(portalMessage.id)}
-                          disabled={!authenticated || busy}
-                        >
-                          <Trash2 size={15} />
-                          <span>Archive message</span>
-                        </button>
-                      </div>
-                      <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
-                      <form
-                        className="contact-form portal-reply-form"
-                        aria-label={`Reply to ${portalMessage.title}`}
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          void onReplySubmit(portalMessage.id)
-                        }}
-                      >
-                        <label className="contact-field">
-                          <span>Reply</span>
-                          <textarea
-                            value={replyBodies[portalMessage.id] ?? ''}
-                            onChange={(event) => onReplyBodyChange(portalMessage.id, event.target.value)}
-                            aria-label={`Reply to ${portalMessage.title}`}
-                            disabled={!authenticated || busy}
-                            rows={3}
-                          />
-                        </label>
-                        <div className="contact-actions">
-                          <button
-                            className="icon-text-button"
-                            type="submit"
-                            disabled={!authenticated || busy || (replyBodies[portalMessage.id] ?? '').trim() === ''}
-                          >
-                            <Reply size={15} />
-                            <span>Send reply</span>
-                          </button>
-                        </div>
-                      </form>
-                      {portalMessage.senderId !== home.portalUsername && (
-                        <form
-                          className="contact-form portal-reply-form"
-                          aria-label={`Forward ${portalMessage.title} to practice`}
-                          onSubmit={(event) => {
-                            event.preventDefault()
-                            void onForwardSubmit(portalMessage.id)
-                          }}
-                        >
-                          <label className="contact-field">
-                            <span>Forward to practice</span>
-                            <textarea
-                              value={forwardBodies[portalMessage.id] ?? ''}
-                              onChange={(event) => onForwardBodyChange(portalMessage.id, event.target.value)}
-                              aria-label={`Forward ${portalMessage.title} to practice`}
-                              disabled={!authenticated || busy}
-                              rows={3}
-                            />
-                          </label>
+                      {isMailboxMessage ? (
+                        <>
                           <div className="contact-actions">
                             <button
                               className="icon-text-button"
-                              type="submit"
-                              disabled={!authenticated || busy || (forwardBodies[portalMessage.id] ?? '').trim() === ''}
+                              type="button"
+                              onClick={() => void onLoadThread(portalMessage.id)}
+                              disabled={!authenticated || busy}
                             >
-                              <Forward size={15} />
-                              <span>Forward to practice</span>
+                              <Mail size={15} />
+                              <span>View thread</span>
+                            </button>
+                            {status === 'New' && (
+                              <button
+                                className="icon-text-button"
+                                type="button"
+                                onClick={() => void onMarkRead(portalMessage.id)}
+                                disabled={!authenticated || busy}
+                              >
+                                <Check size={15} />
+                                <span>Mark read</span>
+                              </button>
+                            )}
+                            <button
+                              className="icon-text-button"
+                              type="button"
+                              onClick={() => void onDeleteMessage(portalMessage.id)}
+                              disabled={!authenticated || busy}
+                            >
+                              <Trash2 size={15} />
+                              <span>Archive message</span>
                             </button>
                           </div>
-                        </form>
+                          <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
+                          <form
+                            className="contact-form portal-reply-form"
+                            aria-label={`Reply to ${portalMessage.title}`}
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void onReplySubmit(portalMessage.id)
+                            }}
+                          >
+                            <label className="contact-field">
+                              <span>Reply</span>
+                              <textarea
+                                value={replyBodies[portalMessage.id] ?? ''}
+                                onChange={(event) => onReplyBodyChange(portalMessage.id, event.target.value)}
+                                aria-label={`Reply to ${portalMessage.title}`}
+                                disabled={!authenticated || busy}
+                                rows={3}
+                              />
+                            </label>
+                            <div className="contact-actions">
+                              <button
+                                className="icon-text-button"
+                                type="submit"
+                                disabled={!authenticated || busy || (replyBodies[portalMessage.id] ?? '').trim() === ''}
+                              >
+                                <Reply size={15} />
+                                <span>Send reply</span>
+                              </button>
+                            </div>
+                          </form>
+                          {portalMessage.senderId !== home.portalUsername && (
+                            <form
+                              className="contact-form portal-reply-form"
+                              aria-label={`Forward ${portalMessage.title} to practice`}
+                              onSubmit={(event) => {
+                                event.preventDefault()
+                                void onForwardSubmit(portalMessage.id)
+                              }}
+                            >
+                              <label className="contact-field">
+                                <span>Forward to practice</span>
+                                <textarea
+                                  value={forwardBodies[portalMessage.id] ?? ''}
+                                  onChange={(event) => onForwardBodyChange(portalMessage.id, event.target.value)}
+                                  aria-label={`Forward ${portalMessage.title} to practice`}
+                                  disabled={!authenticated || busy}
+                                  rows={3}
+                                />
+                              </label>
+                              <div className="contact-actions">
+                                <button
+                                  className="icon-text-button"
+                                  type="submit"
+                                  disabled={!authenticated || busy || (forwardBodies[portalMessage.id] ?? '').trim() === ''}
+                                >
+                                  <Forward size={15} />
+                                  <span>Forward to practice</span>
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </>
+                      ) : (
+                        <div className="message-meta-row">
+                          <span>Notification</span>
+                          <span>Read-only reminder</span>
+                        </div>
                       )}
                     </article>
                     )
@@ -6633,6 +6646,8 @@ function PatientPortalWorkspace({
                   {visibleAllPortalMessages.map((portalMessage) => {
                     const patientAuthored = portalMessage.senderId === home.portalUsername
                     const status = getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet)
+                    const isMailboxMessage = isPatientPortalMailboxMessage(portalMessage)
+                    const messageTypeLabel = getPortalMessageTypeLabel(portalMessage)
                     return (
                       <article className="message-item" key={portalMessage.id}>
                         <div className="message-item-header">
@@ -6641,7 +6656,7 @@ function PatientPortalWorkspace({
                               type="checkbox"
                               checked={selectedPortalMessageIdSet.has(portalMessage.id)}
                               onChange={(event) => togglePortalMessageSelection(portalMessage.id, event.target.checked)}
-                              disabled={!authenticated || busy}
+                              disabled={!authenticated || busy || !isMailboxMessage}
                               aria-label={`Select all-folder secure message ${portalMessage.title}`}
                             />
                           </label>
@@ -6654,47 +6669,58 @@ function PatientPortalWorkspace({
                             </span>
                           </div>
                           <span className={status === 'New' ? 'status-pill active' : 'status-pill'}>
-                            {status || 'Status pending'}
+                            {isMailboxMessage ? (status || 'Status pending') : messageTypeLabel}
                           </span>
                         </div>
                         <SecureMessageBody body={portalMessage.body} />
                         <div className="message-meta-row">
-                          <span>{patientAuthored ? 'Patient sent message' : 'Care team message'}</span>
+                          <span>{isMailboxMessage
+                            ? (patientAuthored ? 'Patient sent message' : 'Care team message')
+                            : 'Patient reminder notification'}</span>
                           <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
                           <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                         </div>
-                        <div className="contact-actions">
-                          <button
-                            className="icon-text-button"
-                            type="button"
-                            onClick={() => void onLoadThread(portalMessage.id)}
-                            disabled={!authenticated || busy}
-                          >
-                            <Mail size={15} />
-                            <span>View thread</span>
-                          </button>
-                          {status === 'New' && (
-                            <button
-                              className="icon-text-button"
-                              type="button"
-                              onClick={() => void onMarkRead(portalMessage.id)}
-                              disabled={!authenticated || busy}
-                            >
-                              <Check size={15} />
-                              <span>Mark read</span>
-                            </button>
-                          )}
-                          <button
-                            className="icon-text-button"
-                            type="button"
-                            onClick={() => void onDeleteMessage(portalMessage.id)}
-                            disabled={!authenticated || busy}
-                          >
-                            <Trash2 size={15} />
-                            <span>Archive message</span>
-                          </button>
-                        </div>
-                        <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
+                        {isMailboxMessage ? (
+                          <>
+                            <div className="contact-actions">
+                              <button
+                                className="icon-text-button"
+                                type="button"
+                                onClick={() => void onLoadThread(portalMessage.id)}
+                                disabled={!authenticated || busy}
+                              >
+                                <Mail size={15} />
+                                <span>View thread</span>
+                              </button>
+                              {status === 'New' && (
+                                <button
+                                  className="icon-text-button"
+                                  type="button"
+                                  onClick={() => void onMarkRead(portalMessage.id)}
+                                  disabled={!authenticated || busy}
+                                >
+                                  <Check size={15} />
+                                  <span>Mark read</span>
+                                </button>
+                              )}
+                              <button
+                                className="icon-text-button"
+                                type="button"
+                                onClick={() => void onDeleteMessage(portalMessage.id)}
+                                disabled={!authenticated || busy}
+                              >
+                                <Trash2 size={15} />
+                                <span>Archive message</span>
+                              </button>
+                            </div>
+                            <PatientPortalThreadPanel thread={threads[portalMessage.id]} portalUsername={home.portalUsername} />
+                          </>
+                        ) : (
+                          <div className="message-meta-row">
+                            <span>Notification</span>
+                            <span>Read-only reminder</span>
+                          </div>
+                        )}
                       </article>
                     )
                   })}
@@ -7030,6 +7056,14 @@ function getPortalMessageStatus(message: PatientPortalMessageItem, locallyReadMe
   }
 
   return message.status || ''
+}
+
+function getPortalMessageTypeLabel(message: PatientPortalMessageItem) {
+  return message.type || 'Message'
+}
+
+function isPatientPortalMailboxMessage(message: PatientPortalMessageItem) {
+  return getPortalMessageTypeLabel(message) === 'Message'
 }
 
 function getSecureMessagePageCount(messageCount: number) {

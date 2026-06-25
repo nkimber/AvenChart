@@ -697,6 +697,7 @@ public sealed record PatientPortalMessageThreadResponse(
 
 public sealed record PatientPortalMessageItem(
     string Id,
+    string Type,
     string Date,
     string Title,
     string Body,

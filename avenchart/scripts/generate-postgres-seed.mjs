@@ -239,6 +239,7 @@ drop table if exists medications;
 drop table if exists allergies;
 drop table if exists problems;
 drop table if exists patient_documents;
+drop table if exists patient_reminders;
 drop table if exists portal_mailbox_messages;
 drop table if exists messages;
 drop table if exists lab_results;
@@ -1031,6 +1032,23 @@ create table portal_mailbox_messages (
   reply_mail_chain integer not null,
   is_encrypted boolean not null default false,
   deleted integer not null default 0
+);
+
+create table patient_reminders (
+  id integer primary key,
+  active integer not null default 1,
+  date_inactivated timestamp,
+  reason_inactivated text not null default '',
+  due_status text not null default '',
+  pid integer not null,
+  category text not null default '',
+  item text not null default '',
+  date_created timestamp,
+  date_sent timestamp,
+  voice_status integer not null default 0,
+  sms_status integer not null default 0,
+  email_status integer not null default 0,
+  mail_status integer not null default 0
 );
 
 create table patient_documents (
@@ -2260,6 +2278,7 @@ create index idx_lab_results_date on lab_results (result_date);
 create index idx_messages_pid on messages (pid);
 create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);
 create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);
+create index idx_patient_reminders_pid_active_created on patient_reminders (pid, active, date_created desc);
 create index idx_patient_portal_report_audit_patient_created on patient_portal_report_audit_events (patient_id, created_at desc, id desc);
 create index idx_patient_portal_report_audit_session on patient_portal_report_audit_events (session_id);
 create index idx_patient_portal_message_audit_patient_created on patient_portal_message_audit_events (patient_id, created_at desc, id desc);
