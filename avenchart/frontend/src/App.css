@@ -1729,6 +1729,7 @@
   justify-content: center;
   min-width: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .document-thumbnail-image-preview {
@@ -1736,6 +1737,19 @@
   height: 100%;
   object-fit: contain;
   width: 100%;
+}
+
+.document-thumbnail-badge {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 4px;
+  bottom: 4px;
+  color: #27465c;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 2px 4px;
+  position: absolute;
+  right: 4px;
 }
 
 .document-thumbnail-pdf {

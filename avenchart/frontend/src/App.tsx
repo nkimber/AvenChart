@@ -19513,11 +19513,14 @@ function DocumentItem({
       <div className="document-preview-readiness">
         <div className={`document-thumbnail document-thumbnail-${document.previewKind || 'file'}`} aria-label={`Document preview ${document.thumbnailLabel || 'DOC'}`}>
           {document.thumbnailDataUri ? (
-            <img
-              alt={`${document.name} thumbnail`}
-              className="document-thumbnail-image-preview"
-              src={document.thumbnailDataUri}
-            />
+            <>
+              <img
+                alt={`${document.name} thumbnail`}
+                className="document-thumbnail-image-preview"
+                src={document.thumbnailDataUri}
+              />
+              <span className="document-thumbnail-badge">{document.thumbnailLabel || 'DOC'}</span>
+            </>
           ) : (
             <span>{document.thumbnailLabel || 'DOC'}</span>
           )}
