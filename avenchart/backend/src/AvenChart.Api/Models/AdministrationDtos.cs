@@ -81,6 +81,20 @@ public sealed record AdministrationPortalProfileReviewRequest(
     string Checksum,
     PatientPortalProfileDemographics RequestedDemographics);
 
+public sealed record AdministrationPortalProfileReviewMutationResponse(
+    string Id,
+    string PatientId,
+    int LegacyPid,
+    string Status,
+    string PendingAction,
+    string ActionTaken,
+    string Narrative,
+    string TableAction,
+    string ActionUser,
+    string ActionTakenAt,
+    PatientPortalProfileDemographics RequestedDemographics,
+    AdministrationDirectoryResponse Detail);
+
 public sealed record AdministrationAccessGroupItem(
     int Id,
     string Value,

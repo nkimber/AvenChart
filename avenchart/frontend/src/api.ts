@@ -2181,6 +2181,21 @@ export type AdministrationPortalActivitySummary = {
   profileReviewRequests: AdministrationPortalProfileReviewRequest[]
 }
 
+export type AdministrationPortalProfileReviewMutationResponse = {
+  id: string
+  patientId: string
+  legacyPid: number
+  status: string
+  pendingAction: string
+  actionTaken: string
+  narrative: string
+  tableAction: string
+  actionUser: string
+  actionTakenAt: string
+  requestedDemographics: PatientPortalProfileDemographics
+  detail: AdministrationDirectoryResponse
+}
+
 export type AdministrationDirectoryResponse = {
   datasetId: string
   datasetVersion: string
@@ -6266,6 +6281,26 @@ export async function getAdministrationDirectory(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Administration directory load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function acceptAdministrationPortalProfileReview(
+  requestId: string | number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/administration/portal-activity/profile-reviews/${encodeURIComponent(String(requestId))}/accept`,
+    {
+      method: 'PUT',
+      headers: buildLegacyEhrSessionHeaders(sessionId),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(adminApiError('Portal profile review accept', response.status))
   }
 
   return response.json()

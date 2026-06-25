@@ -2408,6 +2408,22 @@ administration.MapGet("/directory", async (
     })
     .WithName("GetAdministrationDirectory");
 
+administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/accept", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        long requestId,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.AcceptPortalProfileReviewAsync(
+            requestId,
+            session.Username,
+            cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("AcceptAdministrationPortalProfileReview");
+
 administration.MapPost("/users", async (
         AdministrationRepository repository,
         AdministrationUserMutationRequest request,

@@ -44,6 +44,7 @@ import {
 import {
   getAppointmentDetail,
   getAdministrationDirectory,
+  acceptAdministrationPortalProfileReview,
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
@@ -3488,6 +3489,25 @@ function App() {
     }
   }
 
+  async function handleAdministrationPortalProfileReviewAccept(request: AdministrationPortalProfileReviewRequest) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await acceptAdministrationPortalProfileReview(request.id, sessionId)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (acceptError) {
+      setAdministrationStatus('error')
+      const message = acceptError instanceof Error ? acceptError.message : 'Portal profile review accept failed'
+      setAdministrationError(message)
+      throw acceptError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -5027,6 +5047,7 @@ function App() {
             onRevokeAccessPermission={handleAdministrationAccessPermissionRevoke}
             onGrantAccessMembership={handleAdministrationAccessUserMembershipGrant}
             onRevokeAccessMembership={handleAdministrationAccessUserMembershipRevoke}
+            onAcceptPortalProfileReview={handleAdministrationPortalProfileReviewAccept}
             onAdminSessionActive={(sessionId) => {
               setLegacyEhrSessionId(sessionId)
               setAdministrationRefreshKey((current) => current + 1)
@@ -18354,6 +18375,7 @@ function AdministrationWorkspace({
   onRevokeAccessPermission,
   onGrantAccessMembership,
   onRevokeAccessMembership,
+  onAcceptPortalProfileReview,
   onAdminSessionActive,
   onAdminSessionEnded,
 }: {
@@ -18376,6 +18398,7 @@ function AdministrationWorkspace({
   onRevokeAccessPermission: (input: AdministrationAccessPermissionMutationInput) => Promise<unknown>
   onGrantAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
   onRevokeAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
+  onAcceptPortalProfileReview: (request: AdministrationPortalProfileReviewRequest) => Promise<unknown>
   onAdminSessionActive: (sessionId: string) => void
   onAdminSessionEnded: () => void
 }) {
@@ -18433,6 +18456,7 @@ function AdministrationWorkspace({
   const [loginAudit, setLoginAudit] = useState<AuthAuditResponse | null>(null)
   const [loginAuditStatus, setLoginAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
+  const [portalReviewActionId, setPortalReviewActionId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authSession?.authenticated || !authSession.sessionId) {
@@ -18644,6 +18668,17 @@ function AdministrationWorkspace({
     setMutationMessage(`Revoked ${accessMembershipDraft.userValue} from ${accessMembershipDraft.groupValue}`)
   }
 
+  async function handlePortalProfileReviewAccept(request: AdministrationPortalProfileReviewRequest) {
+    setMutationMessage(null)
+    setPortalReviewActionId(request.id)
+    try {
+      await onAcceptPortalProfileReview(request)
+      setMutationMessage(`Committed ${request.patientName || request.pubpid} profile edits to chart`)
+    } finally {
+      setPortalReviewActionId(null)
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Administration summary">
@@ -18707,7 +18742,12 @@ function AdministrationWorkspace({
               {directory.portalActivity.profileReviewRequests.length > 0 ? (
                 <div className="review-queue-list">
                   {directory.portalActivity.profileReviewRequests.map((request) => (
-                    <PortalProfileReviewCard key={request.id} request={request} />
+                    <PortalProfileReviewCard
+                      key={request.id}
+                      request={request}
+                      isAccepting={portalReviewActionId === request.id}
+                      onAccept={handlePortalProfileReviewAccept}
+                    />
                   ))}
                 </div>
               ) : (
@@ -21668,7 +21708,15 @@ function Field({ label, value }: { label: string; value?: string | number | null
   )
 }
 
-function PortalProfileReviewCard({ request }: { request: AdministrationPortalProfileReviewRequest }) {
+function PortalProfileReviewCard({
+  request,
+  isAccepting,
+  onAccept,
+}: {
+  request: AdministrationPortalProfileReviewRequest
+  isAccepting: boolean
+  onAccept: (request: AdministrationPortalProfileReviewRequest) => Promise<void>
+}) {
   return (
     <article className="review-queue-card">
       <div className="review-queue-card-main">
@@ -21677,7 +21725,18 @@ function PortalProfileReviewCard({ request }: { request: AdministrationPortalPro
           <h4>{request.patientName}</h4>
           <p>{request.pubpid} - PID {request.legacyPid}</p>
         </div>
-        <span className="status-pill">{request.status}</span>
+        <div className="queue-card-actions">
+          <span className="status-pill">{request.status}</span>
+          <button
+            type="button"
+            className="icon-text-button primary compact"
+            disabled={isAccepting}
+            onClick={() => void onAccept(request)}
+          >
+            <Check size={15} />
+            <span>{isAccepting ? 'Committing' : 'Commit to Chart'}</span>
+          </button>
+        </div>
       </div>
       <div className="review-queue-card-grid">
         <Field label="Requested" value={request.requestedAt} />

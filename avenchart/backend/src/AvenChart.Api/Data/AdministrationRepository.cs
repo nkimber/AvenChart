@@ -49,6 +49,158 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             PortalActivity: portalActivity);
     }
 
+    public async Task<AdministrationPortalProfileReviewMutationResponse?> AcceptPortalProfileReviewAsync(
+        long requestId,
+        string actionUser,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var findCommand = connection.CreateCommand();
+        findCommand.Transaction = transaction;
+        findCommand.CommandText = """
+            select
+                id::text,
+                patient_id,
+                pid,
+                requested_changes::text as requested_changes
+            from patient_portal_profile_change_requests
+            where id = @id
+              and status = 'waiting'
+              and activity = 'profile'
+              and require_audit = 1
+              and pending_action = 'review'
+            for update;
+            """;
+        findCommand.Parameters.Add("id", NpgsqlDbType.Bigint).Value = requestId;
+
+        string id;
+        string patientId;
+        int legacyPid;
+        PatientPortalProfileDemographics requestedDemographics;
+        await using (var reader = await findCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            id = reader.GetString(reader.GetOrdinal("id"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            requestedDemographics = JsonSerializer.Deserialize<PatientPortalProfileDemographics>(
+                reader.GetString(reader.GetOrdinal("requested_changes")),
+                PortalProfileChangeJsonOptions) ?? EmptyRequestedDemographics();
+        }
+
+        await using (var updatePatientCommand = connection.CreateCommand())
+        {
+            updatePatientCommand.Transaction = transaction;
+            updatePatientCommand.CommandText = """
+                update patients
+                set first_name = @first_name,
+                    last_name = @last_name,
+                    preferred_name = @preferred_name,
+                    date_of_birth = coalesce(@date_of_birth, date_of_birth),
+                    sex = @sex,
+                    email = @email,
+                    street = @street,
+                    city = @city,
+                    state = @state,
+                    postal_code = @postal_code,
+                    phone_home = @phone_home,
+                    phone_cell = @phone_cell,
+                    phone = @phone_contact,
+                    guardian_relationship = @guardian_relationship,
+                    mother_name = @mother_name,
+                    guardian_name = @guardian_name,
+                    guardian_phone = @guardian_phone,
+                    guardian_email = @guardian_email
+                where canonical_id = @patient_id;
+                """;
+            updatePatientCommand.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = patientId;
+            updatePatientCommand.Parameters.Add("first_name", NpgsqlDbType.Text).Value =
+                NormalizeRequired(requestedDemographics.FirstName, "First name");
+            updatePatientCommand.Parameters.Add("last_name", NpgsqlDbType.Text).Value =
+                NormalizeRequired(requestedDemographics.LastName, "Last name");
+            AddNullableText(updatePatientCommand, "preferred_name", requestedDemographics.PreferredName);
+            AddNullableDate(updatePatientCommand, "date_of_birth", requestedDemographics.DateOfBirth);
+            AddNullableText(updatePatientCommand, "sex", requestedDemographics.Sex);
+            AddNullableText(updatePatientCommand, "email", requestedDemographics.Email);
+            AddNullableText(updatePatientCommand, "street", requestedDemographics.Street);
+            AddNullableText(updatePatientCommand, "city", requestedDemographics.City);
+            AddNullableText(updatePatientCommand, "state", requestedDemographics.State);
+            AddNullableText(updatePatientCommand, "postal_code", requestedDemographics.PostalCode);
+            AddNullableText(updatePatientCommand, "phone_home", requestedDemographics.PhoneHome);
+            AddNullableText(updatePatientCommand, "phone_cell", requestedDemographics.PhoneCell);
+            AddNullableText(updatePatientCommand, "phone_contact", requestedDemographics.PhoneContact);
+            AddNullableText(
+                updatePatientCommand,
+                "guardian_relationship",
+                requestedDemographics.GuardianRelationship ?? requestedDemographics.ContactRelationship);
+            AddNullableText(updatePatientCommand, "mother_name", requestedDemographics.MotherName);
+            AddNullableText(updatePatientCommand, "guardian_name", requestedDemographics.GuardianName);
+            AddNullableText(updatePatientCommand, "guardian_phone", requestedDemographics.GuardianPhone);
+            AddNullableText(updatePatientCommand, "guardian_email", requestedDemographics.GuardianEmail);
+
+            if (await updatePatientCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+        }
+
+        const string acceptedStatus = "closed";
+        const string acceptedPendingAction = "completed";
+        const string acceptedActionTaken = "accept";
+        const string acceptedNarrative = "Changes reviewed and committed to demographics.";
+        const string acceptedTableAction = "update";
+        string acceptedAt;
+        await using (var updateRequestCommand = connection.CreateCommand())
+        {
+            updateRequestCommand.Transaction = transaction;
+            updateRequestCommand.CommandText = """
+                update patient_portal_profile_change_requests
+                set pending_action = @pending_action,
+                    action_taken = @action_taken,
+                    status = @status,
+                    narrative = @narrative,
+                    table_action = @table_action,
+                    action_user = @action_user,
+                    action_taken_at = now(),
+                    updated_at = now()
+                where id = @id
+                returning to_char(action_taken_at, 'YYYY-MM-DD HH24:MI:SS') as action_taken_at;
+                """;
+            updateRequestCommand.Parameters.Add("id", NpgsqlDbType.Bigint).Value = requestId;
+            updateRequestCommand.Parameters.Add("pending_action", NpgsqlDbType.Text).Value = acceptedPendingAction;
+            updateRequestCommand.Parameters.Add("action_taken", NpgsqlDbType.Text).Value = acceptedActionTaken;
+            updateRequestCommand.Parameters.Add("status", NpgsqlDbType.Text).Value = acceptedStatus;
+            updateRequestCommand.Parameters.Add("narrative", NpgsqlDbType.Text).Value = acceptedNarrative;
+            updateRequestCommand.Parameters.Add("table_action", NpgsqlDbType.Text).Value = acceptedTableAction;
+            updateRequestCommand.Parameters.Add("action_user", NpgsqlDbType.Text).Value = NormalizeRequired(actionUser, "Action user");
+            acceptedAt = (string)(await updateRequestCommand.ExecuteScalarAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Profile review accept did not return an action timestamp."));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AdministrationPortalProfileReviewMutationResponse(
+            Id: id,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Status: acceptedStatus,
+            PendingAction: acceptedPendingAction,
+            ActionTaken: acceptedActionTaken,
+            Narrative: acceptedNarrative,
+            TableAction: acceptedTableAction,
+            ActionUser: NormalizeRequired(actionUser, "Action user"),
+            ActionTakenAt: acceptedAt,
+            RequestedDemographics: requestedDemographics,
+            Detail: await GetDirectoryAsync(cancellationToken));
+    }
+
     public async Task<AdministrationUserMutationResponse> CreateUserAsync(
         AdministrationUserMutationRequest request,
         CancellationToken cancellationToken)
@@ -883,6 +1035,12 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add(name, NpgsqlDbType.Integer).Value = value is { } integer
             ? integer
             : DBNull.Value;
+    }
+
+    private static void AddNullableDate(NpgsqlCommand command, string name, string? value)
+    {
+        command.Parameters.Add(name, NpgsqlDbType.Date).Value =
+            DateOnly.TryParse(value, out var date) ? date : (object)DBNull.Value;
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)
