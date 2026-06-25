@@ -603,3 +603,629 @@ export async function downloadPatientPortalGeneratedMedicalReportPdf(
   }
   return response.blob()
 }
+
+// ─── Clinician API ───────────────────────────────────────────────────────────
+
+function clinicianHeaders(sessionId: string): Record<string, string> {
+  return { 'X-Legacy EHR-Session': sessionId, 'content-type': 'application/json' }
+}
+
+async function clinicianGet<T>(sessionId: string, path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: { 'X-Legacy EHR-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`)
+  return response.json()
+}
+
+async function clinicianPost<T>(sessionId: string, path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'POST',
+    headers: clinicianHeaders(sessionId),
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) throw new Error(`POST ${path} failed with ${response.status}`)
+  return response.json()
+}
+
+async function clinicianPut<T>(sessionId: string, path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'PUT',
+    headers: clinicianHeaders(sessionId),
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) throw new Error(`PUT ${path} failed with ${response.status}`)
+  return response.json()
+}
+
+// ── Patients ──────────────────────────────────────────────────────────────────
+
+export type PatientListItem = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  preferredName?: string | null
+  sex?: string | null
+  dateOfBirth: string
+  age: number
+  phone?: string | null
+  phoneCell?: string | null
+  email?: string | null
+  primaryProviderName?: string | null
+  facilityName?: string | null
+  counts: PatientActivityCounts
+}
+
+export type PatientActivityCounts = {
+  appointments: number
+  encounters: number
+  prescriptions: number
+  billingItems: number
+  labOrders: number
+  messages: number
+  problems: number
+  allergies: number
+  medications: number
+}
+
+export type PatientTimelineItem = {
+  id: string
+  date: string
+  time?: string | null
+  title: string
+  status?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+}
+
+export type PatientInsuranceItem = {
+  id: string
+  type?: string | null
+  provider?: string | null
+  planName?: string | null
+  policyNumber?: string | null
+  groupNumber?: string | null
+  relationship?: string | null
+  subscriberFirstName?: string | null
+  subscriberLastName?: string | null
+}
+
+export type PatientCareTeamSummary = {
+  primaryProviderId?: number | null
+  primaryProviderName?: string | null
+  members?: Array<{ displayName: string; role?: string | null }> | null
+}
+
+export type PatientChartSummary = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  preferredName?: string | null
+  sex?: string | null
+  dateOfBirth: string
+  age: number
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  email?: string | null
+  phone?: string | null
+  phoneCell?: string | null
+  maritalStatus?: string | null
+  occupation?: string | null
+  race?: string | null
+  ethnicity?: string | null
+  portalEnabled: boolean
+  registrationDate: string
+  deceasedDate?: string | null
+  primaryProviderName?: string | null
+  facilityName?: string | null
+  careTeam?: PatientCareTeamSummary | null
+  insurance: PatientInsuranceItem[]
+  counts: PatientActivityCounts
+  nextAppointment?: PatientTimelineItem | null
+  latestEncounter?: PatientTimelineItem | null
+}
+
+export type PatientSearchResponse = {
+  totalMatches: number
+  patients: PatientListItem[]
+}
+
+export async function searchPatients(
+  sessionId: string,
+  params: { search?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<PatientSearchResponse> {
+  const q = new URLSearchParams()
+  if (params.search) q.set('search', params.search)
+  if (params.limit) q.set('limit', String(params.limit))
+  return clinicianGet(sessionId, `/api/patients/?${q}`, signal)
+}
+
+export async function getPatientChartSummary(
+  sessionId: string,
+  canonicalId: string,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
+}
+
+// ── Appointments ──────────────────────────────────────────────────────────────
+
+export type AppointmentListItem = {
+  id: string
+  patientId: string
+  patientDisplayName: string
+  pubpid: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  title: string
+  status?: string | null
+  room?: string | null
+  categoryName?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  comments?: string | null
+}
+
+export type AppointmentSearchResponse = {
+  totalMatches: number
+  appointments: AppointmentListItem[]
+}
+
+export async function searchAppointments(
+  sessionId: string,
+  params: { fromDate?: string; toDate?: string; patientId?: string; providerId?: number; limit?: number },
+  signal?: AbortSignal,
+): Promise<AppointmentSearchResponse> {
+  const q = new URLSearchParams()
+  if (params.fromDate) q.set('fromDate', params.fromDate)
+  if (params.toDate) q.set('toDate', params.toDate)
+  if (params.patientId) q.set('patientId', params.patientId)
+  if (params.providerId) q.set('providerId', String(params.providerId))
+  if (params.limit) q.set('limit', String(params.limit))
+  return clinicianGet(sessionId, `/api/appointments/?${q}`, signal)
+}
+
+export async function updateAppointmentStatus(
+  sessionId: string,
+  appointmentId: string,
+  status: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianPut(sessionId, `/api/appointments/${appointmentId}/status`, { status }, signal)
+}
+
+// ── Encounters ────────────────────────────────────────────────────────────────
+
+export type EncounterListItem = {
+  id: number
+  encounter: number
+  patientId: string
+  patientDisplayName: string
+  date: string
+  reason?: string | null
+  diagnosisCode?: string | null
+  diagnosisText?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  hasVitals: boolean
+  hasSoapNote: boolean
+  billingLineCount: number
+}
+
+export type EncounterVitals = {
+  systolic?: number | null
+  diastolic?: number | null
+  bloodPressure?: string | null
+  weight?: number | null
+  height?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  bmi?: number | null
+  oxygenSaturation?: number | null
+}
+
+export type EncounterSoapNote = {
+  subjective?: string | null
+  objective?: string | null
+  assessment?: string | null
+  plan?: string | null
+}
+
+export type EncounterDiagnosisCode = {
+  code: string
+  description?: string | null
+  billingLineCount: number
+}
+
+export type EncounterDetail = {
+  id: number
+  encounter: number
+  patientId: string
+  patientDisplayName: string
+  date: string
+  dateTime: string
+  reason?: string | null
+  diagnosisCode?: string | null
+  diagnosisText?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  sensitivity?: string | null
+  billingNote?: string | null
+  vitals?: EncounterVitals | null
+  soapNote?: EncounterSoapNote | null
+  billingLineCount: number
+  diagnosisCodes: EncounterDiagnosisCode[]
+}
+
+export type EncounterSearchResponse = {
+  totalMatches: number
+  encounters: EncounterListItem[]
+}
+
+export async function searchEncounters(
+  sessionId: string,
+  params: { patientId?: string; fromDate?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<EncounterSearchResponse> {
+  const q = new URLSearchParams()
+  if (params.patientId) q.set('patientId', params.patientId)
+  if (params.fromDate) q.set('fromDate', params.fromDate)
+  if (params.limit) q.set('limit', String(params.limit))
+  return clinicianGet(sessionId, `/api/encounters/?${q}`, signal)
+}
+
+export async function getEncounterDetail(
+  sessionId: string,
+  encounterId: number,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
+  return clinicianGet(sessionId, `/api/encounters/${encounterId}`, signal)
+}
+
+// ── Clinical Lists ────────────────────────────────────────────────────────────
+
+export type ProblemListItem = {
+  id: string
+  title: string
+  diagnosis?: string | null
+  date?: string | null
+  comments?: string | null
+  activity: number
+}
+
+export type AllergyListItem = {
+  id: string
+  title: string
+  reaction?: string | null
+  severity?: string | null
+  date?: string | null
+  activity: number
+}
+
+export type MedicationListItem = {
+  id: string
+  title: string
+  diagnosis?: string | null
+  date?: string | null
+  activity: number
+}
+
+export type ImmunizationListItem = {
+  id: number
+  vaccine: string
+  administeredAt?: string | null
+  manufacturer?: string | null
+  lotNumber?: string | null
+}
+
+export type PrescriptionListItem = {
+  id: string
+  drug: string
+  dosage?: string | null
+  quantity?: string | null
+  route?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  active: number
+  providerName?: string | null
+}
+
+export type ClinicalListsResponse = {
+  patientId: string
+  patientDisplayName: string
+  problems: ProblemListItem[]
+  allergies: AllergyListItem[]
+  medications: MedicationListItem[]
+  immunizations: ImmunizationListItem[]
+  prescriptions: PrescriptionListItem[]
+}
+
+export async function getClinicalLists(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListsResponse> {
+  return clinicianGet(sessionId, `/api/clinical-lists/${patientId}`, signal)
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+export type PatientMessageItem = {
+  id: string
+  date?: string | null
+  title?: string | null
+  body?: string | null
+  status?: string | null
+  assignedTo?: string | null
+  portalRelation?: string | null
+  deleted: number
+}
+
+export type PatientMessagesResponse = {
+  patientId: string
+  patientDisplayName: string
+  portalEnabled: boolean
+  messages: PatientMessageItem[]
+}
+
+export async function getPatientMessages(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  return clinicianGet(sessionId, `/api/messages/${patientId}`, signal)
+}
+
+export async function replyToPatientMessage(
+  sessionId: string,
+  messageId: string,
+  body: { body: string; assignedTo: string },
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  return clinicianPost(sessionId, `/api/messages/${messageId}/reply`, body, signal)
+}
+
+export async function updatePatientMessageStatus(
+  sessionId: string,
+  messageId: string,
+  body: { status: string; body: string },
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  return clinicianPut(sessionId, `/api/messages/${messageId}/status`, body, signal)
+}
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+export type PatientDocumentItem = {
+  id: number
+  categoryName: string
+  name: string
+  docDate: string
+  mimetype?: string | null
+  sizeBytes?: number | null
+  canDownload: boolean
+}
+
+export type PatientDocumentsResponse = {
+  patientId: string
+  patientDisplayName: string
+  documents: PatientDocumentItem[]
+}
+
+export async function getPatientDocuments(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientDocumentsResponse> {
+  return clinicianGet(sessionId, `/api/documents/${patientId}`, signal)
+}
+
+// ── Procedures / Lab Queue ────────────────────────────────────────────────────
+
+export type ProcedureReportQueueItem = {
+  reportId: number
+  orderId: number
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  orderDate: string
+  providerName?: string | null
+  labName?: string | null
+  procedureCode?: string | null
+  procedureName?: string | null
+  reportDate: string
+  reportStatus?: string | null
+  reviewStatus?: string | null
+  reviewedBy?: string | null
+  notes?: string | null
+}
+
+export type ProcedureReportQueueResponse = {
+  totalReports: number
+  unreviewedReports: number
+  reports: ProcedureReportQueueItem[]
+}
+
+export async function getProcedureReportQueue(
+  sessionId: string,
+  params?: { status?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<ProcedureReportQueueResponse> {
+  const q = new URLSearchParams()
+  if (params?.status) q.set('status', params.status)
+  if (params?.limit) q.set('limit', String(params.limit))
+  return clinicianGet(sessionId, `/api/procedures/report-review-queue?${q}`, signal)
+}
+
+export type ProcedureOrderQueueItem = {
+  orderId: number
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  orderDate: string
+  providerName?: string | null
+  labName?: string | null
+  procedureCode?: string | null
+  procedureName?: string | null
+  orderStatus?: string | null
+}
+
+export type ProcedureOrderQueueResponse = {
+  totalOrders: number
+  readyToSendOrders: number
+  reports: ProcedureOrderQueueItem[]
+}
+
+export async function getProcedureOrderQueue(
+  sessionId: string,
+  params?: { status?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<ProcedureOrderQueueResponse> {
+  const q = new URLSearchParams()
+  if (params?.status) q.set('status', params.status)
+  if (params?.limit) q.set('limit', String(params.limit))
+  return clinicianGet(sessionId, `/api/procedures/order-queue?${q}`, signal)
+}
+
+// ── Operational Reports ───────────────────────────────────────────────────────
+
+export type OperationalReportCounts = {
+  patients: number
+  portalPatients: number
+  appointments: number
+  futureAppointments: number
+  currentYearAppointments: number
+  encounters: number
+  currentYearEncounters: number
+  billingLines: number
+  billingTotal: number
+  labReports: number
+  patientDocuments: number
+  messages: number
+  newMessages: number
+  doneMessages: number
+  facilities: number
+  providers: number
+}
+
+export type ProviderActivityReportItem = {
+  username: string
+  displayName: string
+  encounters: number
+  billingTotal: number
+}
+
+export type FacilityActivityReportItem = {
+  code: string
+  name: string
+  appointments: number
+  encounters: number
+  billingTotal: number
+}
+
+export type ClinicalConditionReportItem = {
+  title: string
+  diagnosis: string
+  patients: number
+}
+
+export type OperationalReportsResponse = {
+  asOfDate: string
+  currentYear: number
+  counts: OperationalReportCounts
+  providerActivity: ProviderActivityReportItem[]
+  facilityActivity: FacilityActivityReportItem[]
+  clinicalConditions: ClinicalConditionReportItem[]
+}
+
+export async function getOperationalReports(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<OperationalReportsResponse> {
+  return clinicianGet(sessionId, '/api/reports/operational', signal)
+}
+
+// ── Administration ────────────────────────────────────────────────────────────
+
+export type AdministrationUserItem = {
+  id: number
+  username: string
+  firstName: string
+  lastName: string
+  displayName: string
+  role: string
+  authorized: boolean
+  active: boolean
+  calendar: boolean
+  facilityName?: string | null
+  email?: string | null
+  npi?: string | null
+}
+
+export type AdministrationFacilityItem = {
+  id: number
+  code: string
+  name: string
+  active: boolean
+  phone?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  color?: string | null
+}
+
+export type AdministrationAccessGroupItem = {
+  id: number
+  value: string
+  name: string
+  permissionCount: number
+}
+
+export type AdministrationDirectoryCounts = {
+  users: number
+  providers: number
+  facilities: number
+  accessGroups: number
+  accessGroupPermissions: number
+  accessUserMemberships: number
+}
+
+export type AdministrationDirectoryResponse = {
+  counts: AdministrationDirectoryCounts
+  users: AdministrationUserItem[]
+  facilities: AdministrationFacilityItem[]
+  accessControl: {
+    groups: AdministrationAccessGroupItem[]
+  }
+}
+
+export async function getAdministrationDirectory(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AdministrationDirectoryResponse> {
+  return clinicianGet(sessionId, '/api/administration/directory', signal)
+}
+
+export async function getLoginAudit(
+  sessionId: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<{ entries: Array<{ username: string; at: string; sourceIp?: string | null; success: boolean }> }> {
+  const q = limit ? `?limit=${limit}` : ''
+  return clinicianGet(sessionId, `/api/auth/login-audit${q}`, signal)
+}
