@@ -578,11 +578,26 @@ try {
         -Method Get `
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
+    $portalProfile = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patient-portal/profile" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
+        -TimeoutSec 20
     $portalHomeAppointments = @($portalHome.upcomingAppointments)
     $portalHomeImmunization = @($portalHome.immunizations) | Where-Object {
         $_.codeText -eq "Influenza, seasonal, injectable" -and
         $_.cvxCode -eq "141" -and
         $_.administeredDate -eq "2026-01-12"
+    } | Select-Object -First 1
+    $portalProfilePrimaryInsurance = @($portalProfile.insurance) | Where-Object {
+        $_.type -eq "primary" -and
+        $_.planName -eq "Community HMO" -and
+        $_.policyNumber -eq "POL100004"
+    } | Select-Object -First 1
+    $portalProfileSecondaryInsurance = @($portalProfile.insurance) | Where-Object {
+        $_.type -eq "secondary" -and
+        $_.planName -eq "Standard Silver" -and
+        $_.policyNumber -eq "SEC100004"
     } | Select-Object -First 1
     $portalMessages = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/messages" `
@@ -643,6 +658,14 @@ try {
         -and $portalHomeAppointments.Count -gt 0 `
         -and $portalHomeAppointments[0].date -eq "2026-07-28" `
         -and $portalHomeAppointments[0].title -eq "Preventive Care" `
+        -and $portalProfile.authenticated `
+        -and $portalProfile.pubpid -eq "MOD-PAT-0004" `
+        -and $portalProfile.demographics.firstName -eq "Nora" `
+        -and $portalProfile.demographics.lastName -eq "Kim" `
+        -and $portalProfile.demographics.email -eq "mod-pat-0004@example.test" `
+        -and $portalProfile.insuranceCount -eq 2 `
+        -and $null -ne $portalProfilePrimaryInsurance `
+        -and $null -ne $portalProfileSecondaryInsurance `
         -and $portalHome.immunizationCount -ge 1 `
         -and $null -ne $portalHomeImmunization `
         -and $portalMessages.authenticated `
@@ -684,6 +707,7 @@ try {
         validLogin = $validPortalLogin
         session = $portalSession
         home = $portalHome
+        profile = $portalProfile
         homeImmunization = $portalHomeImmunization
         messages = $portalMessages
         clinicalSummary = $portalClinicalSummary

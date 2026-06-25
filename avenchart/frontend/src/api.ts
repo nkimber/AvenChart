@@ -2361,6 +2361,61 @@ export type PatientPortalHomeSummaryResponse = {
   sessionSource: string
 }
 
+export type PatientPortalProfileDemographics = {
+  firstName: string
+  lastName: string
+  preferredName?: string | null
+  dateOfBirth?: string | null
+  sex?: string | null
+  email?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  phoneHome?: string | null
+  phoneCell?: string | null
+  phoneContact?: string | null
+  contactRelationship?: string | null
+  motherName?: string | null
+  guardianName?: string | null
+  guardianRelationship?: string | null
+  guardianPhone?: string | null
+  guardianEmail?: string | null
+}
+
+export type PatientPortalProfileInsurance = {
+  type: string
+  provider?: string | null
+  planName?: string | null
+  policyNumber?: string | null
+  groupNumber?: string | null
+  subscriberFirstName?: string | null
+  subscriberLastName?: string | null
+  subscriberName?: string | null
+  subscriberRelationship?: string | null
+  subscriberDateOfBirth?: string | null
+}
+
+export type PatientPortalProfileResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  hasPendingProfileChanges: boolean
+  demographics: PatientPortalProfileDemographics
+  insuranceCount: number
+  insurance: PatientPortalProfileInsurance[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
 export type PatientPortalAppointmentsResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -3218,6 +3273,21 @@ export async function getPatientPortalHome(
   })
   if (!response.ok) {
     throw new Error(`Patient portal home check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function getPatientPortalProfile(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal profile check failed with ${response.status}`)
   }
 
   return response.json()

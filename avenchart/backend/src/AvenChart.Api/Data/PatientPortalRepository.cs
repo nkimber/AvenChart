@@ -280,6 +280,53 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalProfileResponse> GetProfileAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyProfile(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        var demographics = await GetPortalProfileDemographicsAsync(
+            connection,
+            session.CanonicalId,
+            session.LegacyPid.Value,
+            cancellationToken);
+        if (demographics is null)
+        {
+            return EmptyProfile(session, "Session patient was not found.");
+        }
+
+        var insurance = await GetPortalProfileInsuranceAsync(
+            connection,
+            session.LegacyPid.Value,
+            cancellationToken);
+
+        return new PatientPortalProfileResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            HasPendingProfileChanges: false,
+            Demographics: demographics,
+            InsuranceCount: insurance.Count,
+            Insurance: insurance,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
     public async Task<PatientPortalAppointmentsResponse> GetAppointmentsAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -1853,6 +1900,67 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         FailureReason: reason,
         SessionSource: SessionSource);
 
+    private static PatientPortalProfileResponse EmptyProfile(
+        PatientPortalSessionResponse session,
+        string reason) => new(
+        Authenticated: false,
+        SessionId: session.SessionId,
+        Username: session.Username,
+        PortalUsername: session.PortalUsername,
+        CanonicalId: session.CanonicalId,
+        LegacyPid: session.LegacyPid,
+        Pubpid: session.Pubpid,
+        DisplayName: session.DisplayName,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        HasPendingProfileChanges: false,
+        Demographics: EmptyProfileDemographics(),
+        InsuranceCount: 0,
+        Insurance: Array.Empty<PatientPortalProfileInsurance>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalProfileResponse MissingSessionProfile(string reason) => new(
+        Authenticated: false,
+        SessionId: null,
+        Username: string.Empty,
+        PortalUsername: string.Empty,
+        CanonicalId: string.Empty,
+        LegacyPid: null,
+        Pubpid: string.Empty,
+        DisplayName: string.Empty,
+        DatasetId: "unseeded",
+        DatasetVersion: "unknown",
+        AsOfDate: DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
+        HasPendingProfileChanges: false,
+        Demographics: EmptyProfileDemographics(),
+        InsuranceCount: 0,
+        Insurance: Array.Empty<PatientPortalProfileInsurance>(),
+        FailureReason: reason,
+        SessionSource: SessionSource);
+
+    private static PatientPortalProfileDemographics EmptyProfileDemographics() => new(
+        FirstName: string.Empty,
+        LastName: string.Empty,
+        PreferredName: null,
+        DateOfBirth: null,
+        Sex: null,
+        Email: null,
+        Street: null,
+        City: null,
+        State: null,
+        PostalCode: null,
+        PhoneHome: null,
+        PhoneCell: null,
+        PhoneContact: null,
+        ContactRelationship: null,
+        MotherName: null,
+        GuardianName: null,
+        GuardianRelationship: null,
+        GuardianPhone: null,
+        GuardianEmail: null);
+
     private static PatientPortalAppointmentsResponse EmptyAppointments(
         PatientPortalSessionResponse session,
         string reason) => new(
@@ -2493,6 +2601,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
     public static PatientPortalHomeSummaryResponse MissingSessionHeaderHomeSummary() =>
         MissingSessionHomeSummary("Patient portal session header was not supplied.");
+
+    public static PatientPortalProfileResponse MissingSessionHeaderProfile() =>
+        MissingSessionProfile("Patient portal session header was not supplied.");
 
     public static PatientPortalAppointmentsResponse MissingSessionHeaderAppointments() =>
         MissingSessionAppointments("Patient portal session header was not supplied.");
@@ -5124,6 +5235,128 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 Note: ReadNullableString(reader, "note"),
                 CompletionStatus: ReadNullableString(reader, "completion_status"),
                 AddedErroneously: reader.GetInt32(reader.GetOrdinal("added_erroneously"))));
+        }
+
+        return items;
+    }
+
+    private static async Task<PatientPortalProfileDemographics?> GetPortalProfileDemographicsAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        int pid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              first_name,
+              last_name,
+              preferred_name,
+              date_of_birth,
+              sex,
+              email,
+              street,
+              city,
+              state,
+              postal_code,
+              phone_home,
+              phone_cell,
+              phone as phone_contact,
+              guardian_relationship as contact_relationship,
+              mother_name,
+              guardian_name,
+              guardian_relationship,
+              guardian_phone,
+              guardian_email
+            from patients
+            where canonical_id = @canonical_id
+               or legacy_pid = @pid
+            order by legacy_pid
+            limit 1;
+            """;
+        command.Parameters.Add("canonical_id", NpgsqlDbType.Text).Value = canonicalId;
+        command.Parameters.AddWithValue("pid", pid);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PatientPortalProfileDemographics(
+            FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+            LastName: reader.GetString(reader.GetOrdinal("last_name")),
+            PreferredName: ReadNullableString(reader, "preferred_name"),
+            DateOfBirth: ReadNullableDate(reader, "date_of_birth"),
+            Sex: ReadNullableString(reader, "sex"),
+            Email: ReadNullableString(reader, "email"),
+            Street: ReadNullableString(reader, "street"),
+            City: ReadNullableString(reader, "city"),
+            State: ReadNullableString(reader, "state"),
+            PostalCode: ReadNullableString(reader, "postal_code"),
+            PhoneHome: ReadNullableString(reader, "phone_home"),
+            PhoneCell: ReadNullableString(reader, "phone_cell"),
+            PhoneContact: ReadNullableString(reader, "phone_contact"),
+            ContactRelationship: ReadNullableString(reader, "contact_relationship"),
+            MotherName: ReadNullableString(reader, "mother_name"),
+            GuardianName: ReadNullableString(reader, "guardian_name"),
+            GuardianRelationship: ReadNullableString(reader, "guardian_relationship"),
+            GuardianPhone: ReadNullableString(reader, "guardian_phone"),
+            GuardianEmail: ReadNullableString(reader, "guardian_email"));
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalProfileInsurance>> GetPortalProfileInsuranceAsync(
+        NpgsqlConnection connection,
+        int pid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              type,
+              provider,
+              plan_name,
+              policy_number,
+              group_number,
+              relationship,
+              subscriber_first_name,
+              subscriber_last_name,
+              subscriber_date_of_birth
+            from insurance_records
+            where pid = @pid
+            order by
+              case type
+                when 'primary' then 1
+                when 'secondary' then 2
+                when 'tertiary' then 3
+                else 4
+              end,
+              id;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+
+        var items = new List<PatientPortalProfileInsurance>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var subscriberFirstName = ReadNullableString(reader, "subscriber_first_name");
+            var subscriberLastName = ReadNullableString(reader, "subscriber_last_name");
+            var subscriberName = string.Join(
+                ' ',
+                new[] { subscriberFirstName, subscriberLastName }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+            items.Add(new PatientPortalProfileInsurance(
+                Type: reader.GetString(reader.GetOrdinal("type")),
+                Provider: ReadNullableString(reader, "provider"),
+                PlanName: ReadNullableString(reader, "plan_name"),
+                PolicyNumber: ReadNullableString(reader, "policy_number"),
+                GroupNumber: ReadNullableString(reader, "group_number"),
+                SubscriberFirstName: subscriberFirstName,
+                SubscriberLastName: subscriberLastName,
+                SubscriberName: string.IsNullOrWhiteSpace(subscriberName) ? null : subscriberName,
+                SubscriberRelationship: ReadNullableString(reader, "relationship"),
+                SubscriberDateOfBirth: ReadNullableDate(reader, "subscriber_date_of_birth")));
         }
 
         return items;

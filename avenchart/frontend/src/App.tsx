@@ -71,6 +71,7 @@ import {
   requestPatientPortalAppointment,
   getPatientPortalDocuments,
   getPatientPortalHome,
+  getPatientPortalProfile,
   getPatientPortalMessageThread,
   getPatientPortalMessages,
   getPatientPortalMessageComposeOptions,
@@ -309,6 +310,7 @@ import {
   type PatientPortalMedicalReportEncounterForm,
   type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
+  type PatientPortalProfileResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
   type PatientMessageCreateInput,
@@ -484,6 +486,7 @@ function App() {
   const [patientPortalPassword, setPatientPortalPassword] = useState('PortalPass207!')
   const [patientPortalSessionId, setPatientPortalSessionId] = useState<string | null>(null)
   const [patientPortalHome, setPatientPortalHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
+  const [patientPortalProfile, setPatientPortalProfile] = useState<PatientPortalProfileResponse | null>(null)
   const [patientPortalAppointments, setPatientPortalAppointments] = useState<PatientPortalAppointmentsResponse | null>(null)
   const [patientPortalAppointmentOptions, setPatientPortalAppointmentOptions] =
     useState<PatientPortalAppointmentRequestOptionsResponse | null>(null)
@@ -3907,6 +3910,7 @@ function App() {
       if (!loginResult.authenticated || !loginResult.sessionId) {
         setPatientPortalSessionId(null)
         setPatientPortalHome(null)
+        setPatientPortalProfile(null)
         setPatientPortalAppointments(null)
         setPatientPortalAppointmentOptions(null)
         setPatientPortalClinicalSummary(null)
@@ -3928,6 +3932,7 @@ function App() {
       }
 
       const home = await getPatientPortalHome(loginResult.sessionId)
+      const profile = home.authenticated ? await getPatientPortalProfile(loginResult.sessionId) : null
       const appointments = home.authenticated ? await getPatientPortalAppointments(loginResult.sessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(loginResult.sessionId) : null
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(loginResult.sessionId) : null
@@ -3942,6 +3947,7 @@ function App() {
       if (!home.authenticated) {
         setPatientPortalSessionId(loginResult.sessionId)
         setPatientPortalHome(home)
+        setPatientPortalProfile(profile)
         setPatientPortalAppointments(appointments)
         setPatientPortalAppointmentOptions(appointmentOptions)
         setPatientPortalClinicalSummary(clinicalSummary)
@@ -3966,6 +3972,7 @@ function App() {
 
       setPatientPortalSessionId(loginResult.sessionId)
       setPatientPortalHome(home)
+      setPatientPortalProfile(profile)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalClinicalSummary(clinicalSummary)
@@ -3988,6 +3995,7 @@ function App() {
     } catch (portalError) {
       setPatientPortalStatus('error')
       setPatientPortalHome(null)
+      setPatientPortalProfile(null)
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
       setPatientPortalClinicalSummary(null)
@@ -4018,6 +4026,7 @@ function App() {
 
     try {
       const home = await getPatientPortalHome(patientPortalSessionId)
+      const profile = home.authenticated ? await getPatientPortalProfile(patientPortalSessionId) : null
       const appointments = home.authenticated ? await getPatientPortalAppointments(patientPortalSessionId) : null
       const appointmentOptions = home.authenticated ? await getPatientPortalAppointmentRequestOptions(patientPortalSessionId) : null
       const clinicalSummary = home.authenticated ? await getPatientPortalClinicalSummary(patientPortalSessionId) : null
@@ -4030,6 +4039,7 @@ function App() {
       const messageAudit = home.authenticated ? await getPatientPortalMessageAudit(patientPortalSessionId) : null
       const documents = home.authenticated ? await getPatientPortalDocuments(patientPortalSessionId) : null
       setPatientPortalHome(home)
+      setPatientPortalProfile(profile)
       setPatientPortalAppointments(appointments)
       setPatientPortalAppointmentOptions(appointmentOptions)
       setPatientPortalClinicalSummary(clinicalSummary)
@@ -4535,6 +4545,7 @@ function App() {
       const result = await endPatientPortalSession(patientPortalSessionId)
       setPatientPortalSessionId(null)
       setPatientPortalHome(null)
+      setPatientPortalProfile(null)
       setPatientPortalAppointments(null)
       setPatientPortalAppointmentOptions(null)
       setPatientPortalClinicalSummary(null)
@@ -4665,6 +4676,7 @@ function App() {
             message={patientPortalMessage}
             sessionId={patientPortalSessionId}
             home={patientPortalHome}
+            profile={patientPortalProfile}
             portalAppointments={patientPortalAppointments}
             portalAppointmentOptions={patientPortalAppointmentOptions}
             portalClinicalSummary={patientPortalClinicalSummary}
@@ -5079,6 +5091,7 @@ function PatientPortalWorkspace({
   message,
   sessionId,
   home,
+  profile,
   portalAppointments,
   portalAppointmentOptions,
   portalClinicalSummary,
@@ -5133,6 +5146,7 @@ function PatientPortalWorkspace({
   message: string | null
   sessionId: string | null
   home: PatientPortalHomeSummaryResponse | null
+  profile: PatientPortalProfileResponse | null
   portalAppointments: PatientPortalAppointmentsResponse | null
   portalAppointmentOptions: PatientPortalAppointmentRequestOptionsResponse | null
   portalClinicalSummary: PatientPortalClinicalSummaryResponse | null
@@ -5458,6 +5472,65 @@ function PatientPortalWorkspace({
             </div>
 
             <div className="chart-grid">
+              <section className="info-panel messages-panel" aria-label="Patient portal profile">
+                <div className="panel-heading">
+                  <UserRound size={17} />
+                  <h3>Profile From Medical Records</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Demographics</span>
+                  <span>{profile?.hasPendingProfileChanges ? 'Edit pending changes' : 'Medical records'}</span>
+                </div>
+                <Field
+                  label="Patient"
+                  value={profile
+                    ? `${profile.demographics.firstName} ${profile.demographics.lastName}`.trim()
+                    : home.displayName}
+                />
+                <Field label="Date of Birth" value={profile?.demographics.dateOfBirth} />
+                <Field label="Sex" value={profile?.demographics.sex} />
+                <Field label="Email" value={profile?.demographics.email} />
+                <Field
+                  label="Address"
+                  value={profile
+                    ? [
+                        profile.demographics.street,
+                        profile.demographics.city,
+                        profile.demographics.state,
+                        profile.demographics.postalCode,
+                      ].filter(Boolean).join(', ')
+                    : null}
+                />
+                <Field label="Home phone" value={profile?.demographics.phoneHome} />
+                <Field label="Cell phone" value={profile?.demographics.phoneCell} />
+                <Field label="Mother" value={profile?.demographics.motherName} />
+                <Field label="Guardian" value={profile?.demographics.guardianName} />
+                <div className="result-meta">
+                  <span>Insurance</span>
+                  <span>{profile?.insuranceCount ?? 0} {(profile?.insuranceCount ?? 0) === 1 ? 'record' : 'records'}</span>
+                </div>
+                    <div className="clinical-list-body" role="region" aria-label="Patient portal insurance">
+                  {(profile?.insurance ?? []).map((insurance) => (
+                    <article className="clinical-item" key={`${insurance.type}-${insurance.policyNumber ?? insurance.planName ?? 'insurance'}`}>
+                      <div>
+                        <strong>{insurance.type}</strong>
+                        <span>{insurance.planName ?? 'Plan not recorded'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>Provider {insurance.provider ?? 'Not recorded'}</span>
+                        <span>Policy {insurance.policyNumber ?? 'Not recorded'}</span>
+                        <span>Group {insurance.groupNumber ?? 'Not recorded'}</span>
+                        <span>Subscriber {insurance.subscriberName ?? 'Not recorded'}</span>
+                        <span>Relationship {insurance.subscriberRelationship ?? 'Not recorded'}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {(profile?.insurance.length ?? 0) === 0 && (
+                    <div className="empty-state inline">No insurance recorded</div>
+                  )}
+                </div>
+              </section>
+
               <InfoPanel title="Messages" icon={Mail}>
                 <MetricRow label="All messages" value={home.messages.totalMessages} />
                 <MetricRow label="New messages" value={home.messages.newMessages} />

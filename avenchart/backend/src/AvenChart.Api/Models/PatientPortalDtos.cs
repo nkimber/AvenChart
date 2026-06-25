@@ -84,6 +84,58 @@ public sealed record PatientPortalHomeImmunizationSummary(
     string? CompletionStatus,
     int AddedErroneously);
 
+public sealed record PatientPortalProfileResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    bool HasPendingProfileChanges,
+    PatientPortalProfileDemographics Demographics,
+    int InsuranceCount,
+    IReadOnlyList<PatientPortalProfileInsurance> Insurance,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalProfileDemographics(
+    string FirstName,
+    string LastName,
+    string? PreferredName,
+    string? DateOfBirth,
+    string? Sex,
+    string? Email,
+    string? Street,
+    string? City,
+    string? State,
+    string? PostalCode,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? PhoneContact,
+    string? ContactRelationship,
+    string? MotherName,
+    string? GuardianName,
+    string? GuardianRelationship,
+    string? GuardianPhone,
+    string? GuardianEmail);
+
+public sealed record PatientPortalProfileInsurance(
+    string Type,
+    string? Provider,
+    string? PlanName,
+    string? PolicyNumber,
+    string? GroupNumber,
+    string? SubscriberFirstName,
+    string? SubscriberLastName,
+    string? SubscriberName,
+    string? SubscriberRelationship,
+    string? SubscriberDateOfBirth);
+
 public sealed record PatientPortalAppointmentsResponse(
     bool Authenticated,
     Guid? SessionId,
