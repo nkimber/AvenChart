@@ -1,5 +1,5 @@
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { CalendarClock, FileText, Phone, Shield } from 'lucide-react'
+import { CalendarClock, FileText, Phone, Printer, Shield } from 'lucide-react'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 function fact(label: string, value?: string | null) {
@@ -19,7 +19,16 @@ export default function PatientSummary() {
 
   return (
     <div className="clinician-page">
-      <div className="cl-grid-two">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button
+          className="cl-btn-secondary"
+          type="button"
+          onClick={() => window.print()}
+        >
+          <Printer size={14} /> Print summary
+        </button>
+      </div>
+      <div className="cl-grid-two print-summary">
         {/* Demographics */}
         <section className="cl-card">
           <div className="cl-card-header">
@@ -142,3 +151,4 @@ export default function PatientSummary() {
     </div>
   )
 }
+

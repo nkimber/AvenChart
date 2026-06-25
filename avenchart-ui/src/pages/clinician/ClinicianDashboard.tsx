@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
-import { CalendarClock, ChevronRight, FlaskConical, Users } from 'lucide-react'
+import { CalendarClock, ChevronRight, ClipboardList, Clock, FlaskConical, Mail, Plus, Users } from 'lucide-react'
 import {
   getProcedureReportQueue,
   searchAppointments,
+  getOperationalReports,
   type AppointmentListItem,
   type ProcedureReportQueueResponse,
+  type OperationalReportsResponse,
 } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
@@ -14,14 +16,24 @@ type AsyncState<T> =
   | { status: 'ready'; data: T }
   | { status: 'error' }
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
+type RecentPatient = { canonicalId: string; displayName: string; dateOfBirth: string; visitedAt: string }
+
+const RECENT_KEY = 'clinician-recent-patients'
+
+export function recordRecentPatient(p: { canonicalId: string; displayName: string; dateOfBirth: string }) {
+  try {
+    const existing: RecentPatient[] = JSON.parse(sessionStorage.getItem(RECENT_KEY) ?? '[]')
+    const fresh = [{ ...p, visitedAt: new Date().toISOString() }, ...existing.filter((r) => r.canonicalId !== p.canonicalId)].slice(0, 8)
+    sessionStorage.setItem(RECENT_KEY, JSON.stringify(fresh))
+  } catch { /* ignore */ }
 }
 
-function formatTime(t?: string | null) {
-  if (!t) return ''
-  return t.slice(0, 5)
+function loadRecentPatients(): RecentPatient[] {
+  try { return JSON.parse(sessionStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
 }
+
+function today() { return new Date().toISOString().slice(0, 10) }
+function formatTime(t?: string | null) { return t ? t.slice(0, 5) : '' }
 
 function apptStatusClass(status?: string | null) {
   if (!status) return ''
@@ -37,6 +49,8 @@ export default function ClinicianDashboard() {
   const navigate = useNavigate()
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [labState, setLabState] = useState<AsyncState<ProcedureReportQueueResponse>>({ status: 'loading' })
+  const [reportsState, setReportsState] = useState<AsyncState<OperationalReportsResponse>>({ status: 'loading' })
+  const [recentPatients, setRecentPatients] = useState<RecentPatient[]>(() => loadRecentPatients())
 
   useEffect(() => {
     const todayStr = today()
@@ -47,10 +61,25 @@ export default function ClinicianDashboard() {
     getProcedureReportQueue(session.sessionId, { status: 'pending', limit: 5 })
       .then((data) => setLabState({ status: 'ready', data }))
       .catch(() => setLabState({ status: 'error' }))
+
+    getOperationalReports(session.sessionId)
+      .then((data) => setReportsState({ status: 'ready', data }))
+      .catch(() => setReportsState({ status: 'error' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Refresh recent patients on focus
+  useEffect(() => {
+    const onFocus = () => setRecentPatients(loadRecentPatients())
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+
+  const unreviewedLabs = labState.status === 'ready' ? labState.data.unreviewedReports : 0
+  const newMessages = reportsState.status === 'ready' ? reportsState.data.counts.newMessages : 0
+  const hasActions = unreviewedLabs > 0 || newMessages > 0
 
   return (
     <div className="clinician-page">
@@ -60,16 +89,45 @@ export default function ClinicianDashboard() {
           <p className="clinician-page-subtitle">{todayLabel}</p>
         </div>
         <div className="clinician-header-actions">
-          <button
-            className="cl-btn-primary"
-            type="button"
-            onClick={() => navigate('/clinician/patients')}
-          >
-            <Users size={15} />
-            Patient search
+          <button className="cl-btn-secondary" type="button" onClick={() => navigate('/clinician/encounters/new')}>
+            <Plus size={15} /> New encounter
+          </button>
+          <button className="cl-btn-primary" type="button" onClick={() => navigate('/clinician/patients')}>
+            <Users size={15} /> Patient search
           </button>
         </div>
       </div>
+
+      {/* Action inbox */}
+      {hasActions && (
+        <section className="cl-card dash-inbox">
+          <div className="cl-card-header">
+            <h2 className="cl-card-title"><ClipboardList size={16} /> Needs attention</h2>
+          </div>
+          <div className="dash-inbox-items">
+            {unreviewedLabs > 0 && (
+              <Link to="/clinician/labs" className="dash-inbox-item dash-inbox-labs">
+                <div className="dash-inbox-icon"><FlaskConical size={18} /></div>
+                <div className="dash-inbox-body">
+                  <p className="dash-inbox-count">{unreviewedLabs}</p>
+                  <p className="dash-inbox-label">lab report{unreviewedLabs !== 1 ? 's' : ''} pending review</p>
+                </div>
+                <ChevronRight size={16} className="dash-inbox-arrow" />
+              </Link>
+            )}
+            {newMessages > 0 && (
+              <Link to="/clinician/messages" className="dash-inbox-item dash-inbox-messages">
+                <div className="dash-inbox-icon"><Mail size={18} /></div>
+                <div className="dash-inbox-body">
+                  <p className="dash-inbox-count">{newMessages}</p>
+                  <p className="dash-inbox-label">new patient message{newMessages !== 1 ? 's' : ''}</p>
+                </div>
+                <ChevronRight size={16} className="dash-inbox-arrow" />
+              </Link>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="clinician-dashboard-grid">
         {/* Today's schedule */}
@@ -100,7 +158,7 @@ export default function ClinicianDashboard() {
             <ul className="cl-appt-list">
               {apptState.data.map((appt) => (
                 <li key={appt.id} className="cl-appt-row">
-                  <div className="cl-appt-time">{formatTime(appt.startTime)}</div>
+                  <div className="cl-appt-time"><Clock size={12} />{formatTime(appt.startTime)}</div>
                   <div className="cl-appt-body">
                     <button
                       className="cl-appt-patient"
@@ -128,6 +186,34 @@ export default function ClinicianDashboard() {
 
         {/* Right column */}
         <div className="clinician-dashboard-right">
+          {/* Recent patients */}
+          {recentPatients.length > 0 && (
+            <section className="cl-card">
+              <div className="cl-card-header">
+                <h2 className="cl-card-title"><Clock size={16} /> Recent patients</h2>
+              </div>
+              <ul className="cl-recent-patients">
+                {recentPatients.map((p) => (
+                  <li key={p.canonicalId}>
+                    <button
+                      className="cl-recent-patient-btn"
+                      type="button"
+                      onClick={() => navigate(`/clinician/patients/${p.canonicalId}/summary`)}
+                    >
+                      <div className="cl-recent-avatar">
+                        {p.displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="cl-recent-name">{p.displayName}</p>
+                        <p className="cl-recent-dob">DOB {p.dateOfBirth}</p>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* Quick links */}
           <section className="cl-card">
             <div className="cl-card-header">
@@ -138,6 +224,7 @@ export default function ClinicianDashboard() {
                 { label: 'Patient search', path: '/clinician/patients', icon: Users },
                 { label: 'Full schedule', path: '/clinician/schedule', icon: CalendarClock },
                 { label: 'Lab queue', path: '/clinician/labs', icon: FlaskConical },
+                { label: 'Renewals', path: '/clinician/renewals', icon: ClipboardList },
               ].map((link) => {
                 const Icon = link.icon
                 return (
@@ -192,8 +279,8 @@ export default function ClinicianDashboard() {
                             {r.labName ? ` · ${r.labName}` : ''}
                           </p>
                         </div>
-                        <span className={`cl-badge ${r.reviewStatus === 'reviewed' ? 'cl-badge-green' : 'cl-badge-amber'}`}>
-                          {r.reviewStatus ?? 'pending'}
+                        <span className={`cl-badge ${r.reviewedBy ? 'cl-badge-green' : 'cl-badge-amber'}`}>
+                          {r.reviewedBy ? 'reviewed' : 'pending'}
                         </span>
                       </li>
                     ))}

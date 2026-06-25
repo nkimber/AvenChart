@@ -1,8 +1,31 @@
-import { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
-import { ChevronRight, FileText } from 'lucide-react'
-import { getEncounterDetail, searchEncounters, type EncounterDetail, type EncounterListItem } from '../../api.ts'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useOutletContext } from 'react-router-dom'
+import { ChevronRight, FileText, Plus, TrendingUp } from 'lucide-react'
+import { getEncounterDetail, searchEncounters, type EncounterDetail, type EncounterListItem, type EncounterVitals } from '../../api.ts'
 import type { PatientOutletContext } from './PatientShell.tsx'
+
+// Simple SVG sparkline for a series of numeric values
+function Sparkline({ values, color = '#0f6e56' }: { values: number[]; color?: string }) {
+  if (values.length < 2) return null
+  const w = 80, h = 28
+  const min = Math.min(...values), max = Math.max(...values)
+  const range = max - min || 1
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * (w - 4) + 2
+    const y = h - 2 - ((v - min) / range) * (h - 4)
+    return `${x},${y}`
+  }).join(' ')
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="vital-sparkline">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      {values.map((v, i) => {
+        const x = (i / (values.length - 1)) * (w - 4) + 2
+        const y = h - 2 - ((v - min) / range) * (h - 4)
+        return <circle key={i} cx={x} cy={y} r={i === values.length - 1 ? 2.5 : 1.5} fill={color} />
+      })}
+    </svg>
+  )
+}
 
 type ListState =
   | { status: 'loading' }
@@ -25,29 +48,99 @@ function vitalRow(label: string, value?: string | number | null, unit?: string) 
   )
 }
 
+function extractVitalSeries(encounters: EncounterListItem[], details: Map<number, EncounterDetail>) {
+  const series: { date: string; vitals: EncounterVitals }[] = []
+  for (const enc of [...encounters].reverse()) {
+    const d = details.get(enc.id)
+    if (d?.vitals) series.push({ date: enc.date, vitals: d.vitals })
+  }
+  return series
+}
+
 export default function PatientEncounters() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
+  const navigate = useNavigate()
   const [listState, setListState] = useState<ListState>({ status: 'loading' })
   const [detailState, setDetailState] = useState<DetailState>({ status: 'idle' })
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [detailCache, setDetailCache] = useState<Map<number, EncounterDetail>>(new Map())
+  const [showTrends, setShowTrends] = useState(false)
 
   useEffect(() => {
+    setDetailCache(new Map())
     searchEncounters(session.sessionId, { patientId, limit: 50 })
       .then((data) => setListState({ status: 'ready', data: data.encounters }))
       .catch((err) => setListState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId])
 
+  const vitalSeries = useMemo(() => {
+    if (listState.status !== 'ready') return []
+    return extractVitalSeries(listState.data, detailCache)
+  }, [listState, detailCache])
+
   function openEncounter(id: number) {
     setSelectedId(id)
     setDetailState({ status: 'loading', id })
     getEncounterDetail(session.sessionId, id)
-      .then((data) => setDetailState({ status: 'ready', data }))
+      .then((data) => {
+        setDetailState({ status: 'ready', data })
+        setDetailCache((prev) => new Map(prev).set(id, data))
+      })
       .catch((err) => setDetailState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
   }
 
   return (
     <div className="clinician-page">
+      {/* Vitals trend panel */}
+      {vitalSeries.length >= 2 && (
+        <section className="cl-card" style={{ marginBottom: 16 }}>
+          <div className="cl-card-header">
+            <h2 className="cl-card-title"><TrendingUp size={15} /> Vital trends ({vitalSeries.length} visits)</h2>
+            <button className="cl-link" type="button" onClick={() => setShowTrends((s) => !s)}>
+              {showTrends ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showTrends && (
+            <div className="vital-trends-grid">
+              {[
+                { label: 'Systolic BP', key: 'systolic' as const, color: '#993c1d' },
+                { label: 'Diastolic BP', key: 'diastolic' as const, color: '#d97706' },
+                { label: 'Pulse', key: 'pulse' as const, color: '#0f6e56' },
+                { label: 'Weight (lbs)', key: 'weight' as const, color: '#7c3aed' },
+                { label: 'O₂ Sat (%)', key: 'oxygenSaturation' as const, color: '#0891b2' },
+                { label: 'Temp (°F)', key: 'temperature' as const, color: '#db2777' },
+              ].map(({ label, key, color }) => {
+                const vals = vitalSeries
+                  .map((s) => s.vitals[key])
+                  .filter((v): v is number => v != null)
+                if (vals.length < 2) return null
+                const latest = vals[vals.length - 1]
+                return (
+                  <div key={key} className="vital-trend-item">
+                    <div className="vital-trend-top">
+                      <span className="vital-trend-label">{label}</span>
+                      <span className="vital-trend-value">{latest}</span>
+                    </div>
+                    <Sparkline values={vals} color={color} />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button
+          className="cl-btn-primary"
+          type="button"
+          onClick={() => navigate(`/clinician/patients/${patientId}/encounters/new`)}
+        >
+          <Plus size={14} /> New encounter
+        </button>
+      </div>
+
       <div className="cl-encounter-layout">
         {/* Encounter list */}
         <aside className="cl-encounter-list">

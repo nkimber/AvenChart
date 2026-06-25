@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
-import { Activity, CalendarClock, FileText, FlaskConical, FolderOpen, Mail, UserCircle, X } from 'lucide-react'
+import { Activity, CalendarClock, FileText, FlaskConical, FolderOpen, GitCommitHorizontal, Mail, UserCircle, X } from 'lucide-react'
 import { getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
@@ -15,6 +15,7 @@ export type PatientOutletContext = {
 const CHART_TABS = [
   { path: 'summary', label: 'Summary', icon: UserCircle },
   { path: 'chart', label: 'Chart', icon: Activity },
+  { path: 'timeline', label: 'Timeline', icon: GitCommitHorizontal },
   { path: 'encounters', label: 'Encounters', icon: FileText },
   { path: 'documents', label: 'Documents', icon: FolderOpen },
   { path: 'labs', label: 'Labs', icon: FlaskConical },

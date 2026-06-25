@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { getClinicalLists, type ClinicalListsResponse } from '../../api.ts'
+import { Plus, X } from 'lucide-react'
+import {
+  getClinicalLists,
+  createProblem,
+  deactivateProblem,
+  createAllergy,
+  deactivateAllergy,
+  createMedication,
+  deactivateMedication,
+  type ClinicalListsResponse,
+} from '../../api.ts'
+import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 type AsyncState<T> =
@@ -12,17 +23,113 @@ function statusDot(activity: number) {
   return <span className={`cl-activity-dot ${activity === 1 ? 'cl-activity-active' : 'cl-activity-inactive'}`} aria-label={activity === 1 ? 'Active' : 'Inactive'} />
 }
 
+function isoNow() { return new Date().toISOString().replace('T', ' ').slice(0, 19) }
+
+type AddMode = 'problem' | 'allergy' | 'medication' | null
+
 export default function PatientChart() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<ClinicalListsResponse>>({ status: 'loading' })
+  const [addMode, setAddMode] = useState<AddMode>(null)
+  const [working, setWorking] = useState(false)
 
-  useEffect(() => {
+  // Add-problem form state
+  const [newProbTitle, setNewProbTitle] = useState('')
+  const [newProbDx, setNewProbDx] = useState('')
+
+  // Add-allergy form state
+  const [newAllergyTitle, setNewAllergyTitle] = useState('')
+  const [newAllergyReaction, setNewAllergyReaction] = useState('')
+  const [newAllergySeverity, setNewAllergySeverity] = useState('mild')
+
+  // Add-medication form state
+  const [newMedTitle, setNewMedTitle] = useState('')
+  const [newMedDx, setNewMedDx] = useState('')
+
+  function load() {
     setState({ status: 'loading' })
     getClinicalLists(session.sessionId, patientId)
       .then((data) => setState({ status: 'ready', data }))
       .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Could not load chart.' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId])
+  }
+
+  useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleAddProblem(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newProbTitle) return
+    setWorking(true)
+    try {
+      const result = await createProblem(session.sessionId, {
+        patientId, title: newProbTitle, dateTime: isoNow(), diagnosis: newProbDx || null, comments: '',
+      })
+      setState({ status: 'ready', data: result.detail })
+      setAddMode(null); setNewProbTitle(''); setNewProbDx('')
+      showToast('Problem added.', 'success')
+    } catch { showToast('Could not add problem.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleDeactivateProblem(id: string) {
+    setWorking(true)
+    try {
+      const result = await deactivateProblem(session.sessionId, id, 'Marked inactive by clinician')
+      setState({ status: 'ready', data: result.detail })
+      showToast('Problem marked inactive.', 'success')
+    } catch { showToast('Could not update problem.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleAddAllergy(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newAllergyTitle) return
+    setWorking(true)
+    try {
+      const result = await createAllergy(session.sessionId, {
+        patientId, title: newAllergyTitle, dateTime: isoNow(),
+        reaction: newAllergyReaction, severity: newAllergySeverity, comments: '',
+      })
+      setState({ status: 'ready', data: result.detail })
+      setAddMode(null); setNewAllergyTitle(''); setNewAllergyReaction(''); setNewAllergySeverity('mild')
+      showToast('Allergy added.', 'success')
+    } catch { showToast('Could not add allergy.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleDeactivateAllergy(id: string) {
+    setWorking(true)
+    try {
+      const result = await deactivateAllergy(session.sessionId, id, 'Marked inactive by clinician')
+      setState({ status: 'ready', data: result.detail })
+      showToast('Allergy marked inactive.', 'success')
+    } catch { showToast('Could not update allergy.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleAddMedication(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newMedTitle) return
+    setWorking(true)
+    try {
+      const result = await createMedication(session.sessionId, {
+        patientId, title: newMedTitle, dateTime: isoNow(), diagnosis: newMedDx || null, comments: '',
+      })
+      setState({ status: 'ready', data: result.detail })
+      setAddMode(null); setNewMedTitle(''); setNewMedDx('')
+      showToast('Medication added.', 'success')
+    } catch { showToast('Could not add medication.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleDeactivateMedication(id: string) {
+    setWorking(true)
+    try {
+      const result = await deactivateMedication(session.sessionId, id, 'Marked inactive by clinician')
+      setState({ status: 'ready', data: result.detail })
+      showToast('Medication marked inactive.', 'success')
+    } catch { showToast('Could not update medication.', 'error') }
+    finally { setWorking(false) }
+  }
 
   if (state.status === 'loading') return (
     <div className="clinician-page">
@@ -51,15 +158,28 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Problems ({data.problems.length})</h2>
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'problem' ? null : 'problem')} title="Add problem">
+              <Plus size={15} />
+            </button>
           </div>
+          {addMode === 'problem' && (
+            <form className="cl-inline-form" onSubmit={handleAddProblem}>
+              <input className="ne-input" placeholder="Problem title…" value={newProbTitle} onChange={(e) => setNewProbTitle(e.target.value)} required />
+              <input className="ne-input" placeholder="Diagnosis code (optional)" value={newProbDx} onChange={(e) => setNewProbDx(e.target.value)} />
+              <div className="cl-inline-form-actions">
+                <button className="cl-btn-primary" type="submit" disabled={working || !newProbTitle}>Add</button>
+                <button className="cl-btn-secondary" type="button" onClick={() => setAddMode(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
           {data.problems.length === 0 ? (
             <p className="cl-empty-text">No problems on file.</p>
           ) : (
             <ul className="cl-clinical-list">
               {data.problems.map((p) => (
-                <li key={p.id} className="cl-clinical-row">
+                <li key={p.id} className="cl-clinical-row cl-clinical-row-interactive">
                   {statusDot(p.activity)}
-                  <div>
+                  <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{p.title}</p>
                     {(p.diagnosis ?? p.date) && (
                       <p className="cl-clinical-meta">
@@ -67,6 +187,17 @@ export default function PatientChart() {
                       </p>
                     )}
                   </div>
+                  {p.activity === 1 && (
+                    <button
+                      className="cl-clinical-action"
+                      type="button"
+                      title="Mark inactive"
+                      disabled={working}
+                      onClick={() => handleDeactivateProblem(p.id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -77,23 +208,52 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Allergies ({data.allergies.length})</h2>
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'allergy' ? null : 'allergy')} title="Add allergy">
+              <Plus size={15} />
+            </button>
           </div>
+          {addMode === 'allergy' && (
+            <form className="cl-inline-form" onSubmit={handleAddAllergy}>
+              <input className="ne-input" placeholder="Allergen name…" value={newAllergyTitle} onChange={(e) => setNewAllergyTitle(e.target.value)} required />
+              <input className="ne-input" placeholder="Reaction (optional)" value={newAllergyReaction} onChange={(e) => setNewAllergyReaction(e.target.value)} />
+              <select className="ne-input" value={newAllergySeverity} onChange={(e) => setNewAllergySeverity(e.target.value)}>
+                <option value="mild">Mild</option>
+                <option value="moderate">Moderate</option>
+                <option value="severe">Severe</option>
+                <option value="life-threatening">Life-threatening</option>
+              </select>
+              <div className="cl-inline-form-actions">
+                <button className="cl-btn-primary" type="submit" disabled={working || !newAllergyTitle}>Add</button>
+                <button className="cl-btn-secondary" type="button" onClick={() => setAddMode(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
           {data.allergies.length === 0 ? (
             <p className="cl-empty-text">No known allergies on file.</p>
           ) : (
             <ul className="cl-clinical-list">
               {data.allergies.map((a) => (
-                <li key={a.id} className="cl-clinical-row">
+                <li key={a.id} className="cl-clinical-row cl-clinical-row-interactive">
                   {statusDot(a.activity)}
-                  <div>
+                  <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{a.title}</p>
                     {(a.reaction ?? a.severity) && (
                       <p className="cl-clinical-meta">
-                        {a.reaction ?? ''}
-                        {a.severity ? ` · ${a.severity}` : ''}
+                        {a.reaction ?? ''}{a.severity ? ` · ${a.severity}` : ''}
                       </p>
                     )}
                   </div>
+                  {a.activity === 1 && (
+                    <button
+                      className="cl-clinical-action"
+                      type="button"
+                      title="Mark inactive"
+                      disabled={working}
+                      onClick={() => handleDeactivateAllergy(a.id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -104,18 +264,42 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Medications ({data.medications.length})</h2>
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'medication' ? null : 'medication')} title="Add medication">
+              <Plus size={15} />
+            </button>
           </div>
+          {addMode === 'medication' && (
+            <form className="cl-inline-form" onSubmit={handleAddMedication}>
+              <input className="ne-input" placeholder="Medication name…" value={newMedTitle} onChange={(e) => setNewMedTitle(e.target.value)} required />
+              <input className="ne-input" placeholder="Diagnosis code (optional)" value={newMedDx} onChange={(e) => setNewMedDx(e.target.value)} />
+              <div className="cl-inline-form-actions">
+                <button className="cl-btn-primary" type="submit" disabled={working || !newMedTitle}>Add</button>
+                <button className="cl-btn-secondary" type="button" onClick={() => setAddMode(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
           {data.medications.length === 0 ? (
             <p className="cl-empty-text">No medications on file.</p>
           ) : (
             <ul className="cl-clinical-list">
               {data.medications.map((m) => (
-                <li key={m.id} className="cl-clinical-row">
+                <li key={m.id} className="cl-clinical-row cl-clinical-row-interactive">
                   {statusDot(m.activity)}
-                  <div>
+                  <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{m.title}</p>
                     {m.date && <p className="cl-clinical-meta">{m.date}</p>}
                   </div>
+                  {m.activity === 1 && (
+                    <button
+                      className="cl-clinical-action"
+                      type="button"
+                      title="Mark inactive"
+                      disabled={working}
+                      onClick={() => handleDeactivateMedication(m.id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

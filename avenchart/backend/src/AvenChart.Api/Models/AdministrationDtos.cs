@@ -6,7 +6,8 @@ public sealed record AdministrationDirectoryResponse(
     AdministrationDirectoryCounts Counts,
     IReadOnlyList<AdministrationUserItem> Users,
     IReadOnlyList<AdministrationFacilityItem> Facilities,
-    AdministrationAccessControlSummary AccessControl);
+    AdministrationAccessControlSummary AccessControl,
+    AdministrationPortalActivitySummary PortalActivity);
 
 public sealed record AdministrationDirectoryCounts(
     int Users,
@@ -16,7 +17,9 @@ public sealed record AdministrationDirectoryCounts(
     int AccessGroups,
     int AccessPermissions,
     int AccessGroupPermissions,
-    int AccessUserMemberships);
+    int AccessUserMemberships,
+    int WaitingPortalAudits,
+    int WaitingProfileReviews);
 
 public sealed record AdministrationUserItem(
     int Id,
@@ -50,6 +53,33 @@ public sealed record AdministrationAccessControlSummary(
     IReadOnlyList<AdministrationAccessPermissionItem> Permissions,
     IReadOnlyList<AdministrationAccessGroupPermissionItem> GroupPermissions,
     IReadOnlyList<AdministrationAccessUserMembershipItem> UserMemberships);
+
+public sealed record AdministrationPortalActivitySummary(
+    int WaitingAuditCount,
+    int WaitingProfileReviewCount,
+    IReadOnlyList<AdministrationPortalProfileReviewRequest> ProfileReviewRequests);
+
+public sealed record AdministrationPortalProfileReviewRequest(
+    string Id,
+    string RequestedAt,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string FirstName,
+    string MiddleName,
+    string LastName,
+    string PatientName,
+    string Activity,
+    int RequireAudit,
+    string PendingAction,
+    string ActionTaken,
+    string Status,
+    string Narrative,
+    string TableAction,
+    string? ActionUser,
+    string? ActionTakenAt,
+    string Checksum,
+    PatientPortalProfileDemographics RequestedDemographics);
 
 public sealed record AdministrationAccessGroupItem(
     int Id,

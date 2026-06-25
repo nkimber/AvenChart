@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
   BarChart2,
+  Bell,
   CalendarClock,
   CalendarDays,
   ChevronLeft,
@@ -11,10 +12,11 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  Pill,
   Settings,
   Users,
 } from 'lucide-react'
-import { getCurrentSession } from '../../api.ts'
+import { getCurrentSession, getProcedureReportQueue, getOperationalReports } from '../../api.ts'
 import { clearClinicianSession, loadClinicianSession, type ClinicianSession } from '../../auth/session.ts'
 
 export type ClinicianOutletContext = {
@@ -29,6 +31,7 @@ const NAV_ITEMS = [
   { path: '/clinician/patients', label: 'Patients', icon: Users },
   { path: '/clinician/labs', label: 'Lab queue', icon: FlaskConical },
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
+  { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },
 ]
@@ -43,6 +46,8 @@ export default function ClinicianShell() {
   const [session] = useState(() => loadClinicianSession())
   const [collapsed, setCollapsed] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [notifCount, setNotifCount] = useState(0)
+  const [notifOpen, setNotifOpen] = useState(false)
 
   useEffect(() => {
     if (!session) { navigate('/login', { replace: true }); return }
@@ -54,6 +59,24 @@ export default function ClinicianShell() {
       .catch(() => setAuthChecked(true)) // network error — allow through, will fail at data layer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!session || !authChecked) return
+    function pollNotifs() {
+      Promise.all([
+        getProcedureReportQueue(session!.sessionId, { status: 'pending', limit: 1 }),
+        getOperationalReports(session!.sessionId),
+      ])
+        .then(([labs, reports]) => {
+          setNotifCount(labs.unreviewedReports + reports.counts.newMessages)
+        })
+        .catch(() => {})
+    }
+    pollNotifs()
+    const timer = setInterval(pollNotifs, 60_000)
+    return () => clearInterval(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked])
 
   if (!session) return null
   if (!authChecked) return (
@@ -111,8 +134,44 @@ export default function ClinicianShell() {
           })}
         </nav>
 
-        {/* Sidebar footer: user + sign out */}
+        {/* Sidebar footer: notifications + user + sign out */}
         <div className="clinician-sidebar-footer">
+          {/* Notification bell */}
+          <div className="sidebar-notif-wrap">
+            <button
+              className="sidebar-notif-btn"
+              type="button"
+              title="Notifications"
+              aria-label="Notifications"
+              onClick={() => setNotifOpen((o) => !o)}
+            >
+              <Bell size={16} />
+              {notifCount > 0 && <span className="sidebar-notif-badge">{notifCount > 99 ? '99+' : notifCount}</span>}
+              {!collapsed && <span>Alerts</span>}
+            </button>
+            {notifOpen && (
+              <div className="sidebar-notif-panel">
+                <p className="sidebar-notif-title">Attention required</p>
+                <Link
+                  to="/clinician/labs"
+                  className="sidebar-notif-item"
+                  onClick={() => setNotifOpen(false)}
+                >
+                  <FlaskConical size={14} />
+                  <span>Unreviewed lab reports</span>
+                </Link>
+                <Link
+                  to="/clinician/messages"
+                  className="sidebar-notif-item"
+                  onClick={() => setNotifOpen(false)}
+                >
+                  <Mail size={14} />
+                  <span>New patient messages</span>
+                </Link>
+              </div>
+            )}
+          </div>
+
           {!collapsed && (
             <div className="clinician-sidebar-user">
               <div className="sidebar-avatar">{initials(session.displayName)}</div>

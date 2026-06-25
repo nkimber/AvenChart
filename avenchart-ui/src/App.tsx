@@ -12,10 +12,12 @@ import PortalAccount from './pages/portal/PortalAccount.tsx'
 import ClinicianShell from './pages/clinician/ClinicianShell.tsx'
 import ClinicianDashboard from './pages/clinician/ClinicianDashboard.tsx'
 import ClinicianSchedule from './pages/clinician/ClinicianSchedule.tsx'
+import ClinicianMessages from './pages/clinician/ClinicianMessages.tsx'
 import PatientSearch from './pages/clinician/PatientSearch.tsx'
 import PatientShell from './pages/clinician/PatientShell.tsx'
 import PatientSummary from './pages/clinician/PatientSummary.tsx'
 import PatientChart from './pages/clinician/PatientChart.tsx'
+import PatientTimeline from './pages/clinician/PatientTimeline.tsx'
 import PatientEncounters from './pages/clinician/PatientEncounters.tsx'
 import PatientDocuments from './pages/clinician/PatientDocuments.tsx'
 import PatientLabs from './pages/clinician/PatientLabs.tsx'
@@ -25,6 +27,8 @@ import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
 import LabQueue from './pages/clinician/LabQueue.tsx'
 import OperationalReports from './pages/clinician/OperationalReports.tsx'
 import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
+import NewEncounter from './pages/clinician/NewEncounter.tsx'
+import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
 
 export default function App() {
   return (
@@ -43,8 +47,13 @@ export default function App() {
           <Route path="schedule" element={<ClinicianSchedule />} />
           <Route path="calendar" element={<ClinicianCalendar />} />
           <Route path="labs" element={<LabQueue />} />
+          <Route path="messages" element={<ClinicianMessages />} />
+          <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
           <Route path="admin" element={<AdminDirectory />} />
+
+          {/* Standalone new encounter (no patient context) */}
+          <Route path="encounters/new" element={<NewEncounter />} />
 
           {/* Patient search */}
           <Route path="patients" element={<PatientSearch />} />
@@ -53,7 +62,9 @@ export default function App() {
           <Route path="patients/:patientId" element={<PatientShell />}>
             <Route path="summary" element={<PatientSummary />} />
             <Route path="chart" element={<PatientChart />} />
+            <Route path="timeline" element={<PatientTimeline />} />
             <Route path="encounters" element={<PatientEncounters />} />
+            <Route path="encounters/new" element={<NewEncounter />} />
             <Route path="documents" element={<PatientDocuments />} />
             <Route path="labs" element={<PatientLabs />} />
             <Route path="appointments" element={<PatientAppointments />} />

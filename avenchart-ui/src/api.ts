@@ -1229,3 +1229,232 @@ export async function getLoginAudit(
   const q = limit ? `?limit=${limit}` : ''
   return clinicianGet(sessionId, `/api/auth/login-audit${q}`, signal)
 }
+
+// ── Write helpers ─────────────────────────────────────────────────────────────
+
+async function clinicianDelete(sessionId: string, path: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'DELETE',
+    headers: clinicianHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) throw new Error(`DELETE ${path} failed with ${response.status}`)
+}
+
+// ── Encounter mutations ───────────────────────────────────────────────────────
+
+export type EncounterCreateInput = {
+  patientId: string
+  dateTime: string
+  reason: string
+  providerId?: number | null
+  facilityId?: number | null
+  sensitivity?: string | null
+}
+
+export async function createEncounter(
+  sessionId: string,
+  body: EncounterCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
+  return clinicianPost(sessionId, '/api/encounters/', body, signal)
+}
+
+export type EncounterVitalsCreateInput = {
+  dateTime: string
+  systolic?: number | null
+  diastolic?: number | null
+  weight?: number | null
+  height?: number | null
+  temperature?: number | null
+  pulse?: number | null
+  respiration?: number | null
+  oxygenSaturation?: number | null
+  note?: string | null
+}
+
+export async function createEncounterVitals(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterVitalsCreateInput,
+  signal?: AbortSignal,
+): Promise<{ id: number; detail: EncounterDetail }> {
+  return clinicianPost(sessionId, `/api/encounters/${encounterId}/vitals`, body, signal)
+}
+
+export type EncounterSoapNoteCreateInput = {
+  dateTime: string
+  subjective?: string | null
+  objective?: string | null
+  assessment?: string | null
+  plan?: string | null
+}
+
+export async function createEncounterSoapNote(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterSoapNoteCreateInput,
+  signal?: AbortSignal,
+): Promise<{ id: number; detail: EncounterDetail }> {
+  return clinicianPost(sessionId, `/api/encounters/${encounterId}/soap-notes`, body, signal)
+}
+
+export async function signEncounter(
+  sessionId: string,
+  encounterId: number,
+  body: { signerUsername: string; signedAt: string; isLock: boolean; amendment?: string | null },
+  signal?: AbortSignal,
+): Promise<{ id: number; detail: EncounterDetail }> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/sign`, body, signal)
+}
+
+// ── Clinical list mutations ───────────────────────────────────────────────────
+
+export type ClinicalListMutationResponse = {
+  id: string
+  detail: ClinicalListsResponse
+}
+
+export type CreateProblemInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  diagnosis?: string | null
+  comments: string
+}
+
+export async function createProblem(
+  sessionId: string,
+  body: CreateProblemInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(sessionId, '/api/clinical-lists/problems', body, signal)
+}
+
+export async function deactivateProblem(
+  sessionId: string,
+  problemId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(sessionId, `/api/clinical-lists/problems/${problemId}/deactivate`, { comments }, signal)
+}
+
+export async function deleteProblem(
+  sessionId: string,
+  problemId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(sessionId, `/api/clinical-lists/problems/${problemId}`, signal)
+}
+
+export type CreateAllergyInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  comments: string
+  reaction: string
+  severity: string
+  listOptionId?: string | null
+}
+
+export async function createAllergy(
+  sessionId: string,
+  body: CreateAllergyInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(sessionId, '/api/clinical-lists/allergies', body, signal)
+}
+
+export async function deactivateAllergy(
+  sessionId: string,
+  allergyId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(sessionId, `/api/clinical-lists/allergies/${allergyId}/deactivate`, { comments }, signal)
+}
+
+export type CreateMedicationInput = {
+  patientId: string
+  title: string
+  dateTime: string
+  diagnosis?: string | null
+  comments: string
+}
+
+export async function createMedication(
+  sessionId: string,
+  body: CreateMedicationInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(sessionId, '/api/clinical-lists/medications', body, signal)
+}
+
+export async function deactivateMedication(
+  sessionId: string,
+  medicationId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(sessionId, `/api/clinical-lists/medications/${medicationId}/deactivate`, { comments }, signal)
+}
+
+export type CreatePrescriptionInput = {
+  patientId: string
+  providerId?: number | null
+  startDate: string
+  drug: string
+  rxNormCode?: string | null
+  dosage: string
+  quantity: string
+  route?: string | null
+  refills: number
+  note: string
+  diagnosis: string
+}
+
+export async function createPrescription(
+  sessionId: string,
+  body: CreatePrescriptionInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(sessionId, '/api/clinical-lists/prescriptions', body, signal)
+}
+
+export async function deactivatePrescription(
+  sessionId: string,
+  prescriptionId: string,
+  body: { endDate: string; note: string },
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(sessionId, `/api/clinical-lists/prescriptions/${prescriptionId}/deactivate`, body, signal)
+}
+
+// ── Lab report sign ───────────────────────────────────────────────────────────
+
+export async function signLabReport(
+  sessionId: string,
+  reportId: number,
+  body: { reviewedBy: string; reviewedAt: string },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return clinicianPut(sessionId, `/api/procedures/reports/${reportId}/sign`, body, signal)
+}
+
+// ── Message creation ──────────────────────────────────────────────────────────
+
+export type CreatePatientMessageInput = {
+  patientId: string
+  title: string
+  body: string
+  assignedTo?: string | null
+}
+
+export async function createPatientMessage(
+  sessionId: string,
+  input: CreatePatientMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientMessageItem> {
+  return clinicianPost(sessionId, '/api/messages/', input, signal)
+}
