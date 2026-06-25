@@ -265,6 +265,7 @@ drop table if exists patient_care_teams;
 drop table if exists patient_related_contacts;
 drop table if exists patient_histories;
 drop table if exists patient_employers;
+drop table if exists patient_portal_profile_change_requests;
 drop table if exists patient_portal_message_audit_events;
 drop table if exists patient_portal_report_audit_events;
 drop table if exists patient_portal_sessions;
@@ -460,6 +461,28 @@ create table patient_portal_sessions (
   expires_at timestamptz not null,
   ended_at timestamptz,
   session_source text not null default 'avenchart-portal'
+);
+
+create table patient_portal_profile_change_requests (
+  id bigserial primary key,
+  patient_id text not null references patients(canonical_id) on delete cascade,
+  pid integer not null,
+  session_id uuid references patient_portal_sessions(id) on delete set null,
+  portal_username text not null,
+  portal_login_username text not null,
+  activity text not null default 'profile',
+  require_audit integer not null default 1,
+  pending_action text not null default 'review',
+  action_taken text not null default '',
+  status text not null default 'waiting',
+  narrative text not null default 'Patient request changes to demographics.',
+  table_action text not null default '',
+  requested_changes jsonb not null,
+  action_user text not null default '0',
+  action_taken_at timestamptz,
+  checksum text not null default '0',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table patient_portal_report_audit_events (
@@ -2242,6 +2265,7 @@ create index idx_patient_portal_report_audit_session on patient_portal_report_au
 create index idx_patient_portal_message_audit_patient_created on patient_portal_message_audit_events (patient_id, created_at desc, id desc);
 create index idx_patient_portal_message_audit_session on patient_portal_message_audit_events (session_id);
 create index idx_patient_portal_message_audit_message on patient_portal_message_audit_events (message_id);
+create index idx_patient_portal_profile_change_pending on patient_portal_profile_change_requests (patient_id, status, pending_action, created_at, id);
 create index idx_patient_documents_pid_date on patient_documents (pid, doc_date);
 create index idx_patient_documents_category on patient_documents (category_name);
 create index idx_problems_pid on problems (pid);
@@ -2277,6 +2301,7 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     paymentSessions: dataset.paymentSessions.length,
     paymentActivities: dataset.paymentActivities.length,
     portalAccounts: dataset.patients.filter((patient) => patient.portalAccount).length,
+    portalProfileChangeRequests: 0,
     labOrders: dataset.labOrders.length,
     labReports: dataset.labReports.length,
     labResults: dataset.labResults.length,

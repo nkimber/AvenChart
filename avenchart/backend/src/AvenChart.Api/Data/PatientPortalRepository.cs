@@ -35,6 +35,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         WriteIndented = true
     };
+    private static readonly JsonSerializerOptions PortalProfileChangeJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly PatientPortalAppointmentCategoryOption[] AppointmentRequestCategoryOptions =
     [
         new(5, "Office Visit", "office_visit", 15),
@@ -306,6 +307,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             connection,
             session.LegacyPid.Value,
             cancellationToken);
+        var pendingChange = await GetPendingProfileChangeAsync(
+            connection,
+            session.CanonicalId,
+            cancellationToken);
 
         return new PatientPortalProfileResponse(
             Authenticated: true,
@@ -319,12 +324,116 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
             AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
-            HasPendingProfileChanges: false,
+            HasPendingProfileChanges: pendingChange is not null,
             Demographics: demographics,
             InsuranceCount: insurance.Count,
             Insurance: insurance,
+            PendingChange: pendingChange,
             FailureReason: null,
             SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalProfileResponse> SubmitProfileChangeAsync(
+        Guid sessionId,
+        PatientPortalProfileChangeSubmitRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return EmptyProfile(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var demographics = await GetPortalProfileDemographicsAsync(
+                connection,
+                session.CanonicalId,
+                session.LegacyPid.Value,
+                cancellationToken);
+            if (demographics is null)
+            {
+                return EmptyProfile(session, "Session patient was not found.");
+            }
+
+            var requestedDemographics = ApplyProfileChangeRequest(demographics, request);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                with existing as (
+                  select id
+                  from patient_portal_profile_change_requests
+                  where patient_id = @patient_id
+                    and activity = 'profile'
+                    and require_audit = 1
+                    and status = 'waiting'
+                    and pending_action = 'review'
+                  order by created_at, id
+                  limit 1
+                ),
+                updated as (
+                  update patient_portal_profile_change_requests
+                  set session_id = @session_id,
+                      portal_username = @portal_username,
+                      portal_login_username = @portal_login_username,
+                      narrative = @narrative,
+                      table_action = '',
+                      requested_changes = @requested_changes,
+                      action_user = '0',
+                      action_taken = '',
+                      action_taken_at = null,
+                      checksum = '0',
+                      updated_at = now()
+                  where id in (select id from existing)
+                  returning id
+                )
+                insert into patient_portal_profile_change_requests (
+                  patient_id,
+                  pid,
+                  session_id,
+                  portal_username,
+                  portal_login_username,
+                  activity,
+                  require_audit,
+                  pending_action,
+                  action_taken,
+                  status,
+                  narrative,
+                  table_action,
+                  requested_changes,
+                  action_user,
+                  checksum
+                )
+                select
+                  @patient_id,
+                  @pid,
+                  @session_id,
+                  @portal_username,
+                  @portal_login_username,
+                  'profile',
+                  1,
+                  'review',
+                  '',
+                  'waiting',
+                  @narrative,
+                  '',
+                  @requested_changes,
+                  '0',
+                  '0'
+                where not exists (select 1 from updated);
+                """;
+            command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = session.CanonicalId;
+            command.Parameters.AddWithValue("pid", session.LegacyPid.Value);
+            command.Parameters.AddWithValue("session_id", session.SessionId!.Value);
+            command.Parameters.Add("portal_username", NpgsqlDbType.Text).Value = session.PortalUsername;
+            command.Parameters.Add("portal_login_username", NpgsqlDbType.Text).Value = session.Username;
+            command.Parameters.Add("narrative", NpgsqlDbType.Text).Value = "Patient request changes to demographics.";
+            command.Parameters.Add("requested_changes", NpgsqlDbType.Jsonb).Value =
+                JsonSerializer.Serialize(requestedDemographics, PortalProfileChangeJsonOptions);
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return await GetProfileAsync(sessionId, cancellationToken);
     }
 
     public async Task<PatientPortalAppointmentsResponse> GetAppointmentsAsync(
@@ -1918,6 +2027,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Demographics: EmptyProfileDemographics(),
         InsuranceCount: 0,
         Insurance: Array.Empty<PatientPortalProfileInsurance>(),
+        PendingChange: null,
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1937,6 +2047,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Demographics: EmptyProfileDemographics(),
         InsuranceCount: 0,
         Insurance: Array.Empty<PatientPortalProfileInsurance>(),
+        PendingChange: null,
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -5360,6 +5471,83 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         return items;
+    }
+
+    private static async Task<PatientPortalProfileChangeRequest?> GetPendingProfileChangeAsync(
+        NpgsqlConnection connection,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id,
+              status,
+              pending_action,
+              narrative,
+              requested_changes::text as requested_changes,
+              created_at,
+              updated_at
+            from patient_portal_profile_change_requests
+            where patient_id = @patient_id
+              and activity = 'profile'
+              and require_audit = 1
+              and status = 'waiting'
+              and pending_action = 'review'
+            order by created_at, id
+            limit 1;
+            """;
+        command.Parameters.Add("patient_id", NpgsqlDbType.Text).Value = canonicalId;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var requestedChanges = reader.GetString(reader.GetOrdinal("requested_changes"));
+        var demographics = JsonSerializer.Deserialize<PatientPortalProfileDemographics>(
+            requestedChanges,
+            PortalProfileChangeJsonOptions) ?? EmptyProfileDemographics();
+        var createdAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"));
+        var updatedAtOrdinal = reader.GetOrdinal("updated_at");
+        var updatedAt = reader.IsDBNull(updatedAtOrdinal)
+            ? null
+            : reader.GetFieldValue<DateTimeOffset>(updatedAtOrdinal).ToString("yyyy-MM-dd HH:mm:ss");
+
+        return new PatientPortalProfileChangeRequest(
+            Id: reader.GetInt64(reader.GetOrdinal("id")),
+            Status: reader.GetString(reader.GetOrdinal("status")),
+            PendingAction: reader.GetString(reader.GetOrdinal("pending_action")),
+            Narrative: reader.GetString(reader.GetOrdinal("narrative")),
+            RequestedAt: createdAt.ToString("yyyy-MM-dd HH:mm:ss"),
+            UpdatedAt: updatedAt,
+            Demographics: demographics);
+    }
+
+    private static PatientPortalProfileDemographics ApplyProfileChangeRequest(
+        PatientPortalProfileDemographics current,
+        PatientPortalProfileChangeSubmitRequest request) =>
+        current with
+        {
+            Email = ApplyProfileChangeValue(current.Email, request.Email),
+            Street = ApplyProfileChangeValue(current.Street, request.Street),
+            City = ApplyProfileChangeValue(current.City, request.City),
+            State = ApplyProfileChangeValue(current.State, request.State),
+            PostalCode = ApplyProfileChangeValue(current.PostalCode, request.PostalCode),
+            PhoneHome = ApplyProfileChangeValue(current.PhoneHome, request.PhoneHome),
+            PhoneCell = ApplyProfileChangeValue(current.PhoneCell, request.PhoneCell)
+        };
+
+    private static string? ApplyProfileChangeValue(string? currentValue, string? requestedValue)
+    {
+        if (requestedValue is null)
+        {
+            return currentValue;
+        }
+
+        var trimmed = requestedValue.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(

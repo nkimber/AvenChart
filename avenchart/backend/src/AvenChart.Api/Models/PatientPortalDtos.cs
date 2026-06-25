@@ -100,6 +100,7 @@ public sealed record PatientPortalProfileResponse(
     PatientPortalProfileDemographics Demographics,
     int InsuranceCount,
     IReadOnlyList<PatientPortalProfileInsurance> Insurance,
+    PatientPortalProfileChangeRequest? PendingChange,
     string? FailureReason,
     string SessionSource);
 
@@ -135,6 +136,24 @@ public sealed record PatientPortalProfileInsurance(
     string? SubscriberName,
     string? SubscriberRelationship,
     string? SubscriberDateOfBirth);
+
+public sealed record PatientPortalProfileChangeRequest(
+    long Id,
+    string Status,
+    string PendingAction,
+    string Narrative,
+    string RequestedAt,
+    string? UpdatedAt,
+    PatientPortalProfileDemographics Demographics);
+
+public sealed record PatientPortalProfileChangeSubmitRequest(
+    string? Email,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? Street,
+    string? City,
+    string? State,
+    string? PostalCode);
 
 public sealed record PatientPortalAppointmentsResponse(
     bool Authenticated,

@@ -72,6 +72,7 @@ import {
   getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalProfile,
+  submitPatientPortalProfileChange,
   getPatientPortalMessageThread,
   getPatientPortalMessages,
   getPatientPortalMessageComposeOptions,
@@ -310,6 +311,7 @@ import {
   type PatientPortalMedicalReportEncounterForm,
   type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
+  type PatientPortalProfileChangeInput,
   type PatientPortalProfileResponse,
   type PatientMessageAssignmentUpdateInput,
   type PatientMessageContentUpdateInput,
@@ -4064,6 +4066,30 @@ function App() {
     }
   }
 
+  async function handlePatientPortalProfileChange(input: PatientPortalProfileChangeInput) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before submitting profile changes.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const profile = await submitPatientPortalProfileChange(patientPortalSessionId, input)
+      setPatientPortalProfile(profile)
+      setPatientPortalStatus(profile.authenticated ? 'ready' : 'rejected')
+      setPatientPortalMessage(profile.authenticated && profile.hasPendingProfileChanges
+        ? `Profile changes submitted for ${profile.displayName}`
+        : profile.failureReason ?? 'Profile changes were not submitted.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal profile change failed')
+      throw portalError
+    }
+  }
+
   async function handlePatientPortalMedicalReportGenerate() {
     if (!patientPortalSessionId) {
       setPatientPortalStatus('rejected')
@@ -4718,6 +4744,7 @@ function App() {
               setPatientPortalReportEncounterFormIds((current) => updateStringSelection(current, formId, selected))}
             onToggleMedicalReportProcedureOrder={(orderId, selected) =>
               setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
+            onSubmitProfileChange={handlePatientPortalProfileChange}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
@@ -5129,6 +5156,7 @@ function PatientPortalWorkspace({
   onToggleMedicalReportIssue,
   onToggleMedicalReportEncounterForm,
   onToggleMedicalReportProcedureOrder,
+  onSubmitProfileChange,
   onRequestAppointment,
   onComposeSubmit,
   onReplySubmit,
@@ -5184,6 +5212,7 @@ function PatientPortalWorkspace({
   onToggleMedicalReportIssue: (issueId: string, selected: boolean) => void
   onToggleMedicalReportEncounterForm: (formId: string, selected: boolean) => void
   onToggleMedicalReportProcedureOrder: (orderId: string, selected: boolean) => void
+  onSubmitProfileChange: (input: PatientPortalProfileChangeInput) => Promise<void>
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
@@ -5262,6 +5291,50 @@ function PatientPortalWorkspace({
   const [portalAppointmentReason, setPortalAppointmentReason] = useState('Portal appointment request for parity validation.')
   const [portalAppointmentRequestStatus, setPortalAppointmentRequestStatus] =
     useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [portalProfileChangeEmail, setPortalProfileChangeEmail] = useState('')
+  const [portalProfileChangePhoneHome, setPortalProfileChangePhoneHome] = useState('')
+  const [portalProfileChangePhoneCell, setPortalProfileChangePhoneCell] = useState('')
+  const [portalProfileChangeStreet, setPortalProfileChangeStreet] = useState('')
+  const [portalProfileChangeCity, setPortalProfileChangeCity] = useState('')
+  const [portalProfileChangeState, setPortalProfileChangeState] = useState('')
+  const [portalProfileChangePostalCode, setPortalProfileChangePostalCode] = useState('')
+  const [portalProfileChangeStatus, setPortalProfileChangeStatus] =
+    useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    const demographics = profile?.pendingChange?.demographics ?? profile?.demographics
+    if (!demographics) {
+      setPortalProfileChangeEmail('')
+      setPortalProfileChangePhoneHome('')
+      setPortalProfileChangePhoneCell('')
+      setPortalProfileChangeStreet('')
+      setPortalProfileChangeCity('')
+      setPortalProfileChangeState('')
+      setPortalProfileChangePostalCode('')
+      setPortalProfileChangeStatus('idle')
+      return
+    }
+
+    setPortalProfileChangeEmail(demographics.email ?? '')
+    setPortalProfileChangePhoneHome(demographics.phoneHome ?? '')
+    setPortalProfileChangePhoneCell(demographics.phoneCell ?? '')
+    setPortalProfileChangeStreet(demographics.street ?? '')
+    setPortalProfileChangeCity(demographics.city ?? '')
+    setPortalProfileChangeState(demographics.state ?? '')
+    setPortalProfileChangePostalCode(demographics.postalCode ?? '')
+    setPortalProfileChangeStatus('idle')
+  }, [
+    profile?.canonicalId,
+    profile?.pendingChange?.id,
+    profile?.pendingChange?.updatedAt,
+    profile?.demographics.email,
+    profile?.demographics.phoneHome,
+    profile?.demographics.phoneCell,
+    profile?.demographics.street,
+    profile?.demographics.city,
+    profile?.demographics.state,
+    profile?.demographics.postalCode,
+  ])
 
   useEffect(() => {
     const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
@@ -5400,6 +5473,30 @@ function PatientPortalWorkspace({
     }
   }
 
+  async function handlePortalProfileChangeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!authenticated) {
+      setPortalProfileChangeStatus('error')
+      return
+    }
+
+    setPortalProfileChangeStatus('saving')
+    try {
+      await onSubmitProfileChange({
+        email: portalProfileChangeEmail,
+        phoneHome: portalProfileChangePhoneHome,
+        phoneCell: portalProfileChangePhoneCell,
+        street: portalProfileChangeStreet,
+        city: portalProfileChangeCity,
+        state: portalProfileChangeState,
+        postalCode: portalProfileChangePostalCode,
+      })
+      setPortalProfileChangeStatus('saved')
+    } catch {
+      setPortalProfileChangeStatus('error')
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Patient portal sign-in">
@@ -5506,10 +5603,120 @@ function PatientPortalWorkspace({
                 <Field label="Mother" value={profile?.demographics.motherName} />
                 <Field label="Guardian" value={profile?.demographics.guardianName} />
                 <div className="result-meta">
+                  <span>Profile review</span>
+                  <span>{profile?.hasPendingProfileChanges ? 'Edit Pending Changes.' : 'Edit Profile'}</span>
+                </div>
+                {profile?.pendingChange && (
+                  <article className="clinical-item">
+                    <div>
+                      <strong>Pending review</strong>
+                      <span>{profile.pendingChange.narrative}</span>
+                    </div>
+                    <div className="message-meta-row">
+                      <span>Status {profile.pendingChange.status}</span>
+                      <span>Action {profile.pendingChange.pendingAction}</span>
+                      <span>Requested {profile.pendingChange.requestedAt}</span>
+                    </div>
+                    <div className="message-meta-row">
+                      <span>Email {profile.pendingChange.demographics.email ?? 'Not recorded'}</span>
+                      <span>Home {profile.pendingChange.demographics.phoneHome ?? 'Not recorded'}</span>
+                      <span>Cell {profile.pendingChange.demographics.phoneCell ?? 'Not recorded'}</span>
+                      <span>
+                        Address {[
+                          profile.pendingChange.demographics.street,
+                          profile.pendingChange.demographics.city,
+                          profile.pendingChange.demographics.state,
+                          profile.pendingChange.demographics.postalCode,
+                        ].filter(Boolean).join(', ') || 'Not recorded'}
+                      </span>
+                    </div>
+                  </article>
+                )}
+                <form
+                  className="contact-form portal-reply-form"
+                  aria-label="Patient portal profile change request"
+                  onSubmit={handlePortalProfileChangeSubmit}
+                >
+                  <div className="mutation-grid two-column">
+                    <label className="contact-field">
+                      <span>Email</span>
+                      <input
+                        value={portalProfileChangeEmail}
+                        onChange={(event) => setPortalProfileChangeEmail(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Home phone</span>
+                      <input
+                        value={portalProfileChangePhoneHome}
+                        onChange={(event) => setPortalProfileChangePhoneHome(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Cell phone</span>
+                      <input
+                        value={portalProfileChangePhoneCell}
+                        onChange={(event) => setPortalProfileChangePhoneCell(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>Street</span>
+                      <input
+                        value={portalProfileChangeStreet}
+                        onChange={(event) => setPortalProfileChangeStreet(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>City</span>
+                      <input
+                        value={portalProfileChangeCity}
+                        onChange={(event) => setPortalProfileChangeCity(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>State</span>
+                      <input
+                        value={portalProfileChangeState}
+                        onChange={(event) => setPortalProfileChangeState(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                    <label className="contact-field">
+                      <span>ZIP</span>
+                      <input
+                        value={portalProfileChangePostalCode}
+                        onChange={(event) => setPortalProfileChangePostalCode(event.target.value)}
+                        disabled={!authenticated || busy}
+                      />
+                    </label>
+                  </div>
+                  <div className="contact-actions">
+                    <button
+                      className="icon-text-button primary"
+                      type="submit"
+                      disabled={!authenticated || busy || portalProfileChangeStatus === 'saving'}
+                    >
+                      <Send size={15} />
+                      <span>{portalProfileChangeStatus === 'saving' ? 'Submitting changes' : 'Submit Changes'}</span>
+                    </button>
+                  </div>
+                  {portalProfileChangeStatus === 'saved' && (
+                    <div className="status-banner success">Profile changes pending review</div>
+                  )}
+                  {portalProfileChangeStatus === 'error' && (
+                    <div className="status-banner error">Profile changes were not submitted.</div>
+                  )}
+                </form>
+                <div className="result-meta">
                   <span>Insurance</span>
                   <span>{profile?.insuranceCount ?? 0} {(profile?.insuranceCount ?? 0) === 1 ? 'record' : 'records'}</span>
                 </div>
-                    <div className="clinical-list-body" role="region" aria-label="Patient portal insurance">
+                <div className="clinical-list-body" role="region" aria-label="Patient portal insurance">
                   {(profile?.insurance ?? []).map((insurance) => (
                     <article className="clinical-item" key={`${insurance.type}-${insurance.policyNumber ?? insurance.planName ?? 'insurance'}`}>
                       <div>

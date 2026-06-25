@@ -181,6 +181,19 @@ patientPortal.MapGet("/profile", async (
     })
     .WithName("GetPatientPortalProfile");
 
+patientPortal.MapPost("/profile/changes", async (
+        PatientPortalProfileChangeSubmitRequest request,
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.SubmitProfileChangeAsync(sessionId, request, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderProfile());
+    })
+    .WithName("SubmitPatientPortalProfileChange");
+
 patientPortal.MapGet("/appointments", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

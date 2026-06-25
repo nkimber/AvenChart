@@ -2396,6 +2396,26 @@ export type PatientPortalProfileInsurance = {
   subscriberDateOfBirth?: string | null
 }
 
+export type PatientPortalProfileChangeRequest = {
+  id: number
+  status: string
+  pendingAction: string
+  narrative: string
+  requestedAt: string
+  updatedAt?: string | null
+  demographics: PatientPortalProfileDemographics
+}
+
+export type PatientPortalProfileChangeInput = {
+  email?: string | null
+  phoneHome?: string | null
+  phoneCell?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+}
+
 export type PatientPortalProfileResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2412,6 +2432,7 @@ export type PatientPortalProfileResponse = {
   demographics: PatientPortalProfileDemographics
   insuranceCount: number
   insurance: PatientPortalProfileInsurance[]
+  pendingChange?: PatientPortalProfileChangeRequest | null
   failureReason?: string | null
   sessionSource: string
 }
@@ -3288,6 +3309,27 @@ export async function getPatientPortalProfile(
   })
   if (!response.ok) {
     throw new Error(`Patient portal profile check failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function submitPatientPortalProfileChange(
+  sessionId: string,
+  input: PatientPortalProfileChangeInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile/changes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`Patient portal profile change failed with ${response.status}`)
   }
 
   return response.json()
