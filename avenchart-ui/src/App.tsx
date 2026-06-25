@@ -21,6 +21,7 @@ import PatientDocuments from './pages/clinician/PatientDocuments.tsx'
 import PatientLabs from './pages/clinician/PatientLabs.tsx'
 import PatientAppointments from './pages/clinician/PatientAppointments.tsx'
 import PatientMessages from './pages/clinician/PatientMessages.tsx'
+import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
 import LabQueue from './pages/clinician/LabQueue.tsx'
 import OperationalReports from './pages/clinician/OperationalReports.tsx'
 import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
@@ -40,6 +41,7 @@ export default function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<ClinicianDashboard />} />
           <Route path="schedule" element={<ClinicianSchedule />} />
+          <Route path="calendar" element={<ClinicianCalendar />} />
           <Route path="labs" element={<LabQueue />} />
           <Route path="reports" element={<OperationalReports />} />
           <Route path="admin" element={<AdminDirectory />} />

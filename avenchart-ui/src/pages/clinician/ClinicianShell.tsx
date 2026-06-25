@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart2,
   CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FlaskConical,
@@ -24,6 +25,7 @@ export type ClinicianOutletContext = {
 const NAV_ITEMS = [
   { path: '/clinician/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/clinician/schedule', label: 'Schedule', icon: CalendarClock },
+  { path: '/clinician/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/clinician/patients', label: 'Patients', icon: Users },
   { path: '/clinician/labs', label: 'Lab queue', icon: FlaskConical },
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
