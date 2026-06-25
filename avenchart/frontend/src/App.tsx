@@ -5568,9 +5568,10 @@ function PatientPortalWorkspace({
                         <span>{allergy.startDate ?? allergy.reportedDate ?? 'Date pending'}</span>
                       </div>
                       <div className="message-meta-row">
-                        <span>Reaction {allergy.reaction ?? 'Not recorded'}</span>
-                        <span>Severity {allergy.severity ?? 'Not recorded'}</span>
-                        <span>End {allergy.endDate ?? 'Active'}</span>
+                        <span>Reported Date {allergy.reportedDate ?? 'Not recorded'}</span>
+                        <span>Start Date {allergy.startDate ?? 'Not recorded'}</span>
+                        <span>End Date {allergy.endDate ?? 'Active'}</span>
+                        <span>Referrer {allergy.referredBy ?? 'Not recorded'}</span>
                       </div>
                     </article>
                   ))}

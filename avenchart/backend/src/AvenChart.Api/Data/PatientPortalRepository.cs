@@ -2808,7 +2808,6 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             from allergies
             where pid = @pid
               and type = 'allergy'
-              and activity = 1
             order by allergy_date, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
