@@ -9726,6 +9726,12 @@ function CalendarWorkspace({
     try {
       const usesMonthlyRepeatOn = editRepeats && editMonthlyRepeatOn
       const usesSpecificWeekdays = editRepeats && editSpecificWeekdays
+      const editedFacilityId = numberOrNull(editFacilityId)
+      const editedBillingLocationId = numberOrNull(editBillingLocationId)
+      const billingShouldFollowFacility =
+        appointmentDetail.facilityId !== editedFacilityId
+        && appointmentDetail.billingLocationId === appointmentDetail.facilityId
+        && editedBillingLocationId === appointmentDetail.billingLocationId
       const scheduleInput = {
         title: editTitle,
         date: editDate,
@@ -9734,8 +9740,8 @@ function CalendarWorkspace({
         room: editRoom,
         categoryId: Number(editCategoryId),
         providerId: numberOrNull(editProviderId),
-        facilityId: numberOrNull(editFacilityId),
-        billingLocationId: numberOrNull(editBillingLocationId),
+        facilityId: editedFacilityId,
+        billingLocationId: billingShouldFollowFacility ? editedFacilityId : editedBillingLocationId,
         status: editStatus,
         comments: editComments,
       }
