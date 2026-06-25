@@ -201,6 +201,140 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             Detail: await GetDirectoryAsync(cancellationToken));
     }
 
+    public async Task<AdministrationPortalProfileReviewMutationResponse?> RevertPortalProfileReviewAsync(
+        long requestId,
+        string actionUser,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var findCommand = connection.CreateCommand();
+        findCommand.Transaction = transaction;
+        findCommand.CommandText = """
+            select
+                r.id::text,
+                r.patient_id,
+                r.pid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.date_of_birth,
+                p.sex,
+                p.email,
+                p.street,
+                p.city,
+                p.state,
+                p.postal_code,
+                p.phone_home,
+                p.phone_cell,
+                p.phone as phone_contact,
+                p.guardian_relationship as contact_relationship,
+                p.mother_name,
+                p.guardian_name,
+                p.guardian_relationship,
+                p.guardian_phone,
+                p.guardian_email
+            from patient_portal_profile_change_requests r
+            join patients p on p.canonical_id = r.patient_id
+            where r.id = @id
+              and r.status = 'waiting'
+              and r.activity = 'profile'
+              and r.require_audit = 1
+              and r.pending_action = 'review'
+            for update;
+            """;
+        findCommand.Parameters.Add("id", NpgsqlDbType.Bigint).Value = requestId;
+
+        string id;
+        string patientId;
+        int legacyPid;
+        PatientPortalProfileDemographics chartDemographics;
+        await using (var reader = await findCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            id = reader.GetString(reader.GetOrdinal("id"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            chartDemographics = new PatientPortalProfileDemographics(
+                FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+                LastName: reader.GetString(reader.GetOrdinal("last_name")),
+                PreferredName: ReadNullableString(reader, "preferred_name"),
+                DateOfBirth: ReadNullableDate(reader, "date_of_birth"),
+                Sex: ReadNullableString(reader, "sex"),
+                Email: ReadNullableString(reader, "email"),
+                Street: ReadNullableString(reader, "street"),
+                City: ReadNullableString(reader, "city"),
+                State: ReadNullableString(reader, "state"),
+                PostalCode: ReadNullableString(reader, "postal_code"),
+                PhoneHome: ReadNullableString(reader, "phone_home"),
+                PhoneCell: ReadNullableString(reader, "phone_cell"),
+                PhoneContact: ReadNullableString(reader, "phone_contact"),
+                ContactRelationship: ReadNullableString(reader, "contact_relationship"),
+                MotherName: ReadNullableString(reader, "mother_name"),
+                GuardianName: ReadNullableString(reader, "guardian_name"),
+                GuardianRelationship: ReadNullableString(reader, "guardian_relationship"),
+                GuardianPhone: ReadNullableString(reader, "guardian_phone"),
+                GuardianEmail: ReadNullableString(reader, "guardian_email"));
+        }
+
+        const string resolvedStatus = "closed";
+        const string resolvedPendingAction = "completed";
+        const string resolvedActionTaken = "accept";
+        const string resolvedNarrative = "Changes reviewed and committed to demographics.";
+        const string resolvedTableAction = "update";
+        string resolvedAt;
+        await using (var updateRequestCommand = connection.CreateCommand())
+        {
+            updateRequestCommand.Transaction = transaction;
+            updateRequestCommand.CommandText = """
+                update patient_portal_profile_change_requests
+                set requested_changes = @requested_changes::jsonb,
+                    pending_action = @pending_action,
+                    action_taken = @action_taken,
+                    status = @status,
+                    narrative = @narrative,
+                    table_action = @table_action,
+                    action_user = @action_user,
+                    action_taken_at = now(),
+                    updated_at = now()
+                where id = @id
+                returning to_char(action_taken_at, 'YYYY-MM-DD HH24:MI:SS') as action_taken_at;
+                """;
+            updateRequestCommand.Parameters.Add("id", NpgsqlDbType.Bigint).Value = requestId;
+            updateRequestCommand.Parameters.Add("requested_changes", NpgsqlDbType.Text).Value =
+                JsonSerializer.Serialize(chartDemographics, PortalProfileChangeJsonOptions);
+            updateRequestCommand.Parameters.Add("pending_action", NpgsqlDbType.Text).Value = resolvedPendingAction;
+            updateRequestCommand.Parameters.Add("action_taken", NpgsqlDbType.Text).Value = resolvedActionTaken;
+            updateRequestCommand.Parameters.Add("status", NpgsqlDbType.Text).Value = resolvedStatus;
+            updateRequestCommand.Parameters.Add("narrative", NpgsqlDbType.Text).Value = resolvedNarrative;
+            updateRequestCommand.Parameters.Add("table_action", NpgsqlDbType.Text).Value = resolvedTableAction;
+            updateRequestCommand.Parameters.Add("action_user", NpgsqlDbType.Text).Value = NormalizeRequired(actionUser, "Action user");
+            resolvedAt = (string)(await updateRequestCommand.ExecuteScalarAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Profile review revert did not return an action timestamp."));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AdministrationPortalProfileReviewMutationResponse(
+            Id: id,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Status: resolvedStatus,
+            PendingAction: resolvedPendingAction,
+            ActionTaken: resolvedActionTaken,
+            Narrative: resolvedNarrative,
+            TableAction: resolvedTableAction,
+            ActionUser: NormalizeRequired(actionUser, "Action user"),
+            ActionTakenAt: resolvedAt,
+            RequestedDemographics: chartDemographics,
+            Detail: await GetDirectoryAsync(cancellationToken));
+    }
+
     public async Task<AdministrationUserMutationResponse> CreateUserAsync(
         AdministrationUserMutationRequest request,
         CancellationToken cancellationToken)
@@ -1053,6 +1187,12 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static string? ReadNullableDate(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);

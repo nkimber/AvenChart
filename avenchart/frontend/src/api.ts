@@ -6306,6 +6306,26 @@ export async function acceptAdministrationPortalProfileReview(
   return response.json()
 }
 
+export async function revertAdministrationPortalProfileReview(
+  requestId: string | number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/administration/portal-activity/profile-reviews/${encodeURIComponent(String(requestId))}/revert`,
+    {
+      method: 'PUT',
+      headers: buildLegacyEhrSessionHeaders(sessionId),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(adminApiError('Portal profile review revert', response.status))
+  }
+
+  return response.json()
+}
+
 export async function createAdministrationUser(
   input: AdministrationUserMutationInput,
   sessionId?: string | null,

@@ -2424,6 +2424,22 @@ administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/accept"
     })
     .WithName("AcceptAdministrationPortalProfileReview");
 
+administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/revert", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        long requestId,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.RevertPortalProfileReviewAsync(
+            requestId,
+            session.Username,
+            cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("RevertAdministrationPortalProfileReview");
+
 administration.MapPost("/users", async (
         AdministrationRepository repository,
         AdministrationUserMutationRequest request,

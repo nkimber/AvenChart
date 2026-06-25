@@ -45,6 +45,7 @@ import {
   getAppointmentDetail,
   getAdministrationDirectory,
   acceptAdministrationPortalProfileReview,
+  revertAdministrationPortalProfileReview,
   getClinicalLists,
   getEncounterDetail,
   getPatientChart,
@@ -3508,6 +3509,25 @@ function App() {
     }
   }
 
+  async function handleAdministrationPortalProfileReviewRevert(request: AdministrationPortalProfileReviewRequest) {
+    setAdministrationStatus('loading')
+    setAdministrationError(null)
+
+    try {
+      const sessionId = getActiveAdministrationSessionId()
+      const response = await revertAdministrationPortalProfileReview(request.id, sessionId)
+      setAdministrationDirectory(response.detail)
+      setAdministrationStatus('ready')
+      setAdministrationRefreshKey((current) => current + 1)
+      return response
+    } catch (revertError) {
+      setAdministrationStatus('error')
+      const message = revertError instanceof Error ? revertError.message : 'Portal profile review revert failed'
+      setAdministrationError(message)
+      throw revertError
+    }
+  }
+
   async function handlePatientMessageCreate(input: PatientMessageCreateInput) {
     setMessageStatus('loading')
     setMessageError(null)
@@ -5048,6 +5068,7 @@ function App() {
             onGrantAccessMembership={handleAdministrationAccessUserMembershipGrant}
             onRevokeAccessMembership={handleAdministrationAccessUserMembershipRevoke}
             onAcceptPortalProfileReview={handleAdministrationPortalProfileReviewAccept}
+            onRevertPortalProfileReview={handleAdministrationPortalProfileReviewRevert}
             onAdminSessionActive={(sessionId) => {
               setLegacyEhrSessionId(sessionId)
               setAdministrationRefreshKey((current) => current + 1)
@@ -18376,6 +18397,7 @@ function AdministrationWorkspace({
   onGrantAccessMembership,
   onRevokeAccessMembership,
   onAcceptPortalProfileReview,
+  onRevertPortalProfileReview,
   onAdminSessionActive,
   onAdminSessionEnded,
 }: {
@@ -18399,6 +18421,7 @@ function AdministrationWorkspace({
   onGrantAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
   onRevokeAccessMembership: (input: AdministrationAccessUserMembershipMutationInput) => Promise<unknown>
   onAcceptPortalProfileReview: (request: AdministrationPortalProfileReviewRequest) => Promise<unknown>
+  onRevertPortalProfileReview: (request: AdministrationPortalProfileReviewRequest) => Promise<unknown>
   onAdminSessionActive: (sessionId: string) => void
   onAdminSessionEnded: () => void
 }) {
@@ -18457,6 +18480,7 @@ function AdministrationWorkspace({
   const [loginAuditStatus, setLoginAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
   const [portalReviewActionId, setPortalReviewActionId] = useState<string | null>(null)
+  const [portalReviewRevertId, setPortalReviewRevertId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authSession?.authenticated || !authSession.sessionId) {
@@ -18679,6 +18703,17 @@ function AdministrationWorkspace({
     }
   }
 
+  async function handlePortalProfileReviewRevert(request: AdministrationPortalProfileReviewRequest) {
+    setMutationMessage(null)
+    setPortalReviewRevertId(request.id)
+    try {
+      await onRevertPortalProfileReview(request)
+      setMutationMessage(`Reverted ${request.patientName || request.pubpid} profile edits`)
+    } finally {
+      setPortalReviewRevertId(null)
+    }
+  }
+
   return (
     <section className="scheduler-layout">
       <section className="finder-panel" aria-label="Administration summary">
@@ -18746,7 +18781,9 @@ function AdministrationWorkspace({
                       key={request.id}
                       request={request}
                       isAccepting={portalReviewActionId === request.id}
+                      isReverting={portalReviewRevertId === request.id}
                       onAccept={handlePortalProfileReviewAccept}
+                      onRevert={handlePortalProfileReviewRevert}
                     />
                   ))}
                 </div>
@@ -21711,12 +21748,17 @@ function Field({ label, value }: { label: string; value?: string | number | null
 function PortalProfileReviewCard({
   request,
   isAccepting,
+  isReverting,
   onAccept,
+  onRevert,
 }: {
   request: AdministrationPortalProfileReviewRequest
   isAccepting: boolean
+  isReverting: boolean
   onAccept: (request: AdministrationPortalProfileReviewRequest) => Promise<void>
+  onRevert: (request: AdministrationPortalProfileReviewRequest) => Promise<void>
 }) {
+  const isWorking = isAccepting || isReverting
   return (
     <article className="review-queue-card">
       <div className="review-queue-card-main">
@@ -21729,8 +21771,17 @@ function PortalProfileReviewCard({
           <span className="status-pill">{request.status}</span>
           <button
             type="button"
+            className="icon-text-button compact"
+            disabled={isWorking}
+            onClick={() => void onRevert(request)}
+          >
+            <RotateCcw size={15} />
+            <span>{isReverting ? 'Reverting' : 'Revert Edits'}</span>
+          </button>
+          <button
+            type="button"
             className="icon-text-button primary compact"
-            disabled={isAccepting}
+            disabled={isWorking}
             onClick={() => void onAccept(request)}
           >
             <Check size={15} />
