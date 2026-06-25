@@ -254,6 +254,10 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             session.LegacyPid.Value,
             metadata.BaseDate,
             cancellationToken);
+        var immunizations = await GetPortalHomeImmunizationsAsync(
+            connection,
+            session.LegacyPid.Value,
+            cancellationToken);
 
         return new PatientPortalHomeSummaryResponse(
             Authenticated: true,
@@ -270,6 +274,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             Messages: messages,
             UpcomingAppointmentCount: appointments.TotalCount,
             UpcomingAppointments: appointments.Items,
+            ImmunizationCount: immunizations.Count,
+            Immunizations: immunizations,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -1822,6 +1828,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Messages: new PatientPortalHomeMessageSummary(0, 0, 0, null, null),
         UpcomingAppointmentCount: 0,
         UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        ImmunizationCount: 0,
+        Immunizations: Array.Empty<PatientPortalHomeImmunizationSummary>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -1840,6 +1848,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         Messages: new PatientPortalHomeMessageSummary(0, 0, 0, null, null),
         UpcomingAppointmentCount: 0,
         UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        ImmunizationCount: 0,
+        Immunizations: Array.Empty<PatientPortalHomeImmunizationSummary>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -5075,6 +5085,48 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         return recipients;
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalHomeImmunizationSummary>> GetPortalHomeImmunizationsAsync(
+        NpgsqlConnection connection,
+        int pid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id,
+              administered_at::date as administered_date,
+              to_char(administered_at::date, 'MM/DD/YYYY') as administered_formatted,
+              immunization_id,
+              cvx_code,
+              coalesce(nullif(vaccine, ''), nullif(cvx_code, ''), '') as code_text,
+              note,
+              completion_status,
+              coalesce(added_erroneously, 0)::int as added_erroneously
+            from immunizations
+            where pid = @pid
+            order by administered_at desc, id desc;
+            """;
+        command.Parameters.AddWithValue("pid", pid);
+
+        var items = new List<PatientPortalHomeImmunizationSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new PatientPortalHomeImmunizationSummary(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                AdministeredDate: ReadNullableDate(reader, "administered_date"),
+                AdministeredFormatted: ReadNullableString(reader, "administered_formatted"),
+                ImmunizationId: ReadNullableInt(reader, "immunization_id"),
+                CvxCode: ReadNullableString(reader, "cvx_code"),
+                CodeText: ReadNullableString(reader, "code_text") ?? string.Empty,
+                Note: ReadNullableString(reader, "note"),
+                CompletionStatus: ReadNullableString(reader, "completion_status"),
+                AddedErroneously: reader.GetInt32(reader.GetOrdinal("added_erroneously"))));
+        }
+
+        return items;
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(

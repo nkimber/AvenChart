@@ -49,6 +49,8 @@ public sealed record PatientPortalHomeSummaryResponse(
     PatientPortalHomeMessageSummary Messages,
     int UpcomingAppointmentCount,
     IReadOnlyList<PatientPortalHomeAppointmentSummary> UpcomingAppointments,
+    int ImmunizationCount,
+    IReadOnlyList<PatientPortalHomeImmunizationSummary> Immunizations,
     string? FailureReason,
     string SessionSource);
 
@@ -70,6 +72,17 @@ public sealed record PatientPortalHomeAppointmentSummary(
     string? ProviderName,
     string? FacilityName,
     string? Comments);
+
+public sealed record PatientPortalHomeImmunizationSummary(
+    int Id,
+    string? AdministeredDate,
+    string? AdministeredFormatted,
+    int? ImmunizationId,
+    string? CvxCode,
+    string CodeText,
+    string? Note,
+    string? CompletionStatus,
+    int AddedErroneously);
 
 public sealed record PatientPortalAppointmentsResponse(
     bool Authenticated,

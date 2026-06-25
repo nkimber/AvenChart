@@ -579,6 +579,11 @@ try {
         -Headers @{ "X-Legacy EHR-Patient-Portal-Session" = $validPortalLogin.sessionId } `
         -TimeoutSec 20
     $portalHomeAppointments = @($portalHome.upcomingAppointments)
+    $portalHomeImmunization = @($portalHome.immunizations) | Where-Object {
+        $_.codeText -eq "Influenza, seasonal, injectable" -and
+        $_.cvxCode -eq "141" -and
+        $_.administeredDate -eq "2026-01-12"
+    } | Select-Object -First 1
     $portalMessages = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patient-portal/messages" `
         -Method Get `
@@ -638,6 +643,8 @@ try {
         -and $portalHomeAppointments.Count -gt 0 `
         -and $portalHomeAppointments[0].date -eq "2026-07-28" `
         -and $portalHomeAppointments[0].title -eq "Preventive Care" `
+        -and $portalHome.immunizationCount -ge 1 `
+        -and $null -ne $portalHomeImmunization `
         -and $portalMessages.authenticated `
         -and $portalMessages.messageCount -eq 2 `
         -and $portalMessages.allMessageCount -eq 2 `
@@ -677,6 +684,7 @@ try {
         validLogin = $validPortalLogin
         session = $portalSession
         home = $portalHome
+        homeImmunization = $portalHomeImmunization
         messages = $portalMessages
         clinicalSummary = $portalClinicalSummary
         labResults = $portalLabResults

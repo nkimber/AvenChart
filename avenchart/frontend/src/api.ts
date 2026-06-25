@@ -2328,6 +2328,18 @@ export type PatientPortalHomeAppointmentSummary = {
   comments?: string | null
 }
 
+export type PatientPortalHomeImmunizationSummary = {
+  id: number
+  administeredDate?: string | null
+  administeredFormatted?: string | null
+  immunizationId?: number | null
+  cvxCode?: string | null
+  codeText: string
+  note?: string | null
+  completionStatus?: string | null
+  addedErroneously: number
+}
+
 export type PatientPortalHomeSummaryResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -2343,6 +2355,8 @@ export type PatientPortalHomeSummaryResponse = {
   messages: PatientPortalHomeMessageSummary
   upcomingAppointmentCount: number
   upcomingAppointments: PatientPortalHomeAppointmentSummary[]
+  immunizationCount: number
+  immunizations: PatientPortalHomeImmunizationSummary[]
   failureReason?: string | null
   sessionSource: string
 }

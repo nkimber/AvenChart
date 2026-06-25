@@ -5466,6 +5466,36 @@ function PatientPortalWorkspace({
                 <Field label="Latest message date" value={home.messages.latestMessageDate} />
               </InfoPanel>
 
+              <section className="info-panel messages-panel" aria-label="Patient portal immunizations">
+                <div className="panel-heading">
+                  <Syringe size={17} />
+                  <h3>Patient Immunization</h3>
+                </div>
+                <div className="result-meta">
+                  <span>Health snapshot</span>
+                  <span>{home.immunizationCount} {home.immunizationCount === 1 ? 'record' : 'records'}</span>
+                </div>
+                <div className="clinical-list-body">
+                  {home.immunizations.map((immunization) => (
+                    <article className="clinical-item" key={immunization.id}>
+                      <div>
+                        <strong>{immunization.codeText || immunization.cvxCode || 'Immunization'}</strong>
+                        <span>{immunization.administeredFormatted ?? immunization.administeredDate ?? 'Date pending'}</span>
+                      </div>
+                      <div className="message-meta-row">
+                        <span>CVX {immunization.cvxCode ?? 'Not recorded'}</span>
+                        <span>Status {immunization.completionStatus ?? 'Not recorded'}</span>
+                        <span>{immunization.note ?? 'No note recorded'}</span>
+                        {immunization.addedErroneously === 1 && <span>Entered in error</span>}
+                      </div>
+                    </article>
+                  ))}
+                  {home.immunizations.length === 0 && (
+                    <div className="empty-state inline">No records found.</div>
+                  )}
+                </div>
+              </section>
+
               <section className="info-panel messages-panel" aria-label="Patient portal documents">
                 <div className="panel-heading">
                   <FolderOpen size={17} />
