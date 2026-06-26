@@ -1201,8 +1201,15 @@
 }
 
 .portal-batch-actions {
+  align-items: flex-end;
   justify-content: flex-end;
   padding: 0 12px;
+}
+
+.portal-message-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 360px;
 }
 
 .secure-message-pager {
