@@ -106,6 +106,7 @@ import {
   logout,
   createBillingClaimStatus,
   importBillingEobBatch,
+  createBillingAdjustmentReversal,
   createBillingInsuranceReversal,
   createBillingLine,
   createBillingPatientRefund,
@@ -249,6 +250,7 @@ import {
   type BillingChargeTemplate,
   type BillingClaimItem,
   type BillingClaimCreateInput,
+  type BillingAdjustmentReversalCreateInput,
   type BillingInsuranceReversalCreateInput,
   type BillingLedgerEntry,
   type BillingStatementLineItem,
@@ -3098,6 +3100,24 @@ function App() {
     }
   }
 
+  async function handleBillingAdjustmentReversalCreate(input: BillingAdjustmentReversalCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingAdjustmentReversal(input, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing adjustment reversal create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
   async function handleBillingEobBatchImport(patientId: string) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5197,6 +5217,7 @@ function App() {
             onCreatePayment={handleBillingPaymentCreate}
             onCreatePatientRefund={handleBillingPatientRefundCreate}
             onCreateInsuranceReversal={handleBillingInsuranceReversalCreate}
+            onCreateAdjustmentReversal={handleBillingAdjustmentReversalCreate}
             onImportEobBatch={handleBillingEobBatchImport}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
             onVoidPayment={handleBillingPaymentVoid}
@@ -14699,6 +14720,7 @@ function FeesWorkspace({
   onCreatePayment,
   onCreatePatientRefund,
   onCreateInsuranceReversal,
+  onCreateAdjustmentReversal,
   onImportEobBatch,
   onDownloadPaymentReceipt,
   onVoidPayment,
@@ -14727,6 +14749,7 @@ function FeesWorkspace({
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onCreatePatientRefund: (input: BillingPatientRefundCreateInput) => Promise<unknown>
   onCreateInsuranceReversal: (input: BillingInsuranceReversalCreateInput) => Promise<unknown>
+  onCreateAdjustmentReversal: (input: BillingAdjustmentReversalCreateInput) => Promise<unknown>
   onImportEobBatch: (patientId: string) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
@@ -15007,6 +15030,28 @@ function FeesWorkspace({
       return
     }
 
+    if (isAdjustmentReversal) {
+      await onCreateAdjustmentReversal({
+        patientId,
+        encounter: Number(billingEncounter),
+        payerId: Number(paymentPayerId),
+        payerName: paymentPayerName,
+        reference: paymentReference,
+        postDate: paymentPostDate,
+        checkDate: paymentPostDate,
+        depositDate: paymentPostDate,
+        paymentMethod,
+        codeType: 'CPT4',
+        code: paymentCode,
+        memo: paymentMemo,
+        adjustmentAmount: parsedAdjustmentAmount,
+        payerClaimNumber: paymentPayerClaimNumber,
+      })
+
+      setMutationMessage('Adjustment reversal saved')
+      return
+    }
+
     await onCreatePayment({
       patientId,
       encounter: Number(billingEncounter),
@@ -15017,19 +15062,19 @@ function FeesWorkspace({
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isAdjustmentReversal ? 'adjustment_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: isPatientPayment ? 'patient_payment' : 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
-      payAmount: isAdjustmentReversal ? 0 : parsedPayAmount,
-      adjustmentAmount: isAdjustmentReversal ? -Math.abs(parsedAdjustmentAmount) : isPatientPayment ? 0 : parsedAdjustmentAmount,
-      accountCode: isPatientPayment || isAdjustmentReversal ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment || isAdjustmentReversal ? '' : paymentReasonCode,
+      payAmount: parsedPayAmount,
+      adjustmentAmount: isPatientPayment ? 0 : parsedAdjustmentAmount,
+      accountCode: isPatientPayment ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment ? '' : paymentReasonCode,
       payerClaimNumber: isPatientPayment ? '' : paymentPayerClaimNumber,
     })
 
-    setMutationMessage(isAdjustmentReversal ? 'Adjustment reversal saved' : 'Payment posting saved')
+    setMutationMessage('Payment posting saved')
   }
 
   async function handleEobBatchImport() {

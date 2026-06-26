@@ -414,6 +414,23 @@ public sealed record BillingInsuranceReversalCreateRequest(
     decimal ReversalAmount,
     string? PayerClaimNumber);
 
+public sealed record BillingAdjustmentReversalCreateRequest(
+    string PatientId,
+    int Encounter,
+    int PayerId,
+    string PayerName,
+    string Reference,
+    string PostDate,
+    string? CheckDate,
+    string? DepositDate,
+    string PaymentMethod,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string Memo,
+    decimal AdjustmentAmount,
+    string? PayerClaimNumber);
+
 public sealed record BillingEobBatchImportRequest(
     string PatientId);
 
