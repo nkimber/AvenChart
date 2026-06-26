@@ -21034,12 +21034,20 @@ function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: strin
 function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
   const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
   const cptLines = encounterLines.filter((line) => (line.codeType || '').toUpperCase() === 'CPT4')
-  const allowedModifiers = new Set(['', '25', '59', '76', '77', '95'])
+  const allowedModifiers = new Set(['25', '59', '76', '77', '95'])
+  const modifierTokensByLine = cptLines.map((line) => parseClaimModifierTokens(line.modifier))
   const invalidModifiers = Array.from(
     new Set(
-      cptLines
-        .map((line) => (line.modifier || '').trim().toUpperCase())
+      modifierTokensByLine
+        .flat()
         .filter((modifier) => !allowedModifiers.has(modifier)),
+    ),
+  )
+  const duplicateModifiers = Array.from(
+    new Set(
+      modifierTokensByLine.flatMap((modifiers) =>
+        modifiers.filter((modifier, index) => modifiers.indexOf(modifier) !== index),
+      ),
     ),
   )
   const diagnosisPointers = Array.from(
@@ -21084,6 +21092,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   if (invalidModifiers.length > 0) {
     issues.push(`invalid-modifier:${invalidModifiers.join(',')}`)
   }
+  if (duplicateModifiers.length > 0) {
+    issues.push(`duplicate-modifier:${duplicateModifiers.join(',')}`)
+  }
 
   const status = issues.length === 0 ? 'PASS' : 'FAIL'
   const processFile = `CLAIM-${claim.encounter}-${controlNumber}-SCRUB.txt`
@@ -21099,6 +21110,13 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   ].join('|')
 
   return { processFile, report, status, issues }
+}
+
+function parseClaimModifierTokens(modifier: string | null | undefined) {
+  return (modifier || '')
+    .split(/[,\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
 }
 
 function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
