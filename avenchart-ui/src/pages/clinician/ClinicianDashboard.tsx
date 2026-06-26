@@ -228,21 +228,18 @@ export default function ClinicianDashboard() {
             </div>
             <div className="dash-quick-actions">
               {[
-                { label: 'Patient search', desc: 'Find or open a chart', path: '/clinician/patients', icon: Users, color: 'blue' },
-                { label: "Today's schedule", desc: 'All appointments for today', path: '/clinician/schedule', icon: CalendarClock, color: 'blue' },
-                { label: 'New encounter', desc: 'Start a visit note', path: '/clinician/encounters/new', icon: FileText, color: 'teal' },
-                { label: 'Register patient', desc: 'Add a new patient record', path: '/clinician/patients/new', icon: UserPlus, color: 'teal' },
-                { label: 'Lab queue', desc: 'Review pending reports', path: '/clinician/labs', icon: FlaskConical, color: 'amber' },
-                { label: 'Rx renewals', desc: 'Prescription requests', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
-                { label: 'Messages', desc: 'Patient communications', path: '/clinician/messages', icon: Mail, color: newMessages ? 'indigo' : 'muted' },
-                { label: 'Reports', desc: 'Operational analytics', path: '/clinician/reports', icon: ClipboardList, color: 'muted' },
-              ].map(({ label, desc, path, icon: Icon, color }) => (
+                { label: 'Patient search', path: '/clinician/patients', icon: Users, color: 'blue' },
+                { label: "Today's schedule", path: '/clinician/schedule', icon: CalendarClock, color: 'blue' },
+                { label: 'New encounter', path: '/clinician/encounters/new', icon: FileText, color: 'teal' },
+                { label: 'Register patient', path: '/clinician/patients/new', icon: UserPlus, color: 'teal' },
+                { label: 'Lab queue', path: '/clinician/labs', icon: FlaskConical, color: 'amber' },
+                { label: 'Rx renewals', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
+                { label: 'Messages', path: '/clinician/messages', icon: Mail, color: newMessages ? 'indigo' : 'muted' },
+                { label: 'Reports', path: '/clinician/reports', icon: ClipboardList, color: 'muted' },
+              ].map(({ label, path, icon: Icon, color }) => (
                 <Link key={path} to={path} className={`dash-action-tile dash-action-${color}`}>
-                  <div className="dash-action-icon"><Icon size={16} /></div>
-                  <div className="dash-action-body">
-                    <p className="dash-action-label">{label}</p>
-                    <p className="dash-action-desc">{desc}</p>
-                  </div>
+                  <div className="dash-action-icon"><Icon size={15} /></div>
+                  <p className="dash-action-label">{label}</p>
                 </Link>
               ))}
             </div>

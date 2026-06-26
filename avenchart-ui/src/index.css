@@ -2594,7 +2594,7 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   text-decoration: none;
@@ -2603,7 +2603,7 @@ a {
 }
 .dash-action-tile:hover { background: var(--surface); border-color: var(--teal); }
 .dash-action-icon {
-  width: 28px; height: 28px; border-radius: 7px;
+  width: 26px; height: 26px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .dash-action-blue   .dash-action-icon { background: var(--teal-soft); color: var(--teal); }
@@ -2611,9 +2611,7 @@ a {
 .dash-action-amber  .dash-action-icon { background: var(--warning-surface); color: var(--warning); }
 .dash-action-indigo .dash-action-icon { background: #ede9fe; color: #5b21b6; }
 .dash-action-muted  .dash-action-icon { background: var(--border); color: var(--text-muted); }
-.dash-action-body { min-width: 0; }
 .dash-action-label { font-size: 12.5px; font-weight: 600; color: var(--text); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dash-action-desc  { font-size: 11px; color: var(--text-muted); margin: 1px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Empty state (small) ─────────────────────────────────────────────────── */
 .cl-empty-state-sm {
