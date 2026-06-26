@@ -5487,6 +5487,11 @@ function PatientPortalWorkspace({
     }))
   }
 
+  function handleClearPortalMessageSearch() {
+    setPortalMessageSearch('')
+    setPortalMessagePages({ inbox: 0, sent: 0, all: 0, deleted: 0 })
+  }
+
   function togglePortalDocumentSelection(documentId: number, checked: boolean) {
     setSelectedPortalDocumentIds((current) => {
       if (checked) {
@@ -6373,6 +6378,16 @@ function PatientPortalWorkspace({
                   <div className="result-meta portal-message-search-summary" aria-label="Secure message search result counts">
                     <span>{secureMessageSearchSummaryText}</span>
                   </div>
+                  <button
+                    className="icon-text-button"
+                    type="button"
+                    onClick={handleClearPortalMessageSearch}
+                    disabled={!authenticated || busy || normalizedPortalMessageSearch === ''}
+                    aria-label="Clear secure message search"
+                  >
+                    <X size={15} />
+                    <span>Clear search</span>
+                  </button>
                   <button
                     className="icon-text-button"
                     type="button"
