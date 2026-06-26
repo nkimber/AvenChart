@@ -21053,9 +21053,8 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   const modifierCountIssues = Array.from(
     new Set(modifierTokensByLine.map((modifiers) => modifiers.length).filter((count) => count > 4)),
   )
-  const diagnosisPointers = Array.from(
-    new Set(cptLines.map((line) => line.justify?.trim()).filter((value): value is string => Boolean(value))),
-  )
+  const diagnosisPointerTokensByLine = cptLines.map((line) => parseClaimDiagnosisPointerTokens(line.justify))
+  const diagnosisPointers = Array.from(new Set(diagnosisPointerTokensByLine.flat()))
   const diagnosisCodes = new Set(
     encounterLines
       .filter((line) => (line.codeType || '').toUpperCase() === 'ICD10')
@@ -21067,8 +21066,8 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
       ? []
       : Array.from(
           new Set(
-            cptLines
-              .map((line) => (line.justify || '').trim().toUpperCase())
+            diagnosisPointerTokensByLine
+              .flat()
               .filter((pointer) => Boolean(pointer) && !diagnosisCodes.has(pointer)),
           ),
         )
@@ -21128,6 +21127,13 @@ function parseClaimModifierTokens(modifier: string | null | undefined) {
   }
 
   return value
+    .split(/[,\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+}
+
+function parseClaimDiagnosisPointerTokens(justify: string | null | undefined) {
+  return (justify || '')
     .split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
