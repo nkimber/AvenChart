@@ -14516,6 +14516,16 @@ const feeSheetChargeTemplates = [
     units: '1',
     justify: 'Z00.00',
   },
+  {
+    id: 'complex-follow-up',
+    label: 'Complex follow-up',
+    code: '99214',
+    modifier: '25',
+    description: 'Complex established patient follow-up',
+    fee: '210.00',
+    units: '2',
+    justify: 'K21.9',
+  },
 ] as const
 
 function FeesWorkspace({
