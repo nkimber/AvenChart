@@ -14580,7 +14580,7 @@ function FeesWorkspace({
   const [claimPayload, setClaimPayload] = useState('Parity claim status mutation')
   const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
   const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
-  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient'>('insurance')
+  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient' | 'refund'>('insurance')
   const [paymentPayerId, setPaymentPayerId] = useState('9005')
   const [paymentPayerName, setPaymentPayerName] = useState('Northstar HMO')
   const [paymentMethod, setPaymentMethod] = useState('check_payment')
@@ -14779,30 +14779,32 @@ function FeesWorkspace({
     event.preventDefault()
     setMutationMessage(null)
     const isPatientPayment = paymentSource === 'patient'
+    const isPatientRefund = paymentSource === 'refund'
+    const parsedPayAmount = Number(paymentPayAmount)
 
     await onCreatePayment({
       patientId,
       encounter: Number(billingEncounter),
-      payerId: isPatientPayment ? 0 : Number(paymentPayerId),
-      payerName: isPatientPayment ? '' : paymentPayerName,
-      payerType: isPatientPayment ? 0 : 1,
+      payerId: isPatientPayment || isPatientRefund ? 0 : Number(paymentPayerId),
+      payerName: isPatientPayment || isPatientRefund ? '' : paymentPayerName,
+      payerType: isPatientPayment || isPatientRefund ? 0 : 1,
       reference: paymentReference,
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: isPatientRefund ? 'patient_refund' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
-      payAmount: Number(paymentPayAmount),
-      adjustmentAmount: isPatientPayment ? 0 : Number(paymentAdjustmentAmount),
-      accountCode: isPatientPayment ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment ? '' : paymentReasonCode,
-      payerClaimNumber: isPatientPayment ? '' : paymentPayerClaimNumber,
+      payAmount: isPatientRefund ? -Math.abs(parsedPayAmount) : parsedPayAmount,
+      adjustmentAmount: isPatientPayment || isPatientRefund ? 0 : Number(paymentAdjustmentAmount),
+      accountCode: isPatientPayment || isPatientRefund ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment || isPatientRefund ? '' : paymentReasonCode,
+      payerClaimNumber: isPatientPayment || isPatientRefund ? '' : paymentPayerClaimNumber,
     })
 
-    setMutationMessage('Payment posting saved')
+    setMutationMessage(isPatientRefund ? 'Patient refund saved' : 'Payment posting saved')
   }
 
   async function handleCollectionsFollowUp(item: CollectionsWorkQueueItem): Promise<CollectionsFollowUpMutationResponse> {
@@ -15244,11 +15246,12 @@ function FeesWorkspace({
                 <span>Source</span>
                 <select
                   value={paymentSource}
-                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient')}
+                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient' | 'refund')}
                   aria-label="New payment source"
                 >
                   <option value="insurance">Insurance</option>
                   <option value="patient">Patient</option>
+                  <option value="refund">Patient refund</option>
                 </select>
               </label>
               <label className="filter-field">
@@ -15267,8 +15270,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentPayerId(event.target.value)}
                   aria-label="New payment payer ID"
                   inputMode="numeric"
-                  disabled={paymentSource === 'patient'}
-                  required={paymentSource !== 'patient'}
+                  disabled={paymentSource !== 'insurance'}
+                  required={paymentSource === 'insurance'}
                 />
               </label>
             </div>
@@ -15278,8 +15281,8 @@ function FeesWorkspace({
                 value={paymentPayerName}
                 onChange={(event) => setPaymentPayerName(event.target.value)}
                 aria-label="New payment payer name"
-                disabled={paymentSource === 'patient'}
-                required={paymentSource !== 'patient'}
+                disabled={paymentSource !== 'insurance'}
+                required={paymentSource === 'insurance'}
               />
             </label>
             <label className="filter-field">
@@ -15305,11 +15308,11 @@ function FeesWorkspace({
             </label>
             <div className="mutation-grid two-column">
               <label className="filter-field">
-                <span>Paid</span>
-                <input
-                  value={paymentPayAmount}
-                  onChange={(event) => setPaymentPayAmount(event.target.value)}
-                  aria-label="New payment amount"
+                  <span>{paymentSource === 'refund' ? 'Refund' : 'Paid'}</span>
+                  <input
+                    value={paymentPayAmount}
+                    onChange={(event) => setPaymentPayAmount(event.target.value)}
+                    aria-label="New payment amount"
                   inputMode="decimal"
                   required
                 />
@@ -15321,8 +15324,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentAdjustmentAmount(event.target.value)}
                   aria-label="New payment adjustment amount"
                   inputMode="decimal"
-                  disabled={paymentSource === 'patient'}
-                  required={paymentSource !== 'patient'}
+                  disabled={paymentSource !== 'insurance'}
+                  required={paymentSource === 'insurance'}
                 />
               </label>
             </div>
@@ -15342,7 +15345,7 @@ function FeesWorkspace({
                   value={paymentReasonCode}
                   onChange={(event) => setPaymentReasonCode(event.target.value)}
                   aria-label="New payment reason code"
-                  disabled={paymentSource === 'patient'}
+                  disabled={paymentSource !== 'insurance'}
                 />
               </label>
             </div>
@@ -15352,7 +15355,7 @@ function FeesWorkspace({
                 value={paymentPayerClaimNumber}
                 onChange={(event) => setPaymentPayerClaimNumber(event.target.value)}
                 aria-label="New payment payer claim number"
-                disabled={paymentSource === 'patient'}
+                disabled={paymentSource !== 'insurance'}
               />
             </label>
             <label className="filter-field">
@@ -20840,7 +20843,12 @@ function BillingPaymentCard({
   onVoid: (payment: BillingPaymentItem) => Promise<unknown>
   onDelete: (payment: BillingPaymentItem) => Promise<void>
 }) {
-  const statusLabel = payment.adjustmentAmount > 0 && payment.payAmount === 0 ? 'Adjustment' : 'Payment'
+  const isRefund = payment.payAmount < 0 || payment.paymentType === 'patient_refund'
+  const statusLabel = isRefund
+    ? 'Refund'
+    : payment.adjustmentAmount > 0 && payment.payAmount === 0
+      ? 'Adjustment'
+      : 'Payment'
   const postedDate = payment.postDate || payment.postTime
 
   return (
@@ -20857,7 +20865,13 @@ function BillingPaymentCard({
         <span>{payment.memo || 'No memo'}</span>
         <span>{payment.paymentMethod || 'No method'}</span>
         <span>{postedDate ? `Posted ${postedDate}` : 'No post date'}</span>
-        <span>{payment.payAmount > 0 ? `Paid ${formatCurrency(payment.payAmount)}` : 'No payment amount'}</span>
+        <span>
+          {isRefund
+            ? `Refunded ${formatCurrency(Math.abs(payment.payAmount))}`
+            : payment.payAmount > 0
+              ? `Paid ${formatCurrency(payment.payAmount)}`
+              : 'No payment amount'}
+        </span>
         <span>
           {payment.adjustmentAmount > 0 ? `Adjusted ${formatCurrency(payment.adjustmentAmount)}` : 'No adjustment'}
         </span>
@@ -20899,10 +20913,12 @@ function BillingPaymentCard({
 }
 
 function BillingStatementLineItemCard({ line }: { line: BillingStatementLineItem }) {
-  const amountClassName = line.chargeAmount > 0 ? 'ledger-amount charge' : 'ledger-amount credit'
+  const amountClassName = line.chargeAmount > 0 || line.refundAmount > 0 ? 'ledger-amount charge' : 'ledger-amount credit'
   const primaryAmount = line.chargeAmount > 0
     ? line.chargeAmount
-    : -(line.paymentAmount || line.adjustmentAmount)
+    : line.refundAmount > 0
+      ? line.refundAmount
+      : -(line.paymentAmount || line.adjustmentAmount)
 
   return (
     <article className="billing-ledger-entry">
@@ -20923,6 +20939,7 @@ function BillingStatementLineItemCard({ line }: { line: BillingStatementLineItem
         <span>{line.reference ? `Reference ${line.reference}` : 'No reference'}</span>
         <span>Charge {formatCurrency(line.chargeAmount)}</span>
         <span>Payment {formatCurrency(line.paymentAmount)}</span>
+        <span>Refund {formatCurrency(line.refundAmount)}</span>
         <span>Adjustment {formatCurrency(line.adjustmentAmount)}</span>
         <span>Balance {formatCurrency(line.balanceAmount)}</span>
       </div>

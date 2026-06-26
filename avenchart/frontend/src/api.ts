@@ -1789,6 +1789,7 @@ export type BillingStatementLineItem = {
   reference?: string | null
   chargeAmount: number
   paymentAmount: number
+  refundAmount: number
   adjustmentAmount: number
   balanceAmount: number
 }

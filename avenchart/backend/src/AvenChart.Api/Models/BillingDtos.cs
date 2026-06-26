@@ -106,6 +106,7 @@ public sealed record BillingStatementLineItem(
     string? Reference,
     decimal ChargeAmount,
     decimal PaymentAmount,
+    decimal RefundAmount,
     decimal AdjustmentAmount,
     decimal BalanceAmount);
 
