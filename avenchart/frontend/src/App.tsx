@@ -5304,6 +5304,21 @@ function PatientPortalWorkspace({
   const sentSecureMessageEmptyText = getSecureMessageEmptyText('Sent', sentPortalMessages.length, normalizedPortalMessageSearch)
   const allSecureMessageEmptyText = getSecureMessageEmptyText('All', allPortalMessages.length, normalizedPortalMessageSearch)
   const deletedSecureMessageEmptyText = getSecureMessageEmptyText('Deleted', deletedPortalMessages.length, normalizedPortalMessageSearch)
+  const secureMessageSearchSummaryText = getSecureMessageSearchSummaryText(
+    normalizedPortalMessageSearch,
+    {
+      inbox: inboxPortalMessages.length,
+      sent: sentPortalMessages.length,
+      all: allPortalMessages.length,
+      deleted: deletedPortalMessages.length,
+    },
+    {
+      inbox: filteredInboxPortalMessages.length,
+      sent: filteredSentPortalMessages.length,
+      all: filteredAllPortalMessages.length,
+      deleted: filteredDeletedPortalMessages.length,
+    },
+  )
   const [portalMessagePages, setPortalMessagePages] = useState<Record<SecureMessageFolderKey, number>>({
     inbox: 0,
     sent: 0,
@@ -6355,6 +6370,9 @@ function PatientPortalWorkspace({
                       disabled={!authenticated || busy}
                     />
                   </label>
+                  <div className="result-meta portal-message-search-summary" aria-label="Secure message search result counts">
+                    <span>{secureMessageSearchSummaryText}</span>
+                  </div>
                   <button
                     className="icon-text-button"
                     type="button"
@@ -7119,6 +7137,16 @@ function getSecureMessageEmptyText(folderLabel: string, unfilteredCount: number,
   return unfilteredCount === 0
     ? (folderLabel === 'All' ? 'No secure messages are available in All' : `No ${folderName} are available`)
     : (folderLabel === 'All' ? 'No secure messages are visible in All on this page' : `No ${folderName} are visible on this page`)
+}
+
+function getSecureMessageSearchSummaryText(
+  query: string,
+  totalCounts: Record<SecureMessageFolderKey, number>,
+  filteredCounts: Record<SecureMessageFolderKey, number>,
+) {
+  const counts = `Inbox ${filteredCounts.inbox} of ${totalCounts.inbox} / Sent ${filteredCounts.sent} of ${totalCounts.sent} / All ${filteredCounts.all} of ${totalCounts.all} / Deleted ${filteredCounts.deleted} of ${totalCounts.deleted}`
+
+  return query ? `Search "${query}" results: ${counts}` : `Search ready: ${counts}`
 }
 
 function getSecureMessagePage(messages: PatientPortalMessageItem[], pageIndex: number) {

@@ -1212,6 +1212,14 @@
   max-width: 360px;
 }
 
+.portal-message-search-summary {
+  flex: 1 1 360px;
+  justify-content: flex-start;
+  line-height: 1.35;
+  min-width: 260px;
+  text-transform: none;
+}
+
 .secure-message-pager {
   align-items: center;
   color: #607280;
