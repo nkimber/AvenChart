@@ -20798,6 +20798,7 @@ function BillingEncounterCard({
             key={claim.id}
             claim={claim}
             patientId={patientId}
+            encounterLines={encounter.lines}
             disabled={disabled}
             onUpdateStatus={onUpdateClaimStatus}
             onCreatePayment={onCreatePayment}
@@ -20839,6 +20840,7 @@ function BillingEncounterCard({
 function BillingClaimCard({
   claim,
   patientId,
+  encounterLines,
   disabled,
   onUpdateStatus,
   onCreatePayment,
@@ -20846,6 +20848,7 @@ function BillingClaimCard({
 }: {
   claim: BillingClaimItem
   patientId: string
+  encounterLines: BillingLineItem[]
   disabled: boolean
   onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
@@ -20854,6 +20857,19 @@ function BillingClaimCard({
   const deniedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-DENIAL-835.txt`
   const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
   const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
+
+  function handleScrub() {
+    const scrub = buildClaimScrubReport(claim, patientId, encounterLines)
+    void onUpdateStatus(claim, {
+      status: claim.status,
+      billProcess: claim.billProcess,
+      processTime: '2026-06-18 13:05:00',
+      processFile: scrub.processFile,
+      target: claim.target || 'HCFA',
+      x12PartnerId: claim.target === 'X12' ? 1 : 0,
+      submittedClaim: scrub.report,
+    })
+  }
 
   function handleGenerate() {
     const generatedClaim = buildGeneratedClaim837Payload(claim, patientId)
@@ -20942,6 +20958,10 @@ function BillingClaimCard({
         <span>{claim.submittedClaim ? 'Reviewed claim data' : 'No submitted claim payload'}</span>
       </div>
       <div className="detail-actions compact-actions">
+        <button type="button" className="icon-text-button" disabled={disabled} onClick={handleScrub}>
+          <FileCheck2 size={14} />
+          Scrub
+        </button>
         <button type="button" className="icon-text-button" disabled={disabled} onClick={handleGenerate}>
           <Upload size={14} />
           Generate
@@ -20965,6 +20985,46 @@ function BillingClaimCard({
       </div>
     </article>
   )
+}
+
+function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
+  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
+  const cptLines = encounterLines.filter((line) => (line.codeType || '').toUpperCase() === 'CPT4')
+  const diagnosisPointers = Array.from(
+    new Set(cptLines.map((line) => line.justify?.trim()).filter((value): value is string => Boolean(value))),
+  )
+  const issues: string[] = []
+
+  if (claim.payerId <= 0 || !claim.payerName) {
+    issues.push('missing-payer')
+  }
+  if (cptLines.length === 0) {
+    issues.push('missing-cpt-line')
+  }
+  if (cptLines.some((line) => !line.justify?.trim())) {
+    issues.push('missing-diagnosis-pointer')
+  }
+  if (cptLines.some((line) => (line.fee ?? 0) <= 0)) {
+    issues.push('invalid-fee')
+  }
+  if (cptLines.some((line) => line.units <= 0)) {
+    issues.push('invalid-units')
+  }
+
+  const status = issues.length === 0 ? 'PASS' : 'FAIL'
+  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-SCRUB.txt`
+  const report = [
+    `SCRUB-${status}`,
+    `claim=${controlNumber}`,
+    `patient=${patientId}`,
+    `encounter=${claim.encounter}`,
+    `payer=${claim.payerName || claim.payerId}`,
+    `cptCount=${cptLines.length}`,
+    `diagnosisPointers=${diagnosisPointers.join(',') || 'none'}`,
+    `issues=${issues.join(',') || 'none'}`,
+  ].join('|')
+
+  return { processFile, report, status, issues }
 }
 
 function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
