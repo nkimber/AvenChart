@@ -21076,6 +21076,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
     .filter((line) => (line.codeType || '').toUpperCase() === 'ICD10')
     .map((line) => (line.code || '').trim().toUpperCase())
     .filter(Boolean)
+  const invalidDiagnosisCodes = Array.from(
+    new Set(diagnosisCodeValues.filter((diagnosisCode) => !isSupportedIcd10DiagnosisCode(diagnosisCode))),
+  )
   const duplicateDiagnosisCodes = Array.from(
     new Set(
       diagnosisCodeValues.filter((diagnosisCode, index) => diagnosisCodeValues.indexOf(diagnosisCode) !== index),
@@ -21111,6 +21114,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (unsupportedDiagnosisPointers.length > 0) {
     issues.push(`invalid-diagnosis-pointer:${unsupportedDiagnosisPointers.join(',')}`)
+  }
+  if (invalidDiagnosisCodes.length > 0) {
+    issues.push(`invalid-diagnosis-code:${invalidDiagnosisCodes.join(',')}`)
   }
   if (duplicateDiagnosisCodes.length > 0) {
     issues.push(`duplicate-diagnosis-code:${duplicateDiagnosisCodes.join(',')}`)
@@ -21170,6 +21176,10 @@ function parseClaimDiagnosisPointerTokens(justify: string | null | undefined) {
     .split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
+}
+
+function isSupportedIcd10DiagnosisCode(code: string) {
+  return /^[A-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?$/.test(code)
 }
 
 function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
