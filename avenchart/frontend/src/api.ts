@@ -6281,6 +6281,23 @@ export async function generateBillingClaimStatus(
   return response.json()
 }
 
+export async function resubmitBillingClaimStatus(
+  claimId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingClaimMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/resubmit`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing claim resubmission', response.status))
+  }
+
+  return response.json()
+}
+
 export async function deleteBillingClaimStatus(
   claimId: string,
   sessionId?: string | null,

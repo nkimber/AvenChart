@@ -177,6 +177,7 @@ import {
   softDeleteEncounterDocument,
   signPatientDocument,
   generateBillingClaimStatus,
+  resubmitBillingClaimStatus,
   scrubBillingClaimStatus,
   softDeletePatientDocument,
   softDeletePatientMessage,
@@ -2954,6 +2955,23 @@ function App() {
     }
   }
 
+  async function handleBillingClaimResubmit(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await resubmitBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (resubmissionError) {
+      setBillingStatus('error')
+      setBillingError(resubmissionError instanceof Error ? resubmissionError.message : 'Unable to resubmit billing claim.')
+      throw resubmissionError
+    }
+  }
+
   async function handleBillingClaimDelete(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5063,6 +5081,7 @@ function App() {
             onUpdateClaimStatus={handleBillingClaimStatusUpdate}
             onScrubClaim={handleBillingClaimScrub}
             onGenerateClaim={handleBillingClaimGenerate}
+            onResubmitClaim={handleBillingClaimResubmit}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14582,6 +14601,7 @@ function FeesWorkspace({
   onUpdateClaimStatus,
   onScrubClaim,
   onGenerateClaim,
+  onResubmitClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14603,6 +14623,7 @@ function FeesWorkspace({
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15766,6 +15787,7 @@ function FeesWorkspace({
                       onUpdateClaimStatus={onUpdateClaimStatus}
                       onScrubClaim={onScrubClaim}
                       onGenerateClaim={onGenerateClaim}
+                      onResubmitClaim={onResubmitClaim}
                       onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
@@ -20800,6 +20822,7 @@ function BillingEncounterCard({
   onUpdateClaimStatus,
   onScrubClaim,
   onGenerateClaim,
+  onResubmitClaim,
   onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
@@ -20815,6 +20838,7 @@ function BillingEncounterCard({
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -20860,6 +20884,7 @@ function BillingEncounterCard({
             onUpdateStatus={onUpdateClaimStatus}
             onScrub={onScrubClaim}
             onGenerate={onGenerateClaim}
+            onResubmit={onResubmitClaim}
             onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
@@ -20903,6 +20928,7 @@ function BillingClaimCard({
   onUpdateStatus,
   onScrub,
   onGenerate,
+  onResubmit,
   onCreatePayment,
   onDelete,
 }: {
@@ -20912,6 +20938,7 @@ function BillingClaimCard({
   onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrub: (claim: BillingClaimItem) => Promise<unknown>
   onGenerate: (claim: BillingClaimItem) => Promise<unknown>
+  onResubmit: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
@@ -20920,16 +20947,7 @@ function BillingClaimCard({
   const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
 
   function handleResubmit() {
-    const resubmission = buildClaimResubmissionPayload(claim, patientId)
-    void onUpdateStatus(claim, {
-      status: 1,
-      billProcess: 1,
-      processTime: '2026-06-18 17:10:00',
-      processFile: resubmission.processFile,
-      target: 'X12',
-      x12PartnerId: 1,
-      submittedClaim: resubmission.payload,
-    })
+    void onResubmit(claim)
   }
 
   function handleScrub() {
@@ -21045,23 +21063,6 @@ function BillingClaimCard({
       </div>
     </article>
   )
-}
-
-function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: string) {
-  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
-  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-RESUBMIT.txt`
-  const payload = [
-    'RESUBMIT',
-    `claim=${controlNumber}`,
-    `patient=${patientId}`,
-    `encounter=${claim.encounter}`,
-    `payer=${claim.payerName || claim.payerId}`,
-    `sourceStatus=${claim.statusLabel || claim.status}`,
-    `target=X12`,
-    'reason=corrected-and-requeued',
-  ].join('|')
-
-  return { processFile, payload }
 }
 
 function BillingPaymentCard({
