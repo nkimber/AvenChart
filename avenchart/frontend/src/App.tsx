@@ -176,6 +176,7 @@ import {
   replyToPatientMessage,
   softDeleteEncounterDocument,
   signPatientDocument,
+  generateBillingClaimStatus,
   scrubBillingClaimStatus,
   softDeletePatientDocument,
   softDeletePatientMessage,
@@ -2936,6 +2937,23 @@ function App() {
     }
   }
 
+  async function handleBillingClaimGenerate(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await generateBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (generationError) {
+      setBillingStatus('error')
+      setBillingError(generationError instanceof Error ? generationError.message : 'Unable to generate billing claim.')
+      throw generationError
+    }
+  }
+
   async function handleBillingClaimDelete(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5044,6 +5062,7 @@ function App() {
             onCreateClaim={handleBillingClaimCreate}
             onUpdateClaimStatus={handleBillingClaimStatusUpdate}
             onScrubClaim={handleBillingClaimScrub}
+            onGenerateClaim={handleBillingClaimGenerate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14562,6 +14581,7 @@ function FeesWorkspace({
   onCreateClaim,
   onUpdateClaimStatus,
   onScrubClaim,
+  onGenerateClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14582,6 +14602,7 @@ function FeesWorkspace({
   onCreateClaim: (input: BillingClaimCreateInput) => Promise<unknown>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15744,6 +15765,7 @@ function FeesWorkspace({
                       onDeleteLine={onDeleteLine}
                       onUpdateClaimStatus={onUpdateClaimStatus}
                       onScrubClaim={onScrubClaim}
+                      onGenerateClaim={onGenerateClaim}
                       onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
@@ -20777,6 +20799,7 @@ function BillingEncounterCard({
   onDeleteLine,
   onUpdateClaimStatus,
   onScrubClaim,
+  onGenerateClaim,
   onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
@@ -20791,6 +20814,7 @@ function BillingEncounterCard({
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -20835,6 +20859,7 @@ function BillingEncounterCard({
             disabled={disabled}
             onUpdateStatus={onUpdateClaimStatus}
             onScrub={onScrubClaim}
+            onGenerate={onGenerateClaim}
             onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
@@ -20877,6 +20902,7 @@ function BillingClaimCard({
   disabled,
   onUpdateStatus,
   onScrub,
+  onGenerate,
   onCreatePayment,
   onDelete,
 }: {
@@ -20885,6 +20911,7 @@ function BillingClaimCard({
   disabled: boolean
   onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrub: (claim: BillingClaimItem) => Promise<unknown>
+  onGenerate: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
@@ -20910,16 +20937,7 @@ function BillingClaimCard({
   }
 
   function handleGenerate() {
-    const generatedClaim = buildGeneratedClaim837Payload(claim, patientId)
-    void onUpdateStatus(claim, {
-      status: 2,
-      billProcess: 0,
-      processTime: '2026-06-18 14:15:00',
-      processFile: generatedClaim.processFile,
-      target: 'X12',
-      x12PartnerId: 1,
-      submittedClaim: generatedClaim.payload,
-    })
+    void onGenerate(claim)
   }
 
   function handleClear() {
@@ -21042,25 +21060,6 @@ function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: strin
     `target=X12`,
     'reason=corrected-and-requeued',
   ].join('|')
-
-  return { processFile, payload }
-}
-
-function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
-  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
-  const payerName = claim.payerName || `Payer ${claim.payerId}`
-  const payerCode = String(claim.payerId || 'UNKNOWN').replace(/[^a-z0-9]/gi, '').toUpperCase()
-  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-837P.txt`
-  const payload = [
-    `ISA*00*          *00*          *ZZ*LEGACY_EHR        *ZZ*PAYER${payerCode.padEnd(10, ' ')}*260618*1415*^*00501*${controlNumber.padStart(9, '0').slice(-9)}*0*T*:~`,
-    `GS*HC*LEGACY_EHR*PAYER${payerCode}*20260618*1415*${controlNumber}*X*005010X222A1~`,
-    `ST*837*${controlNumber}*005010X222A1~`,
-    `BHT*0019*00*${claim.encounter}*20260618*1415*CH~`,
-    `NM1*QC*1*PATIENT*${patientId}****MI*${patientId}~`,
-    `CLM*${claim.encounter}*0***11:B:1*Y*A*Y*I~`,
-    `NM1*PR*2*${payerName}*****PI*${claim.payerId}~`,
-    `SE*7*${controlNumber}~`,
-  ].join('')
 
   return { processFile, payload }
 }

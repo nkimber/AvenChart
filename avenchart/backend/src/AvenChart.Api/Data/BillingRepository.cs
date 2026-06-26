@@ -878,6 +878,57 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
     }
 
+    public async Task<BillingClaimMutationResponse?> GenerateClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var claim = await GetClaimAsync(connection, claimId, cancellationToken);
+            if (claim is null)
+            {
+                return null;
+            }
+
+            var generated = BuildGeneratedClaim837Payload(claim);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                update claims
+                set status = @status,
+                    bill_process = @billProcess,
+                    process_time = @processTime,
+                    process_file = @processFile,
+                    target = @target,
+                    x12_partner_id = @x12PartnerId,
+                    submitted_claim = @submittedClaim
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", claimId);
+            command.Parameters.AddWithValue("status", 2);
+            command.Parameters.AddWithValue("billProcess", 0);
+            AddNullableTimestamp(command, "processTime", new DateTime(2026, 6, 18, 14, 15, 0));
+            command.Parameters.AddWithValue("processFile", generated.ProcessFile);
+            command.Parameters.AddWithValue("target", "X12");
+            command.Parameters.AddWithValue("x12PartnerId", 1);
+            command.Parameters.AddWithValue("submittedClaim", generated.Payload);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
+    }
+
     public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(claimId))
@@ -2512,6 +2563,41 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return new BillingClaimScrubReport(processFile, report);
     }
 
+    private static BillingGeneratedClaimPayload BuildGeneratedClaim837Payload(BillingClaimScrubContext claim)
+    {
+        var controlNumber = new string(claim.Id.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        controlNumber = controlNumber.Length > 12 ? controlNumber[..12] : controlNumber;
+        if (string.IsNullOrWhiteSpace(controlNumber))
+        {
+            controlNumber = "CLAIM";
+        }
+
+        var payerName = NormalizeText(claim.PayerName) ?? $"Payer {claim.PayerId}";
+        var payerCode = new string((claim.PayerId == 0 ? "UNKNOWN" : claim.PayerId.ToString(CultureInfo.InvariantCulture))
+            .Where(char.IsLetterOrDigit)
+            .ToArray())
+            .ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(payerCode))
+        {
+            payerCode = "UNKNOWN";
+        }
+
+        var isaControlNumber = controlNumber.PadLeft(9, '0');
+        isaControlNumber = isaControlNumber.Length > 9 ? isaControlNumber[^9..] : isaControlNumber;
+        var processFile = $"CLAIM-{claim.Encounter}-{controlNumber}-837P.txt";
+        var payload = string.Concat(
+            $"ISA*00*          *00*          *ZZ*LEGACY_EHR        *ZZ*PAYER{payerCode.PadRight(10, ' ')}*260618*1415*^*00501*{isaControlNumber}*0*T*:~",
+            $"GS*HC*LEGACY_EHR*PAYER{payerCode}*20260618*1415*{controlNumber}*X*005010X222A1~",
+            $"ST*837*{controlNumber}*005010X222A1~",
+            $"BHT*0019*00*{claim.Encounter}*20260618*1415*CH~",
+            $"NM1*QC*1*PATIENT*{claim.PatientId}****MI*{claim.PatientId}~",
+            $"CLM*{claim.Encounter}*0***11:B:1*Y*A*Y*I~",
+            $"NM1*PR*2*{payerName}*****PI*{claim.PayerId}~",
+            $"SE*7*{controlNumber}~");
+
+        return new BillingGeneratedClaimPayload(processFile, payload);
+    }
+
     private static IEnumerable<string> ParseClaimModifierTokens(string? modifier)
     {
         var value = (modifier ?? string.Empty).Trim().ToUpperInvariant();
@@ -2661,6 +2747,10 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private sealed record BillingClaimScrubReport(
         string ProcessFile,
         string Report);
+
+    private sealed record BillingGeneratedClaimPayload(
+        string ProcessFile,
+        string Payload);
 
     private sealed record BillingLedgerDraft(
         string EntryId,

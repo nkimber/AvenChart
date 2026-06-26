@@ -6264,6 +6264,23 @@ export async function scrubBillingClaimStatus(
   return response.json()
 }
 
+export async function generateBillingClaimStatus(
+  claimId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingClaimMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/generate`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing claim generation', response.status))
+  }
+
+  return response.json()
+}
+
 export async function deleteBillingClaimStatus(
   claimId: string,
   sessionId?: string | null,
