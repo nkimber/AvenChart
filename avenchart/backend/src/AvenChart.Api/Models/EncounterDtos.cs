@@ -55,6 +55,7 @@ public sealed record EncounterDetail(
     string? ExternalId,
     int? PosCode,
     string? BillingNote,
+    string? SourceAppointmentId,
     EncounterVitals? Vitals,
     EncounterSoapNote? SoapNote,
     int BillingLineCount,
@@ -171,7 +172,8 @@ public sealed record EncounterCreateRequest(
     string? ReferralSource,
     string? ExternalId,
     int? PosCode,
-    string? BillingNote);
+    string? BillingNote,
+    string? SourceAppointmentId);
 
 public sealed record EncounterUpdateRequest(
     string Reason,

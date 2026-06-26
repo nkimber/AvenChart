@@ -1693,7 +1693,7 @@ function App() {
     setAppointmentError(null)
 
     try {
-      const sessionId = getActiveAppointmentSessionId()
+      const sessionId = getActiveEncounterSessionId()
       const created = await createAppointment(input, sessionId)
       setAppointmentPatientId(created.patientId)
       setAppointmentFromDate(created.date)
@@ -1912,6 +1912,46 @@ function App() {
       const message = createError instanceof Error ? createError.message : 'Encounter create failed'
       setEncounterError(message)
       throw createError
+    }
+  }
+
+  async function handleAppointmentConvertToEncounter(appointment: AppointmentDetail) {
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      const created = await createEncounter({
+        patientId: appointment.patientId,
+        providerId: appointment.providerId ?? null,
+        dateTime: `${appointment.date}T${appointment.startTime}`,
+        reason: appointment.title || 'Appointment encounter',
+        facilityId: appointment.facilityId ?? null,
+        billingFacilityId: appointment.billingLocationId ?? appointment.facilityId ?? null,
+        sensitivity: null,
+        referralSource: 'appointment',
+        externalId: null,
+        posCode: null,
+        billingNote: appointment.comments ?? null,
+        sourceAppointmentId: appointment.seriesRootId,
+      }, sessionId)
+      setEncounterPatientId(created.patientId)
+      setEncounterFromDate(created.date)
+      setSelectedEncounter(created.encounter)
+      setEncounterDetail(created)
+      setEncounterDetailStatus('ready')
+      setEncounterStatus('ready')
+      setEncounterRefreshKey((current) => current + 1)
+      const refreshed = await getAppointmentDetail(appointment.id, sessionId)
+      setAppointmentDetail(refreshed)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return created
+    } catch (conversionError) {
+      setAppointmentDetailStatus('error')
+      const message = conversionError instanceof Error ? conversionError.message : 'Appointment encounter conversion failed'
+      setAppointmentError(message)
+      throw conversionError
     }
   }
 
@@ -4825,6 +4865,7 @@ function App() {
             onCancelAppointment={handleAppointmentCancel}
             onDeleteAppointment={handleAppointmentDelete}
             onRestoreAppointmentOccurrence={handleAppointmentOccurrenceRestore}
+            onConvertToEncounter={handleAppointmentConvertToEncounter}
           />
         )}
         {activeModule === 'encounters' && (
@@ -9628,6 +9669,7 @@ function CalendarWorkspace({
   onCancelAppointment,
   onDeleteAppointment,
   onRestoreAppointmentOccurrence,
+  onConvertToEncounter,
 }: {
   patientId: string
   fromDate: string
@@ -9651,6 +9693,7 @@ function CalendarWorkspace({
   onCancelAppointment: (appointment: AppointmentDetail) => Promise<AppointmentDetail>
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
   onRestoreAppointmentOccurrence: (appointment: AppointmentDetail, occurrenceDate: string) => Promise<AppointmentDetail>
+  onConvertToEncounter: (appointment: AppointmentDetail) => Promise<EncounterDetail>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -9924,6 +9967,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onRestoreAppointmentOccurrence(appointmentDetail, occurrenceDate)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleConvertToEncounter() {
+    if (!appointmentDetail || calendarLocked || selectedOccurrenceIsVirtual || appointmentDetail.convertedEncounterId) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onConvertToEncounter(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -10319,6 +10376,15 @@ function CalendarWorkspace({
                 {selectedOccurrenceIsVirtual ? <Ban size={15} /> : <Trash2 size={15} />}
                 <span>{selectedOccurrenceIsVirtual ? 'Skip occurrence' : 'Delete appointment'}</span>
               </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={() => void handleConvertToEncounter()}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || Boolean(appointmentDetail.convertedEncounterId)}
+              >
+                <FileText size={15} />
+                <span>{appointmentDetail.convertedEncounterId ? 'Encounter created' : 'Create encounter'}</span>
+              </button>
             </div>
 
             <form
@@ -10600,6 +10666,7 @@ function CalendarWorkspace({
                 <Field label="Reminder channel" value={appointmentDetail.reminderChannel} />
                 <Field label="Reminder contact" value={appointmentDetail.reminderContact} />
                 <Field label="Reminder lead" value={appointmentReminderLeadDetail(appointmentDetail)} />
+                <Field label="Converted encounter" value={appointmentDetail.convertedEncounterId ? `${appointmentDetail.convertedEncounterId} (${appointmentDetail.convertedEncounterDate ?? appointmentDetail.date})` : null} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
                 <Field label="Repeat on" value={appointmentDetail.recurrenceType === 2 ? appointmentRepeatOnLabel(appointmentDetail) : null} />
                 <Field label="Weekdays" value={appointmentDetail.recurrenceType === 3 ? appointmentWeekdayLabels(appointmentDetail.recurrenceDays) : null} />

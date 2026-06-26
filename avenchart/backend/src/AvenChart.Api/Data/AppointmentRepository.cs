@@ -61,6 +61,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_end_date,
                 a.recurrence_days,
                 a.recurrence_exdates,
+                ce.encounter as converted_encounter_id,
+                ce.encounter_date as converted_encounter_date,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -72,6 +74,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
             left join facilities bf on bf.id = a.billing_location_id
+            left join lateral (
+                select encounter, encounter_date
+                from encounters
+                where source_appointment_id = a.id
+                order by encounter desc
+                limit 1
+            ) ce on true
             where {{AppointmentSearchPredicate}}
             order by a.appointment_date, a.start_time, a.id
             """;
@@ -143,6 +152,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_end_date,
                 a.recurrence_days,
                 a.recurrence_exdates,
+                ce.encounter as converted_encounter_id,
+                ce.encounter_date as converted_encounter_date,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -154,6 +165,13 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join staff s on s.id = a.provider_id
             left join facilities f on f.id = a.facility_id
             left join facilities bf on bf.id = a.billing_location_id
+            left join lateral (
+                select encounter, encounter_date
+                from encounters
+                where source_appointment_id = a.id
+                order by encounter desc
+                limit 1
+            ) ce on true
             where a.id = @appointmentId;
             """;
         command.Parameters.AddWithValue("appointmentId", occurrenceReference.RootAppointmentId);
@@ -273,7 +291,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ReminderStatus: reminder.Status,
             ReminderChannel: reminder.Channel,
             ReminderContact: reminder.Contact,
-            ReminderLeadDays: reminder.LeadDays);
+            ReminderLeadDays: reminder.LeadDays,
+            ConvertedEncounterId: ReadNullableInt(reader, "converted_encounter_id"),
+            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"));
 
         var providerOverlapSummary = await GetProviderOverlapSummaryAsync(detail, cancellationToken);
         var patientOverlapSummary = await GetPatientOverlapSummaryAsync(detail, cancellationToken);
@@ -1001,7 +1021,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ReminderStatus: reminder.Status,
             ReminderChannel: reminder.Channel,
             ReminderContact: reminder.Contact,
-            ReminderLeadDays: reminder.LeadDays);
+            ReminderLeadDays: reminder.LeadDays,
+            ConvertedEncounterId: ReadNullableInt(reader, "converted_encounter_id"),
+            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"));
     }
 
     private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate, DateOnly baseDate)

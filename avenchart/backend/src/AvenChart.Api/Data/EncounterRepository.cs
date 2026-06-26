@@ -45,6 +45,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 e.referral_source,
                 e.external_id,
                 e.pos_code,
+                e.source_appointment_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
                 exists (select 1 from vitals v where v.pid = e.pid and v.encounter = e.encounter) as has_vitals,
@@ -108,6 +109,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 e.external_id,
                 e.pos_code,
                 e.billing_note,
+                e.source_appointment_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 f.name as facility_name,
                 v.bps,
@@ -176,6 +178,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             ExternalId: ReadNullableString(reader, "external_id"),
             PosCode: ReadNullableInt(reader, "pos_code"),
             BillingNote: ReadNullableString(reader, "billing_note"),
+            SourceAppointmentId: ReadNullableString(reader, "source_appointment_id"),
             Vitals: ReadVitals(reader),
             SoapNote: ReadSoapNote(reader),
             BillingLineCount: reader.GetInt32(reader.GetOrdinal("billing_line_count")),
@@ -235,6 +238,20 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             next_id as (
                 select coalesce(max(greatest(id, encounter)), 0) + 1 as id
                 from encounters
+            ),
+            source_appointment as (
+                select a.id,
+                       a.patient_id,
+                       a.provider_id,
+                       a.facility_id,
+                       a.billing_location_id,
+                       a.appointment_date,
+                       a.start_time,
+                       a.title
+                from appointments a
+                join selected_patient p on p.canonical_id = a.patient_id
+                where a.id = @sourceAppointmentId
+                limit 1
             )
             insert into encounters (
                 id,
@@ -254,7 +271,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 referral_source,
                 external_id,
                 pos_code,
-                billing_note
+                billing_note,
+                source_appointment_id
             )
             select
                 next_id.id,
@@ -263,17 +281,21 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 selected_patient.legacy_pid,
                 coalesce(
                     (select id from staff where id = @providerId),
+                    source_appointment.provider_id,
                     selected_patient.patient_provider_id,
                     (select id from staff where role = 'provider' order by id limit 1)
                 ),
                 coalesce(
                     (select id from facilities where id = @facilityId),
+                    source_appointment.facility_id,
                     selected_patient.patient_facility_id,
                     (select id from facilities order by id limit 1)
                 ),
                 coalesce(
                     (select id from facilities where id = @billingFacilityId),
                     (select id from facilities where id = @facilityId),
+                    source_appointment.billing_location_id,
+                    source_appointment.facility_id,
                     selected_patient.patient_facility_id,
                     (select id from facilities order by id limit 1)
                 ),
@@ -287,9 +309,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                 @referralSource,
                 @externalId,
                 @posCode,
-                @billingNote
+                @billingNote,
+                source_appointment.id
             from selected_patient
             cross join next_id
+            left join source_appointment on true
+            where @sourceAppointmentId is null or source_appointment.id is not null
             returning encounter;
             """;
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId;
@@ -304,6 +329,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         AddNullableText(command, "externalId", NormalizeText(request.ExternalId));
         AddNullableInt(command, "posCode", request.PosCode);
         AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
+        AddNullableText(command, "sourceAppointmentId", NormalizeText(request.SourceAppointmentId));
 
         var encounter = await command.ExecuteScalarAsync(cancellationToken);
         return encounter is null || encounter is DBNull

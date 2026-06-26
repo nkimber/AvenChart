@@ -701,7 +701,8 @@ create table encounters (
   referral_source text,
   external_id text,
   pos_code integer,
-  billing_note text
+  billing_note text,
+  source_appointment_id text references appointments(id)
 );
 
 create table encounter_signatures (

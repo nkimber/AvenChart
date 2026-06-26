@@ -457,6 +457,8 @@ export type AppointmentListItem = {
   reminderChannel: string
   reminderContact?: string | null
   reminderLeadDays?: number | null
+  convertedEncounterId?: number | null
+  convertedEncounterDate?: string | null
 }
 
 export type AppointmentDetail = AppointmentListItem & {
@@ -673,6 +675,7 @@ export type EncounterDetail = EncounterListItem & {
   dateOfBirth: string
   dateTime: string
   billingNote?: string | null
+  sourceAppointmentId?: string | null
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
   diagnosisCodes: EncounterDiagnosisCode[]
@@ -696,6 +699,7 @@ export type EncounterCreateInput = {
   externalId?: string | null
   posCode?: number | null
   billingNote?: string | null
+  sourceAppointmentId?: string | null
 }
 
 export type EncounterUpdateInput = {
