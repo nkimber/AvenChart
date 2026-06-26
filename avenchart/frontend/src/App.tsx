@@ -5300,6 +5300,14 @@ function PatientPortalWorkspace({
   const filteredSentPortalMessages = filterSecureMessages(sentPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
   const filteredAllPortalMessages = filterSecureMessages(allPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
   const filteredDeletedPortalMessages = filterSecureMessages(deletedPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
+  const selectableFilteredPortalMessages = useMemo(
+    () => [
+      ...filteredInboxPortalMessages,
+      ...filteredSentPortalMessages,
+      ...filteredAllPortalMessages,
+    ].filter(isPatientPortalMailboxMessage),
+    [filteredInboxPortalMessages, filteredSentPortalMessages, filteredAllPortalMessages],
+  )
   const inboxSecureMessageEmptyText = getSecureMessageEmptyText('Inbox', inboxPortalMessages.length, normalizedPortalMessageSearch)
   const sentSecureMessageEmptyText = getSecureMessageEmptyText('Sent', sentPortalMessages.length, normalizedPortalMessageSearch)
   const allSecureMessageEmptyText = getSecureMessageEmptyText('All', allPortalMessages.length, normalizedPortalMessageSearch)
@@ -5405,9 +5413,12 @@ function PatientPortalWorkspace({
   ])
 
   useEffect(() => {
-    const availableMessageIds = new Set(selectablePortalMessages.map((portalMessage) => portalMessage.id))
-    setSelectedPortalMessageIds((current) => current.filter((messageId) => availableMessageIds.has(messageId)))
-  }, [selectablePortalMessages])
+    const availableMessageIds = new Set(selectableFilteredPortalMessages.map((portalMessage) => portalMessage.id))
+    setSelectedPortalMessageIds((current) => {
+      const next = current.filter((messageId) => availableMessageIds.has(messageId))
+      return next.length === current.length ? current : next
+    })
+  }, [selectableFilteredPortalMessages])
 
   useEffect(() => {
     setLocallyReadPortalMessageIds([])
@@ -5490,6 +5501,7 @@ function PatientPortalWorkspace({
   function handleClearPortalMessageSearch() {
     setPortalMessageSearch('')
     setPortalMessagePages({ inbox: 0, sent: 0, all: 0, deleted: 0 })
+    setSelectedPortalMessageIds([])
   }
 
   function togglePortalDocumentSelection(documentId: number, checked: boolean) {
@@ -6370,6 +6382,7 @@ function PatientPortalWorkspace({
                       onChange={(event) => {
                         setPortalMessageSearch(event.target.value)
                         setPortalMessagePages({ inbox: 0, sent: 0, all: 0, deleted: 0 })
+                        setSelectedPortalMessageIds([])
                       }}
                       aria-label="Search secure messages"
                       disabled={!authenticated || busy}
