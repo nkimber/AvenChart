@@ -5431,6 +5431,10 @@ function PatientPortalWorkspace({
   ])
 
   useEffect(() => {
+    setPortalMessagePages({ inbox: 0, sent: 0, all: 0, deleted: 0 })
+  }, [normalizedPortalMessageSearch])
+
+  useEffect(() => {
     const availableDocumentIds = new Set(selectablePortalDocuments.map((document) => document.id))
     setSelectedPortalDocumentIds((current) => current.filter((documentId) => availableDocumentIds.has(documentId)))
   }, [selectablePortalDocuments])
