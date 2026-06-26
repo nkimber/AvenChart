@@ -1408,7 +1408,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             MailChain: nextId,
             ReplyMailChain: nextId,
             PortalRelation: "portal:composed",
-            IsEncrypted: false);
+            IsEncrypted: false,
+            AttachmentCount: 0,
+            Attachments: Array.Empty<PatientPortalMessageAttachment>());
         var recipientMessage = sentMessage with
         {
             Id = (nextId + 1).ToString(),
@@ -1526,7 +1528,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             MailChain: nextId,
             ReplyMailChain: replyThreadId,
             PortalRelation: "portal:reply",
-            IsEncrypted: false);
+            IsEncrypted: false,
+            AttachmentCount: 0,
+            Attachments: Array.Empty<PatientPortalMessageAttachment>());
         var recipientMessage = sentMessage with
         {
             Id = (nextId + 1).ToString(),
@@ -5177,7 +5181,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             MailChain: reader.GetInt32(reader.GetOrdinal("mail_chain")),
             ReplyMailChain: reader.GetInt32(reader.GetOrdinal("reply_mail_chain")),
             PortalRelation: ReadNullableString(reader, "portal_relation"),
-            IsEncrypted: isEncrypted);
+            IsEncrypted: isEncrypted,
+            AttachmentCount: 0,
+            Attachments: Array.Empty<PatientPortalMessageAttachment>());
     }
 
     private static int ResolvePortalThreadId(PatientPortalMessageItem message, int fallbackMessageId)

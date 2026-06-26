@@ -2910,6 +2910,16 @@ export type PatientPortalMessageItem = {
   replyMailChain: number
   portalRelation?: string | null
   isEncrypted: boolean
+  attachmentCount: number
+  attachments: PatientPortalMessageAttachment[]
+}
+
+export type PatientPortalMessageAttachment = {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes?: number | null
+  source: string
 }
 
 export type PatientPortalMessagesResponse = {

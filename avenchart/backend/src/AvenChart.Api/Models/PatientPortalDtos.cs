@@ -710,7 +710,16 @@ public sealed record PatientPortalMessageItem(
     int MailChain,
     int ReplyMailChain,
     string? PortalRelation,
-    bool IsEncrypted);
+    bool IsEncrypted,
+    int AttachmentCount,
+    IReadOnlyList<PatientPortalMessageAttachment> Attachments);
+
+public sealed record PatientPortalMessageAttachment(
+    string Id,
+    string FileName,
+    string ContentType,
+    long? SizeBytes,
+    string Source);
 
 public sealed record PatientPortalComposeMessageRequest(
     string? RecipientId,

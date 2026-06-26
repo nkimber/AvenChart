@@ -6442,6 +6442,7 @@ function PatientPortalWorkspace({
                           ? (portalMessage.portalRelation ? `Portal relation ${portalMessage.portalRelation}` : 'Care team message')
                           : 'Patient reminder notification'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                        <span>Attachments {portalMessage.attachmentCount}</span>
                         <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                       </div>
                       {isMailboxMessage ? (
@@ -6591,6 +6592,7 @@ function PatientPortalWorkspace({
                       <div className="message-meta-row">
                         <span>Recipient {portalMessage.recipientId || portalMessage.assignedTo || 'care team'}</span>
                         <span>{portalMessage.isEncrypted ? 'Encrypted message' : 'Plain text message'}</span>
+                        <span>Attachments {portalMessage.attachmentCount}</span>
                         <span>Thread {portalMessage.replyMailChain || portalMessage.mailChain}</span>
                       </div>
                       <div className="contact-actions">
@@ -6977,6 +6979,9 @@ function PatientPortalThreadPanel({
               </span>
             </div>
             <SecureMessageBody body={threadMessage.body} compact />
+            <div className="message-meta-row">
+              <span>Attachments {threadMessage.attachmentCount}</span>
+            </div>
           </article>
         )
       })}
