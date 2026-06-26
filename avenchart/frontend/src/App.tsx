@@ -21050,6 +21050,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
       ),
     ),
   )
+  const modifierCountIssues = Array.from(
+    new Set(modifierTokensByLine.map((modifiers) => modifiers.length).filter((count) => count > 4)),
+  )
   const diagnosisPointers = Array.from(
     new Set(cptLines.map((line) => line.justify?.trim()).filter((value): value is string => Boolean(value))),
   )
@@ -21095,6 +21098,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   if (duplicateModifiers.length > 0) {
     issues.push(`duplicate-modifier:${duplicateModifiers.join(',')}`)
   }
+  if (modifierCountIssues.length > 0) {
+    issues.push(`modifier-count-exceeded:${modifierCountIssues.join(',')}`)
+  }
 
   const status = issues.length === 0 ? 'PASS' : 'FAIL'
   const processFile = `CLAIM-${claim.encounter}-${controlNumber}-SCRUB.txt`
@@ -21113,7 +21119,12 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
 }
 
 function parseClaimModifierTokens(modifier: string | null | undefined) {
-  return (modifier || '')
+  const value = (modifier || '').trim().toUpperCase()
+  if (/^[A-Z0-9]+$/.test(value) && value.length > 2 && value.length % 2 === 0) {
+    return value.match(/.{1,2}/g) || []
+  }
+
+  return value
     .split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
