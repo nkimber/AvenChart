@@ -695,7 +695,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || request.Encounter <= 0
-            || request.PayerId <= 0
+            || request.PayerId < 0
             || request.PayerType <= 0
             || !IsClaimStatus(request.Status)
             || !IsBinaryStatus(request.BillProcess))

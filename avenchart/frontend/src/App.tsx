@@ -21112,7 +21112,7 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
         )
   const issues: string[] = []
 
-  if (claim.payerId <= 0 || !claim.payerName) {
+  if (claim.payerId <= 0 || !claim.payerName?.trim()) {
     issues.push('missing-payer')
   }
   if (cptLines.length === 0) {
