@@ -2063,6 +2063,24 @@ export type BillingPatientRefundCreateInput = {
   refundAmount: number
 }
 
+export type BillingInsuranceReversalCreateInput = {
+  patientId: string
+  encounter: number
+  payerId: number
+  payerName: string
+  reference: string
+  postDate: string
+  checkDate?: string | null
+  depositDate?: string | null
+  paymentMethod: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo: string
+  reversalAmount: number
+  payerClaimNumber?: string | null
+}
+
 export type BillingEobBatchImportInput = {
   patientId: string
 }
@@ -6447,6 +6465,24 @@ export async function createBillingPatientRefund(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Billing patient refund create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createBillingInsuranceReversal(
+  input: BillingInsuranceReversalCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/insurance-reversals`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing insurance reversal create', response.status))
   }
 
   return response.json()

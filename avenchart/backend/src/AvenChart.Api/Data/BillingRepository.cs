@@ -1464,6 +1464,40 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    public Task<BillingPaymentMutationResponse?> CreateInsuranceReversalAsync(
+        BillingInsuranceReversalCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.PayerId <= 0 || request.ReversalAmount == 0m || string.IsNullOrWhiteSpace(request.PayerName))
+        {
+            return Task.FromResult<BillingPaymentMutationResponse?>(null);
+        }
+
+        return CreatePaymentAsync(
+            new BillingPaymentCreateRequest(
+                request.PatientId,
+                request.Encounter,
+                request.PayerId,
+                request.PayerName,
+                1,
+                request.Reference,
+                request.PostDate,
+                request.CheckDate,
+                request.DepositDate,
+                "insurance_reversal",
+                request.PaymentMethod,
+                request.CodeType,
+                request.Code,
+                request.Modifier,
+                request.Memo,
+                -Math.Abs(request.ReversalAmount),
+                0m,
+                string.Empty,
+                string.Empty,
+                request.PayerClaimNumber ?? string.Empty),
+            cancellationToken);
+    }
+
     public async Task<BillingEobBatchImportResponse?> ImportEobBatchAsync(
         BillingEobBatchImportRequest request,
         CancellationToken cancellationToken)
