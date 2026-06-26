@@ -21139,10 +21139,10 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   if (duplicateDiagnosisCodes.length > 0) {
     issues.push(`duplicate-diagnosis-code:${duplicateDiagnosisCodes.join(',')}`)
   }
-  if (cptLines.some((line) => (line.fee ?? 0) <= 0)) {
+  if (cptLines.some((line) => isInvalidClaimNumber(line.fee, 0))) {
     issues.push('invalid-fee')
   }
-  if (cptLines.some((line) => line.units <= 0)) {
+  if (cptLines.some((line) => isInvalidClaimNumber(line.units, 1))) {
     issues.push('invalid-units')
   }
   if (invalidModifiers.length > 0) {
@@ -21190,6 +21190,11 @@ function parseClaimModifierTokens(modifier: string | null | undefined) {
     .split(/[,\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
+}
+
+function isInvalidClaimNumber(value: number | string | null | undefined, fallback: number) {
+  const numberValue = Number(value ?? fallback)
+  return !Number.isFinite(numberValue) || numberValue <= 0
 }
 
 function parseClaimDiagnosisPointerTokens(justify: string | null | undefined) {
