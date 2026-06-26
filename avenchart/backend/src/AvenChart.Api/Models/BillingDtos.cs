@@ -323,6 +323,16 @@ public sealed record BillingLineMutationResponse(
     string Id,
     PatientBillingResponse Detail);
 
+public sealed record BillingChargeTemplateResponse(
+    string Id,
+    string Label,
+    string Code,
+    string Modifier,
+    string Description,
+    string Fee,
+    int Units,
+    string Justify);
+
 public sealed record BillingClaimCreateRequest(
     string PatientId,
     int Encounter,

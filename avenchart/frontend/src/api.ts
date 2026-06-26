@@ -1983,6 +1983,17 @@ export type BillingLineMutationResponse = {
   detail: PatientBillingResponse
 }
 
+export type BillingChargeTemplate = {
+  id: string
+  label: string
+  code: string
+  modifier: string
+  description: string
+  fee: string
+  units: number
+  justify: string
+}
+
 export type BillingClaimCreateInput = {
   patientId: string
   encounter: number
@@ -6162,6 +6173,22 @@ export async function createBillingLine(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Billing line create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getBillingChargeTemplate(
+  templateId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingChargeTemplate> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/charge-templates/${encodeURIComponent(templateId)}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing charge template lookup', response.status))
   }
 
   return response.json()

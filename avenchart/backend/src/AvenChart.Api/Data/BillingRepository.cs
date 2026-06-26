@@ -595,6 +595,55 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingLineMutationResponse(id, billing);
     }
 
+    public BillingChargeTemplateResponse? GetChargeTemplate(string templateId)
+    {
+        if (string.IsNullOrWhiteSpace(templateId))
+        {
+            return null;
+        }
+
+        return NormalizeText(templateId)?.ToLowerInvariant() switch
+        {
+            "office-visit" => new BillingChargeTemplateResponse(
+                Id: "office-visit",
+                Label: "Office visit",
+                Code: "99213",
+                Modifier: string.Empty,
+                Description: "Established patient office visit",
+                Fee: "125.00",
+                Units: 1,
+                Justify: "Z00.00"),
+            "preventive-visit" => new BillingChargeTemplateResponse(
+                Id: "preventive-visit",
+                Label: "Preventive visit",
+                Code: "99395",
+                Modifier: string.Empty,
+                Description: "Preventive medicine visit",
+                Fee: "185.00",
+                Units: 1,
+                Justify: "Z00.00"),
+            "telehealth-follow-up" => new BillingChargeTemplateResponse(
+                Id: "telehealth-follow-up",
+                Label: "Telehealth follow-up",
+                Code: "99212",
+                Modifier: "95",
+                Description: "Established patient telehealth follow-up",
+                Fee: "92.00",
+                Units: 1,
+                Justify: "Z00.00"),
+            "complex-follow-up" => new BillingChargeTemplateResponse(
+                Id: "complex-follow-up",
+                Label: "Complex follow-up",
+                Code: "99214",
+                Modifier: "25",
+                Description: "Complex established patient follow-up",
+                Fee: "210.00",
+                Units: 2,
+                Justify: "K21.9"),
+            _ => null
+        };
+    }
+
     public async Task<BillingLineMutationResponse?> UpdateLineStatusAsync(
         string billingLineId,
         BillingLineStatusUpdateRequest request,

@@ -52,6 +52,7 @@ import {
   getPatientCareTeamOptions,
   getPatientProviderAssignmentOptions,
   getPatientBilling,
+  getBillingChargeTemplate,
   getCollectionsWorkQueue,
   getStatementBatch,
   downloadBillingPaymentReceiptPdf,
@@ -243,6 +244,7 @@ import {
   type AppointmentUpdateInput,
   type AllergyListItem,
   type BillingEncounterItem,
+  type BillingChargeTemplate,
   type BillingClaimItem,
   type BillingClaimCreateInput,
   type BillingLedgerEntry,
@@ -2830,6 +2832,19 @@ function App() {
     }
   }
 
+  async function handleBillingChargeTemplateApply(templateId: string) {
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      return await getBillingChargeTemplate(templateId, sessionId)
+    } catch (templateError) {
+      const message = templateError instanceof Error ? templateError.message : 'Billing charge template lookup failed'
+      setBillingError(message)
+      throw templateError
+    }
+  }
+
   async function handleBillingLineUpdate(lineId: string, input: BillingLineUpdateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5127,6 +5142,7 @@ function App() {
             }}
             onPatientIdChange={setBillingPatientId}
             onCreateLine={handleBillingLineCreate}
+            onApplyChargeTemplate={handleBillingChargeTemplateApply}
             onUpdateLine={handleBillingLineUpdate}
             onDeactivateLine={handleBillingLineDeactivate}
             onDeleteLine={handleBillingLineDelete}
@@ -14602,42 +14618,18 @@ const feeSheetChargeTemplates = [
   {
     id: 'office-visit',
     label: 'Office visit',
-    code: '99213',
-    modifier: '',
-    description: 'Established patient office visit',
-    fee: '125.00',
-    units: '1',
-    justify: 'Z00.00',
   },
   {
     id: 'preventive-visit',
     label: 'Preventive visit',
-    code: '99395',
-    modifier: '',
-    description: 'Preventive medicine visit',
-    fee: '185.00',
-    units: '1',
-    justify: 'Z00.00',
   },
   {
     id: 'telehealth-follow-up',
     label: 'Telehealth follow-up',
-    code: '99212',
-    modifier: '95',
-    description: 'Established patient telehealth follow-up',
-    fee: '92.00',
-    units: '1',
-    justify: 'Z00.00',
   },
   {
     id: 'complex-follow-up',
     label: 'Complex follow-up',
-    code: '99214',
-    modifier: '25',
-    description: 'Complex established patient follow-up',
-    fee: '210.00',
-    units: '2',
-    justify: 'K21.9',
   },
 ] as const
 
@@ -14650,6 +14642,7 @@ function FeesWorkspace({
   onBillingSessionActive,
   onPatientIdChange,
   onCreateLine,
+  onApplyChargeTemplate,
   onUpdateLine,
   onDeactivateLine,
   onDeleteLine,
@@ -14675,6 +14668,7 @@ function FeesWorkspace({
   onBillingSessionActive: (sessionId: string) => void
   onPatientIdChange: (value: string) => void
   onCreateLine: (input: BillingLineCreateInput) => Promise<unknown>
+  onApplyChargeTemplate: (templateId: string) => Promise<BillingChargeTemplate>
   onUpdateLine: (lineId: string, input: BillingLineUpdateInput) => Promise<unknown>
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
@@ -14815,14 +14809,20 @@ function FeesWorkspace({
     }
   }, [billingEncounter, patientBilling])
 
-  function applyFeeSheetTemplate(template: (typeof feeSheetChargeTemplates)[number]) {
-    setBillingCode(template.code)
-    setBillingModifier(template.modifier)
-    setBillingCodeText(template.description)
-    setBillingFee(template.fee)
-    setBillingUnits(template.units)
-    setBillingJustify(template.justify)
-    setMutationMessage(`${template.label} template applied`)
+  async function applyFeeSheetTemplate(template: (typeof feeSheetChargeTemplates)[number]) {
+    setMutationMessage(null)
+    try {
+      const appliedTemplate = await onApplyChargeTemplate(template.id)
+      setBillingCode(appliedTemplate.code)
+      setBillingModifier(appliedTemplate.modifier)
+      setBillingCodeText(appliedTemplate.description)
+      setBillingFee(appliedTemplate.fee)
+      setBillingUnits(String(appliedTemplate.units))
+      setBillingJustify(appliedTemplate.justify)
+      setMutationMessage(`${template.label} template applied`)
+    } catch (templateError) {
+      setMutationMessage(templateError instanceof Error ? templateError.message : 'Charge template could not be applied')
+    }
   }
 
   async function handleBillingLineSubmit(event: FormEvent<HTMLFormElement>) {

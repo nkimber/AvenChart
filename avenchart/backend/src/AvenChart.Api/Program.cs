@@ -2283,6 +2283,16 @@ billing.MapGet("/{patientId}/statement.pdf", async (
     })
     .WithName("DownloadBillingStatementPdf");
 
+billing.MapGet("/charge-templates/{templateId}", (
+        BillingRepository repository,
+        string templateId) =>
+    {
+        var template = repository.GetChargeTemplate(templateId);
+        return template is null ? Results.NotFound() : Results.Ok(template);
+    })
+    .WithName("GetBillingChargeTemplate")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "view"));
+
 billing.MapPost("/lines", async (
         BillingRepository repository,
         BillingLineCreateRequest request,
