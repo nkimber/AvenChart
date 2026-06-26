@@ -2922,6 +2922,12 @@ export type PatientPortalMessageAttachment = {
   source: string
 }
 
+export type PatientPortalMessageAttachmentSubmission = {
+  fileName?: string | null
+  contentType?: string | null
+  sizeBytes?: number | null
+}
+
 export type PatientPortalMessagesResponse = {
   authenticated: boolean
   sessionId?: string | null
@@ -3071,6 +3077,7 @@ export type PatientPortalComposeMessageInput = {
   recipientId?: string | null
   title: string
   body: string
+  attachments?: PatientPortalMessageAttachmentSubmission[] | null
 }
 
 export type PatientPortalComposeMessageResponse = {
@@ -3095,6 +3102,7 @@ export type PatientPortalComposeMessageResponse = {
 
 export type PatientPortalReplyMessageInput = {
   body: string
+  attachments?: PatientPortalMessageAttachmentSubmission[] | null
 }
 
 export type PatientPortalReplyMessageResponse = {

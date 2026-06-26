@@ -724,7 +724,13 @@ public sealed record PatientPortalMessageAttachment(
 public sealed record PatientPortalComposeMessageRequest(
     string? RecipientId,
     string? Title,
-    string? Body);
+    string? Body,
+    IReadOnlyList<PatientPortalMessageAttachmentSubmission>? Attachments);
+
+public sealed record PatientPortalMessageAttachmentSubmission(
+    string? FileName,
+    string? ContentType,
+    long? SizeBytes);
 
 public sealed record PatientPortalComposeMessageResponse(
     bool Authenticated,
@@ -746,7 +752,8 @@ public sealed record PatientPortalComposeMessageResponse(
     string SessionSource);
 
 public sealed record PatientPortalReplyMessageRequest(
-    string? Body);
+    string? Body,
+    IReadOnlyList<PatientPortalMessageAttachmentSubmission>? Attachments);
 
 public sealed record PatientPortalReplyMessageResponse(
     bool Authenticated,

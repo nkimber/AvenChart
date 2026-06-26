@@ -1369,6 +1369,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var recipientId = NormalizeText(request.RecipientId) ?? "admin";
         var title = NormalizeText(request.Title);
         var body = NormalizeText(request.Body);
+        if (HasRequestedAttachments(request.Attachments))
+        {
+            return ComposeFailure(
+                session,
+                "Secure message attachments are not supported by the legacy-compatible patient portal message workflow.",
+                recipientId);
+        }
+
         if (string.IsNullOrWhiteSpace(title))
         {
             return ComposeFailure(session, "Secure message title is required.", recipientId);
@@ -1487,6 +1495,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         var body = NormalizeText(request.Body);
+        if (HasRequestedAttachments(request.Attachments))
+        {
+            return ReplyFailure(
+                session,
+                messageId.ToString(),
+                "Secure message attachments are not supported by the legacy-compatible patient portal message workflow.");
+        }
+
         if (string.IsNullOrWhiteSpace(body))
         {
             return ReplyFailure(session, messageId.ToString(), "Secure message reply body is required.");
@@ -2889,6 +2905,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         SentMessageCount: 0,
         FailureReason: reason,
         SessionSource: SessionSource);
+
+    private static bool HasRequestedAttachments(IReadOnlyList<PatientPortalMessageAttachmentSubmission>? attachments) =>
+        attachments is { Count: > 0 };
 
     private static PatientPortalForwardMessageResponse ForwardFailure(
         PatientPortalSessionResponse session,
