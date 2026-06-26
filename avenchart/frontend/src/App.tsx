@@ -21034,6 +21034,14 @@ function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: strin
 function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
   const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
   const cptLines = encounterLines.filter((line) => (line.codeType || '').toUpperCase() === 'CPT4')
+  const allowedModifiers = new Set(['', '25', '59', '76', '77', '95'])
+  const invalidModifiers = Array.from(
+    new Set(
+      cptLines
+        .map((line) => (line.modifier || '').trim().toUpperCase())
+        .filter((modifier) => !allowedModifiers.has(modifier)),
+    ),
+  )
   const diagnosisPointers = Array.from(
     new Set(cptLines.map((line) => line.justify?.trim()).filter((value): value is string => Boolean(value))),
   )
@@ -21053,6 +21061,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (cptLines.some((line) => line.units <= 0)) {
     issues.push('invalid-units')
+  }
+  if (invalidModifiers.length > 0) {
+    issues.push(`invalid-modifier:${invalidModifiers.join(',')}`)
   }
 
   const status = issues.length === 0 ? 'PASS' : 'FAIL'
