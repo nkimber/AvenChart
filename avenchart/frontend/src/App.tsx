@@ -21034,6 +21034,13 @@ function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: strin
 function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
   const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
   const cptLines = encounterLines.filter((line) => (line.codeType || '').toUpperCase() === 'CPT4')
+  const invalidCptCodes = Array.from(
+    new Set(
+      cptLines
+        .map((line) => (line.code || '').trim().toUpperCase())
+        .filter((code) => !/^\d{5}$/.test(code)),
+    ),
+  )
   const allowedModifiers = new Set(['25', '59', '76', '77', '95'])
   const modifierTokensByLine = cptLines.map((line) => parseClaimModifierTokens(line.modifier))
   const invalidModifiers = Array.from(
@@ -21092,6 +21099,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (cptLines.length === 0) {
     issues.push('missing-cpt-line')
+  }
+  if (invalidCptCodes.length > 0) {
+    issues.push(`invalid-cpt-code:${invalidCptCodes.join(',')}`)
   }
   if (cptLines.some((line) => !line.justify?.trim())) {
     issues.push('missing-diagnosis-pointer')
