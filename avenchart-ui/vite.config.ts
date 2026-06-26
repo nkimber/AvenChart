@@ -6,8 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 3100,
-    strictPort: true,
+    port: parseInt(process.env.PORT || '3100'),
     watch: {
       usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
     },

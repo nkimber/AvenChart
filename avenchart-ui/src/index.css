@@ -1,23 +1,36 @@
-/* "Calm Clinical" design tokens, carried over from the approved mockups. */
+/* Dreams EMR design tokens — indigo-navy professional palette. */
 :root {
-  --bg: #f7f9f8;
+  --bg: #f9fbfe;
   --surface: #ffffff;
-  --border: #e4e8e6;
-  --text: #1c2624;
-  --text-muted: #5b6864;
-  --teal: #0f6e56;
-  --teal-soft: #e1f5ee;
-  --coral: #993c1d;
-  --coral-soft: #faece7;
-  --radius-lg: 14px;
-  --radius-md: 10px;
+  --border: #e6eaed;
+  --text: #1b2559;
+  --text-muted: #6c757d;
+  --teal: #2e37a4;
+  --teal-soft: #eef0fb;
+  --coral: #dc3545;
+  --coral-soft: #fce9eb;
+  --radius-lg: 12px;
+  --radius-md: 8px;
   --shadow-none: none;
 
-  /* Bolder layer: gradient + elevation tokens, layered on top of the same brand colors. */
-  --teal-bright: #14a37e;
-  --teal-deep: #0a5544;
-  --shadow-card: 0 1px 2px rgba(15, 23, 21, 0.04), 0 18px 36px -16px rgba(15, 110, 86, 0.22);
-  --shadow-pop: 0 28px 52px -18px rgba(8, 49, 40, 0.4);
+  /* Gradient + elevation tokens. */
+  --teal-bright: #4f5ec7;
+  --teal-deep: #1f278a;
+  --shadow-card: 0 1px 4px rgba(27, 37, 89, 0.06);
+  --shadow-pop: 0 8px 40px rgba(27, 37, 89, 0.20);
+
+  /* Semantic status tokens. */
+  --success: #0cbc8b;
+  --success-surface: #e8faf4;
+  --warning: #d9a012;
+  --warning-surface: #fef9ec;
+  --danger: #dc3545;
+  --danger-surface: #fce9eb;
+  --info: #0ea5e9;
+  --info-surface: #e0f5fe;
+
+  /* Sidebar */
+  --sidebar-bg: #1b2038;
 }
 
 * {
@@ -1053,7 +1066,7 @@ a {
   background: linear-gradient(
     90deg,
     var(--border) 25%,
-    #edf0ee 50%,
+    #edf0f8 50%,
     var(--border) 75%
   );
   background-size: 1200px 100%;
@@ -1119,7 +1132,7 @@ a {
 
 .quick-action-tile:hover {
   border-color: var(--teal);
-  box-shadow: 0 2px 8px rgba(15, 110, 86, 0.1);
+  box-shadow: 0 2px 8px rgba(27, 37, 89, 0.1);
 }
 
 .quick-action-tile:disabled {
@@ -1316,7 +1329,7 @@ a {
 }
 
 .toggle-button:hover {
-  background: #c8edde;
+  background: #dce0f6;
 }
 
 .toggle-button-active {
@@ -1449,7 +1462,7 @@ a {
 }
 
 .message-row-unread:hover {
-  background: #d2f0e4;
+  background: #dce0f6;
 }
 
 .unread-dot {
@@ -1933,7 +1946,7 @@ a {
 }
 
 .button-sign-out:hover {
-  background: #f5d5cc;
+  background: #f8d7da;
 }
 
 /* ─── Modal overlay (appointment request) ──────────────────────────────── */
@@ -2092,7 +2105,7 @@ a {
 
 .account-quick-link:hover {
   border-color: var(--teal);
-  box-shadow: 0 2px 8px rgba(15, 110, 86, 0.1);
+  box-shadow: 0 2px 8px rgba(27, 37, 89, 0.1);
 }
 
 .account-quick-link-icon {
@@ -2259,9 +2272,9 @@ a {
 /* ─── Sidebar ──────────────────────────────────────────────────────────────── */
 
 .clinician-sidebar {
-  width: 220px;
-  min-width: 220px;
-  background: var(--text);
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar-bg);
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -2276,7 +2289,7 @@ a {
 }
 
 .clinician-sidebar-header {
-  height: 56px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2688,7 +2701,7 @@ a {
   border-radius: 20px;
   white-space: nowrap;
 }
-.appt-status-scheduled  { background: #e0f2fe; color: #0369a1; }
+.appt-status-scheduled  { background: #eef0fb; color: #2e37a4; }
 .appt-status-pending    { background: #fef3c7; color: #92400e; }
 .appt-status-completed  { background: #d1fae5; color: #065f46; }
 .appt-status-cancelled  { background: #fee2e2; color: #991b1b; }
@@ -4002,7 +4015,7 @@ a {
   font-size: 12px; cursor: pointer; color: var(--text-muted); transition: all .12s;
 }
 .tl-filter-btn-active { color: #fff; border-color: transparent; }
-.tl-filter-encounter.tl-filter-btn-active { background: #0f6e56; }
+.tl-filter-encounter.tl-filter-btn-active { background: #2e37a4; }
 .tl-filter-appointment.tl-filter-btn-active { background: #0369a1; }
 .tl-filter-lab.tl-filter-btn-active { background: #7c3aed; }
 .tl-filter-prescription.tl-filter-btn-active { background: #d97706; }
@@ -4014,7 +4027,7 @@ a {
   background: var(--surface); border-radius: var(--radius-md); border-left: 3px solid var(--border); transition: box-shadow .1s;
 }
 .tl-event:hover { box-shadow: var(--shadow-card); }
-.tl-kind-encounter { border-left-color: #0f6e56; }
+.tl-kind-encounter { border-left-color: #2e37a4; }
 .tl-kind-appt { border-left-color: #0369a1; }
 .tl-kind-lab { border-left-color: #7c3aed; }
 .tl-kind-rx { border-left-color: #d97706; }
