@@ -1257,7 +1257,7 @@ export async function createEncounter(
   body: EncounterCreateInput,
   signal?: AbortSignal,
 ): Promise<EncounterDetail> {
-  return clinicianPost(sessionId, '/api/encounters/', body, signal)
+  return clinicianPost(sessionId, '/api/encounters', body, signal)
 }
 
 export type EncounterVitalsCreateInput = {
@@ -1456,7 +1456,7 @@ export async function createPatientMessage(
   input: CreatePatientMessageInput,
   signal?: AbortSignal,
 ): Promise<PatientMessageItem> {
-  return clinicianPost(sessionId, '/api/messages/', input, signal)
+  return clinicianPost(sessionId, '/api/messages', input, signal)
 }
 
 // ── Patient mutations ─────────────────────────────────────────────────────────
@@ -1574,7 +1574,7 @@ export async function createPatient(
   body: PatientRegistrationInput,
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
-  return clinicianPost(sessionId, '/api/patients/', body, signal)
+  return clinicianPost(sessionId, '/api/patients', body, signal)
 }
 
 // ── Appointment mutations ─────────────────────────────────────────────────────
@@ -1597,7 +1597,7 @@ export async function createAppointment(
   body: AppointmentCreateInput,
   signal?: AbortSignal,
 ): Promise<AppointmentListItem> {
-  return clinicianPost(sessionId, '/api/appointments/', body, signal)
+  return clinicianPost(sessionId, '/api/appointments', body, signal)
 }
 
 // ── Immunization mutations ────────────────────────────────────────────────────
