@@ -5295,10 +5295,15 @@ function PatientPortalWorkspace({
   const allPortalMessages = portalMessages?.allMessages ?? []
   const deletedPortalMessages = portalMessages?.deletedMessages ?? []
   const [portalMessageSearch, setPortalMessageSearch] = useState('')
+  const normalizedPortalMessageSearch = portalMessageSearch.trim()
   const filteredInboxPortalMessages = filterSecureMessages(inboxPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
   const filteredSentPortalMessages = filterSecureMessages(sentPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
   const filteredAllPortalMessages = filterSecureMessages(allPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
   const filteredDeletedPortalMessages = filterSecureMessages(deletedPortalMessages, portalMessageSearch, locallyReadPortalMessageIdSet)
+  const inboxSecureMessageEmptyText = getSecureMessageEmptyText('Inbox', inboxPortalMessages.length, normalizedPortalMessageSearch)
+  const sentSecureMessageEmptyText = getSecureMessageEmptyText('Sent', sentPortalMessages.length, normalizedPortalMessageSearch)
+  const allSecureMessageEmptyText = getSecureMessageEmptyText('All', allPortalMessages.length, normalizedPortalMessageSearch)
+  const deletedSecureMessageEmptyText = getSecureMessageEmptyText('Deleted', deletedPortalMessages.length, normalizedPortalMessageSearch)
   const [portalMessagePages, setPortalMessagePages] = useState<Record<SecureMessageFolderKey, number>>({
     inbox: 0,
     sent: 0,
@@ -6572,7 +6577,7 @@ function PatientPortalWorkspace({
                     )
                   })}
                   {filteredInboxPortalMessages.length === 0 && (
-                    <div className="timeline-placeholder">No secure messages match the current search</div>
+                    <div className="timeline-placeholder" role="status" aria-label="Inbox secure messages empty state">{inboxSecureMessageEmptyText}</div>
                   )}
                 </div>
                 <div className="result-meta">
@@ -6653,7 +6658,7 @@ function PatientPortalWorkspace({
                     )
                   })}
                   {filteredSentPortalMessages.length === 0 && (
-                    <div className="timeline-placeholder">No sent secure messages match the current search</div>
+                    <div className="timeline-placeholder" role="status" aria-label="Sent secure messages empty state">{sentSecureMessageEmptyText}</div>
                   )}
                 </div>
                 <div className="result-meta">
@@ -6749,7 +6754,7 @@ function PatientPortalWorkspace({
                     )
                   })}
                   {filteredAllPortalMessages.length === 0 && (
-                    <div className="timeline-placeholder">No active secure messages match the current search</div>
+                    <div className="timeline-placeholder" role="status" aria-label="All secure messages empty state">{allSecureMessageEmptyText}</div>
                   )}
                 </div>
                 <div className="result-meta">
@@ -6789,7 +6794,7 @@ function PatientPortalWorkspace({
                     )
                   })}
                   {filteredDeletedPortalMessages.length === 0 && (
-                    <div className="timeline-placeholder">No deleted secure messages match the current search</div>
+                    <div className="timeline-placeholder" role="status" aria-label="Deleted secure messages empty state">{deletedSecureMessageEmptyText}</div>
                   )}
                 </div>
               </section>
@@ -7100,6 +7105,20 @@ function filterSecureMessages(
     ]
     return searchableValues.some((value) => value.toLowerCase().includes(needle))
   })
+}
+
+function getSecureMessageEmptyText(folderLabel: string, unfilteredCount: number, query: string) {
+  const folderName = folderLabel === 'All' ? 'All' : `${folderLabel.toLowerCase()} secure messages`
+
+  if (query) {
+    return folderLabel === 'All'
+      ? `No secure messages in All match "${query}"`
+      : `No ${folderName} match "${query}"`
+  }
+
+  return unfilteredCount === 0
+    ? (folderLabel === 'All' ? 'No secure messages are available in All' : `No ${folderName} are available`)
+    : (folderLabel === 'All' ? 'No secure messages are visible in All on this page' : `No ${folderName} are visible on this page`)
 }
 
 function getSecureMessagePage(messages: PatientPortalMessageItem[], pageIndex: number) {
