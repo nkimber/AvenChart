@@ -20851,20 +20851,20 @@ function BillingClaimCard({
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
-  const generatedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-PARITY-837P.txt`
   const deniedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-DENIAL-835.txt`
   const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
   const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
 
   function handleGenerate() {
+    const generatedClaim = buildGeneratedClaim837Payload(claim, patientId)
     void onUpdateStatus(claim, {
       status: 2,
       billProcess: 0,
       processTime: '2026-06-18 14:15:00',
-      processFile: generatedProcessFile,
+      processFile: generatedClaim.processFile,
       target: 'X12',
       x12PartnerId: 1,
-      submittedClaim: claim.submittedClaim || `Generated claim ${claim.encounter}`,
+      submittedClaim: generatedClaim.payload,
     })
   }
 
@@ -20965,6 +20965,25 @@ function BillingClaimCard({
       </div>
     </article>
   )
+}
+
+function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
+  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
+  const payerName = claim.payerName || `Payer ${claim.payerId}`
+  const payerCode = String(claim.payerId || 'UNKNOWN').replace(/[^a-z0-9]/gi, '').toUpperCase()
+  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-837P.txt`
+  const payload = [
+    `ISA*00*          *00*          *ZZ*LEGACY_EHR        *ZZ*PAYER${payerCode.padEnd(10, ' ')}*260618*1415*^*00501*${controlNumber.padStart(9, '0').slice(-9)}*0*T*:~`,
+    `GS*HC*LEGACY_EHR*PAYER${payerCode}*20260618*1415*${controlNumber}*X*005010X222A1~`,
+    `ST*837*${controlNumber}*005010X222A1~`,
+    `BHT*0019*00*${claim.encounter}*20260618*1415*CH~`,
+    `NM1*QC*1*PATIENT*${patientId}****MI*${patientId}~`,
+    `CLM*${claim.encounter}*0***11:B:1*Y*A*Y*I~`,
+    `NM1*PR*2*${payerName}*****PI*${claim.payerId}~`,
+    `SE*7*${controlNumber}~`,
+  ].join('')
+
+  return { processFile, payload }
 }
 
 function BillingPaymentCard({
