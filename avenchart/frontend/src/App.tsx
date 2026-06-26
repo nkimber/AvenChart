@@ -21045,6 +21045,22 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   const diagnosisPointers = Array.from(
     new Set(cptLines.map((line) => line.justify?.trim()).filter((value): value is string => Boolean(value))),
   )
+  const diagnosisCodes = new Set(
+    encounterLines
+      .filter((line) => (line.codeType || '').toUpperCase() === 'ICD10')
+      .map((line) => (line.code || '').trim().toUpperCase())
+      .filter(Boolean),
+  )
+  const unsupportedDiagnosisPointers =
+    diagnosisCodes.size === 0
+      ? []
+      : Array.from(
+          new Set(
+            cptLines
+              .map((line) => (line.justify || '').trim().toUpperCase())
+              .filter((pointer) => Boolean(pointer) && !diagnosisCodes.has(pointer)),
+          ),
+        )
   const issues: string[] = []
 
   if (claim.payerId <= 0 || !claim.payerName) {
@@ -21055,6 +21071,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (cptLines.some((line) => !line.justify?.trim())) {
     issues.push('missing-diagnosis-pointer')
+  }
+  if (unsupportedDiagnosisPointers.length > 0) {
+    issues.push(`invalid-diagnosis-pointer:${unsupportedDiagnosisPointers.join(',')}`)
   }
   if (cptLines.some((line) => (line.fee ?? 0) <= 0)) {
     issues.push('invalid-fee')
