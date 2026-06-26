@@ -11,6 +11,16 @@ namespace AvenChart.Api.Data;
 
 public sealed class BillingRepository(NpgsqlDataSource dataSource)
 {
+    private static readonly DateOnly ClaimScrubBusinessDate = new(2026, 6, 18);
+    private static readonly HashSet<string> AllowedClaimModifiers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "25",
+        "59",
+        "76",
+        "77",
+        "95"
+    };
+
     public async Task<PatientBillingResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -820,6 +830,54 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
     }
 
+    public async Task<BillingClaimMutationResponse?> ScrubClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var claim = await GetClaimAsync(connection, claimId, cancellationToken);
+            if (claim is null)
+            {
+                return null;
+            }
+
+            var lines = await GetBillingLinesAsync(connection, claim.Pid, [claim.Encounter], cancellationToken);
+            var scrub = BuildClaimScrubReport(claim, lines);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                update claims
+                set process_time = @processTime,
+                    process_file = @processFile,
+                    target = @target,
+                    x12_partner_id = @x12PartnerId,
+                    submitted_claim = @submittedClaim
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", claimId);
+            AddNullableTimestamp(command, "processTime", new DateTime(2026, 6, 18, 13, 5, 0));
+            command.Parameters.AddWithValue("processFile", scrub.ProcessFile);
+            command.Parameters.AddWithValue("target", NormalizeText(claim.Target) ?? "HCFA");
+            command.Parameters.AddWithValue("x12PartnerId", string.Equals(claim.Target, "X12", StringComparison.OrdinalIgnoreCase) ? 1 : 0);
+            command.Parameters.AddWithValue("submittedClaim", scrub.Report);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
+    }
+
     public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(claimId))
@@ -1410,6 +1468,37 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         return items;
+    }
+
+    private static async Task<BillingClaimScrubContext?> GetClaimAsync(
+        NpgsqlConnection connection,
+        string claimId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select c.id, c.pid, coalesce(p.pubpid, c.pid::text) as patient_id, c.encounter, c.payer_id, c.payer_name, c.target
+            from claims c
+            left join patients p on p.legacy_pid = c.pid
+            where c.id = @id
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("id", claimId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new BillingClaimScrubContext(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            Pid: ReadInt(reader, "pid"),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            Encounter: ReadInt(reader, "encounter"),
+            PayerId: ReadInt(reader, "payer_id"),
+            PayerName: ReadNullableString(reader, "payer_name"),
+            Target: ReadNullableString(reader, "target"));
     }
 
     private static async Task<IReadOnlyList<BillingPaymentItem>> GetPaymentsAsync(
@@ -2251,6 +2340,220 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             .ToList();
     }
 
+    private static BillingClaimScrubReport BuildClaimScrubReport(
+        BillingClaimScrubContext claim,
+        IReadOnlyList<BillingLineItem> encounterLines)
+    {
+        var controlNumber = new string(claim.Id.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        controlNumber = controlNumber.Length > 12 ? controlNumber[..12] : controlNumber;
+        if (string.IsNullOrWhiteSpace(controlNumber))
+        {
+            controlNumber = "CLAIM";
+        }
+
+        var cptLines = encounterLines
+            .Where(line => string.Equals(line.CodeType, "CPT4", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var invalidCptCodes = cptLines
+            .Select(line => (line.Code ?? string.Empty).Trim().ToUpperInvariant())
+            .Where(code => !System.Text.RegularExpressions.Regex.IsMatch(code, "^\\d{5}$"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var futureServiceDates = cptLines
+            .Select(line => NormalizeBillingDate(line.BillingDate))
+            .Where(billingDate => billingDate is not null && billingDate > ClaimScrubBusinessDate)
+            .Select(billingDate => billingDate!.Value.ToString("yyyy-MM-dd"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var modifierTokensByLine = cptLines
+            .Select(line => ParseClaimModifierTokens(line.Modifier).ToList())
+            .ToList();
+        var invalidModifiers = modifierTokensByLine
+            .SelectMany(modifiers => modifiers)
+            .Where(modifier => !AllowedClaimModifiers.Contains(modifier))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var duplicateModifiers = modifierTokensByLine
+            .SelectMany(modifiers => modifiers.Where((modifier, index) => modifiers.IndexOf(modifier) != index))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var incompatibleModifierCombinations = modifierTokensByLine
+            .Where(modifiers => modifiers.Contains("25", StringComparer.OrdinalIgnoreCase)
+                && modifiers.Contains("59", StringComparer.OrdinalIgnoreCase))
+            .Select(_ => "25+59")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var modifierCountIssues = modifierTokensByLine
+            .Select(modifiers => modifiers.Count)
+            .Where(count => count > 4)
+            .Distinct()
+            .ToList();
+        var diagnosisPointerTokensByLine = cptLines
+            .Select(line => ParseClaimDiagnosisPointerTokens(line.Justify).ToList())
+            .ToList();
+        var duplicateDiagnosisPointers = diagnosisPointerTokensByLine
+            .SelectMany(pointers => pointers.Where((pointer, index) => pointers.IndexOf(pointer) != index))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var diagnosisPointerCountIssues = diagnosisPointerTokensByLine
+            .Select(pointers => pointers.Count)
+            .Where(count => count > 4)
+            .Distinct()
+            .ToList();
+        var diagnosisPointers = diagnosisPointerTokensByLine
+            .SelectMany(pointers => pointers)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var diagnosisCodeValues = encounterLines
+            .Where(line => string.Equals(line.CodeType, "ICD10", StringComparison.OrdinalIgnoreCase))
+            .Select(line => (line.Code ?? string.Empty).Trim().ToUpperInvariant())
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .ToList();
+        var invalidDiagnosisCodes = diagnosisCodeValues
+            .Where(diagnosisCode => !System.Text.RegularExpressions.Regex.IsMatch(diagnosisCode, "^[A-Z][0-9][0-9A-Z](?:\\.[0-9A-Z]{1,4})?$"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var duplicateDiagnosisCodes = diagnosisCodeValues
+            .Where((diagnosisCode, index) => diagnosisCodeValues.IndexOf(diagnosisCode) != index)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var diagnosisCodes = diagnosisCodeValues.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unsupportedDiagnosisPointers = diagnosisCodes.Count == 0
+            ? []
+            : diagnosisPointerTokensByLine
+                .SelectMany(pointers => pointers)
+                .Where(pointer => !string.IsNullOrWhiteSpace(pointer) && !diagnosisCodes.Contains(pointer))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        var issues = new List<string>();
+
+        if (claim.PayerId <= 0 || string.IsNullOrWhiteSpace(claim.PayerName))
+        {
+            issues.Add("missing-payer");
+        }
+        if (cptLines.Count == 0)
+        {
+            issues.Add("missing-cpt-line");
+        }
+        if (invalidCptCodes.Count > 0)
+        {
+            issues.Add($"invalid-cpt-code:{string.Join(",", invalidCptCodes)}");
+        }
+        if (futureServiceDates.Count > 0)
+        {
+            issues.Add($"future-service-date:{string.Join(",", futureServiceDates)}");
+        }
+        if (cptLines.Any(line => string.IsNullOrWhiteSpace(line.Justify)))
+        {
+            issues.Add("missing-diagnosis-pointer");
+        }
+        if (diagnosisCodes.Count == 0 && cptLines.Any(line => !string.IsNullOrWhiteSpace(line.Justify)))
+        {
+            issues.Add("missing-diagnosis-code");
+        }
+        if (unsupportedDiagnosisPointers.Count > 0)
+        {
+            issues.Add($"invalid-diagnosis-pointer:{string.Join(",", unsupportedDiagnosisPointers)}");
+        }
+        if (invalidDiagnosisCodes.Count > 0)
+        {
+            issues.Add($"invalid-diagnosis-code:{string.Join(",", invalidDiagnosisCodes)}");
+        }
+        if (duplicateDiagnosisCodes.Count > 0)
+        {
+            issues.Add($"duplicate-diagnosis-code:{string.Join(",", duplicateDiagnosisCodes)}");
+        }
+        if (cptLines.Any(line => IsInvalidClaimNumber(line.Fee, 0m)))
+        {
+            issues.Add("invalid-fee");
+        }
+        if (cptLines.Any(line => IsInvalidClaimNumber(line.Units, 1)))
+        {
+            issues.Add("invalid-units");
+        }
+        if (invalidModifiers.Count > 0)
+        {
+            issues.Add($"invalid-modifier:{string.Join(",", invalidModifiers)}");
+        }
+        if (duplicateModifiers.Count > 0)
+        {
+            issues.Add($"duplicate-modifier:{string.Join(",", duplicateModifiers)}");
+        }
+        if (incompatibleModifierCombinations.Count > 0)
+        {
+            issues.Add($"incompatible-modifier-combination:{string.Join(",", incompatibleModifierCombinations)}");
+        }
+        if (modifierCountIssues.Count > 0)
+        {
+            issues.Add($"modifier-count-exceeded:{string.Join(",", modifierCountIssues)}");
+        }
+        if (diagnosisPointerCountIssues.Count > 0)
+        {
+            issues.Add($"diagnosis-pointer-count-exceeded:{string.Join(",", diagnosisPointerCountIssues)}");
+        }
+        if (duplicateDiagnosisPointers.Count > 0)
+        {
+            issues.Add($"duplicate-diagnosis-pointer:{string.Join(",", duplicateDiagnosisPointers)}");
+        }
+
+        var status = issues.Count == 0 ? "PASS" : "FAIL";
+        var processFile = $"CLAIM-{claim.Encounter}-{controlNumber}-SCRUB.txt";
+        var report = string.Join("|", [
+            $"SCRUB-{status}",
+            $"claim={controlNumber}",
+            $"patient={claim.PatientId}",
+            $"encounter={claim.Encounter}",
+            $"payer={claim.PayerName ?? claim.PayerId.ToString(CultureInfo.InvariantCulture)}",
+            $"cptCount={cptLines.Count}",
+            $"diagnosisPointers={(diagnosisPointers.Count > 0 ? string.Join(",", diagnosisPointers) : "none")}",
+            $"issues={(issues.Count > 0 ? string.Join(",", issues) : "none")}"
+        ]);
+
+        return new BillingClaimScrubReport(processFile, report);
+    }
+
+    private static IEnumerable<string> ParseClaimModifierTokens(string? modifier)
+    {
+        var value = (modifier ?? string.Empty).Trim().ToUpperInvariant();
+        if (value.Length > 2 && value.Length % 2 == 0 && value.All(char.IsLetterOrDigit))
+        {
+            for (var index = 0; index < value.Length; index += 2)
+            {
+                yield return value.Substring(index, 2);
+            }
+
+            yield break;
+        }
+
+        foreach (var token in value.Split([',', ' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return token.ToUpperInvariant();
+        }
+    }
+
+    private static IEnumerable<string> ParseClaimDiagnosisPointerTokens(string? justify)
+    {
+        foreach (var token in (justify ?? string.Empty).Split([',', ' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return token.ToUpperInvariant();
+        }
+    }
+
+    private static bool IsInvalidClaimNumber(decimal? value, decimal fallback)
+    {
+        return (value ?? fallback) <= 0m;
+    }
+
+    private static DateOnly? NormalizeBillingDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length < 10)
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(value[..10], "yyyy-MM-dd", out var date) ? date : null;
+    }
+
     private static string? NormalizeText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -2345,6 +2648,19 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private sealed record BillingEncounterMutationContext(
         int Encounter,
         int ProviderId);
+
+    private sealed record BillingClaimScrubContext(
+        string Id,
+        int Pid,
+        string PatientId,
+        int Encounter,
+        int PayerId,
+        string? PayerName,
+        string? Target);
+
+    private sealed record BillingClaimScrubReport(
+        string ProcessFile,
+        string Report);
 
     private sealed record BillingLedgerDraft(
         string EntryId,

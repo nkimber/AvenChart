@@ -176,6 +176,7 @@ import {
   replyToPatientMessage,
   softDeleteEncounterDocument,
   signPatientDocument,
+  scrubBillingClaimStatus,
   softDeletePatientDocument,
   softDeletePatientMessage,
   transmitProcedureOrder,
@@ -2918,6 +2919,23 @@ function App() {
     }
   }
 
+  async function handleBillingClaimScrub(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await scrubBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (scrubError) {
+      setBillingStatus('error')
+      setBillingError(scrubError instanceof Error ? scrubError.message : 'Unable to scrub billing claim.')
+      throw scrubError
+    }
+  }
+
   async function handleBillingClaimDelete(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5025,6 +5043,7 @@ function App() {
             onDeleteLine={handleBillingLineDelete}
             onCreateClaim={handleBillingClaimCreate}
             onUpdateClaimStatus={handleBillingClaimStatusUpdate}
+            onScrubClaim={handleBillingClaimScrub}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14542,6 +14561,7 @@ function FeesWorkspace({
   onDeleteLine,
   onCreateClaim,
   onUpdateClaimStatus,
+  onScrubClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14561,6 +14581,7 @@ function FeesWorkspace({
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onCreateClaim: (input: BillingClaimCreateInput) => Promise<unknown>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15722,6 +15743,7 @@ function FeesWorkspace({
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
                       onUpdateClaimStatus={onUpdateClaimStatus}
+                      onScrubClaim={onScrubClaim}
                       onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
@@ -20754,6 +20776,7 @@ function BillingEncounterCard({
   onDeactivateLine,
   onDeleteLine,
   onUpdateClaimStatus,
+  onScrubClaim,
   onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
@@ -20767,6 +20790,7 @@ function BillingEncounterCard({
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -20808,9 +20832,9 @@ function BillingEncounterCard({
             key={claim.id}
             claim={claim}
             patientId={patientId}
-            encounterLines={encounter.lines}
             disabled={disabled}
             onUpdateStatus={onUpdateClaimStatus}
+            onScrub={onScrubClaim}
             onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
@@ -20850,17 +20874,17 @@ function BillingEncounterCard({
 function BillingClaimCard({
   claim,
   patientId,
-  encounterLines,
   disabled,
   onUpdateStatus,
+  onScrub,
   onCreatePayment,
   onDelete,
 }: {
   claim: BillingClaimItem
   patientId: string
-  encounterLines: BillingLineItem[]
   disabled: boolean
   onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onScrub: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
@@ -20882,16 +20906,7 @@ function BillingClaimCard({
   }
 
   function handleScrub() {
-    const scrub = buildClaimScrubReport(claim, patientId, encounterLines)
-    void onUpdateStatus(claim, {
-      status: claim.status,
-      billProcess: claim.billProcess,
-      processTime: '2026-06-18 13:05:00',
-      processFile: scrub.processFile,
-      target: claim.target || 'HCFA',
-      x12PartnerId: claim.target === 'X12' ? 1 : 0,
-      submittedClaim: scrub.report,
-    })
+    void onScrub(claim)
   }
 
   function handleGenerate() {
@@ -21029,190 +21044,6 @@ function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: strin
   ].join('|')
 
   return { processFile, payload }
-}
-
-function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
-  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
-  const cptLines = encounterLines.filter((line) => (line.codeType || '').toUpperCase() === 'CPT4')
-  const invalidCptCodes = Array.from(
-    new Set(
-      cptLines
-        .map((line) => (line.code || '').trim().toUpperCase())
-        .filter((code) => !/^\d{5}$/.test(code)),
-    ),
-  )
-  const futureServiceDates = Array.from(
-    new Set(
-      cptLines
-        .map((line) => normalizeBillingDate(line.billingDate))
-        .filter((billingDate) => Boolean(billingDate) && billingDate > claimScrubBusinessDate),
-    ),
-  )
-  const allowedModifiers = new Set(['25', '59', '76', '77', '95'])
-  const modifierTokensByLine = cptLines.map((line) => parseClaimModifierTokens(line.modifier))
-  const invalidModifiers = Array.from(
-    new Set(
-      modifierTokensByLine
-        .flat()
-        .filter((modifier) => !allowedModifiers.has(modifier)),
-    ),
-  )
-  const duplicateModifiers = Array.from(
-    new Set(
-      modifierTokensByLine.flatMap((modifiers) =>
-        modifiers.filter((modifier, index) => modifiers.indexOf(modifier) !== index),
-      ),
-    ),
-  )
-  const incompatibleModifierCombinations = Array.from(
-    new Set(
-      modifierTokensByLine.flatMap((modifiers) => {
-        const modifierSet = new Set(modifiers)
-        return modifierSet.has('25') && modifierSet.has('59') ? ['25+59'] : []
-      }),
-    ),
-  )
-  const modifierCountIssues = Array.from(
-    new Set(modifierTokensByLine.map((modifiers) => modifiers.length).filter((count) => count > 4)),
-  )
-  const diagnosisPointerTokensByLine = cptLines.map((line) => parseClaimDiagnosisPointerTokens(line.justify))
-  const duplicateDiagnosisPointers = Array.from(
-    new Set(
-      diagnosisPointerTokensByLine.flatMap((pointers) =>
-        pointers.filter((pointer, index) => pointers.indexOf(pointer) !== index),
-      ),
-    ),
-  )
-  const diagnosisPointerCountIssues = Array.from(
-    new Set(diagnosisPointerTokensByLine.map((pointers) => pointers.length).filter((count) => count > 4)),
-  )
-  const diagnosisPointers = Array.from(new Set(diagnosisPointerTokensByLine.flat()))
-  const diagnosisCodeValues = encounterLines
-    .filter((line) => (line.codeType || '').toUpperCase() === 'ICD10')
-    .map((line) => (line.code || '').trim().toUpperCase())
-    .filter(Boolean)
-  const invalidDiagnosisCodes = Array.from(
-    new Set(diagnosisCodeValues.filter((diagnosisCode) => !isSupportedIcd10DiagnosisCode(diagnosisCode))),
-  )
-  const duplicateDiagnosisCodes = Array.from(
-    new Set(
-      diagnosisCodeValues.filter((diagnosisCode, index) => diagnosisCodeValues.indexOf(diagnosisCode) !== index),
-    ),
-  )
-  const diagnosisCodes = new Set(diagnosisCodeValues)
-  const unsupportedDiagnosisPointers =
-    diagnosisCodes.size === 0
-      ? []
-      : Array.from(
-          new Set(
-            diagnosisPointerTokensByLine
-              .flat()
-              .filter((pointer) => Boolean(pointer) && !diagnosisCodes.has(pointer)),
-          ),
-        )
-  const issues: string[] = []
-
-  if (claim.payerId <= 0 || !claim.payerName?.trim()) {
-    issues.push('missing-payer')
-  }
-  if (cptLines.length === 0) {
-    issues.push('missing-cpt-line')
-  }
-  if (invalidCptCodes.length > 0) {
-    issues.push(`invalid-cpt-code:${invalidCptCodes.join(',')}`)
-  }
-  if (futureServiceDates.length > 0) {
-    issues.push(`future-service-date:${futureServiceDates.join(',')}`)
-  }
-  if (cptLines.some((line) => !line.justify?.trim())) {
-    issues.push('missing-diagnosis-pointer')
-  }
-  if (diagnosisCodes.size === 0 && cptLines.some((line) => line.justify?.trim())) {
-    issues.push('missing-diagnosis-code')
-  }
-  if (unsupportedDiagnosisPointers.length > 0) {
-    issues.push(`invalid-diagnosis-pointer:${unsupportedDiagnosisPointers.join(',')}`)
-  }
-  if (invalidDiagnosisCodes.length > 0) {
-    issues.push(`invalid-diagnosis-code:${invalidDiagnosisCodes.join(',')}`)
-  }
-  if (duplicateDiagnosisCodes.length > 0) {
-    issues.push(`duplicate-diagnosis-code:${duplicateDiagnosisCodes.join(',')}`)
-  }
-  if (cptLines.some((line) => isInvalidClaimNumber(line.fee, 0))) {
-    issues.push('invalid-fee')
-  }
-  if (cptLines.some((line) => isInvalidClaimNumber(line.units, 1))) {
-    issues.push('invalid-units')
-  }
-  if (invalidModifiers.length > 0) {
-    issues.push(`invalid-modifier:${invalidModifiers.join(',')}`)
-  }
-  if (duplicateModifiers.length > 0) {
-    issues.push(`duplicate-modifier:${duplicateModifiers.join(',')}`)
-  }
-  if (incompatibleModifierCombinations.length > 0) {
-    issues.push(`incompatible-modifier-combination:${incompatibleModifierCombinations.join(',')}`)
-  }
-  if (modifierCountIssues.length > 0) {
-    issues.push(`modifier-count-exceeded:${modifierCountIssues.join(',')}`)
-  }
-  if (diagnosisPointerCountIssues.length > 0) {
-    issues.push(`diagnosis-pointer-count-exceeded:${diagnosisPointerCountIssues.join(',')}`)
-  }
-  if (duplicateDiagnosisPointers.length > 0) {
-    issues.push(`duplicate-diagnosis-pointer:${duplicateDiagnosisPointers.join(',')}`)
-  }
-
-  const status = issues.length === 0 ? 'PASS' : 'FAIL'
-  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-SCRUB.txt`
-  const report = [
-    `SCRUB-${status}`,
-    `claim=${controlNumber}`,
-    `patient=${patientId}`,
-    `encounter=${claim.encounter}`,
-    `payer=${claim.payerName || claim.payerId}`,
-    `cptCount=${cptLines.length}`,
-    `diagnosisPointers=${diagnosisPointers.join(',') || 'none'}`,
-    `issues=${issues.join(',') || 'none'}`,
-  ].join('|')
-
-  return { processFile, report, status, issues }
-}
-
-function parseClaimModifierTokens(modifier: string | null | undefined) {
-  const value = (modifier || '').trim().toUpperCase()
-  if (/^[A-Z0-9]+$/.test(value) && value.length > 2 && value.length % 2 === 0) {
-    return value.match(/.{1,2}/g) || []
-  }
-
-  return value
-    .split(/[,\s]+/)
-    .map((value) => value.trim().toUpperCase())
-    .filter(Boolean)
-}
-
-function isInvalidClaimNumber(value: number | string | null | undefined, fallback: number) {
-  const numberValue = Number(value ?? fallback)
-  return !Number.isFinite(numberValue) || numberValue <= 0
-}
-
-function parseClaimDiagnosisPointerTokens(justify: string | null | undefined) {
-  return (justify || '')
-    .split(/[,\s]+/)
-    .map((value) => value.trim().toUpperCase())
-    .filter(Boolean)
-}
-
-function isSupportedIcd10DiagnosisCode(code: string) {
-  return /^[A-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?$/.test(code)
-}
-
-const claimScrubBusinessDate = '2026-06-18'
-
-function normalizeBillingDate(value: string | null | undefined) {
-  const trimmed = (value || '').trim()
-  return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : ''
 }
 
 function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
