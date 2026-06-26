@@ -132,6 +132,7 @@ import {
   createProcedureSpecimen,
   createProcedureResult,
   createPatient,
+  adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
   findPatientDuplicates,
   PatientRegistrationValidationError,
@@ -198,7 +199,6 @@ import {
   updateAppointmentStatus,
   updateAdministrationFacility,
   updateAdministrationUser,
-  updateBillingClaimStatus,
   updateBillingLine,
   updateBillingLineStatus,
   voidBillingPaymentPosting,
@@ -244,7 +244,6 @@ import {
   type BillingEncounterItem,
   type BillingClaimItem,
   type BillingClaimCreateInput,
-  type BillingClaimStatusUpdateInput,
   type BillingLedgerEntry,
   type BillingStatementLineItem,
   type BillingPaymentItem,
@@ -2905,24 +2904,6 @@ function App() {
     }
   }
 
-  async function handleBillingClaimStatusUpdate(claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) {
-    setBillingStatus('loading')
-    setBillingError(null)
-
-    try {
-      const sessionId = getActiveBillingSessionId()
-      const response = await updateBillingClaimStatus(claim.id, input, sessionId)
-      setPatientBilling(response.detail)
-      setBillingStatus('ready')
-      return response
-    } catch (updateError) {
-      setBillingStatus('error')
-      const message = updateError instanceof Error ? updateError.message : 'Billing claim status update failed'
-      setBillingError(message)
-      throw updateError
-    }
-  }
-
   async function handleBillingClaimScrub(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -3005,6 +2986,23 @@ function App() {
       setBillingStatus('error')
       setBillingError(clearError instanceof Error ? clearError.message : 'Unable to clear billing claim.')
       throw clearError
+    }
+  }
+
+  async function handleBillingClaimAdjudicate(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await adjudicateBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (adjudicationError) {
+      setBillingStatus('error')
+      setBillingError(adjudicationError instanceof Error ? adjudicationError.message : 'Unable to adjudicate billing claim.')
+      throw adjudicationError
     }
   }
 
@@ -5114,12 +5112,12 @@ function App() {
             onDeactivateLine={handleBillingLineDeactivate}
             onDeleteLine={handleBillingLineDelete}
             onCreateClaim={handleBillingClaimCreate}
-            onUpdateClaimStatus={handleBillingClaimStatusUpdate}
             onScrubClaim={handleBillingClaimScrub}
             onGenerateClaim={handleBillingClaimGenerate}
             onResubmitClaim={handleBillingClaimResubmit}
             onDenyClaim={handleBillingClaimDeny}
             onClearClaim={handleBillingClaimClear}
+            onAdjudicateClaim={handleBillingClaimAdjudicate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14636,12 +14634,12 @@ function FeesWorkspace({
   onDeactivateLine,
   onDeleteLine,
   onCreateClaim,
-  onUpdateClaimStatus,
   onScrubClaim,
   onGenerateClaim,
   onResubmitClaim,
   onDenyClaim,
   onClearClaim,
+  onAdjudicateClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14660,12 +14658,12 @@ function FeesWorkspace({
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onCreateClaim: (input: BillingClaimCreateInput) => Promise<unknown>
-  onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
   onClearClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15821,18 +15819,16 @@ function FeesWorkspace({
                     <BillingEncounterCard
                       key={encounter.encounter}
                       encounter={encounter}
-                      patientId={patientId}
                       disabled={isLoading || feesLocked}
                       onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
-                      onUpdateClaimStatus={onUpdateClaimStatus}
                       onScrubClaim={onScrubClaim}
                       onGenerateClaim={onGenerateClaim}
                       onResubmitClaim={onResubmitClaim}
                       onDenyClaim={onDenyClaim}
                       onClearClaim={onClearClaim}
-                      onCreatePayment={onCreatePayment}
+                      onAdjudicateClaim={onAdjudicateClaim}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
                       onVoidPayment={onVoidPayment}
@@ -20858,36 +20854,32 @@ function MessageItem({
 
 function BillingEncounterCard({
   encounter,
-  patientId,
   disabled,
   onSelectCorrectionLine,
   onDeactivateLine,
   onDeleteLine,
-  onUpdateClaimStatus,
   onScrubClaim,
   onGenerateClaim,
   onResubmitClaim,
   onDenyClaim,
   onClearClaim,
-  onCreatePayment,
+  onAdjudicateClaim,
   onDeleteClaim,
   onDownloadPaymentReceipt,
   onVoidPayment,
   onDeletePayment,
 }: {
   encounter: BillingEncounterItem
-  patientId: string
   disabled: boolean
   onSelectCorrectionLine: (line: BillingLineItem) => void
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
-  onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
   onClearClaim: (claim: BillingClaimItem) => Promise<unknown>
-  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
@@ -20927,15 +20919,13 @@ function BillingEncounterCard({
           <BillingClaimCard
             key={claim.id}
             claim={claim}
-            patientId={patientId}
             disabled={disabled}
-            onUpdateStatus={onUpdateClaimStatus}
             onScrub={onScrubClaim}
             onGenerate={onGenerateClaim}
             onResubmit={onResubmitClaim}
             onDeny={onDenyClaim}
             onClear={onClearClaim}
-            onCreatePayment={onCreatePayment}
+            onAdjudicate={onAdjudicateClaim}
             onDelete={onDeleteClaim}
           />
         ))}
@@ -20973,32 +20963,25 @@ function BillingEncounterCard({
 
 function BillingClaimCard({
   claim,
-  patientId,
   disabled,
-  onUpdateStatus,
   onScrub,
   onGenerate,
   onResubmit,
   onDeny,
   onClear,
-  onCreatePayment,
+  onAdjudicate,
   onDelete,
 }: {
   claim: BillingClaimItem
-  patientId: string
   disabled: boolean
-  onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onScrub: (claim: BillingClaimItem) => Promise<unknown>
   onGenerate: (claim: BillingClaimItem) => Promise<unknown>
   onResubmit: (claim: BillingClaimItem) => Promise<unknown>
   onDeny: (claim: BillingClaimItem) => Promise<unknown>
   onClear: (claim: BillingClaimItem) => Promise<unknown>
-  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onAdjudicate: (claim: BillingClaimItem) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
-  const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
-  const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
-
   function handleResubmit() {
     void onResubmit(claim)
   }
@@ -21019,37 +21002,8 @@ function BillingClaimCard({
     void onDeny(claim)
   }
 
-  async function handleAdjudicate() {
-    await onCreatePayment({
-      patientId,
-      encounter: claim.encounter,
-      payerId: claim.payerId,
-      payerName: claim.payerName || `Payer ${claim.payerId}`,
-      payerType: claim.payerType || 1,
-      reference: `EOB-${claim.encounter}-ADJUDICATED`,
-      postDate: '2026-06-18',
-      checkDate: '2026-06-18',
-      depositDate: '2026-06-18',
-      paymentType: 'insurance_payment',
-      paymentMethod: 'electronic_payment',
-      codeType: 'CPT4',
-      code: '99214',
-      memo: `Adjudicated claim ${claim.encounter}`,
-      payAmount: 42,
-      adjustmentAmount: 5.75,
-      accountCode: 'CO45',
-      reasonCode: 'CO-45',
-      payerClaimNumber,
-    })
-    await onUpdateStatus(claim, {
-      status: 3,
-      billProcess: 0,
-      processTime: '2026-06-18 16:05:00',
-      processFile: adjudicatedProcessFile,
-      target: 'X12',
-      x12PartnerId: 1,
-      submittedClaim: claim.submittedClaim || `Adjudicated claim ${claim.encounter}`,
-    })
+  function handleAdjudicate() {
+    void onAdjudicate(claim)
   }
 
   return (

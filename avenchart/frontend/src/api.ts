@@ -6332,6 +6332,23 @@ export async function clearBillingClaimStatus(
   return response.json()
 }
 
+export async function adjudicateBillingClaimStatus(
+  claimId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/claims/${encodeURIComponent(claimId)}/adjudicate`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing claim adjudication', response.status))
+  }
+
+  return response.json()
+}
+
 export async function deleteBillingClaimStatus(
   claimId: string,
   sessionId?: string | null,

@@ -1082,6 +1082,150 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
     }
 
+    public async Task<BillingPaymentMutationResponse?> AdjudicateClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        int sessionId;
+        int legacyPid;
+        var activityId = $"PAY-MODERN-{Guid.NewGuid():N}";
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var claim = await GetClaimAsync(connection, claimId, cancellationToken);
+            if (claim is null)
+            {
+                return null;
+            }
+
+            var patient = await GetPatientAsync(connection, claim.Pid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+            if (patient is null)
+            {
+                return null;
+            }
+
+            var encounter = await GetEncounterForPatientAsync(connection, patient.LegacyPid, claim.Encounter, cancellationToken);
+            if (encounter is null)
+            {
+                return null;
+            }
+
+            legacyPid = patient.LegacyPid;
+            var postDate = new DateOnly(2026, 6, 18);
+            var postTime = postDate.ToDateTime(new TimeOnly(10, 45, 0));
+            var payerName = NormalizeText(claim.PayerName) ?? $"Payer {claim.PayerId}";
+            var payerType = claim.PayerType <= 0 ? 1 : claim.PayerType;
+            var payerClaimNumber = BuildAdjudicatedPayerClaimNumber(claim);
+            var adjudicated = BuildClaimAdjudicationPayload(claim);
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            sessionId = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                cancellationToken);
+            var sequenceNo = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                cancellationToken,
+                command =>
+                {
+                    command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    command.Parameters.AddWithValue("encounter", encounter.Encounter);
+                });
+
+            await using (var sessionCommand = connection.CreateCommand())
+            {
+                sessionCommand.Transaction = transaction;
+                sessionCommand.CommandText = """
+                    insert into payment_sessions
+                        (id, patient_id, pid, payer_id, payer_name, user_id, user_name, closed, reference,
+                         check_date, deposit_date, pay_total, created_time, modified_time, global_amount,
+                         payment_type, description, adjustment_code, post_to_date, payment_method)
+                    values
+                        (@id, @patientId, @pid, @payerId, @payerName, 119, 'gold-billing-01', 1, @reference,
+                         @checkDate, @depositDate, @payTotal, @postTime, @postTime, 0,
+                         'insurance_payment', @description, 'contractual_adjustment', @postDate, 'electronic_payment');
+                    """;
+                sessionCommand.Parameters.AddWithValue("id", sessionId);
+                sessionCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                sessionCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                sessionCommand.Parameters.AddWithValue("payerId", claim.PayerId);
+                sessionCommand.Parameters.AddWithValue("payerName", payerName);
+                sessionCommand.Parameters.AddWithValue("reference", $"EOB-{claim.Encounter}-ADJUDICATED");
+                sessionCommand.Parameters.Add("checkDate", NpgsqlDbType.Date).Value = postDate;
+                sessionCommand.Parameters.Add("depositDate", NpgsqlDbType.Date).Value = postDate;
+                sessionCommand.Parameters.AddWithValue("payTotal", 42m);
+                sessionCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                sessionCommand.Parameters.AddWithValue("description", $"Adjudicated claim {claim.Encounter}");
+                sessionCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var activityCommand = connection.CreateCommand())
+            {
+                activityCommand.Transaction = transaction;
+                activityCommand.CommandText = """
+                    insert into payment_activities
+                        (id, session_id, patient_id, pid, encounter, sequence_no, code_type, code, modifier,
+                         payer_type, post_time, post_user_id, post_user_name, memo, pay_amount, adj_amount,
+                         modified_time, follow_up, follow_up_note, account_code, reason_code, deleted, post_date,
+                         payer_claim_number)
+                    values
+                        (@id, @sessionId, @patientId, @pid, @encounter, @sequenceNo, 'CPT4', '99214', '',
+                         @payerType, @postTime, 119, 'gold-billing-01', @memo, 42, 5.75,
+                         @postTime, '', '', 'CO45', 'CO-45', null, @postDate, @payerClaimNumber);
+                    """;
+                activityCommand.Parameters.AddWithValue("id", activityId);
+                activityCommand.Parameters.AddWithValue("sessionId", sessionId);
+                activityCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                activityCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                activityCommand.Parameters.AddWithValue("encounter", encounter.Encounter);
+                activityCommand.Parameters.AddWithValue("sequenceNo", sequenceNo);
+                activityCommand.Parameters.AddWithValue("payerType", payerType);
+                activityCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                activityCommand.Parameters.AddWithValue("memo", $"Adjudicated claim {claim.Encounter}");
+                activityCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                activityCommand.Parameters.AddWithValue("payerClaimNumber", payerClaimNumber);
+                await activityCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var claimCommand = connection.CreateCommand())
+            {
+                claimCommand.Transaction = transaction;
+                claimCommand.CommandText = """
+                    update claims
+                    set status = @status,
+                        bill_process = @billProcess,
+                        process_time = @processTime,
+                        process_file = @processFile,
+                        target = @target,
+                        x12_partner_id = @x12PartnerId,
+                        submitted_claim = @submittedClaim
+                    where id = @id;
+                    """;
+                claimCommand.Parameters.AddWithValue("id", claimId);
+                claimCommand.Parameters.AddWithValue("status", 3);
+                claimCommand.Parameters.AddWithValue("billProcess", 0);
+                AddNullableTimestamp(claimCommand, "processTime", new DateTime(2026, 6, 18, 16, 5, 0));
+                claimCommand.Parameters.AddWithValue("processFile", adjudicated.ProcessFile);
+                claimCommand.Parameters.AddWithValue("target", "X12");
+                claimCommand.Parameters.AddWithValue("x12PartnerId", 1);
+                claimCommand.Parameters.AddWithValue("submittedClaim", adjudicated.Payload);
+                await claimCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var billing = await GetForPatientAsync(legacyPid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingPaymentMutationResponse(activityId, sessionId, billing);
+    }
+
     public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(claimId))
@@ -1681,7 +1825,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select c.id, c.pid, coalesce(p.pubpid, c.pid::text) as patient_id, c.encounter, c.payer_id, c.payer_name, c.target, c.status, c.bill_process, c.process_file, c.submitted_claim
+            select c.id, c.pid, coalesce(p.pubpid, c.pid::text) as patient_id, c.encounter, c.payer_id, c.payer_name, c.payer_type, c.target, c.status, c.bill_process, c.process_file, c.submitted_claim
             from claims c
             left join patients p on p.legacy_pid = c.pid
             where c.id = @id
@@ -1702,6 +1846,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Encounter: ReadInt(reader, "encounter"),
             PayerId: ReadInt(reader, "payer_id"),
             PayerName: ReadNullableString(reader, "payer_name"),
+            PayerType: ReadInt(reader, "payer_type"),
             Target: ReadNullableString(reader, "target"),
             Status: ReadInt(reader, "status"),
             BillProcess: ReadInt(reader, "bill_process"),
@@ -2791,6 +2936,17 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private static string BuildClaimClearPayload(BillingClaimScrubContext claim)
         => NormalizeText(claim.SubmittedClaim) ?? $"Cleared claim {claim.Encounter}";
 
+    private static BillingGeneratedClaimPayload BuildClaimAdjudicationPayload(BillingClaimScrubContext claim)
+    {
+        var processFile = $"CLAIM-{claim.Encounter}-EOB-835.txt";
+        var payload = NormalizeText(claim.SubmittedClaim) ?? $"Adjudicated claim {claim.Encounter}";
+
+        return new BillingGeneratedClaimPayload(processFile, payload);
+    }
+
+    private static string BuildAdjudicatedPayerClaimNumber(BillingClaimScrubContext claim)
+        => $"ADJ-{claim.Id}"[..Math.Min(48, $"ADJ-{claim.Id}".Length)];
+
     private static IEnumerable<string> ParseClaimModifierTokens(string? modifier)
     {
         var value = (modifier ?? string.Empty).Trim().ToUpperInvariant();
@@ -2935,6 +3091,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         int Encounter,
         int PayerId,
         string? PayerName,
+        int PayerType,
         string? Target,
         int Status,
         int BillProcess,
