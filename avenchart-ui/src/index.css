@@ -4213,3 +4213,15 @@ a {
 
 /* cl-badge-red helper */
 .cl-badge-red { background: #fee2e2; color: #991b1b; }
+
+/* Insurance CRUD */
+.cl-insurance-item-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.cl-insurance-btns { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Form section labels */
+.cl-form-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 0 8px; padding: 0; }
+
+/* Vitals inline entry form */
+.cl-vitals-form { background: var(--bg); border-radius: var(--radius-md); padding: 12px; margin-bottom: 12px; }
+.cl-vitals-input-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+@media (max-width: 768px) { .cl-vitals-input-grid { grid-template-columns: repeat(2, 1fr); } }

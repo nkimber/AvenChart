@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { Search, UserCircle } from 'lucide-react'
+import { Search, UserCircle, UserPlus } from 'lucide-react'
 import { searchPatients, type PatientListItem } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
@@ -32,6 +32,9 @@ export default function PatientSearch() {
     <div className="clinician-page">
       <div className="clinician-page-header">
         <h1 className="clinician-page-title">Patient search</h1>
+        <button className="cl-btn-primary" type="button" onClick={() => navigate('/clinician/patients/new')}>
+          <UserPlus size={14} /> Register patient
+        </button>
       </div>
 
       <section className="cl-card">

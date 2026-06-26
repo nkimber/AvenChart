@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { ChevronRight, FileText, Plus, TrendingUp } from 'lucide-react'
-import { getEncounterDetail, searchEncounters, type EncounterDetail, type EncounterListItem, type EncounterVitals } from '../../api.ts'
+import {
+  createEncounterSoapNote,
+  createEncounterVitals,
+  getEncounterDetail,
+  searchEncounters,
+  type EncounterDetail,
+  type EncounterListItem,
+  type EncounterVitals,
+} from '../../api.ts'
+import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 // Simple SVG sparkline for a series of numeric values
@@ -57,6 +66,11 @@ function extractVitalSeries(encounters: EncounterListItem[], details: Map<number
   return series
 }
 
+const BLANK_VITALS = {
+  systolic: '', diastolic: '', pulse: '', temperature: '', respiration: '', oxygenSaturation: '', weight: '', height: '',
+}
+const BLANK_SOAP = { subjective: '', objective: '', assessment: '', plan: '' }
+
 export default function PatientEncounters() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const navigate = useNavigate()
@@ -65,6 +79,11 @@ export default function PatientEncounters() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detailCache, setDetailCache] = useState<Map<number, EncounterDetail>>(new Map())
   const [showTrends, setShowTrends] = useState(false)
+  const [addVitalsOpen, setAddVitalsOpen] = useState(false)
+  const [addSoapOpen, setAddSoapOpen] = useState(false)
+  const [vitalsForm, setVitalsForm] = useState(BLANK_VITALS)
+  const [soapForm, setSoapForm] = useState(BLANK_SOAP)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     setDetailCache(new Map())
@@ -81,6 +100,10 @@ export default function PatientEncounters() {
 
   function openEncounter(id: number) {
     setSelectedId(id)
+    setAddVitalsOpen(false)
+    setAddSoapOpen(false)
+    setVitalsForm(BLANK_VITALS)
+    setSoapForm(BLANK_SOAP)
     setDetailState({ status: 'loading', id })
     getEncounterDetail(session.sessionId, id)
       .then((data) => {
@@ -88,6 +111,47 @@ export default function PatientEncounters() {
         setDetailCache((prev) => new Map(prev).set(id, data))
       })
       .catch((err) => setDetailState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
+  }
+
+  async function handleAddVitals(e: React.FormEvent) {
+    e.preventDefault()
+    if (selectedId == null) return
+    setSaving(true)
+    try {
+      await createEncounterVitals(session.sessionId, selectedId, {
+        dateTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        systolic: vitalsForm.systolic ? Number(vitalsForm.systolic) : undefined,
+        diastolic: vitalsForm.diastolic ? Number(vitalsForm.diastolic) : undefined,
+        pulse: vitalsForm.pulse ? Number(vitalsForm.pulse) : undefined,
+        temperature: vitalsForm.temperature ? Number(vitalsForm.temperature) : undefined,
+        respiration: vitalsForm.respiration ? Number(vitalsForm.respiration) : undefined,
+        oxygenSaturation: vitalsForm.oxygenSaturation ? Number(vitalsForm.oxygenSaturation) : undefined,
+        weight: vitalsForm.weight ? Number(vitalsForm.weight) : undefined,
+        height: vitalsForm.height ? Number(vitalsForm.height) : undefined,
+      })
+      showToast('Vitals recorded.', 'success')
+      setAddVitalsOpen(false)
+      setVitalsForm(BLANK_VITALS)
+      openEncounter(selectedId)
+    } catch { showToast('Could not record vitals.', 'error') }
+    finally { setSaving(false) }
+  }
+
+  async function handleAddSoap(e: React.FormEvent) {
+    e.preventDefault()
+    if (selectedId == null) return
+    setSaving(true)
+    try {
+      await createEncounterSoapNote(session.sessionId, selectedId, {
+        dateTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        ...soapForm,
+      })
+      showToast('SOAP note saved.', 'success')
+      setAddSoapOpen(false)
+      setSoapForm(BLANK_SOAP)
+      openEncounter(selectedId)
+    } catch { showToast('Could not save SOAP note.', 'error') }
+    finally { setSaving(false) }
   }
 
   return (
@@ -209,11 +273,40 @@ export default function PatientEncounters() {
                   </ul>
                 </div>
 
-                {enc.vitals && (
-                  <div className="cl-card">
-                    <div className="cl-card-header">
-                      <h2 className="cl-card-title">Vitals</h2>
-                    </div>
+                <div className="cl-card">
+                  <div className="cl-card-header">
+                    <h2 className="cl-card-title">Vitals</h2>
+                    <button className="cl-btn-icon" type="button" title="Record vitals" onClick={() => { setAddVitalsOpen((o) => !o); setAddSoapOpen(false) }}>
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  {addVitalsOpen && (
+                    <form className="cl-vitals-form" onSubmit={handleAddVitals}>
+                      <div className="cl-vitals-input-grid">
+                        {[
+                          { id: 'v-sys', label: 'Systolic', key: 'systolic' as const, placeholder: '120' },
+                          { id: 'v-dia', label: 'Diastolic', key: 'diastolic' as const, placeholder: '80' },
+                          { id: 'v-pulse', label: 'Pulse (bpm)', key: 'pulse' as const, placeholder: '72' },
+                          { id: 'v-temp', label: 'Temp (°F)', key: 'temperature' as const, placeholder: '98.6' },
+                          { id: 'v-resp', label: 'Resp (/min)', key: 'respiration' as const, placeholder: '16' },
+                          { id: 'v-o2', label: 'O₂ Sat (%)', key: 'oxygenSaturation' as const, placeholder: '99' },
+                          { id: 'v-wt', label: 'Weight (lbs)', key: 'weight' as const, placeholder: '150' },
+                          { id: 'v-ht', label: 'Height (in)', key: 'height' as const, placeholder: '68' },
+                        ].map(({ id, label, key, placeholder }) => (
+                          <div key={key} className="field">
+                            <label className="label" htmlFor={id}>{label}</label>
+                            <input id={id} type="number" step="0.1" className="input" placeholder={placeholder}
+                              value={vitalsForm[key]} onChange={(e) => setVitalsForm((f) => ({ ...f, [key]: e.target.value }))} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="cl-inline-form-actions">
+                        <button className="cl-btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Record vitals'}</button>
+                        <button className="cl-btn-secondary" type="button" onClick={() => setAddVitalsOpen(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
+                  {enc.vitals ? (
                     <div className="cl-vitals-grid">
                       {vitalRow('BP', enc.vitals.bloodPressure ?? (enc.vitals.systolic ? `${enc.vitals.systolic}/${enc.vitals.diastolic}` : null))}
                       {vitalRow('Pulse', enc.vitals.pulse, 'bpm')}
@@ -224,15 +317,43 @@ export default function PatientEncounters() {
                       {vitalRow('Height', enc.vitals.height, 'in')}
                       {vitalRow('BMI', enc.vitals.bmi)}
                     </div>
-                  </div>
-                )}
+                  ) : !addVitalsOpen && (
+                    <p className="cl-empty-text">No vitals recorded. <button className="cl-link" type="button" onClick={() => setAddVitalsOpen(true)}>Add vitals</button></p>
+                  )}
+                </div>
 
-                {enc.soapNote && (enc.soapNote.subjective ?? enc.soapNote.objective ?? enc.soapNote.assessment ?? enc.soapNote.plan) && (
-                  <div className="cl-card">
-                    <div className="cl-card-header">
-                      <h2 className="cl-card-title">SOAP note</h2>
-                    </div>
-                    {[
+                <div className="cl-card">
+                  <div className="cl-card-header">
+                    <h2 className="cl-card-title">SOAP note</h2>
+                    <button className="cl-btn-icon" type="button" title="Add SOAP note" onClick={() => {
+                      setAddSoapOpen((o) => !o); setAddVitalsOpen(false)
+                      if (enc.soapNote) setSoapForm({
+                        subjective: enc.soapNote.subjective ?? '',
+                        objective: enc.soapNote.objective ?? '',
+                        assessment: enc.soapNote.assessment ?? '',
+                        plan: enc.soapNote.plan ?? '',
+                      })
+                    }}>
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  {addSoapOpen && (
+                    <form onSubmit={handleAddSoap}>
+                      {(['subjective', 'objective', 'assessment', 'plan'] as const).map((field) => (
+                        <div key={field} className="field" style={{ marginBottom: 10 }}>
+                          <label className="label" htmlFor={`soap-${field}`} style={{ textTransform: 'capitalize' }}>{field}</label>
+                          <textarea id={`soap-${field}`} className="textarea" rows={3}
+                            value={soapForm[field]} onChange={(e) => setSoapForm((f) => ({ ...f, [field]: e.target.value }))} />
+                        </div>
+                      ))}
+                      <div className="cl-inline-form-actions">
+                        <button className="cl-btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save SOAP note'}</button>
+                        <button className="cl-btn-secondary" type="button" onClick={() => setAddSoapOpen(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
+                  {enc.soapNote && (enc.soapNote.subjective ?? enc.soapNote.objective ?? enc.soapNote.assessment ?? enc.soapNote.plan) ? (
+                    [
                       { label: 'Subjective', text: enc.soapNote.subjective },
                       { label: 'Objective', text: enc.soapNote.objective },
                       { label: 'Assessment', text: enc.soapNote.assessment },
@@ -242,9 +363,11 @@ export default function PatientEncounters() {
                         <p className="cl-soap-label">{s.label}</p>
                         <p className="cl-soap-text">{s.text}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  ) : !addSoapOpen && (
+                    <p className="cl-empty-text">No SOAP note. <button className="cl-link" type="button" onClick={() => setAddSoapOpen(true)}>Add note</button></p>
+                  )}
+                </div>
 
                 {enc.diagnosisCodes.length > 0 && (
                   <div className="cl-card">

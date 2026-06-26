@@ -28,6 +28,7 @@ import LabQueue from './pages/clinician/LabQueue.tsx'
 import OperationalReports from './pages/clinician/OperationalReports.tsx'
 import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
 import NewEncounter from './pages/clinician/NewEncounter.tsx'
+import NewPatient from './pages/clinician/NewPatient.tsx'
 import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
 
 export default function App() {
@@ -55,8 +56,9 @@ export default function App() {
           {/* Standalone new encounter (no patient context) */}
           <Route path="encounters/new" element={<NewEncounter />} />
 
-          {/* Patient search */}
+          {/* Patient search & registration */}
           <Route path="patients" element={<PatientSearch />} />
+          <Route path="patients/new" element={<NewPatient />} />
 
           {/* Patient chart shell — nested */}
           <Route path="patients/:patientId" element={<PatientShell />}>

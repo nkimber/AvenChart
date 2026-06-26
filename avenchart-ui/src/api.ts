@@ -1458,3 +1458,225 @@ export async function createPatientMessage(
 ): Promise<PatientMessageItem> {
   return clinicianPost(sessionId, '/api/messages/', input, signal)
 }
+
+// ── Patient mutations ─────────────────────────────────────────────────────────
+
+export type PatientContactUpdate = {
+  phoneHome: string
+  phoneCell: string
+  email: string
+  hipaaAllowSms: string
+  hipaaAllowEmail: string
+}
+
+export type PatientDemographicsUpdate = {
+  firstName: string
+  lastName: string
+  preferredName: string
+  sex: string
+  dateOfBirth: string
+  street: string
+  city: string
+  state: string
+  postalCode: string
+  maritalStatus: string
+  occupation: string
+  race: string
+  ethnicity: string
+  interpreter: string
+  familySize: string
+  monthlyIncome: string
+  homeless: string
+  financialReviewDate: string
+}
+
+export async function updatePatientContact(
+  sessionId: string,
+  patientId: string,
+  body: PatientContactUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/contact`, body, signal)
+}
+
+export async function updatePatientDemographics(
+  sessionId: string,
+  patientId: string,
+  body: PatientDemographicsUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/demographics`, body, signal)
+}
+
+export type PatientInsuranceMutationInput = {
+  type: string
+  provider: string
+  planName: string
+  policyNumber: string
+  groupNumber: string
+  relationship: string
+  subscriberFirstName: string
+  subscriberLastName: string
+  subscriberDateOfBirth: string
+  subscriberSex: string
+}
+
+export async function createPatientInsurance(
+  sessionId: string,
+  patientId: string,
+  body: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/insurance`, body, signal)
+}
+
+export async function updatePatientInsurance(
+  sessionId: string,
+  insuranceId: string,
+  body: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(sessionId, `/api/patients/insurance/${encodeURIComponent(insuranceId)}`, body, signal)
+}
+
+export async function deletePatientInsurance(
+  sessionId: string,
+  insuranceId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianDelete(sessionId, `/api/patients/insurance/${encodeURIComponent(insuranceId)}`, signal)
+}
+
+export type PatientRegistrationInput = {
+  pubpid: string
+  firstName: string
+  lastName: string
+  preferredName: string
+  sex: string
+  dateOfBirth: string
+  street: string
+  city: string
+  state: string
+  postalCode: string
+  phoneHome: string
+  phoneCell: string
+  email: string
+  maritalStatus: string
+  occupation: string
+  race: string
+  ethnicity: string
+  hipaaAllowSms: string
+  hipaaAllowEmail: string
+}
+
+export async function createPatient(
+  sessionId: string,
+  body: PatientRegistrationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPost(sessionId, '/api/patients/', body, signal)
+}
+
+// ── Appointment mutations ─────────────────────────────────────────────────────
+
+export type AppointmentCreateInput = {
+  patientId: string
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  providerId?: number | null
+  facilityId?: number | null
+  categoryId?: number | null
+  room?: string | null
+  comments?: string | null
+}
+
+export async function createAppointment(
+  sessionId: string,
+  body: AppointmentCreateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPost(sessionId, '/api/appointments/', body, signal)
+}
+
+// ── Immunization mutations ────────────────────────────────────────────────────
+
+export type ImmunizationCreateInput = {
+  patientId: string
+  vaccine: string
+  administeredAt: string
+  manufacturer?: string | null
+  lotNumber?: string | null
+}
+
+export async function createImmunization(
+  sessionId: string,
+  body: ImmunizationCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(sessionId, '/api/clinical-lists/immunizations', body, signal)
+}
+
+export async function markImmunizationEnteredInError(
+  sessionId: string,
+  immunizationId: number,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(sessionId, `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`, {}, signal)
+}
+
+// ── Portal profile mutations ──────────────────────────────────────────────────
+
+export type PatientPortalProfile = {
+  displayName: string
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+}
+
+export type PatientPortalProfileResponse = {
+  authenticated: boolean
+  profile: PatientPortalProfile
+  failureReason?: string | null
+}
+
+export async function getPatientPortalProfile(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal profile failed with ${response.status}`)
+  return response.json()
+}
+
+export type PatientPortalProfileChangeInput = {
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+}
+
+export async function updatePatientPortalProfile(
+  sessionId: string,
+  body: PatientPortalProfileChangeInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal profile update failed with ${response.status}`)
+  return response.json()
+}

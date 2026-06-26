@@ -1,10 +1,31 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useOutletContext } from 'react-router-dom'
 import { Download, LogOut } from 'lucide-react'
-import { useOutletContext } from 'react-router-dom'
+import { updatePatientPortalProfile, type PatientPortalProfileChangeInput } from '../../api.ts'
+import { showToast } from '../../components/Toast.tsx'
 import type { PortalOutletContext } from './PortalShell.tsx'
 
 export default function PortalAccount() {
   const { session, home, signOut } = useOutletContext<PortalOutletContext>()
+  const [editOpen, setEditOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [contactForm, setContactForm] = useState<PatientPortalProfileChangeInput>({
+    phoneHome: null, phoneCell: null, email: null,
+  })
+
+  async function handleSaveContact(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await updatePatientPortalProfile(session.sessionId, contactForm)
+      showToast('Contact info updated.', 'success')
+      setEditOpen(false)
+    } catch {
+      showToast('Could not update contact info.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="portal-page">
@@ -26,33 +47,60 @@ export default function PortalAccount() {
       </section>
 
       <section className="portal-section">
-        <h2 className="portal-section-title" style={{ marginBottom: 14 }}>Account details</h2>
-        <ul className="fact-list" style={{ marginBottom: 0 }}>
-          <li className="fact-row">
-            <span>Portal username</span>
-            <span>{session.portalUsername}</span>
-          </li>
-          <li className="fact-row">
-            <span>Display name</span>
-            <span>{session.displayName}</span>
-          </li>
-          {home && (
-            <>
-              <li className="fact-row">
-                <span>Upcoming appointments</span>
-                <span>{home.upcomingAppointmentCount}</span>
-              </li>
-              <li className="fact-row">
-                <span>Unread messages</span>
-                <span>{home.messages.newMessages}</span>
-              </li>
-              <li className="fact-row">
-                <span>Total inbox messages</span>
-                <span>{home.messages.totalMessages}</span>
-              </li>
-            </>
-          )}
-        </ul>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <h2 className="portal-section-title">Account details</h2>
+          <button className="toggle-button" type="button" onClick={() => setEditOpen((o) => !o)}>
+            {editOpen ? 'Cancel' : 'Edit contact'}
+          </button>
+        </div>
+
+        {editOpen ? (
+          <form onSubmit={handleSaveContact}>
+            <div className="field">
+              <label className="label" htmlFor="pa-phone">Home phone</label>
+              <input id="pa-phone" type="tel" className="input" placeholder="(optional)" value={contactForm.phoneHome ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, phoneHome: e.target.value || null }))} />
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="pa-cell">Cell phone</label>
+              <input id="pa-cell" type="tel" className="input" placeholder="(optional)" value={contactForm.phoneCell ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, phoneCell: e.target.value || null }))} />
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="pa-email">Email</label>
+              <input id="pa-email" type="email" className="input" placeholder="(optional)" value={contactForm.email ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value || null }))} />
+            </div>
+            <div className="button-row">
+              <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+              <button className="button-secondary" type="button" onClick={() => setEditOpen(false)} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <ul className="fact-list" style={{ marginBottom: 0 }}>
+            <li className="fact-row">
+              <span>Portal username</span>
+              <span>{session.portalUsername}</span>
+            </li>
+            <li className="fact-row">
+              <span>Display name</span>
+              <span>{session.displayName}</span>
+            </li>
+            {home && (
+              <>
+                <li className="fact-row">
+                  <span>Upcoming appointments</span>
+                  <span>{home.upcomingAppointmentCount}</span>
+                </li>
+                <li className="fact-row">
+                  <span>Unread messages</span>
+                  <span>{home.messages.newMessages}</span>
+                </li>
+                <li className="fact-row">
+                  <span>Total inbox messages</span>
+                  <span>{home.messages.totalMessages}</span>
+                </li>
+              </>
+            )}
+          </ul>
+        )}
       </section>
 
       <section className="portal-section">

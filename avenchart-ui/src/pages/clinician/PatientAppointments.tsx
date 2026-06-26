@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
+import { CalendarPlus } from 'lucide-react'
+import { createAppointment, searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
 import type { PatientOutletContext } from './PatientShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
 
@@ -16,10 +17,23 @@ function formatTime(t?: string | null) {
   return t.slice(0, 5)
 }
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export default function PatientAppointments() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [newApptOpen, setNewApptOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [apptForm, setApptForm] = useState({
+    title: 'Office visit',
+    date: todayStr(),
+    startTime: '09:00',
+    durationMinutes: 20,
+    comments: '',
+  })
 
   function load() {
     setState({ status: 'loading' })
@@ -43,8 +57,71 @@ export default function PatientAppointments() {
     }
   }
 
+  async function handleCreateAppointment(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await createAppointment(session.sessionId, { patientId, ...apptForm })
+      showToast('Appointment created.', 'success')
+      setNewApptOpen(false)
+      load()
+    } catch {
+      showToast('Could not create appointment.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="clinician-page">
+      {/* New appointment modal */}
+      {newApptOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setNewApptOpen(false) }}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-label="New appointment">
+            <div className="modal-header">
+              <h2 className="modal-title">New appointment</h2>
+              <button className="modal-close" type="button" onClick={() => setNewApptOpen(false)} aria-label="Close">×</button>
+            </div>
+            <form onSubmit={handleCreateAppointment}>
+              <div className="field">
+                <label className="label" htmlFor="appt-title">Visit type / title</label>
+                <input id="appt-title" className="input" value={apptForm.title} onChange={(e) => setApptForm((f) => ({ ...f, title: e.target.value }))} required />
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="appt-date">Date</label>
+                  <input id="appt-date" type="date" className="input" value={apptForm.date} onChange={(e) => setApptForm((f) => ({ ...f, date: e.target.value }))} required />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="appt-time">Time</label>
+                  <input id="appt-time" type="time" className="input" value={apptForm.startTime} onChange={(e) => setApptForm((f) => ({ ...f, startTime: e.target.value }))} required />
+                </div>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="appt-dur">Duration (minutes)</label>
+                <select id="appt-dur" className="select" value={apptForm.durationMinutes} onChange={(e) => setApptForm((f) => ({ ...f, durationMinutes: Number(e.target.value) }))}>
+                  {[10, 15, 20, 30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="appt-comments">Comments (optional)</label>
+                <textarea id="appt-comments" className="textarea" rows={2} value={apptForm.comments} onChange={(e) => setApptForm((f) => ({ ...f, comments: e.target.value }))} />
+              </div>
+              <div className="button-row">
+                <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create appointment'}</button>
+                <button className="button-secondary" type="button" onClick={() => setNewApptOpen(false)} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button className="cl-btn-primary" type="button" onClick={() => setNewApptOpen(true)}>
+          <CalendarPlus size={14} /> New appointment
+        </button>
+      </div>
+
       {state.status === 'loading' && (
         <div className="cl-card">
           <div className="skeleton-list">

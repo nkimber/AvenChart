@@ -9,6 +9,8 @@ import {
   deactivateAllergy,
   createMedication,
   deactivateMedication,
+  createImmunization,
+  markImmunizationEnteredInError,
   type ClinicalListsResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -25,7 +27,7 @@ function statusDot(activity: number) {
 
 function isoNow() { return new Date().toISOString().replace('T', ' ').slice(0, 19) }
 
-type AddMode = 'problem' | 'allergy' | 'medication' | null
+type AddMode = 'problem' | 'allergy' | 'medication' | 'immunization' | null
 
 export default function PatientChart() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
@@ -45,6 +47,12 @@ export default function PatientChart() {
   // Add-medication form state
   const [newMedTitle, setNewMedTitle] = useState('')
   const [newMedDx, setNewMedDx] = useState('')
+
+  // Add-immunization form state
+  const [newImmVaccine, setNewImmVaccine] = useState('')
+  const [newImmDate, setNewImmDate] = useState('')
+  const [newImmManufacturer, setNewImmManufacturer] = useState('')
+  const [newImmLot, setNewImmLot] = useState('')
 
   function load() {
     setState({ status: 'loading' })
@@ -128,6 +136,35 @@ export default function PatientChart() {
       setState({ status: 'ready', data: result.detail })
       showToast('Medication marked inactive.', 'success')
     } catch { showToast('Could not update medication.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleAddImmunization(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newImmVaccine || !newImmDate) return
+    setWorking(true)
+    try {
+      const result = await createImmunization(session.sessionId, {
+        patientId,
+        vaccine: newImmVaccine,
+        administeredAt: newImmDate,
+        manufacturer: newImmManufacturer || null,
+        lotNumber: newImmLot || null,
+      })
+      setState({ status: 'ready', data: result.detail })
+      setAddMode(null); setNewImmVaccine(''); setNewImmDate(''); setNewImmManufacturer(''); setNewImmLot('')
+      showToast('Immunization recorded.', 'success')
+    } catch { showToast('Could not add immunization.', 'error') }
+    finally { setWorking(false) }
+  }
+
+  async function handleMarkImmunizationError(id: number) {
+    setWorking(true)
+    try {
+      const result = await markImmunizationEnteredInError(session.sessionId, id)
+      setState({ status: 'ready', data: result.detail })
+      showToast('Immunization marked entered-in-error.', 'success')
+    } catch { showToast('Could not update immunization.', 'error') }
     finally { setWorking(false) }
   }
 
@@ -335,15 +372,34 @@ export default function PatientChart() {
         <section className="cl-card cl-card-wide">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Immunizations ({data.immunizations.length})</h2>
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'immunization' ? null : 'immunization')} title="Add immunization">
+              <Plus size={15} />
+            </button>
           </div>
+          {addMode === 'immunization' && (
+            <form className="cl-inline-form" onSubmit={handleAddImmunization}>
+              <div className="form-row">
+                <input className="ne-input" placeholder="Vaccine name…" value={newImmVaccine} onChange={(e) => setNewImmVaccine(e.target.value)} required style={{ flex: 2 }} />
+                <input className="ne-input" type="date" placeholder="Date administered" value={newImmDate} onChange={(e) => setNewImmDate(e.target.value)} required />
+              </div>
+              <div className="form-row">
+                <input className="ne-input" placeholder="Manufacturer (optional)" value={newImmManufacturer} onChange={(e) => setNewImmManufacturer(e.target.value)} />
+                <input className="ne-input" placeholder="Lot number (optional)" value={newImmLot} onChange={(e) => setNewImmLot(e.target.value)} />
+              </div>
+              <div className="cl-inline-form-actions">
+                <button className="cl-btn-primary" type="submit" disabled={working || !newImmVaccine || !newImmDate}>Record</button>
+                <button className="cl-btn-secondary" type="button" onClick={() => setAddMode(null)}>Cancel</button>
+              </div>
+            </form>
+          )}
           {data.immunizations.length === 0 ? (
             <p className="cl-empty-text">No immunizations on file.</p>
           ) : (
             <ul className="cl-clinical-list">
               {data.immunizations.map((imm) => (
-                <li key={imm.id} className="cl-clinical-row">
+                <li key={imm.id} className="cl-clinical-row cl-clinical-row-interactive">
                   <div className="cl-activity-dot cl-activity-active" aria-hidden="true" />
-                  <div>
+                  <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{imm.vaccine}</p>
                     <p className="cl-clinical-meta">
                       {imm.administeredAt ?? ''}
@@ -351,6 +407,15 @@ export default function PatientChart() {
                       {imm.lotNumber ? ` · Lot: ${imm.lotNumber}` : ''}
                     </p>
                   </div>
+                  <button
+                    className="cl-clinical-action"
+                    type="button"
+                    title="Mark entered in error"
+                    disabled={working}
+                    onClick={() => handleMarkImmunizationError(imm.id)}
+                  >
+                    <X size={12} />
+                  </button>
                 </li>
               ))}
             </ul>
