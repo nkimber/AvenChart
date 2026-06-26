@@ -104,6 +104,7 @@ import {
   loginPatientPortal,
   logout,
   createBillingClaimStatus,
+  importBillingEobBatch,
   createBillingLine,
   createBillingPaymentPosting,
   createClinicalAllergy,
@@ -3042,6 +3043,24 @@ function App() {
     }
   }
 
+  async function handleBillingEobBatchImport(patientId: string) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await importBillingEobBatch({ patientId }, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (importError) {
+      setBillingStatus('error')
+      const message = importError instanceof Error ? importError.message : 'Billing EOB batch import failed'
+      setBillingError(message)
+      throw importError
+    }
+  }
+
   async function handleBillingPaymentVoid(payment: BillingPaymentItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5120,6 +5139,7 @@ function App() {
             onAdjudicateClaim={handleBillingClaimAdjudicate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
+            onImportEobBatch={handleBillingEobBatchImport}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
             onVoidPayment={handleBillingPaymentVoid}
             onDeletePayment={handleBillingPaymentDelete}
@@ -14642,6 +14662,7 @@ function FeesWorkspace({
   onAdjudicateClaim,
   onDeleteClaim,
   onCreatePayment,
+  onImportEobBatch,
   onDownloadPaymentReceipt,
   onVoidPayment,
   onDeletePayment,
@@ -14666,6 +14687,7 @@ function FeesWorkspace({
   onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onImportEobBatch: (patientId: string) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
   onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
@@ -14926,53 +14948,7 @@ function FeesWorkspace({
   async function handleEobBatchImport() {
     setMutationMessage(null)
 
-    const eobBatch = [
-      {
-        reference: 'EOB-BATCH-1000052-PRIMARY',
-        code: '99214',
-        memo: 'Imported EOB batch primary',
-        payAmount: 28,
-        adjustmentAmount: 4.25,
-        accountCode: 'CO45',
-        reasonCode: 'CO-45',
-        payerClaimNumber: 'EOB-BATCH-1000052-P1',
-      },
-      {
-        reference: 'EOB-BATCH-1000052-SECONDARY',
-        code: '99213',
-        memo: 'Imported EOB batch secondary',
-        payAmount: 11,
-        adjustmentAmount: 1.5,
-        accountCode: 'PR2',
-        reasonCode: 'PR-2',
-        payerClaimNumber: 'EOB-BATCH-1000052-S1',
-      },
-    ]
-
-    for (const eobPayment of eobBatch) {
-      await onCreatePayment({
-        patientId,
-        encounter: Number(billingEncounter),
-        payerId: 9005,
-        payerName: 'Northstar HMO',
-        payerType: 1,
-        reference: eobPayment.reference,
-        postDate: paymentPostDate,
-        checkDate: paymentPostDate,
-        depositDate: paymentPostDate,
-        paymentType: 'insurance_payment',
-        paymentMethod: 'electronic_payment',
-        codeType: 'CPT4',
-        code: eobPayment.code,
-        memo: eobPayment.memo,
-        payAmount: eobPayment.payAmount,
-        adjustmentAmount: eobPayment.adjustmentAmount,
-        accountCode: eobPayment.accountCode,
-        reasonCode: eobPayment.reasonCode,
-        payerClaimNumber: eobPayment.payerClaimNumber,
-      })
-    }
-
+    await onImportEobBatch(patientId)
     setMutationMessage('Imported 2 EOB payments')
   }
 

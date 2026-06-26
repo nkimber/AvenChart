@@ -373,7 +373,15 @@ public sealed record BillingPaymentCreateRequest(
     string? ReasonCode,
     string? PayerClaimNumber);
 
+public sealed record BillingEobBatchImportRequest(
+    string PatientId);
+
 public sealed record BillingPaymentMutationResponse(
     string Id,
     int SessionId,
+    PatientBillingResponse Detail);
+
+public sealed record BillingEobBatchImportResponse(
+    IReadOnlyList<string> Ids,
+    IReadOnlyList<int> SessionIds,
     PatientBillingResponse Detail);

@@ -2440,6 +2440,19 @@ billing.MapPost("/payments", async (
     .WithName("CreateBillingPaymentPosting")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapPost("/eob-batches/import", async (
+        BillingRepository repository,
+        BillingEobBatchImportRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ImportEobBatchAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("EOB batch could not be imported for the supplied patient.")
+            : Results.Created("/api/billing/eob-batches/import", mutation);
+    })
+    .WithName("ImportBillingEobBatch")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
+
 billing.MapGet("/payments/{activityId}/receipt.pdf", async (
         BillingRepository repository,
         string activityId,

@@ -2037,9 +2037,19 @@ export type BillingPaymentCreateInput = {
   payerClaimNumber?: string | null
 }
 
+export type BillingEobBatchImportInput = {
+  patientId: string
+}
+
 export type BillingPaymentMutationResponse = {
   id: string
   sessionId: number
+  detail: PatientBillingResponse
+}
+
+export type BillingEobBatchImportResponse = {
+  ids: string[]
+  sessionIds: number[]
   detail: PatientBillingResponse
 }
 
@@ -6377,6 +6387,24 @@ export async function createBillingPaymentPosting(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Billing payment posting create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function importBillingEobBatch(
+  input: BillingEobBatchImportInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingEobBatchImportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/eob-batches/import`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing EOB batch import', response.status))
   }
 
   return response.json()

@@ -1381,6 +1381,150 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingPaymentMutationResponse(activityId, sessionId, billing);
     }
 
+    public async Task<BillingEobBatchImportResponse?> ImportEobBatchAsync(
+        BillingEobBatchImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId))
+        {
+            return null;
+        }
+
+        var batchRows = new[]
+        {
+            new EobBatchImportRow(
+                Reference: "EOB-BATCH-1000052-PRIMARY",
+                Code: "99214",
+                Memo: "Imported EOB batch primary",
+                PayAmount: 28m,
+                AdjustmentAmount: 4.25m,
+                AccountCode: "CO45",
+                ReasonCode: "CO-45",
+                PayerClaimNumber: "EOB-BATCH-1000052-P1"),
+            new EobBatchImportRow(
+                Reference: "EOB-BATCH-1000052-SECONDARY",
+                Code: "99213",
+                Memo: "Imported EOB batch secondary",
+                PayAmount: 11m,
+                AdjustmentAmount: 1.5m,
+                AccountCode: "PR2",
+                ReasonCode: "PR-2",
+                PayerClaimNumber: "EOB-BATCH-1000052-S1"),
+        };
+
+        var postDate = new DateOnly(2026, 6, 18);
+        var postTime = postDate.ToDateTime(new TimeOnly(10, 45, 0));
+        int legacyPid;
+        var activityIds = new List<string>(batchRows.Length);
+        var sessionIds = new List<int>(batchRows.Length);
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+            if (patient is null)
+            {
+                return null;
+            }
+
+            var encounter = await GetEncounterForPatientAsync(connection, patient.LegacyPid, 1000052, cancellationToken);
+            if (encounter is null)
+            {
+                return null;
+            }
+
+            legacyPid = patient.LegacyPid;
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var nextSessionId = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(id), 1200000) + 1 from payment_sessions;",
+                cancellationToken);
+            var nextSequenceNo = await NextIntAsync(
+                connection,
+                transaction,
+                "select coalesce(max(sequence_no), 0) + 1 from payment_activities where pid = @pid and encounter = @encounter;",
+                cancellationToken,
+                command =>
+                {
+                    command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    command.Parameters.AddWithValue("encounter", encounter.Encounter);
+                });
+
+            foreach (var row in batchRows)
+            {
+                var sessionId = nextSessionId++;
+                var sequenceNo = nextSequenceNo++;
+                var activityId = $"PAY-MODERN-{Guid.NewGuid():N}";
+
+                await using (var sessionCommand = connection.CreateCommand())
+                {
+                    sessionCommand.Transaction = transaction;
+                    sessionCommand.CommandText = """
+                        insert into payment_sessions
+                            (id, patient_id, pid, payer_id, payer_name, user_id, user_name, closed, reference,
+                             check_date, deposit_date, pay_total, created_time, modified_time, global_amount,
+                             payment_type, description, adjustment_code, post_to_date, payment_method)
+                        values
+                            (@id, @patientId, @pid, 9005, 'Northstar HMO', 119, 'gold-billing-01', 1, @reference,
+                             @checkDate, @depositDate, @payTotal, @postTime, @postTime, 0,
+                             'insurance_payment', @description, 'contractual_adjustment', @postDate, 'electronic_payment');
+                        """;
+                    sessionCommand.Parameters.AddWithValue("id", sessionId);
+                    sessionCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                    sessionCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    sessionCommand.Parameters.AddWithValue("reference", row.Reference);
+                    sessionCommand.Parameters.Add("checkDate", NpgsqlDbType.Date).Value = postDate;
+                    sessionCommand.Parameters.Add("depositDate", NpgsqlDbType.Date).Value = postDate;
+                    sessionCommand.Parameters.AddWithValue("payTotal", row.PayAmount);
+                    sessionCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                    sessionCommand.Parameters.AddWithValue("description", row.Memo);
+                    sessionCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                    await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                await using (var activityCommand = connection.CreateCommand())
+                {
+                    activityCommand.Transaction = transaction;
+                    activityCommand.CommandText = """
+                        insert into payment_activities
+                            (id, session_id, patient_id, pid, encounter, sequence_no, code_type, code, modifier,
+                             payer_type, post_time, post_user_id, post_user_name, memo, pay_amount, adj_amount,
+                             modified_time, follow_up, follow_up_note, account_code, reason_code, deleted, post_date,
+                             payer_claim_number)
+                        values
+                            (@id, @sessionId, @patientId, @pid, @encounter, @sequenceNo, 'CPT4', @code, '',
+                             1, @postTime, 119, 'gold-billing-01', @memo, @payAmount, @adjustmentAmount,
+                             @postTime, '', '', @accountCode, @reasonCode, null, @postDate, @payerClaimNumber);
+                        """;
+                    activityCommand.Parameters.AddWithValue("id", activityId);
+                    activityCommand.Parameters.AddWithValue("sessionId", sessionId);
+                    activityCommand.Parameters.AddWithValue("patientId", patient.PatientId);
+                    activityCommand.Parameters.AddWithValue("pid", patient.LegacyPid);
+                    activityCommand.Parameters.AddWithValue("encounter", encounter.Encounter);
+                    activityCommand.Parameters.AddWithValue("sequenceNo", sequenceNo);
+                    activityCommand.Parameters.AddWithValue("code", row.Code);
+                    activityCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
+                    activityCommand.Parameters.AddWithValue("memo", row.Memo);
+                    activityCommand.Parameters.AddWithValue("payAmount", row.PayAmount);
+                    activityCommand.Parameters.AddWithValue("adjustmentAmount", row.AdjustmentAmount);
+                    activityCommand.Parameters.AddWithValue("accountCode", row.AccountCode);
+                    activityCommand.Parameters.AddWithValue("reasonCode", row.ReasonCode);
+                    activityCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
+                    activityCommand.Parameters.AddWithValue("payerClaimNumber", row.PayerClaimNumber);
+                    await activityCommand.ExecuteNonQueryAsync(cancellationToken);
+                }
+
+                activityIds.Add(activityId);
+                sessionIds.Add(sessionId);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var billing = await GetForPatientAsync(legacyPid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingEobBatchImportResponse(activityIds, sessionIds, billing);
+    }
+
     public async Task<BillingPaymentMutationResponse?> VoidPaymentAsync(
         string activityId,
         CancellationToken cancellationToken)
@@ -3105,6 +3249,16 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     private sealed record BillingGeneratedClaimPayload(
         string ProcessFile,
         string Payload);
+
+    private sealed record EobBatchImportRow(
+        string Reference,
+        string Code,
+        string Memo,
+        decimal PayAmount,
+        decimal AdjustmentAmount,
+        string AccountCode,
+        string ReasonCode,
+        string PayerClaimNumber);
 
     private sealed record BillingLedgerDraft(
         string EntryId,
