@@ -21064,6 +21064,14 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
       ),
     ),
   )
+  const incompatibleModifierCombinations = Array.from(
+    new Set(
+      modifierTokensByLine.flatMap((modifiers) => {
+        const modifierSet = new Set(modifiers)
+        return modifierSet.has('25') && modifierSet.has('59') ? ['25+59'] : []
+      }),
+    ),
+  )
   const modifierCountIssues = Array.from(
     new Set(modifierTokensByLine.map((modifiers) => modifiers.length).filter((count) => count > 4)),
   )
@@ -21142,6 +21150,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (duplicateModifiers.length > 0) {
     issues.push(`duplicate-modifier:${duplicateModifiers.join(',')}`)
+  }
+  if (incompatibleModifierCombinations.length > 0) {
+    issues.push(`incompatible-modifier-combination:${incompatibleModifierCombinations.join(',')}`)
   }
   if (modifierCountIssues.length > 0) {
     issues.push(`modifier-count-exceeded:${modifierCountIssues.join(',')}`)
