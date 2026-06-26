@@ -14580,7 +14580,7 @@ function FeesWorkspace({
   const [claimPayload, setClaimPayload] = useState('Parity claim status mutation')
   const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
   const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
-  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient' | 'refund'>('insurance')
+  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient' | 'insuranceReversal' | 'refund'>('insurance')
   const [paymentPayerId, setPaymentPayerId] = useState('9005')
   const [paymentPayerName, setPaymentPayerName] = useState('Northstar HMO')
   const [paymentMethod, setPaymentMethod] = useState('check_payment')
@@ -14780,6 +14780,7 @@ function FeesWorkspace({
     setMutationMessage(null)
     const isPatientPayment = paymentSource === 'patient'
     const isPatientRefund = paymentSource === 'refund'
+    const isInsuranceReversal = paymentSource === 'insuranceReversal'
     const parsedPayAmount = Number(paymentPayAmount)
 
     await onCreatePayment({
@@ -14792,19 +14793,19 @@ function FeesWorkspace({
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isPatientRefund ? 'patient_refund' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: isPatientRefund ? 'patient_refund' : isInsuranceReversal ? 'insurance_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
-      payAmount: isPatientRefund ? -Math.abs(parsedPayAmount) : parsedPayAmount,
-      adjustmentAmount: isPatientPayment || isPatientRefund ? 0 : Number(paymentAdjustmentAmount),
-      accountCode: isPatientPayment || isPatientRefund ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment || isPatientRefund ? '' : paymentReasonCode,
+      payAmount: isPatientRefund || isInsuranceReversal ? -Math.abs(parsedPayAmount) : parsedPayAmount,
+      adjustmentAmount: isPatientPayment || isPatientRefund || isInsuranceReversal ? 0 : Number(paymentAdjustmentAmount),
+      accountCode: isPatientPayment || isPatientRefund || isInsuranceReversal ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment || isPatientRefund || isInsuranceReversal ? '' : paymentReasonCode,
       payerClaimNumber: isPatientPayment || isPatientRefund ? '' : paymentPayerClaimNumber,
     })
 
-    setMutationMessage(isPatientRefund ? 'Patient refund saved' : 'Payment posting saved')
+    setMutationMessage(isPatientRefund ? 'Patient refund saved' : isInsuranceReversal ? 'Insurance reversal saved' : 'Payment posting saved')
   }
 
   async function handleCollectionsFollowUp(item: CollectionsWorkQueueItem): Promise<CollectionsFollowUpMutationResponse> {
@@ -15246,10 +15247,11 @@ function FeesWorkspace({
                 <span>Source</span>
                 <select
                   value={paymentSource}
-                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient' | 'refund')}
+                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient' | 'insuranceReversal' | 'refund')}
                   aria-label="New payment source"
                 >
                   <option value="insurance">Insurance</option>
+                  <option value="insuranceReversal">Insurance reversal</option>
                   <option value="patient">Patient</option>
                   <option value="refund">Patient refund</option>
                 </select>
@@ -15270,8 +15272,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentPayerId(event.target.value)}
                   aria-label="New payment payer ID"
                   inputMode="numeric"
-                  disabled={paymentSource !== 'insurance'}
-                  required={paymentSource === 'insurance'}
+                  disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
+                  required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal'}
                 />
               </label>
             </div>
@@ -15281,8 +15283,8 @@ function FeesWorkspace({
                 value={paymentPayerName}
                 onChange={(event) => setPaymentPayerName(event.target.value)}
                 aria-label="New payment payer name"
-                disabled={paymentSource !== 'insurance'}
-                required={paymentSource === 'insurance'}
+                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
+                required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal'}
               />
             </label>
             <label className="filter-field">
@@ -15308,7 +15310,7 @@ function FeesWorkspace({
             </label>
             <div className="mutation-grid two-column">
               <label className="filter-field">
-                  <span>{paymentSource === 'refund' ? 'Refund' : 'Paid'}</span>
+                  <span>{paymentSource === 'refund' ? 'Refund' : paymentSource === 'insuranceReversal' ? 'Reversed' : 'Paid'}</span>
                   <input
                     value={paymentPayAmount}
                     onChange={(event) => setPaymentPayAmount(event.target.value)}
@@ -15355,7 +15357,7 @@ function FeesWorkspace({
                 value={paymentPayerClaimNumber}
                 onChange={(event) => setPaymentPayerClaimNumber(event.target.value)}
                 aria-label="New payment payer claim number"
-                disabled={paymentSource !== 'insurance'}
+                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
               />
             </label>
             <label className="filter-field">
@@ -20843,9 +20845,12 @@ function BillingPaymentCard({
   onVoid: (payment: BillingPaymentItem) => Promise<unknown>
   onDelete: (payment: BillingPaymentItem) => Promise<void>
 }) {
-  const isRefund = payment.payAmount < 0 || payment.paymentType === 'patient_refund'
-  const statusLabel = isRefund
+  const isPatientRefund = payment.paymentType === 'patient_refund' || (payment.payAmount < 0 && payment.payerType === 0)
+  const isInsuranceReversal = payment.paymentType === 'insurance_reversal' || (payment.payAmount < 0 && payment.payerType !== 0)
+  const statusLabel = isPatientRefund
     ? 'Refund'
+    : isInsuranceReversal
+      ? 'Reversal'
     : payment.adjustmentAmount > 0 && payment.payAmount === 0
       ? 'Adjustment'
       : 'Payment'
@@ -20862,12 +20867,15 @@ function BillingPaymentCard({
       </p>
       <div className="procedure-order-meta">
         <span>{payment.code ? `${payment.code}${payment.modifier ? `:${payment.modifier}` : ''}` : 'No code'}</span>
+        <span>{formatPaymentType(payment)}</span>
         <span>{payment.memo || 'No memo'}</span>
         <span>{payment.paymentMethod || 'No method'}</span>
         <span>{postedDate ? `Posted ${postedDate}` : 'No post date'}</span>
         <span>
-          {isRefund
+          {isPatientRefund
             ? `Refunded ${formatCurrency(Math.abs(payment.payAmount))}`
+            : isInsuranceReversal
+              ? `Reversed ${formatCurrency(Math.abs(payment.payAmount))}`
             : payment.payAmount > 0
               ? `Paid ${formatCurrency(payment.payAmount)}`
               : 'No payment amount'}
@@ -22347,6 +22355,26 @@ function formatPaymentPayer(payment: BillingPaymentItem) {
   }
 
   return `${formatPayerType(payment.payerType)} ${payment.payerName || 'Payer'}`
+}
+
+function formatPaymentType(payment: BillingPaymentItem) {
+  if (payment.paymentType === 'patient_refund') {
+    return 'Patient refund'
+  }
+
+  if (payment.paymentType === 'insurance_reversal') {
+    return 'Insurance reversal'
+  }
+
+  if (payment.paymentType === 'patient_payment') {
+    return 'Patient payment'
+  }
+
+  if (payment.paymentType === 'insurance_payment') {
+    return 'Insurance payment'
+  }
+
+  return payment.paymentType || 'Payment type not recorded'
 }
 
 function countUsersByRole(users: AdministrationUserItem[] | undefined, role: string) {
