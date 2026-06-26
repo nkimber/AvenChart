@@ -2520,9 +2520,45 @@ a {
 
 /* ─── Grid layouts ─────────────────────────────────────────────────────────── */
 
+/* ── Dashboard stat row ──────────────────────────────────────────────────── */
+.dash-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dash-stat-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  text-decoration: none;
+  transition: box-shadow 0.15s, transform 0.15s;
+  box-shadow: var(--shadow-card);
+}
+.dash-stat-tile:hover { box-shadow: var(--shadow-pop); transform: translateY(-1px); }
+.dash-stat-tile-alert { border-color: #fcd34d; background: #fffbeb; }
+.dash-stat-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.dash-stat-icon-blue   { background: var(--teal-soft); color: var(--teal); }
+.dash-stat-icon-amber  { background: #fef3c7; color: #b45309; }
+.dash-stat-icon-indigo { background: #ede9fe; color: #5b21b6; }
+.dash-stat-icon-muted  { background: var(--bg); color: var(--text-muted); }
+.dash-stat-body { flex: 1; min-width: 0; }
+.dash-stat-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; margin: 0; }
+.dash-stat-value-sm { font-size: 15px; font-weight: 600; color: var(--text); margin: 0; }
+.dash-stat-label { font-size: 11.5px; color: var(--text-muted); margin: 3px 0 0; }
+.dash-stat-arrow { color: var(--text-muted); flex-shrink: 0; }
+
+/* ── Dashboard main grid ─────────────────────────────────────────────────── */
 .clinician-dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 300px;
   gap: 16px;
   align-items: start;
 }
@@ -2532,6 +2568,59 @@ a {
   flex-direction: column;
   gap: 16px;
 }
+
+/* Schedule list: fixed height so it doesn't overflow */
+.dash-appt-list { max-height: 300px; overflow-y: auto; }
+
+.dash-show-more {
+  display: block;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--teal);
+  text-decoration: none;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.dash-show-more:hover { text-decoration: underline; }
+
+/* ── Quick action tiles ──────────────────────────────────────────────────── */
+.dash-quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.dash-action-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s;
+  background: var(--bg);
+}
+.dash-action-tile:hover { background: var(--surface); border-color: var(--teal); }
+.dash-action-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.dash-action-blue   .dash-action-icon { background: var(--teal-soft); color: var(--teal); }
+.dash-action-teal   .dash-action-icon { background: var(--success-surface); color: var(--success); }
+.dash-action-amber  .dash-action-icon { background: var(--warning-surface); color: var(--warning); }
+.dash-action-indigo .dash-action-icon { background: #ede9fe; color: #5b21b6; }
+.dash-action-muted  .dash-action-icon { background: var(--border); color: var(--text-muted); }
+.dash-action-body { min-width: 0; }
+.dash-action-label { font-size: 12.5px; font-weight: 600; color: var(--text); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-action-desc  { font-size: 11px; color: var(--text-muted); margin: 1px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Empty state (small) ─────────────────────────────────────────────────── */
+.cl-empty-state-sm {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 24px 16px; color: var(--text-muted); font-size: 13px; text-align: center;
+}
+.cl-empty-icon-sm { opacity: 0.3; }
 
 .cl-grid-two {
   display: grid;
@@ -3373,6 +3462,7 @@ a {
 /* ─── Responsive adjustments ───────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
+  .dash-stat-row { grid-template-columns: repeat(2, 1fr); }
   .clinician-dashboard-grid {
     grid-template-columns: 1fr;
   }
