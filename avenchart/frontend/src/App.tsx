@@ -5269,25 +5269,11 @@ function PatientPortalWorkspace({
 }) {
   const authenticated = Boolean(home?.authenticated && sessionId)
   const busy = status === 'loading' || status === 'ending'
-  const selectablePortalMessages = useMemo(
-    () => [
-      ...(portalMessages?.messages ?? []),
-      ...(portalMessages?.sentMessages ?? []),
-      ...(portalMessages?.allMessages ?? []),
-    ].filter(isPatientPortalMailboxMessage),
-    [portalMessages],
-  )
   const [selectedPortalMessageIds, setSelectedPortalMessageIds] = useState<string[]>([])
   const selectedPortalMessageIdSet = useMemo(() => new Set(selectedPortalMessageIds), [selectedPortalMessageIds])
   const selectedPortalMessageCount = selectedPortalMessageIds.length
   const [locallyReadPortalMessageIds, setLocallyReadPortalMessageIds] = useState<string[]>([])
   const locallyReadPortalMessageIdSet = useMemo(() => new Set(locallyReadPortalMessageIds), [locallyReadPortalMessageIds])
-  const newSelectablePortalMessageIds = useMemo(
-    () => Array.from(new Set(selectablePortalMessages
-      .filter((portalMessage) => getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet) === 'New')
-      .map((portalMessage) => portalMessage.id))),
-    [selectablePortalMessages, locallyReadPortalMessageIdSet],
-  )
   const messageRecipientOptions = portalMessageRecipients?.recipients ?? []
   const messageSubjectOptions = portalMessageComposeOptions?.subjectOptions ?? []
   const inboxPortalMessages = portalMessages?.messages ?? []
@@ -5307,6 +5293,12 @@ function PatientPortalWorkspace({
       ...filteredAllPortalMessages,
     ].filter(isPatientPortalMailboxMessage),
     [filteredInboxPortalMessages, filteredSentPortalMessages, filteredAllPortalMessages],
+  )
+  const newSelectablePortalMessageIds = useMemo(
+    () => Array.from(new Set(selectableFilteredPortalMessages
+      .filter((portalMessage) => getPortalMessageStatus(portalMessage, locallyReadPortalMessageIdSet) === 'New')
+      .map((portalMessage) => portalMessage.id))),
+    [selectableFilteredPortalMessages, locallyReadPortalMessageIdSet],
   )
   const inboxSecureMessageEmptyText = getSecureMessageEmptyText('Inbox', inboxPortalMessages.length, normalizedPortalMessageSearch)
   const sentSecureMessageEmptyText = getSecureMessageEmptyText('Sent', sentPortalMessages.length, normalizedPortalMessageSearch)
