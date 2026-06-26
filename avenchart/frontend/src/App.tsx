@@ -20858,6 +20858,19 @@ function BillingClaimCard({
   const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
   const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
 
+  function handleResubmit() {
+    const resubmission = buildClaimResubmissionPayload(claim, patientId)
+    void onUpdateStatus(claim, {
+      status: 1,
+      billProcess: 1,
+      processTime: '2026-06-18 17:10:00',
+      processFile: resubmission.processFile,
+      target: 'X12',
+      x12PartnerId: 1,
+      submittedClaim: resubmission.payload,
+    })
+  }
+
   function handleScrub() {
     const scrub = buildClaimScrubReport(claim, patientId, encounterLines)
     void onUpdateStatus(claim, {
@@ -20974,6 +20987,10 @@ function BillingClaimCard({
           <X size={14} />
           Deny
         </button>
+        <button type="button" className="icon-text-button secondary" disabled={disabled || claim.status !== 7} onClick={handleResubmit}>
+          <RotateCcw size={14} />
+          Resubmit
+        </button>
         <button type="button" className="icon-text-button secondary" disabled={disabled} onClick={() => void handleAdjudicate()}>
           <WalletCards size={14} />
           Adjudicate
@@ -20985,6 +21002,23 @@ function BillingClaimCard({
       </div>
     </article>
   )
+}
+
+function buildClaimResubmissionPayload(claim: BillingClaimItem, patientId: string) {
+  const controlNumber = String(claim.id).replace(/[^a-z0-9]/gi, '').slice(0, 12).toUpperCase() || 'CLAIM'
+  const processFile = `CLAIM-${claim.encounter}-${controlNumber}-RESUBMIT.txt`
+  const payload = [
+    'RESUBMIT',
+    `claim=${controlNumber}`,
+    `patient=${patientId}`,
+    `encounter=${claim.encounter}`,
+    `payer=${claim.payerName || claim.payerId}`,
+    `sourceStatus=${claim.statusLabel || claim.status}`,
+    `target=X12`,
+    'reason=corrected-and-requeued',
+  ].join('|')
+
+  return { processFile, payload }
 }
 
 function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encounterLines: BillingLineItem[]) {
