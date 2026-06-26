@@ -14810,6 +14810,59 @@ function FeesWorkspace({
     setMutationMessage(isPatientRefund ? 'Patient refund saved' : isInsuranceReversal ? 'Insurance reversal saved' : isAdjustmentReversal ? 'Adjustment reversal saved' : 'Payment posting saved')
   }
 
+  async function handleEobBatchImport() {
+    setMutationMessage(null)
+
+    const eobBatch = [
+      {
+        reference: 'EOB-BATCH-1000052-PRIMARY',
+        code: '99214',
+        memo: 'Imported EOB batch primary',
+        payAmount: 28,
+        adjustmentAmount: 4.25,
+        accountCode: 'CO45',
+        reasonCode: 'CO-45',
+        payerClaimNumber: 'EOB-BATCH-1000052-P1',
+      },
+      {
+        reference: 'EOB-BATCH-1000052-SECONDARY',
+        code: '99213',
+        memo: 'Imported EOB batch secondary',
+        payAmount: 11,
+        adjustmentAmount: 1.5,
+        accountCode: 'PR2',
+        reasonCode: 'PR-2',
+        payerClaimNumber: 'EOB-BATCH-1000052-S1',
+      },
+    ]
+
+    for (const eobPayment of eobBatch) {
+      await onCreatePayment({
+        patientId,
+        encounter: Number(billingEncounter),
+        payerId: 9005,
+        payerName: 'Northstar HMO',
+        payerType: 1,
+        reference: eobPayment.reference,
+        postDate: paymentPostDate,
+        checkDate: paymentPostDate,
+        depositDate: paymentPostDate,
+        paymentType: 'insurance_payment',
+        paymentMethod: 'electronic_payment',
+        codeType: 'CPT4',
+        code: eobPayment.code,
+        memo: eobPayment.memo,
+        payAmount: eobPayment.payAmount,
+        adjustmentAmount: eobPayment.adjustmentAmount,
+        accountCode: eobPayment.accountCode,
+        reasonCode: eobPayment.reasonCode,
+        payerClaimNumber: eobPayment.payerClaimNumber,
+      })
+    }
+
+    setMutationMessage('Imported 2 EOB payments')
+  }
+
   async function handleCollectionsFollowUp(item: CollectionsWorkQueueItem): Promise<CollectionsFollowUpMutationResponse> {
     setCollectionsFollowUpStatus('saving')
     setCollectionsFollowUpMessage(null)
@@ -15307,6 +15360,7 @@ function FeesWorkspace({
                 aria-label="New payment method"
               >
                 <option value="check_payment">Check</option>
+                <option value="electronic_payment">Electronic</option>
                 <option value="credit_card">Card</option>
                 <option value="cash_payment">Cash</option>
               </select>
@@ -15382,6 +15436,15 @@ function FeesWorkspace({
             >
               <Check size={15} />
               Post Payment
+            </button>
+            <button
+              className="icon-text-button secondary"
+              type="button"
+              disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              onClick={() => void handleEobBatchImport()}
+            >
+              <Upload size={15} />
+              Import EOB
             </button>
           </div>
         </form>
