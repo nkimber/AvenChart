@@ -1430,6 +1430,40 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingPaymentMutationResponse(activityId, sessionId, billing);
     }
 
+    public Task<BillingPaymentMutationResponse?> CreatePatientRefundAsync(
+        BillingPatientRefundCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.RefundAmount == 0m)
+        {
+            return Task.FromResult<BillingPaymentMutationResponse?>(null);
+        }
+
+        return CreatePaymentAsync(
+            new BillingPaymentCreateRequest(
+                request.PatientId,
+                request.Encounter,
+                0,
+                string.Empty,
+                0,
+                request.Reference,
+                request.PostDate,
+                request.CheckDate,
+                request.DepositDate,
+                "patient_refund",
+                request.PaymentMethod,
+                request.CodeType,
+                request.Code,
+                request.Modifier,
+                request.Memo,
+                -Math.Abs(request.RefundAmount),
+                0m,
+                string.Empty,
+                string.Empty,
+                string.Empty),
+            cancellationToken);
+    }
+
     public async Task<BillingEobBatchImportResponse?> ImportEobBatchAsync(
         BillingEobBatchImportRequest request,
         CancellationToken cancellationToken)

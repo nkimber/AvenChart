@@ -2450,6 +2450,19 @@ billing.MapPost("/payments", async (
     .WithName("CreateBillingPaymentPosting")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapPost("/payments/patient-refunds", async (
+        BillingRepository repository,
+        BillingPatientRefundCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreatePatientRefundAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Patient refund could not be posted for the supplied patient and encounter.")
+            : Results.Created($"/api/billing/payments/{mutation.Id}", mutation);
+    })
+    .WithName("CreateBillingPatientRefund")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
+
 billing.MapPost("/eob-batches/import", async (
         BillingRepository repository,
         BillingEobBatchImportRequest request,

@@ -107,6 +107,7 @@ import {
   createBillingClaimStatus,
   importBillingEobBatch,
   createBillingLine,
+  createBillingPatientRefund,
   createBillingPaymentPosting,
   createClinicalAllergy,
   createClinicalImmunization,
@@ -253,6 +254,7 @@ import {
   type BillingLineCreateInput,
   type BillingLineItem,
   type BillingLineUpdateInput,
+  type BillingPatientRefundCreateInput,
   type BillingPaymentCreateInput,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
@@ -3058,6 +3060,24 @@ function App() {
     }
   }
 
+  async function handleBillingPatientRefundCreate(input: BillingPatientRefundCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingPatientRefund(input, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing patient refund create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
   async function handleBillingEobBatchImport(patientId: string) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5155,6 +5175,7 @@ function App() {
             onAdjudicateClaim={handleBillingClaimAdjudicate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
+            onCreatePatientRefund={handleBillingPatientRefundCreate}
             onImportEobBatch={handleBillingEobBatchImport}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
             onVoidPayment={handleBillingPaymentVoid}
@@ -14655,6 +14676,7 @@ function FeesWorkspace({
   onAdjudicateClaim,
   onDeleteClaim,
   onCreatePayment,
+  onCreatePatientRefund,
   onImportEobBatch,
   onDownloadPaymentReceipt,
   onVoidPayment,
@@ -14681,6 +14703,7 @@ function FeesWorkspace({
   onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onCreatePatientRefund: (input: BillingPatientRefundCreateInput) => Promise<unknown>
   onImportEobBatch: (patientId: string) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
@@ -14920,29 +14943,48 @@ function FeesWorkspace({
     const parsedPayAmount = Number(paymentPayAmount)
     const parsedAdjustmentAmount = Number(paymentAdjustmentAmount)
 
+    if (isPatientRefund) {
+      await onCreatePatientRefund({
+        patientId,
+        encounter: Number(billingEncounter),
+        reference: paymentReference,
+        postDate: paymentPostDate,
+        checkDate: paymentPostDate,
+        depositDate: paymentPostDate,
+        paymentMethod,
+        codeType: 'CPT4',
+        code: paymentCode,
+        memo: paymentMemo,
+        refundAmount: parsedPayAmount,
+      })
+
+      setMutationMessage('Patient refund saved')
+      return
+    }
+
     await onCreatePayment({
       patientId,
       encounter: Number(billingEncounter),
-      payerId: isPatientPayment || isPatientRefund ? 0 : Number(paymentPayerId),
-      payerName: isPatientPayment || isPatientRefund ? '' : paymentPayerName,
-      payerType: isPatientPayment || isPatientRefund ? 0 : 1,
+      payerId: isPatientPayment ? 0 : Number(paymentPayerId),
+      payerName: isPatientPayment ? '' : paymentPayerName,
+      payerType: isPatientPayment ? 0 : 1,
       reference: paymentReference,
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isPatientRefund ? 'patient_refund' : isInsuranceReversal ? 'insurance_reversal' : isAdjustmentReversal ? 'adjustment_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: isInsuranceReversal ? 'insurance_reversal' : isAdjustmentReversal ? 'adjustment_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
-      payAmount: isAdjustmentReversal ? 0 : isPatientRefund || isInsuranceReversal ? -Math.abs(parsedPayAmount) : parsedPayAmount,
-      adjustmentAmount: isAdjustmentReversal ? -Math.abs(parsedAdjustmentAmount) : isPatientPayment || isPatientRefund || isInsuranceReversal ? 0 : parsedAdjustmentAmount,
-      accountCode: isPatientPayment || isPatientRefund || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment || isPatientRefund || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode,
-      payerClaimNumber: isPatientPayment || isPatientRefund ? '' : paymentPayerClaimNumber,
+      payAmount: isAdjustmentReversal ? 0 : isInsuranceReversal ? -Math.abs(parsedPayAmount) : parsedPayAmount,
+      adjustmentAmount: isAdjustmentReversal ? -Math.abs(parsedAdjustmentAmount) : isPatientPayment || isInsuranceReversal ? 0 : parsedAdjustmentAmount,
+      accountCode: isPatientPayment || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode,
+      payerClaimNumber: isPatientPayment ? '' : paymentPayerClaimNumber,
     })
 
-    setMutationMessage(isPatientRefund ? 'Patient refund saved' : isInsuranceReversal ? 'Insurance reversal saved' : isAdjustmentReversal ? 'Adjustment reversal saved' : 'Payment posting saved')
+    setMutationMessage(isInsuranceReversal ? 'Insurance reversal saved' : isAdjustmentReversal ? 'Adjustment reversal saved' : 'Payment posting saved')
   }
 
   async function handleEobBatchImport() {

@@ -2048,6 +2048,21 @@ export type BillingPaymentCreateInput = {
   payerClaimNumber?: string | null
 }
 
+export type BillingPatientRefundCreateInput = {
+  patientId: string
+  encounter: number
+  reference: string
+  postDate: string
+  checkDate?: string | null
+  depositDate?: string | null
+  paymentMethod: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo: string
+  refundAmount: number
+}
+
 export type BillingEobBatchImportInput = {
   patientId: string
 }
@@ -6414,6 +6429,24 @@ export async function createBillingPaymentPosting(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Billing payment posting create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createBillingPatientRefund(
+  input: BillingPatientRefundCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/patient-refunds`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing patient refund create', response.status))
   }
 
   return response.json()
