@@ -2396,6 +2396,17 @@ billing.MapPost("/claims/{claimId}/deny", async (
     .WithName("DenyBillingClaim")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapPost("/claims/{claimId}/clear", async (
+        BillingRepository repository,
+        string claimId,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ClearClaimAsync(claimId, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("ClearBillingClaim")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
+
 billing.MapDelete("/claims/{claimId}", async (
         BillingRepository repository,
         string claimId,

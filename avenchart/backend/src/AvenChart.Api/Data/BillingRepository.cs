@@ -1031,6 +1031,57 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
     }
 
+    public async Task<BillingClaimMutationResponse?> ClearClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var claim = await GetClaimAsync(connection, claimId, cancellationToken);
+            if (claim is null)
+            {
+                return null;
+            }
+
+            var payload = BuildClaimClearPayload(claim);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                update claims
+                set status = @status,
+                    bill_process = @billProcess,
+                    process_time = @processTime,
+                    process_file = @processFile,
+                    target = @target,
+                    x12_partner_id = @x12PartnerId,
+                    submitted_claim = @submittedClaim
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", claimId);
+            command.Parameters.AddWithValue("status", 3);
+            command.Parameters.AddWithValue("billProcess", 0);
+            AddNullableTimestamp(command, "processTime", null);
+            command.Parameters.AddWithValue("processFile", string.Empty);
+            command.Parameters.AddWithValue("target", "HCFA");
+            command.Parameters.AddWithValue("x12PartnerId", 0);
+            command.Parameters.AddWithValue("submittedClaim", payload);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
+    }
+
     public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(claimId))
@@ -2736,6 +2787,9 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
         return new BillingGeneratedClaimPayload(processFile, payload);
     }
+
+    private static string BuildClaimClearPayload(BillingClaimScrubContext claim)
+        => NormalizeText(claim.SubmittedClaim) ?? $"Cleared claim {claim.Encounter}";
 
     private static IEnumerable<string> ParseClaimModifierTokens(string? modifier)
     {

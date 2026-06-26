@@ -132,6 +132,7 @@ import {
   createProcedureSpecimen,
   createProcedureResult,
   createPatient,
+  clearBillingClaimStatus,
   findPatientDuplicates,
   PatientRegistrationValidationError,
   updateProcedureReport,
@@ -2990,6 +2991,23 @@ function App() {
     }
   }
 
+  async function handleBillingClaimClear(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await clearBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (clearError) {
+      setBillingStatus('error')
+      setBillingError(clearError instanceof Error ? clearError.message : 'Unable to clear billing claim.')
+      throw clearError
+    }
+  }
+
   async function handleBillingClaimDelete(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5101,6 +5119,7 @@ function App() {
             onGenerateClaim={handleBillingClaimGenerate}
             onResubmitClaim={handleBillingClaimResubmit}
             onDenyClaim={handleBillingClaimDeny}
+            onClearClaim={handleBillingClaimClear}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14622,6 +14641,7 @@ function FeesWorkspace({
   onGenerateClaim,
   onResubmitClaim,
   onDenyClaim,
+  onClearClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14645,6 +14665,7 @@ function FeesWorkspace({
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onClearClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15810,6 +15831,7 @@ function FeesWorkspace({
                       onGenerateClaim={onGenerateClaim}
                       onResubmitClaim={onResubmitClaim}
                       onDenyClaim={onDenyClaim}
+                      onClearClaim={onClearClaim}
                       onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
@@ -20846,6 +20868,7 @@ function BillingEncounterCard({
   onGenerateClaim,
   onResubmitClaim,
   onDenyClaim,
+  onClearClaim,
   onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
@@ -20863,6 +20886,7 @@ function BillingEncounterCard({
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onClearClaim: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -20910,6 +20934,7 @@ function BillingEncounterCard({
             onGenerate={onGenerateClaim}
             onResubmit={onResubmitClaim}
             onDeny={onDenyClaim}
+            onClear={onClearClaim}
             onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
@@ -20955,6 +20980,7 @@ function BillingClaimCard({
   onGenerate,
   onResubmit,
   onDeny,
+  onClear,
   onCreatePayment,
   onDelete,
 }: {
@@ -20966,6 +20992,7 @@ function BillingClaimCard({
   onGenerate: (claim: BillingClaimItem) => Promise<unknown>
   onResubmit: (claim: BillingClaimItem) => Promise<unknown>
   onDeny: (claim: BillingClaimItem) => Promise<unknown>
+  onClear: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
@@ -20985,15 +21012,7 @@ function BillingClaimCard({
   }
 
   function handleClear() {
-    void onUpdateStatus(claim, {
-      status: 3,
-      billProcess: 0,
-      processTime: null,
-      processFile: '',
-      target: 'HCFA',
-      x12PartnerId: 0,
-      submittedClaim: claim.submittedClaim || `Cleared claim ${claim.encounter}`,
-    })
+    void onClear(claim)
   }
 
   function handleDeny() {
