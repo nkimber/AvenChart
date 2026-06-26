@@ -21083,6 +21083,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   if (cptLines.some((line) => !line.justify?.trim())) {
     issues.push('missing-diagnosis-pointer')
   }
+  if (diagnosisCodes.size === 0 && cptLines.some((line) => line.justify?.trim())) {
+    issues.push('missing-diagnosis-code')
+  }
   if (unsupportedDiagnosisPointers.length > 0) {
     issues.push(`invalid-diagnosis-pointer:${unsupportedDiagnosisPointers.join(',')}`)
   }
