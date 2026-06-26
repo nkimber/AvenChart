@@ -14463,6 +14463,39 @@ function ClinicalListsWorkspace({
   )
 }
 
+const feeSheetChargeTemplates = [
+  {
+    id: 'office-visit',
+    label: 'Office visit',
+    code: '99213',
+    modifier: '',
+    description: 'Established patient office visit',
+    fee: '125.00',
+    units: '1',
+    justify: 'Z00.00',
+  },
+  {
+    id: 'preventive-visit',
+    label: 'Preventive visit',
+    code: '99395',
+    modifier: '',
+    description: 'Preventive medicine visit',
+    fee: '185.00',
+    units: '1',
+    justify: 'Z00.00',
+  },
+  {
+    id: 'telehealth-follow-up',
+    label: 'Telehealth follow-up',
+    code: '99212',
+    modifier: '95',
+    description: 'Established patient telehealth follow-up',
+    fee: '92.00',
+    units: '1',
+    justify: 'Z00.00',
+  },
+] as const
+
 function FeesWorkspace({
   patientId,
   patientBilling,
@@ -14622,6 +14655,16 @@ function FeesWorkspace({
       setBillingEncounter(String(patientBilling.encounters[0].encounter))
     }
   }, [billingEncounter, patientBilling])
+
+  function applyFeeSheetTemplate(template: (typeof feeSheetChargeTemplates)[number]) {
+    setBillingCode(template.code)
+    setBillingModifier(template.modifier)
+    setBillingCodeText(template.description)
+    setBillingFee(template.fee)
+    setBillingUnits(template.units)
+    setBillingJustify(template.justify)
+    setMutationMessage(`${template.label} template applied`)
+  }
 
   async function handleBillingLineSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -14914,6 +14957,20 @@ function FeesWorkspace({
           <div className="panel-heading compact-heading">
             <WalletCards size={16} />
             <h3>New CPT Line</h3>
+          </div>
+          <div className="detail-actions template-action-row" aria-label="Fee sheet charge templates">
+            {feeSheetChargeTemplates.map((template) => (
+              <button
+                className="icon-text-button secondary"
+                type="button"
+                key={template.id}
+                onClick={() => applyFeeSheetTemplate(template)}
+                disabled={feesLocked || isLoading || !patientBilling || patientBilling.encounters.length === 0}
+              >
+                <ClipboardList size={15} />
+                <span>{template.label}</span>
+              </button>
+            ))}
           </div>
           <div className="mutation-grid">
             <label className="filter-field">
