@@ -459,6 +459,7 @@ export type AppointmentListItem = {
   reminderLeadDays?: number | null
   convertedEncounterId?: number | null
   convertedEncounterDate?: string | null
+  convertedBillingLineCount: number
 }
 
 export type AppointmentDetail = AppointmentListItem & {

@@ -63,6 +63,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_exdates,
                 ce.encounter as converted_encounter_id,
                 ce.encounter_date as converted_encounter_date,
+                coalesce(ce.converted_billing_line_count, 0) as converted_billing_line_count,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -75,10 +76,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join facilities f on f.id = a.facility_id
             left join facilities bf on bf.id = a.billing_location_id
             left join lateral (
-                select encounter, encounter_date
-                from encounters
-                where source_appointment_id = a.id
-                order by encounter desc
+                select
+                    e.encounter,
+                    e.encounter_date,
+                    (
+                        select count(*)
+                        from billing b
+                        where b.pid = e.pid
+                          and b.encounter = e.encounter
+                          and b.activity = 1
+                    )::int as converted_billing_line_count
+                from encounters e
+                where e.source_appointment_id = a.id
+                order by e.encounter desc
                 limit 1
             ) ce on true
             where {{AppointmentSearchPredicate}}
@@ -154,6 +164,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 a.recurrence_exdates,
                 ce.encounter as converted_encounter_id,
                 ce.encounter_date as converted_encounter_date,
+                coalesce(ce.converted_billing_line_count, 0) as converted_billing_line_count,
                 a.provider_id,
                 trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
                 a.facility_id,
@@ -166,10 +177,19 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             left join facilities f on f.id = a.facility_id
             left join facilities bf on bf.id = a.billing_location_id
             left join lateral (
-                select encounter, encounter_date
-                from encounters
-                where source_appointment_id = a.id
-                order by encounter desc
+                select
+                    e.encounter,
+                    e.encounter_date,
+                    (
+                        select count(*)
+                        from billing b
+                        where b.pid = e.pid
+                          and b.encounter = e.encounter
+                          and b.activity = 1
+                    )::int as converted_billing_line_count
+                from encounters e
+                where e.source_appointment_id = a.id
+                order by e.encounter desc
                 limit 1
             ) ce on true
             where a.id = @appointmentId;
@@ -293,7 +313,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ReminderContact: reminder.Contact,
             ReminderLeadDays: reminder.LeadDays,
             ConvertedEncounterId: ReadNullableInt(reader, "converted_encounter_id"),
-            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"));
+            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"),
+            ConvertedBillingLineCount: reader.GetInt32(reader.GetOrdinal("converted_billing_line_count")));
 
         var providerOverlapSummary = await GetProviderOverlapSummaryAsync(detail, cancellationToken);
         var patientOverlapSummary = await GetPatientOverlapSummaryAsync(detail, cancellationToken);
@@ -1023,7 +1044,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ReminderContact: reminder.Contact,
             ReminderLeadDays: reminder.LeadDays,
             ConvertedEncounterId: ReadNullableInt(reader, "converted_encounter_id"),
-            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"));
+            ConvertedEncounterDate: ReadNullableDate(reader, "converted_encounter_date"),
+            ConvertedBillingLineCount: reader.GetInt32(reader.GetOrdinal("converted_billing_line_count")));
     }
 
     private static IEnumerable<AppointmentListItem> ExpandAppointmentListItem(AppointmentListItem appointment, DateOnly fromDate, DateOnly baseDate)

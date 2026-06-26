@@ -57,7 +57,8 @@ public sealed record AppointmentListItem(
     string? ReminderContact,
     int? ReminderLeadDays,
     int? ConvertedEncounterId,
-    string? ConvertedEncounterDate);
+    string? ConvertedEncounterDate,
+    int ConvertedBillingLineCount);
 
 public sealed record AppointmentDetail(
     string Id,
@@ -112,7 +113,8 @@ public sealed record AppointmentDetail(
     string? ReminderContact,
     int? ReminderLeadDays,
     int? ConvertedEncounterId,
-    string? ConvertedEncounterDate);
+    string? ConvertedEncounterDate,
+    int ConvertedBillingLineCount);
 
 public sealed record AppointmentCreateRequest(
     string PatientId,

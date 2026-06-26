@@ -1955,6 +1955,54 @@ function App() {
     }
   }
 
+  async function handleAppointmentCreateCharge(appointment: AppointmentDetail) {
+    if (!appointment.convertedEncounterId) {
+      throw new Error('Create an encounter before adding an appointment charge.')
+    }
+
+    setAppointmentDetailStatus('loading')
+    setAppointmentError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      const response = await createBillingLine({
+        patientId: appointment.patientId,
+        providerId: appointment.providerId ?? null,
+        encounter: appointment.convertedEncounterId,
+        billingDate: appointment.convertedEncounterDate ?? appointment.date,
+        codeType: 'CPT4',
+        code: '99213',
+        modifier: '',
+        codeText: `${appointment.title || 'Appointment'} appointment charge`,
+        fee: 125,
+        units: 1,
+        justify: 'Z00.00',
+      }, sessionId)
+
+      setBillingPatientId(response.detail.patientId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      const refreshed = await getAppointmentDetail(appointment.id, sessionId)
+      setAppointmentDetail(refreshed)
+      setAppointmentDetailStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+
+      if (encounterDetail?.encounter === appointment.convertedEncounterId) {
+        const refreshedEncounter = await getEncounterDetail(appointment.convertedEncounterId, sessionId)
+        setEncounterDetail(refreshedEncounter)
+        setEncounterDetailStatus('ready')
+        setEncounterRefreshKey((current) => current + 1)
+      }
+
+      return response
+    } catch (chargeError) {
+      setAppointmentDetailStatus('error')
+      const message = chargeError instanceof Error ? chargeError.message : 'Appointment charge create failed'
+      setAppointmentError(message)
+      throw chargeError
+    }
+  }
+
   async function handleEncounterUpdate(encounter: EncounterDetail, update: EncounterUpdateInput) {
     setEncounterDetailStatus('loading')
     setEncounterError(null)
@@ -4866,6 +4914,7 @@ function App() {
             onDeleteAppointment={handleAppointmentDelete}
             onRestoreAppointmentOccurrence={handleAppointmentOccurrenceRestore}
             onConvertToEncounter={handleAppointmentConvertToEncounter}
+            onCreateAppointmentCharge={handleAppointmentCreateCharge}
           />
         )}
         {activeModule === 'encounters' && (
@@ -9670,6 +9719,7 @@ function CalendarWorkspace({
   onDeleteAppointment,
   onRestoreAppointmentOccurrence,
   onConvertToEncounter,
+  onCreateAppointmentCharge,
 }: {
   patientId: string
   fromDate: string
@@ -9694,6 +9744,7 @@ function CalendarWorkspace({
   onDeleteAppointment: (appointment: AppointmentDetail) => Promise<void>
   onRestoreAppointmentOccurrence: (appointment: AppointmentDetail, occurrenceDate: string) => Promise<AppointmentDetail>
   onConvertToEncounter: (appointment: AppointmentDetail) => Promise<EncounterDetail>
+  onCreateAppointmentCharge: (appointment: AppointmentDetail) => Promise<unknown>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -9981,6 +10032,26 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onConvertToEncounter(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleCreateAppointmentCharge() {
+    if (
+      !appointmentDetail
+      || calendarLocked
+      || selectedOccurrenceIsVirtual
+      || !appointmentDetail.convertedEncounterId
+      || appointmentDetail.convertedBillingLineCount > 0
+    ) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onCreateAppointmentCharge(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -10385,6 +10456,15 @@ function CalendarWorkspace({
                 <FileText size={15} />
                 <span>{appointmentDetail.convertedEncounterId ? 'Encounter created' : 'Create encounter'}</span>
               </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={() => void handleCreateAppointmentCharge()}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || !appointmentDetail.convertedEncounterId || appointmentDetail.convertedBillingLineCount > 0}
+              >
+                <WalletCards size={15} />
+                <span>{appointmentDetail.convertedBillingLineCount > 0 ? 'Charge created' : 'Create charge'}</span>
+              </button>
             </div>
 
             <form
@@ -10667,6 +10747,7 @@ function CalendarWorkspace({
                 <Field label="Reminder contact" value={appointmentDetail.reminderContact} />
                 <Field label="Reminder lead" value={appointmentReminderLeadDetail(appointmentDetail)} />
                 <Field label="Converted encounter" value={appointmentDetail.convertedEncounterId ? `${appointmentDetail.convertedEncounterId} (${appointmentDetail.convertedEncounterDate ?? appointmentDetail.date})` : null} />
+                <Field label="Converted charges" value={appointmentDetail.convertedBillingLineCount > 0 ? `${appointmentDetail.convertedBillingLineCount} active fee-sheet line${appointmentDetail.convertedBillingLineCount === 1 ? '' : 's'}` : null} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />
                 <Field label="Repeat on" value={appointmentDetail.recurrenceType === 2 ? appointmentRepeatOnLabel(appointmentDetail) : null} />
                 <Field label="Weekdays" value={appointmentDetail.recurrenceType === 3 ? appointmentWeekdayLabels(appointmentDetail.recurrenceDays) : null} />
