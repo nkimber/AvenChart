@@ -15643,11 +15643,13 @@ function FeesWorkspace({
                     <BillingEncounterCard
                       key={encounter.encounter}
                       encounter={encounter}
+                      patientId={patientId}
                       disabled={isLoading || feesLocked}
                       onSelectCorrectionLine={handleSelectCorrectionLine}
                       onDeactivateLine={onDeactivateLine}
                       onDeleteLine={onDeleteLine}
                       onUpdateClaimStatus={onUpdateClaimStatus}
+                      onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
                       onVoidPayment={onVoidPayment}
@@ -20673,22 +20675,26 @@ function MessageItem({
 
 function BillingEncounterCard({
   encounter,
+  patientId,
   disabled,
   onSelectCorrectionLine,
   onDeactivateLine,
   onDeleteLine,
   onUpdateClaimStatus,
+  onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
   onVoidPayment,
   onDeletePayment,
 }: {
   encounter: BillingEncounterItem
+  patientId: string
   disabled: boolean
   onSelectCorrectionLine: (line: BillingLineItem) => void
   onDeactivateLine: (line: BillingLineItem) => Promise<unknown>
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
@@ -20728,8 +20734,10 @@ function BillingEncounterCard({
           <BillingClaimCard
             key={claim.id}
             claim={claim}
+            patientId={patientId}
             disabled={disabled}
             onUpdateStatus={onUpdateClaimStatus}
+            onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
         ))}
@@ -20767,17 +20775,23 @@ function BillingEncounterCard({
 
 function BillingClaimCard({
   claim,
+  patientId,
   disabled,
   onUpdateStatus,
+  onCreatePayment,
   onDelete,
 }: {
   claim: BillingClaimItem
+  patientId: string
   disabled: boolean
   onUpdateStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
+  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
   const generatedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-PARITY-837P.txt`
   const deniedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-DENIAL-835.txt`
+  const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
+  const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
 
   function handleGenerate() {
     void onUpdateStatus(claim, {
@@ -20815,6 +20829,39 @@ function BillingClaimCard({
     })
   }
 
+  async function handleAdjudicate() {
+    await onCreatePayment({
+      patientId,
+      encounter: claim.encounter,
+      payerId: claim.payerId,
+      payerName: claim.payerName || `Payer ${claim.payerId}`,
+      payerType: claim.payerType || 1,
+      reference: `EOB-${claim.encounter}-ADJUDICATED`,
+      postDate: '2026-06-18',
+      checkDate: '2026-06-18',
+      depositDate: '2026-06-18',
+      paymentType: 'insurance_payment',
+      paymentMethod: 'electronic_payment',
+      codeType: 'CPT4',
+      code: '99214',
+      memo: `Adjudicated claim ${claim.encounter}`,
+      payAmount: 42,
+      adjustmentAmount: 5.75,
+      accountCode: 'CO45',
+      reasonCode: 'CO-45',
+      payerClaimNumber,
+    })
+    await onUpdateStatus(claim, {
+      status: 3,
+      billProcess: 0,
+      processTime: '2026-06-18 16:05:00',
+      processFile: adjudicatedProcessFile,
+      target: 'X12',
+      x12PartnerId: 1,
+      submittedClaim: claim.submittedClaim || `Adjudicated claim ${claim.encounter}`,
+    })
+  }
+
   return (
     <article className="billing-line-card">
       <div className="message-item-header">
@@ -20843,6 +20890,10 @@ function BillingClaimCard({
         <button type="button" className="icon-text-button danger" disabled={disabled} onClick={handleDeny}>
           <X size={14} />
           Deny
+        </button>
+        <button type="button" className="icon-text-button secondary" disabled={disabled} onClick={() => void handleAdjudicate()}>
+          <WalletCards size={14} />
+          Adjudicate
         </button>
         <button type="button" className="icon-text-button danger" disabled={disabled} onClick={() => void onDelete(claim)}>
           <Trash2 size={14} />
