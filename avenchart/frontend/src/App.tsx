@@ -21041,6 +21041,13 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
         .filter((code) => !/^\d{5}$/.test(code)),
     ),
   )
+  const futureServiceDates = Array.from(
+    new Set(
+      cptLines
+        .map((line) => normalizeBillingDate(line.billingDate))
+        .filter((billingDate) => Boolean(billingDate) && billingDate > claimScrubBusinessDate),
+    ),
+  )
   const allowedModifiers = new Set(['25', '59', '76', '77', '95'])
   const modifierTokensByLine = cptLines.map((line) => parseClaimModifierTokens(line.modifier))
   const invalidModifiers = Array.from(
@@ -21105,6 +21112,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (invalidCptCodes.length > 0) {
     issues.push(`invalid-cpt-code:${invalidCptCodes.join(',')}`)
+  }
+  if (futureServiceDates.length > 0) {
+    issues.push(`future-service-date:${futureServiceDates.join(',')}`)
   }
   if (cptLines.some((line) => !line.justify?.trim())) {
     issues.push('missing-diagnosis-pointer')
@@ -21180,6 +21190,13 @@ function parseClaimDiagnosisPointerTokens(justify: string | null | undefined) {
 
 function isSupportedIcd10DiagnosisCode(code: string) {
   return /^[A-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?$/.test(code)
+}
+
+const claimScrubBusinessDate = '2026-06-18'
+
+function normalizeBillingDate(value: string | null | undefined) {
+  const trimmed = (value || '').trim()
+  return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : ''
 }
 
 function buildGeneratedClaim837Payload(claim: BillingClaimItem, patientId: string) {
