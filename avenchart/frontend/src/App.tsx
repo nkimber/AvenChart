@@ -20777,6 +20777,7 @@ function BillingClaimCard({
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
   const generatedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-PARITY-837P.txt`
+  const deniedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-DENIAL-835.txt`
 
   function handleGenerate() {
     void onUpdateStatus(claim, {
@@ -20799,6 +20800,18 @@ function BillingClaimCard({
       target: 'HCFA',
       x12PartnerId: 0,
       submittedClaim: claim.submittedClaim || `Cleared claim ${claim.encounter}`,
+    })
+  }
+
+  function handleDeny() {
+    void onUpdateStatus(claim, {
+      status: 7,
+      billProcess: 0,
+      processTime: '2026-06-18 15:20:00',
+      processFile: deniedProcessFile,
+      target: 'X12',
+      x12PartnerId: 1,
+      submittedClaim: claim.submittedClaim || `Denied claim ${claim.encounter}`,
     })
   }
 
@@ -20826,6 +20839,10 @@ function BillingClaimCard({
         <button type="button" className="icon-text-button primary" disabled={disabled} onClick={handleClear}>
           <Check size={14} />
           Clear
+        </button>
+        <button type="button" className="icon-text-button danger" disabled={disabled} onClick={handleDeny}>
+          <X size={14} />
+          Deny
         </button>
         <button type="button" className="icon-text-button danger" disabled={disabled} onClick={() => void onDelete(claim)}>
           <Trash2 size={14} />
