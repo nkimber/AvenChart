@@ -14580,7 +14580,7 @@ function FeesWorkspace({
   const [claimPayload, setClaimPayload] = useState('Parity claim status mutation')
   const [paymentReference, setPaymentReference] = useState('EOB-PARITY-1000052')
   const [paymentPostDate, setPaymentPostDate] = useState('2026-06-18')
-  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient' | 'insuranceReversal' | 'refund'>('insurance')
+  const [paymentSource, setPaymentSource] = useState<'insurance' | 'patient' | 'insuranceReversal' | 'adjustmentReversal' | 'refund'>('insurance')
   const [paymentPayerId, setPaymentPayerId] = useState('9005')
   const [paymentPayerName, setPaymentPayerName] = useState('Northstar HMO')
   const [paymentMethod, setPaymentMethod] = useState('check_payment')
@@ -14781,7 +14781,9 @@ function FeesWorkspace({
     const isPatientPayment = paymentSource === 'patient'
     const isPatientRefund = paymentSource === 'refund'
     const isInsuranceReversal = paymentSource === 'insuranceReversal'
+    const isAdjustmentReversal = paymentSource === 'adjustmentReversal'
     const parsedPayAmount = Number(paymentPayAmount)
+    const parsedAdjustmentAmount = Number(paymentAdjustmentAmount)
 
     await onCreatePayment({
       patientId,
@@ -14793,19 +14795,19 @@ function FeesWorkspace({
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isPatientRefund ? 'patient_refund' : isInsuranceReversal ? 'insurance_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: isPatientRefund ? 'patient_refund' : isInsuranceReversal ? 'insurance_reversal' : isAdjustmentReversal ? 'adjustment_reversal' : isPatientPayment ? 'patient_payment' : 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
-      payAmount: isPatientRefund || isInsuranceReversal ? -Math.abs(parsedPayAmount) : parsedPayAmount,
-      adjustmentAmount: isPatientPayment || isPatientRefund || isInsuranceReversal ? 0 : Number(paymentAdjustmentAmount),
-      accountCode: isPatientPayment || isPatientRefund || isInsuranceReversal ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment || isPatientRefund || isInsuranceReversal ? '' : paymentReasonCode,
+      payAmount: isAdjustmentReversal ? 0 : isPatientRefund || isInsuranceReversal ? -Math.abs(parsedPayAmount) : parsedPayAmount,
+      adjustmentAmount: isAdjustmentReversal ? -Math.abs(parsedAdjustmentAmount) : isPatientPayment || isPatientRefund || isInsuranceReversal ? 0 : parsedAdjustmentAmount,
+      accountCode: isPatientPayment || isPatientRefund || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode.replace('-', ''),
+      reasonCode: isPatientPayment || isPatientRefund || isInsuranceReversal || isAdjustmentReversal ? '' : paymentReasonCode,
       payerClaimNumber: isPatientPayment || isPatientRefund ? '' : paymentPayerClaimNumber,
     })
 
-    setMutationMessage(isPatientRefund ? 'Patient refund saved' : isInsuranceReversal ? 'Insurance reversal saved' : 'Payment posting saved')
+    setMutationMessage(isPatientRefund ? 'Patient refund saved' : isInsuranceReversal ? 'Insurance reversal saved' : isAdjustmentReversal ? 'Adjustment reversal saved' : 'Payment posting saved')
   }
 
   async function handleCollectionsFollowUp(item: CollectionsWorkQueueItem): Promise<CollectionsFollowUpMutationResponse> {
@@ -15247,11 +15249,12 @@ function FeesWorkspace({
                 <span>Source</span>
                 <select
                   value={paymentSource}
-                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient' | 'insuranceReversal' | 'refund')}
+                  onChange={(event) => setPaymentSource(event.target.value as 'insurance' | 'patient' | 'insuranceReversal' | 'adjustmentReversal' | 'refund')}
                   aria-label="New payment source"
                 >
                   <option value="insurance">Insurance</option>
                   <option value="insuranceReversal">Insurance reversal</option>
+                  <option value="adjustmentReversal">Adjustment reversal</option>
                   <option value="patient">Patient</option>
                   <option value="refund">Patient refund</option>
                 </select>
@@ -15272,8 +15275,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentPayerId(event.target.value)}
                   aria-label="New payment payer ID"
                   inputMode="numeric"
-                  disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
-                  required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal'}
+                  disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal' && paymentSource !== 'adjustmentReversal'}
+                  required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal' || paymentSource === 'adjustmentReversal'}
                 />
               </label>
             </div>
@@ -15283,8 +15286,8 @@ function FeesWorkspace({
                 value={paymentPayerName}
                 onChange={(event) => setPaymentPayerName(event.target.value)}
                 aria-label="New payment payer name"
-                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
-                required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal'}
+                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal' && paymentSource !== 'adjustmentReversal'}
+                required={paymentSource === 'insurance' || paymentSource === 'insuranceReversal' || paymentSource === 'adjustmentReversal'}
               />
             </label>
             <label className="filter-field">
@@ -15316,7 +15319,8 @@ function FeesWorkspace({
                     onChange={(event) => setPaymentPayAmount(event.target.value)}
                     aria-label="New payment amount"
                   inputMode="decimal"
-                  required
+                  disabled={paymentSource === 'adjustmentReversal'}
+                  required={paymentSource !== 'adjustmentReversal'}
                 />
               </label>
               <label className="filter-field">
@@ -15326,8 +15330,8 @@ function FeesWorkspace({
                   onChange={(event) => setPaymentAdjustmentAmount(event.target.value)}
                   aria-label="New payment adjustment amount"
                   inputMode="decimal"
-                  disabled={paymentSource !== 'insurance'}
-                  required={paymentSource === 'insurance'}
+                  disabled={paymentSource !== 'insurance' && paymentSource !== 'adjustmentReversal'}
+                  required={paymentSource === 'insurance' || paymentSource === 'adjustmentReversal'}
                 />
               </label>
             </div>
@@ -15347,7 +15351,7 @@ function FeesWorkspace({
                   value={paymentReasonCode}
                   onChange={(event) => setPaymentReasonCode(event.target.value)}
                   aria-label="New payment reason code"
-                  disabled={paymentSource !== 'insurance'}
+                  disabled={paymentSource !== 'insurance' && paymentSource !== 'adjustmentReversal'}
                 />
               </label>
             </div>
@@ -15357,7 +15361,7 @@ function FeesWorkspace({
                 value={paymentPayerClaimNumber}
                 onChange={(event) => setPaymentPayerClaimNumber(event.target.value)}
                 aria-label="New payment payer claim number"
-                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal'}
+                disabled={paymentSource !== 'insurance' && paymentSource !== 'insuranceReversal' && paymentSource !== 'adjustmentReversal'}
               />
             </label>
             <label className="filter-field">
@@ -20847,9 +20851,10 @@ function BillingPaymentCard({
 }) {
   const isPatientRefund = payment.paymentType === 'patient_refund' || (payment.payAmount < 0 && payment.payerType === 0)
   const isInsuranceReversal = payment.paymentType === 'insurance_reversal' || (payment.payAmount < 0 && payment.payerType !== 0)
+  const isAdjustmentReversal = payment.paymentType === 'adjustment_reversal' || payment.adjustmentAmount < 0
   const statusLabel = isPatientRefund
     ? 'Refund'
-    : isInsuranceReversal
+    : isInsuranceReversal || isAdjustmentReversal
       ? 'Reversal'
     : payment.adjustmentAmount > 0 && payment.payAmount === 0
       ? 'Adjustment'
@@ -20881,7 +20886,11 @@ function BillingPaymentCard({
               : 'No payment amount'}
         </span>
         <span>
-          {payment.adjustmentAmount > 0 ? `Adjusted ${formatCurrency(payment.adjustmentAmount)}` : 'No adjustment'}
+          {isAdjustmentReversal
+            ? `Adjustment reversed ${formatCurrency(Math.abs(payment.adjustmentAmount))}`
+            : payment.adjustmentAmount > 0
+              ? `Adjusted ${formatCurrency(payment.adjustmentAmount)}`
+              : 'No adjustment'}
         </span>
         <span>{payment.accountCode ? `Account ${payment.accountCode}` : 'No account code'}</span>
         <span>{payment.reasonCode ? `Reason ${payment.reasonCode}` : 'No reason code'}</span>
@@ -22364,6 +22373,10 @@ function formatPaymentType(payment: BillingPaymentItem) {
 
   if (payment.paymentType === 'insurance_reversal') {
     return 'Insurance reversal'
+  }
+
+  if (payment.paymentType === 'adjustment_reversal') {
+    return 'Adjustment reversal'
   }
 
   if (payment.paymentType === 'patient_payment') {

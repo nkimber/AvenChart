@@ -78,7 +78,9 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             PaymentAmount: -ledgerEntries
                 .Where(entry => entry.EntryType is "Payment" or "Refund" or "Reversal")
                 .Sum(entry => entry.Amount),
-            AdjustmentAmount: -ledgerEntries.Where(entry => entry.EntryType == "Adjustment").Sum(entry => entry.Amount),
+            AdjustmentAmount: -ledgerEntries
+                .Where(entry => entry.EntryType is "Adjustment" or "Adjustment Reversal")
+                .Sum(entry => entry.Amount),
             EndingBalanceAmount: ledgerEntries.LastOrDefault()?.RunningBalanceAmount ?? 0m);
         var statementSummary = BuildStatementSummary(
             patient,
@@ -841,6 +843,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         var paymentType = NormalizeText(request.PaymentType);
         var isPatientRefund = string.Equals(paymentType, "patient_refund", StringComparison.OrdinalIgnoreCase);
         var isInsuranceReversal = string.Equals(paymentType, "insurance_reversal", StringComparison.OrdinalIgnoreCase);
+        var isAdjustmentReversal = string.Equals(paymentType, "adjustment_reversal", StringComparison.OrdinalIgnoreCase);
         var allowsNegativePayment = isPatientRefund || isInsuranceReversal;
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || request.Encounter <= 0
@@ -850,11 +853,12 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(paymentType)
             || string.IsNullOrWhiteSpace(request.PaymentMethod)
             || string.IsNullOrWhiteSpace(request.Memo)
-            || request.AdjustmentAmount < 0
+            || (request.AdjustmentAmount < 0m && !isAdjustmentReversal)
             || (request.PayAmount == 0m && request.AdjustmentAmount == 0m)
             || (request.PayAmount < 0m && !allowsNegativePayment)
             || (isPatientRefund && (request.PayAmount >= 0m || request.AdjustmentAmount != 0m || request.PayerType != 0 || request.PayerId != 0))
             || (isInsuranceReversal && (request.PayAmount >= 0m || request.AdjustmentAmount != 0m || request.PayerType == 0 || request.PayerId <= 0))
+            || (isAdjustmentReversal && (request.PayAmount != 0m || request.AdjustmentAmount >= 0m || request.PayerType == 0 || request.PayerId <= 0))
             || !TryReadDate(request.PostDate, out var postDate))
         {
             return null;
@@ -925,7 +929,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
                 sessionCommand.Parameters.Add("postTime", NpgsqlDbType.Timestamp).Value = postTime;
                 sessionCommand.Parameters.AddWithValue("paymentType", paymentType);
                 sessionCommand.Parameters.AddWithValue("description", request.Memo.Trim());
-                sessionCommand.Parameters.AddWithValue("adjustmentCode", request.AdjustmentAmount > 0m ? "contractual_adjustment" : string.Empty);
+                sessionCommand.Parameters.AddWithValue("adjustmentCode", request.AdjustmentAmount > 0m ? "contractual_adjustment" : isAdjustmentReversal ? "adjustment_reversal" : string.Empty);
                 sessionCommand.Parameters.Add("postDate", NpgsqlDbType.Date).Value = postDate;
                 sessionCommand.Parameters.AddWithValue("paymentMethod", request.PaymentMethod.Trim());
                 await sessionCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -1914,7 +1918,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             ChargeAmount: entry.EntryType == "Charge" ? entry.Amount : 0m,
             PaymentAmount: entry.EntryType == "Payment" ? Math.Abs(entry.Amount) : 0m,
             RefundAmount: entry.EntryType is "Refund" or "Reversal" ? entry.Amount : 0m,
-            AdjustmentAmount: entry.EntryType == "Adjustment" ? Math.Abs(entry.Amount) : 0m,
+            AdjustmentAmount: entry.EntryType is "Adjustment" or "Adjustment Reversal" ? Math.Abs(entry.Amount) : 0m,
             BalanceAmount: entry.RunningBalanceAmount);
     }
 
@@ -2208,12 +2212,13 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
 
                 if (payment.AdjustmentAmount != 0m)
                 {
+                    var isAdjustmentReversal = payment.AdjustmentAmount < 0m;
                     draftEntries.Add(new BillingLedgerDraft(
-                        EntryId: $"adjustment-{payment.Encounter}-{payment.SequenceNo}",
+                        EntryId: $"{(isAdjustmentReversal ? "adjustment-reversal" : "adjustment")}-{payment.Encounter}-{payment.SequenceNo}",
                         EntryDate: paymentDate,
                         Encounter: payment.Encounter,
-                        EntryType: "Adjustment",
-                        Description: NormalizeText(payment.Memo) ?? "Adjustment",
+                        EntryType: isAdjustmentReversal ? "Adjustment Reversal" : "Adjustment",
+                        Description: NormalizeText(payment.Memo) ?? (isAdjustmentReversal ? "Adjustment reversal" : "Adjustment"),
                         Code: code,
                         Reference: reference,
                         Amount: -payment.AdjustmentAmount,
