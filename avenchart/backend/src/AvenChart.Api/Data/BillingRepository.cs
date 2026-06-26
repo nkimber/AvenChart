@@ -539,7 +539,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(request.Justify)
             || request.Encounter <= 0
             || request.Fee < 0
-            || request.Units <= 0
+            || request.Units < 0
             || !TryReadDate(request.BillingDate, out var billingDate))
         {
             return null;
@@ -634,7 +634,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(request.CodeText)
             || string.IsNullOrWhiteSpace(request.Justify)
             || request.Fee < 0
-            || request.Units <= 0)
+            || request.Units < 0)
         {
             return null;
         }
