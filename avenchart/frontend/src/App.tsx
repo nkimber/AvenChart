@@ -21054,6 +21054,13 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
     new Set(modifierTokensByLine.map((modifiers) => modifiers.length).filter((count) => count > 4)),
   )
   const diagnosisPointerTokensByLine = cptLines.map((line) => parseClaimDiagnosisPointerTokens(line.justify))
+  const duplicateDiagnosisPointers = Array.from(
+    new Set(
+      diagnosisPointerTokensByLine.flatMap((pointers) =>
+        pointers.filter((pointer, index) => pointers.indexOf(pointer) !== index),
+      ),
+    ),
+  )
   const diagnosisPointerCountIssues = Array.from(
     new Set(diagnosisPointerTokensByLine.map((pointers) => pointers.length).filter((count) => count > 4)),
   )
@@ -21108,6 +21115,9 @@ function buildClaimScrubReport(claim: BillingClaimItem, patientId: string, encou
   }
   if (diagnosisPointerCountIssues.length > 0) {
     issues.push(`diagnosis-pointer-count-exceeded:${diagnosisPointerCountIssues.join(',')}`)
+  }
+  if (duplicateDiagnosisPointers.length > 0) {
+    issues.push(`duplicate-diagnosis-pointer:${duplicateDiagnosisPointers.join(',')}`)
   }
 
   const status = issues.length === 0 ? 'PASS' : 'FAIL'
