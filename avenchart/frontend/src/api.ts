@@ -6122,6 +6122,22 @@ export async function downloadBillingStatementPdf(
   return response.blob()
 }
 
+export async function downloadBillingPaymentReceiptPdf(
+  activityId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/${encodeURIComponent(activityId)}/receipt.pdf`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing payment receipt PDF download', response.status))
+  }
+
+  return response.blob()
+}
+
 export async function createBillingLine(
   input: BillingLineCreateInput,
   sessionId?: string | null,

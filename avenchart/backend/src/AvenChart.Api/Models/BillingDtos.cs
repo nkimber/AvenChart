@@ -270,6 +270,30 @@ public sealed record BillingPaymentItem(
     string? ReasonCode,
     string? PayerClaimNumber);
 
+public sealed record BillingPaymentReceiptDocument(
+    string ReceiptNumber,
+    string Title,
+    string PatientDisplayName,
+    string Pubpid,
+    int LegacyPid,
+    int Encounter,
+    string PostedDate,
+    string? Reference,
+    string? PayerName,
+    string PayerTypeLabel,
+    string? PaymentType,
+    string? PaymentMethod,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string? Memo,
+    decimal PaymentAmount,
+    decimal AdjustmentAmount,
+    string? AccountCode,
+    string? ReasonCode,
+    string? PayerClaimNumber,
+    string GeneratedText);
+
 public sealed record BillingLineCreateRequest(
     string PatientId,
     int? ProviderId,

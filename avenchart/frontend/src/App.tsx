@@ -54,6 +54,7 @@ import {
   getPatientBilling,
   getCollectionsWorkQueue,
   getStatementBatch,
+  downloadBillingPaymentReceiptPdf,
   downloadBillingStatementPdf,
   downloadStatementBatchPackage,
   downloadPatientDocument,
@@ -2989,6 +2990,26 @@ function App() {
     }
   }
 
+  async function handleBillingPaymentReceiptDownload(payment: BillingPaymentItem) {
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const blob = await downloadBillingPaymentReceiptPdf(payment.activityId, sessionId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const postedDate = (payment.postDate || payment.postTime || 'receipt').slice(0, 10).replaceAll('-', '')
+      link.download = `RCPT-${patientBilling?.pubpid ?? billingPatientId}-${postedDate}-${String(payment.sequenceNo).padStart(3, '0')}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (downloadError) {
+      const message = downloadError instanceof Error ? downloadError.message : 'Billing payment receipt download failed'
+      setBillingError(message)
+      throw downloadError
+    }
+  }
+
   async function handleProcedureOrderCreate(input: ProcedureOrderCreateInput) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -5006,6 +5027,7 @@ function App() {
             onUpdateClaimStatus={handleBillingClaimStatusUpdate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
+            onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
             onVoidPayment={handleBillingPaymentVoid}
             onDeletePayment={handleBillingPaymentDelete}
           />
@@ -14512,6 +14534,7 @@ function FeesWorkspace({
   onUpdateClaimStatus,
   onDeleteClaim,
   onCreatePayment,
+  onDownloadPaymentReceipt,
   onVoidPayment,
   onDeletePayment,
 }: {
@@ -14530,6 +14553,7 @@ function FeesWorkspace({
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
   onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
 }) {
@@ -15616,6 +15640,7 @@ function FeesWorkspace({
                       onDeleteLine={onDeleteLine}
                       onUpdateClaimStatus={onUpdateClaimStatus}
                       onDeleteClaim={onDeleteClaim}
+                      onDownloadPaymentReceipt={onDownloadPaymentReceipt}
                       onVoidPayment={onVoidPayment}
                       onDeletePayment={onDeletePayment}
                     />
@@ -20645,6 +20670,7 @@ function BillingEncounterCard({
   onDeleteLine,
   onUpdateClaimStatus,
   onDeleteClaim,
+  onDownloadPaymentReceipt,
   onVoidPayment,
   onDeletePayment,
 }: {
@@ -20655,6 +20681,7 @@ function BillingEncounterCard({
   onDeleteLine: (line: BillingLineItem) => Promise<void>
   onUpdateClaimStatus: (claim: BillingClaimItem, input: BillingClaimStatusUpdateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
+  onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoidPayment: (payment: BillingPaymentItem) => Promise<unknown>
   onDeletePayment: (payment: BillingPaymentItem) => Promise<void>
 }) {
@@ -20705,6 +20732,7 @@ function BillingEncounterCard({
             key={payment.activityId}
             payment={payment}
             disabled={disabled}
+            onDownloadReceipt={onDownloadPaymentReceipt}
             onVoid={onVoidPayment}
             onDelete={onDeletePayment}
           />
@@ -20802,11 +20830,13 @@ function BillingClaimCard({
 function BillingPaymentCard({
   payment,
   disabled,
+  onDownloadReceipt,
   onVoid,
   onDelete,
 }: {
   payment: BillingPaymentItem
   disabled: boolean
+  onDownloadReceipt: (payment: BillingPaymentItem) => Promise<void>
   onVoid: (payment: BillingPaymentItem) => Promise<unknown>
   onDelete: (payment: BillingPaymentItem) => Promise<void>
 }) {
@@ -20836,6 +20866,15 @@ function BillingPaymentCard({
         <span>{payment.payerClaimNumber ? `Claim ${payment.payerClaimNumber}` : 'No payer claim number'}</span>
       </div>
       <div className="detail-actions compact-actions">
+        <button
+          type="button"
+          className="icon-text-button secondary"
+          disabled={disabled}
+          onClick={() => void onDownloadReceipt(payment)}
+        >
+          <Download size={14} />
+          Receipt
+        </button>
         <button
           type="button"
           className="icon-text-button"

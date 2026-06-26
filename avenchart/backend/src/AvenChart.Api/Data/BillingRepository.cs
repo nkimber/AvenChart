@@ -124,6 +124,22 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             FileName: $"{document.StatementNumber}.pdf");
     }
 
+    public async Task<(byte[] Content, string FileName, BillingPaymentReceiptDocument Document)?> GetPaymentReceiptPdfAsync(
+        string activityId,
+        CancellationToken cancellationToken)
+    {
+        var receipt = await GetPaymentReceiptDocumentAsync(activityId, cancellationToken);
+        if (receipt is null)
+        {
+            return null;
+        }
+
+        return (
+            Content: BuildPaymentReceiptPdf(receipt),
+            FileName: $"{receipt.ReceiptNumber}.pdf",
+            Document: receipt);
+    }
+
     public async Task<StatementBatchResponse> GetStatementBatchAsync(
         int limit,
         CancellationToken cancellationToken)
@@ -1041,6 +1057,136 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return true;
     }
 
+    private async Task<BillingPaymentReceiptDocument?> GetPaymentReceiptDocumentAsync(
+        string activityId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(activityId))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                pa.pid,
+                pa.encounter,
+                pa.sequence_no,
+                ps.reference,
+                ps.payer_name,
+                pa.payer_type,
+                ps.payment_type,
+                ps.payment_method,
+                pa.post_date::text as post_date,
+                to_char(pa.post_time, 'YYYY-MM-DD HH24:MI:SS') as post_time,
+                pa.code_type,
+                pa.code,
+                pa.modifier,
+                pa.memo,
+                pa.pay_amount,
+                pa.adj_amount,
+                pa.account_code,
+                pa.reason_code,
+                pa.payer_claim_number
+            from payment_activities pa
+            inner join payment_sessions ps on ps.id = pa.session_id
+            where pa.id = @id
+              and pa.deleted is null
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("id", activityId);
+
+        int legacyPid;
+        int encounter;
+        int sequenceNo;
+        string? reference;
+        string? payerName;
+        int payerType;
+        string? paymentType;
+        string? paymentMethod;
+        string postDate;
+        string? codeType;
+        string? code;
+        string? modifier;
+        string? memo;
+        decimal paymentAmount;
+        decimal adjustmentAmount;
+        string? accountCode;
+        string? reasonCode;
+        string? payerClaimNumber;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            encounter = reader.GetInt32(reader.GetOrdinal("encounter"));
+            sequenceNo = reader.GetInt32(reader.GetOrdinal("sequence_no"));
+            reference = ReadNullableString(reader, "reference");
+            payerName = ReadNullableString(reader, "payer_name");
+            payerType = reader.GetInt32(reader.GetOrdinal("payer_type"));
+            paymentType = ReadNullableString(reader, "payment_type");
+            paymentMethod = ReadNullableString(reader, "payment_method");
+            postDate = ReadNullableString(reader, "post_date")
+                ?? reader.GetString(reader.GetOrdinal("post_time"))[..10];
+            codeType = ReadNullableString(reader, "code_type");
+            code = ReadNullableString(reader, "code");
+            modifier = ReadNullableString(reader, "modifier");
+            memo = ReadNullableString(reader, "memo");
+            paymentAmount = reader.GetDecimal(reader.GetOrdinal("pay_amount"));
+            adjustmentAmount = reader.GetDecimal(reader.GetOrdinal("adj_amount"));
+            accountCode = ReadNullableString(reader, "account_code");
+            reasonCode = ReadNullableString(reader, "reason_code");
+            payerClaimNumber = ReadNullableString(reader, "payer_claim_number");
+        }
+
+        var patient = await GetPatientAsync(connection, legacyPid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var receiptNumber = $"RCPT-{patient.Pubpid}-{postDate.Replace("-", string.Empty, StringComparison.Ordinal)}-{sequenceNo:000}";
+        var payerTypeLabel = payerType switch
+        {
+            0 => "Patient",
+            1 => "Primary insurance",
+            2 => "Secondary insurance",
+            3 => "Tertiary insurance",
+            _ => $"Payer type {payerType}"
+        };
+
+        var document = new BillingPaymentReceiptDocument(
+            ReceiptNumber: receiptNumber,
+            Title: "Payment Receipt",
+            PatientDisplayName: patient.DisplayName,
+            Pubpid: patient.Pubpid,
+            LegacyPid: patient.LegacyPid,
+            Encounter: encounter,
+            PostedDate: postDate,
+            Reference: reference,
+            PayerName: payerName,
+            PayerTypeLabel: payerTypeLabel,
+            PaymentType: paymentType,
+            PaymentMethod: paymentMethod,
+            CodeType: codeType,
+            Code: code,
+            Modifier: modifier,
+            Memo: memo,
+            PaymentAmount: paymentAmount,
+            AdjustmentAmount: adjustmentAmount,
+            AccountCode: accountCode,
+            ReasonCode: reasonCode,
+            PayerClaimNumber: payerClaimNumber,
+            GeneratedText: string.Empty);
+
+        var generatedText = string.Join(Environment.NewLine, BuildPaymentReceiptLines(document));
+        return document with { GeneratedText = generatedText };
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -1808,6 +1954,91 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             contentBuilder.AppendLine(") Tj");
             contentBuilder.AppendLine("0 -14 Td");
         }
+        contentBuilder.AppendLine("ET");
+
+        var content = contentBuilder.ToString();
+        var contentLength = Encoding.ASCII.GetByteCount(content);
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            $"<< /Length {contentLength} >>\nstream\n{content}endstream"
+        };
+
+        var pdf = new StringBuilder();
+        var offsets = new List<int>();
+        pdf.AppendLine("%PDF-1.4");
+        for (var i = 0; i < objects.Length; i++)
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+            pdf.Append(i + 1);
+            pdf.AppendLine(" 0 obj");
+            pdf.AppendLine(objects[i]);
+            pdf.AppendLine("endobj");
+        }
+
+        var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+        pdf.AppendLine("xref");
+        pdf.AppendLine($"0 {objects.Length + 1}");
+        pdf.AppendLine("0000000000 65535 f ");
+        foreach (var offset in offsets)
+        {
+            pdf.AppendLine($"{offset:0000000000} 00000 n ");
+        }
+
+        pdf.AppendLine("trailer");
+        pdf.AppendLine($"<< /Size {objects.Length + 1} /Root 1 0 R >>");
+        pdf.AppendLine("startxref");
+        pdf.AppendLine(xrefOffset.ToString(CultureInfo.InvariantCulture));
+        pdf.Append("%%EOF");
+
+        return Encoding.ASCII.GetBytes(pdf.ToString());
+    }
+
+    private static IReadOnlyList<string> BuildPaymentReceiptLines(BillingPaymentReceiptDocument document)
+    {
+        var code = string.IsNullOrWhiteSpace(document.Code)
+            ? "None"
+            : $"{document.CodeType ?? "Code"} {document.Code}{(string.IsNullOrWhiteSpace(document.Modifier) ? string.Empty : $":{document.Modifier}")}";
+        return
+        [
+            $"{document.Title} {document.ReceiptNumber}",
+            document.PatientDisplayName,
+            $"Patient ID {document.Pubpid}",
+            $"PID {document.LegacyPid}",
+            $"Encounter {document.Encounter}",
+            $"Posted date {document.PostedDate}",
+            $"Payer {(string.IsNullOrWhiteSpace(document.PayerName) ? document.PayerTypeLabel : document.PayerName)}",
+            $"Payer type {document.PayerTypeLabel}",
+            $"Reference {document.Reference ?? "None"}",
+            $"Payment type {document.PaymentType ?? "None"}",
+            $"Payment method {document.PaymentMethod ?? "None"}",
+            $"Code {code}",
+            $"Memo {document.Memo ?? "None"}",
+            $"Payment amount {FormatMoney(document.PaymentAmount)}",
+            $"Adjustment amount {FormatMoney(document.AdjustmentAmount)}",
+            $"Account code {document.AccountCode ?? "None"}",
+            $"Reason code {document.ReasonCode ?? "None"}",
+            $"Payer claim number {document.PayerClaimNumber ?? "None"}"
+        ];
+    }
+
+    private static byte[] BuildPaymentReceiptPdf(BillingPaymentReceiptDocument document)
+    {
+        var contentBuilder = new StringBuilder();
+        contentBuilder.AppendLine("BT");
+        contentBuilder.AppendLine("/F1 11 Tf");
+        contentBuilder.AppendLine("50 760 Td");
+        foreach (var line in BuildPaymentReceiptLines(document))
+        {
+            contentBuilder.Append('(');
+            contentBuilder.Append(EscapePdfText(line));
+            contentBuilder.AppendLine(") Tj");
+            contentBuilder.AppendLine("0 -16 Td");
+        }
+
         contentBuilder.AppendLine("ET");
 
         var content = contentBuilder.ToString();

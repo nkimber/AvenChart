@@ -2374,6 +2374,21 @@ billing.MapPost("/payments", async (
     .WithName("CreateBillingPaymentPosting")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapGet("/payments/{activityId}/receipt.pdf", async (
+        BillingRepository repository,
+        string activityId,
+        CancellationToken cancellationToken) =>
+    {
+        var export = await repository.GetPaymentReceiptPdfAsync(activityId, cancellationToken);
+        return export is null
+            ? Results.NotFound()
+            : Results.File(
+                export.Value.Content,
+                contentType: "application/pdf",
+                fileDownloadName: export.Value.FileName);
+    })
+    .WithName("DownloadBillingPaymentReceiptPdf");
+
 billing.MapPut("/payments/{activityId}/void", async (
         BillingRepository repository,
         string activityId,
