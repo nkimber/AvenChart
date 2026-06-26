@@ -6375,7 +6375,12 @@ function PatientPortalWorkspace({
                       disabled={!authenticated || busy}
                     />
                   </label>
-                  <div className="result-meta portal-message-search-summary" aria-label="Secure message search result counts">
+                  <div
+                    className="result-meta portal-message-search-summary"
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Secure message search result counts"
+                  >
                     <span>{secureMessageSearchSummaryText}</span>
                   </div>
                   <button
