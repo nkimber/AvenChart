@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import {
-  CalendarClock, CalendarPlus, ChevronRight, ClipboardList,
+  CalendarClock, ChevronRight, ClipboardList,
   Clock, FileText, FlaskConical, Mail, Plus, RefreshCw, Users, UserPlus,
 } from 'lucide-react'
 import {
@@ -229,14 +229,13 @@ export default function ClinicianDashboard() {
             <div className="dash-quick-actions">
               {[
                 { label: 'Patient search', desc: 'Find or open a chart', path: '/clinician/patients', icon: Users, color: 'blue' },
-                { label: 'Today\'s schedule', desc: 'All appointments for today', path: '/clinician/schedule', icon: CalendarClock, color: 'blue' },
+                { label: "Today's schedule", desc: 'All appointments for today', path: '/clinician/schedule', icon: CalendarClock, color: 'blue' },
                 { label: 'New encounter', desc: 'Start a visit note', path: '/clinician/encounters/new', icon: FileText, color: 'teal' },
                 { label: 'Register patient', desc: 'Add a new patient record', path: '/clinician/patients/new', icon: UserPlus, color: 'teal' },
                 { label: 'Lab queue', desc: 'Review pending reports', path: '/clinician/labs', icon: FlaskConical, color: 'amber' },
-                { label: 'Rx renewals', desc: 'Prescription renewal requests', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
+                { label: 'Rx renewals', desc: 'Prescription requests', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
                 { label: 'Messages', desc: 'Patient communications', path: '/clinician/messages', icon: Mail, color: newMessages ? 'indigo' : 'muted' },
                 { label: 'Reports', desc: 'Operational analytics', path: '/clinician/reports', icon: ClipboardList, color: 'muted' },
-                { label: 'Calendar', desc: 'Scheduling calendar view', path: '/clinician/calendar', icon: CalendarPlus, color: 'muted' },
               ].map(({ label, desc, path, icon: Icon, color }) => (
                 <Link key={path} to={path} className={`dash-action-tile dash-action-${color}`}>
                   <div className="dash-action-icon"><Icon size={16} /></div>

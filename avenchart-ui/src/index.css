@@ -2593,8 +2593,8 @@ a {
 .dash-action-tile {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   text-decoration: none;
@@ -2603,7 +2603,7 @@ a {
 }
 .dash-action-tile:hover { background: var(--surface); border-color: var(--teal); }
 .dash-action-icon {
-  width: 32px; height: 32px; border-radius: 8px;
+  width: 28px; height: 28px; border-radius: 7px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .dash-action-blue   .dash-action-icon { background: var(--teal-soft); color: var(--teal); }
