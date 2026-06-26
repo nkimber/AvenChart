@@ -980,6 +980,57 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
     }
 
+    public async Task<BillingClaimMutationResponse?> DenyClaimAsync(string claimId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(claimId))
+        {
+            return null;
+        }
+
+        int? pid = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            var claim = await GetClaimAsync(connection, claimId, cancellationToken);
+            if (claim is null)
+            {
+                return null;
+            }
+
+            var denial = BuildClaimDenialPayload(claim);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                update claims
+                set status = @status,
+                    bill_process = @billProcess,
+                    process_time = @processTime,
+                    process_file = @processFile,
+                    target = @target,
+                    x12_partner_id = @x12PartnerId,
+                    submitted_claim = @submittedClaim
+                where id = @id
+                returning pid;
+                """;
+            command.Parameters.AddWithValue("id", claimId);
+            command.Parameters.AddWithValue("status", 7);
+            command.Parameters.AddWithValue("billProcess", 0);
+            AddNullableTimestamp(command, "processTime", new DateTime(2026, 6, 18, 15, 20, 0));
+            command.Parameters.AddWithValue("processFile", denial.ProcessFile);
+            command.Parameters.AddWithValue("target", "X12");
+            command.Parameters.AddWithValue("x12PartnerId", 1);
+            command.Parameters.AddWithValue("submittedClaim", denial.Payload);
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            pid = result is null ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        }
+
+        if (pid is null)
+        {
+            return null;
+        }
+
+        var billing = await GetForPatientAsync(pid.Value.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        return billing is null ? null : new BillingClaimMutationResponse(claimId, billing);
+    }
+
     public async Task<bool> DeleteClaimAsync(string claimId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(claimId))
@@ -1579,7 +1630,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select c.id, c.pid, coalesce(p.pubpid, c.pid::text) as patient_id, c.encounter, c.payer_id, c.payer_name, c.target, c.status, c.bill_process
+            select c.id, c.pid, coalesce(p.pubpid, c.pid::text) as patient_id, c.encounter, c.payer_id, c.payer_name, c.target, c.status, c.bill_process, c.process_file, c.submitted_claim
             from claims c
             left join patients p on p.legacy_pid = c.pid
             where c.id = @id
@@ -1602,7 +1653,9 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             PayerName: ReadNullableString(reader, "payer_name"),
             Target: ReadNullableString(reader, "target"),
             Status: ReadInt(reader, "status"),
-            BillProcess: ReadInt(reader, "bill_process"));
+            BillProcess: ReadInt(reader, "bill_process"),
+            ProcessFile: ReadNullableString(reader, "process_file"),
+            SubmittedClaim: ReadNullableString(reader, "submitted_claim"));
     }
 
     private static async Task<IReadOnlyList<BillingPaymentItem>> GetPaymentsAsync(
@@ -2676,6 +2729,14 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return new BillingGeneratedClaimPayload(processFile, payload);
     }
 
+    private static BillingGeneratedClaimPayload BuildClaimDenialPayload(BillingClaimScrubContext claim)
+    {
+        var processFile = NormalizeText(claim.ProcessFile) ?? $"CLAIM-{claim.Encounter}-DENIAL-835.txt";
+        var payload = NormalizeText(claim.SubmittedClaim) ?? $"Denied claim {claim.Encounter}";
+
+        return new BillingGeneratedClaimPayload(processFile, payload);
+    }
+
     private static IEnumerable<string> ParseClaimModifierTokens(string? modifier)
     {
         var value = (modifier ?? string.Empty).Trim().ToUpperInvariant();
@@ -2822,7 +2883,9 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         string? PayerName,
         string? Target,
         int Status,
-        int BillProcess);
+        int BillProcess,
+        string? ProcessFile,
+        string? SubmittedClaim);
 
     private sealed record BillingClaimScrubReport(
         string ProcessFile,

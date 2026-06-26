@@ -142,6 +142,7 @@ import {
   deleteBillingClaimStatus,
   deleteBillingLine,
   deleteBillingPaymentPosting,
+  denyBillingClaimStatus,
   deleteClinicalAllergy,
   deleteClinicalImmunization,
   deleteClinicalMedication,
@@ -2972,6 +2973,23 @@ function App() {
     }
   }
 
+  async function handleBillingClaimDeny(claim: BillingClaimItem) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await denyBillingClaimStatus(claim.id, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (denialError) {
+      setBillingStatus('error')
+      setBillingError(denialError instanceof Error ? denialError.message : 'Unable to deny billing claim.')
+      throw denialError
+    }
+  }
+
   async function handleBillingClaimDelete(claim: BillingClaimItem) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5082,6 +5100,7 @@ function App() {
             onScrubClaim={handleBillingClaimScrub}
             onGenerateClaim={handleBillingClaimGenerate}
             onResubmitClaim={handleBillingClaimResubmit}
+            onDenyClaim={handleBillingClaimDeny}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onDownloadPaymentReceipt={handleBillingPaymentReceiptDownload}
@@ -14602,6 +14621,7 @@ function FeesWorkspace({
   onScrubClaim,
   onGenerateClaim,
   onResubmitClaim,
+  onDenyClaim,
   onDeleteClaim,
   onCreatePayment,
   onDownloadPaymentReceipt,
@@ -14624,6 +14644,7 @@ function FeesWorkspace({
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -15788,6 +15809,7 @@ function FeesWorkspace({
                       onScrubClaim={onScrubClaim}
                       onGenerateClaim={onGenerateClaim}
                       onResubmitClaim={onResubmitClaim}
+                      onDenyClaim={onDenyClaim}
                       onCreatePayment={onCreatePayment}
                       onDeleteClaim={onDeleteClaim}
                       onDownloadPaymentReceipt={onDownloadPaymentReceipt}
@@ -20823,6 +20845,7 @@ function BillingEncounterCard({
   onScrubClaim,
   onGenerateClaim,
   onResubmitClaim,
+  onDenyClaim,
   onCreatePayment,
   onDeleteClaim,
   onDownloadPaymentReceipt,
@@ -20839,6 +20862,7 @@ function BillingEncounterCard({
   onScrubClaim: (claim: BillingClaimItem) => Promise<unknown>
   onGenerateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onResubmitClaim: (claim: BillingClaimItem) => Promise<unknown>
+  onDenyClaim: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onDownloadPaymentReceipt: (payment: BillingPaymentItem) => Promise<void>
@@ -20885,6 +20909,7 @@ function BillingEncounterCard({
             onScrub={onScrubClaim}
             onGenerate={onGenerateClaim}
             onResubmit={onResubmitClaim}
+            onDeny={onDenyClaim}
             onCreatePayment={onCreatePayment}
             onDelete={onDeleteClaim}
           />
@@ -20929,6 +20954,7 @@ function BillingClaimCard({
   onScrub,
   onGenerate,
   onResubmit,
+  onDeny,
   onCreatePayment,
   onDelete,
 }: {
@@ -20939,10 +20965,10 @@ function BillingClaimCard({
   onScrub: (claim: BillingClaimItem) => Promise<unknown>
   onGenerate: (claim: BillingClaimItem) => Promise<unknown>
   onResubmit: (claim: BillingClaimItem) => Promise<unknown>
+  onDeny: (claim: BillingClaimItem) => Promise<unknown>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onDelete: (claim: BillingClaimItem) => Promise<void>
 }) {
-  const deniedProcessFile = claim.processFile || `CLAIM-${claim.encounter}-DENIAL-835.txt`
   const adjudicatedProcessFile = `CLAIM-${claim.encounter}-EOB-835.txt`
   const payerClaimNumber = `ADJ-${claim.id}`.slice(0, 48)
 
@@ -20971,15 +20997,7 @@ function BillingClaimCard({
   }
 
   function handleDeny() {
-    void onUpdateStatus(claim, {
-      status: 7,
-      billProcess: 0,
-      processTime: '2026-06-18 15:20:00',
-      processFile: deniedProcessFile,
-      target: 'X12',
-      x12PartnerId: 1,
-      submittedClaim: claim.submittedClaim || `Denied claim ${claim.encounter}`,
-    })
+    void onDeny(claim)
   }
 
   async function handleAdjudicate() {
