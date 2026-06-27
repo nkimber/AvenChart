@@ -383,6 +383,20 @@ public sealed record BillingPaymentCreateRequest(
     string? ReasonCode,
     string? PayerClaimNumber);
 
+public sealed record BillingPatientPaymentCreateRequest(
+    string PatientId,
+    int Encounter,
+    string Reference,
+    string PostDate,
+    string? CheckDate,
+    string? DepositDate,
+    string PaymentMethod,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string Memo,
+    decimal PayAmount);
+
 public sealed record BillingPatientRefundCreateRequest(
     string PatientId,
     int Encounter,

@@ -1464,6 +1464,40 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             cancellationToken);
     }
 
+    public Task<BillingPaymentMutationResponse?> CreatePatientPaymentAsync(
+        BillingPatientPaymentCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.PayAmount <= 0m)
+        {
+            return Task.FromResult<BillingPaymentMutationResponse?>(null);
+        }
+
+        return CreatePaymentAsync(
+            new BillingPaymentCreateRequest(
+                request.PatientId,
+                request.Encounter,
+                0,
+                string.Empty,
+                0,
+                request.Reference,
+                request.PostDate,
+                request.CheckDate,
+                request.DepositDate,
+                "patient_payment",
+                request.PaymentMethod,
+                request.CodeType,
+                request.Code,
+                request.Modifier,
+                request.Memo,
+                request.PayAmount,
+                0m,
+                string.Empty,
+                string.Empty,
+                string.Empty),
+            cancellationToken);
+    }
+
     public Task<BillingPaymentMutationResponse?> CreateInsurancePaymentAsync(
         BillingInsurancePaymentCreateRequest request,
         CancellationToken cancellationToken)

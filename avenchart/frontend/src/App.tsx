@@ -110,6 +110,7 @@ import {
   createBillingInsurancePayment,
   createBillingInsuranceReversal,
   createBillingLine,
+  createBillingPatientPayment,
   createBillingPatientRefund,
   createBillingPaymentPosting,
   createClinicalAllergy,
@@ -260,6 +261,7 @@ import {
   type BillingLineCreateInput,
   type BillingLineItem,
   type BillingLineUpdateInput,
+  type BillingPatientPaymentCreateInput,
   type BillingPatientRefundCreateInput,
   type BillingPaymentCreateInput,
   type ClinicalListsResponse,
@@ -3084,6 +3086,24 @@ function App() {
     }
   }
 
+  async function handleBillingPatientPaymentCreate(input: BillingPatientPaymentCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingPatientPayment(input, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing patient payment create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
   async function handleBillingInsurancePaymentCreate(input: BillingInsurancePaymentCreateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5235,6 +5255,7 @@ function App() {
             onAdjudicateClaim={handleBillingClaimAdjudicate}
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
+            onCreatePatientPayment={handleBillingPatientPaymentCreate}
             onCreatePatientRefund={handleBillingPatientRefundCreate}
             onCreateInsurancePayment={handleBillingInsurancePaymentCreate}
             onCreateInsuranceReversal={handleBillingInsuranceReversalCreate}
@@ -14739,6 +14760,7 @@ function FeesWorkspace({
   onAdjudicateClaim,
   onDeleteClaim,
   onCreatePayment,
+  onCreatePatientPayment,
   onCreatePatientRefund,
   onCreateInsurancePayment,
   onCreateInsuranceReversal,
@@ -14769,6 +14791,7 @@ function FeesWorkspace({
   onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
+  onCreatePatientPayment: (input: BillingPatientPaymentCreateInput) => Promise<unknown>
   onCreatePatientRefund: (input: BillingPatientRefundCreateInput) => Promise<unknown>
   onCreateInsurancePayment: (input: BillingInsurancePaymentCreateInput) => Promise<unknown>
   onCreateInsuranceReversal: (input: BillingInsuranceReversalCreateInput) => Promise<unknown>
@@ -15031,6 +15054,25 @@ function FeesWorkspace({
       return
     }
 
+    if (isPatientPayment) {
+      await onCreatePatientPayment({
+        patientId,
+        encounter: Number(billingEncounter),
+        reference: paymentReference,
+        postDate: paymentPostDate,
+        checkDate: paymentPostDate,
+        depositDate: paymentPostDate,
+        paymentMethod,
+        codeType: 'CPT4',
+        code: paymentCode,
+        memo: paymentMemo,
+        payAmount: parsedPayAmount,
+      })
+
+      setMutationMessage('Payment posting saved')
+      return
+    }
+
     if (!isPatientPayment && !isInsuranceReversal && !isAdjustmentReversal) {
       await onCreateInsurancePayment({
         patientId,
@@ -15102,23 +15144,23 @@ function FeesWorkspace({
     await onCreatePayment({
       patientId,
       encounter: Number(billingEncounter),
-      payerId: isPatientPayment ? 0 : Number(paymentPayerId),
-      payerName: isPatientPayment ? '' : paymentPayerName,
-      payerType: isPatientPayment ? 0 : 1,
+      payerId: Number(paymentPayerId),
+      payerName: paymentPayerName,
+      payerType: 1,
       reference: paymentReference,
       postDate: paymentPostDate,
       checkDate: paymentPostDate,
       depositDate: paymentPostDate,
-      paymentType: isPatientPayment ? 'patient_payment' : 'insurance_payment',
+      paymentType: 'insurance_payment',
       paymentMethod,
       codeType: 'CPT4',
       code: paymentCode,
       memo: paymentMemo,
       payAmount: parsedPayAmount,
-      adjustmentAmount: isPatientPayment ? 0 : parsedAdjustmentAmount,
-      accountCode: isPatientPayment ? '' : paymentReasonCode.replace('-', ''),
-      reasonCode: isPatientPayment ? '' : paymentReasonCode,
-      payerClaimNumber: isPatientPayment ? '' : paymentPayerClaimNumber,
+      adjustmentAmount: parsedAdjustmentAmount,
+      accountCode: paymentReasonCode.replace('-', ''),
+      reasonCode: paymentReasonCode,
+      payerClaimNumber: paymentPayerClaimNumber,
     })
 
     setMutationMessage('Payment posting saved')

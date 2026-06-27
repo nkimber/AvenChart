@@ -2048,6 +2048,21 @@ export type BillingPaymentCreateInput = {
   payerClaimNumber?: string | null
 }
 
+export type BillingPatientPaymentCreateInput = {
+  patientId: string
+  encounter: number
+  reference: string
+  postDate: string
+  checkDate?: string | null
+  depositDate?: string | null
+  paymentMethod: string
+  codeType?: string | null
+  code?: string | null
+  modifier?: string | null
+  memo: string
+  payAmount: number
+}
+
 export type BillingPatientRefundCreateInput = {
   patientId: string
   encounter: number
@@ -6485,6 +6500,24 @@ export async function createBillingPaymentPosting(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Billing payment posting create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createBillingPatientPayment(
+  input: BillingPatientPaymentCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<BillingPaymentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/payments/patient-payments`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Billing patient payment create', response.status))
   }
 
   return response.json()
