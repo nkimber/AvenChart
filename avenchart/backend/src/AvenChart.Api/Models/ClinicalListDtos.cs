@@ -13,6 +13,7 @@ public sealed record ClinicalListsResponse(
     IReadOnlyList<AllergyListItem> Allergies,
     IReadOnlyList<MedicationListItem> Medications,
     IReadOnlyList<MedicationDuplicateSummary> MedicationDuplicates,
+    IReadOnlyList<MedicationReconciliationSummary> MedicationReconciliations,
     IReadOnlyList<ImmunizationListItem> Immunizations,
     IReadOnlyList<PrescriptionListItem> Prescriptions,
     IReadOnlyList<PrescriptionDiagnosisInteractionSummary> PrescriptionDiagnosisInteractions,
@@ -97,6 +98,18 @@ public sealed record MedicationDuplicateSummary(
     IReadOnlyList<string> MedicationIds,
     string? FirstDate,
     string? LatestDate,
+    IReadOnlyList<string> Diagnoses);
+
+public sealed record MedicationReconciliationSummary(
+    string NormalizedTitle,
+    string DisplayTitle,
+    string Status,
+    int MedicationCount,
+    int PrescriptionCount,
+    IReadOnlyList<string> MedicationIds,
+    IReadOnlyList<string> PrescriptionIds,
+    IReadOnlyList<string> MedicationTitles,
+    IReadOnlyList<string> PrescriptionDrugs,
     IReadOnlyList<string> Diagnoses);
 
 public sealed record MedicationVocabularyItem(

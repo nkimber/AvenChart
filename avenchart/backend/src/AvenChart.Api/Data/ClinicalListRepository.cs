@@ -79,6 +79,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var medicationDuplicates = BuildMedicationDuplicates(medications);
         var immunizations = await GetImmunizationsAsync(connection, patient.LegacyPid, cancellationToken);
         var prescriptions = await GetPrescriptionsAsync(connection, patient.LegacyPid, cancellationToken);
+        var medicationReconciliations = BuildMedicationReconciliations(medications, prescriptions);
         var prescriptionDiagnosisInteractions = BuildPrescriptionDiagnosisInteractions(problems, prescriptions);
         var prescriptionRefillRequests = await GetPrescriptionRefillRequestsAsync(connection, patient.LegacyPid, cancellationToken);
 
@@ -95,6 +96,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             Allergies: allergies,
             Medications: medications,
             MedicationDuplicates: medicationDuplicates,
+            MedicationReconciliations: medicationReconciliations,
             Immunizations: immunizations,
             Prescriptions: prescriptions,
             PrescriptionDiagnosisInteractions: prescriptionDiagnosisInteractions,
@@ -1452,6 +1454,73 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     PrescriptionCount: orderedPrescriptions.Count,
                     PrescriptionIds: orderedPrescriptions.Select(prescription => prescription.Id).ToList(),
                     Drugs: orderedPrescriptions.Select(prescription => prescription.Drug).ToList());
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<MedicationReconciliationSummary> BuildMedicationReconciliations(
+        IReadOnlyList<MedicationListItem> medications,
+        IReadOnlyList<PrescriptionListItem> prescriptions)
+    {
+        var medicationGroups = medications
+            .Where(medication => !string.IsNullOrWhiteSpace(medication.Title))
+            .GroupBy(medication => NormalizeMedicationTitle(medication.Title))
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var prescriptionGroups = prescriptions
+            .Where(prescription => !string.IsNullOrWhiteSpace(prescription.Drug))
+            .GroupBy(prescription => NormalizeMedicationTitle(prescription.Drug))
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return medicationGroups.Keys
+            .Concat(prescriptionGroups.Keys)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .Select(key =>
+            {
+                medicationGroups.TryGetValue(key, out var medicationGroup);
+                prescriptionGroups.TryGetValue(key, out var prescriptionGroup);
+                medicationGroup ??= [];
+                prescriptionGroup ??= [];
+
+                var orderedMedications = medicationGroup
+                    .OrderBy(medication => medication.Title, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(medication => medication.Id, StringComparer.Ordinal)
+                    .ToList();
+                var orderedPrescriptions = prescriptionGroup
+                    .OrderBy(prescription => prescription.Drug, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(prescription => prescription.Id, StringComparer.Ordinal)
+                    .ToList();
+                var diagnoses = orderedMedications
+                    .Select(medication => medication.Diagnosis)
+                    .Concat(orderedPrescriptions.Select(prescription => prescription.Diagnosis))
+                    .Where(diagnosis => !string.IsNullOrWhiteSpace(diagnosis))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(diagnosis => diagnosis, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var displayTitle = orderedMedications
+                    .Select(medication => medication.Title.Trim())
+                    .Concat(orderedPrescriptions.Select(prescription => prescription.Drug.Trim()))
+                    .OrderBy(title => title, StringComparer.OrdinalIgnoreCase)
+                    .First();
+                var status = (orderedMedications.Count, orderedPrescriptions.Count) switch
+                {
+                    (> 0, > 0) => "matched",
+                    (> 0, 0) => "medication-list-only",
+                    _ => "prescription-only"
+                };
+
+                return new MedicationReconciliationSummary(
+                    NormalizedTitle: key,
+                    DisplayTitle: displayTitle,
+                    Status: status,
+                    MedicationCount: orderedMedications.Count,
+                    PrescriptionCount: orderedPrescriptions.Count,
+                    MedicationIds: orderedMedications.Select(medication => medication.Id).ToList(),
+                    PrescriptionIds: orderedPrescriptions.Select(prescription => prescription.Id).ToList(),
+                    MedicationTitles: orderedMedications.Select(medication => medication.Title).ToList(),
+                    PrescriptionDrugs: orderedPrescriptions.Select(prescription => prescription.Drug).ToList(),
+                    Diagnoses: diagnoses!);
             })
             .ToList();
     }

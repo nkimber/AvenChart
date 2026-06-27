@@ -316,6 +316,7 @@ import {
   type ImmunizationListItem,
   type MedicationListItem,
   type MedicationDuplicateSummary,
+  type MedicationReconciliationSummary,
   type PatientChartSummary,
   type PatientDuplicateCandidate,
   type PatientDuplicateSearchResponse,
@@ -15337,6 +15338,7 @@ function ClinicalListsWorkspace({
               <MedicationPanel
                 items={clinicalLists.medications}
                 duplicates={clinicalLists.medicationDuplicates ?? []}
+                reconciliations={clinicalLists.medicationReconciliations ?? []}
                 onDeactivate={onDeactivateMedication}
                 onDelete={onDeleteMedication}
                 disabled={isLoading || !canUseLists}
@@ -23370,12 +23372,14 @@ function AllergyPanel({
 function MedicationPanel({
   items,
   duplicates,
+  reconciliations,
   onDeactivate,
   onDelete,
   disabled,
 }: {
   items: MedicationListItem[]
   duplicates: MedicationDuplicateSummary[]
+  reconciliations: MedicationReconciliationSummary[]
   onDeactivate: (medication: MedicationListItem) => Promise<unknown>
   onDelete: (medication: MedicationListItem) => Promise<void>
   disabled: boolean
@@ -23402,6 +23406,25 @@ function MedicationPanel({
               <p className="clinical-item-note">IDs {duplicate.medicationIds.join(', ')}</p>
             </article>
           ))}
+        </div>
+      )}
+      {reconciliations.length > 0 && (
+        <div className="statement-batch-summary" aria-label="Medication reconciliation summary">
+          <div className="summary-row">
+            <span>Reconciliation rows</span>
+            <strong>{reconciliations.length}</strong>
+          </div>
+          <div className="statement-batch-list">
+            {reconciliations.map((item) => (
+              <article className="statement-batch-row" key={item.normalizedTitle}>
+                <strong>{item.displayTitle}</strong>
+                <span>{formatMedicationReconciliationStatus(item.status)}</span>
+                <span>{item.medicationCount} medication-list / {item.prescriptionCount} prescription</span>
+                {item.prescriptionDrugs.length > 0 && <span>Rx {item.prescriptionDrugs.join(', ')}</span>}
+                {item.diagnoses.length > 0 && <span>{item.diagnoses.join(', ')}</span>}
+              </article>
+            ))}
+          </div>
         </div>
       )}
       {items.map((item) => (
@@ -23431,6 +23454,16 @@ function MedicationPanel({
       {items.length === 0 && <div className="timeline-placeholder">No active medications</div>}
     </ClinicalSection>
   )
+}
+
+function formatMedicationReconciliationStatus(status: string) {
+  if (status === 'matched') {
+    return 'Matched active prescription'
+  }
+  if (status === 'prescription-only') {
+    return 'Prescription without medication-list row'
+  }
+  return 'Medication-list only'
 }
 
 function ImmunizationPanel({

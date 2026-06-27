@@ -954,6 +954,19 @@ export type MedicationDuplicateSummary = {
   diagnoses: string[]
 }
 
+export type MedicationReconciliationSummary = {
+  normalizedTitle: string
+  displayTitle: string
+  status: string
+  medicationCount: number
+  prescriptionCount: number
+  medicationIds: string[]
+  prescriptionIds: string[]
+  medicationTitles: string[]
+  prescriptionDrugs: string[]
+  diagnoses: string[]
+}
+
 export type MedicationVocabularyItem = {
   rxNormCode: string
   drugName: string
@@ -1061,6 +1074,7 @@ export type ClinicalListsResponse = {
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
   medicationDuplicates: MedicationDuplicateSummary[]
+  medicationReconciliations: MedicationReconciliationSummary[]
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
   prescriptionDiagnosisInteractions: PrescriptionDiagnosisInteractionSummary[]
