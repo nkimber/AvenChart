@@ -990,7 +990,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
             var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
             var contentBytes = reader.IsDBNull(contentBytesOrdinal) ? null : (byte[])reader.GetValue(contentBytesOrdinal);
-            var thumbnailDataUri = BuildThumbnailDataUri(mimetype, contentBytes);
+            var thumbnailDataUri = BuildThumbnailDataUri(mimetype, contentBytes, fileName, pages);
             var reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
             var reviewedBy = ReadNullableString(reader, "reviewed_by");
             var reviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
@@ -1226,17 +1226,56 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return "FILE";
     }
 
-    private static string? BuildThumbnailDataUri(string? mimetype, byte[]? contentBytes)
+    private static string? BuildThumbnailDataUri(string? mimetype, byte[]? contentBytes, string? fileName, int? pages)
     {
         var normalizedMimetype = NormalizeText(mimetype)?.ToLowerInvariant() ?? string.Empty;
-        if (!normalizedMimetype.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-            || contentBytes is not { Length: > 0 }
-            || contentBytes.Length > MaxInlineThumbnailBytes)
+        if (contentBytes is not { Length: > 0 } || contentBytes.Length > MaxInlineThumbnailBytes)
         {
             return null;
         }
 
-        return $"data:{normalizedMimetype};base64,{Convert.ToBase64String(contentBytes)}";
+        if (normalizedMimetype.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"data:{normalizedMimetype};base64,{Convert.ToBase64String(contentBytes)}";
+        }
+
+        if (normalizedMimetype == "application/pdf")
+        {
+            var thumbnailSvg = BuildPdfThumbnailSvg(fileName, pages, contentBytes.Length);
+            return $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(thumbnailSvg))}";
+        }
+
+        return null;
+    }
+
+    private static string BuildPdfThumbnailSvg(string? fileName, int? pages, int sizeBytes)
+    {
+        var title = HtmlEscape(TrimThumbnailText(fileName) ?? "PDF document");
+        var pageText = pages is > 0 ? $"{pages.Value} page PDF" : "PDF document";
+        var sizeText = sizeBytes >= 1024 ? $"{Math.Round(sizeBytes / 1024m, 1)} KB" : $"{sizeBytes} bytes";
+
+        return $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="144" height="188" viewBox="0 0 144 188" role="img" aria-label="Generated PDF thumbnail">
+              <rect width="144" height="188" rx="8" fill="#f8fafc"/>
+              <path d="M32 14h56l24 24v136H32z" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+              <path d="M88 14v25h24" fill="#e2e8f0"/>
+              <rect x="44" y="58" width="56" height="30" rx="4" fill="#b91c1c"/>
+              <text x="72" y="79" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ffffff">PDF</text>
+              <text x="72" y="112" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155">{HtmlEscape(pageText)}</text>
+              <text x="72" y="130" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">{HtmlEscape(sizeText)}</text>
+              <text x="72" y="154" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#475569">{title}</text>
+            </svg>
+            """;
+    }
+
+    private static string HtmlEscape(string value)
+    {
+        return value
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal)
+            .Replace("'", "&#39;", StringComparison.Ordinal);
     }
 
     private static string? TrimThumbnailText(string? value)
