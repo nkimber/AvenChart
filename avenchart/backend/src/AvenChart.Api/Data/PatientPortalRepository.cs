@@ -18,6 +18,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string PortalMessageComposedEventType = "message_composed";
     private const string PortalMessageRepliedEventType = "message_replied";
     private const string PortalMessageForwardedEventType = "message_forwarded";
+    private const string PortalPrescriptionRefillRequestedEventType = "prescription_refill_requested";
     private const string PortalMessageReadEventType = "message_read";
     private const string PortalMessageArchivedEventType = "message_archived";
     private const string PortalMessagesArchivedEventType = "messages_archived";
@@ -1474,6 +1475,129 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             DisplayName: session.DisplayName,
             RecipientId: recipientId,
             RecipientName: recipientName,
+            SentMessage: sentMessage,
+            RecipientMessage: recipientMessage,
+            MessageCount: inboxCount,
+            SentMessageCount: sentCount,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalComposeMessageResponse> RequestPrescriptionRefillAsync(
+        Guid sessionId,
+        string prescriptionId,
+        PatientPortalPrescriptionRefillRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return ComposeFailure(session, session.FailureReason ?? "Session is not active.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var prescription = await GetPortalPrescriptionAsync(connection, session.LegacyPid.Value, prescriptionId, cancellationToken);
+        if (prescription is null)
+        {
+            return ComposeFailure(session, "Active prescription was not found for the signed-in portal patient.", "admin");
+        }
+
+        var recipientOptions = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
+        var recipientOption = recipientOptions.FirstOrDefault(
+            recipient => string.Equals(recipient.Id, "admin", StringComparison.OrdinalIgnoreCase));
+        if (recipientOption is null)
+        {
+            return ComposeFailure(session, "Secure message recipient was not found in the patient portal recipient directory.", "admin");
+        }
+
+        var requestDate = NormalizeDate(request.RequestDate) ?? DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        var note = NormalizeText(request.Note);
+        var title = $"Prescription refill request - {prescription.Drug}";
+        var bodyParts = new[]
+        {
+            $"Patient {session.DisplayName} requested a prescription refill on {requestDate}.",
+            $"Prescription: {prescription.Drug}",
+            $"Dosage: {prescription.Dosage ?? "Not recorded"}",
+            $"Quantity: {prescription.Quantity ?? "Not recorded"}",
+            $"Route: {prescription.Route ?? "Not recorded"}",
+            $"Prescription ID: {prescription.Id}",
+            string.IsNullOrWhiteSpace(note) ? null : $"Patient note: {note}"
+        };
+        var body = string.Join(Environment.NewLine, bodyParts.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var nextId = await GetNextPortalMailboxIdAsync(connection, transaction, cancellationToken);
+        var sentMessage = new PatientPortalMessageItem(
+            Id: nextId.ToString(),
+            Type: "Message",
+            Date: requestDate,
+            Title: title,
+            Body: body,
+            Status: "New",
+            AssignedTo: recipientOption.Id,
+            SenderId: session.PortalUsername,
+            SenderName: session.DisplayName,
+            RecipientId: recipientOption.Id,
+            RecipientName: recipientOption.DisplayName,
+            MailChain: nextId,
+            ReplyMailChain: nextId,
+            PortalRelation: "portal:prescription-refill-request",
+            IsEncrypted: false,
+            AttachmentCount: 0,
+            Attachments: Array.Empty<PatientPortalMessageAttachment>());
+        var recipientMessage = sentMessage with
+        {
+            Id = (nextId + 1).ToString(),
+            MailChain = nextId + 1
+        };
+
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            sentMessage,
+            owner: session.PortalUsername,
+            userValue: session.PortalUsername,
+            mailChain: nextId,
+            replyMailChain: nextId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+        await InsertPortalMailboxMessageAsync(
+            connection,
+            session,
+            recipientMessage,
+            owner: recipientOption.Id,
+            userValue: session.PortalUsername,
+            mailChain: nextId + 1,
+            replyMailChain: nextId,
+            transaction: transaction,
+            cancellationToken: cancellationToken);
+        await RecordPortalMessageAuditEventAsync(
+            connection,
+            session,
+            PortalPrescriptionRefillRequestedEventType,
+            sentMessage,
+            [sentMessage, recipientMessage],
+            archivedMessageCount: 0,
+            transaction,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var sentCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Sent, cancellationToken);
+        var inboxCount = await GetPortalMessageCountAsync(connection, session.PortalUsername, PortalMessageFolder.Inbox, cancellationToken);
+
+        return new PatientPortalComposeMessageResponse(
+            Authenticated: true,
+            Created: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            RecipientId: recipientOption.Id,
+            RecipientName: recipientOption.DisplayName,
             SentMessage: sentMessage,
             RecipientMessage: recipientMessage,
             MessageCount: inboxCount,
@@ -3160,6 +3284,51 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return items;
     }
 
+    private static async Task<PatientPortalPrescriptionItem?> GetPortalPrescriptionAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        string prescriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              id::text as id,
+              drug,
+              coalesce(to_char(date_added, 'YYYY-MM-DD HH24:MI:SS'), start_date::text) as start_date,
+              modified_date,
+              end_date,
+              dosage,
+              quantity::text as quantity,
+              route,
+              note
+            from prescriptions
+            where pid = @pid
+              and id::text = @id
+              and end_date is null
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("pid", legacyPid);
+        command.Parameters.Add("id", NpgsqlDbType.Text).Value = prescriptionId.Trim();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PatientPortalPrescriptionItem(
+            Id: reader.GetString(reader.GetOrdinal("id")),
+            Drug: ReadNullableString(reader, "drug") ?? string.Empty,
+            StartDate: ReadNullableString(reader, "start_date"),
+            ModifiedDate: ReadNullableDate(reader, "modified_date"),
+            EndDate: ReadNullableDate(reader, "end_date"),
+            Dosage: ReadNullableString(reader, "dosage"),
+            Quantity: ReadNullableString(reader, "quantity"),
+            Route: ReadNullableString(reader, "route"),
+            Note: ReadNullableString(reader, "note"));
+    }
+
     private static async Task<IReadOnlyList<PortalLabOrderRow>> GetPortalLabOrdersAsync(
         NpgsqlConnection connection,
         int legacyPid,
@@ -3987,6 +4156,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         PortalMessageComposedEventType => "Message composed",
         PortalMessageRepliedEventType => "Message replied",
         PortalMessageForwardedEventType => "Message forwarded",
+        PortalPrescriptionRefillRequestedEventType => "Prescription refill requested",
         PortalMessageReadEventType => "Message marked read",
         PortalMessageArchivedEventType => "Message archived",
         PortalMessagesArchivedEventType => "Messages archived",
@@ -4005,6 +4175,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
                 $"Replied to secure message \"{message.Title}\" in thread {GetPortalMessageAuditThreadId(message)}.",
             PortalMessageForwardedEventType =>
                 $"Forwarded secure message \"{message.Title}\" to {FormatPortalMessageForwardAssignee(message)}.",
+            PortalPrescriptionRefillRequestedEventType =>
+                $"Requested prescription refill through secure message \"{message.Title}\" with {relatedMessageCount} mailbox rows.",
             PortalMessageReadEventType =>
                 $"Marked secure message \"{message.Title}\" read.",
             PortalMessageArchivedEventType =>
@@ -5929,6 +6101,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? NormalizeDate(string? value)
+    {
+        var normalized = NormalizeText(value);
+        return DateOnly.TryParse(normalized, out var date)
+            ? date.ToString("yyyy-MM-dd")
+            : null;
     }
 
     private static string HashPassword(string salt, string password)

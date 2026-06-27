@@ -431,6 +431,20 @@ patientPortal.MapPost("/messages", async (
     })
     .WithName("ComposePatientPortalMessage");
 
+patientPortal.MapPost("/prescriptions/{prescriptionId}/refill-request", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        string prescriptionId,
+        PatientPortalPrescriptionRefillRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.RequestPrescriptionRefillAsync(sessionId, prescriptionId, request, cancellationToken))
+            : Results.Ok(PatientPortalRepository.MissingSessionHeaderComposeMessage());
+    })
+    .WithName("RequestPatientPortalPrescriptionRefill");
+
 patientPortal.MapPost("/messages/{messageId:int}/reply", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

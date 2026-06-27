@@ -81,6 +81,7 @@ import {
   downloadPatientPortalGeneratedMedicalReportPdf,
   downloadPatientPortalGeneratedMedicalReportPackage,
   requestPatientPortalAppointment,
+  requestPatientPortalPrescriptionRefill,
   getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalProfile,
@@ -440,6 +441,30 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
 
+
+function moduleFromUrlSearch(): ModuleId {
+  if (typeof window === 'undefined') {
+    return 'patients'
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const requestedModule = params.get('module')
+  const matchedModule = moduleItems.find((item) => item.implemented === requestedModule)?.implemented
+  if (matchedModule) {
+    return matchedModule
+  }
+
+  const demoPreset = (params.get('demo') ?? '').toLowerCase()
+  if (demoPreset === 'patient') {
+    return 'portal'
+  }
+  if (demoPreset === 'staff') {
+    return 'admin'
+  }
+
+  return 'patients'
+}
+
 function getDefaultPatientPortalReportSectionIds(report: PatientPortalMedicalReportResponse | null): string[] {
   return report?.sections.filter((section) => section.selected).map((section) => section.id) ?? []
 }
@@ -476,7 +501,7 @@ function updateStringSelection(current: string[], id: string, selected: boolean)
 }
 
 function App() {
-  const [activeModule, setActiveModule] = useState<ModuleId>('patients')
+  const [activeModule, setActiveModule] = useState<ModuleId>(() => moduleFromUrlSearch())
 
   const [query, setQuery] = useState('Avery')
   const [searchResult, setSearchResult] = useState<PatientSearchResponse | null>(null)
@@ -4759,6 +4784,35 @@ function App() {
     }
   }
 
+  async function handlePatientPortalPrescriptionRefillRequest(prescriptionId: string, drug: string) {
+    if (!patientPortalSessionId) {
+      setPatientPortalStatus('rejected')
+      setPatientPortalMessage('Open the portal home before requesting a prescription refill.')
+      return
+    }
+
+    setPatientPortalStatus('loading')
+    setPatientPortalMessage(null)
+
+    try {
+      const requestResult = await requestPatientPortalPrescriptionRefill(patientPortalSessionId, prescriptionId, {
+        requestDate: '2026-08-20',
+        note: `Please review my refill request for ${drug}.`,
+      })
+      const clinicalSummary = await getPatientPortalClinicalSummary(patientPortalSessionId)
+      const { messages } = await refreshPatientPortalMessagesAndAudit(patientPortalSessionId)
+      setPatientPortalClinicalSummary(clinicalSummary)
+      setPatientPortalMessages(messages)
+      setPatientPortalStatus(requestResult.created ? 'ready' : 'rejected')
+      setPatientPortalMessage(requestResult.created
+        ? `Prescription refill request sent for ${drug}`
+        : requestResult.failureReason ?? 'Prescription refill request was not sent.')
+    } catch (portalError) {
+      setPatientPortalStatus('error')
+      setPatientPortalMessage(portalError instanceof Error ? portalError.message : 'Patient portal prescription refill request failed')
+    }
+  }
+
   async function handlePatientPortalComposeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!patientPortalSessionId) {
@@ -5256,6 +5310,7 @@ function App() {
               setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
             onSubmitProfileChange={handlePatientPortalProfileChange}
             onRequestAppointment={handlePatientPortalAppointmentRequest}
+            onRequestPrescriptionRefill={handlePatientPortalPrescriptionRefillRequest}
             onComposeSubmit={handlePatientPortalComposeSubmit}
             onReplySubmit={handlePatientPortalReplySubmit}
             onForwardSubmit={handlePatientPortalForwardSubmit}
@@ -5694,6 +5749,7 @@ function PatientPortalWorkspace({
   onToggleMedicalReportProcedureOrder,
   onSubmitProfileChange,
   onRequestAppointment,
+  onRequestPrescriptionRefill,
   onComposeSubmit,
   onReplySubmit,
   onForwardSubmit,
@@ -5750,6 +5806,7 @@ function PatientPortalWorkspace({
   onToggleMedicalReportProcedureOrder: (orderId: string, selected: boolean) => void
   onSubmitProfileChange: (input: PatientPortalProfileChangeInput) => Promise<void>
   onRequestAppointment: (input: PatientPortalAppointmentRequestInput) => Promise<void>
+  onRequestPrescriptionRefill: (prescriptionId: string, drug: string) => Promise<void>
   onComposeSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onReplySubmit: (messageId: string) => Promise<void>
   onForwardSubmit: (messageId: string) => Promise<void>
@@ -6507,6 +6564,16 @@ function PatientPortalWorkspace({
                         <span>Route {prescription.route ?? 'Not recorded'}</span>
                         <span>Modified {prescription.modifiedDate ?? 'Not recorded'}</span>
                         <span>End Date {prescription.endDate ?? 'Active'}</span>
+                      </div>
+                      <div className="clinical-item-actions">
+                        <button
+                          type="button"
+                          className="button button-outline"
+                          onClick={() => onRequestPrescriptionRefill(prescription.id, prescription.drug)}
+                          disabled={!authenticated || busy}
+                        >
+                          Request refill
+                        </button>
                       </div>
                     </article>
                   ))}

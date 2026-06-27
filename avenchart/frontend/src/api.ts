@@ -2947,6 +2947,11 @@ export type PatientPortalClinicalSummaryResponse = {
   sessionSource: string
 }
 
+export type PatientPortalPrescriptionRefillRequestInput = {
+  requestDate?: string | null
+  note?: string | null
+}
+
 export type PatientPortalLabResultItem = {
   id: string
   resultCode?: string | null
@@ -4086,6 +4091,31 @@ export async function composePatientPortalMessage(
   })
   if (!response.ok) {
     throw new Error(`Patient portal message compose failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function requestPatientPortalPrescriptionRefill(
+  sessionId: string,
+  prescriptionId: string,
+  input: PatientPortalPrescriptionRefillRequestInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalComposeMessageResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId)}/refill-request`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Patient portal prescription refill request failed with ${response.status}`)
   }
 
   return response.json()

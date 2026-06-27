@@ -232,6 +232,10 @@ public sealed record PatientPortalPrescriptionItem(
     string? Route,
     string? Note);
 
+public sealed record PatientPortalPrescriptionRefillRequest(
+    string? RequestDate,
+    string? Note);
+
 public sealed record PatientPortalLabResultsResponse(
     bool Authenticated,
     Guid? SessionId,
