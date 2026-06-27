@@ -854,6 +854,35 @@ appointments.MapPost("/", async (
         AppointmentCreateRequest request,
         CancellationToken cancellationToken) =>
     {
+        if (request.EnforceConflictPolicy)
+        {
+            var validation = await repository.ValidateAvailabilityAsync(
+                new AppointmentAvailabilityValidationRequest(
+                    PatientId: request.PatientId,
+                    ProviderId: request.ProviderId,
+                    Date: request.Date,
+                    StartTime: request.StartTime,
+                    DurationMinutes: request.DurationMinutes,
+                    FacilityId: request.FacilityId,
+                    Room: request.Room,
+                    ExcludeAppointmentId: null),
+                cancellationToken);
+
+            if (validation is null)
+            {
+                return Results.BadRequest("Appointment availability could not be validated from the supplied patient, date, time, and duration.");
+            }
+
+            if (!validation.Available)
+            {
+                return Results.Conflict(new
+                {
+                    error = "Appointment conflicts with existing schedule availability.",
+                    validation
+                });
+            }
+        }
+
         var appointment = await repository.CreateAsync(request, cancellationToken);
         return appointment is null
             ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")

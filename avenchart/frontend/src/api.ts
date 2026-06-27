@@ -491,6 +491,7 @@ export type AppointmentCreateInput = {
   recurrenceDays?: number[] | null
   recurrenceEndDate?: string | null
   recurrenceExdates?: string[] | null
+  enforceConflictPolicy?: boolean
 }
 
 export type AppointmentAvailabilityValidationInput = {
@@ -4884,6 +4885,15 @@ export async function createAppointment(
     signal,
   })
   if (!response.ok) {
+    if (response.status === 409) {
+      const conflict = (await response.json().catch(() => null)) as {
+        error?: string
+        validation?: AppointmentAvailabilityValidationResponse
+      } | null
+      const validation = conflict?.validation
+      const detail = validation?.messages?.length ? ` ${validation.messages.join(' ')}` : ''
+      throw new Error(`${conflict?.error ?? 'Appointment conflicts with existing schedule availability.'}${detail}`)
+    }
     throw new Error(appointmentApiError('Appointment create', response.status))
   }
 

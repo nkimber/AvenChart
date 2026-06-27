@@ -136,7 +136,8 @@ public sealed record AppointmentCreateRequest(
     int? RepeatOnFrequency,
     IReadOnlyList<int>? RecurrenceDays,
     string? RecurrenceEndDate,
-    IReadOnlyList<string>? RecurrenceExdates);
+    IReadOnlyList<string>? RecurrenceExdates,
+    bool EnforceConflictPolicy = false);
 
 public sealed record AppointmentAvailabilityValidationRequest(
     string PatientId,

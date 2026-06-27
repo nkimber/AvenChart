@@ -10313,6 +10313,7 @@ function CalendarWorkspace({
   const [draftRepeatOnFrequency, setDraftRepeatOnFrequency] = useState('1')
   const [draftRecurrenceDays, setDraftRecurrenceDays] = useState<number[]>([2, 4, 6])
   const [draftRecurrenceEndDate, setDraftRecurrenceEndDate] = useState('2026-12-31')
+  const [draftEnforceConflictPolicy, setDraftEnforceConflictPolicy] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editStartTime, setEditStartTime] = useState('')
@@ -10336,6 +10337,7 @@ function CalendarWorkspace({
   const [editRecurrenceExdates, setEditRecurrenceExdates] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mutationError, setMutationError] = useState<string | null>(null)
   const [availabilityStatus, setAvailabilityStatus] = useState<'idle' | 'checking' | 'ready' | 'error'>('idle')
   const [availabilityResult, setAvailabilityResult] = useState<AppointmentAvailabilityValidationResponse | null>(null)
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
@@ -10407,6 +10409,7 @@ function CalendarWorkspace({
     }
 
     setMutationStatus('saving')
+    setMutationError(null)
 
     try {
       const usesMonthlyRepeatOn = draftRepeats && draftMonthlyRepeatOn
@@ -10431,10 +10434,12 @@ function CalendarWorkspace({
         repeatOnFrequency: usesMonthlyRepeatOn ? Number(draftRepeatOnFrequency) : null,
         recurrenceDays: usesSpecificWeekdays ? draftRecurrenceDays : null,
         recurrenceEndDate: draftRepeats ? draftRecurrenceEndDate : null,
+        enforceConflictPolicy: draftEnforceConflictPolicy,
       })
       setMutationStatus('saved')
-    } catch {
+    } catch (createError) {
       setMutationStatus('error')
+      setMutationError(createError instanceof Error ? createError.message : 'Appointment create failed')
     }
   }
 
@@ -10874,6 +10879,15 @@ function CalendarWorkspace({
               />
               <span>Monthly repeat on</span>
             </label>
+            <label className="contact-field checkbox-field">
+              <input
+                type="checkbox"
+                checked={draftEnforceConflictPolicy}
+                onChange={(event) => setDraftEnforceConflictPolicy(event.target.checked)}
+                aria-label="Block scheduling conflicts"
+              />
+              <span>Block conflicts</span>
+            </label>
             <div className="weekday-toggle-row" aria-label="New appointment recurrence weekdays">
               {appointmentWeekdayOptions.map((day) => (
                 <label className="weekday-toggle" key={day.id}>
@@ -10981,7 +10995,7 @@ function CalendarWorkspace({
               <span>{mutationStatus === 'saving' ? 'Saving' : 'Create'}</span>
             </button>
             {mutationStatus === 'saved' && <span className="save-note">Saved</span>}
-            {mutationStatus === 'error' && <span className="save-note error">Action failed</span>}
+            {mutationStatus === 'error' && <span className="save-note error">{mutationError ?? 'Action failed'}</span>}
           </div>
           {availabilityStatus === 'error' && availabilityError && (
             <div className="status-banner error" role="status">{availabilityError}</div>
