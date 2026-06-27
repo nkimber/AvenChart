@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Npgsql;
@@ -540,6 +541,94 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Entries: entries);
     }
 
+    public async Task<StatementPortalDeliveryResponse> DeliverStatementBatchToPortalAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var batch = await GetStatementBatchAsync(limit, cancellationToken);
+        var packageDate = batch.AsOfDate.Replace("-", string.Empty, StringComparison.Ordinal);
+        var portalDeliveryId = $"STMT-PORTAL-{packageDate}-TOP{batch.Candidates.Count}";
+        var deliveredAt = $"{batch.AsOfDate}T12:10:00Z";
+        var entries = new List<StatementPortalDeliveryEntry>();
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var nextDocumentId = await GetNextPortalStatementDocumentIdAsync(connection, transaction, cancellationToken);
+
+        foreach (var candidate in batch.Candidates)
+        {
+            var portalAccount = await GetPortalStatementDeliveryAccountAsync(
+                connection,
+                candidate.LegacyPid,
+                transaction,
+                cancellationToken);
+            if (portalAccount is null)
+            {
+                continue;
+            }
+
+            var patientBilling = await GetForPatientAsync(candidate.LegacyPid.ToString(CultureInfo.InvariantCulture), cancellationToken);
+            var document = patientBilling?.StatementDocument;
+            if (document is null)
+            {
+                continue;
+            }
+
+            var contentBytes = BuildStatementPdf(document);
+            var documentKey = $"portal-statement-{candidate.StatementNumber}";
+            var documentName = $"Patient Statement {candidate.StatementNumber}";
+            var fileName = $"{candidate.StatementNumber}.pdf";
+            var documentId = await UpsertPortalStatementDocumentAsync(
+                connection,
+                transaction,
+                nextDocumentId,
+                portalAccount,
+                candidate,
+                documentKey,
+                documentName,
+                fileName,
+                contentBytes,
+                cancellationToken);
+            nextDocumentId = Math.Max(nextDocumentId + 1, documentId + 1);
+
+            entries.Add(new StatementPortalDeliveryEntry(
+                DocumentId: documentId,
+                DocumentKey: documentKey,
+                Pubpid: candidate.Pubpid,
+                LegacyPid: candidate.LegacyPid,
+                PatientDisplayName: candidate.PatientDisplayName,
+                PortalUsername: portalAccount.PortalUsername,
+                StatementNumber: candidate.StatementNumber,
+                StatementStatus: candidate.StatementStatus,
+                StatementDate: candidate.StatementDate,
+                DueDate: candidate.DueDate,
+                BalanceDueAmount: candidate.BalanceDueAmount,
+                PastDueAmount: candidate.PastDueAmount,
+                CurrentDueAmount: candidate.CurrentDueAmount,
+                CategoryName: "Invoices",
+                DocumentName: documentName,
+                FileName: fileName,
+                DeliveryStatus: "Portal document published"));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new StatementPortalDeliveryResponse(
+            DatasetId: batch.DatasetId,
+            DatasetVersion: batch.DatasetVersion,
+            AsOfDate: batch.AsOfDate,
+            PortalDeliveryId: portalDeliveryId,
+            DeliveredAt: deliveredAt,
+            CandidateCount: batch.CandidateCount,
+            PortalEligibleCount: entries.Count,
+            DeliveredDocumentCount: entries.Count,
+            SkippedCount: Math.Max(0, batch.Candidates.Count - entries.Count),
+            TotalBalanceAmount: batch.TotalBalanceAmount,
+            TotalPastDueAmount: batch.TotalPastDueAmount,
+            TotalCurrentDueAmount: batch.TotalCurrentDueAmount,
+            Entries: entries);
+    }
+
     private async Task SaveStatementDispatchAsync(
         StatementBatchDispatchResponse response,
         CancellationToken cancellationToken)
@@ -619,6 +708,127 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task<int> GetNextPortalStatementDocumentIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select greatest(coalesce(max(id), 0) + 1, 8100000) from patient_documents;";
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<PortalStatementDeliveryAccount?> GetPortalStatementDeliveryAccountAsync(
+        NpgsqlConnection connection,
+        int legacyPid,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select
+              p.canonical_id,
+              p.legacy_pid,
+              ppa.portal_username
+            from patients p
+            inner join patient_portal_accounts ppa on ppa.patient_id = p.canonical_id
+            where p.legacy_pid = @legacyPid
+              and p.portal_enabled = true
+              and ppa.password_status = 1
+              and coalesce(ppa.one_time_token, '') = ''
+            limit 1;
+            """;
+        command.Parameters.Add("legacyPid", NpgsqlDbType.Integer).Value = legacyPid;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new PortalStatementDeliveryAccount(
+            PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            PortalUsername: reader.GetString(reader.GetOrdinal("portal_username")));
+    }
+
+    private static async Task<int> UpsertPortalStatementDocumentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        PortalStatementDeliveryAccount portalAccount,
+        StatementBatchCandidate candidate,
+        string documentKey,
+        string documentName,
+        string fileName,
+        byte[] contentBytes,
+        CancellationToken cancellationToken)
+    {
+        var statementDate = ReadDateOnly(candidate.StatementDate, ClaimScrubBusinessDate);
+        var uploadedAt = ReadDispatchTimestamp($"{candidate.StatementDate}T12:10:00Z");
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into patient_documents (
+              id, document_key, patient_id, pid, category_id, category_name, name,
+              doc_date, uploaded_at, mimetype, file_name, size_bytes, pages, encounter,
+              storage_method, url, hash, documentation_of, notes, review_status,
+              reviewed_by, reviewed_at, content, content_bytes, deleted
+            )
+            values (
+              @id, @documentKey, @patientId, @pid, 31, 'Invoices', @name,
+              @docDate, @uploadedAt, 'application/pdf', @fileName, @sizeBytes, 1, null,
+              'database', '', @hash, 'billing_statement', @notes, 'reviewed',
+              'system', @uploadedAt, @content, @contentBytes, 0
+            )
+            on conflict (document_key) do update set
+              patient_id = excluded.patient_id,
+              pid = excluded.pid,
+              category_id = excluded.category_id,
+              category_name = excluded.category_name,
+              name = excluded.name,
+              doc_date = excluded.doc_date,
+              uploaded_at = excluded.uploaded_at,
+              mimetype = excluded.mimetype,
+              file_name = excluded.file_name,
+              size_bytes = excluded.size_bytes,
+              pages = excluded.pages,
+              encounter = excluded.encounter,
+              storage_method = excluded.storage_method,
+              url = excluded.url,
+              hash = excluded.hash,
+              documentation_of = excluded.documentation_of,
+              notes = excluded.notes,
+              review_status = excluded.review_status,
+              reviewed_by = excluded.reviewed_by,
+              reviewed_at = excluded.reviewed_at,
+              content = excluded.content,
+              content_bytes = excluded.content_bytes,
+              deleted = 0
+            returning id;
+            """;
+        command.Parameters.Add("id", NpgsqlDbType.Integer).Value = documentId;
+        command.Parameters.Add("documentKey", NpgsqlDbType.Text).Value = documentKey;
+        command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = portalAccount.PatientId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = portalAccount.LegacyPid;
+        command.Parameters.Add("name", NpgsqlDbType.Text).Value = documentName;
+        command.Parameters.Add("docDate", NpgsqlDbType.Date).Value = statementDate;
+        command.Parameters.Add("uploadedAt", NpgsqlDbType.Timestamp).Value = uploadedAt;
+        command.Parameters.Add("fileName", NpgsqlDbType.Text).Value = fileName;
+        command.Parameters.Add("sizeBytes", NpgsqlDbType.Integer).Value = contentBytes.Length;
+        command.Parameters.Add("hash", NpgsqlDbType.Text).Value = Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant();
+        command.Parameters.Add("notes", NpgsqlDbType.Text).Value = $"Delivered to portal account {portalAccount.PortalUsername}.";
+        command.Parameters.Add("content", NpgsqlDbType.Text).Value =
+            $"Portal-delivered statement {candidate.StatementNumber} for {candidate.PatientDisplayName}; balance {candidate.BalanceDueAmount:0.00}.";
+        command.Parameters.Add("contentBytes", NpgsqlDbType.Bytea).Value = contentBytes;
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private static async Task EnsureStatementDeliveryAuditTableAsync(
@@ -3760,6 +3970,11 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         decimal CurrentDueAmount,
         string DeliveryMethod,
         string FileName);
+
+    private sealed record PortalStatementDeliveryAccount(
+        string PatientId,
+        int LegacyPid,
+        string PortalUsername);
 
     private sealed record BillingPatient(
         string PatientId,

@@ -1933,6 +1933,42 @@ export type StatementDeliveryAuditHistoryResponse = {
   entries: StatementDeliveryAuditHistoryEntry[]
 }
 
+export type StatementPortalDeliveryEntry = {
+  documentId: number
+  documentKey: string
+  pubpid: string
+  legacyPid: number
+  patientDisplayName: string
+  portalUsername: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  categoryName: string
+  documentName: string
+  fileName: string
+  deliveryStatus: string
+}
+
+export type StatementPortalDeliveryResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  portalDeliveryId: string
+  deliveredAt: string
+  candidateCount: number
+  portalEligibleCount: number
+  deliveredDocumentCount: number
+  skippedCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  entries: StatementPortalDeliveryEntry[]
+}
+
 export type CollectionsWorkQueueItem = {
   patientId: string
   legacyPid: number
@@ -6321,6 +6357,23 @@ export async function getStatementDispatchHistory(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Statement dispatch history load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function deliverStatementBatchToPortal(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementPortalDeliveryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/portal-delivery?limit=${encodeURIComponent(String(limit))}`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Statement portal delivery', response.status))
   }
 
   return response.json()

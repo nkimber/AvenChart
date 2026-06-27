@@ -234,6 +234,40 @@ public sealed record StatementDeliveryAuditHistoryEntry(
     string DispatchStatus,
     string ExternalReference);
 
+public sealed record StatementPortalDeliveryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string PortalDeliveryId,
+    string DeliveredAt,
+    int CandidateCount,
+    int PortalEligibleCount,
+    int DeliveredDocumentCount,
+    int SkippedCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalCurrentDueAmount,
+    IReadOnlyList<StatementPortalDeliveryEntry> Entries);
+
+public sealed record StatementPortalDeliveryEntry(
+    int DocumentId,
+    string DocumentKey,
+    string Pubpid,
+    int LegacyPid,
+    string PatientDisplayName,
+    string PortalUsername,
+    string StatementNumber,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal CurrentDueAmount,
+    string CategoryName,
+    string DocumentName,
+    string FileName,
+    string DeliveryStatus);
+
 public sealed record CollectionsWorkQueueResponse(
     string DatasetId,
     string DatasetVersion,

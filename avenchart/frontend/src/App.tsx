@@ -56,6 +56,7 @@ import {
   getCollectionsWorkQueue,
   getStatementBatch,
   getStatementDispatchHistory,
+  deliverStatementBatchToPortal,
   dispatchStatementBatchDelivery,
   downloadBillingPaymentReceiptPdf,
   downloadBillingStatementPdf,
@@ -355,6 +356,7 @@ import {
   type StatementBatchDispatchResponse,
   type StatementBatchResponse,
   type StatementDeliveryAuditHistoryResponse,
+  type StatementPortalDeliveryResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
@@ -14844,6 +14846,9 @@ function FeesWorkspace({
   const [statementDispatchHistory, setStatementDispatchHistory] = useState<StatementDeliveryAuditHistoryResponse | null>(null)
   const [statementDispatchHistoryStatus, setStatementDispatchHistoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [statementDispatchHistoryError, setStatementDispatchHistoryError] = useState<string | null>(null)
+  const [statementPortalDelivery, setStatementPortalDelivery] = useState<StatementPortalDeliveryResponse | null>(null)
+  const [statementPortalDeliveryStatus, setStatementPortalDeliveryStatus] = useState<'idle' | 'delivering' | 'ready' | 'error'>('idle')
+  const [statementPortalDeliveryError, setStatementPortalDeliveryError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -14873,6 +14878,9 @@ function FeesWorkspace({
       setStatementDispatchHistory(null)
       setStatementDispatchHistoryStatus('idle')
       setStatementDispatchHistoryError(null)
+      setStatementPortalDelivery(null)
+      setStatementPortalDeliveryStatus('idle')
+      setStatementPortalDeliveryError(null)
       setCollectionsWorkQueue(null)
       setCollectionsWorkQueueStatus('idle')
       setCollectionsWorkQueueError(null)
@@ -15301,6 +15309,23 @@ function FeesWorkspace({
     } catch (error) {
       setStatementDispatchHistoryStatus('error')
       setStatementDispatchHistoryError(error instanceof Error ? error.message : 'Statement dispatch history load failed')
+    }
+  }
+
+  async function handleStatementPortalDelivery() {
+    if (!sessionId) {
+      return
+    }
+
+    setStatementPortalDeliveryStatus('delivering')
+    setStatementPortalDeliveryError(null)
+    try {
+      const delivery = await deliverStatementBatchToPortal(5, sessionId)
+      setStatementPortalDelivery(delivery)
+      setStatementPortalDeliveryStatus('ready')
+    } catch (error) {
+      setStatementPortalDeliveryStatus('error')
+      setStatementPortalDeliveryError(error instanceof Error ? error.message : 'Statement portal delivery failed')
     }
   }
 
@@ -15892,10 +15917,14 @@ function FeesWorkspace({
           dispatchHistory={statementDispatchHistory}
           dispatchHistoryStatus={statementDispatchHistoryStatus}
           dispatchHistoryError={statementDispatchHistoryError}
+          portalDelivery={statementPortalDelivery}
+          portalDeliveryStatus={statementPortalDeliveryStatus}
+          portalDeliveryError={statementPortalDeliveryError}
           onDownloadPackage={handleStatementBatchPackageDownload}
           onPrepareDelivery={handleStatementDeliveryPrepare}
           onDispatchDelivery={handleStatementDeliveryDispatch}
           onLoadDispatchHistory={handleStatementDispatchHistoryLoad}
+          onDeliverToPortal={handleStatementPortalDelivery}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -16117,10 +16146,14 @@ function StatementBatchPanel({
   dispatchHistory,
   dispatchHistoryStatus,
   dispatchHistoryError,
+  portalDelivery,
+  portalDeliveryStatus,
+  portalDeliveryError,
   onDownloadPackage,
   onPrepareDelivery,
   onDispatchDelivery,
   onLoadDispatchHistory,
+  onDeliverToPortal,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
@@ -16138,16 +16171,21 @@ function StatementBatchPanel({
   dispatchHistory: StatementDeliveryAuditHistoryResponse | null
   dispatchHistoryStatus: 'idle' | 'loading' | 'ready' | 'error'
   dispatchHistoryError: string | null
+  portalDelivery: StatementPortalDeliveryResponse | null
+  portalDeliveryStatus: 'idle' | 'delivering' | 'ready' | 'error'
+  portalDeliveryError: string | null
   onDownloadPackage: () => Promise<void>
   onPrepareDelivery: () => Promise<void>
   onDispatchDelivery: () => Promise<void>
   onLoadDispatchHistory: () => Promise<void>
+  onDeliverToPortal: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
   const deliveryEntries = delivery?.entries ?? []
   const dispatchEntries = dispatch?.entries ?? []
   const dispatchHistoryEntries = dispatchHistory?.entries ?? []
+  const portalDeliveryEntries = portalDelivery?.entries ?? []
 
   return (
     <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
@@ -16190,6 +16228,15 @@ function StatementBatchPanel({
           <FileClock size={14} />
           {dispatchHistoryStatus === 'loading' ? 'Loading History' : 'Dispatch History'}
         </button>
+        <button
+          className="icon-text-button secondary statement-batch-export"
+          type="button"
+          disabled={disabled || portalDeliveryStatus === 'delivering' || !batch}
+          onClick={() => void onDeliverToPortal()}
+        >
+          <FolderOpen size={14} />
+          {portalDeliveryStatus === 'delivering' ? 'Delivering Portal' : 'Portal Delivery'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
@@ -16198,6 +16245,7 @@ function StatementBatchPanel({
         {deliveryError && <div className="status-banner error">{deliveryError}</div>}
         {dispatchError && <div className="status-banner error">{dispatchError}</div>}
         {dispatchHistoryError && <div className="status-banner error">{dispatchHistoryError}</div>}
+        {portalDeliveryError && <div className="status-banner error">{portalDeliveryError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
@@ -16295,6 +16343,38 @@ function StatementBatchPanel({
                   <Field label="Created" value={entry.createdAt} />
                   <Field label="Reference" value={entry.externalReference} />
                   <Field label="Delivery" value={entry.deliveryMethod} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {portalDelivery && (
+          <div className="statement-batch-summary" aria-label="Statement portal delivery">
+            <Field label="Portal delivery ID" value={portalDelivery.portalDeliveryId} />
+            <Field label="Delivered" value={portalDelivery.deliveredAt} />
+            <Field label="Documents" value={portalDelivery.deliveredDocumentCount} />
+            <Field label="Portal eligible" value={portalDelivery.portalEligibleCount} />
+            <Field label="Skipped" value={portalDelivery.skippedCount} />
+          </div>
+        )}
+        {portalDeliveryEntries.length > 0 && (
+          <div className="statement-batch-list" aria-label="Statement portal delivery entries">
+            {portalDeliveryEntries.map((entry) => (
+              <article className="statement-batch-row" key={entry.documentKey}>
+                <div className="statement-batch-row-main">
+                  <div>
+                    <strong>{entry.patientDisplayName}</strong>
+                    <span>{entry.documentName} / {entry.portalUsername}</span>
+                  </div>
+                  <div className="statement-batch-actions">
+                    <span className="status-pill">{entry.deliveryStatus}</span>
+                    <span className="status-pill">{entry.categoryName}</span>
+                  </div>
+                </div>
+                <div className="statement-batch-row-grid">
+                  <Field label="Document ID" value={entry.documentId} />
+                  <Field label="Statement" value={entry.statementNumber} />
+                  <Field label="File" value={entry.fileName} />
                 </div>
               </article>
             ))}
