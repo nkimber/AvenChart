@@ -543,10 +543,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     public async Task<AppointmentReminderDispatchResponse?> DispatchReminderAsync(
         string appointmentId,
+        string? templateId,
         CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
-        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, cancellationToken);
+        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, templateId, cancellationToken);
         if (dispatch is null)
         {
             return null;
@@ -556,12 +557,22 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return dispatch;
     }
 
+    public async Task<AppointmentReminderTemplateCatalogResponse> GetReminderTemplateCatalogAsync(CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        return new AppointmentReminderTemplateCatalogResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Templates: ReminderTemplateOptions);
+    }
+
     public async Task<AppointmentReminderDispatchResponse?> RetryReminderDispatchAsync(
         string appointmentId,
         CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
-        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, cancellationToken);
+        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, null, cancellationToken);
         if (dispatch is null)
         {
             return null;
@@ -1492,6 +1503,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
     private async Task<AppointmentReminderDispatchResponse?> BuildReminderDispatchAsync(
         string appointmentId,
         DatasetMetadata metadata,
+        string? requestedTemplateId,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -1548,6 +1560,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        var template = ResolveReminderTemplate(reminder.Channel, requestedTemplateId);
+        if (template is null)
+        {
+            throw new ArgumentException($"Appointment reminder template '{requestedTemplateId}' is not valid for channel '{reminder.Channel}'.", nameof(requestedTemplateId));
+        }
+
         var actualAppointmentId = reader.GetString(reader.GetOrdinal("id"));
         var compactDate = metadata.BaseDate.ToString("yyyyMMdd");
         var dispatchId = $"APPT-REMINDER-DISPATCH-{compactDate}-{SanitizeIdentifier(actualAppointmentId)}";
@@ -1586,8 +1604,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             QueueName: GetReminderQueueName(reminder.Channel),
             DispatchStatus: $"{reminder.Channel} queued",
             ExternalReference: externalReference,
-            TemplateName: GetReminderTemplateName(reminder.Channel),
-            MessagePreview: BuildReminderMessagePreview(patientDisplayName, appointmentDate, startTime, title, reminder));
+            TemplateName: template.TemplateId,
+            MessagePreview: BuildReminderMessagePreview(patientDisplayName, appointmentDate, startTime, title, reminder, template));
     }
 
     private static async Task EnsureReminderDispatchTableAsync(
@@ -2048,24 +2066,86 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         _ => "appointment-reminder-print"
     };
 
-    private static string GetReminderTemplateName(string channel) => channel switch
+    private static readonly IReadOnlyList<AppointmentReminderTemplateOption> ReminderTemplateOptions =
+    [
+        new(
+            TemplateId: "appointment-reminder-sms-email-v1",
+            Name: "Standard SMS and email reminder",
+            Channel: "SMS + Email",
+            QueueName: "appointment-reminder-sms-email",
+            Description: "Default combined SMS and email appointment reminder.",
+            IsDefault: true),
+        new(
+            TemplateId: "appointment-reminder-sms-email-arrival-v1",
+            Name: "Arrival instructions SMS and email reminder",
+            Channel: "SMS + Email",
+            QueueName: "appointment-reminder-sms-email",
+            Description: "Combined SMS and email reminder with arrival and check-in instructions.",
+            IsDefault: false),
+        new(
+            TemplateId: "appointment-reminder-sms-v1",
+            Name: "Standard SMS reminder",
+            Channel: "SMS",
+            QueueName: "appointment-reminder-sms",
+            Description: "Default SMS appointment reminder.",
+            IsDefault: true),
+        new(
+            TemplateId: "appointment-reminder-email-v1",
+            Name: "Standard email reminder",
+            Channel: "Email",
+            QueueName: "appointment-reminder-email",
+            Description: "Default email appointment reminder.",
+            IsDefault: true),
+        new(
+            TemplateId: "appointment-reminder-email-arrival-v1",
+            Name: "Arrival instructions email reminder",
+            Channel: "Email",
+            QueueName: "appointment-reminder-email",
+            Description: "Email reminder with arrival and check-in instructions.",
+            IsDefault: false),
+        new(
+            TemplateId: "appointment-reminder-phone-v1",
+            Name: "Phone call reminder",
+            Channel: "Phone",
+            QueueName: "appointment-reminder-phone",
+            Description: "Default phone-call reminder work item.",
+            IsDefault: true),
+        new(
+            TemplateId: "appointment-reminder-print-v1",
+            Name: "Printed reminder",
+            Channel: "Print",
+            QueueName: "appointment-reminder-print",
+            Description: "Default printed reminder work item.",
+            IsDefault: true)
+    ];
+
+    private static AppointmentReminderTemplateOption? ResolveReminderTemplate(string channel, string? requestedTemplateId)
     {
-        "SMS + Email" => "appointment-reminder-sms-email-v1",
-        "SMS" => "appointment-reminder-sms-v1",
-        "Email" => "appointment-reminder-email-v1",
-        "Phone" => "appointment-reminder-phone-v1",
-        _ => "appointment-reminder-print-v1"
-    };
+        var normalizedTemplateId = NormalizeText(requestedTemplateId);
+        if (normalizedTemplateId is null)
+        {
+            return ReminderTemplateOptions.First(template =>
+                template.Channel.Equals(channel, StringComparison.OrdinalIgnoreCase) && template.IsDefault);
+        }
+
+        return ReminderTemplateOptions.FirstOrDefault(template =>
+            template.TemplateId.Equals(normalizedTemplateId, StringComparison.OrdinalIgnoreCase)
+            && template.Channel.Equals(channel, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static string BuildReminderMessagePreview(
         string patientDisplayName,
         DateOnly appointmentDate,
         TimeOnly startTime,
         string title,
-        AppointmentReminder reminder)
+        AppointmentReminder reminder,
+        AppointmentReminderTemplateOption template)
     {
         var contact = reminder.Contact is null ? "no direct contact" : reminder.Contact;
-        return $"Reminder for {patientDisplayName}: {title} on {appointmentDate:yyyy-MM-dd} at {startTime:HH:mm}. Channel {reminder.Channel}; contact {contact}.";
+        var preview = $"Reminder for {patientDisplayName}: {title} on {appointmentDate:yyyy-MM-dd} at {startTime:HH:mm}. Channel {reminder.Channel}; contact {contact}.";
+        return template.TemplateId.Contains("arrival", StringComparison.OrdinalIgnoreCase)
+            ? $"{preview} Please arrive 15 minutes early and bring insurance plus photo ID."
+            : preview;
     }
 
     private static bool AllowsContact(string? value) =>

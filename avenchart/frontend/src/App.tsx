@@ -79,6 +79,7 @@ import {
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
   getAppointmentReminderDispatchHistory,
+  getAppointmentReminderTemplates,
   getPatientPortalClinicalSummary,
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
@@ -271,6 +272,7 @@ import {
   type AppointmentOccurrenceRescheduleInput,
   type AppointmentReminderDispatchHistoryResponse,
   type AppointmentReminderDispatchResponse,
+  type AppointmentReminderTemplateCatalogResponse,
   type AppointmentSearchResponse,
   type AppointmentUpdateInput,
   type AppointmentWaitlistResponse,
@@ -559,6 +561,11 @@ function App() {
   const [appointmentReminderDispatch, setAppointmentReminderDispatch] = useState<AppointmentReminderDispatchResponse | null>(null)
   const [appointmentReminderDispatchHistory, setAppointmentReminderDispatchHistory] =
     useState<AppointmentReminderDispatchHistoryResponse | null>(null)
+  const [appointmentReminderTemplates, setAppointmentReminderTemplates] =
+    useState<AppointmentReminderTemplateCatalogResponse | null>(null)
+  const [appointmentReminderTemplateStatus, setAppointmentReminderTemplateStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [appointmentReminderTemplateError, setAppointmentReminderTemplateError] = useState<string | null>(null)
   const [appointmentReminderDispatchStatus, setAppointmentReminderDispatchStatus] =
     useState<'idle' | 'dispatching' | 'ready' | 'error'>('idle')
   const [appointmentReminderDispatchError, setAppointmentReminderDispatchError] = useState<string | null>(null)
@@ -833,6 +840,9 @@ function App() {
       setAppointmentWaitlistError(null)
       setAppointmentReminderDispatch(null)
       setAppointmentReminderDispatchHistory(null)
+      setAppointmentReminderTemplates(null)
+      setAppointmentReminderTemplateStatus('idle')
+      setAppointmentReminderTemplateError(null)
       setAppointmentReminderDispatchStatus('idle')
       setAppointmentReminderDispatchError(null)
       return
@@ -875,6 +885,42 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'calendar') {
+      return
+    }
+
+    if (!openEmrSessionId) {
+      setAppointmentReminderTemplates(null)
+      setAppointmentReminderTemplateStatus('idle')
+      setAppointmentReminderTemplateError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadAppointmentReminderTemplates() {
+      setAppointmentReminderTemplateStatus('loading')
+      setAppointmentReminderTemplateError(null)
+
+      try {
+        const templates = await getAppointmentReminderTemplates(openEmrSessionId, controller.signal)
+        setAppointmentReminderTemplates(templates)
+        setAppointmentReminderTemplateStatus('ready')
+      } catch (templateError) {
+        if (!controller.signal.aborted) {
+          setAppointmentReminderTemplates(null)
+          setAppointmentReminderTemplateStatus('error')
+          setAppointmentReminderTemplateError(
+            templateError instanceof Error ? templateError.message : 'Appointment reminder templates failed',
+          )
+        }
+      }
+    }
+
+    loadAppointmentReminderTemplates()
+    return () => controller.abort()
+  }, [activeModule, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar') {
@@ -2073,13 +2119,13 @@ function App() {
     }
   }
 
-  async function handleAppointmentReminderDispatch(appointment: AppointmentDetail) {
+  async function handleAppointmentReminderDispatch(appointment: AppointmentDetail, templateId?: string | null) {
     setAppointmentReminderDispatchStatus('dispatching')
     setAppointmentReminderDispatchError(null)
 
     try {
       const sessionId = getActiveAppointmentSessionId()
-      const dispatch = await dispatchAppointmentReminder(appointment.id, sessionId)
+      const dispatch = await dispatchAppointmentReminder(appointment.id, sessionId, { templateId })
       const history = await getAppointmentReminderDispatchHistory(appointment.id, sessionId)
       setAppointmentReminderDispatch(dispatch)
       setAppointmentReminderDispatchHistory(history)
@@ -5561,6 +5607,9 @@ function App() {
             waitlistError={appointmentWaitlistError}
             reminderDispatch={appointmentReminderDispatch}
             reminderDispatchHistory={appointmentReminderDispatchHistory}
+            reminderTemplates={appointmentReminderTemplates}
+            reminderTemplateStatus={appointmentReminderTemplateStatus}
+            reminderTemplateError={appointmentReminderTemplateError}
             reminderDispatchStatus={appointmentReminderDispatchStatus}
             reminderDispatchError={appointmentReminderDispatchError}
             searchStatus={appointmentStatus}
@@ -10448,6 +10497,9 @@ function CalendarWorkspace({
   waitlistError,
   reminderDispatch,
   reminderDispatchHistory,
+  reminderTemplates,
+  reminderTemplateStatus,
+  reminderTemplateError,
   reminderDispatchStatus,
   reminderDispatchError,
   searchStatus,
@@ -10484,6 +10536,9 @@ function CalendarWorkspace({
   waitlistError: string | null
   reminderDispatch: AppointmentReminderDispatchResponse | null
   reminderDispatchHistory: AppointmentReminderDispatchHistoryResponse | null
+  reminderTemplates: AppointmentReminderTemplateCatalogResponse | null
+  reminderTemplateStatus: 'idle' | 'loading' | 'ready' | 'error'
+  reminderTemplateError: string | null
   reminderDispatchStatus: 'idle' | 'dispatching' | 'ready' | 'error'
   reminderDispatchError: string | null
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
@@ -10507,7 +10562,7 @@ function CalendarWorkspace({
   onCreateAppointmentCharge: (appointment: AppointmentDetail) => Promise<unknown>
   onPromoteWaitlistAppointment: (appointmentId: string, title: string) => Promise<AppointmentDetail>
   onDeferWaitlistAppointment: (reminderId: string, reason: string | null | undefined) => Promise<void>
-  onDispatchAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
+  onDispatchAppointmentReminder: (appointment: AppointmentDetail, templateId?: string | null) => Promise<AppointmentReminderDispatchResponse>
   onRetryAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
@@ -10563,8 +10618,17 @@ function CalendarWorkspace({
   const [calendarLoginStatus, setCalendarLoginStatus] =
     useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [calendarLoginMessage, setCalendarLoginMessage] = useState<string | null>(null)
+  const [selectedReminderTemplateId, setSelectedReminderTemplateId] = useState('')
   const selectedOccurrenceIsVirtual = appointmentDetail?.isVirtualOccurrence ?? false
   const calendarLocked = !sessionId
+  const reminderTemplateOptions = useMemo(
+    () => reminderTemplates?.templates.filter((template) => {
+      return appointmentDetail?.reminderChannel
+        ? template.channel.toLocaleLowerCase() === appointmentDetail.reminderChannel.toLocaleLowerCase()
+        : false
+    }) ?? [],
+    [appointmentDetail?.reminderChannel, reminderTemplates],
+  )
 
   useEffect(() => {
     if (!appointmentDetail) {
@@ -10596,6 +10660,22 @@ function CalendarWorkspace({
     setEditRecurrenceExdates(appointmentDetail.recurrenceExdates.join(', '))
     setEditStatus(appointmentDetail.status ?? '-')
   }, [appointmentDetail])
+
+  useEffect(() => {
+    if (!appointmentDetail || reminderTemplateOptions.length === 0) {
+      setSelectedReminderTemplateId('')
+      return
+    }
+
+    setSelectedReminderTemplateId((current) => {
+      const currentStillValid = reminderTemplateOptions.some((template) => template.templateId === current)
+      if (currentStillValid) {
+        return current
+      }
+
+      return reminderTemplateOptions.find((template) => template.isDefault)?.templateId ?? reminderTemplateOptions[0].templateId
+    })
+  }, [appointmentDetail?.id, reminderTemplateOptions])
 
   async function handleCalendarLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -10716,7 +10796,7 @@ function CalendarWorkspace({
 
     setMutationStatus('saving')
     try {
-      await onDispatchAppointmentReminder(appointmentDetail)
+      await onDispatchAppointmentReminder(appointmentDetail, selectedReminderTemplateId || null)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -11423,11 +11503,28 @@ function CalendarWorkspace({
                 <WalletCards size={15} />
                 <span>{appointmentDetail.convertedBillingLineCount > 0 ? 'Charge created' : 'Create charge'}</span>
               </button>
+              <label className="contact-field reminder-template-selector">
+                <span>Reminder template</span>
+                <select
+                  value={selectedReminderTemplateId}
+                  onChange={(event) => setSelectedReminderTemplateId(event.target.value)}
+                  aria-label="Appointment reminder template"
+                  disabled={calendarLocked || reminderTemplateStatus === 'loading' || reminderTemplateOptions.length === 0}
+                >
+                  {reminderTemplateOptions.length === 0 ? (
+                    <option value="">No compatible templates</option>
+                  ) : reminderTemplateOptions.map((template) => (
+                    <option key={template.templateId} value={template.templateId}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 className="icon-text-button"
                 type="button"
                 onClick={() => void handleDispatchSelectedReminder()}
-                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || !appointmentDetail.reminderDue || reminderDispatchStatus === 'dispatching'}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || !appointmentDetail.reminderDue || reminderDispatchStatus === 'dispatching' || reminderTemplateStatus === 'loading'}
               >
                 <Send size={15} />
                 <span>{reminderDispatchStatus === 'dispatching' ? 'Dispatching' : 'Dispatch reminder'}</span>
@@ -11722,6 +11819,14 @@ function CalendarWorkspace({
                 <Field label="Reminder channel" value={appointmentDetail.reminderChannel} />
                 <Field label="Reminder contact" value={appointmentDetail.reminderContact} />
                 <Field label="Reminder lead" value={appointmentReminderLeadDetail(appointmentDetail)} />
+                <Field label="Template catalog" value={reminderTemplateOptions.length ? `${reminderTemplateOptions.length} compatible template${reminderTemplateOptions.length === 1 ? '' : 's'}` : null} />
+                {reminderTemplateError && <div className="status-banner error">{reminderTemplateError}</div>}
+                {selectedReminderTemplateId && (
+                  <Field
+                    label="Selected template"
+                    value={reminderTemplateOptions.find((template) => template.templateId === selectedReminderTemplateId)?.name ?? selectedReminderTemplateId}
+                  />
+                )}
                 {reminderDispatchError && <div className="status-banner error">{reminderDispatchError}</div>}
                 {reminderDispatch && reminderDispatch.appointmentId === appointmentDetail.id && (
                   <div className="statement-batch-summary" aria-label="Appointment reminder dispatch">

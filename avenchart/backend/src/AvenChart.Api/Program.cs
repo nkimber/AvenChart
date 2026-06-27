@@ -815,15 +815,39 @@ appointments.MapGet("/waitlist", async (
     })
     .WithName("GetAppointmentWaitlist");
 
+appointments.MapGet("/reminders/templates", async (
+        AppointmentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.GetReminderTemplateCatalogAsync(cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("GetAppointmentReminderTemplates")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+
 appointments.MapPost("/{appointmentId}/reminders/dispatch", async (
         AppointmentRepository repository,
+        HttpRequest request,
         string appointmentId,
         CancellationToken cancellationToken) =>
     {
-        var dispatch = await repository.DispatchReminderAsync(appointmentId, cancellationToken);
-        return dispatch is null
-            ? Results.BadRequest("Appointment reminder could not be dispatched because the appointment was not found or no reminder is due.")
-            : Results.Ok(dispatch);
+        AppointmentReminderDispatchRequest? dispatchRequest = null;
+        if (request.ContentLength.GetValueOrDefault() > 0)
+        {
+            dispatchRequest = await request.ReadFromJsonAsync<AppointmentReminderDispatchRequest>(cancellationToken);
+        }
+
+        try
+        {
+            var dispatch = await repository.DispatchReminderAsync(appointmentId, dispatchRequest?.TemplateId, cancellationToken);
+            return dispatch is null
+                ? Results.BadRequest("Appointment reminder could not be dispatched because the appointment was not found or no reminder is due.")
+                : Results.Ok(dispatch);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(ex.Message);
+        }
     })
     .WithName("DispatchAppointmentReminder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));

@@ -241,6 +241,23 @@ public sealed record AppointmentReminderDispatchResponse(
     string? RetryOfDispatchId = null,
     int RetryAttempt = 0);
 
+public sealed record AppointmentReminderDispatchRequest(
+    string? TemplateId);
+
+public sealed record AppointmentReminderTemplateOption(
+    string TemplateId,
+    string Name,
+    string Channel,
+    string QueueName,
+    string Description,
+    bool IsDefault);
+
+public sealed record AppointmentReminderTemplateCatalogResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    IReadOnlyList<AppointmentReminderTemplateOption> Templates);
+
 public sealed record AppointmentReminderDispatchHistoryResponse(
     string DatasetId,
     string DatasetVersion,

@@ -602,6 +602,26 @@ export type AppointmentReminderDispatchResponse = {
   retryAttempt: number
 }
 
+export type AppointmentReminderTemplateOption = {
+  templateId: string
+  name: string
+  channel: string
+  queueName: string
+  description: string
+  isDefault: boolean
+}
+
+export type AppointmentReminderTemplateCatalogResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  templates: AppointmentReminderTemplateOption[]
+}
+
+export type AppointmentReminderDispatchInput = {
+  templateId?: string | null
+}
+
 export type AppointmentReminderDispatchHistoryResponse = {
   datasetId: string
   datasetVersion: string
@@ -5100,15 +5120,33 @@ export async function validateAppointmentAvailability(
 export async function dispatchAppointmentReminder(
   appointmentId: string,
   sessionId?: string | null,
+  input?: AppointmentReminderDispatchInput | null,
   signal?: AbortSignal,
 ): Promise<AppointmentReminderDispatchResponse> {
+  const hasDispatchInput = Boolean(input?.templateId?.trim())
   const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`, {
     method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+    headers: buildLegacyEhrSessionHeaders(sessionId, hasDispatchInput ? 'application/json' : undefined),
+    body: hasDispatchInput ? JSON.stringify({ templateId: input?.templateId?.trim() }) : undefined,
     signal,
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment reminder dispatch', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getAppointmentReminderTemplates(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderTemplateCatalogResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/reminders/templates`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment reminder templates', response.status))
   }
 
   return response.json()

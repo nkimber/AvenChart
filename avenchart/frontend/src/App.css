@@ -754,6 +754,14 @@
   padding-top: 2px;
 }
 
+.reminder-template-selector {
+  min-width: min(100%, 18rem);
+}
+
+.reminder-template-selector select {
+  min-height: 34px;
+}
+
 .icon-text-button {
   min-height: 34px;
   display: inline-flex;
