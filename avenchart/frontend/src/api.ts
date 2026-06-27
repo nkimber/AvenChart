@@ -969,6 +969,12 @@ export type PrescriptionListItem = {
   note?: string | null
   encounter?: number | null
   providerName?: string | null
+  pharmacyId?: number | null
+  pharmacyName?: string | null
+  pharmacyNcpdp?: number | null
+  erxUploaded: number
+  erxSentAt?: string | null
+  erxPayload?: string | null
 }
 
 export type PrescriptionRefillRequestItem = {
@@ -1086,6 +1092,12 @@ export type ClinicalPrescriptionDeactivateInput = {
 export type ClinicalPrescriptionRefillInput = {
   refillDate: string
   additionalRefills: number
+  note: string
+}
+
+export type ClinicalPrescriptionPharmacyRouteInput = {
+  pharmacyId: number
+  sentAt: string
   note: string
 }
 
@@ -5564,6 +5576,25 @@ export async function refillClinicalPrescription(
   )
   if (!response.ok) {
     throw new Error(clinicalListApiError('Clinical prescription refill', response.status))
+  }
+
+  return response.json()
+}
+
+export async function routeClinicalPrescriptionToPharmacy(
+  prescriptionId: string,
+  route: ClinicalPrescriptionPharmacyRouteInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/route-pharmacy`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(route),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(clinicalListApiError('Clinical prescription pharmacy route', response.status))
   }
 
   return response.json()

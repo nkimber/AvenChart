@@ -95,7 +95,13 @@ public sealed record PrescriptionListItem(
     int Active,
     string? Note,
     int? Encounter,
-    string? ProviderName);
+    string? ProviderName,
+    int? PharmacyId,
+    string? PharmacyName,
+    int? PharmacyNcpdp,
+    int ErxUploaded,
+    string? ErxSentAt,
+    string? ErxPayload);
 
 public sealed record PrescriptionRefillRequestItem(
     int MessageId,
@@ -184,4 +190,9 @@ public sealed record ClinicalPrescriptionRefillRequest(
 public sealed record ClinicalPrescriptionRefillApprovalRequest(
     string RefillDate,
     int AdditionalRefills,
+    string Note);
+
+public sealed record ClinicalPrescriptionPharmacyRouteRequest(
+    int PharmacyId,
+    string SentAt,
     string Note);

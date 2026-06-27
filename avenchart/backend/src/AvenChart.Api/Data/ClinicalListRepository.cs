@@ -529,6 +529,103 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return lists is null ? null : new ClinicalListMutationResponse(refillRequest.PrescriptionId, lists);
     }
 
+    public async Task<ClinicalListMutationResponse?> RoutePrescriptionToPharmacyAsync(
+        string prescriptionId,
+        ClinicalPrescriptionPharmacyRouteRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId)
+            || request.PharmacyId <= 0
+            || !TryReadDateTime(request.SentAt, out var sentAt))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        PharmacyRouteAnchor anchor;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select
+                    pr.patient_id,
+                    pr.drug,
+                    pr.dosage,
+                    pr.quantity,
+                    ph.id as pharmacy_id,
+                    ph.name as pharmacy_name,
+                    ph.ncpdp
+                from prescriptions pr
+                join pharmacies ph on ph.id = @pharmacyId
+                where pr.id = @id
+                  and pr.active = 1
+                limit 1;
+                """;
+            command.Parameters.AddWithValue("id", prescriptionId);
+            command.Parameters.Add("pharmacyId", NpgsqlDbType.Integer).Value = request.PharmacyId;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            anchor = new PharmacyRouteAnchor(
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                Drug: reader.GetString(reader.GetOrdinal("drug")),
+                Dosage: ReadNullableString(reader, "dosage"),
+                Quantity: ReadNullableString(reader, "quantity"),
+                PharmacyId: reader.GetInt32(reader.GetOrdinal("pharmacy_id")),
+                PharmacyName: reader.GetString(reader.GetOrdinal("pharmacy_name")),
+                PharmacyNcpdp: ReadNullableInt(reader, "ncpdp"));
+        }
+
+        var sentAtText = sentAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        var payload = string.Join(
+            "\n",
+            $"Prescription ID: {prescriptionId}",
+            $"Drug: {anchor.Drug}",
+            $"Dosage: {anchor.Dosage ?? "Not recorded"}",
+            $"Quantity: {anchor.Quantity ?? "Not recorded"}",
+            $"Pharmacy: {anchor.PharmacyName}",
+            $"NCPDP: {anchor.PharmacyNcpdp?.ToString(CultureInfo.InvariantCulture) ?? "Not recorded"}",
+            $"Sent: {sentAtText}");
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update prescriptions
+                set pharmacy_id = @pharmacyId,
+                    pharmacy_name = @pharmacyName,
+                    pharmacy_ncpdp = @pharmacyNcpdp,
+                    erx_uploaded = 1,
+                    erx_sent_at = @sentAt,
+                    erx_payload = @payload,
+                    modified_date = @sentDate,
+                    note = @note
+                where id = @id
+                  and active = 1;
+                """;
+            command.Parameters.AddWithValue("id", prescriptionId);
+            command.Parameters.Add("pharmacyId", NpgsqlDbType.Integer).Value = anchor.PharmacyId;
+            command.Parameters.AddWithValue("pharmacyName", anchor.PharmacyName);
+            AddNullableInt(command, "pharmacyNcpdp", anchor.PharmacyNcpdp);
+            command.Parameters.Add("sentAt", NpgsqlDbType.Timestamp).Value = sentAt;
+            command.Parameters.AddWithValue("payload", payload);
+            command.Parameters.Add("sentDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(sentAt);
+            command.Parameters.AddWithValue("note", NullableText(request.Note));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(anchor.PatientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
+    }
+
     public async Task<bool> DeletePrescriptionAsync(string prescriptionId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(prescriptionId))
@@ -838,7 +935,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 pr.active,
                 pr.note,
                 pr.encounter,
-                trim(concat(s.first_name, ' ', s.last_name)) as provider_name
+                trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                pr.pharmacy_id,
+                pr.pharmacy_name,
+                pr.pharmacy_ncpdp,
+                pr.erx_uploaded,
+                pr.erx_sent_at,
+                pr.erx_payload
             from prescriptions pr
             left join staff s on s.id = pr.provider_id
             where pr.pid = @pid and pr.active = 1
@@ -864,7 +967,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Active: ReadInt(reader, "active"),
                 Note: ReadNullableString(reader, "note"),
                 Encounter: ReadNullableInt(reader, "encounter"),
-                ProviderName: ReadNullableString(reader, "provider_name")));
+                ProviderName: ReadNullableString(reader, "provider_name"),
+                PharmacyId: ReadNullableInt(reader, "pharmacy_id"),
+                PharmacyName: ReadNullableString(reader, "pharmacy_name"),
+                PharmacyNcpdp: ReadNullableInt(reader, "pharmacy_ncpdp"),
+                ErxUploaded: ReadInt(reader, "erx_uploaded"),
+                ErxSentAt: ReadNullableDateTime(reader, "erx_sent_at"),
+                ErxPayload: ReadNullableString(reader, "erx_payload")));
         }
 
         return items;
@@ -1207,4 +1316,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int LegacyPid,
         int ReplyMailChain,
         string PrescriptionId);
+
+    private sealed record PharmacyRouteAnchor(
+        string PatientId,
+        string Drug,
+        string? Dosage,
+        string? Quantity,
+        int PharmacyId,
+        string PharmacyName,
+        int? PharmacyNcpdp);
 }

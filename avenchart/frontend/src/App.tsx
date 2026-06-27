@@ -192,6 +192,7 @@ import {
   signProcedureReport,
   reopenProcedureReportReview,
   approveClinicalPrescriptionRefillRequest,
+  routeClinicalPrescriptionToPharmacy,
   refillClinicalPrescription,
   replyToPatientMessage,
   softDeleteEncounterDocument,
@@ -284,6 +285,7 @@ import {
   type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
   type ClinicalPrescriptionCreateInput,
+  type ClinicalPrescriptionPharmacyRouteInput,
   type ClinicalPrescriptionRefillApprovalInput,
   type ClinicalPrescriptionRefillInput,
   type CollectionsWorkQueueItem,
@@ -2928,6 +2930,28 @@ function App() {
     }
   }
 
+  async function handleClinicalPrescriptionRouteToPharmacy(
+    prescription: PrescriptionListItem,
+    input: ClinicalPrescriptionPharmacyRouteInput,
+  ) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await routeClinicalPrescriptionToPharmacy(prescription.id, input, sessionId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (routeError) {
+      setClinicalStatus('error')
+      const message = routeError instanceof Error ? routeError.message : 'Clinical prescription pharmacy route failed'
+      setClinicalError(message)
+      throw routeError
+    }
+  }
+
   async function handleClinicalPrescriptionRefillRequestApprove(
     request: PrescriptionRefillRequestItem,
     input: ClinicalPrescriptionRefillApprovalInput,
@@ -5452,6 +5476,7 @@ function App() {
             onCreatePrescription={handleClinicalPrescriptionCreate}
             onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
             onRefillPrescription={handleClinicalPrescriptionRefill}
+            onRoutePrescriptionToPharmacy={handleClinicalPrescriptionRouteToPharmacy}
             onApprovePrescriptionRefillRequest={handleClinicalPrescriptionRefillRequestApprove}
             onDeletePrescription={handleClinicalPrescriptionDelete}
             onCreateImmunization={handleClinicalImmunizationCreate}
@@ -14493,6 +14518,7 @@ function ClinicalListsWorkspace({
   onCreatePrescription,
   onDeactivatePrescription,
   onRefillPrescription,
+  onRoutePrescriptionToPharmacy,
   onApprovePrescriptionRefillRequest,
   onDeletePrescription,
   onCreateImmunization,
@@ -14518,6 +14544,10 @@ function ClinicalListsWorkspace({
   onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
   onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
   onRefillPrescription: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
+  onRoutePrescriptionToPharmacy: (
+    prescription: PrescriptionListItem,
+    input: ClinicalPrescriptionPharmacyRouteInput,
+  ) => Promise<unknown>
   onApprovePrescriptionRefillRequest: (
     request: PrescriptionRefillRequestItem,
     input: ClinicalPrescriptionRefillApprovalInput,
@@ -15160,6 +15190,7 @@ function ClinicalListsWorkspace({
                 items={clinicalLists.prescriptions}
                 onDeactivate={onDeactivatePrescription}
                 onRefill={onRefillPrescription}
+                onRouteToPharmacy={onRoutePrescriptionToPharmacy}
                 onDelete={onDeletePrescription}
                 disabled={isLoading || !canUseLists}
               />
@@ -23331,12 +23362,14 @@ function PrescriptionPanel({
   items,
   onDeactivate,
   onRefill,
+  onRouteToPharmacy,
   onDelete,
   disabled,
 }: {
   items: PrescriptionListItem[]
   onDeactivate: (prescription: PrescriptionListItem) => Promise<unknown>
   onRefill: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
+  onRouteToPharmacy: (prescription: PrescriptionListItem, input: ClinicalPrescriptionPharmacyRouteInput) => Promise<unknown>
   onDelete: (prescription: PrescriptionListItem) => Promise<void>
   disabled: boolean
 }) {
@@ -23353,6 +23386,14 @@ function PrescriptionPanel({
             .join(' / ')}
         >
           {item.note && <p className="clinical-item-note">{item.note}</p>}
+          {item.pharmacyName && (
+            <p className="clinical-item-note">
+              Pharmacy {item.pharmacyName}
+              {item.pharmacyNcpdp ? ` / NCPDP ${item.pharmacyNcpdp}` : ''}
+              {item.erxSentAt ? ` / Sent ${item.erxSentAt}` : ''}
+            </p>
+          )}
+          {item.erxPayload && <p className="clinical-item-note">{item.erxPayload}</p>}
           <div className="clinical-item-actions">
             <button
               className="icon-text-button"
@@ -23366,6 +23407,19 @@ function PrescriptionPanel({
             >
               <RotateCcw size={14} />
               Refill
+            </button>
+            <button
+              className="icon-text-button primary"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onRouteToPharmacy(item, {
+                pharmacyId: 9001,
+                sentAt: '2026-08-21 09:15:00',
+                note: 'Prescription routed to Northstar Community Pharmacy from the modernized Lists workspace.',
+              })}
+            >
+              <Send size={14} />
+              Route
             </button>
             <button
               className="icon-text-button danger"

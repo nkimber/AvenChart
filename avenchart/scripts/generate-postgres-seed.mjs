@@ -257,6 +257,7 @@ drop table if exists claims;
 drop table if exists billing;
 drop table if exists immunizations;
 drop table if exists prescriptions;
+drop table if exists pharmacies;
 drop table if exists clinical_notes;
 drop table if exists vitals;
 drop table if exists encounters;
@@ -752,6 +753,15 @@ create table clinical_notes (
   plan text
 );
 
+create table pharmacies (
+  id integer primary key,
+  name text not null,
+  transmit_method integer not null default 1,
+  email text,
+  ncpdp integer,
+  npi integer
+);
+
 create table prescriptions (
   id text primary key,
   patient_id text not null references patients(canonical_id),
@@ -770,7 +780,13 @@ create table prescriptions (
   refills integer not null default 0,
   diagnosis text,
   note text,
-  active integer not null default 1
+  active integer not null default 1,
+  pharmacy_id integer references pharmacies(id),
+  pharmacy_name text,
+  pharmacy_ncpdp integer,
+  erx_uploaded integer not null default 0,
+  erx_sent_at timestamp,
+  erx_payload text
 );
 
 create table immunizations (
@@ -1690,6 +1706,19 @@ copyRows('clinical_notes', [
   note.plan,
 ]))
 
+copyRows('pharmacies', [
+  'id',
+  'name',
+  'transmit_method',
+  'email',
+  'ncpdp',
+  'npi',
+], [
+  [9001, 'Northstar Community Pharmacy', 1, 'rx@northstar.example.test', 4501001, 1800001001],
+  [9002, 'Summit Mail Order Pharmacy', 1, 'mailorder@summit.example.test', 4501002, 1800001002],
+  [9003, 'Lakeside 24 Hour Pharmacy', 1, 'afterhours@lakeside.example.test', 4501003, 1800001003],
+])
+
 copyRows('prescriptions', [
   'id',
   'patient_id',
@@ -1709,6 +1738,12 @@ copyRows('prescriptions', [
   'diagnosis',
   'note',
   'active',
+  'pharmacy_id',
+  'pharmacy_name',
+  'pharmacy_ncpdp',
+  'erx_uploaded',
+  'erx_sent_at',
+  'erx_payload',
 ], dataset.prescriptions.map((prescription) => [
   prescription.id,
   prescription.patientId,
@@ -1728,6 +1763,12 @@ copyRows('prescriptions', [
   prescription.diagnosis,
   prescription.note ?? 'Gold dataset prescription',
   prescription.active ?? 1,
+  prescription.pharmacyId ?? '',
+  prescription.pharmacyName ?? '',
+  prescription.pharmacyNcpdp ?? '',
+  prescription.erxUploaded ?? 0,
+  prescription.erxSentAt ?? '',
+  prescription.erxPayload ?? '',
 ]))
 
 copyRows('immunizations', [
