@@ -174,6 +174,33 @@ export type PatientDuplicateSearchResponse = {
   candidates: PatientDuplicateCandidate[]
 }
 
+export type PatientMergePreviewPatient = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+}
+
+export type PatientMergePreviewResponse = {
+  datasetId: string
+  datasetVersion: string
+  previewOnly: boolean
+  targetPatient: PatientMergePreviewPatient
+  sourcePatient: PatientMergePreviewPatient
+  targetCounts: PatientActivityCounts
+  sourceCounts: PatientActivityCounts
+  combinedCounts: PatientActivityCounts
+  matchScore: number
+  matchReasons: string[]
+  safeguards: string[]
+}
+
 export type PatientInsuranceMutationInput = {
   type: string
   provider: string
@@ -4756,6 +4783,28 @@ export async function findPatientDuplicates(
   })
   if (!response.ok) {
     throw new Error(patientApiError('Patient duplicate detection', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getPatientMergePreview(
+  targetPatientId: string,
+  sourcePatientId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientMergePreviewResponse> {
+  const params = new URLSearchParams({
+    targetPatientId,
+    sourcePatientId,
+  })
+
+  const response = await fetch(`${apiBaseUrl}/api/patients/merge-preview?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(patientApiError('Patient merge preview', response.status))
   }
 
   return response.json()

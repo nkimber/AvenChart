@@ -557,6 +557,45 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Candidates: candidates);
     }
 
+    public async Task<PatientMergePreviewResponse?> GetMergePreviewAsync(
+        string targetPatientId,
+        string sourcePatientId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var target = await GetMergePreviewPatientAsync(connection, targetPatientId, cancellationToken);
+        var source = await GetMergePreviewPatientAsync(connection, sourcePatientId, cancellationToken);
+        if (target is null || source is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(target.Patient.CanonicalId, source.Patient.CanonicalId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Source patient and target patient must be different records.");
+        }
+
+        var match = BuildMergeMatch(source.Patient, target.Patient);
+        return new PatientMergePreviewResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            PreviewOnly: true,
+            TargetPatient: target.Patient,
+            SourcePatient: source.Patient,
+            TargetCounts: target.Counts,
+            SourceCounts: source.Counts,
+            CombinedCounts: CombineCounts(target.Counts, source.Counts),
+            MatchScore: match.Score,
+            MatchReasons: match.Reasons,
+            Safeguards: new[]
+            {
+                "Preview only; no patient rows or clinical records are changed.",
+                "Source and target must be separate patient records.",
+                "Full destructive merge remains blocked until record-move auditing and rollback are implemented."
+            });
+    }
+
     private static async Task<PatientHistorySummary?> GetHistoryForPatientAsync(
         NpgsqlConnection connection,
         string canonicalId,
@@ -1612,6 +1651,112 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             (select count(*) from medications med where med.pid = {pidExpression} and med.activity = 1)::int as medication_count
         """;
 
+    private static async Task<PatientMergePreviewRow?> GetMergePreviewPatientAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            select
+                p.canonical_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.date_of_birth,
+                p.phone_home,
+                p.phone_cell,
+                p.email,
+                counts.appointment_count,
+                counts.encounter_count,
+                counts.prescription_count,
+                counts.billing_count,
+                counts.lab_order_count,
+                counts.message_count,
+                counts.problem_count,
+                counts.allergy_count,
+                counts.medication_count
+            from patients p
+            left join lateral ({CountsSql("p.legacy_pid")}) counts on true
+            where lower(p.canonical_id) = lower(@patientId)
+               or lower(p.pubpid) = lower(@patientId)
+               or p.legacy_pid::text = @patientId
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var patient = new PatientMergePreviewPatient(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+            DisplayName: BuildDisplayName(reader),
+            FirstName: reader.GetString(reader.GetOrdinal("first_name")),
+            LastName: reader.GetString(reader.GetOrdinal("last_name")),
+            DateOfBirth: ReadDate(reader, "date_of_birth"),
+            PhoneHome: ReadNullableString(reader, "phone_home"),
+            PhoneCell: ReadNullableString(reader, "phone_cell"),
+            Email: ReadNullableString(reader, "email"));
+
+        return new PatientMergePreviewRow(patient, ReadCounts(reader));
+    }
+
+    private static (int Score, IReadOnlyList<string> Reasons) BuildMergeMatch(
+        PatientMergePreviewPatient source,
+        PatientMergePreviewPatient target)
+    {
+        var score = 0;
+        var reasons = new List<string>();
+        if (string.Equals(source.FirstName, target.FirstName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(source.LastName, target.LastName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(source.DateOfBirth, target.DateOfBirth, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 80;
+            reasons.Add("Same first name, last name, and date of birth");
+        }
+
+        var sourcePhones = new[] { source.PhoneHome, source.PhoneCell }
+            .Select(NormalizePhoneDigits)
+            .Where(phone => !string.IsNullOrWhiteSpace(phone))
+            .ToHashSet(StringComparer.Ordinal);
+        var targetPhones = new[] { target.PhoneHome, target.PhoneCell }
+            .Select(NormalizePhoneDigits)
+            .Where(phone => !string.IsNullOrWhiteSpace(phone))
+            .ToArray();
+        if (targetPhones.Any(sourcePhones.Contains))
+        {
+            score += 10;
+            reasons.Add("Matching phone");
+        }
+
+        if (!string.IsNullOrWhiteSpace(source.Email)
+            && string.Equals(source.Email, target.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 10;
+            reasons.Add("Matching email");
+        }
+
+        return (score, reasons);
+    }
+
+    private static PatientActivityCounts CombineCounts(PatientActivityCounts target, PatientActivityCounts source) => new(
+        Appointments: target.Appointments + source.Appointments,
+        Encounters: target.Encounters + source.Encounters,
+        Prescriptions: target.Prescriptions + source.Prescriptions,
+        BillingItems: target.BillingItems + source.BillingItems,
+        LabOrders: target.LabOrders + source.LabOrders,
+        Messages: target.Messages + source.Messages,
+        Problems: target.Problems + source.Problems,
+        Allergies: target.Allergies + source.Allergies,
+        Medications: target.Medications + source.Medications);
+
     private static void AddSearchParameter(NpgsqlCommand command, string? normalizedSearch)
     {
         command.Parameters.Add("search", NpgsqlDbType.Text).Value = normalizedSearch is null ? DBNull.Value : $"%{normalizedSearch}%";
@@ -2543,6 +2688,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record PatientIdentity(string CanonicalId, int LegacyPid);
+
+    private sealed record PatientMergePreviewRow(PatientMergePreviewPatient Patient, PatientActivityCounts Counts);
 
     private sealed record NormalizedDuplicateSearch(
         string? FirstName,

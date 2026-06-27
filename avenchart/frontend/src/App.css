@@ -599,6 +599,68 @@
   font-weight: 800;
 }
 
+.merge-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #c9dce1;
+  border-radius: 7px;
+  background: #f6fafb;
+  padding: 10px;
+}
+
+.merge-preview-direction {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.merge-preview-direction > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid #d8e5e8;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.merge-preview-direction span,
+.merge-preview-direction small {
+  color: #607682;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.merge-preview-direction strong {
+  color: #163743;
+  font-size: 13px;
+}
+
+.merge-count-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.merge-count-grid span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-radius: 6px;
+  background: #e8f3f5;
+  color: #375765;
+  padding: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.merge-count-grid strong {
+  color: #0d3a48;
+  font-size: 15px;
+}
+
 .insurance-item {
   display: flex;
   flex-direction: column;

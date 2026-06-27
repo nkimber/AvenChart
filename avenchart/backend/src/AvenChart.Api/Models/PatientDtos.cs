@@ -145,6 +145,31 @@ public sealed record PatientDuplicateCandidate(
     int MatchScore,
     IReadOnlyList<string> MatchReasons);
 
+public sealed record PatientMergePreviewResponse(
+    string DatasetId,
+    string DatasetVersion,
+    bool PreviewOnly,
+    PatientMergePreviewPatient TargetPatient,
+    PatientMergePreviewPatient SourcePatient,
+    PatientActivityCounts TargetCounts,
+    PatientActivityCounts SourceCounts,
+    PatientActivityCounts CombinedCounts,
+    int MatchScore,
+    IReadOnlyList<string> MatchReasons,
+    IReadOnlyList<string> Safeguards);
+
+public sealed record PatientMergePreviewPatient(
+    string CanonicalId,
+    int LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string FirstName,
+    string LastName,
+    string DateOfBirth,
+    string? PhoneHome,
+    string? PhoneCell,
+    string? Email);
+
 public sealed record PatientActivityCounts(
     int Appointments,
     int Encounters,

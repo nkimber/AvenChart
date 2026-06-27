@@ -55,6 +55,7 @@ import {
   getEncounterSoapNoteTemplates,
   getPatientChart,
   getPatientCareTeamOptions,
+  getPatientMergePreview,
   getPatientProviderAssignmentOptions,
   getPatientBilling,
   getBillingChargeTemplate,
@@ -333,6 +334,7 @@ import {
   type PatientChartSummary,
   type PatientDuplicateCandidate,
   type PatientDuplicateSearchResponse,
+  type PatientMergePreviewResponse,
   type PatientInsuranceItem,
   type PatientInsuranceMutationInput,
   type PatientListItem,
@@ -8252,6 +8254,9 @@ function PatientWorkspace({
   const [duplicateSearch, setDuplicateSearch] = useState<PatientDuplicateSearchResponse | null>(null)
   const [duplicateSearchStatus, setDuplicateSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [duplicateSearchError, setDuplicateSearchError] = useState<string | null>(null)
+  const [mergePreview, setMergePreview] = useState<PatientMergePreviewResponse | null>(null)
+  const [mergePreviewStatus, setMergePreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [mergePreviewError, setMergePreviewError] = useState<string | null>(null)
   const [patientLoginUsername, setPatientLoginUsername] = useState('admin')
   const [patientLoginPassword, setPatientLoginPassword] = useState('pass')
   const [patientLoginStatus, setPatientLoginStatus] =
@@ -8291,6 +8296,9 @@ function PatientWorkspace({
     setEditingInsuranceId(null)
     setInsuranceDraft(buildInsuranceDraft())
     setInsuranceSaveStatus('idle')
+    setMergePreview(null)
+    setMergePreviewStatus('idle')
+    setMergePreviewError(null)
   }, [activePatient, chart])
 
   function updateDraft(field: keyof PatientContactUpdate, value: string) {
@@ -8480,6 +8488,24 @@ function PatientWorkspace({
       setDuplicateSearch(null)
       setDuplicateSearchStatus('error')
       setDuplicateSearchError(duplicateError instanceof Error ? duplicateError.message : 'Duplicate check failed')
+    }
+  }
+
+  async function handleMergePreview(candidate: PatientDuplicateCandidate) {
+    if (!sessionId || !chart) {
+      return
+    }
+
+    setMergePreviewStatus('loading')
+    setMergePreviewError(null)
+    try {
+      const preview = await getPatientMergePreview(chart.canonicalId, candidate.canonicalId, sessionId)
+      setMergePreview(preview)
+      setMergePreviewStatus('ready')
+    } catch (previewError) {
+      setMergePreview(null)
+      setMergePreviewStatus('error')
+      setMergePreviewError(previewError instanceof Error ? previewError.message : 'Merge preview failed')
     }
   }
 
@@ -9868,7 +9894,17 @@ function PatientWorkspace({
                     <strong>Patient duplicate detection</strong>
                     <span>{chart ? `${chart.duplicateCandidates.length} candidates` : 'Loading'}</span>
                   </div>
-                  <PatientDuplicateCandidateList candidates={chart?.duplicateCandidates ?? []} />
+                  <PatientDuplicateCandidateList
+                    candidates={chart?.duplicateCandidates ?? []}
+                    onPreviewMerge={handleMergePreview}
+                  />
+                  {mergePreviewStatus === 'loading' && (
+                    <div className="status-banner">Building patient merge preview</div>
+                  )}
+                  {mergePreviewStatus === 'error' && (
+                    <div className="status-banner error">{mergePreviewError ?? 'Merge preview failed'}</div>
+                  )}
+                  {mergePreview && <PatientMergePreviewPanel preview={mergePreview} />}
                 </div>
               </InfoPanel>
 
@@ -22473,7 +22509,13 @@ function AdministrationAccessGroupCard({
   )
 }
 
-function PatientDuplicateCandidateList({ candidates }: { candidates: PatientDuplicateCandidate[] }) {
+function PatientDuplicateCandidateList({
+  candidates,
+  onPreviewMerge,
+}: {
+  candidates: PatientDuplicateCandidate[]
+  onPreviewMerge?: (candidate: PatientDuplicateCandidate) => void
+}) {
   if (candidates.length === 0) {
     return <div className="timeline-placeholder">No duplicate candidates detected</div>
   }
@@ -22499,9 +22541,67 @@ function PatientDuplicateCandidateList({ candidates }: { candidates: PatientDupl
               <span key={reason}>{reason}</span>
             ))}
           </div>
+          {onPreviewMerge && (
+            <button className="icon-text-button compact" type="button" onClick={() => onPreviewMerge(candidate)}>
+              <UserCheck size={14} />
+              <span>Preview merge</span>
+            </button>
+          )}
         </article>
       ))}
     </div>
+  )
+}
+
+function PatientMergePreviewPanel({ preview }: { preview: PatientMergePreviewResponse }) {
+  const countRows = [
+    ['Appointments', preview.combinedCounts.appointments],
+    ['Encounters', preview.combinedCounts.encounters],
+    ['Prescriptions', preview.combinedCounts.prescriptions],
+    ['Billing', preview.combinedCounts.billingItems],
+    ['Labs', preview.combinedCounts.labOrders],
+    ['Messages', preview.combinedCounts.messages],
+    ['Problems', preview.combinedCounts.problems],
+    ['Allergies', preview.combinedCounts.allergies],
+    ['Medications', preview.combinedCounts.medications],
+  ] as const
+
+  return (
+    <section className="merge-preview-panel" aria-label="Patient merge preview">
+      <div className="duplicate-readiness-header">
+        <strong>Merge Preview</strong>
+        <span>{preview.previewOnly ? 'Preview only' : 'Ready'}</span>
+      </div>
+      <div className="merge-preview-direction">
+        <div>
+          <span>Target chart</span>
+          <strong>{preview.targetPatient.displayName}</strong>
+          <small>{preview.targetPatient.pubpid}</small>
+        </div>
+        <div>
+          <span>Source chart</span>
+          <strong>{preview.sourcePatient.displayName}</strong>
+          <small>{preview.sourcePatient.pubpid}</small>
+        </div>
+      </div>
+      <div className="procedure-order-meta">
+        <span>Match score {preview.matchScore}</span>
+        <span>{preview.matchReasons.join(', ') || 'No duplicate reasons detected'}</span>
+      </div>
+      <div className="merge-count-grid">
+        {countRows.map(([label, value]) => (
+          <span key={label}>
+            <strong>{value}</strong>
+            {label}
+          </span>
+        ))}
+      </div>
+      <div className="duplicate-reason-list">
+        {preview.safeguards.map((safeguard) => (
+          <span key={safeguard}>{safeguard}</span>
+        ))}
+      </div>
+    </section>
   )
 }
 

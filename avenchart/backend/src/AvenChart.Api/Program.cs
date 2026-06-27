@@ -576,6 +576,25 @@ patients.MapGet("/duplicates", async (
     })
     .WithName("FindPatientDuplicateCandidates");
 
+patients.MapGet("/merge-preview", async (
+        PatientRepository repository,
+        string targetPatientId,
+        string sourcePatientId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var response = await repository.GetMergePreviewAsync(targetPatientId, sourcePatientId, cancellationToken);
+            return response is null ? Results.NotFound() : Results.Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    })
+    .WithName("GetPatientMergePreview")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapGet("/provider-options", async (
         PatientRepository repository,
         CancellationToken cancellationToken) =>
