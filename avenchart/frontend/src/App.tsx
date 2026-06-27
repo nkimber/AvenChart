@@ -23595,6 +23595,27 @@ function ProcedureResultCard({
         <span>{result.abnormal || 'No flag'}</span>
         <span>{result.resultDate}</span>
       </div>
+      <div className="procedure-order-meta">
+        <span>{result.versionLabel || 'Version 1'}</span>
+        <span>
+          {(result.versionHistoryCount ?? 1)} version{(result.versionHistoryCount ?? 1) === 1 ? '' : 's'}
+        </span>
+      </div>
+      {(result.versionHistory ?? []).length > 0 && (
+        <div className="procedure-result-history" aria-label={`Procedure result version history ${result.id}`}>
+          {(result.versionHistory ?? []).map((version) => (
+            <div className="procedure-result-history-row" key={`${version.version}-${version.versionStatus}`}>
+              <strong>{version.versionLabel}</strong>
+              <span>{version.versionStatus} / {version.resultStatus || 'No status'} / {version.resultDate}</span>
+              <span>
+                {version.text || 'Result'}: {version.result || 'No value'} {version.units || ''}
+                {version.range ? ` / Range ${version.range}` : ''}
+                {version.abnormal ? ` / ${version.abnormal}` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="detail-actions compact-actions">
         <button
           className="icon-text-button secondary"

@@ -243,6 +243,7 @@ drop table if exists patient_documents;
 drop table if exists patient_reminders;
 drop table if exists portal_mailbox_messages;
 drop table if exists messages;
+drop table if exists procedure_result_versions;
 drop table if exists lab_results;
 drop table if exists lab_reports;
 drop table if exists lab_specimens;
@@ -1072,6 +1073,22 @@ create table lab_results (
   abnormal text,
   result_date timestamp not null,
   result_status text
+);
+
+create table procedure_result_versions (
+  id bigserial primary key,
+  result_id integer not null references lab_results(id) on delete cascade,
+  version_no integer not null,
+  captured_at timestamp not null,
+  code text,
+  text text,
+  units text,
+  result text,
+  range text,
+  abnormal text,
+  result_date timestamp,
+  result_status text,
+  unique (result_id, version_no)
 );
 
 create table messages (
@@ -2431,6 +2448,7 @@ create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
 create index idx_lab_order_catalog_lab_id on lab_order_catalog (lab_id);
 create index idx_lab_reports_date on lab_reports (report_date);
 create index idx_lab_results_date on lab_results (result_date);
+create index idx_procedure_result_versions_result on procedure_result_versions (result_id, version_no desc);
 create index idx_messages_pid on messages (pid);
 create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);
 create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);

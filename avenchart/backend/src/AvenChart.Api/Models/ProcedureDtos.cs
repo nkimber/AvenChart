@@ -306,6 +306,25 @@ public sealed record ProcedureResultItem(
     string? Range,
     string? Abnormal,
     string ResultDate,
+    string? ResultStatus,
+    int CurrentVersion,
+    string VersionLabel,
+    int VersionHistoryCount,
+    bool HasPriorVersions,
+    IReadOnlyList<ProcedureResultVersionItem> VersionHistory);
+
+public sealed record ProcedureResultVersionItem(
+    int Version,
+    string VersionLabel,
+    string VersionStatus,
+    string CapturedAt,
+    string? Code,
+    string? Text,
+    string? Units,
+    string? Result,
+    string? Range,
+    string? Abnormal,
+    string ResultDate,
     string? ResultStatus);
 
 public sealed record ProcedureOrderCreateRequest(

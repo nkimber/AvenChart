@@ -1604,6 +1604,26 @@ export type ProcedureResultItem = {
   abnormal?: string | null
   resultDate: string
   resultStatus?: string | null
+  currentVersion: number
+  versionLabel: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+  versionHistory: ProcedureResultVersionItem[]
+}
+
+export type ProcedureResultVersionItem = {
+  version: number
+  versionLabel: string
+  versionStatus: string
+  capturedAt: string
+  code?: string | null
+  text?: string | null
+  units?: string | null
+  result?: string | null
+  range?: string | null
+  abnormal?: string | null
+  resultDate: string
+  resultStatus?: string | null
 }
 
 export type ProcedureReportItem = {

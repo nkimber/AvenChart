@@ -14,6 +14,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureProcedureResultVersionTableAsync(connection, cancellationToken);
         var patient = await GetPatientAsync(connection, patientId, cancellationToken);
         if (patient is null)
         {
@@ -1550,13 +1551,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureProcedureResultVersionTableAsync(connection, cancellationToken);
         var result = await GetResultMutationContextAsync(connection, resultId, cancellationToken);
         if (result is null)
         {
             return null;
         }
 
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SnapshotCurrentProcedureResultVersionAsync(connection, transaction, result.Id, cancellationToken);
+
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update lab_results
             set code = @code,
@@ -1579,6 +1585,7 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("resultDate", NpgsqlDbType.Timestamp).Value = resultDate;
         command.Parameters.AddWithValue("status", request.Status.Trim());
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var detail = await GetForPatientAsync(result.PatientId, cancellationToken);
         return detail is null ? null : new ProcedureMutationResponse(result.Id, detail);
@@ -1858,7 +1865,8 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, report_id, code, text, units, result, range, abnormal, result_date, result_status
+            select id, report_id, code, text, units, result, range, abnormal, result_date, result_status,
+                   (select count(*) from procedure_result_versions v where v.result_id = lab_results.id) as prior_version_count
             from lab_results
             where report_id = any(@reportIds)
             order by id;
@@ -1867,20 +1875,167 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
 
         var rows = new List<ProcedureResultRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var baseRows = new List<ProcedureResultBaseRow>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            rows.Add(new ProcedureResultRow(
+            baseRows.Add(new ProcedureResultBaseRow(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
                 ReportId: reader.GetInt32(reader.GetOrdinal("report_id")),
+                Code: ReadNullableString(reader, "code"),
+                Text: ReadNullableString(reader, "text"),
+                Units: ReadNullableString(reader, "units"),
+                Result: ReadNullableString(reader, "result"),
+                Range: ReadNullableString(reader, "range"),
+                Abnormal: ReadNullableString(reader, "abnormal"),
+                ResultDate: reader.GetDateTime(reader.GetOrdinal("result_date")),
+                ResultStatus: ReadNullableString(reader, "result_status"),
+                PriorVersionCount: Convert.ToInt32(reader.GetValue(reader.GetOrdinal("prior_version_count")))));
+        }
+        await reader.DisposeAsync();
+
+        var historyByResult = await GetProcedureResultVersionHistoryAsync(connection, baseRows.Select(row => row.Id).ToArray(), cancellationToken);
+        foreach (var row in baseRows)
+        {
+            var currentVersion = row.PriorVersionCount + 1;
+            var currentHistory = new ProcedureResultVersionItem(
+                Version: currentVersion,
+                VersionLabel: $"Version {currentVersion}",
+                VersionStatus: "Current version",
+                CapturedAt: row.ResultDate.ToString("yyyy-MM-dd HH:mm"),
+                Code: row.Code,
+                Text: row.Text,
+                Units: row.Units,
+                Result: row.Result,
+                Range: row.Range,
+                Abnormal: row.Abnormal,
+                ResultDate: row.ResultDate.ToString("yyyy-MM-dd HH:mm"),
+                ResultStatus: row.ResultStatus);
+            var versionHistory = new List<ProcedureResultVersionItem> { currentHistory };
+            versionHistory.AddRange(historyByResult.GetValueOrDefault(row.Id, []));
+            rows.Add(new ProcedureResultRow(
+                ReportId: row.ReportId,
                 Result: new ProcedureResultItem(
-                    Id: reader.GetInt32(reader.GetOrdinal("id")),
-                    Code: ReadNullableString(reader, "code"),
-                    Text: ReadNullableString(reader, "text"),
-                    Units: ReadNullableString(reader, "units"),
-                    Result: ReadNullableString(reader, "result"),
-                    Range: ReadNullableString(reader, "range"),
-                    Abnormal: ReadNullableString(reader, "abnormal"),
-                    ResultDate: reader.GetDateTime(reader.GetOrdinal("result_date")).ToString("yyyy-MM-dd HH:mm"),
-                    ResultStatus: ReadNullableString(reader, "result_status"))));
+                    Id: row.Id,
+                    Code: row.Code,
+                    Text: row.Text,
+                    Units: row.Units,
+                    Result: row.Result,
+                    Range: row.Range,
+                    Abnormal: row.Abnormal,
+                    ResultDate: row.ResultDate.ToString("yyyy-MM-dd HH:mm"),
+                    ResultStatus: row.ResultStatus,
+                    CurrentVersion: currentVersion,
+                    VersionLabel: $"Version {currentVersion}",
+                    VersionHistoryCount: currentVersion,
+                    HasPriorVersions: row.PriorVersionCount > 0,
+                    VersionHistory: versionHistory)));
+        }
+
+        return rows;
+    }
+
+    private static async Task EnsureProcedureResultVersionTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists procedure_result_versions (
+              id bigserial primary key,
+              result_id integer not null references lab_results(id) on delete cascade,
+              version_no integer not null,
+              captured_at timestamp not null,
+              code text,
+              text text,
+              units text,
+              result text,
+              range text,
+              abnormal text,
+              result_date timestamp,
+              result_status text,
+              unique (result_id, version_no)
+            );
+
+            create index if not exists idx_procedure_result_versions_result
+              on procedure_result_versions (result_id, version_no desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task SnapshotCurrentProcedureResultVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int resultId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into procedure_result_versions (
+              result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status
+            )
+            select
+              lr.id,
+              coalesce((select max(v.version_no) from procedure_result_versions v where v.result_id = lr.id), 0) + 1,
+              current_timestamp,
+              lr.code,
+              lr.text,
+              lr.units,
+              lr.result,
+              lr.range,
+              lr.abnormal,
+              lr.result_date,
+              lr.result_status
+            from lab_results lr
+            where lr.id = @resultId;
+            """;
+        command.Parameters.AddWithValue("resultId", resultId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<IReadOnlyDictionary<int, List<ProcedureResultVersionItem>>> GetProcedureResultVersionHistoryAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<int> resultIds,
+        CancellationToken cancellationToken)
+    {
+        if (resultIds.Count == 0)
+        {
+            return new Dictionary<int, List<ProcedureResultVersionItem>>();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select result_id, version_no, captured_at, code, text, units, result, range, abnormal, result_date, result_status
+            from procedure_result_versions
+            where result_id = any(@resultIds)
+            order by result_id, version_no desc;
+            """;
+        command.Parameters.AddWithValue("resultIds", resultIds.ToArray());
+
+        var rows = new Dictionary<int, List<ProcedureResultVersionItem>>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var resultId = reader.GetInt32(reader.GetOrdinal("result_id"));
+            var version = reader.GetInt32(reader.GetOrdinal("version_no"));
+            var resultRows = rows.GetValueOrDefault(resultId) ?? [];
+            var resultDate = reader.IsDBNull(reader.GetOrdinal("result_date"))
+                ? string.Empty
+                : reader.GetDateTime(reader.GetOrdinal("result_date")).ToString("yyyy-MM-dd HH:mm");
+            resultRows.Add(new ProcedureResultVersionItem(
+                Version: version,
+                VersionLabel: $"Version {version}",
+                VersionStatus: "Prior version",
+                CapturedAt: reader.GetDateTime(reader.GetOrdinal("captured_at")).ToString("yyyy-MM-dd HH:mm"),
+                Code: ReadNullableString(reader, "code"),
+                Text: ReadNullableString(reader, "text"),
+                Units: ReadNullableString(reader, "units"),
+                Result: ReadNullableString(reader, "result"),
+                Range: ReadNullableString(reader, "range"),
+                Abnormal: ReadNullableString(reader, "abnormal"),
+                ResultDate: resultDate,
+                ResultStatus: ReadNullableString(reader, "result_status")));
+            rows[resultId] = resultRows;
         }
 
         return rows;
@@ -2616,6 +2771,18 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
     private sealed record ProcedureReportRow(int Id, int OrderId, ProcedureReportItem Report);
 
     private sealed record ProcedureResultRow(int ReportId, ProcedureResultItem Result);
+    private sealed record ProcedureResultBaseRow(
+        int Id,
+        int ReportId,
+        string? Code,
+        string? Text,
+        string? Units,
+        string? Result,
+        string? Range,
+        string? Abnormal,
+        DateTime ResultDate,
+        string? ResultStatus,
+        int PriorVersionCount);
 
     private sealed record ProcedureEncounterMutationContext(int Encounter, int? ProviderId);
 

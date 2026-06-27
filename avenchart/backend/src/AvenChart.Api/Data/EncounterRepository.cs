@@ -1140,7 +1140,12 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
                     Range: ReadNullableString(reader, "range"),
                     Abnormal: ReadNullableString(reader, "abnormal"),
                     ResultDate: ReadDateTime(reader, "result_date"),
-                    ResultStatus: ReadNullableString(reader, "result_status"))));
+                    ResultStatus: ReadNullableString(reader, "result_status"),
+                    CurrentVersion: 1,
+                    VersionLabel: "Version 1",
+                    VersionHistoryCount: 1,
+                    HasPriorVersions: false,
+                    VersionHistory: [])));
         }
 
         return rows;
