@@ -792,6 +792,15 @@ appointments.MapGet("/", async (
     })
     .WithName("SearchAppointments");
 
+appointments.MapGet("/waitlist", async (
+        AppointmentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.GetWaitlistAsync(cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("GetAppointmentWaitlist");
+
 appointments.MapGet("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,

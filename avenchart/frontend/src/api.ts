@@ -535,6 +535,43 @@ export type AppointmentAvailabilityValidationResponse = {
   messages: string[]
 }
 
+export type AppointmentWaitlistItem = {
+  appointmentId: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  date: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  title: string
+  status?: string | null
+  categoryId?: number | null
+  categoryName?: string | null
+  providerId?: number | null
+  providerName?: string | null
+  facilityId?: number | null
+  facilityName?: string | null
+  room?: string | null
+  reason?: string | null
+  daysUntilRequestedSlot: number
+  priority: string
+  reminderCreated: boolean
+  reminderId?: string | null
+  reminderStatus?: string | null
+  reminderAssignedTo?: string | null
+  reminderBody?: string | null
+}
+
+export type AppointmentWaitlistResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  totalWaiting: number
+  items: AppointmentWaitlistItem[]
+}
+
 export type AppointmentUpdateInput = {
   providerId?: number | null
   title: string
@@ -4620,6 +4657,21 @@ export async function getAppointmentDetail(
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment detail load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getAppointmentWaitlist(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentWaitlistResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/waitlist`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment waitlist load', response.status))
   }
 
   return response.json()

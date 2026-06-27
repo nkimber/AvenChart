@@ -43,6 +43,7 @@ import {
 } from 'lucide-react'
 import {
   getAppointmentDetail,
+  getAppointmentWaitlist,
   getAdministrationDirectory,
   acceptAdministrationPortalProfileReview,
   revertAdministrationPortalProfileReview,
@@ -253,6 +254,7 @@ import {
   type AppointmentOccurrenceRescheduleInput,
   type AppointmentSearchResponse,
   type AppointmentUpdateInput,
+  type AppointmentWaitlistResponse,
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingChargeTemplate,
@@ -492,6 +494,9 @@ function App() {
   const [appointmentDetailStatus, setAppointmentDetailStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentError, setAppointmentError] = useState<string | null>(null)
   const [appointmentRefreshKey, setAppointmentRefreshKey] = useState(0)
+  const [appointmentWaitlist, setAppointmentWaitlist] = useState<AppointmentWaitlistResponse | null>(null)
+  const [appointmentWaitlistStatus, setAppointmentWaitlistStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [appointmentWaitlistError, setAppointmentWaitlistError] = useState<string | null>(null)
 
   const [encounterPatientId, setEncounterPatientId] = useState('MOD-PAT-0001')
   const [encounterFromDate, setEncounterFromDate] = useState('2026-01-01')
@@ -755,6 +760,9 @@ function App() {
       setSelectedAppointmentId(null)
       setAppointmentDetail(null)
       setAppointmentDetailStatus('idle')
+      setAppointmentWaitlist(null)
+      setAppointmentWaitlistStatus('idle')
+      setAppointmentWaitlistError(null)
       return
     }
 
@@ -795,6 +803,39 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, appointmentPatientId, appointmentFromDate, appointmentRefreshKey, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'calendar') {
+      return
+    }
+
+    if (!openEmrSessionId) {
+      setAppointmentWaitlist(null)
+      setAppointmentWaitlistStatus('idle')
+      setAppointmentWaitlistError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadAppointmentWaitlist() {
+      setAppointmentWaitlistStatus('loading')
+      setAppointmentWaitlistError(null)
+
+      try {
+        const waitlist = await getAppointmentWaitlist(openEmrSessionId, controller.signal)
+        setAppointmentWaitlist(waitlist)
+        setAppointmentWaitlistStatus('ready')
+      } catch (waitlistError) {
+        if (!controller.signal.aborted) {
+          setAppointmentWaitlistStatus('error')
+          setAppointmentWaitlistError(waitlistError instanceof Error ? waitlistError.message : 'Appointment waitlist failed')
+        }
+      }
+    }
+
+    loadAppointmentWaitlist()
+    return () => controller.abort()
+  }, [activeModule, appointmentRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'calendar' || !selectedAppointmentId || !openEmrSessionId) {
@@ -1878,6 +1919,33 @@ function App() {
       const message = noShowError instanceof Error ? noShowError.message : 'Appointment no-show update failed'
       setAppointmentError(message)
       throw noShowError
+    }
+  }
+
+  async function handleAppointmentWaitlistPromote(appointmentId: string, title: string) {
+    setAppointmentWaitlistStatus('loading')
+    setAppointmentError(null)
+    setAppointmentWaitlistError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      const updated = await updateAppointmentStatus(appointmentId, {
+        status: '~',
+        title,
+      }, sessionId)
+      setAppointmentPatientId(updated.patientId)
+      setAppointmentFromDate(updated.date)
+      setSelectedAppointmentId(updated.id)
+      setAppointmentDetail(updated)
+      setAppointmentDetailStatus('ready')
+      setAppointmentWaitlistStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+      return updated
+    } catch (promoteError) {
+      setAppointmentWaitlistStatus('error')
+      const message = promoteError instanceof Error ? promoteError.message : 'Appointment waitlist promote failed'
+      setAppointmentWaitlistError(message)
+      throw promoteError
     }
   }
 
@@ -5128,6 +5196,9 @@ function App() {
             searchResult={appointmentResult}
             selectedAppointmentId={selectedAppointmentId}
             appointmentDetail={appointmentDetail}
+            waitlist={appointmentWaitlist}
+            waitlistStatus={appointmentWaitlistStatus}
+            waitlistError={appointmentWaitlistError}
             searchStatus={appointmentStatus}
             detailStatus={appointmentDetailStatus}
             error={appointmentError}
@@ -5150,6 +5221,7 @@ function App() {
             onRestoreAppointmentOccurrence={handleAppointmentOccurrenceRestore}
             onConvertToEncounter={handleAppointmentConvertToEncounter}
             onCreateAppointmentCharge={handleAppointmentCreateCharge}
+            onPromoteWaitlistAppointment={handleAppointmentWaitlistPromote}
           />
         )}
         {activeModule === 'encounters' && (
@@ -9948,6 +10020,9 @@ function CalendarWorkspace({
   searchResult,
   selectedAppointmentId,
   appointmentDetail,
+  waitlist,
+  waitlistStatus,
+  waitlistError,
   searchStatus,
   detailStatus,
   error,
@@ -9967,12 +10042,16 @@ function CalendarWorkspace({
   onRestoreAppointmentOccurrence,
   onConvertToEncounter,
   onCreateAppointmentCharge,
+  onPromoteWaitlistAppointment,
 }: {
   patientId: string
   fromDate: string
   searchResult: AppointmentSearchResponse | null
   selectedAppointmentId: string | null
   appointmentDetail: AppointmentDetail | null
+  waitlist: AppointmentWaitlistResponse | null
+  waitlistStatus: 'idle' | 'loading' | 'ready' | 'error'
+  waitlistError: string | null
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
@@ -9992,6 +10071,7 @@ function CalendarWorkspace({
   onRestoreAppointmentOccurrence: (appointment: AppointmentDetail, occurrenceDate: string) => Promise<AppointmentDetail>
   onConvertToEncounter: (appointment: AppointmentDetail) => Promise<EncounterDetail>
   onCreateAppointmentCharge: (appointment: AppointmentDetail) => Promise<unknown>
+  onPromoteWaitlistAppointment: (appointmentId: string, title: string) => Promise<AppointmentDetail>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -10169,6 +10249,21 @@ function CalendarWorkspace({
       setAvailabilityError(
         validationError instanceof Error ? validationError.message : 'Appointment availability validation failed',
       )
+    }
+  }
+
+  async function handlePromoteWaitlistAppointment(appointmentId: string, title: string) {
+    if (calendarLocked) {
+      setMutationStatus('error')
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onPromoteWaitlistAppointment(appointmentId, title)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
     }
   }
 
@@ -10677,6 +10772,66 @@ function CalendarWorkspace({
             </div>
           )}
         </form>
+
+        <section className="appointment-mutation-panel" aria-label="Appointment waitlist queue">
+          <div className="panel-heading compact-heading">
+            <Clock size={16} />
+            <h3>Waitlist Queue</h3>
+          </div>
+          <div className="result-meta">
+            <span>{waitlistStatus === 'loading' ? 'Loading waitlist' : `${waitlist?.totalWaiting ?? 0} waiting requests`}</span>
+            <span>As of {waitlist?.asOfDate ?? 'current session'}</span>
+          </div>
+          {waitlistStatus === 'error' && waitlistError && (
+            <div className="status-banner error" role="status">{waitlistError}</div>
+          )}
+          {waitlist?.items.length ? (
+            <div className="appointment-list">
+              {waitlist.items.map((item) => (
+                <article className="appointment-result" key={item.appointmentId}>
+                  <div className="appointment-result-main">
+                    <div>
+                      <div className="patient-name">{item.patientDisplayName}</div>
+                      <div className="patient-id">{item.pubpid} / {item.categoryName ?? item.title}</div>
+                    </div>
+                    <span className="status-tag">{item.priority}</span>
+                  </div>
+                  <div>
+                    <Field label="Requested" value={`${item.date} ${item.startTime}-${item.endTime}`} />
+                    <Field label="Provider" value={careLocationDetail(item.providerName, item.providerId) ?? 'Not assigned'} />
+                    <Field label="Facility" value={careLocationDetail(item.facilityName, item.facilityId) ?? 'Not assigned'} />
+                    <Field label="Reminder" value={item.reminderCreated ? `${item.reminderStatus ?? 'New'} / ${item.reminderAssignedTo ?? 'Unassigned'}` : 'Missing'} />
+                  </div>
+                  {item.reason && <div className="patient-result-sub">{item.reason}</div>}
+                  <div className="contact-actions">
+                    <button
+                      className="icon-text-button"
+                      type="button"
+                      disabled={calendarLocked || mutationStatus === 'saving'}
+                      onClick={() => {
+                        onSelectAppointment(item.appointmentId)
+                      }}
+                    >
+                      <Search size={15} />
+                      <span>Open request</span>
+                    </button>
+                    <button
+                      className="icon-text-button primary"
+                      type="button"
+                      disabled={calendarLocked || mutationStatus === 'saving'}
+                      onClick={() => void handlePromoteWaitlistAppointment(item.appointmentId, item.title)}
+                    >
+                      <Check size={15} />
+                      <span>Promote pending</span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            waitlistStatus === 'ready' && <div className="empty-state">No waiting appointment requests</div>
+          )}
+        </section>
 
         <div className="result-meta">
           <span>{searchStatus === 'loading' ? 'Searching' : `${searchResult?.totalMatches ?? 0} appointments`}</span>

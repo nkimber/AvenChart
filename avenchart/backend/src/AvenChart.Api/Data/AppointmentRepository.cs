@@ -433,6 +433,113 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
     }
 
+    public async Task<AppointmentWaitlistResponse> GetWaitlistAsync(CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                a.id,
+                p.canonical_id as patient_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                a.appointment_date,
+                a.start_time,
+                a.duration_minutes,
+                a.title,
+                a.status,
+                a.category_id,
+                a.room,
+                a.comments,
+                a.provider_id,
+                trim(concat(s.first_name, ' ', s.last_name)) as provider_name,
+                a.facility_id,
+                f.name as facility_name,
+                m.id as reminder_id,
+                m.status as reminder_status,
+                m.assigned_to as reminder_assigned_to,
+                m.body as reminder_body
+            from appointments a
+            join patients p on p.legacy_pid = a.pid
+            left join staff s on s.id = a.provider_id
+            left join facilities f on f.id = a.facility_id
+            left join lateral (
+                select id, status, assigned_to, body
+                from messages
+                where pid = a.pid
+                  and deleted = 0
+                  and activity = 1
+                  and title = 'Patient Reminders'
+                  and portal_relation = concat('portal:appointment-request:', a.id)
+                order by message_date desc, id desc
+                limit 1
+            ) m on true
+            where a.status = '^'
+              and a.appointment_date >= @baseDate
+            order by a.appointment_date, a.start_time, p.last_name, p.first_name, a.id;
+            """;
+        command.Parameters.Add("baseDate", NpgsqlDbType.Date).Value = metadata.BaseDate;
+
+        var items = new List<AppointmentWaitlistItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var appointmentDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date"));
+            var startTime = reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time"));
+            var durationMinutes = reader.GetInt32(reader.GetOrdinal("duration_minutes"));
+            var endTime = startTime.Add(TimeSpan.FromMinutes(durationMinutes));
+            var daysUntilRequestedSlot = appointmentDate.DayNumber - metadata.BaseDate.DayNumber;
+            var categoryId = ReadNullableInt(reader, "category_id");
+            var patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            var firstName = ReadNullableString(reader, "first_name");
+            var lastName = ReadNullableString(reader, "last_name");
+            var preferredName = ReadNullableString(reader, "preferred_name");
+            var displayName = !string.IsNullOrWhiteSpace(preferredName)
+                ? $"{lastName}, {preferredName}".Trim(' ', ',')
+                : NormalizePatientName(firstName, lastName, patientId);
+            var reminderId = ReadNullableString(reader, "reminder_id");
+
+            items.Add(new AppointmentWaitlistItem(
+                AppointmentId: reader.GetString(reader.GetOrdinal("id")),
+                PatientId: patientId,
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                Pubpid: ReadNullableString(reader, "pubpid") ?? patientId,
+                PatientDisplayName: displayName,
+                Date: appointmentDate.ToString("yyyy-MM-dd"),
+                StartTime: startTime.ToString("HH:mm"),
+                EndTime: endTime.ToString("HH:mm"),
+                DurationMinutes: durationMinutes,
+                Title: ReadNullableString(reader, "title") ?? "Appointment request",
+                Status: ReadNullableString(reader, "status"),
+                CategoryId: categoryId,
+                CategoryName: GetAppointmentCategoryName(categoryId),
+                ProviderId: ReadNullableInt(reader, "provider_id"),
+                ProviderName: ReadNullableString(reader, "provider_name"),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
+                FacilityName: ReadNullableString(reader, "facility_name"),
+                Room: ReadNullableString(reader, "room"),
+                Reason: ReadNullableString(reader, "comments"),
+                DaysUntilRequestedSlot: daysUntilRequestedSlot,
+                Priority: GetWaitlistPriority(daysUntilRequestedSlot, reminderId),
+                ReminderCreated: reminderId is not null,
+                ReminderId: reminderId,
+                ReminderStatus: ReadNullableString(reader, "reminder_status"),
+                ReminderAssignedTo: ReadNullableString(reader, "reminder_assigned_to"),
+                ReminderBody: ReadNullableString(reader, "reminder_body")));
+        }
+
+        return new AppointmentWaitlistResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            TotalWaiting: items.Count,
+            Items: items);
+    }
+
     public async Task<AppointmentAvailabilityValidationResponse?> ValidateAvailabilityAsync(
         AppointmentAvailabilityValidationRequest request,
         CancellationToken cancellationToken)
@@ -2069,6 +2176,21 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         null => null,
         _ => $"Category {categoryId.Value}"
     };
+
+    private static string GetWaitlistPriority(int daysUntilRequestedSlot, string? reminderId)
+    {
+        if (daysUntilRequestedSlot <= 2)
+        {
+            return "urgent";
+        }
+
+        if (string.IsNullOrWhiteSpace(reminderId))
+        {
+            return "needs-reminder";
+        }
+
+        return daysUntilRequestedSlot <= 7 ? "soon" : "standard";
+    }
 
     private static void AddRecurrenceParameters(
         NpgsqlCommand command,

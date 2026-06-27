@@ -177,6 +177,41 @@ public sealed record AppointmentAvailabilityConflict(
     string EndTime,
     string Title);
 
+public sealed record AppointmentWaitlistResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int TotalWaiting,
+    IReadOnlyList<AppointmentWaitlistItem> Items);
+
+public sealed record AppointmentWaitlistItem(
+    string AppointmentId,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string Date,
+    string StartTime,
+    string EndTime,
+    int DurationMinutes,
+    string Title,
+    string? Status,
+    int? CategoryId,
+    string? CategoryName,
+    int? ProviderId,
+    string? ProviderName,
+    int? FacilityId,
+    string? FacilityName,
+    string? Room,
+    string? Reason,
+    int DaysUntilRequestedSlot,
+    string Priority,
+    bool ReminderCreated,
+    string? ReminderId,
+    string? ReminderStatus,
+    string? ReminderAssignedTo,
+    string? ReminderBody);
+
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
     string Title,
