@@ -1355,6 +1355,38 @@ export type PatientDocumentRoutingQueueResponse = {
   items: PatientDocumentRoutingQueueItem[]
 }
 
+export type PatientDocumentRetentionPolicyItem = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  fileName?: string | null
+  encounter?: number | null
+  retentionClass: string
+  retentionYears: number
+  retainUntil: string
+  dispositionStatus: string
+  policyBasis: string
+  notes?: string | null
+}
+
+export type PatientDocumentRetentionPolicyResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  count: number
+  eligibleCount: number
+  items: PatientDocumentRetentionPolicyItem[]
+}
+
 export type PatientDocumentOcrCompleteInput = {
   extractedText: string
   completedBy: string
@@ -5964,6 +5996,25 @@ export async function getPatientDocumentRoutingQueue(
   })
   if (!response.ok) {
     throw new Error(documentApiError('Document routing queue load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getPatientDocumentRetentionPolicy(
+  patientId?: string | null,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRetentionPolicyResponse> {
+  const query = patientId && patientId.trim().length > 0
+    ? `?patientId=${encodeURIComponent(patientId.trim())}`
+    : ''
+  const response = await fetch(`${apiBaseUrl}/api/documents/retention-policy${query}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(documentApiError('Document retention policy load', response.status))
   }
 
   return response.json()

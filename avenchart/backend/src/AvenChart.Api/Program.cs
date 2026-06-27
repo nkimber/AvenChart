@@ -1835,6 +1835,16 @@ documents.MapGet("/routing-queue", async (
     })
     .WithName("GetPatientDocumentRoutingQueue");
 
+documents.MapGet("/retention-policy", async (
+        DocumentRepository repository,
+        CancellationToken cancellationToken,
+        string? patientId = null) =>
+    {
+        var policy = await repository.GetRetentionPolicyAsync(cancellationToken, patientId);
+        return Results.Ok(policy);
+    })
+    .WithName("GetPatientDocumentRetentionPolicy");
+
 documents.MapPost("/{documentId:int}/ocr/complete", async (
         DocumentRepository repository,
         int documentId,

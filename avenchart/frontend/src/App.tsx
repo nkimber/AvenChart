@@ -73,6 +73,7 @@ import {
   getPatientDocuments,
   getPatientDocumentOcrQueue,
   getPatientDocumentRoutingQueue,
+  getPatientDocumentRetentionPolicy,
   getPatientMessages,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
@@ -345,6 +346,7 @@ import {
   type PatientDocumentOcrCompleteResponse,
   type PatientDocumentOcrQueueItem,
   type PatientDocumentOcrQueueResponse,
+  type PatientDocumentRetentionPolicyResponse,
   type PatientDocumentRoutingQueueResponse,
   type PatientProviderAssignmentOption,
   type PatientProviderAssignmentOptionsResponse,
@@ -620,6 +622,7 @@ function App() {
   const [documentIncludeArchived, setDocumentIncludeArchived] = useState(false)
   const [documentOcrQueue, setDocumentOcrQueue] = useState<PatientDocumentOcrQueueResponse | null>(null)
   const [documentRoutingQueue, setDocumentRoutingQueue] = useState<PatientDocumentRoutingQueueResponse | null>(null)
+  const [documentRetentionPolicy, setDocumentRetentionPolicy] = useState<PatientDocumentRetentionPolicyResponse | null>(null)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -1104,6 +1107,7 @@ function App() {
       setPatientDocuments(null)
       setDocumentOcrQueue(null)
       setDocumentRoutingQueue(null)
+      setDocumentRetentionPolicy(null)
       setDocumentStatus('idle')
       setDocumentError(null)
       return
@@ -1123,9 +1127,11 @@ function App() {
         )
         const ocrQueue = await getPatientDocumentOcrQueue(documentPatientId, openEmrSessionId, controller.signal)
         const routingQueue = await getPatientDocumentRoutingQueue(documentPatientId, openEmrSessionId, controller.signal)
+        const retentionPolicy = await getPatientDocumentRetentionPolicy(documentPatientId, openEmrSessionId, controller.signal)
         setPatientDocuments(result)
         setDocumentOcrQueue(ocrQueue)
         setDocumentRoutingQueue(routingQueue)
+        setDocumentRetentionPolicy(retentionPolicy)
         setDocumentStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
@@ -5627,6 +5633,7 @@ function App() {
             patientDocuments={patientDocuments}
             documentOcrQueue={documentOcrQueue}
             documentRoutingQueue={documentRoutingQueue}
+            documentRetentionPolicy={documentRetentionPolicy}
             status={documentStatus}
             error={documentError}
             includeArchived={documentIncludeArchived}
@@ -18020,6 +18027,7 @@ function DocumentsWorkspace({
   patientDocuments,
   documentOcrQueue,
   documentRoutingQueue,
+  documentRetentionPolicy,
   status,
   error,
   includeArchived,
@@ -18044,6 +18052,7 @@ function DocumentsWorkspace({
   patientDocuments: PatientDocumentsResponse | null
   documentOcrQueue: PatientDocumentOcrQueueResponse | null
   documentRoutingQueue: PatientDocumentRoutingQueueResponse | null
+  documentRetentionPolicy: PatientDocumentRetentionPolicyResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeArchived: boolean
@@ -18114,6 +18123,7 @@ function DocumentsWorkspace({
   const ocrQueueItems = documentOcrQueue?.items ?? []
   const ocrQueuePages = ocrQueueItems.reduce((total, item) => total + item.scanPageCount, 0)
   const routingQueueItems = documentRoutingQueue?.items ?? []
+  const retentionItems = documentRetentionPolicy?.items ?? []
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
   const documentAuthorizationError = status === 'error' && Boolean(error?.includes('Document access'))
@@ -18736,6 +18746,37 @@ function DocumentsWorkspace({
                   ))}
                   {routingQueueItems.length === 0 && (
                     <div className="timeline-placeholder">No documents waiting for routing review</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="info-panel documents-panel" aria-label="Document retention policy">
+                <div className="panel-heading">
+                  <ClipboardList size={17} />
+                  <h3>Retention Policy</h3>
+                </div>
+                <div className="list-counts compact-counts">
+                  <MetricRow label="Tracked" value={documentRetentionPolicy?.count ?? 0} />
+                  <MetricRow label="Eligible" value={documentRetentionPolicy?.eligibleCount ?? 0} />
+                </div>
+                <Field label="As of" value={documentRetentionPolicy?.asOfDate} />
+                <div className="message-list-body">
+                  {retentionItems.slice(0, 6).map((item) => (
+                    <div className="message-item compact-message-item" key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.categoryName} / {item.retentionClass}</span>
+                        <span>Retain until {item.retainUntil}</span>
+                      </div>
+                      <div className="document-card-tags">
+                        <span className="status-tag">{item.dispositionStatus}</span>
+                        <span className="status-tag">{item.retentionYears} years</span>
+                      </div>
+                      <p className="document-preview-text">{item.policyBasis}</p>
+                    </div>
+                  ))}
+                  {retentionItems.length === 0 && (
+                    <div className="timeline-placeholder">No active documents with retention policy evidence</div>
                   )}
                 </div>
               </section>

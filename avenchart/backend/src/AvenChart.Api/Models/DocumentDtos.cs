@@ -122,6 +122,36 @@ public sealed record PatientDocumentRoutingQueueItem(
     string RoutingReason,
     string? Notes);
 
+public sealed record PatientDocumentRetentionPolicyResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int Count,
+    int EligibleCount,
+    IReadOnlyList<PatientDocumentRetentionPolicyItem> Items);
+
+public sealed record PatientDocumentRetentionPolicyItem(
+    int Id,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    int CategoryId,
+    string CategoryName,
+    string Name,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    string? FileName,
+    int? Encounter,
+    string RetentionClass,
+    int RetentionYears,
+    string RetainUntil,
+    string DispositionStatus,
+    string PolicyBasis,
+    string? Notes);
+
 public sealed record PatientDocumentOcrCompleteRequest(
     string ExtractedText,
     string CompletedBy);

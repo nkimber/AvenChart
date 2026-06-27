@@ -197,6 +197,81 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
+    public async Task<PatientDocumentRetentionPolicyResponse> GetRetentionPolicyAsync(
+        CancellationToken cancellationToken,
+        string? patientId = null)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
+              d.category_id, d.category_name, d.name, d.doc_date, d.uploaded_at, d.mimetype, d.file_name,
+              d.encounter, d.notes
+            from patient_documents d
+            join patients p on p.canonical_id = d.patient_id
+            where d.deleted = 0
+              and (@patientId is null
+                   or lower(d.patient_id) = lower(@patientId)
+                   or lower(p.pubpid) = lower(@patientId)
+                   or d.pid::text = @patientId)
+            order by d.doc_date, d.id;
+            """;
+        var patientParameter = command.Parameters.Add("patientId", NpgsqlTypes.NpgsqlDbType.Text);
+        patientParameter.Value = string.IsNullOrWhiteSpace(patientId) ? DBNull.Value : patientId.Trim();
+
+        var items = new List<PatientDocumentRetentionPolicyItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+            var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+            var preferredName = ReadNullableString(reader, "preferred_name");
+            var categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+            var notes = ReadNullableString(reader, "notes");
+            var documentDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date"));
+            var retentionYears = BuildRetentionYears(categoryName, notes);
+            var retainUntil = documentDate.AddYears(retentionYears);
+            var retentionClass = ExtractTaggedValue(notes, "Retention class") ?? BuildRetentionClass(categoryName);
+            var policyBasis = ExtractTaggedValue(notes, "Retention basis")
+                ?? $"{categoryName} documents retained for {retentionYears} year{(retentionYears == 1 ? string.Empty : "s")}";
+            var dispositionStatus = retainUntil <= metadata.BaseDate ? "Eligible for disposition" : "Retain";
+
+            items.Add(new PatientDocumentRetentionPolicyItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                PatientDisplayName: string.IsNullOrWhiteSpace(preferredName)
+                    ? $"{lastName}, {firstName}"
+                    : $"{lastName}, {firstName} ({preferredName})",
+                CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+                CategoryName: categoryName,
+                Name: reader.GetString(reader.GetOrdinal("name")),
+                DocDate: documentDate.ToString("yyyy-MM-dd"),
+                UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                Mimetype: ReadNullableString(reader, "mimetype"),
+                FileName: ReadNullableString(reader, "file_name"),
+                Encounter: ReadNullableInt32(reader, "encounter"),
+                RetentionClass: retentionClass,
+                RetentionYears: retentionYears,
+                RetainUntil: retainUntil.ToString("yyyy-MM-dd"),
+                DispositionStatus: dispositionStatus,
+                PolicyBasis: policyBasis,
+                Notes: notes));
+        }
+
+        return new PatientDocumentRetentionPolicyResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Count: items.Count,
+            EligibleCount: items.Count(item => item.DispositionStatus == "Eligible for disposition"),
+            Items: items);
+    }
+
     public async Task<PatientDocumentOcrCompleteResponse?> CompleteOcrAsync(
         int documentId,
         PatientDocumentOcrCompleteRequest request,
@@ -1379,6 +1454,49 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         return "Standard";
+    }
+
+    private static string BuildRetentionClass(string categoryName)
+    {
+        var normalized = categoryName.ToLowerInvariant();
+        if (normalized.Contains("advance", StringComparison.Ordinal))
+        {
+            return "Legal and directive";
+        }
+
+        if (normalized.Contains("lab", StringComparison.Ordinal))
+        {
+            return "Clinical diagnostic";
+        }
+
+        if (normalized.Contains("patient", StringComparison.Ordinal))
+        {
+            return "Administrative";
+        }
+
+        return "Clinical record";
+    }
+
+    private static int BuildRetentionYears(string categoryName, string? notes)
+    {
+        var taggedYears = ExtractTaggedValue(notes, "Retention years");
+        if (int.TryParse(taggedYears, out var years) && years > 0 && years <= 99)
+        {
+            return years;
+        }
+
+        var normalized = categoryName.ToLowerInvariant();
+        if (normalized.Contains("patient", StringComparison.Ordinal))
+        {
+            return 3;
+        }
+
+        if (normalized.Contains("advance", StringComparison.Ordinal))
+        {
+            return 10;
+        }
+
+        return 7;
     }
 
     private static string? ExtractTaggedValue(string? notes, string label)
