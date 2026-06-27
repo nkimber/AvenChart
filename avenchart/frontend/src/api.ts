@@ -1969,6 +1969,44 @@ export type StatementPortalDeliveryResponse = {
   entries: StatementPortalDeliveryEntry[]
 }
 
+export type StatementEmailOutboxEntry = {
+  outboxMessageId: string
+  pubpid: string
+  legacyPid: number
+  patientDisplayName: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  toEmail: string
+  fromEmail: string
+  subject: string
+  bodyPreview: string
+  attachmentFileName: string
+  queueName: string
+  deliveryStatus: string
+  externalReference: string
+}
+
+export type StatementEmailOutboxResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  outboxBatchId: string
+  queuedAt: string
+  candidateCount: number
+  emailEligibleCount: number
+  queuedMessageCount: number
+  skippedCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  entries: StatementEmailOutboxEntry[]
+}
+
 export type CollectionsWorkQueueItem = {
   patientId: string
   legacyPid: number
@@ -6374,6 +6412,23 @@ export async function deliverStatementBatchToPortal(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Statement portal delivery', response.status))
+  }
+
+  return response.json()
+}
+
+export async function queueStatementBatchEmailOutbox(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementEmailOutboxResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/email-outbox?limit=${encodeURIComponent(String(limit))}`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Statement email outbox queue', response.status))
   }
 
   return response.json()

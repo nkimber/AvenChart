@@ -268,6 +268,42 @@ public sealed record StatementPortalDeliveryEntry(
     string FileName,
     string DeliveryStatus);
 
+public sealed record StatementEmailOutboxResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string OutboxBatchId,
+    string QueuedAt,
+    int CandidateCount,
+    int EmailEligibleCount,
+    int QueuedMessageCount,
+    int SkippedCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalCurrentDueAmount,
+    IReadOnlyList<StatementEmailOutboxEntry> Entries);
+
+public sealed record StatementEmailOutboxEntry(
+    string OutboxMessageId,
+    string Pubpid,
+    int LegacyPid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal CurrentDueAmount,
+    string ToEmail,
+    string FromEmail,
+    string Subject,
+    string BodyPreview,
+    string AttachmentFileName,
+    string QueueName,
+    string DeliveryStatus,
+    string ExternalReference);
+
 public sealed record CollectionsWorkQueueResponse(
     string DatasetId,
     string DatasetVersion,

@@ -2277,6 +2277,17 @@ billing.MapPost("/statements/batch/portal-delivery", async (
     .WithName("DeliverBillingStatementBatchToPortal")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapPost("/statements/batch/email-outbox", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var outbox = await repository.QueueStatementBatchEmailOutboxAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(outbox);
+    })
+    .WithName("QueueBillingStatementBatchEmailOutbox")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
+
 billing.MapGet("/collections/work-queue", async (
         BillingRepository repository,
         int? limit,

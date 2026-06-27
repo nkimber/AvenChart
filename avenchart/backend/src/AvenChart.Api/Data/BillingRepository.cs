@@ -629,6 +629,58 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Entries: entries);
     }
 
+    public async Task<StatementEmailOutboxResponse> QueueStatementBatchEmailOutboxAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var delivery = await PrepareStatementBatchDeliveryAsync(limit, cancellationToken);
+        var packageDate = delivery.AsOfDate.Replace("-", string.Empty, StringComparison.Ordinal);
+        var outboxBatchId = $"STMT-EMAIL-{packageDate}-TOP{delivery.Entries.Count}";
+        var queuedAt = $"{delivery.AsOfDate}T12:15:00Z";
+        var entries = delivery.Entries
+            .Where(entry => string.Equals(entry.DeliveryMethod, "Email-ready", StringComparison.OrdinalIgnoreCase)
+                && NormalizeText(entry.Destination) is not null)
+            .Select((entry, index) => new StatementEmailOutboxEntry(
+                OutboxMessageId: $"EMAIL-{outboxBatchId}-{index + 1:D4}",
+                Pubpid: entry.Pubpid,
+                LegacyPid: entry.LegacyPid,
+                PatientDisplayName: entry.PatientDisplayName,
+                StatementNumber: entry.StatementNumber,
+                StatementStatus: entry.StatementStatus,
+                StatementDate: entry.StatementDate,
+                DueDate: entry.DueDate,
+                BalanceDueAmount: entry.BalanceDueAmount,
+                PastDueAmount: entry.PastDueAmount,
+                CurrentDueAmount: entry.CurrentDueAmount,
+                ToEmail: entry.Destination,
+                FromEmail: "billing@example.test",
+                Subject: $"Statement {entry.StatementNumber} is ready",
+                BodyPreview: $"Your statement {entry.StatementNumber} dated {entry.StatementDate} has a balance of {entry.BalanceDueAmount:0.00}.",
+                AttachmentFileName: entry.FileName,
+                QueueName: "patient-statement-email-outbox",
+                DeliveryStatus: "Email outbox queued",
+                ExternalReference: $"LOCAL-EMAIL-OUTBOX-{entry.StatementNumber}"))
+            .ToList();
+
+        var response = new StatementEmailOutboxResponse(
+            DatasetId: delivery.DatasetId,
+            DatasetVersion: delivery.DatasetVersion,
+            AsOfDate: delivery.AsOfDate,
+            OutboxBatchId: outboxBatchId,
+            QueuedAt: queuedAt,
+            CandidateCount: delivery.CandidateCount,
+            EmailEligibleCount: entries.Count,
+            QueuedMessageCount: entries.Count,
+            SkippedCount: Math.Max(0, delivery.Entries.Count - entries.Count),
+            TotalBalanceAmount: delivery.TotalBalanceAmount,
+            TotalPastDueAmount: delivery.TotalPastDueAmount,
+            TotalCurrentDueAmount: delivery.TotalCurrentDueAmount,
+            Entries: entries);
+
+        await SaveStatementEmailOutboxAsync(response, cancellationToken);
+        return response;
+    }
+
     private async Task SaveStatementDispatchAsync(
         StatementBatchDispatchResponse response,
         CancellationToken cancellationToken)
@@ -703,6 +755,91 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             command.Parameters.Add("dispatchStatus", NpgsqlDbType.Text).Value = entry.DispatchStatus;
             command.Parameters.Add("externalReference", NpgsqlDbType.Text).Value = entry.ExternalReference;
             command.Parameters.Add("createdAt", NpgsqlDbType.Timestamp).Value = ReadDispatchTimestamp(response.DispatchedAt);
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task SaveStatementEmailOutboxAsync(
+        StatementEmailOutboxResponse response,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureStatementEmailOutboxTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        foreach (var entry in response.Entries)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into statement_email_outbox (
+                  outbox_message_id, dataset_id, dataset_version, as_of_date, outbox_batch_id, queued_at,
+                  pubpid, legacy_pid, patient_display_name, statement_number, statement_status,
+                  statement_date, due_date, balance_due_amount, past_due_amount, current_due_amount,
+                  to_email, from_email, subject, body_preview, attachment_file_name, queue_name,
+                  delivery_status, external_reference, created_at
+                )
+                values (
+                  @outboxMessageId, @datasetId, @datasetVersion, @asOfDate, @outboxBatchId, @queuedAt,
+                  @pubpid, @legacyPid, @patientDisplayName, @statementNumber, @statementStatus,
+                  @statementDate, @dueDate, @balanceDueAmount, @pastDueAmount, @currentDueAmount,
+                  @toEmail, @fromEmail, @subject, @bodyPreview, @attachmentFileName, @queueName,
+                  @deliveryStatus, @externalReference, @createdAt
+                )
+                on conflict (outbox_message_id) do update set
+                  dataset_id = excluded.dataset_id,
+                  dataset_version = excluded.dataset_version,
+                  as_of_date = excluded.as_of_date,
+                  outbox_batch_id = excluded.outbox_batch_id,
+                  queued_at = excluded.queued_at,
+                  pubpid = excluded.pubpid,
+                  legacy_pid = excluded.legacy_pid,
+                  patient_display_name = excluded.patient_display_name,
+                  statement_number = excluded.statement_number,
+                  statement_status = excluded.statement_status,
+                  statement_date = excluded.statement_date,
+                  due_date = excluded.due_date,
+                  balance_due_amount = excluded.balance_due_amount,
+                  past_due_amount = excluded.past_due_amount,
+                  current_due_amount = excluded.current_due_amount,
+                  to_email = excluded.to_email,
+                  from_email = excluded.from_email,
+                  subject = excluded.subject,
+                  body_preview = excluded.body_preview,
+                  attachment_file_name = excluded.attachment_file_name,
+                  queue_name = excluded.queue_name,
+                  delivery_status = excluded.delivery_status,
+                  external_reference = excluded.external_reference,
+                  created_at = excluded.created_at;
+                """;
+            command.Parameters.Add("outboxMessageId", NpgsqlDbType.Text).Value = entry.OutboxMessageId;
+            command.Parameters.Add("datasetId", NpgsqlDbType.Text).Value = response.DatasetId;
+            command.Parameters.Add("datasetVersion", NpgsqlDbType.Text).Value = response.DatasetVersion;
+            command.Parameters.Add("asOfDate", NpgsqlDbType.Date).Value = ReadDateOnly(response.AsOfDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("outboxBatchId", NpgsqlDbType.Text).Value = response.OutboxBatchId;
+            command.Parameters.Add("queuedAt", NpgsqlDbType.Timestamp).Value = ReadDispatchTimestamp(response.QueuedAt);
+            command.Parameters.Add("pubpid", NpgsqlDbType.Text).Value = entry.Pubpid;
+            command.Parameters.Add("legacyPid", NpgsqlDbType.Integer).Value = entry.LegacyPid;
+            command.Parameters.Add("patientDisplayName", NpgsqlDbType.Text).Value = entry.PatientDisplayName;
+            command.Parameters.Add("statementNumber", NpgsqlDbType.Text).Value = entry.StatementNumber;
+            command.Parameters.Add("statementStatus", NpgsqlDbType.Text).Value = entry.StatementStatus;
+            command.Parameters.Add("statementDate", NpgsqlDbType.Date).Value = ReadDateOnly(entry.StatementDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("dueDate", NpgsqlDbType.Date).Value = ReadDateOnly(entry.DueDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("balanceDueAmount", NpgsqlDbType.Numeric).Value = entry.BalanceDueAmount;
+            command.Parameters.Add("pastDueAmount", NpgsqlDbType.Numeric).Value = entry.PastDueAmount;
+            command.Parameters.Add("currentDueAmount", NpgsqlDbType.Numeric).Value = entry.CurrentDueAmount;
+            command.Parameters.Add("toEmail", NpgsqlDbType.Text).Value = entry.ToEmail;
+            command.Parameters.Add("fromEmail", NpgsqlDbType.Text).Value = entry.FromEmail;
+            command.Parameters.Add("subject", NpgsqlDbType.Text).Value = entry.Subject;
+            command.Parameters.Add("bodyPreview", NpgsqlDbType.Text).Value = entry.BodyPreview;
+            command.Parameters.Add("attachmentFileName", NpgsqlDbType.Text).Value = entry.AttachmentFileName;
+            command.Parameters.Add("queueName", NpgsqlDbType.Text).Value = entry.QueueName;
+            command.Parameters.Add("deliveryStatus", NpgsqlDbType.Text).Value = entry.DeliveryStatus;
+            command.Parameters.Add("externalReference", NpgsqlDbType.Text).Value = entry.ExternalReference;
+            command.Parameters.Add("createdAt", NpgsqlDbType.Timestamp).Value = ReadDispatchTimestamp(response.QueuedAt);
 
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -867,6 +1004,47 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
               on statement_delivery_audit_events (dispatch_id, dispatched_at desc);
             create index if not exists idx_statement_delivery_audit_pid_created
               on statement_delivery_audit_events (legacy_pid, created_at desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureStatementEmailOutboxTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists statement_email_outbox (
+              outbox_message_id text primary key,
+              dataset_id text not null,
+              dataset_version text not null,
+              as_of_date date not null,
+              outbox_batch_id text not null,
+              queued_at timestamp not null,
+              pubpid text not null,
+              legacy_pid integer not null,
+              patient_display_name text not null,
+              statement_number text not null,
+              statement_status text not null,
+              statement_date date not null,
+              due_date date not null,
+              balance_due_amount numeric(12,2) not null default 0,
+              past_due_amount numeric(12,2) not null default 0,
+              current_due_amount numeric(12,2) not null default 0,
+              to_email text not null,
+              from_email text not null,
+              subject text not null,
+              body_preview text not null,
+              attachment_file_name text not null,
+              queue_name text not null,
+              delivery_status text not null,
+              external_reference text not null,
+              created_at timestamp not null
+            );
+            create index if not exists idx_statement_email_outbox_batch
+              on statement_email_outbox (outbox_batch_id, queued_at desc);
+            create index if not exists idx_statement_email_outbox_pid_created
+              on statement_email_outbox (legacy_pid, created_at desc);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

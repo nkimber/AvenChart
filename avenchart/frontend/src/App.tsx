@@ -58,6 +58,7 @@ import {
   getStatementDispatchHistory,
   deliverStatementBatchToPortal,
   dispatchStatementBatchDelivery,
+  queueStatementBatchEmailOutbox,
   downloadBillingPaymentReceiptPdf,
   downloadBillingStatementPdf,
   downloadStatementBatchPackage,
@@ -356,6 +357,7 @@ import {
   type StatementBatchDispatchResponse,
   type StatementBatchResponse,
   type StatementDeliveryAuditHistoryResponse,
+  type StatementEmailOutboxResponse,
   type StatementPortalDeliveryResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
@@ -14849,6 +14851,9 @@ function FeesWorkspace({
   const [statementPortalDelivery, setStatementPortalDelivery] = useState<StatementPortalDeliveryResponse | null>(null)
   const [statementPortalDeliveryStatus, setStatementPortalDeliveryStatus] = useState<'idle' | 'delivering' | 'ready' | 'error'>('idle')
   const [statementPortalDeliveryError, setStatementPortalDeliveryError] = useState<string | null>(null)
+  const [statementEmailOutbox, setStatementEmailOutbox] = useState<StatementEmailOutboxResponse | null>(null)
+  const [statementEmailOutboxStatus, setStatementEmailOutboxStatus] = useState<'idle' | 'queueing' | 'ready' | 'error'>('idle')
+  const [statementEmailOutboxError, setStatementEmailOutboxError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -14881,6 +14886,9 @@ function FeesWorkspace({
       setStatementPortalDelivery(null)
       setStatementPortalDeliveryStatus('idle')
       setStatementPortalDeliveryError(null)
+      setStatementEmailOutbox(null)
+      setStatementEmailOutboxStatus('idle')
+      setStatementEmailOutboxError(null)
       setCollectionsWorkQueue(null)
       setCollectionsWorkQueueStatus('idle')
       setCollectionsWorkQueueError(null)
@@ -15326,6 +15334,23 @@ function FeesWorkspace({
     } catch (error) {
       setStatementPortalDeliveryStatus('error')
       setStatementPortalDeliveryError(error instanceof Error ? error.message : 'Statement portal delivery failed')
+    }
+  }
+
+  async function handleStatementEmailOutboxQueue() {
+    if (!sessionId) {
+      return
+    }
+
+    setStatementEmailOutboxStatus('queueing')
+    setStatementEmailOutboxError(null)
+    try {
+      const outbox = await queueStatementBatchEmailOutbox(5, sessionId)
+      setStatementEmailOutbox(outbox)
+      setStatementEmailOutboxStatus('ready')
+    } catch (error) {
+      setStatementEmailOutboxStatus('error')
+      setStatementEmailOutboxError(error instanceof Error ? error.message : 'Statement email outbox queue failed')
     }
   }
 
@@ -15920,11 +15945,15 @@ function FeesWorkspace({
           portalDelivery={statementPortalDelivery}
           portalDeliveryStatus={statementPortalDeliveryStatus}
           portalDeliveryError={statementPortalDeliveryError}
+          emailOutbox={statementEmailOutbox}
+          emailOutboxStatus={statementEmailOutboxStatus}
+          emailOutboxError={statementEmailOutboxError}
           onDownloadPackage={handleStatementBatchPackageDownload}
           onPrepareDelivery={handleStatementDeliveryPrepare}
           onDispatchDelivery={handleStatementDeliveryDispatch}
           onLoadDispatchHistory={handleStatementDispatchHistoryLoad}
           onDeliverToPortal={handleStatementPortalDelivery}
+          onQueueEmailOutbox={handleStatementEmailOutboxQueue}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -16149,11 +16178,15 @@ function StatementBatchPanel({
   portalDelivery,
   portalDeliveryStatus,
   portalDeliveryError,
+  emailOutbox,
+  emailOutboxStatus,
+  emailOutboxError,
   onDownloadPackage,
   onPrepareDelivery,
   onDispatchDelivery,
   onLoadDispatchHistory,
   onDeliverToPortal,
+  onQueueEmailOutbox,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
@@ -16174,11 +16207,15 @@ function StatementBatchPanel({
   portalDelivery: StatementPortalDeliveryResponse | null
   portalDeliveryStatus: 'idle' | 'delivering' | 'ready' | 'error'
   portalDeliveryError: string | null
+  emailOutbox: StatementEmailOutboxResponse | null
+  emailOutboxStatus: 'idle' | 'queueing' | 'ready' | 'error'
+  emailOutboxError: string | null
   onDownloadPackage: () => Promise<void>
   onPrepareDelivery: () => Promise<void>
   onDispatchDelivery: () => Promise<void>
   onLoadDispatchHistory: () => Promise<void>
   onDeliverToPortal: () => Promise<void>
+  onQueueEmailOutbox: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
@@ -16186,6 +16223,7 @@ function StatementBatchPanel({
   const dispatchEntries = dispatch?.entries ?? []
   const dispatchHistoryEntries = dispatchHistory?.entries ?? []
   const portalDeliveryEntries = portalDelivery?.entries ?? []
+  const emailOutboxEntries = emailOutbox?.entries ?? []
 
   return (
     <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
@@ -16237,6 +16275,15 @@ function StatementBatchPanel({
           <FolderOpen size={14} />
           {portalDeliveryStatus === 'delivering' ? 'Delivering Portal' : 'Portal Delivery'}
         </button>
+        <button
+          className="icon-text-button secondary statement-batch-export"
+          type="button"
+          disabled={disabled || emailOutboxStatus === 'queueing' || !batch}
+          onClick={() => void onQueueEmailOutbox()}
+        >
+          <Mail size={14} />
+          {emailOutboxStatus === 'queueing' ? 'Queueing Email' : 'Email Outbox'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
@@ -16246,6 +16293,7 @@ function StatementBatchPanel({
         {dispatchError && <div className="status-banner error">{dispatchError}</div>}
         {dispatchHistoryError && <div className="status-banner error">{dispatchHistoryError}</div>}
         {portalDeliveryError && <div className="status-banner error">{portalDeliveryError}</div>}
+        {emailOutboxError && <div className="status-banner error">{emailOutboxError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
@@ -16375,6 +16423,38 @@ function StatementBatchPanel({
                   <Field label="Document ID" value={entry.documentId} />
                   <Field label="Statement" value={entry.statementNumber} />
                   <Field label="File" value={entry.fileName} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {emailOutbox && (
+          <div className="statement-batch-summary" aria-label="Statement email outbox">
+            <Field label="Outbox batch" value={emailOutbox.outboxBatchId} />
+            <Field label="Queued" value={emailOutbox.queuedAt} />
+            <Field label="Messages" value={emailOutbox.queuedMessageCount} />
+            <Field label="Email eligible" value={emailOutbox.emailEligibleCount} />
+            <Field label="Skipped" value={emailOutbox.skippedCount} />
+          </div>
+        )}
+        {emailOutboxEntries.length > 0 && (
+          <div className="statement-batch-list" aria-label="Statement email outbox entries">
+            {emailOutboxEntries.map((entry) => (
+              <article className="statement-batch-row" key={entry.outboxMessageId}>
+                <div className="statement-batch-row-main">
+                  <div>
+                    <strong>{entry.patientDisplayName}</strong>
+                    <span>{entry.subject} / {entry.toEmail}</span>
+                  </div>
+                  <div className="statement-batch-actions">
+                    <span className="status-pill">{entry.deliveryStatus}</span>
+                    <span className="status-pill">{entry.queueName}</span>
+                  </div>
+                </div>
+                <div className="statement-batch-row-grid">
+                  <Field label="Message ID" value={entry.outboxMessageId} />
+                  <Field label="Reference" value={entry.externalReference} />
+                  <Field label="Attachment" value={entry.attachmentFileName} />
                 </div>
               </article>
             ))}
