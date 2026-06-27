@@ -1325,6 +1325,36 @@ export type PatientDocumentOcrQueueResponse = {
   items: PatientDocumentOcrQueueItem[]
 }
 
+export type PatientDocumentRoutingQueueItem = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  fileName?: string | null
+  encounter?: number | null
+  reviewStatus: string
+  queueStatus: string
+  routeDestination: string
+  priority: string
+  routingReason: string
+  notes?: string | null
+}
+
+export type PatientDocumentRoutingQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  count: number
+  items: PatientDocumentRoutingQueueItem[]
+}
+
 export type PatientDocumentOcrCompleteInput = {
   extractedText: string
   completedBy: string
@@ -5915,6 +5945,25 @@ export async function getPatientDocumentOcrQueue(
   })
   if (!response.ok) {
     throw new Error(documentApiError('Document OCR queue load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getPatientDocumentRoutingQueue(
+  patientId?: string | null,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingQueueResponse> {
+  const query = patientId && patientId.trim().length > 0
+    ? `?patientId=${encodeURIComponent(patientId.trim())}`
+    : ''
+  const response = await fetch(`${apiBaseUrl}/api/documents/routing-queue${query}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(documentApiError('Document routing queue load', response.status))
   }
 
   return response.json()

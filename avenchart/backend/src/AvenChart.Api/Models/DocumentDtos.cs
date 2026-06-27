@@ -94,6 +94,34 @@ public sealed record PatientDocumentOcrQueueItem(
     string Priority,
     string? Notes);
 
+public sealed record PatientDocumentRoutingQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int Count,
+    IReadOnlyList<PatientDocumentRoutingQueueItem> Items);
+
+public sealed record PatientDocumentRoutingQueueItem(
+    int Id,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    int CategoryId,
+    string CategoryName,
+    string Name,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    string? FileName,
+    int? Encounter,
+    string ReviewStatus,
+    string QueueStatus,
+    string RouteDestination,
+    string Priority,
+    string RoutingReason,
+    string? Notes);
+
 public sealed record PatientDocumentOcrCompleteRequest(
     string ExtractedText,
     string CompletedBy);

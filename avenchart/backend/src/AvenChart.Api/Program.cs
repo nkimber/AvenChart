@@ -1825,6 +1825,16 @@ documents.MapGet("/ocr-queue", async (
     })
     .WithName("GetPatientDocumentOcrQueue");
 
+documents.MapGet("/routing-queue", async (
+        DocumentRepository repository,
+        CancellationToken cancellationToken,
+        string? patientId = null) =>
+    {
+        var queue = await repository.GetRoutingQueueAsync(cancellationToken, patientId);
+        return Results.Ok(queue);
+    })
+    .WithName("GetPatientDocumentRoutingQueue");
+
 documents.MapPost("/{documentId:int}/ocr/complete", async (
         DocumentRepository repository,
         int documentId,

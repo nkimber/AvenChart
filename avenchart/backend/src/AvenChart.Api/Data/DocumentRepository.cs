@@ -128,6 +128,75 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
+    public async Task<PatientDocumentRoutingQueueResponse> GetRoutingQueueAsync(
+        CancellationToken cancellationToken,
+        string? patientId = null)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
+              d.category_id, d.category_name, d.name, d.doc_date, d.uploaded_at, d.mimetype, d.file_name,
+              d.encounter, d.notes, coalesce(d.review_status, 'pending') as review_status
+            from patient_documents d
+            join patients p on p.canonical_id = d.patient_id
+            where d.deleted = 0
+              and lower(coalesce(d.review_status, 'pending')) = 'pending'
+              and (@patientId is null
+                   or lower(d.patient_id) = lower(@patientId)
+                   or lower(p.pubpid) = lower(@patientId)
+                   or d.pid::text = @patientId)
+            order by d.uploaded_at, d.id;
+            """;
+        var patientParameter = command.Parameters.Add("patientId", NpgsqlTypes.NpgsqlDbType.Text);
+        patientParameter.Value = string.IsNullOrWhiteSpace(patientId) ? DBNull.Value : patientId.Trim();
+
+        var items = new List<PatientDocumentRoutingQueueItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+            var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+            var preferredName = ReadNullableString(reader, "preferred_name");
+            var categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+            var notes = ReadNullableString(reader, "notes");
+            var routeDestination = ExtractTaggedValue(notes, "Route to") ?? BuildRouteDestination(categoryName);
+            var priority = ExtractTaggedValue(notes, "Routing priority") ?? BuildRoutingPriority(categoryName, notes);
+
+            items.Add(new PatientDocumentRoutingQueueItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                PatientDisplayName: string.IsNullOrWhiteSpace(preferredName)
+                    ? $"{lastName}, {firstName}"
+                    : $"{lastName}, {firstName} ({preferredName})",
+                CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+                CategoryName: categoryName,
+                Name: reader.GetString(reader.GetOrdinal("name")),
+                DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
+                UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                Mimetype: ReadNullableString(reader, "mimetype"),
+                FileName: ReadNullableString(reader, "file_name"),
+                Encounter: ReadNullableInt32(reader, "encounter"),
+                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                QueueStatus: "Awaiting review",
+                RouteDestination: routeDestination,
+                Priority: priority,
+                RoutingReason: $"Pending {categoryName} review",
+                Notes: notes));
+        }
+
+        return new PatientDocumentRoutingQueueResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Count: items.Count,
+            Items: items);
+    }
+
     public async Task<PatientDocumentOcrCompleteResponse?> CompleteOcrAsync(
         int documentId,
         PatientDocumentOcrCompleteRequest request,
@@ -1276,6 +1345,61 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             .Replace(">", "&gt;", StringComparison.Ordinal)
             .Replace("\"", "&quot;", StringComparison.Ordinal)
             .Replace("'", "&#39;", StringComparison.Ordinal);
+    }
+
+    private static string BuildRouteDestination(string categoryName)
+    {
+        var normalized = categoryName.ToLowerInvariant();
+        if (normalized.Contains("lab", StringComparison.Ordinal))
+        {
+            return "Lab review";
+        }
+
+        if (normalized.Contains("advance", StringComparison.Ordinal))
+        {
+            return "Clinical review";
+        }
+
+        if (normalized.Contains("patient", StringComparison.Ordinal))
+        {
+            return "Front desk review";
+        }
+
+        return "Records review";
+    }
+
+    private static string BuildRoutingPriority(string categoryName, string? notes)
+    {
+        var evidence = $"{categoryName} {notes}".ToLowerInvariant();
+        if (evidence.Contains("urgent", StringComparison.Ordinal)
+            || evidence.Contains("stat", StringComparison.Ordinal)
+            || evidence.Contains("advance directive", StringComparison.Ordinal))
+        {
+            return "High";
+        }
+
+        return "Standard";
+    }
+
+    private static string? ExtractTaggedValue(string? notes, string label)
+    {
+        var normalized = NormalizeText(notes);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        var marker = $"{label}:";
+        var start = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += marker.Length;
+        var end = normalized.IndexOf(';', start);
+        var value = end < 0 ? normalized[start..] : normalized[start..end];
+        return NormalizeText(value);
     }
 
     private static string? TrimThumbnailText(string? value)

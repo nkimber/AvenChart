@@ -72,6 +72,7 @@ import {
   getPatientDocumentContent,
   getPatientDocuments,
   getPatientDocumentOcrQueue,
+  getPatientDocumentRoutingQueue,
   getPatientMessages,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
@@ -344,6 +345,7 @@ import {
   type PatientDocumentOcrCompleteResponse,
   type PatientDocumentOcrQueueItem,
   type PatientDocumentOcrQueueResponse,
+  type PatientDocumentRoutingQueueResponse,
   type PatientProviderAssignmentOption,
   type PatientProviderAssignmentOptionsResponse,
   type PatientProviderAssignmentUpdate,
@@ -617,6 +619,7 @@ function App() {
   const [documentRefreshKey, setDocumentRefreshKey] = useState(0)
   const [documentIncludeArchived, setDocumentIncludeArchived] = useState(false)
   const [documentOcrQueue, setDocumentOcrQueue] = useState<PatientDocumentOcrQueueResponse | null>(null)
+  const [documentRoutingQueue, setDocumentRoutingQueue] = useState<PatientDocumentRoutingQueueResponse | null>(null)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -1100,6 +1103,7 @@ function App() {
     if (!openEmrSessionId) {
       setPatientDocuments(null)
       setDocumentOcrQueue(null)
+      setDocumentRoutingQueue(null)
       setDocumentStatus('idle')
       setDocumentError(null)
       return
@@ -1118,8 +1122,10 @@ function App() {
           controller.signal,
         )
         const ocrQueue = await getPatientDocumentOcrQueue(documentPatientId, openEmrSessionId, controller.signal)
+        const routingQueue = await getPatientDocumentRoutingQueue(documentPatientId, openEmrSessionId, controller.signal)
         setPatientDocuments(result)
         setDocumentOcrQueue(ocrQueue)
+        setDocumentRoutingQueue(routingQueue)
         setDocumentStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
@@ -5620,6 +5626,7 @@ function App() {
             patientId={documentPatientId}
             patientDocuments={patientDocuments}
             documentOcrQueue={documentOcrQueue}
+            documentRoutingQueue={documentRoutingQueue}
             status={documentStatus}
             error={documentError}
             includeArchived={documentIncludeArchived}
@@ -18012,6 +18019,7 @@ function DocumentsWorkspace({
   patientId,
   patientDocuments,
   documentOcrQueue,
+  documentRoutingQueue,
   status,
   error,
   includeArchived,
@@ -18035,6 +18043,7 @@ function DocumentsWorkspace({
   patientId: string
   patientDocuments: PatientDocumentsResponse | null
   documentOcrQueue: PatientDocumentOcrQueueResponse | null
+  documentRoutingQueue: PatientDocumentRoutingQueueResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeArchived: boolean
@@ -18104,6 +18113,7 @@ function DocumentsWorkspace({
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
   const ocrQueueItems = documentOcrQueue?.items ?? []
   const ocrQueuePages = ocrQueueItems.reduce((total, item) => total + item.scanPageCount, 0)
+  const routingQueueItems = documentRoutingQueue?.items ?? []
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
   const documentAuthorizationError = status === 'error' && Boolean(error?.includes('Document access'))
@@ -18695,6 +18705,37 @@ function DocumentsWorkspace({
                   ))}
                   {ocrQueueItems.length === 0 && (
                     <div className="timeline-placeholder">No documents waiting for OCR</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="info-panel documents-panel" aria-label="Document routing queue">
+                <div className="panel-heading">
+                  <Forward size={17} />
+                  <h3>Routing Queue</h3>
+                </div>
+                <div className="list-counts compact-counts">
+                  <MetricRow label="Queued" value={documentRoutingQueue?.count ?? 0} />
+                  <MetricRow label="High priority" value={routingQueueItems.filter((item) => item.priority === 'High').length} />
+                </div>
+                <div className="message-list-body">
+                  {routingQueueItems.map((item) => (
+                    <div className="message-item compact-message-item" key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.patientDisplayName} / {item.pubpid}</span>
+                        <span>{item.categoryName} / {item.routeDestination}</span>
+                      </div>
+                      <div className="document-card-tags">
+                        <span className="status-tag">{item.queueStatus}</span>
+                        <span className="status-tag">{item.reviewStatus}</span>
+                        <span className="status-tag">{item.priority}</span>
+                      </div>
+                      <p className="document-preview-text">{item.routingReason}</p>
+                    </div>
+                  ))}
+                  {routingQueueItems.length === 0 && (
+                    <div className="timeline-placeholder">No documents waiting for routing review</div>
                   )}
                 </div>
               </section>
