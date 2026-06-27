@@ -57,6 +57,12 @@ public sealed record ClinicalListMutationResponse(
     string Id,
     ClinicalListsResponse Detail);
 
+public sealed record ClinicalPrescriptionPharmacyRouteResponse(
+    string Id,
+    bool Routed,
+    string? FailureReason,
+    ClinicalListsResponse Detail);
+
 public sealed record MedicationListItem(
     string Id,
     string Title,
@@ -88,6 +94,9 @@ public sealed record PrescriptionListItem(
     string? Quantity,
     string? Route,
     string? RxNormCode,
+    string? ControlledSubstanceSchedule,
+    bool ControlledSubstanceReviewRequired,
+    string? ControlledSubstanceReason,
     string? Diagnosis,
     string? StartDate,
     string? EndDate,

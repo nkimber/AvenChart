@@ -961,6 +961,9 @@ export type PrescriptionListItem = {
   quantity?: string | null
   route?: string | null
   rxNormCode?: string | null
+  controlledSubstanceSchedule?: string | null
+  controlledSubstanceReviewRequired: boolean
+  controlledSubstanceReason?: string | null
   diagnosis?: string | null
   startDate?: string | null
   endDate?: string | null
@@ -1067,6 +1070,13 @@ export type ClinicalListDeactivateInput = {
 
 export type ClinicalListMutationResponse = {
   id: string
+  detail: ClinicalListsResponse
+}
+
+export type ClinicalPrescriptionPharmacyRouteResponse = {
+  id: string
+  routed: boolean
+  failureReason?: string | null
   detail: ClinicalListsResponse
 }
 
@@ -5586,7 +5596,7 @@ export async function routeClinicalPrescriptionToPharmacy(
   route: ClinicalPrescriptionPharmacyRouteInput,
   sessionId?: string | null,
   signal?: AbortSignal,
-): Promise<ClinicalListMutationResponse> {
+): Promise<ClinicalPrescriptionPharmacyRouteResponse> {
   const response = await fetch(`${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/route-pharmacy`, {
     method: 'PUT',
     headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),

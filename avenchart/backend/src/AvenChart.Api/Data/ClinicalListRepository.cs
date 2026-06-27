@@ -529,7 +529,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return lists is null ? null : new ClinicalListMutationResponse(refillRequest.PrescriptionId, lists);
     }
 
-    public async Task<ClinicalListMutationResponse?> RoutePrescriptionToPharmacyAsync(
+    public async Task<ClinicalPrescriptionPharmacyRouteResponse?> RoutePrescriptionToPharmacyAsync(
         string prescriptionId,
         ClinicalPrescriptionPharmacyRouteRequest request,
         CancellationToken cancellationToken)
@@ -554,6 +554,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     pr.drug,
                     pr.dosage,
                     pr.quantity,
+                    pr.rx_norm_code,
                     ph.id as pharmacy_id,
                     ph.name as pharmacy_name,
                     ph.ncpdp
@@ -577,9 +578,24 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Drug: reader.GetString(reader.GetOrdinal("drug")),
                 Dosage: ReadNullableString(reader, "dosage"),
                 Quantity: ReadNullableString(reader, "quantity"),
+                RxNormCode: ReadNullableString(reader, "rx_norm_code"),
                 PharmacyId: reader.GetInt32(reader.GetOrdinal("pharmacy_id")),
                 PharmacyName: reader.GetString(reader.GetOrdinal("pharmacy_name")),
                 PharmacyNcpdp: ReadNullableInt(reader, "ncpdp"));
+        }
+
+        var controlledSubstance = GetControlledSubstanceInfo(anchor.Drug, anchor.RxNormCode);
+        if (controlledSubstance.ReviewRequired)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var detail = await GetForPatientAsync(anchor.PatientId, cancellationToken);
+            return detail is null
+                ? null
+                : new ClinicalPrescriptionPharmacyRouteResponse(
+                    prescriptionId,
+                    Routed: false,
+                    FailureReason: controlledSubstance.Reason,
+                    Detail: detail);
         }
 
         var sentAtText = sentAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
@@ -623,7 +639,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(anchor.PatientId, cancellationToken);
-        return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
+        return lists is null
+            ? null
+            : new ClinicalPrescriptionPharmacyRouteResponse(
+                prescriptionId,
+                Routed: true,
+                FailureReason: null,
+                Detail: lists);
     }
 
     public async Task<bool> DeletePrescriptionAsync(string prescriptionId, CancellationToken cancellationToken)
@@ -953,6 +975,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var controlledSubstance = GetControlledSubstanceInfo(
+                reader.GetString(reader.GetOrdinal("drug")),
+                ReadNullableString(reader, "rx_norm_code"));
+
             items.Add(new PrescriptionListItem(
                 Id: reader.GetString(reader.GetOrdinal("id")),
                 Drug: reader.GetString(reader.GetOrdinal("drug")),
@@ -960,6 +986,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Quantity: ReadNullableString(reader, "quantity"),
                 Route: ReadNullableString(reader, "route"),
                 RxNormCode: ReadNullableString(reader, "rx_norm_code"),
+                ControlledSubstanceSchedule: controlledSubstance.Schedule,
+                ControlledSubstanceReviewRequired: controlledSubstance.ReviewRequired,
+                ControlledSubstanceReason: controlledSubstance.Reason,
                 Diagnosis: ReadNullableString(reader, "diagnosis"),
                 StartDate: ReadNullableDate(reader, "start_date"),
                 EndDate: ReadNullableDate(reader, "end_date"),
@@ -1300,6 +1329,36 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
+    private static ControlledSubstanceInfo GetControlledSubstanceInfo(string drug, string? rxNormCode)
+    {
+        var normalizedDrug = drug.ToUpperInvariant();
+        var normalizedRxNorm = (rxNormCode ?? string.Empty).Trim();
+
+        if (normalizedDrug.Contains("OXYCODONE", StringComparison.Ordinal)
+            || normalizedDrug.Contains("HYDROCODONE", StringComparison.Ordinal)
+            || normalizedDrug.Contains("MORPHINE", StringComparison.Ordinal))
+        {
+            return new ControlledSubstanceInfo(
+                "CII",
+                true,
+                "Controlled substance requires EPCS review before pharmacy routing.");
+        }
+
+        if (normalizedDrug.Contains("ALPRAZOLAM", StringComparison.Ordinal)
+            || normalizedDrug.Contains("CLONAZEPAM", StringComparison.Ordinal)
+            || normalizedDrug.Contains("LORAZEPAM", StringComparison.Ordinal)
+            || normalizedDrug.Contains("DIAZEPAM", StringComparison.Ordinal)
+            || normalizedRxNorm is "197901" or "197902")
+        {
+            return new ControlledSubstanceInfo(
+                "CIV",
+                true,
+                "Controlled substance requires EPCS review before pharmacy routing.");
+        }
+
+        return new ControlledSubstanceInfo(null, false, null);
+    }
+
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record ClinicalListPatient(
@@ -1322,7 +1381,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         string Drug,
         string? Dosage,
         string? Quantity,
+        string? RxNormCode,
         int PharmacyId,
         string PharmacyName,
         int? PharmacyNcpdp);
+
+    private sealed record ControlledSubstanceInfo(
+        string? Schedule,
+        bool ReviewRequired,
+        string? Reason);
 }

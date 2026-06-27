@@ -2942,6 +2942,9 @@ function App() {
       const response = await routeClinicalPrescriptionToPharmacy(prescription.id, input, sessionId)
       setClinicalLists(response.detail)
       setClinicalStatus('ready')
+      if (!response.routed && response.failureReason) {
+        setClinicalError(response.failureReason)
+      }
       setClinicalRefreshKey((current) => current + 1)
       return response
     } catch (routeError) {
@@ -23386,6 +23389,12 @@ function PrescriptionPanel({
             .join(' / ')}
         >
           {item.note && <p className="clinical-item-note">{item.note}</p>}
+          {item.controlledSubstanceReviewRequired && (
+            <p className="clinical-item-note">
+              {item.controlledSubstanceSchedule ? `${item.controlledSubstanceSchedule} / ` : ''}
+              {item.controlledSubstanceReason ?? 'Controlled substance requires EPCS review before pharmacy routing.'}
+            </p>
+          )}
           {item.pharmacyName && (
             <p className="clinical-item-note">
               Pharmacy {item.pharmacyName}
