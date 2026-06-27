@@ -452,12 +452,15 @@ type ModuleId =
   | 'reports'
   | 'admin'
 
+type EntryMode = 'chooser' | 'staff-login' | 'staff' | 'portal'
+
 type EncounterProcedureResultSetInput = {
   report: ProcedureReportCreateInput
   result: Omit<ProcedureResultCreateInput, 'reportId'>
 }
 
 const secureMessagePageSize = 20
+const staffSessionStorageKey = 'avenchart.staff-session-id'
 
 type SecureMessageFolderKey = 'inbox' | 'sent' | 'all' | 'deleted'
 
@@ -474,6 +477,42 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'reports', label: 'Reports', icon: FileText, implemented: 'reports' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
+
+const staffModuleItems = moduleItems.filter((item) => item.implemented !== 'portal')
+
+function isChooserEntryRequested(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const entry = (new URLSearchParams(window.location.search).get('entry') ?? '').toLowerCase()
+  return entry === 'chooser'
+}
+
+function entryModeFromUrlSearch(): EntryMode {
+  if (typeof window === 'undefined') {
+    return 'chooser'
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const requestedModule = params.get('module')
+  const demoPreset = (params.get('demo') ?? '').toLowerCase()
+  const entry = (params.get('entry') ?? '').toLowerCase()
+
+  if (entry === 'chooser') {
+    return 'chooser'
+  }
+
+  if (demoPreset === 'patient' || requestedModule === 'portal') {
+    return 'portal'
+  }
+
+  if (demoPreset === 'staff' || moduleItems.some((item) => item.implemented === requestedModule)) {
+    return 'staff-login'
+  }
+
+  return 'chooser'
+}
 
 function moduleFromUrlSearch(): ModuleId {
   if (typeof window === 'undefined') {
@@ -496,6 +535,23 @@ function moduleFromUrlSearch(): ModuleId {
   }
 
   return 'patients'
+}
+
+function staffSessionFromLogin(result: AuthLoginResponse): AuthSessionResponse {
+  return {
+    authenticated: true,
+    sessionId: result.sessionId ?? null,
+    username: result.username,
+    displayName: result.displayName,
+    role: result.role,
+    staffId: result.staffId ?? null,
+    createdAt: result.sessionCreatedAt,
+    lastSeenAt: result.sessionCreatedAt,
+    expiresAt: result.sessionExpiresAt,
+    endedAt: null,
+    failureReason: null,
+    sessionSource: 'avenchart',
+  }
 }
 
 function getDefaultPatientPortalReportSectionIds(report: PatientPortalMedicalReportResponse | null): string[] {
@@ -534,6 +590,8 @@ function updateStringSelection(current: string[], id: string, selected: boolean)
 }
 
 function App() {
+  const [forceEntryChooser] = useState(() => isChooserEntryRequested())
+  const [entryMode, setEntryMode] = useState<EntryMode>(() => entryModeFromUrlSearch())
   const [activeModule, setActiveModule] = useState<ModuleId>(() => moduleFromUrlSearch())
 
   const [query, setQuery] = useState('Avery')
@@ -664,6 +722,12 @@ function App() {
   const [administrationError, setAdministrationError] = useState<string | null>(null)
   const [administrationRefreshKey, setAdministrationRefreshKey] = useState(0)
   const [openEmrSessionId, setLegacyEhrSessionId] = useState<string | null>(null)
+  const [openEmrSession, setLegacyEhrSession] = useState<AuthSessionResponse | null>(null)
+  const [staffLoginUsername, setStaffLoginUsername] = useState('admin')
+  const [staffLoginPassword, setStaffLoginPassword] = useState('pass')
+  const [staffLoginStatus, setStaffLoginStatus] =
+    useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
+  const [staffLoginMessage, setStaffLoginMessage] = useState<string | null>(null)
 
   const [operationalReports, setOperationalReports] = useState<OperationalReportsResponse | null>(null)
   const [reportsStatus, setReportsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -1573,6 +1637,133 @@ function App() {
   )
 
   const activePatient = chart ?? selectedFromList
+
+  useEffect(() => {
+    if (forceEntryChooser) {
+      window.sessionStorage.removeItem(staffSessionStorageKey)
+      setStaffLoginStatus('idle')
+      setStaffLoginMessage(null)
+    }
+  }, [forceEntryChooser])
+
+  useEffect(() => {
+    if (forceEntryChooser && entryMode === 'chooser') {
+      return
+    }
+
+    if (entryMode === 'portal' || openEmrSessionId) {
+      return
+    }
+
+    const storedSessionId = window.sessionStorage.getItem(staffSessionStorageKey)
+    if (!storedSessionId) {
+      return
+    }
+
+    const sessionIdToRestore = storedSessionId
+    const controller = new AbortController()
+    setStaffLoginStatus('checking')
+    setStaffLoginMessage('Checking saved staff session')
+
+    async function restoreStaffSession() {
+      try {
+        const session = await getCurrentSession(sessionIdToRestore, controller.signal)
+        if (session.authenticated && session.sessionId) {
+          setLegacyEhrSessionId(session.sessionId)
+          setLegacyEhrSession(session)
+          setEntryMode('staff')
+          setStaffLoginStatus('authenticated')
+          setStaffLoginMessage(`Signed in as ${session.displayName}`)
+        } else {
+          window.sessionStorage.removeItem(staffSessionStorageKey)
+          setStaffLoginStatus('idle')
+          setStaffLoginMessage(null)
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return
+        }
+        window.sessionStorage.removeItem(staffSessionStorageKey)
+        setStaffLoginStatus('idle')
+        setStaffLoginMessage(error instanceof Error ? error.message : null)
+      }
+    }
+
+    void restoreStaffSession()
+    return () => controller.abort()
+  }, [entryMode, forceEntryChooser, openEmrSessionId])
+
+  function activateLegacyEhrSession(sessionId: string, session?: AuthSessionResponse) {
+    setLegacyEhrSessionId(sessionId)
+    window.sessionStorage.setItem(staffSessionStorageKey, sessionId)
+    if (session) {
+      setLegacyEhrSession(session)
+    } else {
+      void getCurrentSession(sessionId)
+        .then((currentSession) => {
+          if (currentSession.authenticated) {
+            setLegacyEhrSession(currentSession)
+          }
+        })
+        .catch(() => {
+          setLegacyEhrSession(null)
+        })
+    }
+    if (activeModule === 'portal') {
+      setActiveModule('patients')
+    }
+    setEntryMode('staff')
+  }
+
+  function clearLegacyEhrSession(nextEntryMode: EntryMode = 'staff-login') {
+    setLegacyEhrSessionId(null)
+    setLegacyEhrSession(null)
+    setAdministrationDirectory(null)
+    setAdministrationStatus('idle')
+    setAdministrationError(null)
+    window.sessionStorage.removeItem(staffSessionStorageKey)
+    setEntryMode(nextEntryMode)
+  }
+
+  async function handleStaffLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setStaffLoginStatus('checking')
+    setStaffLoginMessage(null)
+
+    try {
+      const result = await login({ username: staffLoginUsername, password: staffLoginPassword })
+      if (result.authenticated && result.sessionId) {
+        const session = staffSessionFromLogin(result)
+        activateLegacyEhrSession(result.sessionId, session)
+        setStaffLoginStatus('authenticated')
+        setStaffLoginMessage(`Signed in as ${result.displayName}`)
+        return
+      }
+
+      setStaffLoginStatus('rejected')
+      setStaffLoginMessage(result.failureReason ?? 'Invalid username or password.')
+    } catch (error) {
+      setStaffLoginStatus('error')
+      setStaffLoginMessage(error instanceof Error ? error.message : 'Staff sign-in failed')
+    }
+  }
+
+  async function handleStaffLogout() {
+    const sessionId = openEmrSessionId
+    clearLegacyEhrSession('chooser')
+    setStaffLoginStatus('idle')
+    setStaffLoginMessage(null)
+
+    if (!sessionId) {
+      return
+    }
+
+    try {
+      await logout(sessionId)
+    } catch {
+      setStaffLoginMessage('Signed out locally; the session could not be ended on the server.')
+    }
+  }
 
   function getActiveLegacyEhrSessionId() {
     if (!openEmrSessionId) {
@@ -5501,6 +5692,113 @@ function App() {
               ? administrationDirectory?.datasetVersion ?? searchResult?.datasetVersion
               : searchResult?.datasetVersion
 
+  const portalWorkspace = (
+    <PatientPortalWorkspace
+      username={patientPortalUsername}
+      password={patientPortalPassword}
+      status={patientPortalStatus}
+      message={patientPortalMessage}
+      sessionId={patientPortalSessionId}
+      home={patientPortalHome}
+      profile={patientPortalProfile}
+      portalAppointments={patientPortalAppointments}
+      portalAppointmentOptions={patientPortalAppointmentOptions}
+      portalClinicalSummary={patientPortalClinicalSummary}
+      portalLabResults={patientPortalLabResults}
+      portalMedicalReport={patientPortalMedicalReport}
+      portalGeneratedMedicalReport={patientPortalGeneratedMedicalReport}
+      selectedMedicalReportSectionIds={patientPortalReportSectionIds}
+      selectedMedicalReportIssueIds={patientPortalReportIssueIds}
+      selectedMedicalReportEncounterFormIds={patientPortalReportEncounterFormIds}
+      selectedMedicalReportProcedureOrderIds={patientPortalReportProcedureOrderIds}
+      portalMessages={patientPortalMessages}
+      portalMessageComposeOptions={patientPortalMessageComposeOptions}
+      portalMessageRecipients={patientPortalMessageRecipients}
+      portalMessageAudit={patientPortalMessageAudit}
+      portalDocuments={patientPortalDocuments}
+      composeRecipient={patientPortalComposeRecipient}
+      composeTitle={patientPortalComposeTitle}
+      composeBody={patientPortalComposeBody}
+      replyBodies={patientPortalReplyBodies}
+      forwardBodies={patientPortalForwardBodies}
+      threads={patientPortalThreads}
+      onUsernameChange={setPatientPortalUsername}
+      onPasswordChange={setPatientPortalPassword}
+      onComposeRecipientChange={setPatientPortalComposeRecipient}
+      onComposeTitleChange={setPatientPortalComposeTitle}
+      onComposeBodyChange={setPatientPortalComposeBody}
+      onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
+      onForwardBodyChange={(messageId, value) => setPatientPortalForwardBodies((current) => ({ ...current, [messageId]: value }))}
+      onLogin={handlePatientPortalHomeLogin}
+      onRefresh={handlePatientPortalHomeRefresh}
+      onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
+      onDownloadGeneratedMedicalReportPdf={handlePatientPortalMedicalReportPdfDownload}
+      onDownloadGeneratedMedicalReportPackage={handlePatientPortalMedicalReportPackageDownload}
+      onToggleMedicalReportSection={(sectionId, selected) =>
+        setPatientPortalReportSectionIds((current) => updateStringSelection(current, sectionId, selected))}
+      onToggleMedicalReportIssue={(issueId, selected) =>
+        setPatientPortalReportIssueIds((current) => updateStringSelection(current, issueId, selected))}
+      onToggleMedicalReportEncounterForm={(formId, selected) =>
+        setPatientPortalReportEncounterFormIds((current) => updateStringSelection(current, formId, selected))}
+      onToggleMedicalReportProcedureOrder={(orderId, selected) =>
+        setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
+      onSubmitProfileChange={handlePatientPortalProfileChange}
+      onRequestAppointment={handlePatientPortalAppointmentRequest}
+      onRequestPrescriptionRefill={handlePatientPortalPrescriptionRefillRequest}
+      onComposeSubmit={handlePatientPortalComposeSubmit}
+      onReplySubmit={handlePatientPortalReplySubmit}
+      onForwardSubmit={handlePatientPortalForwardSubmit}
+      onLoadThread={handlePatientPortalThreadLoad}
+      onMarkRead={handlePatientPortalMessageRead}
+      onDeleteMessage={handlePatientPortalMessageDelete}
+      onArchiveMessages={handlePatientPortalMessagesArchive}
+      onDownloadDocuments={handlePatientPortalDocumentsDownload}
+      onLogout={handlePatientPortalHomeLogout}
+    />
+  )
+
+  if (entryMode === 'chooser') {
+    return (
+      <EntryChooserPage
+        onSelectStaff={() => setEntryMode('staff-login')}
+        onSelectPortal={() => {
+          setActiveModule('portal')
+          setEntryMode('portal')
+        }}
+      />
+    )
+  }
+
+  if (entryMode === 'portal') {
+    return (
+      <PortalEntryShell
+        datasetVersion={patientPortalHome?.datasetVersion ?? searchResult?.datasetVersion ?? 'v1'}
+        onBack={() => setEntryMode('chooser')}
+      >
+        {portalWorkspace}
+      </PortalEntryShell>
+    )
+  }
+
+  if (!openEmrSessionId || entryMode === 'staff-login') {
+    return (
+      <StaffLoginPage
+        username={staffLoginUsername}
+        password={staffLoginPassword}
+        status={staffLoginStatus}
+        message={staffLoginMessage}
+        onUsernameChange={setStaffLoginUsername}
+        onPasswordChange={setStaffLoginPassword}
+        onSubmit={handleStaffLogin}
+        onBack={() => {
+          clearLegacyEhrSession('chooser')
+          setStaffLoginStatus('idle')
+          setStaffLoginMessage(null)
+        }}
+      />
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main modules">
@@ -5513,7 +5811,7 @@ function App() {
         </div>
 
         <nav className="module-nav">
-          {moduleItems.map((item) => {
+          {staffModuleItems.map((item) => {
             const Icon = item.icon
             const active = item.implemented === activeModule
             return (
@@ -5540,9 +5838,24 @@ function App() {
             <p className="eyebrow">{moduleEyebrow(activeModule)}</p>
             <h1>{moduleTitle(activeModule)}</h1>
           </div>
-          <div className="dataset-chip">
-            <Activity size={16} />
-            <span>{datasetVersion ?? 'v1'} gold dataset</span>
+          <div className="workspace-header-actions">
+            <div className="session-chip">
+              <UserCheck size={16} />
+              <span>{openEmrSession?.displayName ?? openEmrSession?.username ?? 'Signed in'}</span>
+            </div>
+            <div className="dataset-chip">
+              <Activity size={16} />
+              <span>{datasetVersion ?? 'v1'} gold dataset</span>
+            </div>
+            <button
+              type="button"
+              className="icon-text-button"
+              aria-label="Log out and return to chooser"
+              onClick={() => void handleStaffLogout()}
+            >
+              <LogOut size={16} />
+              <span>Log out</span>
+            </button>
           </div>
         </header>
 
@@ -5561,7 +5874,7 @@ function App() {
             careTeamOptionsStatus={careTeamOptionsStatus}
             error={patientError}
             sessionId={openEmrSessionId}
-            onPatientSessionActive={setLegacyEhrSessionId}
+            onPatientSessionActive={activateLegacyEhrSession}
             onQueryChange={setQuery}
             onSelectPatient={setSelectedPatientId}
             onCreatePatient={handlePatientCreate}
@@ -5577,70 +5890,6 @@ function App() {
             onCreateInsurance={handlePatientInsuranceCreate}
             onUpdateInsurance={handlePatientInsuranceUpdate}
             onDeleteInsurance={handlePatientInsuranceDelete}
-          />
-        )}
-        {activeModule === 'portal' && (
-          <PatientPortalWorkspace
-            username={patientPortalUsername}
-            password={patientPortalPassword}
-            status={patientPortalStatus}
-            message={patientPortalMessage}
-            sessionId={patientPortalSessionId}
-            home={patientPortalHome}
-            profile={patientPortalProfile}
-            portalAppointments={patientPortalAppointments}
-            portalAppointmentOptions={patientPortalAppointmentOptions}
-            portalClinicalSummary={patientPortalClinicalSummary}
-            portalLabResults={patientPortalLabResults}
-            portalMedicalReport={patientPortalMedicalReport}
-            portalGeneratedMedicalReport={patientPortalGeneratedMedicalReport}
-            selectedMedicalReportSectionIds={patientPortalReportSectionIds}
-            selectedMedicalReportIssueIds={patientPortalReportIssueIds}
-            selectedMedicalReportEncounterFormIds={patientPortalReportEncounterFormIds}
-            selectedMedicalReportProcedureOrderIds={patientPortalReportProcedureOrderIds}
-            portalMessages={patientPortalMessages}
-            portalMessageComposeOptions={patientPortalMessageComposeOptions}
-            portalMessageRecipients={patientPortalMessageRecipients}
-            portalMessageAudit={patientPortalMessageAudit}
-            portalDocuments={patientPortalDocuments}
-            composeRecipient={patientPortalComposeRecipient}
-            composeTitle={patientPortalComposeTitle}
-            composeBody={patientPortalComposeBody}
-            replyBodies={patientPortalReplyBodies}
-            forwardBodies={patientPortalForwardBodies}
-            threads={patientPortalThreads}
-            onUsernameChange={setPatientPortalUsername}
-            onPasswordChange={setPatientPortalPassword}
-            onComposeRecipientChange={setPatientPortalComposeRecipient}
-            onComposeTitleChange={setPatientPortalComposeTitle}
-            onComposeBodyChange={setPatientPortalComposeBody}
-            onReplyBodyChange={(messageId, value) => setPatientPortalReplyBodies((current) => ({ ...current, [messageId]: value }))}
-            onForwardBodyChange={(messageId, value) => setPatientPortalForwardBodies((current) => ({ ...current, [messageId]: value }))}
-            onLogin={handlePatientPortalHomeLogin}
-            onRefresh={handlePatientPortalHomeRefresh}
-            onGenerateMedicalReport={handlePatientPortalMedicalReportGenerate}
-            onDownloadGeneratedMedicalReportPdf={handlePatientPortalMedicalReportPdfDownload}
-            onDownloadGeneratedMedicalReportPackage={handlePatientPortalMedicalReportPackageDownload}
-            onToggleMedicalReportSection={(sectionId, selected) =>
-              setPatientPortalReportSectionIds((current) => updateStringSelection(current, sectionId, selected))}
-            onToggleMedicalReportIssue={(issueId, selected) =>
-              setPatientPortalReportIssueIds((current) => updateStringSelection(current, issueId, selected))}
-            onToggleMedicalReportEncounterForm={(formId, selected) =>
-              setPatientPortalReportEncounterFormIds((current) => updateStringSelection(current, formId, selected))}
-            onToggleMedicalReportProcedureOrder={(orderId, selected) =>
-              setPatientPortalReportProcedureOrderIds((current) => updateStringSelection(current, orderId, selected))}
-            onSubmitProfileChange={handlePatientPortalProfileChange}
-            onRequestAppointment={handlePatientPortalAppointmentRequest}
-            onRequestPrescriptionRefill={handlePatientPortalPrescriptionRefillRequest}
-            onComposeSubmit={handlePatientPortalComposeSubmit}
-            onReplySubmit={handlePatientPortalReplySubmit}
-            onForwardSubmit={handlePatientPortalForwardSubmit}
-            onLoadThread={handlePatientPortalThreadLoad}
-            onMarkRead={handlePatientPortalMessageRead}
-            onDeleteMessage={handlePatientPortalMessageDelete}
-            onArchiveMessages={handlePatientPortalMessagesArchive}
-            onDownloadDocuments={handlePatientPortalDocumentsDownload}
-            onLogout={handlePatientPortalHomeLogout}
           />
         )}
         {activeModule === 'calendar' && (
@@ -5665,7 +5914,7 @@ function App() {
             error={appointmentError}
             sessionId={openEmrSessionId}
             onCalendarSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setAppointmentRefreshKey((current) => current + 1)
             }}
             onPatientIdChange={setAppointmentPatientId}
@@ -5704,7 +5953,7 @@ function App() {
             includeArchivedDocuments={encounterIncludeArchivedDocuments}
             sessionId={openEmrSessionId}
             onEncounterSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setEncounterRefreshKey((current) => current + 1)
             }}
             onPatientIdChange={setEncounterPatientId}
@@ -5742,7 +5991,7 @@ function App() {
             status={clinicalStatus}
             error={clinicalError}
             sessionId={openEmrSessionId}
-            onClinicalListsSessionActive={setLegacyEhrSessionId}
+            onClinicalListsSessionActive={activateLegacyEhrSession}
             onPatientIdChange={setClinicalPatientId}
             onCreateAllergy={handleClinicalAllergyCreate}
             onDeactivateAllergy={handleClinicalAllergyDeactivate}
@@ -5772,7 +6021,7 @@ function App() {
             error={billingError}
             sessionId={openEmrSessionId}
             onBillingSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
             }}
             onPatientIdChange={setBillingPatientId}
             onCreateLine={handleBillingLineCreate}
@@ -5810,7 +6059,7 @@ function App() {
             orderCatalogError={procedureOrderCatalogError}
             sessionId={openEmrSessionId}
             onProceduresSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setProcedureRefreshKey((current) => current + 1)
             }}
             onPatientIdChange={setProcedurePatientId}
@@ -5837,7 +6086,7 @@ function App() {
             sessionId={openEmrSessionId}
             onPatientIdChange={setMessagePatientId}
             onMessagesSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setMessageRefreshKey((current) => current + 1)
             }}
             onCreateMessage={handlePatientMessageCreate}
@@ -5863,7 +6112,7 @@ function App() {
             onPatientIdChange={setDocumentPatientId}
             onIncludeArchivedChange={setDocumentIncludeArchived}
             onDocumentsSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setDocumentRefreshKey((current) => current + 1)
             }}
             onCreateDocument={handlePatientDocumentCreate}
@@ -5888,7 +6137,7 @@ function App() {
             status={reportsStatus}
             error={reportsError}
             sessionId={openEmrSessionId}
-            onReportsSessionActive={setLegacyEhrSessionId}
+            onReportsSessionActive={activateLegacyEhrSession}
             labProviders={procedureLabProviders}
             labProvidersStatus={procedureLabProvidersStatus}
             labProvidersError={procedureLabProvidersError}
@@ -5943,6 +6192,7 @@ function App() {
             directory={administrationDirectory}
             status={administrationStatus}
             error={administrationError}
+            activeSession={openEmrSession}
             onCreateUser={handleAdministrationUserCreate}
             onUpdateUser={handleAdministrationUserUpdate}
             onDeleteUser={handleAdministrationUserDelete}
@@ -5956,18 +6206,253 @@ function App() {
             onAcceptPortalProfileReview={handleAdministrationPortalProfileReviewAccept}
             onRevertPortalProfileReview={handleAdministrationPortalProfileReviewRevert}
             onAdminSessionActive={(sessionId) => {
-              setLegacyEhrSessionId(sessionId)
+              activateLegacyEhrSession(sessionId)
               setAdministrationRefreshKey((current) => current + 1)
             }}
             onAdminSessionEnded={() => {
-              setLegacyEhrSessionId(null)
-              setAdministrationDirectory(null)
-              setAdministrationStatus('idle')
-              setAdministrationError(null)
+              clearLegacyEhrSession('chooser')
             }}
           />
         )}
       </main>
+    </div>
+  )
+}
+
+const legacyChooserStack = [
+  {
+    name: 'Legacy EHR',
+    version: '8.1.0-2026-06-18',
+    logoText: 'OE',
+    description: 'Pinned reference EHR baseline',
+  },
+  {
+    name: 'PHP',
+    version: '8.5.6',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/php/php-original.svg',
+    description: 'Legacy application runtime',
+  },
+  {
+    name: 'Apache',
+    version: '2.4.67',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apache/apache-original.svg',
+    description: 'Classic web server tier',
+  },
+  {
+    name: 'MariaDB',
+    version: '11.8.8',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/mariadb/mariadb-original.svg',
+    description: 'Original relational database',
+  },
+  {
+    name: 'AngularJS',
+    version: '1.x legacy UI',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/angularjs/angularjs-original.svg',
+    description: 'Legacy browser interaction layer',
+  },
+]
+
+const modernChooserStack = [
+  {
+    name: 'React',
+    version: '19.2.6',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg',
+    description: 'Modern staff and portal UI',
+  },
+  {
+    name: 'TypeScript',
+    version: '6.0.2',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg',
+    description: 'Typed frontend implementation',
+  },
+  {
+    name: 'ASP.NET Core',
+    version: '10.0 / net10.0',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/dotnetcore/dotnetcore-original.svg',
+    description: 'Modern API and business tier',
+  },
+  {
+    name: 'PostgreSQL',
+    version: '17-alpine',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/postgresql/postgresql-original.svg',
+    description: 'Modernized target database',
+  },
+  {
+    name: 'Node.js + Vite',
+    version: '24-alpine / 8.0.16',
+    logoUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon/icons/nodejs/nodejs-original.svg',
+    description: 'Frontend development runtime',
+  },
+]
+
+function EntryChooserPage({
+  onSelectStaff,
+  onSelectPortal,
+}: {
+  onSelectStaff: () => void
+  onSelectPortal: () => void
+}) {
+  return (
+    <main className="entry-shell" aria-label="Legacy EHR entry chooser">
+      <section className="entry-panel">
+        <div className="entry-brand">
+          <div className="brand-mark">OE</div>
+          <div>
+            <p className="eyebrow">AvenChart</p>
+            <h1>Choose Your Access</h1>
+          </div>
+        </div>
+        <div className="entry-modernization-summary" aria-label="Modernization summary">
+          <p>
+            Automated modernization from Legacy EHR to Modern Legacy EHR, preserving the selected Legacy EHR workflows while
+            moving the application to a React, ASP.NET Core, and PostgreSQL architecture.
+          </p>
+        </div>
+        <div className="entry-stack-grid" aria-label="Technology stack comparison">
+          <TechnologyStackPanel title="Original Legacy EHR Stack" items={legacyChooserStack} />
+          <TechnologyStackPanel title="Modern Legacy EHR Stack" items={modernChooserStack} />
+        </div>
+        <div className="entry-choice-grid">
+          <button type="button" className="entry-choice-button" onClick={onSelectStaff}>
+            <ShieldCheck size={30} />
+            <span>Staff</span>
+          </button>
+          <button type="button" className="entry-choice-button" onClick={onSelectPortal}>
+            <KeyRound size={30} />
+            <span>Patient Portal</span>
+          </button>
+        </div>
+        <p className="entry-footnote">Created by Neil Kimber using the project team in June 2026.</p>
+      </section>
+    </main>
+  )
+}
+
+function TechnologyStackPanel({
+  title,
+  items,
+}: {
+  title: string
+  items: Array<{ name: string; version: string; description: string; logoUrl?: string; logoText?: string }>
+}) {
+  return (
+    <section className="entry-stack-panel" aria-label={title}>
+      <h2>{title}</h2>
+      <div className="entry-stack-list">
+        {items.map((item) => (
+          <div className="entry-tech-item" key={`${title}-${item.name}`}>
+            <div className="entry-tech-logo" aria-hidden="true">
+              {item.logoUrl ? <img src={item.logoUrl} alt="" loading="lazy" /> : <span>{item.logoText ?? item.name[0]}</span>}
+            </div>
+            <div>
+              <div className="entry-tech-title">
+                <span>{item.name}</span>
+                <small>{item.version}</small>
+              </div>
+              <p>{item.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function StaffLoginPage({
+  username,
+  password,
+  status,
+  message,
+  onUsernameChange,
+  onPasswordChange,
+  onSubmit,
+  onBack,
+}: {
+  username: string
+  password: string
+  status: 'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'
+  message: string | null
+  onUsernameChange: (value: string) => void
+  onPasswordChange: (value: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  onBack: () => void
+}) {
+  return (
+    <main className="entry-shell staff-login-shell" aria-label="Staff sign in">
+      <form className="entry-panel staff-login-panel" aria-label="Staff login" onSubmit={onSubmit}>
+        <div className="entry-brand">
+          <div className="brand-mark">OE</div>
+          <div>
+            <p className="eyebrow">Staff Access</p>
+            <h1>Legacy EHR Sign In</h1>
+          </div>
+        </div>
+        <label className="form-field">
+          <span>Username</span>
+          <input
+            value={username}
+            autoComplete="username"
+            autoFocus
+            onChange={(event) => onUsernameChange(event.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Password</span>
+          <input
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(event) => onPasswordChange(event.target.value)}
+          />
+        </label>
+        <div className="form-actions">
+          <button type="submit" className="icon-text-button primary" disabled={status === 'checking'}>
+            <LogIn size={16} />
+            <span>{status === 'checking' ? 'Signing in' : 'Sign In'}</span>
+          </button>
+          <button type="button" className="icon-text-button" onClick={onBack}>
+            <ChevronLeft size={16} />
+            <span>Back</span>
+          </button>
+        </div>
+        {message && (
+          <div className={status === 'rejected' || status === 'error' ? 'status-banner error' : 'status-banner'}>
+            {message}
+          </div>
+        )}
+      </form>
+    </main>
+  )
+}
+
+function PortalEntryShell({
+  datasetVersion,
+  onBack,
+  children,
+}: {
+  datasetVersion: string
+  onBack: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="portal-entry-shell">
+      <header className="workspace-header portal-entry-header">
+        <div>
+          <p className="eyebrow">Patient Portal</p>
+          <h1>Patient Portal</h1>
+        </div>
+        <div className="workspace-header-actions">
+          <div className="dataset-chip">
+            <Activity size={16} />
+            <span>{datasetVersion} gold dataset</span>
+          </div>
+          <button type="button" className="icon-text-button" onClick={onBack}>
+            <ChevronLeft size={16} />
+            <span>Entry</span>
+          </button>
+        </div>
+      </header>
+      {children}
     </div>
   )
 }
@@ -21036,6 +21521,7 @@ function AdministrationWorkspace({
   directory,
   status,
   error,
+  activeSession,
   onCreateUser,
   onUpdateUser,
   onDeleteUser,
@@ -21054,6 +21540,7 @@ function AdministrationWorkspace({
   directory: AdministrationDirectoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  activeSession: AuthSessionResponse | null
   onCreateUser: (input: AdministrationUserMutationInput) => Promise<unknown>
   onUpdateUser: (
     user: AdministrationUserItem,
@@ -21123,7 +21610,7 @@ function AdministrationWorkspace({
   const [loginStatus, setLoginStatus] = useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [loginResult, setLoginResult] = useState<AuthLoginResponse | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
-  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null)
+  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(activeSession)
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'checking' | 'active' | 'ended' | 'error'>('idle')
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [loginAudit, setLoginAudit] = useState<AuthAuditResponse | null>(null)
@@ -21131,6 +21618,16 @@ function AdministrationWorkspace({
   const [loginAuditError, setLoginAuditError] = useState<string | null>(null)
   const [portalReviewActionId, setPortalReviewActionId] = useState<string | null>(null)
   const [portalReviewRevertId, setPortalReviewRevertId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!activeSession?.authenticated) {
+      return
+    }
+
+    setAuthSession(activeSession)
+    setSessionStatus('active')
+    setSessionError(null)
+  }, [activeSession])
 
   useEffect(() => {
     if (!authSession?.authenticated || !authSession.sessionId) {
@@ -21446,49 +21943,51 @@ function AdministrationWorkspace({
           )}
         </div>
 
-        <form className="appointment-mutation-panel" aria-label="Login readiness" onSubmit={handleLoginCheck}>
-          <div className="panel-heading">
-            <LogIn size={17} />
-            <h3>Login Readiness</h3>
-          </div>
-          <label className="form-field">
-            <span>Username</span>
-            <input
-              value={loginUsername}
-              autoComplete="username"
-              onChange={(event) => setLoginUsername(event.target.value)}
-            />
-          </label>
-          <label className="form-field">
-            <span>Password</span>
-            <input
-              type="password"
-              value={loginPassword}
-              autoComplete="current-password"
-              onChange={(event) => setLoginPassword(event.target.value)}
-            />
-          </label>
-          <button type="submit" className="icon-text-button primary" disabled={loginStatus === 'checking'}>
-            <LogIn size={16} />
-            Verify Login
-          </button>
-          {loginStatus === 'authenticated' && loginResult && (
-            <div className="status-banner success">
-              Signed in as {loginResult.displayName} ({loginResult.username})
+        {!authSession?.authenticated && (
+          <form className="appointment-mutation-panel" aria-label="Login readiness" onSubmit={handleLoginCheck}>
+            <div className="panel-heading">
+              <LogIn size={17} />
+              <h3>Login Readiness</h3>
             </div>
-          )}
-          {loginStatus === 'rejected' && (
-            <div className="status-banner error">{loginResult?.failureReason ?? 'Invalid username or password.'}</div>
-          )}
-          {loginStatus === 'error' && <div className="status-banner error">{loginError}</div>}
-          {loginResult?.authenticated && (
-            <div className="access-scope-panel">
-              <Field label="Role" value={loginResult.role} />
-              <Field label="Staff link" value={loginResult.staffId ? String(loginResult.staffId) : 'Not linked'} />
-              <Field label="Session" value={loginResult.sessionId ? 'Issued' : 'Not issued'} />
-            </div>
-          )}
-        </form>
+            <label className="form-field">
+              <span>Username</span>
+              <input
+                value={loginUsername}
+                autoComplete="username"
+                onChange={(event) => setLoginUsername(event.target.value)}
+              />
+            </label>
+            <label className="form-field">
+              <span>Password</span>
+              <input
+                type="password"
+                value={loginPassword}
+                autoComplete="current-password"
+                onChange={(event) => setLoginPassword(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="icon-text-button primary" disabled={loginStatus === 'checking'}>
+              <LogIn size={16} />
+              Verify Login
+            </button>
+            {loginStatus === 'authenticated' && loginResult && (
+              <div className="status-banner success">
+                Signed in as {loginResult.displayName} ({loginResult.username})
+              </div>
+            )}
+            {loginStatus === 'rejected' && (
+              <div className="status-banner error">{loginResult?.failureReason ?? 'Invalid username or password.'}</div>
+            )}
+            {loginStatus === 'error' && <div className="status-banner error">{loginError}</div>}
+            {loginResult?.authenticated && (
+              <div className="access-scope-panel">
+                <Field label="Role" value={loginResult.role} />
+                <Field label="Staff link" value={loginResult.staffId ? String(loginResult.staffId) : 'Not linked'} />
+                <Field label="Session" value={loginResult.sessionId ? 'Issued' : 'Not issued'} />
+              </div>
+            )}
+          </form>
+        )}
 
         <div className="access-scope-panel" aria-label="Session readiness">
           <div className="panel-heading">
