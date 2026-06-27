@@ -58,6 +58,7 @@ import {
   getStatementBatch,
   getStatementDispatchHistory,
   deliverStatementBatchToPortal,
+  dispatchAppointmentReminder,
   dispatchStatementBatchDelivery,
   queueStatementBatchEmailOutbox,
   downloadBillingPaymentReceiptPdf,
@@ -71,6 +72,7 @@ import {
   getPatientMessages,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
+  getAppointmentReminderDispatchHistory,
   getPatientPortalClinicalSummary,
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
@@ -252,6 +254,8 @@ import {
   type AppointmentCreateInput,
   type AppointmentListItem,
   type AppointmentOccurrenceRescheduleInput,
+  type AppointmentReminderDispatchHistoryResponse,
+  type AppointmentReminderDispatchResponse,
   type AppointmentSearchResponse,
   type AppointmentUpdateInput,
   type AppointmentWaitlistResponse,
@@ -497,6 +501,12 @@ function App() {
   const [appointmentWaitlist, setAppointmentWaitlist] = useState<AppointmentWaitlistResponse | null>(null)
   const [appointmentWaitlistStatus, setAppointmentWaitlistStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [appointmentWaitlistError, setAppointmentWaitlistError] = useState<string | null>(null)
+  const [appointmentReminderDispatch, setAppointmentReminderDispatch] = useState<AppointmentReminderDispatchResponse | null>(null)
+  const [appointmentReminderDispatchHistory, setAppointmentReminderDispatchHistory] =
+    useState<AppointmentReminderDispatchHistoryResponse | null>(null)
+  const [appointmentReminderDispatchStatus, setAppointmentReminderDispatchStatus] =
+    useState<'idle' | 'dispatching' | 'ready' | 'error'>('idle')
+  const [appointmentReminderDispatchError, setAppointmentReminderDispatchError] = useState<string | null>(null)
 
   const [encounterPatientId, setEncounterPatientId] = useState('MOD-PAT-0001')
   const [encounterFromDate, setEncounterFromDate] = useState('2026-01-01')
@@ -763,6 +773,10 @@ function App() {
       setAppointmentWaitlist(null)
       setAppointmentWaitlistStatus('idle')
       setAppointmentWaitlistError(null)
+      setAppointmentReminderDispatch(null)
+      setAppointmentReminderDispatchHistory(null)
+      setAppointmentReminderDispatchStatus('idle')
+      setAppointmentReminderDispatchError(null)
       return
     }
 
@@ -862,6 +876,28 @@ function App() {
     loadAppointmentDetail()
     return () => controller.abort()
   }, [activeModule, selectedAppointmentId, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'calendar' || !selectedAppointmentId || !openEmrSessionId) {
+      setAppointmentReminderDispatchHistory(null)
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadReminderDispatchHistory() {
+      try {
+        const history = await getAppointmentReminderDispatchHistory(selectedAppointmentId!, openEmrSessionId, controller.signal)
+        setAppointmentReminderDispatchHistory(history)
+      } catch (historyError) {
+        if (!controller.signal.aborted) {
+          setAppointmentReminderDispatchError(historyError instanceof Error ? historyError.message : 'Appointment reminder dispatch history failed')
+        }
+      }
+    }
+
+    loadReminderDispatchHistory()
+    return () => controller.abort()
+  }, [activeModule, selectedAppointmentId, openEmrSessionId, appointmentRefreshKey])
 
   useEffect(() => {
     if (activeModule !== 'encounters') {
@@ -1946,6 +1982,26 @@ function App() {
       const message = promoteError instanceof Error ? promoteError.message : 'Appointment waitlist promote failed'
       setAppointmentWaitlistError(message)
       throw promoteError
+    }
+  }
+
+  async function handleAppointmentReminderDispatch(appointment: AppointmentDetail) {
+    setAppointmentReminderDispatchStatus('dispatching')
+    setAppointmentReminderDispatchError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      const dispatch = await dispatchAppointmentReminder(appointment.id, sessionId)
+      const history = await getAppointmentReminderDispatchHistory(appointment.id, sessionId)
+      setAppointmentReminderDispatch(dispatch)
+      setAppointmentReminderDispatchHistory(history)
+      setAppointmentReminderDispatchStatus('ready')
+      return dispatch
+    } catch (dispatchError) {
+      setAppointmentReminderDispatchStatus('error')
+      const message = dispatchError instanceof Error ? dispatchError.message : 'Appointment reminder dispatch failed'
+      setAppointmentReminderDispatchError(message)
+      throw dispatchError
     }
   }
 
@@ -5199,6 +5255,10 @@ function App() {
             waitlist={appointmentWaitlist}
             waitlistStatus={appointmentWaitlistStatus}
             waitlistError={appointmentWaitlistError}
+            reminderDispatch={appointmentReminderDispatch}
+            reminderDispatchHistory={appointmentReminderDispatchHistory}
+            reminderDispatchStatus={appointmentReminderDispatchStatus}
+            reminderDispatchError={appointmentReminderDispatchError}
             searchStatus={appointmentStatus}
             detailStatus={appointmentDetailStatus}
             error={appointmentError}
@@ -5222,6 +5282,7 @@ function App() {
             onConvertToEncounter={handleAppointmentConvertToEncounter}
             onCreateAppointmentCharge={handleAppointmentCreateCharge}
             onPromoteWaitlistAppointment={handleAppointmentWaitlistPromote}
+            onDispatchAppointmentReminder={handleAppointmentReminderDispatch}
           />
         )}
         {activeModule === 'encounters' && (
@@ -10023,6 +10084,10 @@ function CalendarWorkspace({
   waitlist,
   waitlistStatus,
   waitlistError,
+  reminderDispatch,
+  reminderDispatchHistory,
+  reminderDispatchStatus,
+  reminderDispatchError,
   searchStatus,
   detailStatus,
   error,
@@ -10043,6 +10108,7 @@ function CalendarWorkspace({
   onConvertToEncounter,
   onCreateAppointmentCharge,
   onPromoteWaitlistAppointment,
+  onDispatchAppointmentReminder,
 }: {
   patientId: string
   fromDate: string
@@ -10052,6 +10118,10 @@ function CalendarWorkspace({
   waitlist: AppointmentWaitlistResponse | null
   waitlistStatus: 'idle' | 'loading' | 'ready' | 'error'
   waitlistError: string | null
+  reminderDispatch: AppointmentReminderDispatchResponse | null
+  reminderDispatchHistory: AppointmentReminderDispatchHistoryResponse | null
+  reminderDispatchStatus: 'idle' | 'dispatching' | 'ready' | 'error'
+  reminderDispatchError: string | null
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
@@ -10072,6 +10142,7 @@ function CalendarWorkspace({
   onConvertToEncounter: (appointment: AppointmentDetail) => Promise<EncounterDetail>
   onCreateAppointmentCharge: (appointment: AppointmentDetail) => Promise<unknown>
   onPromoteWaitlistAppointment: (appointmentId: string, title: string) => Promise<AppointmentDetail>
+  onDispatchAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -10261,6 +10332,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onPromoteWaitlistAppointment(appointmentId, title)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleDispatchSelectedReminder() {
+    if (!appointmentDetail || calendarLocked) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onDispatchAppointmentReminder(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -10935,6 +11020,15 @@ function CalendarWorkspace({
                 <WalletCards size={15} />
                 <span>{appointmentDetail.convertedBillingLineCount > 0 ? 'Charge created' : 'Create charge'}</span>
               </button>
+              <button
+                className="icon-text-button"
+                type="button"
+                onClick={() => void handleDispatchSelectedReminder()}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || !appointmentDetail.reminderDue || reminderDispatchStatus === 'dispatching'}
+              >
+                <Send size={15} />
+                <span>{reminderDispatchStatus === 'dispatching' ? 'Dispatching' : 'Dispatch reminder'}</span>
+              </button>
             </div>
 
             <form
@@ -11216,6 +11310,25 @@ function CalendarWorkspace({
                 <Field label="Reminder channel" value={appointmentDetail.reminderChannel} />
                 <Field label="Reminder contact" value={appointmentDetail.reminderContact} />
                 <Field label="Reminder lead" value={appointmentReminderLeadDetail(appointmentDetail)} />
+                {reminderDispatchError && <div className="status-banner error">{reminderDispatchError}</div>}
+                {reminderDispatch && reminderDispatch.appointmentId === appointmentDetail.id && (
+                  <div className="statement-batch-summary" aria-label="Appointment reminder dispatch">
+                    <Field label="Dispatch ID" value={reminderDispatch.dispatchId} />
+                    <Field label="Audit ID" value={reminderDispatch.auditId} />
+                    <Field label="Queue" value={reminderDispatch.queueName} />
+                    <Field label="Status" value={reminderDispatch.dispatchStatus} />
+                    <Field label="External reference" value={reminderDispatch.externalReference} />
+                    <Field label="Template" value={reminderDispatch.templateName} />
+                    <Field label="Preview" value={reminderDispatch.messagePreview} />
+                  </div>
+                )}
+                {reminderDispatchHistory?.entries.length ? (
+                  <div className="statement-batch-summary" aria-label="Appointment reminder dispatch history">
+                    <Field label="Audit events" value={reminderDispatchHistory.eventCount} />
+                    <Field label="Latest dispatch" value={reminderDispatchHistory.entries[0]?.dispatchId ?? null} />
+                    <Field label="Latest status" value={reminderDispatchHistory.entries[0]?.dispatchStatus ?? null} />
+                  </div>
+                ) : null}
                 <Field label="Converted encounter" value={appointmentDetail.convertedEncounterId ? `${appointmentDetail.convertedEncounterId} (${appointmentDetail.convertedEncounterDate ?? appointmentDetail.date})` : null} />
                 <Field label="Converted charges" value={appointmentDetail.convertedBillingLineCount > 0 ? `${appointmentDetail.convertedBillingLineCount} active fee-sheet line${appointmentDetail.convertedBillingLineCount === 1 ? '' : 's'}` : null} />
                 <Field label="Recurrence" value={appointmentDetail.recurrenceLabel} />

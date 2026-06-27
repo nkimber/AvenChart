@@ -540,6 +540,189 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
+    public async Task<AppointmentReminderDispatchResponse?> DispatchReminderAsync(
+        string appointmentId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, cancellationToken);
+        if (dispatch is null)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into appointment_reminder_dispatch_audit (
+              audit_id,
+              dataset_id,
+              dataset_version,
+              as_of_date,
+              appointment_id,
+              dispatch_id,
+              dispatched_at,
+              patient_id,
+              legacy_pid,
+              pubpid,
+              patient_display_name,
+              appointment_date,
+              start_time,
+              end_time,
+              title,
+              reminder_status,
+              reminder_channel,
+              reminder_contact,
+              reminder_lead_days,
+              queue_name,
+              dispatch_status,
+              external_reference,
+              template_name,
+              message_preview,
+              created_at
+            )
+            values (
+              @auditId,
+              @datasetId,
+              @datasetVersion,
+              @asOfDate,
+              @appointmentId,
+              @dispatchId,
+              @dispatchedAt,
+              @patientId,
+              @legacyPid,
+              @pubpid,
+              @patientDisplayName,
+              @appointmentDate,
+              @startTime,
+              @endTime,
+              @title,
+              @reminderStatus,
+              @reminderChannel,
+              @reminderContact,
+              @reminderLeadDays,
+              @queueName,
+              @dispatchStatus,
+              @externalReference,
+              @templateName,
+              @messagePreview,
+              @createdAt
+            )
+            on conflict (audit_id) do update set
+              dataset_id = excluded.dataset_id,
+              dataset_version = excluded.dataset_version,
+              as_of_date = excluded.as_of_date,
+              appointment_id = excluded.appointment_id,
+              dispatch_id = excluded.dispatch_id,
+              dispatched_at = excluded.dispatched_at,
+              patient_id = excluded.patient_id,
+              legacy_pid = excluded.legacy_pid,
+              pubpid = excluded.pubpid,
+              patient_display_name = excluded.patient_display_name,
+              appointment_date = excluded.appointment_date,
+              start_time = excluded.start_time,
+              end_time = excluded.end_time,
+              title = excluded.title,
+              reminder_status = excluded.reminder_status,
+              reminder_channel = excluded.reminder_channel,
+              reminder_contact = excluded.reminder_contact,
+              reminder_lead_days = excluded.reminder_lead_days,
+              queue_name = excluded.queue_name,
+              dispatch_status = excluded.dispatch_status,
+              external_reference = excluded.external_reference,
+              template_name = excluded.template_name,
+              message_preview = excluded.message_preview,
+              created_at = excluded.created_at;
+            """;
+        AddReminderDispatchParameters(command, dispatch, metadata.BaseDate);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return dispatch;
+    }
+
+    public async Task<AppointmentReminderDispatchHistoryResponse> GetReminderDispatchHistoryAsync(
+        string? appointmentId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var safeLimit = Math.Clamp(limit, 1, 50);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              audit_id,
+              dataset_id,
+              dataset_version,
+              as_of_date,
+              appointment_id,
+              dispatch_id,
+              to_char(dispatched_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as dispatched_at_text,
+              patient_id,
+              legacy_pid,
+              pubpid,
+              patient_display_name,
+              appointment_date,
+              start_time,
+              end_time,
+              title,
+              reminder_status,
+              reminder_channel,
+              reminder_contact,
+              reminder_lead_days,
+              queue_name,
+              dispatch_status,
+              external_reference,
+              template_name,
+              message_preview
+            from appointment_reminder_dispatch_audit
+            where (@appointmentId is null or appointment_id = @appointmentId)
+            order by created_at desc, audit_id
+            limit @limit;
+            """;
+        command.Parameters.Add("appointmentId", NpgsqlDbType.Text).Value = NormalizeText(appointmentId) ?? (object)DBNull.Value;
+        command.Parameters.AddWithValue("limit", safeLimit);
+
+        var entries = new List<AppointmentReminderDispatchResponse>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(new AppointmentReminderDispatchResponse(
+                DatasetId: reader.GetString(reader.GetOrdinal("dataset_id")),
+                DatasetVersion: reader.GetString(reader.GetOrdinal("dataset_version")),
+                AsOfDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("as_of_date")).ToString("yyyy-MM-dd"),
+                AppointmentId: reader.GetString(reader.GetOrdinal("appointment_id")),
+                DispatchId: reader.GetString(reader.GetOrdinal("dispatch_id")),
+                AuditId: reader.GetString(reader.GetOrdinal("audit_id")),
+                DispatchedAt: reader.GetString(reader.GetOrdinal("dispatched_at_text")),
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                AppointmentDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date")).ToString("yyyy-MM-dd"),
+                StartTime: reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time")).ToString("HH:mm"),
+                EndTime: reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("end_time")).ToString("HH:mm"),
+                Title: reader.GetString(reader.GetOrdinal("title")),
+                ReminderStatus: reader.GetString(reader.GetOrdinal("reminder_status")),
+                ReminderChannel: reader.GetString(reader.GetOrdinal("reminder_channel")),
+                ReminderContact: ReadNullableString(reader, "reminder_contact"),
+                ReminderLeadDays: ReadNullableInt(reader, "reminder_lead_days"),
+                QueueName: reader.GetString(reader.GetOrdinal("queue_name")),
+                DispatchStatus: reader.GetString(reader.GetOrdinal("dispatch_status")),
+                ExternalReference: reader.GetString(reader.GetOrdinal("external_reference")),
+                TemplateName: reader.GetString(reader.GetOrdinal("template_name")),
+                MessagePreview: reader.GetString(reader.GetOrdinal("message_preview"))));
+        }
+
+        return new AppointmentReminderDispatchHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            EventCount: entries.Count,
+            Entries: entries);
+    }
+
     public async Task<AppointmentAvailabilityValidationResponse?> ValidateAvailabilityAsync(
         AppointmentAvailabilityValidationRequest request,
         CancellationToken cancellationToken)
@@ -1224,6 +1407,180 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
     }
 
+    private async Task<AppointmentReminderDispatchResponse?> BuildReminderDispatchAsync(
+        string appointmentId,
+        DatasetMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                a.id,
+                p.canonical_id as patient_id,
+                p.legacy_pid,
+                p.pubpid,
+                p.first_name,
+                p.last_name,
+                p.preferred_name,
+                p.email,
+                p.phone,
+                p.phone_home,
+                p.phone_cell,
+                p.hipaa_allow_sms,
+                p.hipaa_allow_email,
+                a.appointment_date,
+                a.start_time,
+                a.duration_minutes,
+                a.title,
+                a.status
+            from appointments a
+            join patients p on p.legacy_pid = a.pid
+            where a.id = @appointmentId
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("appointmentId", appointmentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var appointmentDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date"));
+        var startTime = reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time"));
+        var durationMinutes = reader.GetInt32(reader.GetOrdinal("duration_minutes"));
+        var endTime = startTime.Add(TimeSpan.FromMinutes(durationMinutes));
+        var reminder = BuildAppointmentReminder(
+            appointmentDate.ToString("yyyy-MM-dd"),
+            ReadNullableString(reader, "status"),
+            ReadNullableString(reader, "email"),
+            ReadNullableString(reader, "phone"),
+            ReadNullableString(reader, "phone_home"),
+            ReadNullableString(reader, "phone_cell"),
+            ReadNullableString(reader, "hipaa_allow_sms"),
+            ReadNullableString(reader, "hipaa_allow_email"),
+            metadata.BaseDate);
+        if (!reminder.Due)
+        {
+            return null;
+        }
+
+        var actualAppointmentId = reader.GetString(reader.GetOrdinal("id"));
+        var compactDate = metadata.BaseDate.ToString("yyyyMMdd");
+        var dispatchId = $"APPT-REMINDER-DISPATCH-{compactDate}-{SanitizeIdentifier(actualAppointmentId)}";
+        var auditId = $"AUD-{dispatchId}";
+        var channelCode = reminder.Channel.Replace(" + ", "-", StringComparison.Ordinal).ToUpperInvariant();
+        var externalReference = $"LOCAL-{channelCode}-{SanitizeIdentifier(actualAppointmentId)}";
+        var title = ReadNullableString(reader, "title") ?? "Appointment";
+        var patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+        var firstName = ReadNullableString(reader, "first_name");
+        var lastName = ReadNullableString(reader, "last_name");
+        var preferredName = ReadNullableString(reader, "preferred_name");
+        var patientDisplayName = !string.IsNullOrWhiteSpace(preferredName)
+            ? $"{lastName}, {preferredName}".Trim(' ', ',')
+            : NormalizePatientName(firstName, lastName, patientId);
+
+        return new AppointmentReminderDispatchResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            AppointmentId: actualAppointmentId,
+            DispatchId: dispatchId,
+            AuditId: auditId,
+            DispatchedAt: $"{metadata.BaseDate:yyyy-MM-dd}T12:10:00Z",
+            PatientId: patientId,
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+            Pubpid: ReadNullableString(reader, "pubpid") ?? patientId,
+            PatientDisplayName: patientDisplayName,
+            AppointmentDate: appointmentDate.ToString("yyyy-MM-dd"),
+            StartTime: startTime.ToString("HH:mm"),
+            EndTime: endTime.ToString("HH:mm"),
+            Title: title,
+            ReminderStatus: reminder.Status,
+            ReminderChannel: reminder.Channel,
+            ReminderContact: reminder.Contact,
+            ReminderLeadDays: reminder.LeadDays,
+            QueueName: GetReminderQueueName(reminder.Channel),
+            DispatchStatus: $"{reminder.Channel} queued",
+            ExternalReference: externalReference,
+            TemplateName: GetReminderTemplateName(reminder.Channel),
+            MessagePreview: BuildReminderMessagePreview(patientDisplayName, appointmentDate, startTime, title, reminder));
+    }
+
+    private static async Task EnsureReminderDispatchTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists appointment_reminder_dispatch_audit (
+              audit_id text primary key,
+              dataset_id text not null,
+              dataset_version text not null,
+              as_of_date date not null,
+              appointment_id text not null,
+              dispatch_id text not null,
+              dispatched_at timestamp not null,
+              patient_id text not null,
+              legacy_pid integer not null,
+              pubpid text not null,
+              patient_display_name text not null,
+              appointment_date date not null,
+              start_time time not null,
+              end_time time not null,
+              title text not null,
+              reminder_status text not null,
+              reminder_channel text not null,
+              reminder_contact text,
+              reminder_lead_days integer,
+              queue_name text not null,
+              dispatch_status text not null,
+              external_reference text not null,
+              template_name text not null,
+              message_preview text not null,
+              created_at timestamp not null
+            );
+            create index if not exists idx_appointment_reminder_dispatch_appointment
+              on appointment_reminder_dispatch_audit (appointment_id, created_at desc);
+            create index if not exists idx_appointment_reminder_dispatch_dispatch
+              on appointment_reminder_dispatch_audit (dispatch_id, dispatched_at desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void AddReminderDispatchParameters(
+        NpgsqlCommand command,
+        AppointmentReminderDispatchResponse dispatch,
+        DateOnly baseDate)
+    {
+        command.Parameters.AddWithValue("auditId", dispatch.AuditId);
+        command.Parameters.AddWithValue("datasetId", dispatch.DatasetId);
+        command.Parameters.AddWithValue("datasetVersion", dispatch.DatasetVersion);
+        command.Parameters.Add("asOfDate", NpgsqlDbType.Date).Value = baseDate;
+        command.Parameters.AddWithValue("appointmentId", dispatch.AppointmentId);
+        command.Parameters.AddWithValue("dispatchId", dispatch.DispatchId);
+        command.Parameters.Add("dispatchedAt", NpgsqlDbType.Timestamp).Value = DateTime.Parse(dispatch.DispatchedAt.Replace("Z", string.Empty, StringComparison.Ordinal));
+        command.Parameters.AddWithValue("patientId", dispatch.PatientId);
+        command.Parameters.AddWithValue("legacyPid", dispatch.LegacyPid);
+        command.Parameters.AddWithValue("pubpid", dispatch.Pubpid);
+        command.Parameters.AddWithValue("patientDisplayName", dispatch.PatientDisplayName);
+        command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = DateOnly.Parse(dispatch.AppointmentDate);
+        command.Parameters.Add("startTime", NpgsqlDbType.Time).Value = TimeOnly.Parse(dispatch.StartTime);
+        command.Parameters.Add("endTime", NpgsqlDbType.Time).Value = TimeOnly.Parse(dispatch.EndTime);
+        command.Parameters.AddWithValue("title", dispatch.Title);
+        command.Parameters.AddWithValue("reminderStatus", dispatch.ReminderStatus);
+        command.Parameters.AddWithValue("reminderChannel", dispatch.ReminderChannel);
+        command.Parameters.Add("reminderContact", NpgsqlDbType.Text).Value = dispatch.ReminderContact is null ? DBNull.Value : dispatch.ReminderContact;
+        command.Parameters.Add("reminderLeadDays", NpgsqlDbType.Integer).Value = dispatch.ReminderLeadDays is null ? DBNull.Value : dispatch.ReminderLeadDays.Value;
+        command.Parameters.AddWithValue("queueName", dispatch.QueueName);
+        command.Parameters.AddWithValue("dispatchStatus", dispatch.DispatchStatus);
+        command.Parameters.AddWithValue("externalReference", dispatch.ExternalReference);
+        command.Parameters.AddWithValue("templateName", dispatch.TemplateName);
+        command.Parameters.AddWithValue("messagePreview", dispatch.MessagePreview);
+        command.Parameters.Add("createdAt", NpgsqlDbType.Timestamp).Value = DateTime.Parse(dispatch.DispatchedAt.Replace("Z", string.Empty, StringComparison.Ordinal));
+    }
+
     private const string AppointmentSearchPredicate = """
         (@patientId is null
          or lower(p.canonical_id) = @patientId
@@ -1587,6 +1944,35 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         return smsContact ?? emailContact ?? phoneContact;
+    }
+
+    private static string GetReminderQueueName(string channel) => channel switch
+    {
+        "SMS + Email" => "appointment-reminder-sms-email",
+        "SMS" => "appointment-reminder-sms",
+        "Email" => "appointment-reminder-email",
+        "Phone" => "appointment-reminder-phone",
+        _ => "appointment-reminder-print"
+    };
+
+    private static string GetReminderTemplateName(string channel) => channel switch
+    {
+        "SMS + Email" => "appointment-reminder-sms-email-v1",
+        "SMS" => "appointment-reminder-sms-v1",
+        "Email" => "appointment-reminder-email-v1",
+        "Phone" => "appointment-reminder-phone-v1",
+        _ => "appointment-reminder-print-v1"
+    };
+
+    private static string BuildReminderMessagePreview(
+        string patientDisplayName,
+        DateOnly appointmentDate,
+        TimeOnly startTime,
+        string title,
+        AppointmentReminder reminder)
+    {
+        var contact = reminder.Contact is null ? "no direct contact" : reminder.Contact;
+        return $"Reminder for {patientDisplayName}: {title} on {appointmentDate:yyyy-MM-dd} at {startTime:HH:mm}. Channel {reminder.Channel}; contact {contact}.";
     }
 
     private static bool AllowsContact(string? value) =>
@@ -2438,6 +2824,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
     private static string NormalizePatientName(string? firstName, string? lastName, string? fallback) =>
         NormalizeText($"{lastName}, {firstName}") ?? fallback ?? "Unknown patient";
+
+    private static string SanitizeIdentifier(string value)
+    {
+        var cleaned = new string(value.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
+            .Trim('-')
+            .ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(cleaned) ? "UNKNOWN" : cleaned;
+    }
 
     private static string ReadDate(DbDataReader reader, string columnName) =>
         reader.GetFieldValue<DateOnly>(reader.GetOrdinal(columnName)).ToString("yyyy-MM-dd");

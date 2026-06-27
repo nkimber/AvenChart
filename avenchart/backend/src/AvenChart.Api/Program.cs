@@ -801,6 +801,30 @@ appointments.MapGet("/waitlist", async (
     })
     .WithName("GetAppointmentWaitlist");
 
+appointments.MapPost("/{appointmentId}/reminders/dispatch", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        CancellationToken cancellationToken) =>
+    {
+        var dispatch = await repository.DispatchReminderAsync(appointmentId, cancellationToken);
+        return dispatch is null
+            ? Results.BadRequest("Appointment reminder could not be dispatched because the appointment was not found or no reminder is due.")
+            : Results.Ok(dispatch);
+    })
+    .WithName("DispatchAppointmentReminder")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+
+appointments.MapGet("/reminders/dispatch-history", async (
+        AppointmentRepository repository,
+        string? appointmentId,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetReminderDispatchHistoryAsync(appointmentId, limit ?? 10, cancellationToken);
+        return Results.Ok(history);
+    })
+    .WithName("GetAppointmentReminderDispatchHistory");
+
 appointments.MapGet("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,

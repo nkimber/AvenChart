@@ -572,6 +572,41 @@ export type AppointmentWaitlistResponse = {
   items: AppointmentWaitlistItem[]
 }
 
+export type AppointmentReminderDispatchResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  appointmentId: string
+  dispatchId: string
+  auditId: string
+  dispatchedAt: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  appointmentDate: string
+  startTime: string
+  endTime: string
+  title: string
+  reminderStatus: string
+  reminderChannel: string
+  reminderContact?: string | null
+  reminderLeadDays?: number | null
+  queueName: string
+  dispatchStatus: string
+  externalReference: string
+  templateName: string
+  messagePreview: string
+}
+
+export type AppointmentReminderDispatchHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  eventCount: number
+  entries: AppointmentReminderDispatchResponse[]
+}
+
 export type AppointmentUpdateInput = {
   providerId?: number | null
   title: string
@@ -4708,6 +4743,43 @@ export async function validateAppointmentAvailability(
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment availability validation', response.status))
+  }
+
+  return response.json()
+}
+
+export async function dispatchAppointmentReminder(
+  appointmentId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment reminder dispatch', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getAppointmentReminderDispatchHistory(
+  appointmentId?: string | null,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchHistoryResponse> {
+  const params = new URLSearchParams()
+  if (appointmentId?.trim()) {
+    params.set('appointmentId', appointmentId.trim())
+  }
+  const response = await fetch(`${apiBaseUrl}/api/appointments/reminders/dispatch-history?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment reminder dispatch history', response.status))
   }
 
   return response.json()

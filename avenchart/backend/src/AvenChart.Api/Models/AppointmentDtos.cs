@@ -212,6 +212,39 @@ public sealed record AppointmentWaitlistItem(
     string? ReminderAssignedTo,
     string? ReminderBody);
 
+public sealed record AppointmentReminderDispatchResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string AppointmentId,
+    string DispatchId,
+    string AuditId,
+    string DispatchedAt,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string AppointmentDate,
+    string StartTime,
+    string EndTime,
+    string Title,
+    string ReminderStatus,
+    string ReminderChannel,
+    string? ReminderContact,
+    int? ReminderLeadDays,
+    string QueueName,
+    string DispatchStatus,
+    string ExternalReference,
+    string TemplateName,
+    string MessagePreview);
+
+public sealed record AppointmentReminderDispatchHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    int EventCount,
+    IReadOnlyList<AppointmentReminderDispatchResponse> Entries);
+
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
     string Title,
