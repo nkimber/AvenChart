@@ -1602,6 +1602,17 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/refill", async (
     })
     .WithName("RefillClinicalPrescription");
 
+clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/approve", async (
+        ClinicalListRepository repository,
+        int messageId,
+        ClinicalPrescriptionRefillApprovalRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.ApprovePrescriptionRefillRequestAsync(messageId, request, cancellationToken);
+        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+    })
+    .WithName("ApproveClinicalPrescriptionRefillRequest");
+
 clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
         ClinicalListRepository repository,
         string prescriptionId,

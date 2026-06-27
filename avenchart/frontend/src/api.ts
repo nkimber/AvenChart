@@ -971,6 +971,23 @@ export type PrescriptionListItem = {
   providerName?: string | null
 }
 
+export type PrescriptionRefillRequestItem = {
+  messageId: number
+  title: string
+  requestDate: string
+  patientDisplayName: string
+  portalUsername: string
+  prescriptionId: string
+  drug: string
+  dosage?: string | null
+  quantity?: string | null
+  route?: string | null
+  currentRefills: number
+  status: string
+  patientNote?: string | null
+  body: string
+}
+
 export type ImmunizationListItem = {
   id: number
   key: string
@@ -1009,6 +1026,7 @@ export type ClinicalListsResponse = {
   medicationDuplicates: MedicationDuplicateSummary[]
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
+  prescriptionRefillRequests: PrescriptionRefillRequestItem[]
 }
 
 export type ClinicalAllergyCreateInput = {
@@ -1066,6 +1084,12 @@ export type ClinicalPrescriptionDeactivateInput = {
 }
 
 export type ClinicalPrescriptionRefillInput = {
+  refillDate: string
+  additionalRefills: number
+  note: string
+}
+
+export type ClinicalPrescriptionRefillApprovalInput = {
   refillDate: string
   additionalRefills: number
   note: string
@@ -5540,6 +5564,28 @@ export async function refillClinicalPrescription(
   )
   if (!response.ok) {
     throw new Error(clinicalListApiError('Clinical prescription refill', response.status))
+  }
+
+  return response.json()
+}
+
+export async function approveClinicalPrescriptionRefillRequest(
+  messageId: number,
+  approval: ClinicalPrescriptionRefillApprovalInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/prescription-refill-requests/${encodeURIComponent(String(messageId))}/approve`,
+    {
+      method: 'PUT',
+      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      body: JSON.stringify(approval),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(clinicalListApiError('Clinical prescription refill request approval', response.status))
   }
 
   return response.json()

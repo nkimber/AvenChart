@@ -191,6 +191,7 @@ import {
   signEncounterDocument,
   signProcedureReport,
   reopenProcedureReportReview,
+  approveClinicalPrescriptionRefillRequest,
   refillClinicalPrescription,
   replyToPatientMessage,
   softDeleteEncounterDocument,
@@ -283,6 +284,7 @@ import {
   type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
   type ClinicalPrescriptionCreateInput,
+  type ClinicalPrescriptionRefillApprovalInput,
   type ClinicalPrescriptionRefillInput,
   type CollectionsWorkQueueItem,
   type CollectionsWorkQueueResponse,
@@ -401,6 +403,7 @@ import {
   type ProcedureResultUpdateInput,
   type ProcedureResultsResponse,
   type PrescriptionListItem,
+  type PrescriptionRefillRequestItem,
   type ProblemListItem,
 } from './api'
 import './App.css'
@@ -2925,6 +2928,28 @@ function App() {
     }
   }
 
+  async function handleClinicalPrescriptionRefillRequestApprove(
+    request: PrescriptionRefillRequestItem,
+    input: ClinicalPrescriptionRefillApprovalInput,
+  ) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await approveClinicalPrescriptionRefillRequest(request.messageId, input, sessionId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (approveError) {
+      setClinicalStatus('error')
+      const message = approveError instanceof Error ? approveError.message : 'Clinical prescription refill request approval failed'
+      setClinicalError(message)
+      throw approveError
+    }
+  }
+
   async function handleClinicalPrescriptionDelete(prescription: PrescriptionListItem) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -5427,6 +5452,7 @@ function App() {
             onCreatePrescription={handleClinicalPrescriptionCreate}
             onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
             onRefillPrescription={handleClinicalPrescriptionRefill}
+            onApprovePrescriptionRefillRequest={handleClinicalPrescriptionRefillRequestApprove}
             onDeletePrescription={handleClinicalPrescriptionDelete}
             onCreateImmunization={handleClinicalImmunizationCreate}
             onMarkImmunizationEnteredInError={handleClinicalImmunizationEnteredInError}
@@ -14467,6 +14493,7 @@ function ClinicalListsWorkspace({
   onCreatePrescription,
   onDeactivatePrescription,
   onRefillPrescription,
+  onApprovePrescriptionRefillRequest,
   onDeletePrescription,
   onCreateImmunization,
   onMarkImmunizationEnteredInError,
@@ -14491,6 +14518,10 @@ function ClinicalListsWorkspace({
   onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
   onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
   onRefillPrescription: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
+  onApprovePrescriptionRefillRequest: (
+    request: PrescriptionRefillRequestItem,
+    input: ClinicalPrescriptionRefillApprovalInput,
+  ) => Promise<unknown>
   onDeletePrescription: (prescription: PrescriptionListItem) => Promise<void>
   onCreateImmunization: (input: ClinicalImmunizationCreateInput) => Promise<unknown>
   onMarkImmunizationEnteredInError: (immunization: ImmunizationListItem) => Promise<unknown>
@@ -15089,7 +15120,8 @@ function ClinicalListsWorkspace({
                 {clinicalLists.problems.length +
                   clinicalLists.allergies.length +
                   clinicalLists.medications.length +
-                  clinicalLists.immunizations.length} active
+                  clinicalLists.immunizations.length +
+                  (clinicalLists.prescriptionRefillRequests?.length ?? 0)} active
               </div>
             </div>
 
@@ -15117,6 +15149,11 @@ function ClinicalListsWorkspace({
                 items={clinicalLists.immunizations}
                 onMarkEnteredInError={onMarkImmunizationEnteredInError}
                 onDelete={onDeleteImmunization}
+                disabled={isLoading || !canUseLists}
+              />
+              <PrescriptionRefillRequestPanel
+                items={clinicalLists.prescriptionRefillRequests ?? []}
+                onApprove={onApprovePrescriptionRefillRequest}
                 disabled={isLoading || !canUseLists}
               />
               <PrescriptionPanel
@@ -23238,6 +23275,54 @@ function ImmunizationPanel({
         </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No immunizations recorded</div>}
+    </ClinicalSection>
+  )
+}
+
+function PrescriptionRefillRequestPanel({
+  items,
+  onApprove,
+  disabled,
+}: {
+  items: PrescriptionRefillRequestItem[]
+  onApprove: (request: PrescriptionRefillRequestItem, input: ClinicalPrescriptionRefillApprovalInput) => Promise<unknown>
+  disabled: boolean
+}) {
+  return (
+    <ClinicalSection title="Refill Requests" icon={ClipboardList} emptyText="No refill requests">
+      {items.map((item) => (
+        <ClinicalItem
+          key={item.messageId}
+          title={item.drug}
+          meta={[item.dosage, item.route, item.status].filter(Boolean).join(' / ')}
+          date={item.requestDate}
+          note={[
+            item.patientDisplayName,
+            item.quantity ? `Qty ${item.quantity}` : null,
+            `${item.currentRefills} current refill${item.currentRefills === 1 ? '' : 's'}`,
+          ]
+            .filter(Boolean)
+            .join(' / ')}
+        >
+          {item.patientNote && <p className="clinical-item-note">{item.patientNote}</p>}
+          <div className="clinical-item-actions">
+            <button
+              className="icon-text-button primary"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onApprove(item, {
+                refillDate: '2026-08-20',
+                additionalRefills: 1,
+                note: 'Portal refill request approved from the modernized Lists workspace.',
+              })}
+            >
+              <Check size={14} />
+              Approve
+            </button>
+          </div>
+        </ClinicalItem>
+      ))}
+      {items.length === 0 && <div className="timeline-placeholder">No refill requests</div>}
     </ClinicalSection>
   )
 }

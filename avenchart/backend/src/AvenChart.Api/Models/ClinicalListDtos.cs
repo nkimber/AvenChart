@@ -14,7 +14,8 @@ public sealed record ClinicalListsResponse(
     IReadOnlyList<MedicationListItem> Medications,
     IReadOnlyList<MedicationDuplicateSummary> MedicationDuplicates,
     IReadOnlyList<ImmunizationListItem> Immunizations,
-    IReadOnlyList<PrescriptionListItem> Prescriptions);
+    IReadOnlyList<PrescriptionListItem> Prescriptions,
+    IReadOnlyList<PrescriptionRefillRequestItem> PrescriptionRefillRequests);
 
 public sealed record ProblemListItem(
     string Id,
@@ -96,6 +97,22 @@ public sealed record PrescriptionListItem(
     int? Encounter,
     string? ProviderName);
 
+public sealed record PrescriptionRefillRequestItem(
+    int MessageId,
+    string Title,
+    string RequestDate,
+    string PatientDisplayName,
+    string PortalUsername,
+    string PrescriptionId,
+    string Drug,
+    string? Dosage,
+    string? Quantity,
+    string? Route,
+    int CurrentRefills,
+    string Status,
+    string? PatientNote,
+    string Body);
+
 public sealed record ImmunizationListItem(
     int Id,
     string Key,
@@ -160,6 +177,11 @@ public sealed record ClinicalPrescriptionDeactivateRequest(
     string Note);
 
 public sealed record ClinicalPrescriptionRefillRequest(
+    string RefillDate,
+    int AdditionalRefills,
+    string Note);
+
+public sealed record ClinicalPrescriptionRefillApprovalRequest(
     string RefillDate,
     int AdditionalRefills,
     string Note);
