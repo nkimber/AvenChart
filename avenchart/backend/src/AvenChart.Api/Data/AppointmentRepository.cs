@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -551,6 +552,78 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await SaveReminderDispatchAsync(dispatch, metadata.BaseDate, cancellationToken);
+        return dispatch;
+    }
+
+    public async Task<AppointmentReminderDispatchResponse?> RetryReminderDispatchAsync(
+        string appointmentId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, cancellationToken);
+        if (dispatch is null)
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureReminderDispatchTableAsync(connection, cancellationToken);
+        await using var lookup = connection.CreateCommand();
+        lookup.CommandText = """
+            select
+              dispatch_id,
+              coalesce(retry_attempt, 0) as retry_attempt,
+              (
+                select count(*)
+                from appointment_reminder_dispatch_audit retry_rows
+                where retry_rows.appointment_id = @appointmentId
+                  and retry_rows.retry_of_dispatch_id is not null
+              ) as retry_count
+            from appointment_reminder_dispatch_audit
+            where appointment_id = @appointmentId
+            order by created_at desc, audit_id desc
+            limit 1;
+            """;
+        lookup.Parameters.AddWithValue("appointmentId", dispatch.AppointmentId);
+
+        string? priorDispatchId = null;
+        var retryAttempt = 0;
+        await using (var reader = await lookup.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            priorDispatchId = reader.GetString(reader.GetOrdinal("dispatch_id"));
+            retryAttempt = Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("retry_count"))) + 1;
+        }
+
+        var retryDispatchId = $"{dispatch.DispatchId}-RETRY-{retryAttempt}";
+        var retryTimestamp = DateTime.Parse($"{metadata.BaseDate:yyyy-MM-dd}T12:10:00", CultureInfo.InvariantCulture)
+            .AddMinutes(retryAttempt * 10);
+        var retryDispatch = dispatch with
+        {
+            DispatchId = retryDispatchId,
+            AuditId = $"AUD-{retryDispatchId}",
+            DispatchedAt = $"{retryTimestamp:yyyy-MM-dd'T'HH:mm:ss'Z'}",
+            DispatchStatus = $"{dispatch.ReminderChannel} retry queued",
+            ExternalReference = $"{dispatch.ExternalReference}-RETRY-{retryAttempt}",
+            MessagePreview = $"{dispatch.MessagePreview} Retry attempt {retryAttempt} after {priorDispatchId}.",
+            RetryOfDispatchId = priorDispatchId,
+            RetryAttempt = retryAttempt
+        };
+
+        await SaveReminderDispatchAsync(retryDispatch, metadata.BaseDate, cancellationToken);
+        return retryDispatch;
+    }
+
+    private async Task SaveReminderDispatchAsync(
+        AppointmentReminderDispatchResponse dispatch,
+        DateOnly baseDate,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await EnsureReminderDispatchTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
@@ -580,6 +653,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               external_reference,
               template_name,
               message_preview,
+              retry_of_dispatch_id,
+              retry_attempt,
               created_at
             )
             values (
@@ -607,6 +682,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               @externalReference,
               @templateName,
               @messagePreview,
+              @retryOfDispatchId,
+              @retryAttempt,
               @createdAt
             )
             on conflict (audit_id) do update set
@@ -633,11 +710,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               external_reference = excluded.external_reference,
               template_name = excluded.template_name,
               message_preview = excluded.message_preview,
+              retry_of_dispatch_id = excluded.retry_of_dispatch_id,
+              retry_attempt = excluded.retry_attempt,
               created_at = excluded.created_at;
             """;
-        AddReminderDispatchParameters(command, dispatch, metadata.BaseDate);
+        AddReminderDispatchParameters(command, dispatch, baseDate);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        return dispatch;
     }
 
     public async Task<AppointmentReminderDispatchHistoryResponse> GetReminderDispatchHistoryAsync(
@@ -675,7 +753,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               dispatch_status,
               external_reference,
               template_name,
-              message_preview
+              message_preview,
+              retry_of_dispatch_id,
+              coalesce(retry_attempt, 0) as retry_attempt
             from appointment_reminder_dispatch_audit
             where (@appointmentId is null or appointment_id = @appointmentId)
             order by created_at desc, audit_id
@@ -712,7 +792,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 DispatchStatus: reader.GetString(reader.GetOrdinal("dispatch_status")),
                 ExternalReference: reader.GetString(reader.GetOrdinal("external_reference")),
                 TemplateName: reader.GetString(reader.GetOrdinal("template_name")),
-                MessagePreview: reader.GetString(reader.GetOrdinal("message_preview"))));
+                MessagePreview: reader.GetString(reader.GetOrdinal("message_preview")),
+                RetryOfDispatchId: ReadNullableString(reader, "retry_of_dispatch_id"),
+                RetryAttempt: reader.GetInt32(reader.GetOrdinal("retry_attempt"))));
         }
 
         return new AppointmentReminderDispatchHistoryResponse(
@@ -1539,12 +1621,21 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
               external_reference text not null,
               template_name text not null,
               message_preview text not null,
+              retry_of_dispatch_id text,
+              retry_attempt integer not null default 0,
               created_at timestamp not null
             );
+            alter table appointment_reminder_dispatch_audit
+              add column if not exists retry_of_dispatch_id text;
+            alter table appointment_reminder_dispatch_audit
+              add column if not exists retry_attempt integer not null default 0;
             create index if not exists idx_appointment_reminder_dispatch_appointment
               on appointment_reminder_dispatch_audit (appointment_id, created_at desc);
             create index if not exists idx_appointment_reminder_dispatch_dispatch
               on appointment_reminder_dispatch_audit (dispatch_id, dispatched_at desc);
+            create index if not exists idx_appointment_reminder_dispatch_retry
+              on appointment_reminder_dispatch_audit (retry_of_dispatch_id)
+              where retry_of_dispatch_id is not null;
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1578,6 +1669,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("externalReference", dispatch.ExternalReference);
         command.Parameters.AddWithValue("templateName", dispatch.TemplateName);
         command.Parameters.AddWithValue("messagePreview", dispatch.MessagePreview);
+        command.Parameters.Add("retryOfDispatchId", NpgsqlDbType.Text).Value = dispatch.RetryOfDispatchId is null ? DBNull.Value : dispatch.RetryOfDispatchId;
+        command.Parameters.AddWithValue("retryAttempt", dispatch.RetryAttempt);
         command.Parameters.Add("createdAt", NpgsqlDbType.Timestamp).Value = DateTime.Parse(dispatch.DispatchedAt.Replace("Z", string.Empty, StringComparison.Ordinal));
     }
 

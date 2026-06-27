@@ -88,6 +88,7 @@ import {
   downloadPatientPortalGeneratedMedicalReportPackage,
   requestPatientPortalAppointment,
   requestPatientPortalPrescriptionRefill,
+  retryAppointmentReminderDispatch,
   getPatientPortalDocuments,
   getPatientPortalHome,
   getPatientPortalProfile,
@@ -2089,6 +2090,26 @@ function App() {
       const message = dispatchError instanceof Error ? dispatchError.message : 'Appointment reminder dispatch failed'
       setAppointmentReminderDispatchError(message)
       throw dispatchError
+    }
+  }
+
+  async function handleAppointmentReminderRetry(appointment: AppointmentDetail) {
+    setAppointmentReminderDispatchStatus('dispatching')
+    setAppointmentReminderDispatchError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      const dispatch = await retryAppointmentReminderDispatch(appointment.id, sessionId)
+      const history = await getAppointmentReminderDispatchHistory(appointment.id, sessionId)
+      setAppointmentReminderDispatch(dispatch)
+      setAppointmentReminderDispatchHistory(history)
+      setAppointmentReminderDispatchStatus('ready')
+      return dispatch
+    } catch (retryError) {
+      setAppointmentReminderDispatchStatus('error')
+      const message = retryError instanceof Error ? retryError.message : 'Appointment reminder dispatch retry failed'
+      setAppointmentReminderDispatchError(message)
+      throw retryError
     }
   }
 
@@ -5567,6 +5588,7 @@ function App() {
             onPromoteWaitlistAppointment={handleAppointmentWaitlistPromote}
             onDeferWaitlistAppointment={handleAppointmentWaitlistDefer}
             onDispatchAppointmentReminder={handleAppointmentReminderDispatch}
+            onRetryAppointmentReminder={handleAppointmentReminderRetry}
           />
         )}
         {activeModule === 'encounters' && (
@@ -10416,6 +10438,7 @@ function CalendarWorkspace({
   onPromoteWaitlistAppointment,
   onDeferWaitlistAppointment,
   onDispatchAppointmentReminder,
+  onRetryAppointmentReminder,
 }: {
   patientId: string
   fromDate: string
@@ -10451,6 +10474,7 @@ function CalendarWorkspace({
   onPromoteWaitlistAppointment: (appointmentId: string, title: string) => Promise<AppointmentDetail>
   onDeferWaitlistAppointment: (reminderId: string, reason: string | null | undefined) => Promise<void>
   onDispatchAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
+  onRetryAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
   const [draftDate, setDraftDate] = useState('2026-10-15')
@@ -10659,6 +10683,20 @@ function CalendarWorkspace({
     setMutationStatus('saving')
     try {
       await onDispatchAppointmentReminder(appointmentDetail)
+      setMutationStatus('saved')
+    } catch {
+      setMutationStatus('error')
+    }
+  }
+
+  async function handleRetrySelectedReminder() {
+    if (!appointmentDetail || calendarLocked) {
+      return
+    }
+
+    setMutationStatus('saving')
+    try {
+      await onRetryAppointmentReminder(appointmentDetail)
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
@@ -11360,6 +11398,15 @@ function CalendarWorkspace({
                 <Send size={15} />
                 <span>{reminderDispatchStatus === 'dispatching' ? 'Dispatching' : 'Dispatch reminder'}</span>
               </button>
+              <button
+                className="icon-text-button secondary"
+                type="button"
+                onClick={() => void handleRetrySelectedReminder()}
+                disabled={calendarLocked || detailStatus === 'loading' || selectedOccurrenceIsVirtual || !reminderDispatchHistory?.entries.length || reminderDispatchStatus === 'dispatching'}
+              >
+                <RotateCcw size={15} />
+                <span>{reminderDispatchStatus === 'dispatching' ? 'Retrying' : 'Retry reminder'}</span>
+              </button>
             </div>
 
             <form
@@ -11650,6 +11697,8 @@ function CalendarWorkspace({
                     <Field label="Status" value={reminderDispatch.dispatchStatus} />
                     <Field label="External reference" value={reminderDispatch.externalReference} />
                     <Field label="Template" value={reminderDispatch.templateName} />
+                    <Field label="Retry attempt" value={reminderDispatch.retryAttempt > 0 ? String(reminderDispatch.retryAttempt) : null} />
+                    <Field label="Retry of" value={reminderDispatch.retryOfDispatchId} />
                     <Field label="Preview" value={reminderDispatch.messagePreview} />
                   </div>
                 )}
@@ -11658,6 +11707,7 @@ function CalendarWorkspace({
                     <Field label="Audit events" value={reminderDispatchHistory.eventCount} />
                     <Field label="Latest dispatch" value={reminderDispatchHistory.entries[0]?.dispatchId ?? null} />
                     <Field label="Latest status" value={reminderDispatchHistory.entries[0]?.dispatchStatus ?? null} />
+                    <Field label="Latest retry attempt" value={reminderDispatchHistory.entries[0]?.retryAttempt ? String(reminderDispatchHistory.entries[0].retryAttempt) : null} />
                   </div>
                 ) : null}
                 <Field label="Converted encounter" value={appointmentDetail.convertedEncounterId ? `${appointmentDetail.convertedEncounterId} (${appointmentDetail.convertedEncounterDate ?? appointmentDetail.date})` : null} />

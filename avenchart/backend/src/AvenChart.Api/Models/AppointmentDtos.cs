@@ -237,7 +237,9 @@ public sealed record AppointmentReminderDispatchResponse(
     string DispatchStatus,
     string ExternalReference,
     string TemplateName,
-    string MessagePreview);
+    string MessagePreview,
+    string? RetryOfDispatchId = null,
+    int RetryAttempt = 0);
 
 public sealed record AppointmentReminderDispatchHistoryResponse(
     string DatasetId,

@@ -828,6 +828,19 @@ appointments.MapPost("/{appointmentId}/reminders/dispatch", async (
     .WithName("DispatchAppointmentReminder")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
+appointments.MapPost("/{appointmentId}/reminders/dispatch/retry", async (
+        AppointmentRepository repository,
+        string appointmentId,
+        CancellationToken cancellationToken) =>
+    {
+        var dispatch = await repository.RetryReminderDispatchAsync(appointmentId, cancellationToken);
+        return dispatch is null
+            ? Results.BadRequest("Appointment reminder could not be retried because no prior dispatch exists or no reminder is due.")
+            : Results.Ok(dispatch);
+    })
+    .WithName("RetryAppointmentReminderDispatch")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+
 appointments.MapGet("/reminders/dispatch-history", async (
         AppointmentRepository repository,
         string? appointmentId,

@@ -598,6 +598,8 @@ export type AppointmentReminderDispatchResponse = {
   externalReference: string
   templateName: string
   messagePreview: string
+  retryOfDispatchId?: string | null
+  retryAttempt: number
 }
 
 export type AppointmentReminderDispatchHistoryResponse = {
@@ -5103,6 +5105,23 @@ export async function dispatchAppointmentReminder(
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment reminder dispatch', response.status))
+  }
+
+  return response.json()
+}
+
+export async function retryAppointmentReminderDispatch(
+  appointmentId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch/retry`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment reminder dispatch retry', response.status))
   }
 
   return response.json()
