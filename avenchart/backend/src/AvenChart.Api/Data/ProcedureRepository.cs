@@ -1357,6 +1357,42 @@ public sealed class ProcedureRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
     }
 
+    public async Task<ProcedureMutationResponse?> AssignReportReviewerAsync(
+        int reportId,
+        ProcedureReportReviewAssignmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (reportId <= 0
+            || string.IsNullOrWhiteSpace(request.AssignedTo)
+            || !TryReadDateTime(request.AssignedAt, out var assignedAt))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var report = await GetReportMutationContextAsync(connection, reportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update lab_reports
+            set review_status = 'assigned',
+                reviewed_by = @assignedTo,
+                reviewed_at = @assignedAt
+            where id = @id;
+            """;
+        command.Parameters.AddWithValue("id", report.Id);
+        command.Parameters.AddWithValue("assignedTo", request.AssignedTo.Trim());
+        command.Parameters.Add("assignedAt", NpgsqlDbType.Timestamp).Value = assignedAt;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        var detail = await GetForPatientAsync(report.PatientId, cancellationToken);
+        return detail is null ? null : new ProcedureMutationResponse(report.Id, detail);
+    }
+
     public async Task<ProcedureMutationResponse?> ReopenReportReviewAsync(
         int reportId,
         CancellationToken cancellationToken)

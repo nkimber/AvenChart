@@ -2347,6 +2347,20 @@ procedures.MapPut("/reports/{reportId:int}/sign", async (
     .WithName("SignProcedureReport")
     .AddEndpointFilter(AccessPermissionFilter("patients", "sign", "write"));
 
+procedures.MapPut("/reports/{reportId:int}/review-assignment", async (
+        ProcedureRepository repository,
+        int reportId,
+        ProcedureReportReviewAssignmentRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.AssignReportReviewerAsync(reportId, request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Procedure report reviewer assignment could not be saved from the supplied details.")
+            : Results.Ok(mutation);
+    })
+    .WithName("AssignProcedureReportReviewer")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
 procedures.MapPut("/reports/{reportId:int}/reopen-review", async (
         ProcedureRepository repository,
         int reportId,

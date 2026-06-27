@@ -2014,6 +2014,11 @@ export type ProcedureReportSignInput = {
   reviewedAt: string
 }
 
+export type ProcedureReportReviewAssignmentInput = {
+  assignedTo: string
+  assignedAt: string
+}
+
 export type ProcedureReportBulkSignInput = ProcedureReportSignInput & {
   reportIds: number[]
 }
@@ -6896,6 +6901,25 @@ export async function signProcedureReport(
   })
   if (!response.ok) {
     throw new Error(procedureApiError('Procedure report sign-off', response.status))
+  }
+
+  return response.json()
+}
+
+export async function assignProcedureReportReviewer(
+  reportId: number,
+  input: ProcedureReportReviewAssignmentInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/procedures/reports/${encodeURIComponent(String(reportId))}/review-assignment`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(procedureApiError('Procedure report reviewer assignment', response.status))
   }
 
   return response.json()

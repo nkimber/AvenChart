@@ -35,6 +35,7 @@ import {
   Syringe,
   Trash2,
   Upload,
+  UserCheck,
   UserRound,
   UserPlus,
   WalletCards,
@@ -154,6 +155,7 @@ import {
   createProcedureReport,
   createProcedureSpecimen,
   createProcedureResult,
+  assignProcedureReportReviewer,
   createPatient,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
@@ -403,6 +405,7 @@ import {
   type ProcedureOrderUpdateInput,
   type ProcedureReportCreateInput,
   type ProcedureReportItem,
+  type ProcedureReportReviewAssignmentInput,
   type ProcedureLabProviderDirectoryResponse,
   type ProcedureLabProviderItem,
   type ProcedureLabProviderMutationInput,
@@ -3632,6 +3635,30 @@ function App() {
     }
   }
 
+  async function handleProcedureReportReviewAssignment(
+    report: ProcedureReportItem,
+    input: ProcedureReportReviewAssignmentInput,
+  ) {
+    setProcedureStatus('loading')
+    setProcedureError(null)
+
+    try {
+      const sessionId = getActiveProcedureSessionId()
+      const response = await assignProcedureReportReviewer(report.id, input, sessionId)
+      setProcedureResults(response.detail)
+      setProcedureStatus('ready')
+      setProcedureRefreshKey((current) => current + 1)
+      setProcedureReportReviewQueueRefreshKey((current) => current + 1)
+      return response
+    } catch (assignmentError) {
+      setProcedureStatus('error')
+      const message =
+        assignmentError instanceof Error ? assignmentError.message : 'Procedure report reviewer assignment failed'
+      setProcedureError(message)
+      throw assignmentError
+    }
+  }
+
   async function handleProcedureReportReviewReopen(report: ProcedureReportItem) {
     setProcedureStatus('loading')
     setProcedureError(null)
@@ -5648,6 +5675,7 @@ function App() {
             onUpdateOrder={handleProcedureOrderUpdate}
             onCreateReport={handleProcedureReportCreate}
             onUpdateReport={handleProcedureReportUpdate}
+            onAssignReportReviewer={handleProcedureReportReviewAssignment}
             onSignReport={handleProcedureReportSign}
             onReopenReportReview={handleProcedureReportReviewReopen}
             onCreateSpecimen={handleProcedureSpecimenCreate}
@@ -17410,6 +17438,7 @@ function ProceduresWorkspace({
   onUpdateOrder,
   onCreateReport,
   onUpdateReport,
+  onAssignReportReviewer,
   onSignReport,
   onReopenReportReview,
   onCreateSpecimen,
@@ -17432,6 +17461,7 @@ function ProceduresWorkspace({
   onUpdateOrder: (order: ProcedureOrderItem, input: ProcedureOrderUpdateInput) => Promise<unknown>
   onCreateReport: (input: ProcedureReportCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onAssignReportReviewer: (report: ProcedureReportItem, input: ProcedureReportReviewAssignmentInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onCreateSpecimen: (input: ProcedureSpecimenCreateInput) => Promise<unknown>
@@ -17792,6 +17822,7 @@ function ProceduresWorkspace({
                     disabled={proceduresLocked || isLoading}
                     onCreateResult={onCreateResult}
                     onUpdateReport={onUpdateReport}
+                    onAssignReportReviewer={onAssignReportReviewer}
                     onSignReport={onSignReport}
                     onReopenReportReview={onReopenReportReview}
                     onUpdateResult={onUpdateResult}
@@ -23233,6 +23264,7 @@ function ProcedureReportGroup({
   disabled,
   onCreateResult,
   onUpdateReport,
+  onAssignReportReviewer,
   onSignReport,
   onReopenReportReview,
   onUpdateResult,
@@ -23241,6 +23273,7 @@ function ProcedureReportGroup({
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onAssignReportReviewer: (report: ProcedureReportItem, input: ProcedureReportReviewAssignmentInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
@@ -23263,6 +23296,7 @@ function ProcedureReportGroup({
           disabled={disabled}
           onCreateResult={onCreateResult}
           onUpdateReport={onUpdateReport}
+          onAssignReportReviewer={onAssignReportReviewer}
           onSignReport={onSignReport}
           onReopenReportReview={onReopenReportReview}
           onUpdateResult={onUpdateResult}
@@ -23278,6 +23312,7 @@ function ProcedureReportCard({
   disabled,
   onCreateResult,
   onUpdateReport,
+  onAssignReportReviewer,
   onSignReport,
   onReopenReportReview,
   onUpdateResult,
@@ -23286,6 +23321,7 @@ function ProcedureReportCard({
   disabled: boolean
   onCreateResult: (input: ProcedureResultCreateInput) => Promise<unknown>
   onUpdateReport: (report: ProcedureReportItem, input: ProcedureReportUpdateInput) => Promise<unknown>
+  onAssignReportReviewer: (report: ProcedureReportItem, input: ProcedureReportReviewAssignmentInput) => Promise<unknown>
   onSignReport: (report: ProcedureReportItem, input: ProcedureReportSignInput) => Promise<unknown>
   onReopenReportReview: (report: ProcedureReportItem) => Promise<unknown>
   onUpdateResult: (result: ProcedureResultItem, input: ProcedureResultUpdateInput) => Promise<unknown>
@@ -23298,9 +23334,12 @@ function ProcedureReportCard({
   const [reviewStatus, setReviewStatus] = useState(report.reviewStatus ?? 'reviewed')
   const [notes, setNotes] = useState(report.notes ?? '')
   const [correctionStatus, setCorrectionStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [assignmentStatus, setAssignmentStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [signStatus, setSignStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [reopenStatus, setReopenStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const isReviewed = (report.reviewStatus ?? '').toLowerCase() === 'reviewed'
+  const normalizedReviewStatus = (report.reviewStatus ?? '').toLowerCase()
+  const isAssigned = normalizedReviewStatus === 'assigned'
+  const isReviewed = normalizedReviewStatus === 'reviewed'
 
   useEffect(() => {
     setDateCollected(report.dateCollected)
@@ -23310,6 +23349,7 @@ function ProcedureReportCard({
     setReviewStatus(report.reviewStatus ?? 'reviewed')
     setNotes(report.notes ?? '')
     setCorrectionStatus('idle')
+    setAssignmentStatus('idle')
     setSignStatus('idle')
     setReopenStatus('idle')
   }, [report])
@@ -23364,6 +23404,20 @@ function ProcedureReportCard({
     }
   }
 
+  async function handleReportReviewerAssignment() {
+    setAssignmentStatus('saving')
+
+    try {
+      await onAssignReportReviewer(report, {
+        assignedTo: 'admin',
+        assignedAt: '2026-06-22 09:40:00',
+      })
+      setAssignmentStatus('saved')
+    } catch {
+      setAssignmentStatus('error')
+    }
+  }
+
   async function handleReportReviewReopen() {
     setReopenStatus('saving')
 
@@ -23386,8 +23440,8 @@ function ProcedureReportCard({
               report.dateCollected ? `Collected ${report.dateCollected}` : '',
               report.specimenNumber ? `Specimen ${report.specimenNumber}` : '',
               report.reviewStatus,
-              report.reviewedBy ? `Signed by ${report.reviewedBy}` : '',
-              report.reviewedAt ? `Signed ${report.reviewedAt}` : '',
+              report.reviewedBy ? `${isAssigned ? 'Assigned to' : 'Signed by'} ${report.reviewedBy}` : '',
+              report.reviewedAt ? `${isAssigned ? 'Assigned' : 'Signed'} ${report.reviewedAt}` : '',
               report.notes,
             ]
               .filter(Boolean)
@@ -23413,6 +23467,16 @@ function ProcedureReportCard({
         <button
           className="icon-text-button secondary"
           type="button"
+          disabled={disabled || assignmentStatus === 'saving'}
+          onClick={handleReportReviewerAssignment}
+          aria-label={`Assign procedure report ${report.id} reviewer`}
+        >
+          <UserCheck size={15} />
+          Assign Reviewer
+        </button>
+        <button
+          className="icon-text-button secondary"
+          type="button"
           disabled={disabled || signStatus === 'saving'}
           onClick={handleReportSign}
           aria-label={`Sign procedure report ${report.id}`}
@@ -23432,6 +23496,8 @@ function ProcedureReportCard({
         </button>
         {correctionStatus === 'saved' && <span className="save-note">Saved</span>}
         {correctionStatus === 'error' && <span className="save-note error">Action failed</span>}
+        {assignmentStatus === 'saved' && <span className="save-note">Assigned</span>}
+        {assignmentStatus === 'error' && <span className="save-note error">Assign failed</span>}
         {signStatus === 'saved' && <span className="save-note">Signed</span>}
         {signStatus === 'error' && <span className="save-note error">Sign failed</span>}
         {reopenStatus === 'saved' && <span className="save-note">Reopened</span>}

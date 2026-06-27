@@ -378,6 +378,10 @@ public sealed record ProcedureReportSignRequest(
     string ReviewedBy,
     string ReviewedAt);
 
+public sealed record ProcedureReportReviewAssignmentRequest(
+    string AssignedTo,
+    string AssignedAt);
+
 public sealed record ProcedureReportBulkSignRequest(
     IReadOnlyList<int> ReportIds,
     string ReviewedBy,
