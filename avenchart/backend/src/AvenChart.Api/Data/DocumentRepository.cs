@@ -128,6 +128,71 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
+    public async Task<PatientDocumentOcrCompleteResponse?> CompleteOcrAsync(
+        int documentId,
+        PatientDocumentOcrCompleteRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0
+            || string.IsNullOrWhiteSpace(request.ExtractedText)
+            || string.IsNullOrWhiteSpace(request.CompletedBy))
+        {
+            return null;
+        }
+
+        var extractedText = request.ExtractedText.Trim();
+        var completedBy = request.CompletedBy.Trim();
+        var completedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        string? patientId = null;
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update patient_documents
+                set notes = concat_ws('; ',
+                        nullif(regexp_replace(coalesce(notes, ''), '(?i)\\bOCR pending\\b', 'OCR complete', 'g'), ''),
+                        @ocrNote),
+                    documentation_of = concat_ws('; ',
+                        nullif(regexp_replace(coalesce(documentation_of, ''), '(?i)\\bOCR pending\\b', 'OCR complete', 'g'), ''),
+                        @ocrNote),
+                    content = case
+                        when content_bytes is null then @ocrContent
+                        else concat(coalesce(content, ''), E'\nOCR extracted text: ', @extractedText)
+                    end,
+                    uploaded_at = @completedAt
+                where id = @id and deleted = 0
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", documentId);
+            command.Parameters.AddWithValue("ocrNote", $"OCR complete by {completedBy}");
+            command.Parameters.AddWithValue("ocrContent", $"OCR extracted text: {extractedText}");
+            command.Parameters.AddWithValue("extractedText", extractedText);
+            command.Parameters.AddWithValue("completedAt", completedAt);
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var document = await GetContentAsync(documentId, cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        var queue = await GetOcrQueueAsync(cancellationToken, patientId);
+        return new PatientDocumentOcrCompleteResponse(
+            Id: documentId,
+            OcrStatus: document.OcrStatus,
+            CompletedBy: completedBy,
+            CompletedAt: completedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+            Document: document,
+            Queue: queue);
+    }
+
     public async Task<PatientDocumentMutationResponse?> CreateAsync(
         PatientDocumentCreateRequest request,
         CancellationToken cancellationToken)

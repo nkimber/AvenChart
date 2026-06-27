@@ -116,6 +116,7 @@ import {
   login,
   loginPatientPortal,
   logout,
+  completePatientDocumentOcr,
   createBillingClaimStatus,
   importBillingEobBatch,
   createBillingAdjustmentReversal,
@@ -340,6 +341,8 @@ import {
   type PatientDeceasedStatusUpdate,
   type PatientEmployerUpdate,
   type PatientGuardianContactUpdate,
+  type PatientDocumentOcrCompleteResponse,
+  type PatientDocumentOcrQueueItem,
   type PatientDocumentOcrQueueResponse,
   type PatientProviderAssignmentOption,
   type PatientProviderAssignmentOptionsResponse,
@@ -4457,6 +4460,36 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentOcrComplete(
+    item: PatientDocumentOcrQueueItem,
+  ): Promise<PatientDocumentOcrCompleteResponse> {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const sessionId = getActiveDocumentSessionId()
+      const response = await completePatientDocumentOcr(item.id, {
+        extractedText: `OCR completed for ${item.name}`,
+        completedBy: 'admin',
+      }, sessionId)
+      const refreshed = await getPatientDocuments(
+        patientDocuments?.patientId ?? documentPatientId,
+        documentIncludeArchived,
+        sessionId,
+      )
+      setPatientDocuments(refreshed)
+      setDocumentOcrQueue(response.queue)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (ocrError) {
+      setDocumentStatus('error')
+      const message = ocrError instanceof Error ? ocrError.message : 'Patient document OCR completion failed'
+      setDocumentError(message)
+      throw ocrError
+    }
+  }
+
   function syncPatientPortalMedicalReportSelection(report: PatientPortalMedicalReportResponse | null) {
     setPatientPortalReportSectionIds(getDefaultPatientPortalReportSectionIds(report))
     setPatientPortalReportIssueIds([])
@@ -5608,6 +5641,7 @@ function App() {
             onSignDocument={handlePatientDocumentSign}
             onDenyDocument={handlePatientDocumentDeny}
             onDeleteDocument={handlePatientDocumentDelete}
+            onCompleteOcr={handlePatientDocumentOcrComplete}
           />
         )}
         {activeModule === 'reports' && (
@@ -17996,6 +18030,7 @@ function DocumentsWorkspace({
   onSignDocument,
   onDenyDocument,
   onDeleteDocument,
+  onCompleteOcr,
 }: {
   patientId: string
   patientDocuments: PatientDocumentsResponse | null
@@ -18027,6 +18062,7 @@ function DocumentsWorkspace({
   onSignDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDenyDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
+  onCompleteOcr: (item: PatientDocumentOcrQueueItem) => Promise<PatientDocumentOcrCompleteResponse>
 }) {
   const [documentName, setDocumentName] = useState('Parity Document')
   const [documentCategoryId, setDocumentCategoryId] = useState('3')
@@ -18242,6 +18278,20 @@ function DocumentsWorkspace({
     } catch (error) {
       setDocumentContentStatus('error')
       setDocumentContentError(error instanceof Error ? error.message : 'Patient document download failed')
+    }
+  }
+
+  async function handleCompleteOcr(item: PatientDocumentOcrQueueItem) {
+    setDocumentContentStatus('loading')
+    setDocumentContentError(null)
+
+    try {
+      const completion = await onCompleteOcr(item)
+      setViewedDocument(completion.document)
+      setDocumentContentStatus('ready')
+    } catch (error) {
+      setDocumentContentStatus('error')
+      setDocumentContentError(error instanceof Error ? error.message : 'Patient document OCR completion failed')
     }
   }
 
@@ -18629,6 +18679,17 @@ function DocumentsWorkspace({
                         <span className="status-tag">{item.queueStatus}</span>
                         <span className="status-tag">{item.ocrStatus}</span>
                         <span className="status-tag">{item.priority}</span>
+                      </div>
+                      <div className="document-item-actions">
+                        <button
+                          className="icon-text-button secondary"
+                          type="button"
+                          disabled={documentsLocked || isLoading}
+                          onClick={() => void handleCompleteOcr(item)}
+                        >
+                          <FileCheck2 size={14} />
+                          Complete OCR
+                        </button>
                       </div>
                     </div>
                   ))}

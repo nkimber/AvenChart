@@ -94,6 +94,18 @@ public sealed record PatientDocumentOcrQueueItem(
     string Priority,
     string? Notes);
 
+public sealed record PatientDocumentOcrCompleteRequest(
+    string ExtractedText,
+    string CompletedBy);
+
+public sealed record PatientDocumentOcrCompleteResponse(
+    int Id,
+    string OcrStatus,
+    string CompletedBy,
+    string CompletedAt,
+    PatientDocumentContentResponse Document,
+    PatientDocumentOcrQueueResponse Queue);
+
 public sealed record PatientDocumentCreateRequest(
     string PatientId,
     int CategoryId,

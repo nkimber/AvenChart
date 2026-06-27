@@ -1325,6 +1325,20 @@ export type PatientDocumentOcrQueueResponse = {
   items: PatientDocumentOcrQueueItem[]
 }
 
+export type PatientDocumentOcrCompleteInput = {
+  extractedText: string
+  completedBy: string
+}
+
+export type PatientDocumentOcrCompleteResponse = {
+  id: number
+  ocrStatus: string
+  completedBy: string
+  completedAt: string
+  document: PatientDocumentContentResponse
+  queue: PatientDocumentOcrQueueResponse
+}
+
 export type PatientDocumentsResponse = {
   datasetId: string
   datasetVersion: string
@@ -5901,6 +5915,25 @@ export async function getPatientDocumentOcrQueue(
   })
   if (!response.ok) {
     throw new Error(documentApiError('Document OCR queue load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function completePatientDocumentOcr(
+  documentId: number,
+  input: PatientDocumentOcrCompleteInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrCompleteResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/ocr/complete`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(documentApiError('Patient document OCR complete', response.status))
   }
 
   return response.json()

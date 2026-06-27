@@ -1825,6 +1825,20 @@ documents.MapGet("/ocr-queue", async (
     })
     .WithName("GetPatientDocumentOcrQueue");
 
+documents.MapPost("/{documentId:int}/ocr/complete", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentOcrCompleteRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var completion = await repository.CompleteOcrAsync(documentId, request, cancellationToken);
+        return completion is null
+            ? Results.BadRequest("Patient document OCR could not be completed from the supplied document and extracted text.")
+            : Results.Ok(completion);
+    })
+    .WithName("CompletePatientDocumentOcr")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
 documents.MapGet("/{documentId:int}/content", async (
         DocumentRepository repository,
         int documentId,
