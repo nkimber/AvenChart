@@ -12,6 +12,7 @@ public sealed record ClinicalListsResponse(
     IReadOnlyList<ProblemListItem> Problems,
     IReadOnlyList<AllergyListItem> Allergies,
     IReadOnlyList<MedicationListItem> Medications,
+    IReadOnlyList<MedicationDuplicateSummary> MedicationDuplicates,
     IReadOnlyList<ImmunizationListItem> Immunizations,
     IReadOnlyList<PrescriptionListItem> Prescriptions);
 
@@ -62,6 +63,15 @@ public sealed record MedicationListItem(
     string? Date,
     string? Comments,
     int Activity);
+
+public sealed record MedicationDuplicateSummary(
+    string NormalizedTitle,
+    string DisplayTitle,
+    int ActiveCount,
+    IReadOnlyList<string> MedicationIds,
+    string? FirstDate,
+    string? LatestDate,
+    IReadOnlyList<string> Diagnoses);
 
 public sealed record ClinicalMedicationCreateRequest(
     string PatientId,

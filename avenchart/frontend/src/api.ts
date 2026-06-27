@@ -944,6 +944,16 @@ export type MedicationListItem = {
   activity: number
 }
 
+export type MedicationDuplicateSummary = {
+  normalizedTitle: string
+  displayTitle: string
+  activeCount: number
+  medicationIds: string[]
+  firstDate?: string | null
+  latestDate?: string | null
+  diagnoses: string[]
+}
+
 export type PrescriptionListItem = {
   id: string
   drug: string
@@ -996,6 +1006,7 @@ export type ClinicalListsResponse = {
   problems: ProblemListItem[]
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
+  medicationDuplicates: MedicationDuplicateSummary[]
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
 }

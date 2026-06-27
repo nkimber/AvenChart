@@ -304,6 +304,7 @@ import {
   type EncounterVitalsCreateInput,
   type ImmunizationListItem,
   type MedicationListItem,
+  type MedicationDuplicateSummary,
   type PatientChartSummary,
   type PatientDuplicateCandidate,
   type PatientDuplicateSearchResponse,
@@ -15016,6 +15017,7 @@ function ClinicalListsWorkspace({
               />
               <MedicationPanel
                 items={clinicalLists.medications}
+                duplicates={clinicalLists.medicationDuplicates ?? []}
                 onDeactivate={onDeactivateMedication}
                 onDelete={onDeleteMedication}
                 disabled={isLoading || !canUseLists}
@@ -23036,17 +23038,41 @@ function AllergyPanel({
 
 function MedicationPanel({
   items,
+  duplicates,
   onDeactivate,
   onDelete,
   disabled,
 }: {
   items: MedicationListItem[]
+  duplicates: MedicationDuplicateSummary[]
   onDeactivate: (medication: MedicationListItem) => Promise<unknown>
   onDelete: (medication: MedicationListItem) => Promise<void>
   disabled: boolean
 }) {
   return (
     <ClinicalSection title="Medication List" icon={HeartPulse} emptyText="No active medications">
+      {duplicates.length > 0 && (
+        <div className="statement-batch-summary" aria-label="Medication duplicate summary">
+          <div className="summary-row">
+            <span>Duplicate groups</span>
+            <strong>{duplicates.length}</strong>
+          </div>
+          {duplicates.map((duplicate) => (
+            <article className="clinical-item" key={duplicate.normalizedTitle}>
+              <div className="clinical-item-main">
+                <strong>{duplicate.displayTitle}</strong>
+                <span>{duplicate.activeCount} active entries</span>
+              </div>
+              <p className="clinical-item-note">
+                {[duplicate.firstDate && duplicate.latestDate ? `${duplicate.firstDate} to ${duplicate.latestDate}` : null, duplicate.diagnoses.join(', ')]
+                  .filter(Boolean)
+                  .join(' / ')}
+              </p>
+              <p className="clinical-item-note">IDs {duplicate.medicationIds.join(', ')}</p>
+            </article>
+          ))}
+        </div>
+      )}
       {items.map((item) => (
         <ClinicalItem key={item.id} title={item.title} meta={item.diagnosis} date={item.date} note={item.comments}>
           <div className="clinical-item-actions">

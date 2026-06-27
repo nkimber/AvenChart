@@ -22,6 +22,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var problems = await GetProblemsAsync(connection, patient.LegacyPid, cancellationToken);
         var allergies = await GetAllergiesAsync(connection, patient.LegacyPid, cancellationToken);
         var medications = await GetMedicationsAsync(connection, patient.LegacyPid, cancellationToken);
+        var medicationDuplicates = BuildMedicationDuplicates(medications);
         var immunizations = await GetImmunizationsAsync(connection, patient.LegacyPid, cancellationToken);
         var prescriptions = await GetPrescriptionsAsync(connection, patient.LegacyPid, cancellationToken);
 
@@ -37,6 +38,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             Problems: problems,
             Allergies: allergies,
             Medications: medications,
+            MedicationDuplicates: medicationDuplicates,
             Immunizations: immunizations,
             Prescriptions: prescriptions);
     }
@@ -749,6 +751,54 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         return items;
+    }
+
+    private static IReadOnlyList<MedicationDuplicateSummary> BuildMedicationDuplicates(
+        IReadOnlyList<MedicationListItem> medications)
+    {
+        return medications
+            .GroupBy(item => NormalizeMedicationTitle(item.Title))
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key) && group.Count() > 1)
+            .Select(group =>
+            {
+                var ordered = group
+                    .OrderBy(item => item.Date ?? string.Empty, StringComparer.Ordinal)
+                    .ThenBy(item => item.Id, StringComparer.Ordinal)
+                    .ToList();
+                var dates = ordered
+                    .Select(item => item.Date)
+                    .Where(date => !string.IsNullOrWhiteSpace(date))
+                    .ToList();
+                var diagnoses = ordered
+                    .Select(item => item.Diagnosis)
+                    .Where(diagnosis => !string.IsNullOrWhiteSpace(diagnosis))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(diagnosis => diagnosis, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var displayTitle = ordered
+                    .Select(item => item.Title.Trim())
+                    .OrderBy(title => title, StringComparer.Ordinal)
+                    .First();
+
+                return new MedicationDuplicateSummary(
+                    NormalizedTitle: group.Key,
+                    DisplayTitle: displayTitle,
+                    ActiveCount: ordered.Count,
+                    MedicationIds: ordered.Select(item => item.Id).ToList(),
+                    FirstDate: dates.FirstOrDefault(),
+                    LatestDate: dates.LastOrDefault(),
+                    Diagnoses: diagnoses!);
+            })
+            .OrderBy(item => item.DisplayTitle, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string NormalizeMedicationTitle(string title)
+    {
+        return string.Join(
+                " ",
+                title.Trim().ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Trim();
     }
 
     private static async Task<IReadOnlyList<ImmunizationListItem>> GetImmunizationsAsync(
