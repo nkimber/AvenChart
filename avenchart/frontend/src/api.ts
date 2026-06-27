@@ -3091,6 +3091,8 @@ export type PatientPortalProfileDemographics = {
   phoneHome?: string | null
   phoneCell?: string | null
   phoneContact?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
   contactRelationship?: string | null
   motherName?: string | null
   guardianName?: string | null
@@ -3126,6 +3128,8 @@ export type PatientPortalProfileChangeInput = {
   email?: string | null
   phoneHome?: string | null
   phoneCell?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
   street?: string | null
   city?: string | null
   state?: string | null

@@ -6150,6 +6150,8 @@ function PatientPortalWorkspace({
   const [portalProfileChangeEmail, setPortalProfileChangeEmail] = useState('')
   const [portalProfileChangePhoneHome, setPortalProfileChangePhoneHome] = useState('')
   const [portalProfileChangePhoneCell, setPortalProfileChangePhoneCell] = useState('')
+  const [portalProfileChangeSmsAllowed, setPortalProfileChangeSmsAllowed] = useState(false)
+  const [portalProfileChangeEmailAllowed, setPortalProfileChangeEmailAllowed] = useState(false)
   const [portalProfileChangeStreet, setPortalProfileChangeStreet] = useState('')
   const [portalProfileChangeCity, setPortalProfileChangeCity] = useState('')
   const [portalProfileChangeState, setPortalProfileChangeState] = useState('')
@@ -6163,6 +6165,8 @@ function PatientPortalWorkspace({
       setPortalProfileChangeEmail('')
       setPortalProfileChangePhoneHome('')
       setPortalProfileChangePhoneCell('')
+      setPortalProfileChangeSmsAllowed(false)
+      setPortalProfileChangeEmailAllowed(false)
       setPortalProfileChangeStreet('')
       setPortalProfileChangeCity('')
       setPortalProfileChangeState('')
@@ -6174,6 +6178,8 @@ function PatientPortalWorkspace({
     setPortalProfileChangeEmail(demographics.email ?? '')
     setPortalProfileChangePhoneHome(demographics.phoneHome ?? '')
     setPortalProfileChangePhoneCell(demographics.phoneCell ?? '')
+    setPortalProfileChangeSmsAllowed(demographics.hipaaAllowSms === 'YES')
+    setPortalProfileChangeEmailAllowed(demographics.hipaaAllowEmail === 'YES')
     setPortalProfileChangeStreet(demographics.street ?? '')
     setPortalProfileChangeCity(demographics.city ?? '')
     setPortalProfileChangeState(demographics.state ?? '')
@@ -6186,6 +6192,8 @@ function PatientPortalWorkspace({
     profile?.demographics.email,
     profile?.demographics.phoneHome,
     profile?.demographics.phoneCell,
+    profile?.demographics.hipaaAllowSms,
+    profile?.demographics.hipaaAllowEmail,
     profile?.demographics.street,
     profile?.demographics.city,
     profile?.demographics.state,
@@ -6360,6 +6368,8 @@ function PatientPortalWorkspace({
         email: portalProfileChangeEmail,
         phoneHome: portalProfileChangePhoneHome,
         phoneCell: portalProfileChangePhoneCell,
+        hipaaAllowSms: portalProfileChangeSmsAllowed ? 'YES' : 'NO',
+        hipaaAllowEmail: portalProfileChangeEmailAllowed ? 'YES' : 'NO',
         street: portalProfileChangeStreet,
         city: portalProfileChangeCity,
         state: portalProfileChangeState,
@@ -6474,6 +6484,8 @@ function PatientPortalWorkspace({
                 />
                 <Field label="Home phone" value={profile?.demographics.phoneHome} />
                 <Field label="Cell phone" value={profile?.demographics.phoneCell} />
+                <Field label="SMS reminder permission" value={profile?.demographics.hipaaAllowSms} />
+                <Field label="Email reminder permission" value={profile?.demographics.hipaaAllowEmail} />
                 <Field label="Mother" value={profile?.demographics.motherName} />
                 <Field label="Guardian" value={profile?.demographics.guardianName} />
                 <div className="result-meta">
@@ -6495,6 +6507,8 @@ function PatientPortalWorkspace({
                       <span>Email {profile.pendingChange.demographics.email ?? 'Not recorded'}</span>
                       <span>Home {profile.pendingChange.demographics.phoneHome ?? 'Not recorded'}</span>
                       <span>Cell {profile.pendingChange.demographics.phoneCell ?? 'Not recorded'}</span>
+                      <span>SMS reminders {profile.pendingChange.demographics.hipaaAllowSms ?? 'Not recorded'}</span>
+                      <span>Email reminders {profile.pendingChange.demographics.hipaaAllowEmail ?? 'Not recorded'}</span>
                       <span>
                         Address {[
                           profile.pendingChange.demographics.street,
@@ -6535,6 +6549,26 @@ function PatientPortalWorkspace({
                         onChange={(event) => setPortalProfileChangePhoneCell(event.target.value)}
                         disabled={!authenticated || busy}
                       />
+                    </label>
+                    <label className="contact-field checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={portalProfileChangeSmsAllowed}
+                        onChange={(event) => setPortalProfileChangeSmsAllowed(event.target.checked)}
+                        disabled={!authenticated || busy}
+                        aria-label="Portal profile change SMS reminders allowed"
+                      />
+                      <span>SMS reminders allowed</span>
+                    </label>
+                    <label className="contact-field checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={portalProfileChangeEmailAllowed}
+                        onChange={(event) => setPortalProfileChangeEmailAllowed(event.target.checked)}
+                        disabled={!authenticated || busy}
+                        aria-label="Portal profile change email reminders allowed"
+                      />
+                      <span>Email reminders allowed</span>
                     </label>
                     <label className="contact-field">
                       <span>Street</span>

@@ -2211,6 +2211,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         PhoneHome: null,
         PhoneCell: null,
         PhoneContact: null,
+        HipaaAllowSms: null,
+        HipaaAllowEmail: null,
         ContactRelationship: null,
         MotherName: null,
         GuardianName: null,
@@ -5654,6 +5656,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
               phone_home,
               phone_cell,
               phone as phone_contact,
+              hipaa_allow_sms,
+              hipaa_allow_email,
               guardian_relationship as contact_relationship,
               mother_name,
               guardian_name,
@@ -5689,6 +5693,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             PhoneHome: ReadNullableString(reader, "phone_home"),
             PhoneCell: ReadNullableString(reader, "phone_cell"),
             PhoneContact: ReadNullableString(reader, "phone_contact"),
+            HipaaAllowSms: ReadNullableString(reader, "hipaa_allow_sms"),
+            HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
             ContactRelationship: ReadNullableString(reader, "contact_relationship"),
             MotherName: ReadNullableString(reader, "mother_name"),
             GuardianName: ReadNullableString(reader, "guardian_name"),
@@ -5817,7 +5823,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             State = ApplyProfileChangeValue(current.State, request.State),
             PostalCode = ApplyProfileChangeValue(current.PostalCode, request.PostalCode),
             PhoneHome = ApplyProfileChangeValue(current.PhoneHome, request.PhoneHome),
-            PhoneCell = ApplyProfileChangeValue(current.PhoneCell, request.PhoneCell)
+            PhoneCell = ApplyProfileChangeValue(current.PhoneCell, request.PhoneCell),
+            HipaaAllowSms = ApplyProfilePermissionValue(current.HipaaAllowSms, request.HipaaAllowSms),
+            HipaaAllowEmail = ApplyProfilePermissionValue(current.HipaaAllowEmail, request.HipaaAllowEmail)
         };
 
     private static string? ApplyProfileChangeValue(string? currentValue, string? requestedValue)
@@ -5829,6 +5837,16 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
 
         var trimmed = requestedValue.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static string? ApplyProfilePermissionValue(string? currentValue, string? requestedValue)
+    {
+        if (requestedValue is null)
+        {
+            return currentValue;
+        }
+
+        return requestedValue.Trim().Equals("YES", StringComparison.OrdinalIgnoreCase) ? "YES" : "NO";
     }
 
     private static async Task<AppointmentSummaryRows> GetUpcomingAppointmentsAsync(

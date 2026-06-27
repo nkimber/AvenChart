@@ -112,6 +112,8 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                     phone_home = @phone_home,
                     phone_cell = @phone_cell,
                     phone = @phone_contact,
+                    hipaa_allow_sms = @hipaa_allow_sms,
+                    hipaa_allow_email = @hipaa_allow_email,
                     guardian_relationship = @guardian_relationship,
                     mother_name = @mother_name,
                     guardian_name = @guardian_name,
@@ -135,6 +137,8 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             AddNullableText(updatePatientCommand, "phone_home", requestedDemographics.PhoneHome);
             AddNullableText(updatePatientCommand, "phone_cell", requestedDemographics.PhoneCell);
             AddNullableText(updatePatientCommand, "phone_contact", requestedDemographics.PhoneContact);
+            AddNullableText(updatePatientCommand, "hipaa_allow_sms", NormalizePermission(requestedDemographics.HipaaAllowSms));
+            AddNullableText(updatePatientCommand, "hipaa_allow_email", NormalizePermission(requestedDemographics.HipaaAllowEmail));
             AddNullableText(
                 updatePatientCommand,
                 "guardian_relationship",
@@ -229,6 +233,8 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 p.phone_home,
                 p.phone_cell,
                 p.phone as phone_contact,
+                p.hipaa_allow_sms,
+                p.hipaa_allow_email,
                 p.guardian_relationship as contact_relationship,
                 p.mother_name,
                 p.guardian_name,
@@ -274,6 +280,8 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 PhoneHome: ReadNullableString(reader, "phone_home"),
                 PhoneCell: ReadNullableString(reader, "phone_cell"),
                 PhoneContact: ReadNullableString(reader, "phone_contact"),
+                HipaaAllowSms: ReadNullableString(reader, "hipaa_allow_sms"),
+                HipaaAllowEmail: ReadNullableString(reader, "hipaa_allow_email"),
                 ContactRelationship: ReadNullableString(reader, "contact_relationship"),
                 MotherName: ReadNullableString(reader, "mother_name"),
                 GuardianName: ReadNullableString(reader, "guardian_name"),
@@ -1136,12 +1144,24 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             PhoneHome: null,
             PhoneCell: null,
             PhoneContact: null,
+            HipaaAllowSms: null,
+            HipaaAllowEmail: null,
             ContactRelationship: null,
             MotherName: null,
             GuardianName: null,
             GuardianRelationship: null,
             GuardianPhone: null,
             GuardianEmail: null);
+
+    private static string? NormalizePermission(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value.Trim().Equals("YES", StringComparison.OrdinalIgnoreCase) ? "YES" : "NO";
+    }
 
     private static string NormalizeRequired(string? value, string label)
     {
