@@ -412,6 +412,46 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
     }
 
+    public async Task<ClinicalListMutationResponse?> RefillPrescriptionAsync(
+        string prescriptionId,
+        ClinicalPrescriptionRefillRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId)
+            || request.AdditionalRefills <= 0
+            || !TryReadDate(request.RefillDate, out var refillDate))
+        {
+            return null;
+        }
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                update prescriptions
+                set refills = refills + @additionalRefills,
+                    modified_date = @refillDate,
+                    note = @note
+                where id = @id and active = 1
+                returning patient_id;
+                """;
+            command.Parameters.AddWithValue("id", prescriptionId);
+            command.Parameters.AddWithValue("additionalRefills", request.AdditionalRefills);
+            command.Parameters.Add("refillDate", NpgsqlDbType.Date).Value = refillDate;
+            command.Parameters.AddWithValue("note", NullableText(request.Note));
+            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var lists = await GetForPatientAsync(patientId, cancellationToken);
+        return lists is null ? null : new ClinicalListMutationResponse(prescriptionId, lists);
+    }
+
     public async Task<bool> DeletePrescriptionAsync(string prescriptionId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(prescriptionId))

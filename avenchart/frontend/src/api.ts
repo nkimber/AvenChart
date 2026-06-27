@@ -1065,6 +1065,12 @@ export type ClinicalPrescriptionDeactivateInput = {
   note: string
 }
 
+export type ClinicalPrescriptionRefillInput = {
+  refillDate: string
+  additionalRefills: number
+  note: string
+}
+
 export type ClinicalImmunizationCreateInput = {
   patientId: string
   encounter?: number | null
@@ -5482,6 +5488,28 @@ export async function deactivateClinicalPrescription(
   )
   if (!response.ok) {
     throw new Error(clinicalListApiError('Clinical prescription deactivate', response.status))
+  }
+
+  return response.json()
+}
+
+export async function refillClinicalPrescription(
+  prescriptionId: string,
+  refill: ClinicalPrescriptionRefillInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/refill`,
+    {
+      method: 'PUT',
+      headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+      body: JSON.stringify(refill),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(clinicalListApiError('Clinical prescription refill', response.status))
   }
 
   return response.json()

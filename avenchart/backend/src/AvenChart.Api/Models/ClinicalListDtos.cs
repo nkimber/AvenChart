@@ -158,3 +158,8 @@ public sealed record ClinicalPrescriptionCreateRequest(
 public sealed record ClinicalPrescriptionDeactivateRequest(
     string EndDate,
     string Note);
+
+public sealed record ClinicalPrescriptionRefillRequest(
+    string RefillDate,
+    int AdditionalRefills,
+    string Note);

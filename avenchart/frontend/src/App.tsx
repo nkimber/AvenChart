@@ -190,6 +190,7 @@ import {
   signEncounterDocument,
   signProcedureReport,
   reopenProcedureReportReview,
+  refillClinicalPrescription,
   replyToPatientMessage,
   softDeleteEncounterDocument,
   signPatientDocument,
@@ -281,6 +282,7 @@ import {
   type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
   type ClinicalPrescriptionCreateInput,
+  type ClinicalPrescriptionRefillInput,
   type CollectionsWorkQueueItem,
   type CollectionsWorkQueueResponse,
   type CollectionsFollowUpMutationResponse,
@@ -2879,6 +2881,25 @@ function App() {
     }
   }
 
+  async function handleClinicalPrescriptionRefill(prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) {
+    setClinicalStatus('loading')
+    setClinicalError(null)
+
+    try {
+      const sessionId = getActiveClinicalListSessionId()
+      const response = await refillClinicalPrescription(prescription.id, input, sessionId)
+      setClinicalLists(response.detail)
+      setClinicalStatus('ready')
+      setClinicalRefreshKey((current) => current + 1)
+      return response
+    } catch (refillError) {
+      setClinicalStatus('error')
+      const message = refillError instanceof Error ? refillError.message : 'Clinical prescription refill failed'
+      setClinicalError(message)
+      throw refillError
+    }
+  }
+
   async function handleClinicalPrescriptionDelete(prescription: PrescriptionListItem) {
     setClinicalStatus('loading')
     setClinicalError(null)
@@ -5350,6 +5371,7 @@ function App() {
             onDeleteMedication={handleClinicalMedicationDelete}
             onCreatePrescription={handleClinicalPrescriptionCreate}
             onDeactivatePrescription={handleClinicalPrescriptionDeactivate}
+            onRefillPrescription={handleClinicalPrescriptionRefill}
             onDeletePrescription={handleClinicalPrescriptionDelete}
             onCreateImmunization={handleClinicalImmunizationCreate}
             onMarkImmunizationEnteredInError={handleClinicalImmunizationEnteredInError}
@@ -14377,6 +14399,7 @@ function ClinicalListsWorkspace({
   onDeleteMedication,
   onCreatePrescription,
   onDeactivatePrescription,
+  onRefillPrescription,
   onDeletePrescription,
   onCreateImmunization,
   onMarkImmunizationEnteredInError,
@@ -14400,6 +14423,7 @@ function ClinicalListsWorkspace({
   onDeleteMedication: (medication: MedicationListItem) => Promise<void>
   onCreatePrescription: (input: ClinicalPrescriptionCreateInput) => Promise<unknown>
   onDeactivatePrescription: (prescription: PrescriptionListItem) => Promise<unknown>
+  onRefillPrescription: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
   onDeletePrescription: (prescription: PrescriptionListItem) => Promise<void>
   onCreateImmunization: (input: ClinicalImmunizationCreateInput) => Promise<unknown>
   onMarkImmunizationEnteredInError: (immunization: ImmunizationListItem) => Promise<unknown>
@@ -15031,6 +15055,7 @@ function ClinicalListsWorkspace({
               <PrescriptionPanel
                 items={clinicalLists.prescriptions}
                 onDeactivate={onDeactivatePrescription}
+                onRefill={onRefillPrescription}
                 onDelete={onDeletePrescription}
                 disabled={isLoading || !canUseLists}
               />
@@ -23153,11 +23178,13 @@ function ImmunizationPanel({
 function PrescriptionPanel({
   items,
   onDeactivate,
+  onRefill,
   onDelete,
   disabled,
 }: {
   items: PrescriptionListItem[]
   onDeactivate: (prescription: PrescriptionListItem) => Promise<unknown>
+  onRefill: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
   onDelete: (prescription: PrescriptionListItem) => Promise<void>
   disabled: boolean
 }) {
@@ -23175,6 +23202,19 @@ function PrescriptionPanel({
         >
           {item.note && <p className="clinical-item-note">{item.note}</p>}
           <div className="clinical-item-actions">
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={disabled}
+              onClick={() => void onRefill(item, {
+                refillDate: '2026-08-20',
+                additionalRefills: 1,
+                note: 'Refill authorized from the modernized Lists workspace.',
+              })}
+            >
+              <RotateCcw size={14} />
+              Refill
+            </button>
             <button
               className="icon-text-button danger"
               type="button"
