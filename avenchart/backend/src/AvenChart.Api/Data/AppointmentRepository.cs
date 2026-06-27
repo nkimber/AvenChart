@@ -433,6 +433,173 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return insertedId is null ? null : await GetByIdAsync(insertedId, cancellationToken);
     }
 
+    public async Task<AppointmentAvailabilityValidationResponse?> ValidateAvailabilityAsync(
+        AppointmentAvailabilityValidationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!DateOnly.TryParse(request.Date, out var appointmentDate)
+            || !TimeOnly.TryParse(request.StartTime, out var startTime)
+            || request.DurationMinutes <= 0)
+        {
+            return null;
+        }
+
+        var startMinutes = startTime.Hour * 60 + startTime.Minute;
+        var endMinutes = startMinutes + request.DurationMinutes;
+        if (endMinutes > 24 * 60)
+        {
+            return null;
+        }
+
+        var endTime = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(endMinutes));
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            with patient_match as (
+                select canonical_id, legacy_pid, pubpid, first_name, last_name, provider_id, facility_id
+                from patients
+                where lower(canonical_id) = lower(@patientId)
+                   or lower(pubpid) = lower(@patientId)
+                   or legacy_pid::text = @patientId
+                limit 1
+            ),
+            selected as (
+                select
+                    canonical_id,
+                    legacy_pid,
+                    pubpid,
+                    first_name,
+                    last_name,
+                    coalesce((select id from staff where id = @providerId), provider_id) as provider_id,
+                    coalesce((select id from facilities where id = @facilityId), facility_id) as facility_id
+                from patient_match
+            )
+            select
+                selected.canonical_id,
+                selected.legacy_pid,
+                selected.pubpid,
+                selected.first_name,
+                selected.last_name,
+                selected.provider_id,
+                trim(concat(coalesce(staff.first_name, ''), ' ', coalesce(staff.last_name, ''))) as provider_name,
+                selected.facility_id,
+                facilities.name as facility_name
+            from selected
+            left join staff on staff.id = selected.provider_id
+            left join facilities on facilities.id = selected.facility_id;
+            """;
+        command.Parameters.AddWithValue("patientId", request.PatientId.Trim());
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null ? DBNull.Value : request.ProviderId.Value;
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = request.FacilityId is null ? DBNull.Value : request.FacilityId.Value;
+
+        string? patientCanonicalId = null;
+        int? legacyPid = null;
+        string? patientDisplayName = null;
+        int? providerId = null;
+        string? providerName = null;
+        int? facilityId = null;
+        string? facilityName = null;
+
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                patientCanonicalId = ReadNullableString(reader, "canonical_id");
+                legacyPid = reader.GetInt32(reader.GetOrdinal("legacy_pid"));
+                var firstName = ReadNullableString(reader, "first_name");
+                var lastName = ReadNullableString(reader, "last_name");
+                patientDisplayName = NormalizePatientName(firstName, lastName, patientCanonicalId);
+                providerId = ReadNullableInt(reader, "provider_id");
+                providerName = NormalizeText(ReadNullableString(reader, "provider_name"));
+                facilityId = ReadNullableInt(reader, "facility_id");
+                facilityName = NormalizeText(ReadNullableString(reader, "facility_name"));
+            }
+        }
+
+        if (patientCanonicalId is null || legacyPid is null)
+        {
+            return new AppointmentAvailabilityValidationResponse(
+                Available: false,
+                ValidationStatus: "patient-not-found",
+                Date: appointmentDate.ToString("yyyy-MM-dd"),
+                StartTime: startTime.ToString("HH:mm"),
+                EndTime: endTime.ToString("HH:mm"),
+                DurationMinutes: request.DurationMinutes,
+                PatientKnown: false,
+                ProviderId: null,
+                ProviderName: null,
+                ProviderAvailable: false,
+                FacilityId: null,
+                FacilityName: null,
+                FacilityAvailable: false,
+                WithinBusinessHours: false,
+                ConflictCount: 0,
+                Conflicts: Array.Empty<AppointmentAvailabilityConflict>(),
+                Messages: new[] { "Patient was not found for appointment availability validation." });
+        }
+
+        var weekday = appointmentDate.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday;
+        var withinBusinessHours = weekday && startMinutes >= 8 * 60 && endMinutes <= 17 * 60;
+        var messages = new List<string>();
+        if (!withinBusinessHours)
+        {
+            messages.Add("Requested time is outside the shared provider/facility bookable window of Monday-Friday 08:00-17:00.");
+        }
+
+        if (providerId is null)
+        {
+            messages.Add("No provider could be resolved from the request or patient default.");
+        }
+
+        if (facilityId is null)
+        {
+            messages.Add("No facility could be resolved from the request or patient default.");
+        }
+
+        var conflicts = await GetAvailabilityConflictsAsync(
+            connection,
+            appointmentDate,
+            startTime,
+            endTime,
+            legacyPid.Value,
+            providerId,
+            NormalizeText(request.Room),
+            NormalizeText(request.ExcludeAppointmentId),
+            cancellationToken);
+
+        if (conflicts.Count > 0)
+        {
+            messages.Add($"Requested time has {conflicts.Count} active scheduling conflict(s).");
+        }
+
+        var providerAvailable = providerId is not null && withinBusinessHours;
+        var facilityAvailable = facilityId is not null && withinBusinessHours;
+        var available = providerAvailable && facilityAvailable && conflicts.Count == 0;
+        if (available)
+        {
+            messages.Add("Requested time is available for the resolved provider and facility.");
+        }
+
+        return new AppointmentAvailabilityValidationResponse(
+            Available: available,
+            ValidationStatus: available ? "available" : "unavailable",
+            Date: appointmentDate.ToString("yyyy-MM-dd"),
+            StartTime: startTime.ToString("HH:mm"),
+            EndTime: endTime.ToString("HH:mm"),
+            DurationMinutes: request.DurationMinutes,
+            PatientKnown: true,
+            ProviderId: providerId,
+            ProviderName: providerName,
+            ProviderAvailable: providerAvailable,
+            FacilityId: facilityId,
+            FacilityName: facilityName,
+            FacilityAvailable: facilityAvailable,
+            WithinBusinessHours: withinBusinessHours,
+            ConflictCount: conflicts.Count,
+            Conflicts: conflicts,
+            Messages: messages);
+    }
+
     public async Task<AppointmentDetail?> UpdateStatusAsync(
         string appointmentId,
         AppointmentStatusUpdateRequest request,
@@ -1484,6 +1651,76 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         return new ProviderOverlapSummary(overlapIds.Count, overlapIds);
     }
 
+    private static async Task<IReadOnlyList<AppointmentAvailabilityConflict>> GetAvailabilityConflictsAsync(
+        NpgsqlConnection connection,
+        DateOnly appointmentDate,
+        TimeOnly appointmentStart,
+        TimeOnly appointmentEnd,
+        int patientPid,
+        int? providerId,
+        string? room,
+        string? excludeAppointmentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                appointments.id,
+                appointments.patient_id,
+                trim(concat(coalesce(patients.last_name, ''), ', ', coalesce(patients.first_name, ''))) as patient_display_name,
+                appointments.appointment_date,
+                appointments.start_time,
+                (appointments.start_time + make_interval(mins => appointments.duration_minutes))::time as end_time,
+                appointments.title,
+                array_remove(array[
+                    case when @providerId is not null and appointments.provider_id = @providerId then 'provider' end,
+                    case when appointments.pid = @patientPid then 'patient' end,
+                    case when @room is not null and lower(trim(coalesce(appointments.room, ''))) = lower(@room) then 'room' end
+                ], null) as conflict_types
+            from appointments
+            join patients on patients.legacy_pid = appointments.pid
+            where appointments.appointment_date = @appointmentDate
+              and coalesce(appointments.status, '-') <> 'x'
+              and (@excludeAppointmentId is null or appointments.id <> @excludeAppointmentId)
+              and appointments.start_time < @appointmentEnd
+              and (appointments.start_time + make_interval(mins => appointments.duration_minutes))::time > @appointmentStart
+              and (
+                (@providerId is not null and appointments.provider_id = @providerId)
+                or appointments.pid = @patientPid
+                or (@room is not null and lower(trim(coalesce(appointments.room, ''))) = lower(@room))
+              )
+            order by appointments.start_time, appointments.id;
+            """;
+        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = providerId is null ? DBNull.Value : providerId.Value;
+        command.Parameters.Add("patientPid", NpgsqlDbType.Integer).Value = patientPid;
+        command.Parameters.Add("room", NpgsqlDbType.Text).Value = room ?? (object)DBNull.Value;
+        command.Parameters.Add("excludeAppointmentId", NpgsqlDbType.Text).Value = excludeAppointmentId ?? (object)DBNull.Value;
+        command.Parameters.Add("appointmentDate", NpgsqlDbType.Date).Value = appointmentDate;
+        command.Parameters.Add("appointmentStart", NpgsqlDbType.Time).Value = appointmentStart;
+        command.Parameters.Add("appointmentEnd", NpgsqlDbType.Time).Value = appointmentEnd;
+
+        var conflicts = new List<AppointmentAvailabilityConflict>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var conflictTypes = reader.GetFieldValue<string[]>(reader.GetOrdinal("conflict_types"));
+            foreach (var conflictType in conflictTypes)
+            {
+                conflicts.Add(new AppointmentAvailabilityConflict(
+                    AppointmentId: reader.GetString(reader.GetOrdinal("id")),
+                    ConflictType: conflictType,
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    PatientDisplayName: NormalizeText(ReadNullableString(reader, "patient_display_name")) ?? "Unknown patient",
+                    Date: ReadDate(reader, "appointment_date"),
+                    StartTime: ReadTime(reader, "start_time"),
+                    EndTime: ReadTime(reader, "end_time"),
+                    Title: reader.GetString(reader.GetOrdinal("title"))));
+            }
+        }
+
+        return conflicts;
+    }
+
     private async Task<AppointmentOverlapSummary> GetPatientOverlapSummaryAsync(
         AppointmentDetail appointment,
         CancellationToken cancellationToken)
@@ -2076,6 +2313,9 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             ? $"{lastName}, {firstName}"
             : $"{lastName}, {firstName} ({preferredName})";
     }
+
+    private static string NormalizePatientName(string? firstName, string? lastName, string? fallback) =>
+        NormalizeText($"{lastName}, {firstName}") ?? fallback ?? "Unknown patient";
 
     private static string ReadDate(DbDataReader reader, string columnName) =>
         reader.GetFieldValue<DateOnly>(reader.GetOrdinal(columnName)).ToString("yyyy-MM-dd");

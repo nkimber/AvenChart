@@ -815,6 +815,19 @@ appointments.MapPost("/", async (
     .WithName("CreateAppointment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
 
+appointments.MapPost("/availability/validate", async (
+        AppointmentRepository repository,
+        AppointmentAvailabilityValidationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var validation = await repository.ValidateAvailabilityAsync(request, cancellationToken);
+        return validation is null
+            ? Results.BadRequest("Appointment availability could not be validated from the supplied patient, date, time, and duration.")
+            : Results.Ok(validation);
+    })
+    .WithName("ValidateAppointmentAvailability")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
+
 appointments.MapPut("/{appointmentId}", async (
         AppointmentRepository repository,
         string appointmentId,

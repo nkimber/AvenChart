@@ -231,6 +231,7 @@ import {
   updateProcedureLabProvider,
   updateProcedureOrderCatalogItem,
   updateProcedureOrderStatus,
+  validateAppointmentAvailability,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
@@ -246,6 +247,7 @@ import {
   type AuthLoginResponse,
   type AuthSessionResponse,
   type AppointmentDetail,
+  type AppointmentAvailabilityValidationResponse,
   type AppointmentCreateInput,
   type AppointmentListItem,
   type AppointmentOccurrenceRescheduleInput,
@@ -10034,6 +10036,9 @@ function CalendarWorkspace({
   const [editRecurrenceExdates, setEditRecurrenceExdates] = useState('')
   const [editStatus, setEditStatus] = useState('-')
   const [mutationStatus, setMutationStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [availabilityStatus, setAvailabilityStatus] = useState<'idle' | 'checking' | 'ready' | 'error'>('idle')
+  const [availabilityResult, setAvailabilityResult] = useState<AppointmentAvailabilityValidationResponse | null>(null)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
   const [calendarLoginUsername, setCalendarLoginUsername] = useState('admin')
   const [calendarLoginPassword, setCalendarLoginPassword] = useState('pass')
   const [calendarLoginStatus, setCalendarLoginStatus] =
@@ -10130,6 +10135,40 @@ function CalendarWorkspace({
       setMutationStatus('saved')
     } catch {
       setMutationStatus('error')
+    }
+  }
+
+  async function handleValidateAvailability() {
+    if (calendarLocked) {
+      setAvailabilityStatus('error')
+      setAvailabilityError('Calendar access is required before checking appointment availability.')
+      return
+    }
+
+    setAvailabilityStatus('checking')
+    setAvailabilityResult(null)
+    setAvailabilityError(null)
+
+    try {
+      const validation = await validateAppointmentAvailability(
+        {
+          patientId,
+          providerId: numberOrNull(draftProviderId),
+          date: draftDate,
+          startTime: draftStartTime,
+          durationMinutes: Number(draftDuration),
+          facilityId: numberOrNull(draftFacilityId),
+          room: draftRoom,
+        },
+        sessionId,
+      )
+      setAvailabilityResult(validation)
+      setAvailabilityStatus('ready')
+    } catch (validationError) {
+      setAvailabilityStatus('error')
+      setAvailabilityError(
+        validationError instanceof Error ? validationError.message : 'Appointment availability validation failed',
+      )
     }
   }
 
@@ -10599,6 +10638,15 @@ function CalendarWorkspace({
             </label>
           </div>
           <div className="contact-actions">
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={calendarLocked || availabilityStatus === 'checking'}
+              onClick={() => void handleValidateAvailability()}
+            >
+              <Clock size={15} />
+              <span>{availabilityStatus === 'checking' ? 'Checking' : 'Check availability'}</span>
+            </button>
             <button className="icon-text-button primary" type="submit" disabled={calendarLocked || mutationStatus === 'saving'}>
               <CalendarPlus size={15} />
               <span>{mutationStatus === 'saving' ? 'Saving' : 'Create'}</span>
@@ -10606,6 +10654,28 @@ function CalendarWorkspace({
             {mutationStatus === 'saved' && <span className="save-note">Saved</span>}
             {mutationStatus === 'error' && <span className="save-note error">Action failed</span>}
           </div>
+          {availabilityStatus === 'error' && availabilityError && (
+            <div className="status-banner error" role="status">{availabilityError}</div>
+          )}
+          {availabilityResult && (
+            <div
+              className={availabilityResult.available ? 'status-banner' : 'status-banner warning'}
+              role="status"
+              aria-label="Appointment availability result"
+            >
+              <strong>{availabilityResult.available ? 'Available' : 'Unavailable'}</strong>
+              <span>
+                {availabilityResult.date} {availabilityResult.startTime}-{availabilityResult.endTime}
+              </span>
+              <span>
+                Provider {availabilityResult.providerAvailable ? 'available' : 'unavailable'} | Facility{' '}
+                {availabilityResult.facilityAvailable ? 'available' : 'unavailable'} | {availabilityResult.conflictCount} conflicts
+              </span>
+              {availabilityResult.messages.map((message) => (
+                <span key={message}>{message}</span>
+              ))}
+            </div>
+          )}
         </form>
 
         <div className="result-meta">

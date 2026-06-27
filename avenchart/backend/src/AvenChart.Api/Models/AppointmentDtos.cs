@@ -138,6 +138,45 @@ public sealed record AppointmentCreateRequest(
     string? RecurrenceEndDate,
     IReadOnlyList<string>? RecurrenceExdates);
 
+public sealed record AppointmentAvailabilityValidationRequest(
+    string PatientId,
+    int? ProviderId,
+    string Date,
+    string StartTime,
+    int DurationMinutes,
+    int? FacilityId,
+    string? Room,
+    string? ExcludeAppointmentId);
+
+public sealed record AppointmentAvailabilityValidationResponse(
+    bool Available,
+    string ValidationStatus,
+    string Date,
+    string StartTime,
+    string EndTime,
+    int DurationMinutes,
+    bool PatientKnown,
+    int? ProviderId,
+    string? ProviderName,
+    bool ProviderAvailable,
+    int? FacilityId,
+    string? FacilityName,
+    bool FacilityAvailable,
+    bool WithinBusinessHours,
+    int ConflictCount,
+    IReadOnlyList<AppointmentAvailabilityConflict> Conflicts,
+    IReadOnlyList<string> Messages);
+
+public sealed record AppointmentAvailabilityConflict(
+    string AppointmentId,
+    string ConflictType,
+    string PatientId,
+    string PatientDisplayName,
+    string Date,
+    string StartTime,
+    string EndTime,
+    string Title);
+
 public sealed record AppointmentUpdateRequest(
     int? ProviderId,
     string Title,

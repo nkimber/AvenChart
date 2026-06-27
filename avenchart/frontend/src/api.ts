@@ -493,6 +493,48 @@ export type AppointmentCreateInput = {
   recurrenceExdates?: string[] | null
 }
 
+export type AppointmentAvailabilityValidationInput = {
+  patientId: string
+  providerId?: number | null
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  room?: string | null
+  excludeAppointmentId?: string | null
+}
+
+export type AppointmentAvailabilityConflict = {
+  appointmentId: string
+  conflictType: string
+  patientId: string
+  patientDisplayName: string
+  date: string
+  startTime: string
+  endTime: string
+  title: string
+}
+
+export type AppointmentAvailabilityValidationResponse = {
+  available: boolean
+  validationStatus: string
+  date: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  patientKnown: boolean
+  providerId?: number | null
+  providerName?: string | null
+  providerAvailable: boolean
+  facilityId?: number | null
+  facilityName?: string | null
+  facilityAvailable: boolean
+  withinBusinessHours: boolean
+  conflictCount: number
+  conflicts: AppointmentAvailabilityConflict[]
+  messages: string[]
+}
+
 export type AppointmentUpdateInput = {
   providerId?: number | null
   title: string
@@ -4596,6 +4638,24 @@ export async function createAppointment(
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function validateAppointmentAvailability(
+  appointment: AppointmentAvailabilityValidationInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentAvailabilityValidationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/appointments/availability/validate`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(appointment),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Appointment availability validation', response.status))
   }
 
   return response.json()
