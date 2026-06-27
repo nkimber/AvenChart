@@ -2025,29 +2025,6 @@ export type BillingClaimMutationResponse = {
   detail: PatientBillingResponse
 }
 
-export type BillingPaymentCreateInput = {
-  patientId: string
-  encounter: number
-  payerId: number
-  payerName?: string | null
-  payerType: number
-  reference: string
-  postDate: string
-  checkDate?: string | null
-  depositDate?: string | null
-  paymentType: string
-  paymentMethod: string
-  codeType?: string | null
-  code?: string | null
-  modifier?: string | null
-  memo: string
-  payAmount: number
-  adjustmentAmount: number
-  accountCode?: string | null
-  reasonCode?: string | null
-  payerClaimNumber?: string | null
-}
-
 export type BillingPatientPaymentCreateInput = {
   patientId: string
   encounter: number
@@ -6485,24 +6462,6 @@ export async function deleteBillingClaimStatus(
   if (!response.ok) {
     throw new Error(billingApiError('Billing claim status delete', response.status))
   }
-}
-
-export async function createBillingPaymentPosting(
-  input: BillingPaymentCreateInput,
-  sessionId?: string | null,
-  signal?: AbortSignal,
-): Promise<BillingPaymentMutationResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/billing/payments`, {
-    method: 'POST',
-    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
-    body: JSON.stringify(input),
-    signal,
-  })
-  if (!response.ok) {
-    throw new Error(billingApiError('Billing payment posting create', response.status))
-  }
-
-  return response.json()
 }
 
 export async function createBillingPatientPayment(

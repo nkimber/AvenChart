@@ -112,7 +112,6 @@ import {
   createBillingLine,
   createBillingPatientPayment,
   createBillingPatientRefund,
-  createBillingPaymentPosting,
   createClinicalAllergy,
   createClinicalImmunization,
   createClinicalMedication,
@@ -263,7 +262,6 @@ import {
   type BillingLineUpdateInput,
   type BillingPatientPaymentCreateInput,
   type BillingPatientRefundCreateInput,
-  type BillingPaymentCreateInput,
   type ClinicalListsResponse,
   type ClinicalAllergyCreateInput,
   type ClinicalImmunizationCreateInput,
@@ -3050,24 +3048,6 @@ function App() {
     }
   }
 
-  async function handleBillingPaymentCreate(input: BillingPaymentCreateInput) {
-    setBillingStatus('loading')
-    setBillingError(null)
-
-    try {
-      const sessionId = getActiveBillingSessionId()
-      const response = await createBillingPaymentPosting(input, sessionId)
-      setPatientBilling(response.detail)
-      setBillingStatus('ready')
-      return response
-    } catch (createError) {
-      setBillingStatus('error')
-      const message = createError instanceof Error ? createError.message : 'Billing payment posting create failed'
-      setBillingError(message)
-      throw createError
-    }
-  }
-
   async function handleBillingPatientRefundCreate(input: BillingPatientRefundCreateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5254,7 +5234,6 @@ function App() {
             onClearClaim={handleBillingClaimClear}
             onAdjudicateClaim={handleBillingClaimAdjudicate}
             onDeleteClaim={handleBillingClaimDelete}
-            onCreatePayment={handleBillingPaymentCreate}
             onCreatePatientPayment={handleBillingPatientPaymentCreate}
             onCreatePatientRefund={handleBillingPatientRefundCreate}
             onCreateInsurancePayment={handleBillingInsurancePaymentCreate}
@@ -14759,7 +14738,6 @@ function FeesWorkspace({
   onClearClaim,
   onAdjudicateClaim,
   onDeleteClaim,
-  onCreatePayment,
   onCreatePatientPayment,
   onCreatePatientRefund,
   onCreateInsurancePayment,
@@ -14790,7 +14768,6 @@ function FeesWorkspace({
   onClearClaim: (claim: BillingClaimItem) => Promise<unknown>
   onAdjudicateClaim: (claim: BillingClaimItem) => Promise<unknown>
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
-  onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onCreatePatientPayment: (input: BillingPatientPaymentCreateInput) => Promise<unknown>
   onCreatePatientRefund: (input: BillingPatientRefundCreateInput) => Promise<unknown>
   onCreateInsurancePayment: (input: BillingInsurancePaymentCreateInput) => Promise<unknown>
@@ -15141,29 +15118,7 @@ function FeesWorkspace({
       return
     }
 
-    await onCreatePayment({
-      patientId,
-      encounter: Number(billingEncounter),
-      payerId: Number(paymentPayerId),
-      payerName: paymentPayerName,
-      payerType: 1,
-      reference: paymentReference,
-      postDate: paymentPostDate,
-      checkDate: paymentPostDate,
-      depositDate: paymentPostDate,
-      paymentType: 'insurance_payment',
-      paymentMethod,
-      codeType: 'CPT4',
-      code: paymentCode,
-      memo: paymentMemo,
-      payAmount: parsedPayAmount,
-      adjustmentAmount: parsedAdjustmentAmount,
-      accountCode: paymentReasonCode.replace('-', ''),
-      reasonCode: paymentReasonCode,
-      payerClaimNumber: paymentPayerClaimNumber,
-    })
-
-    setMutationMessage('Payment posting saved')
+    setMutationMessage('Unsupported payment source')
   }
 
   async function handleEobBatchImport() {

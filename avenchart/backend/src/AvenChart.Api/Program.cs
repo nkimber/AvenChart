@@ -2439,17 +2439,6 @@ billing.MapDelete("/claims/{claimId}", async (
     .WithName("DeleteBillingClaimStatus")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
-billing.MapPost("/payments", async (
-        BillingRepository repository,
-        BillingPaymentCreateRequest request,
-        CancellationToken cancellationToken) =>
-    {
-        var mutation = await repository.CreatePaymentAsync(request, cancellationToken);
-        return mutation is null ? Results.BadRequest() : Results.Created($"/api/billing/payments/{mutation.Id}", mutation);
-    })
-    .WithName("CreateBillingPaymentPosting")
-    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
-
 billing.MapPost("/payments/patient-payments", async (
         BillingRepository repository,
         BillingPatientPaymentCreateRequest request,
