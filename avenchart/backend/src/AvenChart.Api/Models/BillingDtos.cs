@@ -397,6 +397,25 @@ public sealed record BillingPatientRefundCreateRequest(
     string Memo,
     decimal RefundAmount);
 
+public sealed record BillingInsurancePaymentCreateRequest(
+    string PatientId,
+    int Encounter,
+    int PayerId,
+    string PayerName,
+    string Reference,
+    string PostDate,
+    string? CheckDate,
+    string? DepositDate,
+    string PaymentMethod,
+    string? CodeType,
+    string? Code,
+    string? Modifier,
+    string Memo,
+    decimal PayAmount,
+    decimal AdjustmentAmount,
+    string ReasonCode,
+    string? PayerClaimNumber);
+
 public sealed record BillingInsuranceReversalCreateRequest(
     string PatientId,
     int Encounter,

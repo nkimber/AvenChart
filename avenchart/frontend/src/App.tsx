@@ -107,6 +107,7 @@ import {
   createBillingClaimStatus,
   importBillingEobBatch,
   createBillingAdjustmentReversal,
+  createBillingInsurancePayment,
   createBillingInsuranceReversal,
   createBillingLine,
   createBillingPatientRefund,
@@ -251,6 +252,7 @@ import {
   type BillingClaimItem,
   type BillingClaimCreateInput,
   type BillingAdjustmentReversalCreateInput,
+  type BillingInsurancePaymentCreateInput,
   type BillingInsuranceReversalCreateInput,
   type BillingLedgerEntry,
   type BillingStatementLineItem,
@@ -3082,6 +3084,24 @@ function App() {
     }
   }
 
+  async function handleBillingInsurancePaymentCreate(input: BillingInsurancePaymentCreateInput) {
+    setBillingStatus('loading')
+    setBillingError(null)
+
+    try {
+      const sessionId = getActiveBillingSessionId()
+      const response = await createBillingInsurancePayment(input, sessionId)
+      setPatientBilling(response.detail)
+      setBillingStatus('ready')
+      return response
+    } catch (createError) {
+      setBillingStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Billing insurance payment create failed'
+      setBillingError(message)
+      throw createError
+    }
+  }
+
   async function handleBillingInsuranceReversalCreate(input: BillingInsuranceReversalCreateInput) {
     setBillingStatus('loading')
     setBillingError(null)
@@ -5216,6 +5236,7 @@ function App() {
             onDeleteClaim={handleBillingClaimDelete}
             onCreatePayment={handleBillingPaymentCreate}
             onCreatePatientRefund={handleBillingPatientRefundCreate}
+            onCreateInsurancePayment={handleBillingInsurancePaymentCreate}
             onCreateInsuranceReversal={handleBillingInsuranceReversalCreate}
             onCreateAdjustmentReversal={handleBillingAdjustmentReversalCreate}
             onImportEobBatch={handleBillingEobBatchImport}
@@ -14719,6 +14740,7 @@ function FeesWorkspace({
   onDeleteClaim,
   onCreatePayment,
   onCreatePatientRefund,
+  onCreateInsurancePayment,
   onCreateInsuranceReversal,
   onCreateAdjustmentReversal,
   onImportEobBatch,
@@ -14748,6 +14770,7 @@ function FeesWorkspace({
   onDeleteClaim: (claim: BillingClaimItem) => Promise<void>
   onCreatePayment: (input: BillingPaymentCreateInput) => Promise<unknown>
   onCreatePatientRefund: (input: BillingPatientRefundCreateInput) => Promise<unknown>
+  onCreateInsurancePayment: (input: BillingInsurancePaymentCreateInput) => Promise<unknown>
   onCreateInsuranceReversal: (input: BillingInsuranceReversalCreateInput) => Promise<unknown>
   onCreateAdjustmentReversal: (input: BillingAdjustmentReversalCreateInput) => Promise<unknown>
   onImportEobBatch: (patientId: string) => Promise<unknown>
@@ -15005,6 +15028,30 @@ function FeesWorkspace({
       })
 
       setMutationMessage('Patient refund saved')
+      return
+    }
+
+    if (!isPatientPayment && !isInsuranceReversal && !isAdjustmentReversal) {
+      await onCreateInsurancePayment({
+        patientId,
+        encounter: Number(billingEncounter),
+        payerId: Number(paymentPayerId),
+        payerName: paymentPayerName,
+        reference: paymentReference,
+        postDate: paymentPostDate,
+        checkDate: paymentPostDate,
+        depositDate: paymentPostDate,
+        paymentMethod,
+        codeType: 'CPT4',
+        code: paymentCode,
+        memo: paymentMemo,
+        payAmount: parsedPayAmount,
+        adjustmentAmount: parsedAdjustmentAmount,
+        reasonCode: paymentReasonCode,
+        payerClaimNumber: paymentPayerClaimNumber,
+      })
+
+      setMutationMessage('Payment posting saved')
       return
     }
 
