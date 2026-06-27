@@ -789,6 +789,22 @@ create table prescriptions (
   erx_payload text
 );
 
+create table prescription_audit_events (
+  event_id text primary key,
+  prescription_id text not null,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  action text not null,
+  occurred_at timestamp not null,
+  actor text not null,
+  detail text,
+  before_refills integer,
+  after_refills integer,
+  pharmacy_id integer,
+  pharmacy_name text,
+  failure_reason text
+);
+
 create table immunizations (
   id integer primary key,
   key text not null unique,
@@ -2335,6 +2351,8 @@ create index idx_encounter_signatures_encounter on encounter_signatures (encount
 create index idx_vitals_pid_date on vitals (pid, vital_datetime);
 create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);
+create index idx_prescription_audit_events_prescription on prescription_audit_events (prescription_id, occurred_at, event_id);
+create index idx_prescription_audit_events_pid on prescription_audit_events (pid, occurred_at desc, event_id desc);
 create index idx_immunizations_pid_date on immunizations (pid, administered_at);
 create index idx_billing_pid on billing (pid);
 create index idx_payment_sessions_pid on payment_sessions (pid);

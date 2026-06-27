@@ -48,6 +48,7 @@ import {
   acceptAdministrationPortalProfileReview,
   revertAdministrationPortalProfileReview,
   getClinicalLists,
+  getClinicalPrescriptionAuditHistory,
   getEncounterDetail,
   getPatientChart,
   getPatientCareTeamOptions,
@@ -284,6 +285,7 @@ import {
   type ClinicalImmunizationCreateInput,
   type ClinicalMedicationCreateInput,
   type ClinicalProblemCreateInput,
+  type ClinicalPrescriptionAuditHistoryResponse,
   type ClinicalPrescriptionCreateInput,
   type ClinicalPrescriptionPharmacyRouteInput,
   type ClinicalPrescriptionRefillApprovalInput,
@@ -14565,6 +14567,10 @@ function ClinicalListsWorkspace({
   const [listsLoginStatus, setListsLoginStatus] =
     useState<'idle' | 'checking' | 'authenticated' | 'rejected' | 'error'>('idle')
   const [listsLoginMessage, setListsLoginMessage] = useState<string | null>(null)
+  const [prescriptionAuditHistory, setPrescriptionAuditHistory] =
+    useState<ClinicalPrescriptionAuditHistoryResponse | null>(null)
+  const [prescriptionAuditStatus, setPrescriptionAuditStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [prescriptionAuditError, setPrescriptionAuditError] = useState<string | null>(null)
   const [allergyTitle, setAllergyTitle] = useState('Parity Allergy')
   const [allergyDate, setAllergyDate] = useState('2026-06-18 09:00:00')
   const [allergyReaction, setAllergyReaction] = useState('Rash')
@@ -14597,6 +14603,26 @@ function ClinicalListsWorkspace({
   const [mutationMessage, setMutationMessage] = useState<string | null>(null)
   const isLoading = status === 'loading'
   const canUseLists = Boolean(sessionId)
+
+  async function handlePrescriptionAuditHistory(prescription: PrescriptionListItem) {
+    if (!sessionId) {
+      setPrescriptionAuditStatus('error')
+      setPrescriptionAuditError('Sign in to view prescription audit history')
+      return
+    }
+
+    setPrescriptionAuditStatus('loading')
+    setPrescriptionAuditError(null)
+    try {
+      const history = await getClinicalPrescriptionAuditHistory(prescription.id, sessionId)
+      setPrescriptionAuditHistory(history)
+      setPrescriptionAuditStatus('ready')
+    } catch (historyError) {
+      setPrescriptionAuditHistory(null)
+      setPrescriptionAuditStatus('error')
+      setPrescriptionAuditError(historyError instanceof Error ? historyError.message : 'Prescription audit history load failed')
+    }
+  }
 
   async function handleListsLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -15194,6 +15220,10 @@ function ClinicalListsWorkspace({
                 onDeactivate={onDeactivatePrescription}
                 onRefill={onRefillPrescription}
                 onRouteToPharmacy={onRoutePrescriptionToPharmacy}
+                onShowAuditHistory={handlePrescriptionAuditHistory}
+                auditHistory={prescriptionAuditHistory}
+                auditStatus={prescriptionAuditStatus}
+                auditError={prescriptionAuditError}
                 onDelete={onDeletePrescription}
                 disabled={isLoading || !canUseLists}
               />
@@ -23366,6 +23396,10 @@ function PrescriptionPanel({
   onDeactivate,
   onRefill,
   onRouteToPharmacy,
+  onShowAuditHistory,
+  auditHistory,
+  auditStatus,
+  auditError,
   onDelete,
   disabled,
 }: {
@@ -23373,6 +23407,10 @@ function PrescriptionPanel({
   onDeactivate: (prescription: PrescriptionListItem) => Promise<unknown>
   onRefill: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
   onRouteToPharmacy: (prescription: PrescriptionListItem, input: ClinicalPrescriptionPharmacyRouteInput) => Promise<unknown>
+  onShowAuditHistory: (prescription: PrescriptionListItem) => Promise<void>
+  auditHistory: ClinicalPrescriptionAuditHistoryResponse | null
+  auditStatus: 'idle' | 'loading' | 'ready' | 'error'
+  auditError: string | null
   onDelete: (prescription: PrescriptionListItem) => Promise<void>
   disabled: boolean
 }) {
@@ -23443,12 +23481,54 @@ function PrescriptionPanel({
               className="icon-text-button"
               type="button"
               disabled={disabled}
+              onClick={() => void onShowAuditHistory(item)}
+            >
+              <Clock size={14} />
+              History
+            </button>
+            <button
+              className="icon-text-button"
+              type="button"
+              disabled={disabled}
               onClick={() => void onDelete(item)}
             >
               <Trash2 size={14} />
               Delete
             </button>
           </div>
+          {auditStatus === 'loading' && auditHistory?.prescriptionId !== item.id && (
+            <div className="timeline-placeholder">Loading prescription audit history</div>
+          )}
+          {auditStatus === 'error' && auditError && (
+            <div className="status-banner error">{auditError}</div>
+          )}
+          {auditHistory?.prescriptionId === item.id && (
+            <div className="statement-batch-summary" aria-label={`Prescription audit history ${item.drug}`}>
+              <Field label="Audit events" value={auditHistory.eventCount} />
+              <div className="statement-batch-list" aria-label={`Prescription audit history entries ${item.drug}`}>
+                {auditHistory.events.map((event) => (
+                  <article className="statement-batch-row" key={event.eventId}>
+                    <strong>{event.action}</strong>
+                    <span>{event.actor} / {event.occurredAt}</span>
+                    {event.detail && <span>{event.detail}</span>}
+                    {(event.beforeRefills !== null && event.beforeRefills !== undefined)
+                      || (event.afterRefills !== null && event.afterRefills !== undefined) ? (
+                        <span>
+                          Refills {event.beforeRefills ?? '-'} to {event.afterRefills ?? '-'}
+                        </span>
+                      ) : null}
+                    {event.pharmacyName && (
+                      <span>
+                        Pharmacy {event.pharmacyName}
+                        {event.pharmacyId ? ` / ${event.pharmacyId}` : ''}
+                      </span>
+                    )}
+                    {event.failureReason && <span>{event.failureReason}</span>}
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
         </ClinicalItem>
       ))}
       {items.length === 0 && <div className="timeline-placeholder">No prescriptions</div>}

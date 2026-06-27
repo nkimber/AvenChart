@@ -1080,6 +1080,26 @@ export type ClinicalPrescriptionPharmacyRouteResponse = {
   detail: ClinicalListsResponse
 }
 
+export type ClinicalPrescriptionAuditEventItem = {
+  eventId: string
+  prescriptionId: string
+  action: string
+  occurredAt: string
+  actor: string
+  detail?: string | null
+  beforeRefills?: number | null
+  afterRefills?: number | null
+  pharmacyId?: number | null
+  pharmacyName?: string | null
+  failureReason?: string | null
+}
+
+export type ClinicalPrescriptionAuditHistoryResponse = {
+  prescriptionId: string
+  eventCount: number
+  events: ClinicalPrescriptionAuditEventItem[]
+}
+
 export type ClinicalPrescriptionCreateInput = {
   patientId: string
   providerId?: number | null
@@ -5605,6 +5625,25 @@ export async function routeClinicalPrescriptionToPharmacy(
   })
   if (!response.ok) {
     throw new Error(clinicalListApiError('Clinical prescription pharmacy route', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getClinicalPrescriptionAuditHistory(
+  prescriptionId: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<ClinicalPrescriptionAuditHistoryResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/audit-history`,
+    {
+      headers: buildLegacyEhrSessionHeaders(sessionId),
+      signal,
+    },
+  )
+  if (!response.ok) {
+    throw new Error(clinicalListApiError('Clinical prescription audit history', response.status))
   }
 
   return response.json()

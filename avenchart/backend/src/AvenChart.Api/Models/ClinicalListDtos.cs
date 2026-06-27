@@ -63,6 +63,24 @@ public sealed record ClinicalPrescriptionPharmacyRouteResponse(
     string? FailureReason,
     ClinicalListsResponse Detail);
 
+public sealed record ClinicalPrescriptionAuditHistoryResponse(
+    string PrescriptionId,
+    int EventCount,
+    IReadOnlyList<ClinicalPrescriptionAuditEventItem> Events);
+
+public sealed record ClinicalPrescriptionAuditEventItem(
+    string EventId,
+    string PrescriptionId,
+    string Action,
+    string OccurredAt,
+    string Actor,
+    string? Detail,
+    int? BeforeRefills,
+    int? AfterRefills,
+    int? PharmacyId,
+    string? PharmacyName,
+    string? FailureReason);
+
 public sealed record MedicationListItem(
     string Id,
     string Title,

@@ -347,6 +347,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
+
         var id = $"RX-MODERN-{Guid.NewGuid():N}";
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -372,6 +374,22 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("note", NullableText(request.Note));
         await command.ExecuteNonQueryAsync(cancellationToken);
 
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction: null,
+            prescriptionId: id,
+            patientId: patient.PatientId,
+            pid: patient.LegacyPid,
+            action: "create",
+            occurredAt: startDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+            detail: request.Note,
+            beforeRefills: null,
+            afterRefills: request.Refills,
+            pharmacyId: null,
+            pharmacyName: null,
+            failureReason: null,
+            cancellationToken);
+
         var lists = await GetForPatientAsync(patient.PatientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(id, lists);
     }
@@ -390,6 +408,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
         {
+            await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
             command.CommandText = """
                 update prescriptions
                 set active = 0,
@@ -397,12 +416,33 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     modified_date = @endDate,
                     note = @note
                 where id = @id
-                returning patient_id;
+                returning patient_id, pid;
                 """;
             command.Parameters.AddWithValue("id", prescriptionId);
             command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = endDate;
             command.Parameters.AddWithValue("note", NullableText(request.Note));
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                var pid = ReadInt(reader, "pid");
+                await reader.DisposeAsync();
+                await InsertPrescriptionAuditEventAsync(
+                    connection,
+                    transaction: null,
+                    prescriptionId,
+                    patientId,
+                    pid,
+                    "deactivate",
+                    endDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+                    request.Note,
+                    beforeRefills: null,
+                    afterRefills: null,
+                    pharmacyId: null,
+                    pharmacyName: null,
+                    failureReason: null,
+                    cancellationToken);
+            }
         }
 
         if (patientId is null)
@@ -430,19 +470,42 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
         {
+            await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
             command.CommandText = """
                 update prescriptions
                 set refills = refills + @additionalRefills,
                     modified_date = @refillDate,
                     note = @note
                 where id = @id and active = 1
-                returning patient_id;
+                returning patient_id, pid, refills;
                 """;
             command.Parameters.AddWithValue("id", prescriptionId);
             command.Parameters.AddWithValue("additionalRefills", request.AdditionalRefills);
             command.Parameters.Add("refillDate", NpgsqlDbType.Date).Value = refillDate;
             command.Parameters.AddWithValue("note", NullableText(request.Note));
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                var pid = ReadInt(reader, "pid");
+                var afterRefills = ReadInt(reader, "refills");
+                await reader.DisposeAsync();
+                await InsertPrescriptionAuditEventAsync(
+                    connection,
+                    transaction: null,
+                    prescriptionId: prescriptionId,
+                    patientId: patientId,
+                    pid: pid,
+                    action: "refill",
+                    occurredAt: refillDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+                    detail: request.Note,
+                    beforeRefills: afterRefills - request.AdditionalRefills,
+                    afterRefills: afterRefills,
+                    pharmacyId: null,
+                    pharmacyName: null,
+                    failureReason: null,
+                    cancellationToken);
+            }
         }
 
         if (patientId is null)
@@ -467,6 +530,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
         var refillRequest = await GetPrescriptionRefillRequestAsync(connection, messageId, cancellationToken);
         if (refillRequest is null)
         {
@@ -487,14 +551,39 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                   and pid = @pid
                   and active = 1
                   and end_date is null
-                returning patient_id;
+                returning patient_id, refills;
                 """;
             updatePrescription.Parameters.Add("id", NpgsqlDbType.Text).Value = refillRequest.PrescriptionId;
             updatePrescription.Parameters.Add("pid", NpgsqlDbType.Integer).Value = refillRequest.LegacyPid;
             updatePrescription.Parameters.Add("additionalRefills", NpgsqlDbType.Integer).Value = request.AdditionalRefills;
             updatePrescription.Parameters.Add("refillDate", NpgsqlDbType.Date).Value = refillDate;
             updatePrescription.Parameters.Add("note", NpgsqlDbType.Text).Value = NullableText(request.Note);
-            patientId = (string?)await updatePrescription.ExecuteScalarAsync(cancellationToken);
+            await using var reader = await updatePrescription.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                var afterRefills = ReadInt(reader, "refills");
+                await reader.DisposeAsync();
+                await InsertPrescriptionAuditEventAsync(
+                    connection,
+                    transaction,
+                    refillRequest.PrescriptionId,
+                    patientId,
+                    refillRequest.LegacyPid,
+                    "refill-request-approved",
+                    refillDate.ToDateTime(TimeOnly.Parse("10:00", CultureInfo.InvariantCulture)),
+                    request.Note,
+                    afterRefills - request.AdditionalRefills,
+                    afterRefills,
+                    pharmacyId: null,
+                    pharmacyName: null,
+                    failureReason: null,
+                    cancellationToken);
+            }
+            else
+            {
+                patientId = null;
+            }
         }
 
         if (patientId is null)
@@ -542,6 +631,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         PharmacyRouteAnchor anchor;
@@ -551,6 +641,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             command.CommandText = """
                 select
                     pr.patient_id,
+                    pr.pid,
                     pr.drug,
                     pr.dosage,
                     pr.quantity,
@@ -575,6 +666,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
             anchor = new PharmacyRouteAnchor(
                 PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                Pid: ReadInt(reader, "pid"),
                 Drug: reader.GetString(reader.GetOrdinal("drug")),
                 Dosage: ReadNullableString(reader, "dosage"),
                 Quantity: ReadNullableString(reader, "quantity"),
@@ -587,7 +679,22 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var controlledSubstance = GetControlledSubstanceInfo(anchor.Drug, anchor.RxNormCode);
         if (controlledSubstance.ReviewRequired)
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await InsertPrescriptionAuditEventAsync(
+                connection,
+                transaction,
+                prescriptionId,
+                anchor.PatientId,
+                anchor.Pid,
+                "route-blocked",
+                sentAt,
+                request.Note,
+                beforeRefills: null,
+                afterRefills: null,
+                anchor.PharmacyId,
+                anchor.PharmacyName,
+                controlledSubstance.Reason,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             var detail = await GetForPatientAsync(anchor.PatientId, cancellationToken);
             return detail is null
                 ? null
@@ -636,6 +743,22 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction,
+            prescriptionId,
+            anchor.PatientId,
+            anchor.Pid,
+            "route-pharmacy",
+            sentAt,
+            request.Note,
+            beforeRefills: null,
+            afterRefills: null,
+            anchor.PharmacyId,
+            anchor.PharmacyName,
+            failureReason: null,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(anchor.PatientId, cancellationToken);
@@ -656,6 +779,17 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
+        await using (var auditCommand = connection.CreateCommand())
+        {
+            auditCommand.CommandText = """
+                delete from prescription_audit_events
+                where prescription_id = @id;
+                """;
+            auditCommand.Parameters.AddWithValue("id", prescriptionId);
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = """
             delete from prescriptions
@@ -663,6 +797,69 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             """;
         command.Parameters.AddWithValue("id", prescriptionId);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<ClinicalPrescriptionAuditHistoryResponse?> GetPrescriptionAuditHistoryAsync(
+        string prescriptionId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
+
+        await using (var exists = connection.CreateCommand())
+        {
+            exists.CommandText = "select 1 from prescriptions where id = @id limit 1;";
+            exists.Parameters.AddWithValue("id", prescriptionId);
+            if (await exists.ExecuteScalarAsync(cancellationToken) is null)
+            {
+                return null;
+            }
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                event_id,
+                prescription_id,
+                action,
+                occurred_at,
+                actor,
+                detail,
+                before_refills,
+                after_refills,
+                pharmacy_id,
+                pharmacy_name,
+                failure_reason
+            from prescription_audit_events
+            where prescription_id = @id
+            order by occurred_at, event_id;
+            """;
+        command.Parameters.AddWithValue("id", prescriptionId);
+
+        var events = new List<ClinicalPrescriptionAuditEventItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new ClinicalPrescriptionAuditEventItem(
+                EventId: reader.GetString(reader.GetOrdinal("event_id")),
+                PrescriptionId: reader.GetString(reader.GetOrdinal("prescription_id")),
+                Action: reader.GetString(reader.GetOrdinal("action")),
+                OccurredAt: ReadNullableDateTime(reader, "occurred_at") ?? string.Empty,
+                Actor: reader.GetString(reader.GetOrdinal("actor")),
+                Detail: ReadNullableString(reader, "detail"),
+                BeforeRefills: ReadNullableInt(reader, "before_refills"),
+                AfterRefills: ReadNullableInt(reader, "after_refills"),
+                PharmacyId: ReadNullableInt(reader, "pharmacy_id"),
+                PharmacyName: ReadNullableString(reader, "pharmacy_name"),
+                FailureReason: ReadNullableString(reader, "failure_reason")));
+        }
+
+        return new ClinicalPrescriptionAuditHistoryResponse(prescriptionId, events.Count, events);
     }
 
     public async Task<ClinicalListMutationResponse?> CreateImmunizationAsync(
@@ -1329,6 +1526,76 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
+    private static async Task EnsurePrescriptionAuditTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists prescription_audit_events (
+                event_id text primary key,
+                prescription_id text not null,
+                patient_id text not null,
+                pid integer not null,
+                action text not null,
+                occurred_at timestamp not null,
+                actor text not null,
+                detail text,
+                before_refills integer,
+                after_refills integer,
+                pharmacy_id integer,
+                pharmacy_name text,
+                failure_reason text
+            );
+            create index if not exists idx_prescription_audit_events_prescription
+                on prescription_audit_events (prescription_id, occurred_at, event_id);
+            create index if not exists idx_prescription_audit_events_pid
+                on prescription_audit_events (pid, occurred_at desc, event_id desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertPrescriptionAuditEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string prescriptionId,
+        string patientId,
+        int pid,
+        string action,
+        DateTime occurredAt,
+        string? detail,
+        int? beforeRefills,
+        int? afterRefills,
+        int? pharmacyId,
+        string? pharmacyName,
+        string? failureReason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into prescription_audit_events
+                (event_id, prescription_id, patient_id, pid, action, occurred_at, actor, detail, before_refills, after_refills,
+                 pharmacy_id, pharmacy_name, failure_reason)
+            values
+                (@eventId, @prescriptionId, @patientId, @pid, @action, @occurredAt, 'admin', @detail, @beforeRefills, @afterRefills,
+                 @pharmacyId, @pharmacyName, @failureReason);
+            """;
+        command.Parameters.AddWithValue("eventId", $"RXAUD-{Guid.NewGuid():N}");
+        command.Parameters.AddWithValue("prescriptionId", prescriptionId);
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = pid;
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+        command.Parameters.AddWithValue("detail", NullableText(detail));
+        AddNullableInt(command, "beforeRefills", beforeRefills);
+        AddNullableInt(command, "afterRefills", afterRefills);
+        AddNullableInt(command, "pharmacyId", pharmacyId);
+        command.Parameters.AddWithValue("pharmacyName", NullableText(pharmacyName));
+        command.Parameters.AddWithValue("failureReason", NullableText(failureReason));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static ControlledSubstanceInfo GetControlledSubstanceInfo(string drug, string? rxNormCode)
     {
         var normalizedDrug = drug.ToUpperInvariant();
@@ -1378,6 +1645,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
     private sealed record PharmacyRouteAnchor(
         string PatientId,
+        int Pid,
         string Drug,
         string? Dosage,
         string? Quantity,

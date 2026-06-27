@@ -1613,6 +1613,16 @@ clinicalLists.MapPut("/prescriptions/{prescriptionId}/route-pharmacy", async (
     })
     .WithName("RouteClinicalPrescriptionToPharmacy");
 
+clinicalLists.MapGet("/prescriptions/{prescriptionId}/audit-history", async (
+        ClinicalListRepository repository,
+        string prescriptionId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetPrescriptionAuditHistoryAsync(prescriptionId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetClinicalPrescriptionAuditHistory");
+
 clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/approve", async (
         ClinicalListRepository repository,
         int messageId,
