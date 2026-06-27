@@ -119,6 +119,7 @@ import {
   loginPatientPortal,
   logout,
   completePatientDocumentOcr,
+  disposePatientDocumentRetention,
   createBillingClaimStatus,
   importBillingEobBatch,
   createBillingAdjustmentReversal,
@@ -346,6 +347,7 @@ import {
   type PatientDocumentOcrCompleteResponse,
   type PatientDocumentOcrQueueItem,
   type PatientDocumentOcrQueueResponse,
+  type PatientDocumentRetentionPolicyItem,
   type PatientDocumentRetentionPolicyResponse,
   type PatientDocumentRoutingQueueResponse,
   type PatientProviderAssignmentOption,
@@ -4386,6 +4388,32 @@ function App() {
     }
   }
 
+  async function handlePatientDocumentRetentionDispose(item: PatientDocumentRetentionPolicyItem) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const sessionId = getActiveDocumentSessionId()
+      const response = await disposePatientDocumentRetention(item.id, {
+        disposedBy: 'admin',
+        reason: 'Retention policy disposition from the modernized Documents workspace',
+      }, sessionId)
+      setPatientDocuments(response.detail)
+      setDocumentRetentionPolicy(response.policy)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (dispositionError) {
+      setDocumentStatus('error')
+      const message =
+        dispositionError instanceof Error
+          ? dispositionError.message
+          : 'Patient document retention disposition failed'
+      setDocumentError(message)
+      throw dispositionError
+    }
+  }
+
   async function handlePatientDocumentRestore(document: PatientDocumentItem) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -5656,6 +5684,7 @@ function App() {
             onDenyDocument={handlePatientDocumentDeny}
             onDeleteDocument={handlePatientDocumentDelete}
             onCompleteOcr={handlePatientDocumentOcrComplete}
+            onDisposeRetention={handlePatientDocumentRetentionDispose}
           />
         )}
         {activeModule === 'reports' && (
@@ -18047,6 +18076,7 @@ function DocumentsWorkspace({
   onDenyDocument,
   onDeleteDocument,
   onCompleteOcr,
+  onDisposeRetention,
 }: {
   patientId: string
   patientDocuments: PatientDocumentsResponse | null
@@ -18081,6 +18111,7 @@ function DocumentsWorkspace({
   onDenyDocument: (document: PatientDocumentItem) => Promise<unknown>
   onDeleteDocument: (document: PatientDocumentItem) => Promise<void>
   onCompleteOcr: (item: PatientDocumentOcrQueueItem) => Promise<PatientDocumentOcrCompleteResponse>
+  onDisposeRetention: (item: PatientDocumentRetentionPolicyItem) => Promise<unknown>
 }) {
   const [documentName, setDocumentName] = useState('Parity Document')
   const [documentCategoryId, setDocumentCategoryId] = useState('3')
@@ -18772,6 +18803,16 @@ function DocumentsWorkspace({
                         <span className="status-tag">{item.dispositionStatus}</span>
                         <span className="status-tag">{item.retentionYears} years</span>
                       </div>
+                      {item.dispositionStatus === 'Eligible for disposition' && (
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => void onDisposeRetention(item)}
+                          disabled={documentsLocked || isLoading}
+                        >
+                          Dispose
+                        </button>
+                      )}
                       <p className="document-preview-text">{item.policyBasis}</p>
                     </div>
                   ))}

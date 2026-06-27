@@ -1387,6 +1387,21 @@ export type PatientDocumentRetentionPolicyResponse = {
   items: PatientDocumentRetentionPolicyItem[]
 }
 
+export type PatientDocumentRetentionDispositionInput = {
+  disposedBy: string
+  reason: string
+}
+
+export type PatientDocumentRetentionDispositionResponse = {
+  id: number
+  dispositionStatus: string
+  disposedBy: string
+  disposedAt: string
+  retainUntil: string
+  detail: PatientDocumentsResponse
+  policy: PatientDocumentRetentionPolicyResponse
+}
+
 export type PatientDocumentOcrCompleteInput = {
   extractedText: string
   completedBy: string
@@ -6034,6 +6049,25 @@ export async function completePatientDocumentOcr(
   })
   if (!response.ok) {
     throw new Error(documentApiError('Patient document OCR complete', response.status))
+  }
+
+  return response.json()
+}
+
+export async function disposePatientDocumentRetention(
+  documentId: number,
+  input: PatientDocumentRetentionDispositionInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRetentionDispositionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/retention/dispose`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(documentApiError('Patient document retention disposition', response.status))
   }
 
   return response.json()

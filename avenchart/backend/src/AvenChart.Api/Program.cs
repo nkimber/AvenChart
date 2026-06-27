@@ -1859,6 +1859,20 @@ documents.MapPost("/{documentId:int}/ocr/complete", async (
     .WithName("CompletePatientDocumentOcr")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
+documents.MapPost("/{documentId:int}/retention/dispose", async (
+        DocumentRepository repository,
+        int documentId,
+        PatientDocumentRetentionDispositionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var disposition = await repository.DisposeRetentionAsync(documentId, request, cancellationToken);
+        return disposition is null
+            ? Results.BadRequest("Patient document retention disposition could not be completed from the supplied document and policy evidence.")
+            : Results.Ok(disposition);
+    })
+    .WithName("DisposePatientDocumentRetention")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
 documents.MapGet("/{documentId:int}/content", async (
         DocumentRepository repository,
         int documentId,

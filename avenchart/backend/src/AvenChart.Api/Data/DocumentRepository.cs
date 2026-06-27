@@ -337,6 +337,93 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Queue: queue);
     }
 
+    public async Task<PatientDocumentRetentionDispositionResponse?> DisposeRetentionAsync(
+        int documentId,
+        PatientDocumentRetentionDispositionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0 || string.IsNullOrWhiteSpace(request.DisposedBy) || string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return null;
+        }
+
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var disposedBy = request.DisposedBy.Trim();
+        var reason = request.Reason.Trim();
+        var disposedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        string? patientId;
+        DateOnly retainUntil;
+
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            string categoryName;
+            string? notes;
+            await using (var readCommand = connection.CreateCommand())
+            {
+                readCommand.CommandText = """
+                    select patient_id, category_name, doc_date, notes
+                    from patient_documents
+                    where id = @id
+                      and deleted = 0;
+                    """;
+                readCommand.Parameters.AddWithValue("id", documentId);
+
+                await using var reader = await readCommand.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    return null;
+                }
+
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+                var documentDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date"));
+                notes = ReadNullableString(reader, "notes");
+                retainUntil = documentDate.AddYears(BuildRetentionYears(categoryName, notes));
+            }
+
+            if (retainUntil > metadata.BaseDate)
+            {
+                return null;
+            }
+
+            await using var updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = """
+                update patient_documents
+                set deleted = 1,
+                    notes = concat_ws('; ',
+                        nullif(coalesce(notes, ''), ''),
+                        @dispositionNote)
+                where id = @id
+                returning patient_id;
+                """;
+            updateCommand.Parameters.AddWithValue("id", documentId);
+            updateCommand.Parameters.AddWithValue(
+                "dispositionNote",
+                $"Retention disposition by {disposedBy} at {disposedAt:yyyy-MM-dd HH:mm:ss}: {reason}; retain until {retainUntil:yyyy-MM-dd}");
+            patientId = (string?)await updateCommand.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (patientId is null)
+        {
+            return null;
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        if (detail is null)
+        {
+            return null;
+        }
+
+        return new PatientDocumentRetentionDispositionResponse(
+            Id: documentId,
+            DispositionStatus: "Disposed",
+            DisposedBy: disposedBy,
+            DisposedAt: disposedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+            RetainUntil: retainUntil.ToString("yyyy-MM-dd"),
+            Detail: detail,
+            Policy: await GetRetentionPolicyAsync(cancellationToken, patientId));
+    }
+
     public async Task<PatientDocumentMutationResponse?> CreateAsync(
         PatientDocumentCreateRequest request,
         CancellationToken cancellationToken)

@@ -164,6 +164,19 @@ public sealed record PatientDocumentOcrCompleteResponse(
     PatientDocumentContentResponse Document,
     PatientDocumentOcrQueueResponse Queue);
 
+public sealed record PatientDocumentRetentionDispositionRequest(
+    string DisposedBy,
+    string Reason);
+
+public sealed record PatientDocumentRetentionDispositionResponse(
+    int Id,
+    string DispositionStatus,
+    string DisposedBy,
+    string DisposedAt,
+    string RetainUntil,
+    PatientDocumentsResponse Detail,
+    PatientDocumentRetentionPolicyResponse Policy);
+
 public sealed record PatientDocumentCreateRequest(
     string PatientId,
     int CategoryId,
