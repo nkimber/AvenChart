@@ -15,6 +15,7 @@ public sealed record ClinicalListsResponse(
     IReadOnlyList<MedicationDuplicateSummary> MedicationDuplicates,
     IReadOnlyList<ImmunizationListItem> Immunizations,
     IReadOnlyList<PrescriptionListItem> Prescriptions,
+    IReadOnlyList<PrescriptionDiagnosisInteractionSummary> PrescriptionDiagnosisInteractions,
     IReadOnlyList<PrescriptionRefillRequestItem> PrescriptionRefillRequests);
 
 public sealed record ProblemListItem(
@@ -146,6 +147,15 @@ public sealed record PrescriptionListItem(
     int ErxUploaded,
     string? ErxSentAt,
     string? ErxPayload);
+
+public sealed record PrescriptionDiagnosisInteractionSummary(
+    string Diagnosis,
+    string Status,
+    string? ProblemId,
+    string? ProblemTitle,
+    int PrescriptionCount,
+    IReadOnlyList<string> PrescriptionIds,
+    IReadOnlyList<string> Drugs);
 
 public sealed record PrescriptionRefillRequestItem(
     int MessageId,

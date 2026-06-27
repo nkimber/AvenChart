@@ -79,6 +79,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var medicationDuplicates = BuildMedicationDuplicates(medications);
         var immunizations = await GetImmunizationsAsync(connection, patient.LegacyPid, cancellationToken);
         var prescriptions = await GetPrescriptionsAsync(connection, patient.LegacyPid, cancellationToken);
+        var prescriptionDiagnosisInteractions = BuildPrescriptionDiagnosisInteractions(problems, prescriptions);
         var prescriptionRefillRequests = await GetPrescriptionRefillRequestsAsync(connection, patient.LegacyPid, cancellationToken);
 
         return new ClinicalListsResponse(
@@ -96,6 +97,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             MedicationDuplicates: medicationDuplicates,
             Immunizations: immunizations,
             Prescriptions: prescriptions,
+            PrescriptionDiagnosisInteractions: prescriptionDiagnosisInteractions,
             PrescriptionRefillRequests: prescriptionRefillRequests);
     }
 
@@ -1413,6 +1415,55 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             })
             .OrderBy(item => item.DisplayTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static IReadOnlyList<PrescriptionDiagnosisInteractionSummary> BuildPrescriptionDiagnosisInteractions(
+        IReadOnlyList<ProblemListItem> problems,
+        IReadOnlyList<PrescriptionListItem> prescriptions)
+    {
+        var activeProblemByDiagnosis = problems
+            .Where(problem => !string.IsNullOrWhiteSpace(problem.Diagnosis))
+            .GroupBy(problem => NormalizeDiagnosis(problem.Diagnosis))
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(problem => problem.Date ?? string.Empty, StringComparer.Ordinal)
+                    .ThenBy(problem => problem.Id, StringComparer.Ordinal)
+                    .First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return prescriptions
+            .Where(prescription => !string.IsNullOrWhiteSpace(prescription.Diagnosis))
+            .GroupBy(prescription => NormalizeDiagnosis(prescription.Diagnosis))
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                activeProblemByDiagnosis.TryGetValue(group.Key, out var problem);
+                var orderedPrescriptions = group
+                    .OrderBy(prescription => prescription.Drug, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(prescription => prescription.Id, StringComparer.Ordinal)
+                    .ToList();
+
+                return new PrescriptionDiagnosisInteractionSummary(
+                    Diagnosis: group.Key,
+                    Status: problem is null ? "unmatched" : "matched-active-problem",
+                    ProblemId: problem?.Id,
+                    ProblemTitle: problem?.Title,
+                    PrescriptionCount: orderedPrescriptions.Count,
+                    PrescriptionIds: orderedPrescriptions.Select(prescription => prescription.Id).ToList(),
+                    Drugs: orderedPrescriptions.Select(prescription => prescription.Drug).ToList());
+            })
+            .ToList();
+    }
+
+    private static string NormalizeDiagnosis(string? diagnosis)
+    {
+        return string.Join(
+            ' ',
+            (diagnosis ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static string NormalizeMedicationTitle(string title)

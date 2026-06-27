@@ -409,6 +409,7 @@ import {
   type ProcedureResultUpdateInput,
   type ProcedureResultsResponse,
   type PrescriptionListItem,
+  type PrescriptionDiagnosisInteractionSummary,
   type PrescriptionRefillRequestItem,
   type ProblemListItem,
 } from './api'
@@ -15353,6 +15354,7 @@ function ClinicalListsWorkspace({
               />
               <PrescriptionPanel
                 items={clinicalLists.prescriptions}
+                diagnosisInteractions={clinicalLists.prescriptionDiagnosisInteractions ?? []}
                 onDeactivate={onDeactivatePrescription}
                 onRefill={onRefillPrescription}
                 onRouteToPharmacy={onRoutePrescriptionToPharmacy}
@@ -23529,6 +23531,7 @@ function PrescriptionRefillRequestPanel({
 
 function PrescriptionPanel({
   items,
+  diagnosisInteractions,
   onDeactivate,
   onRefill,
   onRouteToPharmacy,
@@ -23540,6 +23543,7 @@ function PrescriptionPanel({
   disabled,
 }: {
   items: PrescriptionListItem[]
+  diagnosisInteractions: PrescriptionDiagnosisInteractionSummary[]
   onDeactivate: (prescription: PrescriptionListItem) => Promise<unknown>
   onRefill: (prescription: PrescriptionListItem, input: ClinicalPrescriptionRefillInput) => Promise<unknown>
   onRouteToPharmacy: (prescription: PrescriptionListItem, input: ClinicalPrescriptionPharmacyRouteInput) => Promise<unknown>
@@ -23552,6 +23556,25 @@ function PrescriptionPanel({
 }) {
   return (
     <ClinicalSection title="Prescriptions" icon={FileText} emptyText="No prescriptions">
+      {diagnosisInteractions.length > 0 && (
+        <div className="statement-batch-summary" aria-label="Prescription diagnosis interaction summary">
+          <div className="summary-row">
+            <span>Diagnosis links</span>
+            <strong>{diagnosisInteractions.length}</strong>
+          </div>
+          <div className="statement-batch-list">
+            {diagnosisInteractions.map((interaction) => (
+              <article className="statement-batch-row" key={interaction.diagnosis}>
+                <strong>{interaction.diagnosis}</strong>
+                <span>{interaction.status === 'matched-active-problem' ? 'Matched active problem' : 'No active problem match'}</span>
+                {interaction.problemTitle && <span>{interaction.problemTitle}</span>}
+                <span>{interaction.prescriptionCount} prescription{interaction.prescriptionCount === 1 ? '' : 's'}</span>
+                <span>{interaction.drugs.join(', ')}</span>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
       {items.map((item) => {
         const doseAmount = item.doseAmount === null || item.doseAmount === undefined ? null : Number(item.doseAmount)
         const doseText = doseAmount === null

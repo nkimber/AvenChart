@@ -998,6 +998,16 @@ export type PrescriptionListItem = {
   erxPayload?: string | null
 }
 
+export type PrescriptionDiagnosisInteractionSummary = {
+  diagnosis: string
+  status: string
+  problemId?: string | null
+  problemTitle?: string | null
+  prescriptionCount: number
+  prescriptionIds: string[]
+  drugs: string[]
+}
+
 export type PrescriptionRefillRequestItem = {
   messageId: number
   title: string
@@ -1053,6 +1063,7 @@ export type ClinicalListsResponse = {
   medicationDuplicates: MedicationDuplicateSummary[]
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
+  prescriptionDiagnosisInteractions: PrescriptionDiagnosisInteractionSummary[]
   prescriptionRefillRequests: PrescriptionRefillRequestItem[]
 }
 
