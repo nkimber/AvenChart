@@ -1020,6 +1020,16 @@ encounters.MapGet("/", async (
     })
     .WithName("SearchEncounters");
 
+encounters.MapGet("/soap-note-templates", async (
+        EncounterRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.GetSoapNoteTemplateCatalogAsync(cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("GetEncounterSoapNoteTemplates")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
 encounters.MapGet("/{encounter:int}", async (
         EncounterRepository repository,
         int encounter,

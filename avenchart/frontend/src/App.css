@@ -762,6 +762,18 @@
   min-height: 34px;
 }
 
+.soap-template-actions {
+  align-items: flex-end;
+}
+
+.soap-template-selector {
+  min-width: min(100%, 18rem);
+}
+
+.soap-template-selector select {
+  min-height: 34px;
+}
+
 .icon-text-button {
   min-height: 34px;
   display: inline-flex;

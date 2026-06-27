@@ -52,6 +52,7 @@ import {
   getClinicalPrescriptionAuditHistory,
   searchClinicalMedicationVocabulary,
   getEncounterDetail,
+  getEncounterSoapNoteTemplates,
   getPatientChart,
   getPatientCareTeamOptions,
   getPatientProviderAssignmentOptions,
@@ -317,6 +318,7 @@ import {
   type EncounterDocumentMoveResponse,
   type EncounterDocumentMutationResponse,
   type EncounterSoapNoteCreateInput,
+  type EncounterSoapNoteTemplateCatalogResponse,
   type EncounterListItem,
   type EncounterSearchResponse,
   type EncounterSignInput,
@@ -580,6 +582,11 @@ function App() {
   const [encounterError, setEncounterError] = useState<string | null>(null)
   const [encounterRefreshKey, setEncounterRefreshKey] = useState(0)
   const [encounterIncludeArchivedDocuments, setEncounterIncludeArchivedDocuments] = useState(false)
+  const [encounterSoapNoteTemplates, setEncounterSoapNoteTemplates] =
+    useState<EncounterSoapNoteTemplateCatalogResponse | null>(null)
+  const [encounterSoapNoteTemplateStatus, setEncounterSoapNoteTemplateStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [encounterSoapNoteTemplateError, setEncounterSoapNoteTemplateError] = useState<string | null>(null)
 
   const [clinicalPatientId, setClinicalPatientId] = useState('MOD-PAT-0001')
   const [clinicalLists, setClinicalLists] = useState<ClinicalListsResponse | null>(null)
@@ -1015,6 +1022,9 @@ function App() {
       setSelectedEncounter(null)
       setEncounterDetail(null)
       setEncounterDetailStatus('idle')
+      setEncounterSoapNoteTemplates(null)
+      setEncounterSoapNoteTemplateStatus('idle')
+      setEncounterSoapNoteTemplateError(null)
       return
     }
 
@@ -1050,6 +1060,42 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, encounterPatientId, encounterFromDate, encounterRefreshKey, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'encounters') {
+      return
+    }
+
+    if (!openEmrSessionId) {
+      setEncounterSoapNoteTemplates(null)
+      setEncounterSoapNoteTemplateStatus('idle')
+      setEncounterSoapNoteTemplateError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    async function loadEncounterSoapNoteTemplates() {
+      setEncounterSoapNoteTemplateStatus('loading')
+      setEncounterSoapNoteTemplateError(null)
+
+      try {
+        const templates = await getEncounterSoapNoteTemplates(openEmrSessionId, controller.signal)
+        setEncounterSoapNoteTemplates(templates)
+        setEncounterSoapNoteTemplateStatus('ready')
+      } catch (templateError) {
+        if (!controller.signal.aborted) {
+          setEncounterSoapNoteTemplates(null)
+          setEncounterSoapNoteTemplateStatus('error')
+          setEncounterSoapNoteTemplateError(
+            templateError instanceof Error ? templateError.message : 'Encounter SOAP note templates failed',
+          )
+        }
+      }
+    }
+
+    loadEncounterSoapNoteTemplates()
+    return () => controller.abort()
+  }, [activeModule, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'encounters' || selectedEncounter === null || !openEmrSessionId) {
@@ -5650,6 +5696,9 @@ function App() {
             searchStatus={encounterStatus}
             detailStatus={encounterDetailStatus}
             error={encounterError}
+            soapNoteTemplates={encounterSoapNoteTemplates}
+            soapNoteTemplateStatus={encounterSoapNoteTemplateStatus}
+            soapNoteTemplateError={encounterSoapNoteTemplateError}
             includeArchivedDocuments={encounterIncludeArchivedDocuments}
             sessionId={openEmrSessionId}
             onEncounterSessionActive={(sessionId) => {
@@ -11919,6 +11968,9 @@ function EncounterWorkspace({
   searchStatus,
   detailStatus,
   error,
+  soapNoteTemplates,
+  soapNoteTemplateStatus,
+  soapNoteTemplateError,
   includeArchivedDocuments,
   sessionId,
   onEncounterSessionActive,
@@ -11957,6 +12009,9 @@ function EncounterWorkspace({
   searchStatus: 'idle' | 'loading' | 'ready' | 'error'
   detailStatus: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  soapNoteTemplates: EncounterSoapNoteTemplateCatalogResponse | null
+  soapNoteTemplateStatus: 'idle' | 'loading' | 'ready' | 'error'
+  soapNoteTemplateError: string | null
   includeArchivedDocuments: boolean
   sessionId: string | null
   onEncounterSessionActive: (sessionId: string) => void
@@ -12073,6 +12128,11 @@ function EncounterWorkspace({
   const [soapObjective, setSoapObjective] = useState('Vitals reviewed.')
   const [soapAssessment, setSoapAssessment] = useState('Stable clinical condition.')
   const [soapPlan, setSoapPlan] = useState('Continue validation plan.')
+  const [selectedSoapTemplateId, setSelectedSoapTemplateId] = useState('')
+  const selectedSoapTemplate = useMemo(
+    () => soapNoteTemplates?.templates.find((template) => template.templateId === selectedSoapTemplateId) ?? null,
+    [selectedSoapTemplateId, soapNoteTemplates],
+  )
   const [soapStatus, setSoapStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const [signatureSigner, setSignatureSigner] = useState('admin')
@@ -12143,6 +12203,23 @@ function EncounterWorkspace({
   useEffect(() => {
     setCreatePatientId(patientId)
   }, [patientId])
+
+  useEffect(() => {
+    if (!soapNoteTemplates?.templates.length) {
+      setSelectedSoapTemplateId('')
+      return
+    }
+
+    setSelectedSoapTemplateId((current) => {
+      const currentStillAvailable = soapNoteTemplates.templates.some((template) => template.templateId === current)
+      if (currentStillAvailable) {
+        return current
+      }
+
+      return soapNoteTemplates.templates.find((template) => template.isDefault)?.templateId
+        ?? soapNoteTemplates.templates[0].templateId
+    })
+  }, [soapNoteTemplates])
 
   useEffect(() => {
     if (!encounterDetail) {
@@ -12312,6 +12389,18 @@ function EncounterWorkspace({
     } catch {
       setVitalsStatus('error')
     }
+  }
+
+  function handleApplySoapTemplate() {
+    if (!selectedSoapTemplate) {
+      return
+    }
+
+    setSoapSubjective(selectedSoapTemplate.subjective)
+    setSoapObjective(selectedSoapTemplate.objective)
+    setSoapAssessment(selectedSoapTemplate.assessment)
+    setSoapPlan(selectedSoapTemplate.plan)
+    setSoapStatus('idle')
   }
 
   async function handleSoapSubmit(event: FormEvent) {
@@ -13724,6 +13813,36 @@ function EncounterWorkspace({
               <div className="panel-heading compact-heading">
                 <FileText size={16} />
                 <h3>SOAP Entry</h3>
+              </div>
+              <div className="detail-actions soap-template-actions" aria-label="SOAP note template controls">
+                <label className="filter-field soap-template-selector">
+                  <span>Template</span>
+                  <select
+                    value={selectedSoapTemplateId}
+                    onChange={(event) => setSelectedSoapTemplateId(event.target.value)}
+                    aria-label="SOAP note template"
+                    disabled={soapNoteTemplateStatus === 'loading' || !soapNoteTemplates?.templates.length}
+                  >
+                    {soapNoteTemplates?.templates.length ? soapNoteTemplates.templates.map((template) => (
+                      <option key={template.templateId} value={template.templateId}>
+                        {template.name}
+                      </option>
+                    )) : (
+                      <option value="">No templates available</option>
+                    )}
+                  </select>
+                </label>
+                <button
+                  className="icon-text-button secondary"
+                  type="button"
+                  onClick={handleApplySoapTemplate}
+                  disabled={!selectedSoapTemplate || soapNoteTemplateStatus === 'loading'}
+                >
+                  <ClipboardList size={16} />
+                  <span>Apply template</span>
+                </button>
+                {selectedSoapTemplate && <span className="save-note">{selectedSoapTemplate.category}</span>}
+                {soapNoteTemplateError && <span className="save-note error">{soapNoteTemplateError}</span>}
               </div>
               <div className="mutation-grid">
                 <label className="filter-field">

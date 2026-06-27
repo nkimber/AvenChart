@@ -215,6 +215,16 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         };
     }
 
+    public async Task<EncounterSoapNoteTemplateCatalogResponse> GetSoapNoteTemplateCatalogAsync(CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        return new EncounterSoapNoteTemplateCatalogResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            Templates: SoapNoteTemplateOptions);
+    }
+
     public async Task<EncounterDetail?> CreateAsync(EncounterCreateRequest request, CancellationToken cancellationToken)
     {
         var patientId = Normalize(request.PatientId);
@@ -798,6 +808,50 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
         return new EncounterSoapNote(subjective, objective, assessment, plan);
     }
+
+    private static readonly IReadOnlyList<EncounterSoapNoteTemplateOption> SoapNoteTemplateOptions =
+    [
+        new(
+            TemplateId: "soap-follow-up-stable-v1",
+            Name: "Stable follow-up SOAP",
+            Category: "Follow-up",
+            Description: "General established-patient follow-up template for stable symptoms and continued monitoring.",
+            Subjective: "Patient reports symptoms are stable and denies new acute concerns.",
+            Objective: "Vitals and interval history reviewed. No acute distress noted.",
+            Assessment: "Stable chronic condition with no red-flag changes today.",
+            Plan: "Continue current care plan, reinforce return precautions, and schedule routine follow-up.",
+            IsDefault: true),
+        new(
+            TemplateId: "soap-diabetes-follow-up-v1",
+            Name: "Diabetes follow-up SOAP",
+            Category: "Chronic disease",
+            Description: "Focused diabetes follow-up template with medication adherence, foot-care, and lab-review prompts.",
+            Subjective: "Patient reports home glucose readings and medication adherence were reviewed.",
+            Objective: "Vitals reviewed. Foot-care status, recent labs, and medication list reconciled.",
+            Assessment: "Diabetes mellitus follow-up with control and complication risk reviewed.",
+            Plan: "Continue diabetes care plan, reinforce diet and foot-care education, and update labs as indicated.",
+            IsDefault: false),
+        new(
+            TemplateId: "soap-acute-respiratory-v1",
+            Name: "Acute respiratory SOAP",
+            Category: "Acute visit",
+            Description: "Acute cough/upper-respiratory template with symptom duration, exam, assessment, and precautions.",
+            Subjective: "Patient reports acute respiratory symptoms; duration, fever, exposure, and medication history reviewed.",
+            Objective: "Respiratory status, oxygen saturation, lung exam, and hydration status reviewed.",
+            Assessment: "Acute respiratory symptoms assessed with severity and complication risk reviewed.",
+            Plan: "Provide supportive-care instructions, medication plan as appropriate, and clear return precautions.",
+            IsDefault: false),
+        new(
+            TemplateId: "soap-preventive-annual-v1",
+            Name: "Preventive annual SOAP",
+            Category: "Preventive care",
+            Description: "Preventive visit template for screening, immunization, risk review, and health-maintenance planning.",
+            Subjective: "Patient presents for preventive care; interval history, screening needs, and health goals reviewed.",
+            Objective: "Vitals, preventive screening status, immunization history, and risk factors reviewed.",
+            Assessment: "Preventive health maintenance visit with screening and risk-reduction needs identified.",
+            Plan: "Update preventive screenings, immunizations, counseling, and follow-up plan as indicated.",
+            IsDefault: false)
+    ];
 
     private static async Task<IReadOnlyList<BillingLineItem>> GetBillingLinesForEncounterAsync(
         NpgsqlConnection connection,

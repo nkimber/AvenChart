@@ -161,6 +161,23 @@ public sealed record EncounterSoapNote(
     string? Assessment,
     string? Plan);
 
+public sealed record EncounterSoapNoteTemplateOption(
+    string TemplateId,
+    string Name,
+    string Category,
+    string Description,
+    string Subjective,
+    string Objective,
+    string Assessment,
+    string Plan,
+    bool IsDefault);
+
+public sealed record EncounterSoapNoteTemplateCatalogResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    IReadOnlyList<EncounterSoapNoteTemplateOption> Templates);
+
 public sealed record EncounterCreateRequest(
     string PatientId,
     int? ProviderId,

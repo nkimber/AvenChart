@@ -725,6 +725,25 @@ export type EncounterSoapNote = {
   plan?: string | null
 }
 
+export type EncounterSoapNoteTemplateOption = {
+  templateId: string
+  name: string
+  category: string
+  description: string
+  subjective: string
+  objective: string
+  assessment: string
+  plan: string
+  isDefault: boolean
+}
+
+export type EncounterSoapNoteTemplateCatalogResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  templates: EncounterSoapNoteTemplateOption[]
+}
+
 export type EncounterDocumentAttachment = {
   id: number
   documentKey: string
@@ -5325,6 +5344,21 @@ export async function getEncounterDetail(
   })
   if (!response.ok) {
     throw new Error(encounterApiError('Encounter detail load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getEncounterSoapNoteTemplates(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<EncounterSoapNoteTemplateCatalogResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/encounters/soap-note-templates`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(encounterApiError('Encounter SOAP note templates', response.status))
   }
 
   return response.json()
