@@ -347,6 +347,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
         await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
 
         var id = $"RX-MODERN-{Guid.NewGuid():N}";
@@ -354,10 +355,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             insert into prescriptions
                 (id, patient_id, pid, provider_id, encounter, start_date, date_added, modified_date, end_date, drug, rx_norm_code,
-                 dosage, quantity, route, refills, diagnosis, note, active)
+                 dosage, quantity, dose_amount, dose_unit, frequency, duration_days, route, refills, diagnosis, note, active)
             values
                 (@id, @patientId, @pid, @providerId, 0, @startDate, @startDate + time '10:00:00', @startDate, null, @drug, @rxNormCode,
-                 @dosage, @quantity, @route, @refills, @diagnosis, @note, 1);
+                 @dosage, @quantity, @doseAmount, @doseUnit, @frequency, @durationDays, @route, @refills, @diagnosis, @note, 1);
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("patientId", patient.PatientId);
@@ -368,6 +369,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("rxNormCode", NullableText(request.RxNormCode));
         command.Parameters.AddWithValue("dosage", request.Dosage.Trim());
         command.Parameters.AddWithValue("quantity", request.Quantity.Trim());
+        AddNullableDecimal(command, "doseAmount", request.DoseAmount);
+        command.Parameters.AddWithValue("doseUnit", NullableText(request.DoseUnit));
+        command.Parameters.AddWithValue("frequency", NullableText(request.Frequency));
+        AddNullableInt(command, "durationDays", request.DurationDays);
         command.Parameters.AddWithValue("route", string.IsNullOrWhiteSpace(request.Route) ? "oral" : request.Route.Trim());
         command.Parameters.AddWithValue("refills", request.Refills);
         command.Parameters.AddWithValue("diagnosis", NullableText(request.Diagnosis));
@@ -1138,6 +1143,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int legacyPid,
         CancellationToken cancellationToken)
     {
+        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
+
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -1145,6 +1152,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 pr.drug,
                 pr.dosage,
                 pr.quantity,
+                pr.dose_amount,
+                pr.dose_unit,
+                pr.frequency,
+                pr.duration_days,
                 pr.route,
                 pr.rx_norm_code,
                 pr.diagnosis,
@@ -1181,6 +1192,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Drug: reader.GetString(reader.GetOrdinal("drug")),
                 Dosage: ReadNullableString(reader, "dosage"),
                 Quantity: ReadNullableString(reader, "quantity"),
+                DoseAmount: ReadNullableDecimal(reader, "dose_amount"),
+                DoseUnit: ReadNullableString(reader, "dose_unit"),
+                Frequency: ReadNullableString(reader, "frequency"),
+                DurationDays: ReadNullableInt(reader, "duration_days"),
                 Route: ReadNullableString(reader, "route"),
                 RxNormCode: ReadNullableString(reader, "rx_norm_code"),
                 ControlledSubstanceSchedule: controlledSubstance.Schedule,
@@ -1524,6 +1539,21 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     private static object NullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    }
+
+    private static async Task EnsurePrescriptionStructuredDoseColumnsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            alter table prescriptions
+                add column if not exists dose_amount numeric(10,2),
+                add column if not exists dose_unit text,
+                add column if not exists frequency text,
+                add column if not exists duration_days integer;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task EnsurePrescriptionAuditTableAsync(

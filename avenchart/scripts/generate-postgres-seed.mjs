@@ -256,6 +256,7 @@ drop table if exists payment_sessions;
 drop table if exists claims;
 drop table if exists billing;
 drop table if exists immunizations;
+drop table if exists prescription_audit_events;
 drop table if exists prescriptions;
 drop table if exists pharmacies;
 drop table if exists clinical_notes;
@@ -776,6 +777,10 @@ create table prescriptions (
   rx_norm_code text,
   dosage text,
   quantity text,
+  dose_amount numeric(10,2),
+  dose_unit text,
+  frequency text,
+  duration_days integer,
   route text,
   refills integer not null default 0,
   diagnosis text,
@@ -1749,6 +1754,10 @@ copyRows('prescriptions', [
   'rx_norm_code',
   'dosage',
   'quantity',
+  'dose_amount',
+  'dose_unit',
+  'frequency',
+  'duration_days',
   'route',
   'refills',
   'diagnosis',
@@ -1774,6 +1783,10 @@ copyRows('prescriptions', [
   prescription.rxNormCode ?? '',
   prescription.dosage,
   prescription.quantity ?? '30',
+  prescription.doseAmount ?? '',
+  prescription.doseUnit ?? '',
+  prescription.frequency ?? '',
+  prescription.durationDays ?? '',
   prescription.route,
   prescription.refills ?? 2,
   prescription.diagnosis,

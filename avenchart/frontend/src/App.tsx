@@ -14588,6 +14588,10 @@ function ClinicalListsWorkspace({
   const [prescriptionStartDate, setPrescriptionStartDate] = useState('2026-07-15')
   const [prescriptionDosage, setPrescriptionDosage] = useState('1 tablet daily')
   const [prescriptionQuantity, setPrescriptionQuantity] = useState('30')
+  const [prescriptionDoseAmount, setPrescriptionDoseAmount] = useState('10')
+  const [prescriptionDoseUnit, setPrescriptionDoseUnit] = useState('mg')
+  const [prescriptionFrequency, setPrescriptionFrequency] = useState('twice daily')
+  const [prescriptionDurationDays, setPrescriptionDurationDays] = useState('14')
   const [prescriptionRefills, setPrescriptionRefills] = useState('1')
   const [prescriptionDiagnosis, setPrescriptionDiagnosis] = useState('Z00.00')
   const [prescriptionNote, setPrescriptionNote] = useState('Created from the modernized Lists workspace.')
@@ -14715,6 +14719,10 @@ function ClinicalListsWorkspace({
       rxNormCode: '1049502',
       dosage: prescriptionDosage,
       quantity: prescriptionQuantity,
+      doseAmount: prescriptionDoseAmount ? Number(prescriptionDoseAmount) : null,
+      doseUnit: prescriptionDoseUnit,
+      frequency: prescriptionFrequency,
+      durationDays: prescriptionDurationDays ? Number(prescriptionDurationDays) : null,
       route: 'oral',
       refills: Number(prescriptionRefills || 0),
       note: prescriptionNote,
@@ -15038,6 +15046,44 @@ function ClinicalListsWorkspace({
                   onChange={(event) => setPrescriptionQuantity(event.target.value)}
                   aria-label="New prescription quantity"
                   required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Dose amount</span>
+                <input
+                  value={prescriptionDoseAmount}
+                  onChange={(event) => setPrescriptionDoseAmount(event.target.value)}
+                  aria-label="New prescription dose amount"
+                  inputMode="decimal"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Dose unit</span>
+                <input
+                  value={prescriptionDoseUnit}
+                  onChange={(event) => setPrescriptionDoseUnit(event.target.value)}
+                  aria-label="New prescription dose unit"
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Frequency</span>
+                <input
+                  value={prescriptionFrequency}
+                  onChange={(event) => setPrescriptionFrequency(event.target.value)}
+                  aria-label="New prescription frequency"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Duration days</span>
+                <input
+                  value={prescriptionDurationDays}
+                  onChange={(event) => setPrescriptionDurationDays(event.target.value)}
+                  aria-label="New prescription duration days"
+                  inputMode="numeric"
                 />
               </label>
             </div>
@@ -23416,17 +23462,29 @@ function PrescriptionPanel({
 }) {
   return (
     <ClinicalSection title="Prescriptions" icon={FileText} emptyText="No prescriptions">
-      {items.map((item) => (
-        <ClinicalItem
-          key={item.id}
-          title={item.drug}
-          meta={[item.dosage, item.route, item.diagnosis].filter(Boolean).join(' / ')}
-          date={item.startDate}
-          note={[item.providerName, item.quantity ? `Qty ${item.quantity}` : null, `${item.refills} refill${item.refills === 1 ? '' : 's'}`]
-            .filter(Boolean)
-            .join(' / ')}
-        >
+      {items.map((item) => {
+        const doseAmount = item.doseAmount === null || item.doseAmount === undefined ? null : Number(item.doseAmount)
+        const doseText = doseAmount === null
+          ? null
+          : `Dose ${Number.isInteger(doseAmount) ? doseAmount.toFixed(0) : doseAmount.toString()}${item.doseUnit ? ` ${item.doseUnit}` : ''}`
+        const structuredDoseText = [
+          doseText,
+          item.frequency ? `Frequency ${item.frequency}` : null,
+          item.durationDays ? `Duration ${item.durationDays} days` : null,
+        ].filter(Boolean).join(' / ')
+
+        return (
+          <ClinicalItem
+            key={item.id}
+            title={item.drug}
+            meta={[item.dosage, item.route, item.diagnosis].filter(Boolean).join(' / ')}
+            date={item.startDate}
+            note={[item.providerName, item.quantity ? `Qty ${item.quantity}` : null, `${item.refills} refill${item.refills === 1 ? '' : 's'}`]
+              .filter(Boolean)
+              .join(' / ')}
+          >
           {item.note && <p className="clinical-item-note">{item.note}</p>}
+          {structuredDoseText && <p className="clinical-item-note">{structuredDoseText}</p>}
           {item.controlledSubstanceReviewRequired && (
             <p className="clinical-item-note">
               {item.controlledSubstanceSchedule ? `${item.controlledSubstanceSchedule} / ` : ''}
@@ -23529,8 +23587,9 @@ function PrescriptionPanel({
               </div>
             </div>
           )}
-        </ClinicalItem>
-      ))}
+          </ClinicalItem>
+        )
+      })}
       {items.length === 0 && <div className="timeline-placeholder">No prescriptions</div>}
     </ClinicalSection>
   )

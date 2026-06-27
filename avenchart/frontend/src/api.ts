@@ -959,6 +959,10 @@ export type PrescriptionListItem = {
   drug: string
   dosage?: string | null
   quantity?: string | null
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
   route?: string | null
   rxNormCode?: string | null
   controlledSubstanceSchedule?: string | null
@@ -1108,6 +1112,10 @@ export type ClinicalPrescriptionCreateInput = {
   rxNormCode?: string | null
   dosage: string
   quantity: string
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
   route?: string | null
   refills: number
   note: string
