@@ -1294,6 +1294,19 @@ export type PatientDocumentLifecycleEvent = {
   detail: string
 }
 
+export type PatientDocumentVersionItem = {
+  version: number
+  versionLabel: string
+  versionStatus: string
+  capturedAt: string
+  fileName?: string | null
+  mimetype?: string | null
+  sizeBytes?: number | null
+  pages?: number | null
+  hash?: string | null
+  contentPreview: string
+}
+
 export type PatientDocumentOcrQueueItem = {
   id: number
   documentKey: string
@@ -1537,6 +1550,7 @@ export type PatientDocumentContentResponse = {
   scanPageCount: number
   ocrStatus: string
   lifecycleEvents: PatientDocumentLifecycleEvent[]
+  versionHistory: PatientDocumentVersionItem[]
 }
 
 export type PatientDocumentSignInput = {

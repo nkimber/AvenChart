@@ -238,6 +238,7 @@ lines.push(`
 drop table if exists medications;
 drop table if exists allergies;
 drop table if exists problems;
+drop table if exists patient_document_versions;
 drop table if exists patient_documents;
 drop table if exists patient_reminders;
 drop table if exists portal_mailbox_messages;
@@ -1158,6 +1159,23 @@ create table patient_documents (
   content text,
   content_bytes bytea,
   deleted integer not null default 0
+);
+
+create table patient_document_versions (
+  id bigserial primary key,
+  document_id integer not null references patient_documents(id) on delete cascade,
+  version_no integer not null,
+  captured_at timestamp not null,
+  file_name text,
+  mimetype text,
+  size_bytes integer,
+  pages integer,
+  storage_method text,
+  url text,
+  hash text,
+  content text,
+  content_bytes bytea,
+  unique (document_id, version_no)
 );
 
 create table problems (
@@ -2425,6 +2443,7 @@ create index idx_patient_portal_message_audit_message on patient_portal_message_
 create index idx_patient_portal_profile_change_pending on patient_portal_profile_change_requests (patient_id, status, pending_action, created_at, id);
 create index idx_patient_documents_pid_date on patient_documents (pid, doc_date);
 create index idx_patient_documents_category on patient_documents (category_name);
+create index idx_patient_document_versions_document on patient_document_versions (document_id, version_no desc);
 create index idx_problems_pid on problems (pid);
 create index idx_allergies_pid on allergies (pid);
 create index idx_medications_pid on medications (pid);

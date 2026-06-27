@@ -18,6 +18,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         var patient = await GetPatientAsync(connection, patientId, cancellationToken);
         if (patient is null)
         {
@@ -808,11 +809,13 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
               deleted,
+              (select count(*) from patient_document_versions v where v.document_id = patient_documents.id) as prior_version_count,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               coalesce(content, '') as content, content_bytes
             from patient_documents
@@ -841,7 +844,20 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var url = ReadNullableString(reader, "url");
         var pages = ReadNullableInt32(reader, "pages");
         var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
+        var priorVersionCount = reader.GetInt32(reader.GetOrdinal("prior_version_count"));
+        var currentVersion = priorVersionCount + 1;
         var revisionHash = ReadNullableString(reader, "hash");
+        var id = reader.GetInt32(reader.GetOrdinal("id"));
+        var documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+        var responsePatientId = reader.GetString(reader.GetOrdinal("patient_id"));
+        var legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+        var categoryId = reader.GetInt32(reader.GetOrdinal("category_id"));
+        var categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+        var documentDate = reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd");
+        var sizeBytes = ReadNullableInt32(reader, "size_bytes");
+        var encounter = ReadNullableInt32(reader, "encounter");
+        var documentationOf = ReadNullableString(reader, "documentation_of");
+        var notes = ReadNullableString(reader, "notes");
         var reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
         var reviewedBy = ReadNullableString(reader, "reviewed_by");
         var reviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
@@ -853,36 +869,51 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             mimetype,
             pages,
             storageMethod,
-            ReadNullableString(reader, "notes"),
+            notes,
             content);
 
+        await reader.DisposeAsync();
+
+        var versionHistory = await GetDocumentVersionHistoryAsync(
+            connection,
+            documentId,
+            currentVersion,
+            uploadedAt,
+            fileName,
+            mimetype,
+            sizeBytes,
+            pages,
+            revisionHash,
+            content,
+            cancellationToken);
+
         return new PatientDocumentContentResponse(
-            Id: reader.GetInt32(reader.GetOrdinal("id")),
-            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
-            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
-            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
-            CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
-            CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+            Id: id,
+            DocumentKey: documentKey,
+            PatientId: responsePatientId,
+            LegacyPid: legacyPid,
+            CategoryId: categoryId,
+            CategoryName: categoryName,
             Name: name,
             FileName: fileName,
-            DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
+            DocDate: documentDate,
             UploadedAt: uploadedAt,
             RevisionAt: uploadedAt,
-            CurrentVersion: 1,
-            VersionLabel: "Version 1",
+            CurrentVersion: currentVersion,
+            VersionLabel: $"Version {currentVersion}",
             VersionStatus: "Current version",
-            VersionHistoryCount: 1,
-            HasPriorVersions: false,
+            VersionHistoryCount: currentVersion,
+            HasPriorVersions: priorVersionCount > 0,
             RevisionHash: revisionHash,
             Mimetype: mimetype,
-            SizeBytes: ReadNullableInt32(reader, "size_bytes"),
+            SizeBytes: sizeBytes,
             Pages: pages,
-            Encounter: ReadNullableInt32(reader, "encounter"),
+            Encounter: encounter,
             StorageMethod: storageMethod,
             Url: url,
             Hash: revisionHash,
-            DocumentationOf: ReadNullableString(reader, "documentation_of"),
-            Notes: ReadNullableString(reader, "notes"),
+            DocumentationOf: documentationOf,
+            Notes: notes,
             ReviewStatus: reviewStatus,
             ReviewedBy: reviewedBy,
             ReviewedAt: reviewedAt,
@@ -907,7 +938,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 reviewedBy,
                 reviewedAt,
                 deleted,
-                revisionHash));
+                revisionHash,
+                currentVersion),
+            VersionHistory: versionHistory);
     }
 
     public async Task<PatientDocumentMutationResponse?> UpdateMetadataAsync(
@@ -990,8 +1023,18 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? patientId = null;
 
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
         {
+            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var snapshotted = await SnapshotCurrentDocumentVersionAsync(connection, transaction, documentId, cancellationToken);
+            if (!snapshotted)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 update patient_documents
                 set mimetype = 'text/plain',
@@ -1017,11 +1060,14 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("content", content);
             command.Parameters.AddWithValue("uploadedAt", uploadedAt);
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        }
 
-        if (patientId is null)
-        {
-            return null;
+            if (patientId is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
@@ -1063,8 +1109,18 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? patientId = null;
 
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
         {
+            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var snapshotted = await SnapshotCurrentDocumentVersionAsync(connection, transaction, documentId, cancellationToken);
+            if (!snapshotted)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 update patient_documents
                 set mimetype = @mimetype,
@@ -1090,11 +1146,14 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             command.Parameters.Add("contentBytes", NpgsqlTypes.NpgsqlDbType.Bytea).Value = contentBytes;
             command.Parameters.AddWithValue("uploadedAt", uploadedAt);
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        }
 
-        if (patientId is null)
-        {
-            return null;
+            if (patientId is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
@@ -1294,6 +1353,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
               content_bytes,
               deleted,
+              (select count(*) from patient_document_versions v where v.document_id = patient_documents.id) as prior_version_count,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
                 when content_bytes is not null then left(coalesce(content, ''), 260)
@@ -1317,6 +1377,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var pages = ReadNullableInt32(reader, "pages");
             var contentPreview = ReadNullableString(reader, "content_preview");
             var uploadedAt = reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss");
+            var priorVersionCount = reader.GetInt32(reader.GetOrdinal("prior_version_count"));
+            var currentVersion = priorVersionCount + 1;
             var revisionHash = ReadNullableString(reader, "hash");
             var previewInfo = BuildPreviewInfo(mimetype, storageMethod, fileName, url, pages, contentPreview);
             var contentBytesOrdinal = reader.GetOrdinal("content_bytes");
@@ -1347,11 +1409,11 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
                 UploadedAt: uploadedAt,
                 RevisionAt: uploadedAt,
-                CurrentVersion: 1,
-                VersionLabel: "Version 1",
+                CurrentVersion: currentVersion,
+                VersionLabel: $"Version {currentVersion}",
                 VersionStatus: "Current version",
-                VersionHistoryCount: 1,
-                HasPriorVersions: false,
+                VersionHistoryCount: currentVersion,
+                HasPriorVersions: priorVersionCount > 0,
                 RevisionHash: revisionHash,
                 Mimetype: mimetype,
                 SizeBytes: ReadNullableInt32(reader, "size_bytes"),
@@ -1384,10 +1446,11 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                     uploadedAt,
                     uploadedAt,
                     reviewStatus,
-                    reviewedBy,
-                    reviewedAt,
-                    deleted,
-                    revisionHash)));
+                reviewedBy,
+                reviewedAt,
+                deleted,
+                revisionHash,
+                currentVersion)));
         }
 
         return items;
@@ -1400,7 +1463,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? reviewedBy,
         string? reviewedAt,
         int deleted,
-        string? revisionHash)
+        string? revisionHash,
+        int currentVersion = 1)
     {
         var normalizedReviewStatus = (NormalizeText(reviewStatus) ?? string.Empty).ToLowerInvariant();
         PatientDocumentLifecycleEvent reviewEvent = normalizedReviewStatus switch
@@ -1453,11 +1517,137 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 OccurredAt: revisionAt,
                 Actor: null,
                 Detail: NormalizeText(revisionHash) is { } hash
-                    ? $"Version 1 / {hash}"
-                    : "Version 1"),
+                    ? $"Version {currentVersion} / {hash}"
+                    : $"Version {currentVersion}"),
             reviewEvent,
             archiveEvent
         ];
+    }
+
+    private static async Task EnsureDocumentVersionTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists patient_document_versions (
+              id bigserial primary key,
+              document_id integer not null references patient_documents(id) on delete cascade,
+              version_no integer not null,
+              captured_at timestamp not null,
+              file_name text,
+              mimetype text,
+              size_bytes integer,
+              pages integer,
+              storage_method text,
+              url text,
+              hash text,
+              content text,
+              content_bytes bytea,
+              unique (document_id, version_no)
+            );
+
+            create index if not exists idx_patient_document_versions_document
+              on patient_document_versions (document_id, version_no desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> SnapshotCurrentDocumentVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into patient_document_versions (
+              document_id, version_no, captured_at, file_name, mimetype, size_bytes, pages,
+              storage_method, url, hash, content, content_bytes
+            )
+            select d.id,
+              coalesce((select max(v.version_no) from patient_document_versions v where v.document_id = d.id), 0) + 1,
+              d.uploaded_at,
+              d.file_name,
+              d.mimetype,
+              d.size_bytes,
+              d.pages,
+              d.storage_method,
+              d.url,
+              d.hash,
+              d.content,
+              d.content_bytes
+            from patient_documents d
+            where d.id = @documentId
+              and d.deleted = 0
+              and coalesce(d.storage_method, 'database') <> 'web_url'
+            returning id;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        var inserted = await command.ExecuteScalarAsync(cancellationToken);
+        return inserted is not null;
+    }
+
+    private static async Task<IReadOnlyList<PatientDocumentVersionItem>> GetDocumentVersionHistoryAsync(
+        NpgsqlConnection connection,
+        int documentId,
+        int currentVersion,
+        string uploadedAt,
+        string? fileName,
+        string? mimetype,
+        int? sizeBytes,
+        int? pages,
+        string? hash,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<PatientDocumentVersionItem>
+        {
+            new(
+                Version: currentVersion,
+                VersionLabel: $"Version {currentVersion}",
+                VersionStatus: "Current version",
+                CapturedAt: uploadedAt,
+                FileName: fileName,
+                Mimetype: mimetype,
+                SizeBytes: sizeBytes,
+                Pages: pages,
+                Hash: hash,
+                ContentPreview: BuildPreviewText(content) ?? string.Empty)
+        };
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select version_no, captured_at, file_name, mimetype, size_bytes, pages, hash,
+              case
+                when content_bytes is not null then left(coalesce(content, ''), 260)
+                else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
+              end as content_preview
+            from patient_document_versions
+            where document_id = @documentId
+            order by version_no desc;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var version = reader.GetInt32(reader.GetOrdinal("version_no"));
+            items.Add(new PatientDocumentVersionItem(
+                Version: version,
+                VersionLabel: $"Version {version}",
+                VersionStatus: "Prior version",
+                CapturedAt: reader.GetDateTime(reader.GetOrdinal("captured_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                FileName: ReadNullableString(reader, "file_name"),
+                Mimetype: ReadNullableString(reader, "mimetype"),
+                SizeBytes: ReadNullableInt32(reader, "size_bytes"),
+                Pages: ReadNullableInt32(reader, "pages"),
+                Hash: ReadNullableString(reader, "hash"),
+                ContentPreview: ReadNullableString(reader, "content_preview") ?? string.Empty));
+        }
+
+        return items;
     }
 
     private static DocumentPreviewInfo BuildPreviewInfo(

@@ -19003,7 +19003,10 @@ function DocumentsWorkspace({
                       <Field label="File" value={viewedDocument.fileName} />
                       <Field label="Revision" value={viewedDocument.versionLabel} />
                       <Field label="Revision time" value={viewedDocument.revisionAt} />
-                      <Field label="Version history" value={`${viewedDocument.versionHistoryCount} current version`} />
+                      <Field
+                        label="Version history"
+                        value={`${viewedDocument.versionHistoryCount} version${viewedDocument.versionHistoryCount === 1 ? '' : 's'}`}
+                      />
                       <Field label="Scan status" value={viewedDocument.scanStatus} />
                       <Field label="Capture source" value={viewedDocument.captureSource} />
                       <Field label="Scan pages" value={viewedDocument.scanPageCount} />
@@ -19023,6 +19026,15 @@ function DocumentsWorkspace({
                           <strong>{event.label}</strong>
                           <span>{event.occurredAt || 'Current state'}</span>
                           <span>{event.actor ? `By ${event.actor}` : event.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="document-lifecycle-readiness" aria-label={`Version history for ${viewedDocument.name}`}>
+                      {(viewedDocument.versionHistory ?? []).map((version) => (
+                        <div className="document-lifecycle-event" key={`${version.version}-${version.versionStatus}`}>
+                          <strong>{version.versionLabel}</strong>
+                          <span>{version.versionStatus} / {version.capturedAt}</span>
+                          <span>{version.contentPreview || version.fileName || version.mimetype || version.hash || 'Stored version'}</span>
                         </div>
                       ))}
                     </div>

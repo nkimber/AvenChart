@@ -65,6 +65,18 @@ public sealed record PatientDocumentLifecycleEvent(
     string? Actor,
     string Detail);
 
+public sealed record PatientDocumentVersionItem(
+    int Version,
+    string VersionLabel,
+    string VersionStatus,
+    string CapturedAt,
+    string? FileName,
+    string? Mimetype,
+    int? SizeBytes,
+    int? Pages,
+    string? Hash,
+    string ContentPreview);
+
 public sealed record PatientDocumentOcrQueueResponse(
     string DatasetId,
     string DatasetVersion,
@@ -285,7 +297,8 @@ public sealed record PatientDocumentContentResponse(
     string CaptureSource,
     int ScanPageCount,
     string OcrStatus,
-    IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents);
+    IReadOnlyList<PatientDocumentLifecycleEvent> LifecycleEvents,
+    IReadOnlyList<PatientDocumentVersionItem> VersionHistory);
 
 public sealed record PatientDocumentSignRequest(
     string ReviewStatus,
