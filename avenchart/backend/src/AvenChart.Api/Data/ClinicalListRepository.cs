@@ -8,6 +8,60 @@ namespace AvenChart.Api.Data;
 
 public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 {
+    public async Task<IReadOnlyList<MedicationVocabularyItem>> SearchMedicationVocabularyAsync(
+        string? query,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureMedicationVocabularyTableAsync(connection, cancellationToken);
+
+        var normalizedQuery = query?.Trim() ?? string.Empty;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                rx_norm_code,
+                drug_name,
+                display_name,
+                form,
+                strength,
+                route,
+                dose_amount,
+                dose_unit,
+                frequency,
+                duration_days,
+                controlled_substance_schedule
+            from medication_vocabulary
+            where @query = ''
+               or lower(drug_name) like @pattern
+               or lower(display_name) like @pattern
+               or rx_norm_code = @query
+            order by drug_name, dose_amount nulls last, rx_norm_code
+            limit 10;
+            """;
+        command.Parameters.AddWithValue("query", normalizedQuery.ToLowerInvariant());
+        command.Parameters.AddWithValue("pattern", $"%{normalizedQuery.ToLowerInvariant()}%");
+
+        var items = new List<MedicationVocabularyItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new MedicationVocabularyItem(
+                RxNormCode: reader.GetString(reader.GetOrdinal("rx_norm_code")),
+                DrugName: reader.GetString(reader.GetOrdinal("drug_name")),
+                DisplayName: reader.GetString(reader.GetOrdinal("display_name")),
+                Form: reader.GetString(reader.GetOrdinal("form")),
+                Strength: reader.GetString(reader.GetOrdinal("strength")),
+                Route: reader.GetString(reader.GetOrdinal("route")),
+                DoseAmount: ReadNullableDecimal(reader, "dose_amount"),
+                DoseUnit: ReadNullableString(reader, "dose_unit"),
+                Frequency: ReadNullableString(reader, "frequency"),
+                DurationDays: ReadNullableInt(reader, "duration_days"),
+                ControlledSubstanceSchedule: ReadNullableString(reader, "controlled_substance_schedule")));
+        }
+
+        return items;
+    }
+
     public async Task<ClinicalListsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -1539,6 +1593,49 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     private static object NullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    }
+
+    private static async Task EnsureMedicationVocabularyTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists medication_vocabulary (
+                rx_norm_code text primary key,
+                drug_name text not null,
+                display_name text not null,
+                form text not null,
+                strength text not null,
+                route text not null,
+                dose_amount numeric(10,2),
+                dose_unit text,
+                frequency text,
+                duration_days integer,
+                controlled_substance_schedule text
+            );
+
+            insert into medication_vocabulary
+                (rx_norm_code, drug_name, display_name, form, strength, route, dose_amount, dose_unit, frequency, duration_days, controlled_substance_schedule)
+            values
+                ('860975', 'Metformin', 'Metformin 500 mg tablet', 'tablet', '500 mg', 'oral', 500, 'mg', 'twice daily', 30, null),
+                ('1049502', 'Omeprazole', 'Omeprazole 20 mg delayed release capsule', 'capsule', '20 mg', 'oral', 20, 'mg', 'once daily', 30, null),
+                ('312615', 'Lisinopril', 'Lisinopril 10 mg tablet', 'tablet', '10 mg', 'oral', 10, 'mg', 'once daily', 30, null),
+                ('617314', 'Atorvastatin', 'Atorvastatin 20 mg tablet', 'tablet', '20 mg', 'oral', 20, 'mg', 'nightly', 30, null),
+                ('1049621', 'Oxycodone', 'Oxycodone 5 mg tablet', 'tablet', '5 mg', 'oral', 5, 'mg', 'every 6 hours as needed', 7, 'CII')
+            on conflict (rx_norm_code) do update
+            set drug_name = excluded.drug_name,
+                display_name = excluded.display_name,
+                form = excluded.form,
+                strength = excluded.strength,
+                route = excluded.route,
+                dose_amount = excluded.dose_amount,
+                dose_unit = excluded.dose_unit,
+                frequency = excluded.frequency,
+                duration_days = excluded.duration_days,
+                controlled_substance_schedule = excluded.controlled_substance_schedule;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task EnsurePrescriptionStructuredDoseColumnsAsync(

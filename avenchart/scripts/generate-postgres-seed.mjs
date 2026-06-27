@@ -258,6 +258,7 @@ drop table if exists billing;
 drop table if exists immunizations;
 drop table if exists prescription_audit_events;
 drop table if exists prescriptions;
+drop table if exists medication_vocabulary;
 drop table if exists pharmacies;
 drop table if exists clinical_notes;
 drop table if exists vitals;
@@ -761,6 +762,20 @@ create table pharmacies (
   email text,
   ncpdp integer,
   npi integer
+);
+
+create table medication_vocabulary (
+  rx_norm_code text primary key,
+  drug_name text not null,
+  display_name text not null,
+  form text not null,
+  strength text not null,
+  route text not null,
+  dose_amount numeric(10,2),
+  dose_unit text,
+  frequency text,
+  duration_days integer,
+  controlled_substance_schedule text
 );
 
 create table prescriptions (
@@ -1738,6 +1753,26 @@ copyRows('pharmacies', [
   [9001, 'Northstar Community Pharmacy', 1, 'rx@northstar.example.test', 4501001, 1800001001],
   [9002, 'Summit Mail Order Pharmacy', 1, 'mailorder@summit.example.test', 4501002, 1800001002],
   [9003, 'Lakeside 24 Hour Pharmacy', 1, 'afterhours@lakeside.example.test', 4501003, 1800001003],
+])
+
+copyRows('medication_vocabulary', [
+  'rx_norm_code',
+  'drug_name',
+  'display_name',
+  'form',
+  'strength',
+  'route',
+  'dose_amount',
+  'dose_unit',
+  'frequency',
+  'duration_days',
+  'controlled_substance_schedule',
+], [
+  ['860975', 'Metformin', 'Metformin 500 mg tablet', 'tablet', '500 mg', 'oral', 500, 'mg', 'twice daily', 30, ''],
+  ['1049502', 'Omeprazole', 'Omeprazole 20 mg delayed release capsule', 'capsule', '20 mg', 'oral', 20, 'mg', 'once daily', 30, ''],
+  ['312615', 'Lisinopril', 'Lisinopril 10 mg tablet', 'tablet', '10 mg', 'oral', 10, 'mg', 'once daily', 30, ''],
+  ['617314', 'Atorvastatin', 'Atorvastatin 20 mg tablet', 'tablet', '20 mg', 'oral', 20, 'mg', 'nightly', 30, ''],
+  ['1049621', 'Oxycodone', 'Oxycodone 5 mg tablet', 'tablet', '5 mg', 'oral', 5, 'mg', 'every 6 hours as needed', 7, 'CII'],
 ])
 
 copyRows('prescriptions', [

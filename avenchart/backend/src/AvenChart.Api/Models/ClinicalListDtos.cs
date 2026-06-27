@@ -98,6 +98,19 @@ public sealed record MedicationDuplicateSummary(
     string? LatestDate,
     IReadOnlyList<string> Diagnoses);
 
+public sealed record MedicationVocabularyItem(
+    string RxNormCode,
+    string DrugName,
+    string DisplayName,
+    string Form,
+    string Strength,
+    string Route,
+    decimal? DoseAmount,
+    string? DoseUnit,
+    string? Frequency,
+    int? DurationDays,
+    string? ControlledSubstanceSchedule);
+
 public sealed record ClinicalMedicationCreateRequest(
     string PatientId,
     string Title,

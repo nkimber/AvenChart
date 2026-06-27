@@ -1459,6 +1459,16 @@ encounters.MapDelete("/{encounter:int}", async (
 var clinicalLists = app.MapGroup("/api/clinical-lists").WithTags("Clinical Lists");
 RequireAccessPermission(clinicalLists, "patients", "med", "view");
 
+clinicalLists.MapGet("/medication-vocabulary", async (
+        ClinicalListRepository repository,
+        string? query,
+        CancellationToken cancellationToken) =>
+    {
+        var items = await repository.SearchMedicationVocabularyAsync(query, cancellationToken);
+        return Results.Ok(items);
+    })
+    .WithName("SearchClinicalMedicationVocabulary");
+
 clinicalLists.MapGet("/{patientId}", async (
         ClinicalListRepository repository,
         string patientId,

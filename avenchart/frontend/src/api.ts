@@ -954,6 +954,20 @@ export type MedicationDuplicateSummary = {
   diagnoses: string[]
 }
 
+export type MedicationVocabularyItem = {
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  form: string
+  strength: string
+  route: string
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
+  controlledSubstanceSchedule?: string | null
+}
+
 export type PrescriptionListItem = {
   id: string
   drug: string
@@ -5555,6 +5569,27 @@ export async function deleteClinicalAllergy(
   if (!response.ok) {
     throw new Error(clinicalListApiError('Clinical allergy delete', response.status))
   }
+}
+
+export async function searchClinicalMedicationVocabulary(
+  query: string,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<MedicationVocabularyItem[]> {
+  const params = new URLSearchParams()
+  if (query.trim()) {
+    params.set('query', query.trim())
+  }
+  const url = `${apiBaseUrl}/api/clinical-lists/medication-vocabulary${params.size ? `?${params.toString()}` : ''}`
+  const response = await fetch(url, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(clinicalListApiError('Clinical medication vocabulary search', response.status))
+  }
+
+  return response.json()
 }
 
 export async function createClinicalPrescription(

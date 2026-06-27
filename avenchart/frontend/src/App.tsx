@@ -49,6 +49,7 @@ import {
   revertAdministrationPortalProfileReview,
   getClinicalLists,
   getClinicalPrescriptionAuditHistory,
+  searchClinicalMedicationVocabulary,
   getEncounterDetail,
   getPatientChart,
   getPatientCareTeamOptions,
@@ -290,6 +291,7 @@ import {
   type ClinicalPrescriptionPharmacyRouteInput,
   type ClinicalPrescriptionRefillApprovalInput,
   type ClinicalPrescriptionRefillInput,
+  type MedicationVocabularyItem,
   type CollectionsWorkQueueItem,
   type CollectionsWorkQueueResponse,
   type CollectionsFollowUpMutationResponse,
@@ -447,7 +449,6 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'reports', label: 'Reports', icon: FileText, implemented: 'reports' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
-
 
 function moduleFromUrlSearch(): ModuleId {
   if (typeof window === 'undefined') {
@@ -14595,6 +14596,10 @@ function ClinicalListsWorkspace({
   const [prescriptionRefills, setPrescriptionRefills] = useState('1')
   const [prescriptionDiagnosis, setPrescriptionDiagnosis] = useState('Z00.00')
   const [prescriptionNote, setPrescriptionNote] = useState('Created from the modernized Lists workspace.')
+  const [vocabularyQuery, setVocabularyQuery] = useState('metformin')
+  const [vocabularyResults, setVocabularyResults] = useState<MedicationVocabularyItem[]>([])
+  const [vocabularyStatus, setVocabularyStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [vocabularyMessage, setVocabularyMessage] = useState<string | null>(null)
   const [immunizationVaccine, setImmunizationVaccine] = useState('Influenza, seasonal, injectable')
   const [immunizationAdministeredAt, setImmunizationAdministeredAt] = useState('2026-09-10 10:30:00')
   const [immunizationCvxCode, setImmunizationCvxCode] = useState('141')
@@ -14730,6 +14735,39 @@ function ClinicalListsWorkspace({
     })
 
     setMutationMessage('Prescription saved')
+  }
+
+  async function handleVocabularySearch() {
+    if (!canUseLists) {
+      setVocabularyStatus('error')
+      setVocabularyMessage('Sign in to search medication vocabulary')
+      return
+    }
+
+    setVocabularyStatus('loading')
+    setVocabularyMessage(null)
+    try {
+      const results = await searchClinicalMedicationVocabulary(vocabularyQuery, sessionId)
+      setVocabularyResults(results)
+      setVocabularyStatus('ready')
+      setVocabularyMessage(`${results.length} ${results.length === 1 ? 'match' : 'matches'}`)
+    } catch (error) {
+      setVocabularyResults([])
+      setVocabularyStatus('error')
+      setVocabularyMessage(error instanceof Error ? error.message : 'Medication vocabulary search failed')
+    }
+  }
+
+  function handleVocabularySelect(item: MedicationVocabularyItem) {
+    setPrescriptionDrug(item.drugName)
+    setPrescriptionDosage(`${item.strength} ${item.form}`)
+    setPrescriptionQuantity(item.durationDays ? String(item.durationDays) : prescriptionQuantity)
+    setPrescriptionDoseAmount(item.doseAmount === null || item.doseAmount === undefined ? '' : String(item.doseAmount))
+    setPrescriptionDoseUnit(item.doseUnit ?? '')
+    setPrescriptionFrequency(item.frequency ?? '')
+    setPrescriptionDurationDays(item.durationDays === null || item.durationDays === undefined ? '' : String(item.durationDays))
+    setPrescriptionNote(`Selected ${item.displayName} from the clinical medication vocabulary.`)
+    setMutationMessage(`Selected ${item.displayName}`)
   }
 
   async function handleImmunizationSubmit(event: FormEvent<HTMLFormElement>) {
@@ -15008,6 +15046,58 @@ function ClinicalListsWorkspace({
                 required
               />
             </label>
+            <div className="mutation-grid">
+              <label className="filter-field">
+                <span>Vocabulary</span>
+                <input
+                  value={vocabularyQuery}
+                  onChange={(event) => setVocabularyQuery(event.target.value)}
+                  aria-label="Medication vocabulary query"
+                />
+              </label>
+              <div className="detail-actions">
+                <button
+                  className="icon-text-button"
+                  type="button"
+                  disabled={isLoading || !canUseLists || vocabularyStatus === 'loading'}
+                  onClick={() => void handleVocabularySearch()}
+                >
+                  <Search size={15} />
+                  {vocabularyStatus === 'loading' ? 'Searching' : 'Search Vocabulary'}
+                </button>
+              </div>
+              {vocabularyMessage && (
+                <div className={vocabularyStatus === 'error' ? 'status-banner error' : 'status-banner'}>
+                  {vocabularyMessage}
+                </div>
+              )}
+              {vocabularyResults.length > 0 && (
+                <div className="statement-batch-list" aria-label="Medication vocabulary results">
+                  {vocabularyResults.map((item) => (
+                    <article className="statement-batch-row" key={item.rxNormCode}>
+                      <strong>{item.displayName}</strong>
+                      <span>
+                        RxNorm {item.rxNormCode} / {item.route}
+                        {item.controlledSubstanceSchedule ? ` / ${item.controlledSubstanceSchedule}` : ''}
+                      </span>
+                      <span>
+                        {item.frequency ?? 'Frequency pending'}
+                        {item.durationDays ? ` / ${item.durationDays} days` : ''}
+                      </span>
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        disabled={isLoading || !canUseLists}
+                        onClick={() => handleVocabularySelect(item)}
+                      >
+                        <Check size={14} />
+                        Select
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="mutation-grid two-column">
               <label className="filter-field">
                 <span>Start</span>
