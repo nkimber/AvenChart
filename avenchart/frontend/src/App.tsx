@@ -2051,6 +2051,27 @@ function App() {
     }
   }
 
+  async function handleAppointmentWaitlistDefer(reminderId: string, reason: string | null | undefined) {
+    setAppointmentWaitlistStatus('loading')
+    setAppointmentError(null)
+    setAppointmentWaitlistError(null)
+
+    try {
+      const sessionId = getActiveAppointmentSessionId()
+      await updatePatientMessageStatus(reminderId, {
+        status: 'Deferred',
+        body: `${reason || 'Appointment request'}\n\nDeferred by scheduling staff for follow-up.`,
+      }, sessionId)
+      setAppointmentWaitlistStatus('ready')
+      setAppointmentRefreshKey((current) => current + 1)
+    } catch (deferError) {
+      setAppointmentWaitlistStatus('error')
+      const message = deferError instanceof Error ? deferError.message : 'Appointment waitlist defer failed'
+      setAppointmentWaitlistError(message)
+      throw deferError
+    }
+  }
+
   async function handleAppointmentReminderDispatch(appointment: AppointmentDetail) {
     setAppointmentReminderDispatchStatus('dispatching')
     setAppointmentReminderDispatchError(null)
@@ -5544,6 +5565,7 @@ function App() {
             onConvertToEncounter={handleAppointmentConvertToEncounter}
             onCreateAppointmentCharge={handleAppointmentCreateCharge}
             onPromoteWaitlistAppointment={handleAppointmentWaitlistPromote}
+            onDeferWaitlistAppointment={handleAppointmentWaitlistDefer}
             onDispatchAppointmentReminder={handleAppointmentReminderDispatch}
           />
         )}
@@ -10392,6 +10414,7 @@ function CalendarWorkspace({
   onConvertToEncounter,
   onCreateAppointmentCharge,
   onPromoteWaitlistAppointment,
+  onDeferWaitlistAppointment,
   onDispatchAppointmentReminder,
 }: {
   patientId: string
@@ -10426,6 +10449,7 @@ function CalendarWorkspace({
   onConvertToEncounter: (appointment: AppointmentDetail) => Promise<EncounterDetail>
   onCreateAppointmentCharge: (appointment: AppointmentDetail) => Promise<unknown>
   onPromoteWaitlistAppointment: (appointmentId: string, title: string) => Promise<AppointmentDetail>
+  onDeferWaitlistAppointment: (reminderId: string, reason: string | null | undefined) => Promise<void>
   onDispatchAppointmentReminder: (appointment: AppointmentDetail) => Promise<AppointmentReminderDispatchResponse>
 }) {
   const [draftTitle, setDraftTitle] = useState('Parity Appointment')
@@ -11206,6 +11230,15 @@ function CalendarWorkspace({
                     >
                       <Check size={15} />
                       <span>Promote pending</span>
+                    </button>
+                    <button
+                      className="icon-text-button secondary"
+                      type="button"
+                      disabled={calendarLocked || mutationStatus === 'saving' || !item.reminderId}
+                      onClick={() => item.reminderId && void onDeferWaitlistAppointment(item.reminderId, item.reason)}
+                    >
+                      <Clock size={15} />
+                      <span>Defer request</span>
                     </button>
                   </div>
                 </article>
