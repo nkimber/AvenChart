@@ -1942,6 +1942,19 @@ documents.MapPost("/binary", async (
     .WithName("CreateBinaryPatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
+documents.MapPost("/scanner-captures", async (
+        DocumentRepository repository,
+        PatientDocumentScannerCaptureRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var mutation = await repository.CreateScannerCaptureAsync(request, cancellationToken);
+        return mutation is null
+            ? Results.BadRequest("Scanner-captured patient document could not be created from the supplied patient, scanner, and document details.")
+            : Results.Created($"/api/documents/{mutation.Id}", mutation);
+    })
+    .WithName("CreateScannerCapturePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
+
 documents.MapPost("/external-link", async (
         DocumentRepository repository,
         PatientDocumentExternalLinkCreateRequest request,

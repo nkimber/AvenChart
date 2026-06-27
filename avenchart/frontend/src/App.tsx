@@ -140,6 +140,7 @@ import {
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
+  createPatientScannerCapture,
   createEncounter,
   createEncounterBinaryDocument,
   createEncounterDocument,
@@ -356,6 +357,7 @@ import {
   type PatientDocumentExternalLinkCreateInput,
   type PatientDocumentItem,
   type PatientDocumentMetadataUpdateInput,
+  type PatientDocumentScannerCaptureInput,
   type PatientDocumentsResponse,
   type PatientPortalAppointmentRequestInput,
   type PatientPortalAppointmentRequestOptionsResponse,
@@ -4281,6 +4283,26 @@ function App() {
     }
   }
 
+  async function handlePatientScannerCaptureCreate(input: PatientDocumentScannerCaptureInput) {
+    setDocumentStatus('loading')
+    setDocumentError(null)
+
+    try {
+      const sessionId = getActiveDocumentSessionId()
+      const response = await createPatientScannerCapture(input, sessionId)
+      setDocumentPatientId(response.detail.patientId)
+      setPatientDocuments(response.detail)
+      setDocumentStatus('ready')
+      setDocumentRefreshKey((current) => current + 1)
+      return response
+    } catch (createError) {
+      setDocumentStatus('error')
+      const message = createError instanceof Error ? createError.message : 'Scanner capture create failed'
+      setDocumentError(message)
+      throw createError
+    }
+  }
+
   async function handlePatientExternalLinkDocumentCreate(input: PatientDocumentExternalLinkCreateInput) {
     setDocumentStatus('loading')
     setDocumentError(null)
@@ -5674,6 +5696,7 @@ function App() {
             }}
             onCreateDocument={handlePatientDocumentCreate}
             onCreateBinaryDocument={handlePatientBinaryDocumentCreate}
+            onCreateScannerCapture={handlePatientScannerCaptureCreate}
             onCreateExternalLinkDocument={handlePatientExternalLinkDocumentCreate}
             onUpdateDocumentMetadata={handlePatientDocumentMetadataUpdate}
             onReplaceDocumentContent={handlePatientDocumentContentReplace}
@@ -18066,6 +18089,7 @@ function DocumentsWorkspace({
   onDocumentsSessionActive,
   onCreateDocument,
   onCreateBinaryDocument,
+  onCreateScannerCapture,
   onCreateExternalLinkDocument,
   onUpdateDocumentMetadata,
   onReplaceDocumentContent,
@@ -18092,6 +18116,7 @@ function DocumentsWorkspace({
   onDocumentsSessionActive: (sessionId: string) => void
   onCreateDocument: (input: PatientDocumentCreateInput) => Promise<unknown>
   onCreateBinaryDocument: (input: PatientDocumentBinaryCreateInput) => Promise<unknown>
+  onCreateScannerCapture: (input: PatientDocumentScannerCaptureInput) => Promise<unknown>
   onCreateExternalLinkDocument: (input: PatientDocumentExternalLinkCreateInput) => Promise<unknown>
   onUpdateDocumentMetadata: (
     document: PatientDocumentItem,
@@ -18127,6 +18152,16 @@ function DocumentsWorkspace({
   const [binaryMimeType, setBinaryMimeType] = useState('')
   const [binaryContentBase64, setBinaryContentBase64] = useState('')
   const [binaryFileMessage, setBinaryFileMessage] = useState('No file selected')
+  const [scannerDocumentName, setScannerDocumentName] = useState('Front Desk Scanner Capture')
+  const [scannerDocumentCategoryId, setScannerDocumentCategoryId] = useState('3')
+  const [scannerDocumentDate, setScannerDocumentDate] = useState('2026-06-18')
+  const [scannerDocumentEncounter, setScannerDocumentEncounter] = useState('1000013')
+  const [scannerCaptureSource, setScannerCaptureSource] = useState('front-desk scanner')
+  const [scannerPageCount, setScannerPageCount] = useState('3')
+  const [scannerCapturedBy, setScannerCapturedBy] = useState('admin')
+  const [scannerDocumentNotes, setScannerDocumentNotes] = useState(
+    'Captured from the modernized Documents scanner intake.',
+  )
   const [linkDocumentName, setLinkDocumentName] = useState('External Referral Link')
   const [linkDocumentCategoryId, setLinkDocumentCategoryId] = useState('3')
   const [linkDocumentDate, setLinkDocumentDate] = useState('2026-06-18')
@@ -18241,6 +18276,39 @@ function DocumentsWorkspace({
     })
 
     setMutationMessage('File uploaded')
+  }
+
+  async function handleScannerCaptureSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMutationMessage(null)
+
+    const categoryId = Number(scannerDocumentCategoryId)
+    const encounter = scannerDocumentEncounter.trim().length > 0 ? Number(scannerDocumentEncounter) : null
+    const pageCount = Number(scannerPageCount)
+    if (
+      !Number.isInteger(categoryId) ||
+      (encounter !== null && !Number.isInteger(encounter)) ||
+      !Number.isInteger(pageCount) ||
+      pageCount < 1 ||
+      pageCount > 100
+    ) {
+      setMutationMessage('Check scanner fields')
+      return
+    }
+
+    await onCreateScannerCapture({
+      patientId,
+      categoryId,
+      name: scannerDocumentName,
+      docDate: scannerDocumentDate,
+      encounter,
+      captureSource: scannerCaptureSource,
+      pageCount,
+      capturedBy: scannerCapturedBy,
+      notes: scannerDocumentNotes,
+    })
+
+    setMutationMessage('Scanner capture saved')
   }
 
   async function handleExternalLinkDocumentSubmit(event: FormEvent<HTMLFormElement>) {
@@ -18594,6 +18662,103 @@ function DocumentsWorkspace({
               Upload File
             </button>
             <span className="save-note">{binaryFileMessage}</span>
+          </div>
+        </form>
+
+        <form className="appointment-mutation-panel" onSubmit={handleScannerCaptureSubmit}>
+          <div className="panel-heading compact-heading">
+            <FileClock size={16} />
+            <h3>Scanner Capture</h3>
+          </div>
+          <div className="mutation-grid">
+            <label className="filter-field">
+              <span>Name</span>
+              <input
+                value={scannerDocumentName}
+                onChange={(event) => setScannerDocumentName(event.target.value)}
+                aria-label="Scanner capture document name"
+                required
+              />
+            </label>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Category</span>
+                <select
+                  value={scannerDocumentCategoryId}
+                  onChange={(event) => setScannerDocumentCategoryId(event.target.value)}
+                  aria-label="Scanner capture category"
+                >
+                  <option value="3">Medical Record</option>
+                  <option value="6">Advance Directive</option>
+                  <option value="2">Lab Report</option>
+                  <option value="4">Patient Information</option>
+                </select>
+              </label>
+              <label className="filter-field">
+                <span>Document Date</span>
+                <input
+                  type="date"
+                  value={scannerDocumentDate}
+                  onChange={(event) => setScannerDocumentDate(event.target.value)}
+                  aria-label="Scanner capture document date"
+                  required
+                />
+              </label>
+            </div>
+            <div className="mutation-grid two-column">
+              <label className="filter-field">
+                <span>Encounter</span>
+                <input
+                  value={scannerDocumentEncounter}
+                  onChange={(event) => setScannerDocumentEncounter(event.target.value)}
+                  aria-label="Scanner capture encounter"
+                  inputMode="numeric"
+                />
+              </label>
+              <label className="filter-field">
+                <span>Pages</span>
+                <input
+                  value={scannerPageCount}
+                  onChange={(event) => setScannerPageCount(event.target.value)}
+                  aria-label="Scanner capture pages"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+            <label className="filter-field">
+              <span>Source</span>
+              <input
+                value={scannerCaptureSource}
+                onChange={(event) => setScannerCaptureSource(event.target.value)}
+                aria-label="Scanner capture source"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Captured By</span>
+              <input
+                value={scannerCapturedBy}
+                onChange={(event) => setScannerCapturedBy(event.target.value)}
+                aria-label="Scanner capture captured by"
+                required
+              />
+            </label>
+            <label className="filter-field">
+              <span>Notes</span>
+              <textarea
+                value={scannerDocumentNotes}
+                onChange={(event) => setScannerDocumentNotes(event.target.value)}
+                aria-label="Scanner capture notes"
+                rows={3}
+              />
+            </label>
+          </div>
+          <div className="detail-actions">
+            <button className="icon-text-button primary" type="submit" disabled={documentsLocked || isLoading}>
+              <FileCheck2 size={15} />
+              Capture Scan
+            </button>
           </div>
         </form>
 

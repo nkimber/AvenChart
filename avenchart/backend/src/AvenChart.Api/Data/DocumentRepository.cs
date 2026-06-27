@@ -613,6 +613,106 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
     }
 
+    public async Task<PatientDocumentMutationResponse?> CreateScannerCaptureAsync(
+        PatientDocumentScannerCaptureRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.PatientId)
+            || string.IsNullOrWhiteSpace(request.Name)
+            || string.IsNullOrWhiteSpace(request.CaptureSource)
+            || string.IsNullOrWhiteSpace(request.CapturedBy)
+            || request.PageCount <= 0
+            || request.PageCount > 100
+            || !DateOnly.TryParse(request.DocDate, out var documentDate))
+        {
+            return null;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var id = 0;
+        var categoryId = request.CategoryId <= 0 ? 3 : request.CategoryId;
+        var categoryName = CategoryNameFor(categoryId);
+        var name = request.Name.Trim();
+        var captureSource = request.CaptureSource.Trim();
+        var capturedBy = request.CapturedBy.Trim();
+        var pageCount = request.PageCount;
+        var fileName = BuildDownloadFileName(name, "application/pdf");
+        var notes = string.Join(
+            "; ",
+            new[]
+            {
+                $"Scan source: {captureSource}",
+                "OCR pending",
+                $"Captured by: {capturedBy}",
+                $"Scan pages: {pageCount}",
+                NormalizeText(request.Notes)
+            }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var contentBytes = BuildScannerCapturePdf(name, patient.DisplayName, captureSource, pageCount, documentDate);
+        var preview = $"Scanner capture: {fileName} ({pageCount} page{(pageCount == 1 ? string.Empty : "s")})";
+        var documentKey = $"DOC-SCAN-{Guid.NewGuid():N}";
+        var uploadedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using (var idCommand = connection.CreateCommand())
+            {
+                idCommand.Transaction = transaction;
+                idCommand.CommandText = """
+                    select greatest(coalesce(max(id), 8999999) + 1, 9000000)
+                    from patient_documents;
+                    """;
+                id = Convert.ToInt32(await idCommand.ExecuteScalarAsync(cancellationToken));
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    insert into patient_documents
+                        (id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
+                         mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of,
+                         notes, content, content_bytes, deleted)
+                    values
+                        (@id, @documentKey, @patientId, @pid, @categoryId, @categoryName, @name, @docDate, @uploadedAt,
+                         'application/pdf', @fileName, @sizeBytes, @pages, @encounter, 'database', @url, @hash, @documentationOf,
+                         @notes, @content, @contentBytes, 0);
+                    """;
+                command.Parameters.AddWithValue("id", id);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patient.PatientId);
+                command.Parameters.AddWithValue("pid", patient.LegacyPid);
+                command.Parameters.AddWithValue("categoryId", categoryId);
+                command.Parameters.AddWithValue("categoryName", categoryName);
+                command.Parameters.AddWithValue("name", name);
+                command.Parameters.AddWithValue("docDate", documentDate);
+                command.Parameters.AddWithValue("uploadedAt", uploadedAt);
+                command.Parameters.AddWithValue("fileName", fileName);
+                command.Parameters.AddWithValue("sizeBytes", contentBytes.Length);
+                command.Parameters.AddWithValue("pages", pageCount);
+                var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
+                encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+                command.Parameters.AddWithValue("url", $"modern://scanner-captures/{documentKey}/{fileName}");
+                command.Parameters.AddWithValue("hash", Convert.ToHexString(SHA1.HashData(contentBytes)).ToLowerInvariant());
+                command.Parameters.AddWithValue("documentationOf", notes);
+                command.Parameters.AddWithValue("notes", notes);
+                command.Parameters.AddWithValue("content", preview);
+                command.Parameters.Add("contentBytes", NpgsqlTypes.NpgsqlDbType.Bytea).Value = contentBytes;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var detail = await GetForPatientAsync(patient.PatientId, cancellationToken);
+        return detail is null ? null : new PatientDocumentMutationResponse(id, detail);
+    }
+
     public async Task<PatientDocumentMutationResponse?> CreateExternalLinkAsync(
         PatientDocumentExternalLinkCreateRequest request,
         CancellationToken cancellationToken)
@@ -1751,6 +1851,49 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             "application/pdf" => $"{safeName}.pdf",
             _ => safeName
         };
+    }
+
+    private static byte[] BuildScannerCapturePdf(
+        string documentName,
+        string patientDisplayName,
+        string captureSource,
+        int pageCount,
+        DateOnly documentDate)
+    {
+        var text = EscapePdfText(
+            $"Legacy EHR scanner capture | {documentName} | {patientDisplayName} | {captureSource} | {pageCount} page{(pageCount == 1 ? string.Empty : "s")} | {documentDate:yyyy-MM-dd}");
+        var stream = $"BT /F1 10 Tf 24 100 Td ({text}) Tj ET";
+        var pdf = string.Join(
+            "\n",
+            "%PDF-1.4",
+            "% Modernized Legacy EHR scanner capture",
+            "1 0 obj",
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "endobj",
+            "2 0 obj",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "endobj",
+            "3 0 obj",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 144] /Contents 4 0 R >>",
+            "endobj",
+            "4 0 obj",
+            $"<< /Length {stream.Length} >>",
+            "stream",
+            stream,
+            "endstream",
+            "endobj",
+            "%%EOF",
+            string.Empty);
+
+        return Encoding.UTF8.GetBytes(pdf);
+    }
+
+    private static string EscapePdfText(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
     }
 
     private static string SanitizeFileName(string value)

@@ -1451,6 +1451,18 @@ export type PatientDocumentBinaryCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentScannerCaptureInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  captureSource: string
+  pageCount: number
+  capturedBy: string
+  notes?: string | null
+}
+
 export type PatientDocumentExternalLinkCreateInput = {
   patientId: string
   categoryId: number
@@ -6136,6 +6148,24 @@ export async function createPatientBinaryDocument(
   })
   if (!response.ok) {
     throw new Error(documentApiError('Binary patient document create', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createPatientScannerCapture(
+  document: PatientDocumentScannerCaptureInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/documents/scanner-captures`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(document),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(documentApiError('Scanner-captured patient document create', response.status))
   }
 
   return response.json()

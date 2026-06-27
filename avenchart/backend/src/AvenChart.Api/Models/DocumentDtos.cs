@@ -197,6 +197,17 @@ public sealed record PatientDocumentBinaryCreateRequest(
     string ContentBase64,
     string? Notes);
 
+public sealed record PatientDocumentScannerCaptureRequest(
+    string PatientId,
+    int CategoryId,
+    string Name,
+    string DocDate,
+    int? Encounter,
+    string CaptureSource,
+    int PageCount,
+    string CapturedBy,
+    string? Notes);
+
 public sealed record PatientDocumentExternalLinkCreateRequest(
     string PatientId,
     int CategoryId,
