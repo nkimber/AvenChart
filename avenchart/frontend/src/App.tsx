@@ -55,6 +55,7 @@ import {
   getBillingChargeTemplate,
   getCollectionsWorkQueue,
   getStatementBatch,
+  dispatchStatementBatchDelivery,
   downloadBillingPaymentReceiptPdf,
   downloadBillingStatementPdf,
   downloadStatementBatchPackage,
@@ -350,6 +351,7 @@ import {
   type PatientRegistrationInput,
   type StatementBatchCandidate,
   type StatementBatchDeliveryResponse,
+  type StatementBatchDispatchResponse,
   type StatementBatchResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
@@ -14834,6 +14836,9 @@ function FeesWorkspace({
   const [statementDelivery, setStatementDelivery] = useState<StatementBatchDeliveryResponse | null>(null)
   const [statementDeliveryStatus, setStatementDeliveryStatus] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle')
   const [statementDeliveryError, setStatementDeliveryError] = useState<string | null>(null)
+  const [statementDispatch, setStatementDispatch] = useState<StatementBatchDispatchResponse | null>(null)
+  const [statementDispatchStatus, setStatementDispatchStatus] = useState<'idle' | 'dispatching' | 'ready' | 'error'>('idle')
+  const [statementDispatchError, setStatementDispatchError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -14857,6 +14862,9 @@ function FeesWorkspace({
       setStatementDelivery(null)
       setStatementDeliveryStatus('idle')
       setStatementDeliveryError(null)
+      setStatementDispatch(null)
+      setStatementDispatchStatus('idle')
+      setStatementDispatchError(null)
       setCollectionsWorkQueue(null)
       setCollectionsWorkQueueStatus('idle')
       setCollectionsWorkQueueError(null)
@@ -15239,10 +15247,32 @@ function FeesWorkspace({
     try {
       const delivery = await prepareStatementBatchDeliveryManifest(5, sessionId)
       setStatementDelivery(delivery)
+      setStatementDispatch(null)
+      setStatementDispatchStatus('idle')
+      setStatementDispatchError(null)
       setStatementDeliveryStatus('ready')
     } catch (error) {
       setStatementDeliveryStatus('error')
       setStatementDeliveryError(error instanceof Error ? error.message : 'Statement delivery manifest prepare failed')
+    }
+  }
+
+  async function handleStatementDeliveryDispatch() {
+    if (!sessionId) {
+      return
+    }
+
+    setStatementDispatchStatus('dispatching')
+    setStatementDispatchError(null)
+    try {
+      const dispatch = await dispatchStatementBatchDelivery(5, sessionId)
+      setStatementDispatch(dispatch)
+      setStatementDelivery(null)
+      setStatementDeliveryStatus('idle')
+      setStatementDispatchStatus('ready')
+    } catch (error) {
+      setStatementDispatchStatus('error')
+      setStatementDispatchError(error instanceof Error ? error.message : 'Statement dispatch handoff failed')
     }
   }
 
@@ -15828,8 +15858,12 @@ function FeesWorkspace({
           delivery={statementDelivery}
           deliveryStatus={statementDeliveryStatus}
           deliveryError={statementDeliveryError}
+          dispatch={statementDispatch}
+          dispatchStatus={statementDispatchStatus}
+          dispatchError={statementDispatchError}
           onDownloadPackage={handleStatementBatchPackageDownload}
           onPrepareDelivery={handleStatementDeliveryPrepare}
+          onDispatchDelivery={handleStatementDeliveryDispatch}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -16045,8 +16079,12 @@ function StatementBatchPanel({
   delivery,
   deliveryStatus,
   deliveryError,
+  dispatch,
+  dispatchStatus,
+  dispatchError,
   onDownloadPackage,
   onPrepareDelivery,
+  onDispatchDelivery,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
@@ -16058,12 +16096,17 @@ function StatementBatchPanel({
   delivery: StatementBatchDeliveryResponse | null
   deliveryStatus: 'idle' | 'preparing' | 'ready' | 'error'
   deliveryError: string | null
+  dispatch: StatementBatchDispatchResponse | null
+  dispatchStatus: 'idle' | 'dispatching' | 'ready' | 'error'
+  dispatchError: string | null
   onDownloadPackage: () => Promise<void>
   onPrepareDelivery: () => Promise<void>
+  onDispatchDelivery: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
   const deliveryEntries = delivery?.entries ?? []
+  const dispatchEntries = dispatch?.entries ?? []
 
   return (
     <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
@@ -16088,12 +16131,22 @@ function StatementBatchPanel({
           <Send size={14} />
           {deliveryStatus === 'preparing' ? 'Preparing Delivery' : 'Delivery Manifest'}
         </button>
+        <button
+          className="icon-text-button secondary statement-batch-export"
+          type="button"
+          disabled={disabled || dispatchStatus === 'dispatching' || !batch}
+          onClick={() => void onDispatchDelivery()}
+        >
+          <FileCheck2 size={14} />
+          {dispatchStatus === 'dispatching' ? 'Dispatching' : 'Dispatch Handoff'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
         {status === 'error' && <div className="status-banner error">{error}</div>}
         {downloadError && <div className="status-banner error">{downloadError}</div>}
         {deliveryError && <div className="status-banner error">{deliveryError}</div>}
+        {dispatchError && <div className="status-banner error">{dispatchError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
@@ -16128,6 +16181,38 @@ function StatementBatchPanel({
                   <Field label="Destination" value={entry.destination} />
                   <Field label="Balance" value={formatCurrency(entry.balanceDueAmount)} />
                   <Field label="Due date" value={entry.dueDate} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {dispatch && (
+          <div className="statement-batch-summary" aria-label="Statement dispatch handoff">
+            <Field label="Dispatch ID" value={dispatch.dispatchId} />
+            <Field label="Dispatched" value={dispatch.dispatchedAt} />
+            <Field label="Statements" value={dispatch.dispatchedStatementCount} />
+            <Field label="Email queue" value={dispatch.emailQueueCount} />
+            <Field label="Print queue" value={dispatch.printQueueCount} />
+          </div>
+        )}
+        {dispatchEntries.length > 0 && (
+          <div className="statement-batch-list" aria-label="Statement dispatch entries">
+            {dispatchEntries.map((entry) => (
+              <article className="statement-batch-row" key={entry.dispatchAuditId}>
+                <div className="statement-batch-row-main">
+                  <div>
+                    <strong>{entry.patientDisplayName}</strong>
+                    <span>{entry.statementNumber} / {entry.dispatchAuditId}</span>
+                  </div>
+                  <div className="statement-batch-actions">
+                    <span className="status-pill">{entry.dispatchStatus}</span>
+                    <span className="status-pill">{entry.queueName}</span>
+                  </div>
+                </div>
+                <div className="statement-batch-row-grid">
+                  <Field label="Destination" value={entry.destination} />
+                  <Field label="Reference" value={entry.externalReference} />
+                  <Field label="File" value={entry.fileName} />
                 </div>
               </article>
             ))}

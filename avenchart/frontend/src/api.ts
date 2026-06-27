@@ -1881,6 +1881,43 @@ export type StatementBatchDeliveryResponse = {
   entries: StatementBatchDeliveryEntry[]
 }
 
+export type StatementBatchDispatchEntry = {
+  dispatchAuditId: string
+  pubpid: string
+  legacyPid: number
+  patientDisplayName: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  deliveryMethod: string
+  destination: string
+  fileName: string
+  queueName: string
+  dispatchStatus: string
+  externalReference: string
+}
+
+export type StatementBatchDispatchResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  deliveryId: string
+  dispatchId: string
+  dispatchedAt: string
+  candidateCount: number
+  dispatchedStatementCount: number
+  emailQueueCount: number
+  printQueueCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  entries: StatementBatchDispatchEntry[]
+}
+
 export type CollectionsWorkQueueItem = {
   patientId: string
   legacyPid: number
@@ -6236,6 +6273,23 @@ export async function prepareStatementBatchDeliveryManifest(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Statement batch delivery manifest prepare', response.status))
+  }
+
+  return response.json()
+}
+
+export async function dispatchStatementBatchDelivery(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementBatchDispatchResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Statement batch dispatch handoff', response.status))
   }
 
   return response.json()

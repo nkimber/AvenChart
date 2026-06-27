@@ -2245,6 +2245,17 @@ billing.MapPost("/statements/batch/delivery-manifest", async (
     })
     .WithName("PrepareBillingStatementBatchDeliveryManifest");
 
+billing.MapPost("/statements/batch/dispatch", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var dispatch = await repository.DispatchStatementBatchDeliveryAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(dispatch);
+    })
+    .WithName("DispatchBillingStatementBatchDelivery")
+    .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
+
 billing.MapGet("/collections/work-queue", async (
         BillingRepository repository,
         int? limit,

@@ -412,6 +412,56 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             Entries: entries);
     }
 
+    public async Task<StatementBatchDispatchResponse> DispatchStatementBatchDeliveryAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var delivery = await PrepareStatementBatchDeliveryAsync(limit, cancellationToken);
+        var dispatchId = delivery.DeliveryId.Replace("STMT-DELIVERY-", "STMT-DISPATCH-", StringComparison.Ordinal);
+        var dispatchedAt = $"{delivery.AsOfDate}T12:05:00Z";
+        var entries = delivery.Entries
+            .Select((entry, index) =>
+            {
+                var isEmail = string.Equals(entry.DeliveryMethod, "Email-ready", StringComparison.OrdinalIgnoreCase);
+                var channel = isEmail ? "EMAIL" : "PRINT";
+                return new StatementBatchDispatchEntry(
+                    DispatchAuditId: $"AUD-{dispatchId}-{index + 1:D4}",
+                    Pubpid: entry.Pubpid,
+                    LegacyPid: entry.LegacyPid,
+                    PatientDisplayName: entry.PatientDisplayName,
+                    StatementNumber: entry.StatementNumber,
+                    StatementStatus: entry.StatementStatus,
+                    StatementDate: entry.StatementDate,
+                    DueDate: entry.DueDate,
+                    BalanceDueAmount: entry.BalanceDueAmount,
+                    PastDueAmount: entry.PastDueAmount,
+                    CurrentDueAmount: entry.CurrentDueAmount,
+                    DeliveryMethod: entry.DeliveryMethod,
+                    Destination: entry.Destination,
+                    FileName: entry.FileName,
+                    QueueName: isEmail ? "patient-statement-email" : "patient-statement-print",
+                    DispatchStatus: isEmail ? "Email queued" : "Print queued",
+                    ExternalReference: $"LOCAL-{channel}-{entry.StatementNumber}");
+            })
+            .ToList();
+
+        return new StatementBatchDispatchResponse(
+            DatasetId: delivery.DatasetId,
+            DatasetVersion: delivery.DatasetVersion,
+            AsOfDate: delivery.AsOfDate,
+            DeliveryId: delivery.DeliveryId,
+            DispatchId: dispatchId,
+            DispatchedAt: dispatchedAt,
+            CandidateCount: delivery.CandidateCount,
+            DispatchedStatementCount: entries.Count,
+            EmailQueueCount: entries.Count(entry => string.Equals(entry.QueueName, "patient-statement-email", StringComparison.OrdinalIgnoreCase)),
+            PrintQueueCount: entries.Count(entry => string.Equals(entry.QueueName, "patient-statement-print", StringComparison.OrdinalIgnoreCase)),
+            TotalBalanceAmount: delivery.TotalBalanceAmount,
+            TotalPastDueAmount: delivery.TotalPastDueAmount,
+            TotalCurrentDueAmount: delivery.TotalCurrentDueAmount,
+            Entries: entries);
+    }
+
     public async Task<CollectionsWorkQueueResponse> GetCollectionsWorkQueueAsync(
         int limit,
         CancellationToken cancellationToken)

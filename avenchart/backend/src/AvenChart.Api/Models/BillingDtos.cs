@@ -169,6 +169,41 @@ public sealed record StatementBatchDeliveryEntry(
     string FileName,
     string DeliveryStatus);
 
+public sealed record StatementBatchDispatchResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string DeliveryId,
+    string DispatchId,
+    string DispatchedAt,
+    int CandidateCount,
+    int DispatchedStatementCount,
+    int EmailQueueCount,
+    int PrintQueueCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalCurrentDueAmount,
+    IReadOnlyList<StatementBatchDispatchEntry> Entries);
+
+public sealed record StatementBatchDispatchEntry(
+    string DispatchAuditId,
+    string Pubpid,
+    int LegacyPid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal CurrentDueAmount,
+    string DeliveryMethod,
+    string Destination,
+    string FileName,
+    string QueueName,
+    string DispatchStatus,
+    string ExternalReference);
+
 public sealed record CollectionsWorkQueueResponse(
     string DatasetId,
     string DatasetVersion,
