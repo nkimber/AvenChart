@@ -39,6 +39,95 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Documents: documents);
     }
 
+    public async Task<PatientDocumentOcrQueueResponse> GetOcrQueueAsync(
+        CancellationToken cancellationToken,
+        string? patientId = null)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
+              d.category_id, d.category_name, d.name, d.doc_date, d.uploaded_at, d.mimetype, d.file_name, d.pages,
+              d.encounter, d.storage_method, d.notes,
+              case
+                when d.content_bytes is not null then left(coalesce(d.content, ''), 260)
+                else left(regexp_replace(coalesce(d.content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
+              end as content_preview
+            from patient_documents d
+            join patients p on p.canonical_id = d.patient_id
+            where d.deleted = 0
+              and (@patientId is null
+                   or lower(d.patient_id) = lower(@patientId)
+                   or lower(p.pubpid) = lower(@patientId)
+                   or d.pid::text = @patientId)
+            order by d.uploaded_at, d.id;
+            """;
+        var patientParameter = command.Parameters.Add("patientId", NpgsqlTypes.NpgsqlDbType.Text);
+        patientParameter.Value = string.IsNullOrWhiteSpace(patientId) ? DBNull.Value : patientId.Trim();
+
+        var items = new List<PatientDocumentOcrQueueItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var name = reader.GetString(reader.GetOrdinal("name"));
+            var fileName = ReadNullableString(reader, "file_name");
+            var mimetype = ReadNullableString(reader, "mimetype");
+            var notes = ReadNullableString(reader, "notes");
+            var pages = ReadNullableInt32(reader, "pages");
+            var scanReadiness = BuildScanReadiness(
+                name,
+                fileName,
+                mimetype,
+                pages,
+                ReadNullableString(reader, "storage_method"),
+                notes,
+                ReadNullableString(reader, "content_preview"));
+
+            if (!scanReadiness.IsScannedAttachment
+                || !string.Equals(scanReadiness.OcrStatus, "OCR pending", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var firstName = reader.GetString(reader.GetOrdinal("first_name"));
+            var lastName = reader.GetString(reader.GetOrdinal("last_name"));
+            var preferredName = ReadNullableString(reader, "preferred_name");
+            var scanPageCount = scanReadiness.ScanPageCount;
+            items.Add(new PatientDocumentOcrQueueItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+                PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                PatientDisplayName: string.IsNullOrWhiteSpace(preferredName)
+                    ? $"{lastName}, {firstName}"
+                    : $"{lastName}, {firstName} ({preferredName})",
+                CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+                CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+                Name: name,
+                DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
+                UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                Mimetype: mimetype,
+                FileName: fileName,
+                Pages: pages,
+                Encounter: ReadNullableInt32(reader, "encounter"),
+                CaptureSource: scanReadiness.CaptureSource,
+                ScanPageCount: scanPageCount,
+                OcrStatus: scanReadiness.OcrStatus,
+                QueueStatus: "Ready for OCR",
+                Priority: scanPageCount >= 5 ? "High" : "Standard",
+                Notes: notes));
+        }
+
+        return new PatientDocumentOcrQueueResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Count: items.Count,
+            Items: items);
+    }
+
     public async Task<PatientDocumentMutationResponse?> CreateAsync(
         PatientDocumentCreateRequest request,
         CancellationToken cancellationToken)

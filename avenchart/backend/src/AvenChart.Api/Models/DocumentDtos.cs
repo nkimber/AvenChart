@@ -65,6 +65,35 @@ public sealed record PatientDocumentLifecycleEvent(
     string? Actor,
     string Detail);
 
+public sealed record PatientDocumentOcrQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int Count,
+    IReadOnlyList<PatientDocumentOcrQueueItem> Items);
+
+public sealed record PatientDocumentOcrQueueItem(
+    int Id,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    int CategoryId,
+    string CategoryName,
+    string Name,
+    string DocDate,
+    string UploadedAt,
+    string? Mimetype,
+    string? FileName,
+    int? Pages,
+    int? Encounter,
+    string CaptureSource,
+    int ScanPageCount,
+    string OcrStatus,
+    string QueueStatus,
+    string Priority,
+    string? Notes);
+
 public sealed record PatientDocumentCreateRequest(
     string PatientId,
     int CategoryId,

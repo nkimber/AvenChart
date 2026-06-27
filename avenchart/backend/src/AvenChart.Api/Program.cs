@@ -1815,6 +1815,16 @@ messages.MapDelete("/{messageId}", async (
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");
 
+documents.MapGet("/ocr-queue", async (
+        DocumentRepository repository,
+        CancellationToken cancellationToken,
+        string? patientId = null) =>
+    {
+        var queue = await repository.GetOcrQueueAsync(cancellationToken, patientId);
+        return Results.Ok(queue);
+    })
+    .WithName("GetPatientDocumentOcrQueue");
+
 documents.MapGet("/{documentId:int}/content", async (
         DocumentRepository repository,
         int documentId,

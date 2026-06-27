@@ -71,6 +71,7 @@ import {
   prepareStatementBatchDeliveryManifest,
   getPatientDocumentContent,
   getPatientDocuments,
+  getPatientDocumentOcrQueue,
   getPatientMessages,
   getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
@@ -339,6 +340,7 @@ import {
   type PatientDeceasedStatusUpdate,
   type PatientEmployerUpdate,
   type PatientGuardianContactUpdate,
+  type PatientDocumentOcrQueueResponse,
   type PatientProviderAssignmentOption,
   type PatientProviderAssignmentOptionsResponse,
   type PatientProviderAssignmentUpdate,
@@ -611,6 +613,7 @@ function App() {
   const [documentError, setDocumentError] = useState<string | null>(null)
   const [documentRefreshKey, setDocumentRefreshKey] = useState(0)
   const [documentIncludeArchived, setDocumentIncludeArchived] = useState(false)
+  const [documentOcrQueue, setDocumentOcrQueue] = useState<PatientDocumentOcrQueueResponse | null>(null)
 
   const [procedurePatientId, setProcedurePatientId] = useState('MOD-PAT-0009')
   const [procedureResults, setProcedureResults] = useState<ProcedureResultsResponse | null>(null)
@@ -1093,6 +1096,7 @@ function App() {
 
     if (!openEmrSessionId) {
       setPatientDocuments(null)
+      setDocumentOcrQueue(null)
       setDocumentStatus('idle')
       setDocumentError(null)
       return
@@ -1110,7 +1114,9 @@ function App() {
           openEmrSessionId,
           controller.signal,
         )
+        const ocrQueue = await getPatientDocumentOcrQueue(documentPatientId, openEmrSessionId, controller.signal)
         setPatientDocuments(result)
+        setDocumentOcrQueue(ocrQueue)
         setDocumentStatus('ready')
       } catch (loadError) {
         if (!controller.signal.aborted) {
@@ -5580,6 +5586,7 @@ function App() {
           <DocumentsWorkspace
             patientId={documentPatientId}
             patientDocuments={patientDocuments}
+            documentOcrQueue={documentOcrQueue}
             status={documentStatus}
             error={documentError}
             includeArchived={documentIncludeArchived}
@@ -17970,6 +17977,7 @@ function MessagesWorkspace({
 function DocumentsWorkspace({
   patientId,
   patientDocuments,
+  documentOcrQueue,
   status,
   error,
   includeArchived,
@@ -17991,6 +17999,7 @@ function DocumentsWorkspace({
 }: {
   patientId: string
   patientDocuments: PatientDocumentsResponse | null
+  documentOcrQueue: PatientDocumentOcrQueueResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   includeArchived: boolean
@@ -18057,6 +18066,8 @@ function DocumentsWorkspace({
   )
   const linkedEncounterCount = documents.filter((document) => document.encounter).length
   const totalPages = documents.reduce((total, document) => total + (document.pages ?? 0), 0)
+  const ocrQueueItems = documentOcrQueue?.items ?? []
+  const ocrQueuePages = ocrQueueItems.reduce((total, item) => total + item.scanPageCount, 0)
   const latestDocument = documents[0]
   const isLoading = status === 'loading'
   const documentAuthorizationError = status === 'error' && Boolean(error?.includes('Document access'))
@@ -18596,6 +18607,36 @@ function DocumentsWorkspace({
                 <Field label="Revision time" value={latestDocument?.revisionAt} />
                 <Field label="Review status" value={latestDocument?.reviewStatus} />
               </InfoPanel>
+
+              <section className="info-panel documents-panel" aria-label="Document OCR queue">
+                <div className="panel-heading">
+                  <FileClock size={17} />
+                  <h3>OCR Queue</h3>
+                </div>
+                <div className="list-counts compact-counts">
+                  <MetricRow label="Queued" value={documentOcrQueue?.count ?? 0} />
+                  <MetricRow label="Pages" value={ocrQueuePages} />
+                </div>
+                <div className="message-list-body">
+                  {ocrQueueItems.map((item) => (
+                    <div className="message-item compact-message-item" key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.patientDisplayName} / {item.pubpid}</span>
+                        <span>{item.captureSource} / {item.scanPageCount} page{item.scanPageCount === 1 ? '' : 's'}</span>
+                      </div>
+                      <div className="document-card-tags">
+                        <span className="status-tag">{item.queueStatus}</span>
+                        <span className="status-tag">{item.ocrStatus}</span>
+                        <span className="status-tag">{item.priority}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {ocrQueueItems.length === 0 && (
+                    <div className="timeline-placeholder">No documents waiting for OCR</div>
+                  )}
+                </div>
+              </section>
 
               <section className="info-panel document-viewer-panel" aria-label="Document viewer">
                 <div className="panel-heading">
