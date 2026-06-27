@@ -60,6 +60,7 @@ import {
   downloadStatementBatchPackage,
   downloadPatientDocument,
   downloadPatientPortalDocuments,
+  prepareStatementBatchDeliveryManifest,
   getPatientDocumentContent,
   getPatientDocuments,
   getPatientMessages,
@@ -348,6 +349,7 @@ import {
   type PatientSearchResponse,
   type PatientRegistrationInput,
   type StatementBatchCandidate,
+  type StatementBatchDeliveryResponse,
   type StatementBatchResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
@@ -14829,6 +14831,9 @@ function FeesWorkspace({
   const [statementPdfError, setStatementPdfError] = useState<string | null>(null)
   const [batchPackageStatus, setBatchPackageStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle')
   const [batchPackageError, setBatchPackageError] = useState<string | null>(null)
+  const [statementDelivery, setStatementDelivery] = useState<StatementBatchDeliveryResponse | null>(null)
+  const [statementDeliveryStatus, setStatementDeliveryStatus] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle')
+  const [statementDeliveryError, setStatementDeliveryError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -14849,6 +14854,9 @@ function FeesWorkspace({
       setStatementBatch(null)
       setStatementBatchStatus('idle')
       setStatementBatchError(null)
+      setStatementDelivery(null)
+      setStatementDeliveryStatus('idle')
+      setStatementDeliveryError(null)
       setCollectionsWorkQueue(null)
       setCollectionsWorkQueueStatus('idle')
       setCollectionsWorkQueueError(null)
@@ -15218,6 +15226,23 @@ function FeesWorkspace({
     } catch (error) {
       setBatchPackageStatus('error')
       setBatchPackageError(error instanceof Error ? error.message : 'Statement batch package download failed')
+    }
+  }
+
+  async function handleStatementDeliveryPrepare() {
+    if (!sessionId) {
+      return
+    }
+
+    setStatementDeliveryStatus('preparing')
+    setStatementDeliveryError(null)
+    try {
+      const delivery = await prepareStatementBatchDeliveryManifest(5, sessionId)
+      setStatementDelivery(delivery)
+      setStatementDeliveryStatus('ready')
+    } catch (error) {
+      setStatementDeliveryStatus('error')
+      setStatementDeliveryError(error instanceof Error ? error.message : 'Statement delivery manifest prepare failed')
     }
   }
 
@@ -15800,7 +15825,11 @@ function FeesWorkspace({
           disabled={feesLocked}
           downloadStatus={batchPackageStatus}
           downloadError={batchPackageError}
+          delivery={statementDelivery}
+          deliveryStatus={statementDeliveryStatus}
+          deliveryError={statementDeliveryError}
           onDownloadPackage={handleStatementBatchPackageDownload}
+          onPrepareDelivery={handleStatementDeliveryPrepare}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -16013,7 +16042,11 @@ function StatementBatchPanel({
   disabled,
   downloadStatus,
   downloadError,
+  delivery,
+  deliveryStatus,
+  deliveryError,
   onDownloadPackage,
+  onPrepareDelivery,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
@@ -16022,10 +16055,15 @@ function StatementBatchPanel({
   disabled: boolean
   downloadStatus: 'idle' | 'downloading' | 'ready' | 'error'
   downloadError: string | null
+  delivery: StatementBatchDeliveryResponse | null
+  deliveryStatus: 'idle' | 'preparing' | 'ready' | 'error'
+  deliveryError: string | null
   onDownloadPackage: () => Promise<void>
+  onPrepareDelivery: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
+  const deliveryEntries = delivery?.entries ?? []
 
   return (
     <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
@@ -16041,11 +16079,21 @@ function StatementBatchPanel({
           <Download size={14} />
           {downloadStatus === 'downloading' ? 'Preparing Batch' : 'Batch Export'}
         </button>
+        <button
+          className="icon-text-button secondary statement-batch-export"
+          type="button"
+          disabled={disabled || deliveryStatus === 'preparing' || !batch}
+          onClick={() => void onPrepareDelivery()}
+        >
+          <Send size={14} />
+          {deliveryStatus === 'preparing' ? 'Preparing Delivery' : 'Delivery Manifest'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
         {status === 'error' && <div className="status-banner error">{error}</div>}
         {downloadError && <div className="status-banner error">{downloadError}</div>}
+        {deliveryError && <div className="status-banner error">{deliveryError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
@@ -16053,6 +16101,38 @@ function StatementBatchPanel({
           <Field label="Current due" value={batch ? formatCurrency(batch.totalCurrentDueAmount) : status === 'loading' ? 'Loading' : 0} />
           <Field label="As of" value={batch?.asOfDate ?? (status === 'loading' ? 'Loading' : '')} />
         </div>
+        {delivery && (
+          <div className="statement-batch-summary" aria-label="Statement delivery manifest">
+            <Field label="Delivery ID" value={delivery.deliveryId} />
+            <Field label="Prepared" value={delivery.preparedAt} />
+            <Field label="Queued" value={delivery.includedStatementCount} />
+            <Field label="Email-ready" value={delivery.emailReadyCount} />
+            <Field label="Print-ready" value={delivery.printReadyCount} />
+          </div>
+        )}
+        {deliveryEntries.length > 0 && (
+          <div className="statement-batch-list" aria-label="Statement delivery entries">
+            {deliveryEntries.map((entry) => (
+              <article className="statement-batch-row" key={`${entry.statementNumber}-${entry.deliveryMethod}`}>
+                <div className="statement-batch-row-main">
+                  <div>
+                    <strong>{entry.patientDisplayName}</strong>
+                    <span>{entry.statementNumber} / {entry.fileName}</span>
+                  </div>
+                  <div className="statement-batch-actions">
+                    <span className="status-pill">{entry.deliveryStatus}</span>
+                    <span className="status-pill">{entry.deliveryMethod}</span>
+                  </div>
+                </div>
+                <div className="statement-batch-row-grid">
+                  <Field label="Destination" value={entry.destination} />
+                  <Field label="Balance" value={formatCurrency(entry.balanceDueAmount)} />
+                  <Field label="Due date" value={entry.dueDate} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
         <div className="statement-batch-list">
           {candidates.map((candidate) => (

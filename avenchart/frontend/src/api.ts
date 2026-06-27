@@ -1848,6 +1848,39 @@ export type StatementBatchResponse = {
   candidates: StatementBatchCandidate[]
 }
 
+export type StatementBatchDeliveryEntry = {
+  pubpid: string
+  legacyPid: number
+  patientDisplayName: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  deliveryMethod: string
+  destination: string
+  fileName: string
+  deliveryStatus: string
+}
+
+export type StatementBatchDeliveryResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  deliveryId: string
+  preparedAt: string
+  candidateCount: number
+  includedStatementCount: number
+  emailReadyCount: number
+  printReadyCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  entries: StatementBatchDeliveryEntry[]
+}
+
 export type CollectionsWorkQueueItem = {
   patientId: string
   legacyPid: number
@@ -6189,6 +6222,23 @@ export async function downloadStatementBatchPackage(
   }
 
   return response.blob()
+}
+
+export async function prepareStatementBatchDeliveryManifest(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementBatchDeliveryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/delivery-manifest?limit=${encodeURIComponent(String(limit))}`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Statement batch delivery manifest prepare', response.status))
+  }
+
+  return response.json()
 }
 
 export async function downloadBillingStatementPdf(

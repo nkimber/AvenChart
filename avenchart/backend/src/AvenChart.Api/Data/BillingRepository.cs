@@ -358,6 +358,60 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
         return (memory.ToArray(), fileName);
     }
 
+    public async Task<StatementBatchDeliveryResponse> PrepareStatementBatchDeliveryAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var batch = await GetStatementBatchAsync(limit, cancellationToken);
+        var packageDate = batch.AsOfDate.Replace("-", string.Empty, StringComparison.Ordinal);
+        var preparedAt = $"{batch.AsOfDate}T12:00:00Z";
+        var entries = new List<StatementBatchDeliveryEntry>();
+
+        foreach (var candidate in batch.Candidates)
+        {
+            var billing = await GetForPatientAsync(
+                candidate.LegacyPid.ToString(CultureInfo.InvariantCulture),
+                cancellationToken);
+            if (billing is null)
+            {
+                continue;
+            }
+
+            var document = billing.StatementDocument;
+            var summary = billing.StatementSummary;
+            entries.Add(new StatementBatchDeliveryEntry(
+                Pubpid: candidate.Pubpid,
+                LegacyPid: candidate.LegacyPid,
+                PatientDisplayName: candidate.PatientDisplayName,
+                StatementNumber: document.StatementNumber,
+                StatementStatus: candidate.StatementStatus,
+                StatementDate: candidate.StatementDate,
+                DueDate: candidate.DueDate,
+                BalanceDueAmount: candidate.BalanceDueAmount,
+                PastDueAmount: candidate.PastDueAmount,
+                CurrentDueAmount: candidate.CurrentDueAmount,
+                DeliveryMethod: candidate.DeliveryMethod,
+                Destination: StatementDeliveryDestination(candidate.DeliveryMethod, summary),
+                FileName: $"statements/{document.StatementNumber}.pdf",
+                DeliveryStatus: "Queued"));
+        }
+
+        return new StatementBatchDeliveryResponse(
+            DatasetId: batch.DatasetId,
+            DatasetVersion: batch.DatasetVersion,
+            AsOfDate: batch.AsOfDate,
+            DeliveryId: $"STMT-DELIVERY-{packageDate}-TOP{entries.Count}",
+            PreparedAt: preparedAt,
+            CandidateCount: batch.CandidateCount,
+            IncludedStatementCount: entries.Count,
+            EmailReadyCount: entries.Count(entry => string.Equals(entry.DeliveryMethod, "Email-ready", StringComparison.OrdinalIgnoreCase)),
+            PrintReadyCount: entries.Count(entry => string.Equals(entry.DeliveryMethod, "Print", StringComparison.OrdinalIgnoreCase)),
+            TotalBalanceAmount: batch.TotalBalanceAmount,
+            TotalPastDueAmount: batch.TotalPastDueAmount,
+            TotalCurrentDueAmount: batch.TotalCurrentDueAmount,
+            Entries: entries);
+    }
+
     public async Task<CollectionsWorkQueueResponse> GetCollectionsWorkQueueAsync(
         int limit,
         CancellationToken cancellationToken)
@@ -2577,6 +2631,21 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             OldestOpenAgeDays: summary.OldestOpenAgeDays,
             OldestOpenDate: summary.OldestOpenDate,
             DeliveryMethod: NormalizeText(summary.Email) is null ? "Print" : "Email-ready");
+    }
+
+    private static string StatementDeliveryDestination(
+        string deliveryMethod,
+        BillingStatementSummary summary)
+    {
+        if (string.Equals(deliveryMethod, "Email-ready", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(summary.Email))
+        {
+            return summary.Email.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(summary.MailingAddressLine2)
+            ? summary.MailingAddressLine1
+            : $"{summary.MailingAddressLine1}, {summary.MailingAddressLine2}";
     }
 
     private static CollectionsWorkQueueItem BuildCollectionsWorkQueueItem(PatientBillingResponse billing)

@@ -2235,6 +2235,16 @@ billing.MapGet("/statements/batch/package.zip", async (
     })
     .WithName("DownloadBillingStatementBatchPackage");
 
+billing.MapPost("/statements/batch/delivery-manifest", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var delivery = await repository.PrepareStatementBatchDeliveryAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(delivery);
+    })
+    .WithName("PrepareBillingStatementBatchDeliveryManifest");
+
 billing.MapGet("/collections/work-queue", async (
         BillingRepository repository,
         int? limit,

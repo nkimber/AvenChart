@@ -138,6 +138,37 @@ public sealed record StatementBatchCandidate(
     string OldestOpenDate,
     string DeliveryMethod);
 
+public sealed record StatementBatchDeliveryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string AsOfDate,
+    string DeliveryId,
+    string PreparedAt,
+    int CandidateCount,
+    int IncludedStatementCount,
+    int EmailReadyCount,
+    int PrintReadyCount,
+    decimal TotalBalanceAmount,
+    decimal TotalPastDueAmount,
+    decimal TotalCurrentDueAmount,
+    IReadOnlyList<StatementBatchDeliveryEntry> Entries);
+
+public sealed record StatementBatchDeliveryEntry(
+    string Pubpid,
+    int LegacyPid,
+    string PatientDisplayName,
+    string StatementNumber,
+    string StatementStatus,
+    string StatementDate,
+    string DueDate,
+    decimal BalanceDueAmount,
+    decimal PastDueAmount,
+    decimal CurrentDueAmount,
+    string DeliveryMethod,
+    string Destination,
+    string FileName,
+    string DeliveryStatus);
+
 public sealed record CollectionsWorkQueueResponse(
     string DatasetId,
     string DatasetVersion,
