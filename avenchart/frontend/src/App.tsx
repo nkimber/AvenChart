@@ -55,6 +55,7 @@ import {
   getBillingChargeTemplate,
   getCollectionsWorkQueue,
   getStatementBatch,
+  getStatementDispatchHistory,
   dispatchStatementBatchDelivery,
   downloadBillingPaymentReceiptPdf,
   downloadBillingStatementPdf,
@@ -353,6 +354,7 @@ import {
   type StatementBatchDeliveryResponse,
   type StatementBatchDispatchResponse,
   type StatementBatchResponse,
+  type StatementDeliveryAuditHistoryResponse,
   type OperationalReportsResponse,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
@@ -14839,6 +14841,9 @@ function FeesWorkspace({
   const [statementDispatch, setStatementDispatch] = useState<StatementBatchDispatchResponse | null>(null)
   const [statementDispatchStatus, setStatementDispatchStatus] = useState<'idle' | 'dispatching' | 'ready' | 'error'>('idle')
   const [statementDispatchError, setStatementDispatchError] = useState<string | null>(null)
+  const [statementDispatchHistory, setStatementDispatchHistory] = useState<StatementDeliveryAuditHistoryResponse | null>(null)
+  const [statementDispatchHistoryStatus, setStatementDispatchHistoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [statementDispatchHistoryError, setStatementDispatchHistoryError] = useState<string | null>(null)
   const lineCount = countBillingLines(patientBilling?.encounters)
   const claimCount = countBillingClaims(patientBilling?.encounters)
   const paymentCount = countBillingPayments(patientBilling?.encounters)
@@ -14865,6 +14870,9 @@ function FeesWorkspace({
       setStatementDispatch(null)
       setStatementDispatchStatus('idle')
       setStatementDispatchError(null)
+      setStatementDispatchHistory(null)
+      setStatementDispatchHistoryStatus('idle')
+      setStatementDispatchHistoryError(null)
       setCollectionsWorkQueue(null)
       setCollectionsWorkQueueStatus('idle')
       setCollectionsWorkQueueError(null)
@@ -15266,13 +15274,33 @@ function FeesWorkspace({
     setStatementDispatchError(null)
     try {
       const dispatch = await dispatchStatementBatchDelivery(5, sessionId)
+      const history = await getStatementDispatchHistory(5, sessionId)
       setStatementDispatch(dispatch)
+      setStatementDispatchHistory(history)
       setStatementDelivery(null)
       setStatementDeliveryStatus('idle')
       setStatementDispatchStatus('ready')
+      setStatementDispatchHistoryStatus('ready')
     } catch (error) {
       setStatementDispatchStatus('error')
       setStatementDispatchError(error instanceof Error ? error.message : 'Statement dispatch handoff failed')
+    }
+  }
+
+  async function handleStatementDispatchHistoryLoad() {
+    if (!sessionId) {
+      return
+    }
+
+    setStatementDispatchHistoryStatus('loading')
+    setStatementDispatchHistoryError(null)
+    try {
+      const history = await getStatementDispatchHistory(5, sessionId)
+      setStatementDispatchHistory(history)
+      setStatementDispatchHistoryStatus('ready')
+    } catch (error) {
+      setStatementDispatchHistoryStatus('error')
+      setStatementDispatchHistoryError(error instanceof Error ? error.message : 'Statement dispatch history load failed')
     }
   }
 
@@ -15861,9 +15889,13 @@ function FeesWorkspace({
           dispatch={statementDispatch}
           dispatchStatus={statementDispatchStatus}
           dispatchError={statementDispatchError}
+          dispatchHistory={statementDispatchHistory}
+          dispatchHistoryStatus={statementDispatchHistoryStatus}
+          dispatchHistoryError={statementDispatchHistoryError}
           onDownloadPackage={handleStatementBatchPackageDownload}
           onPrepareDelivery={handleStatementDeliveryPrepare}
           onDispatchDelivery={handleStatementDeliveryDispatch}
+          onLoadDispatchHistory={handleStatementDispatchHistoryLoad}
           onSelectCandidate={(candidate) => onPatientIdChange(candidate.pubpid)}
         />
 
@@ -16082,9 +16114,13 @@ function StatementBatchPanel({
   dispatch,
   dispatchStatus,
   dispatchError,
+  dispatchHistory,
+  dispatchHistoryStatus,
+  dispatchHistoryError,
   onDownloadPackage,
   onPrepareDelivery,
   onDispatchDelivery,
+  onLoadDispatchHistory,
   onSelectCandidate,
 }: {
   batch: StatementBatchResponse | null
@@ -16099,14 +16135,19 @@ function StatementBatchPanel({
   dispatch: StatementBatchDispatchResponse | null
   dispatchStatus: 'idle' | 'dispatching' | 'ready' | 'error'
   dispatchError: string | null
+  dispatchHistory: StatementDeliveryAuditHistoryResponse | null
+  dispatchHistoryStatus: 'idle' | 'loading' | 'ready' | 'error'
+  dispatchHistoryError: string | null
   onDownloadPackage: () => Promise<void>
   onPrepareDelivery: () => Promise<void>
   onDispatchDelivery: () => Promise<void>
+  onLoadDispatchHistory: () => Promise<void>
   onSelectCandidate: (candidate: StatementBatchCandidate) => void
 }) {
   const candidates = batch?.candidates ?? []
   const deliveryEntries = delivery?.entries ?? []
   const dispatchEntries = dispatch?.entries ?? []
+  const dispatchHistoryEntries = dispatchHistory?.entries ?? []
 
   return (
     <section className="info-panel statement-batch-panel" aria-label="Statement batch candidates">
@@ -16140,6 +16181,15 @@ function StatementBatchPanel({
           <FileCheck2 size={14} />
           {dispatchStatus === 'dispatching' ? 'Dispatching' : 'Dispatch Handoff'}
         </button>
+        <button
+          className="icon-text-button secondary statement-batch-export"
+          type="button"
+          disabled={disabled || dispatchHistoryStatus === 'loading'}
+          onClick={() => void onLoadDispatchHistory()}
+        >
+          <FileClock size={14} />
+          {dispatchHistoryStatus === 'loading' ? 'Loading History' : 'Dispatch History'}
+        </button>
       </div>
 
       <div className="statement-batch-body">
@@ -16147,6 +16197,7 @@ function StatementBatchPanel({
         {downloadError && <div className="status-banner error">{downloadError}</div>}
         {deliveryError && <div className="status-banner error">{deliveryError}</div>}
         {dispatchError && <div className="status-banner error">{dispatchError}</div>}
+        {dispatchHistoryError && <div className="status-banner error">{dispatchHistoryError}</div>}
         <div className="statement-batch-summary">
           <Field label="Candidates" value={batch?.candidateCount ?? (status === 'loading' ? 'Loading' : 0)} />
           <Field label="Total balance" value={batch ? formatCurrency(batch.totalBalanceAmount) : status === 'loading' ? 'Loading' : 0} />
@@ -16213,6 +16264,37 @@ function StatementBatchPanel({
                   <Field label="Destination" value={entry.destination} />
                   <Field label="Reference" value={entry.externalReference} />
                   <Field label="File" value={entry.fileName} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {dispatchHistory && (
+          <div className="statement-batch-summary" aria-label="Statement dispatch history">
+            <Field label="Audit events" value={dispatchHistory.eventCount} />
+            <Field label="As of" value={dispatchHistory.asOfDate} />
+            <Field label="Latest dispatch" value={dispatchHistory.entries[0]?.dispatchId ?? ''} />
+            <Field label="Latest event" value={dispatchHistory.entries[0]?.createdAt ?? ''} />
+          </div>
+        )}
+        {dispatchHistoryEntries.length > 0 && (
+          <div className="statement-batch-list" aria-label="Statement dispatch history entries">
+            {dispatchHistoryEntries.map((entry) => (
+              <article className="statement-batch-row" key={entry.dispatchAuditId}>
+                <div className="statement-batch-row-main">
+                  <div>
+                    <strong>{entry.patientDisplayName}</strong>
+                    <span>{entry.dispatchAuditId} / {entry.dispatchId}</span>
+                  </div>
+                  <div className="statement-batch-actions">
+                    <span className="status-pill">{entry.dispatchStatus}</span>
+                    <span className="status-pill">{entry.queueName}</span>
+                  </div>
+                </div>
+                <div className="statement-batch-row-grid">
+                  <Field label="Created" value={entry.createdAt} />
+                  <Field label="Reference" value={entry.externalReference} />
+                  <Field label="Delivery" value={entry.deliveryMethod} />
                 </div>
               </article>
             ))}

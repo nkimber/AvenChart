@@ -1918,6 +1918,21 @@ export type StatementBatchDispatchResponse = {
   entries: StatementBatchDispatchEntry[]
 }
 
+export type StatementDeliveryAuditHistoryEntry = StatementBatchDispatchEntry & {
+  deliveryId: string
+  dispatchId: string
+  dispatchedAt: string
+  createdAt: string
+}
+
+export type StatementDeliveryAuditHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  eventCount: number
+  entries: StatementDeliveryAuditHistoryEntry[]
+}
+
 export type CollectionsWorkQueueItem = {
   patientId: string
   legacyPid: number
@@ -6290,6 +6305,22 @@ export async function dispatchStatementBatchDelivery(
   })
   if (!response.ok) {
     throw new Error(billingApiError('Statement batch dispatch handoff', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getStatementDispatchHistory(
+  limit = 10,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<StatementDeliveryAuditHistoryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/billing/statements/batch/dispatch-history?limit=${encodeURIComponent(String(limit))}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(billingApiError('Statement dispatch history load', response.status))
   }
 
   return response.json()

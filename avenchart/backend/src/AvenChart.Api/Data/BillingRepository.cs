@@ -445,7 +445,7 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             })
             .ToList();
 
-        return new StatementBatchDispatchResponse(
+        var response = new StatementBatchDispatchResponse(
             DatasetId: delivery.DatasetId,
             DatasetVersion: delivery.DatasetVersion,
             AsOfDate: delivery.AsOfDate,
@@ -460,6 +460,214 @@ public sealed class BillingRepository(NpgsqlDataSource dataSource)
             TotalPastDueAmount: delivery.TotalPastDueAmount,
             TotalCurrentDueAmount: delivery.TotalCurrentDueAmount,
             Entries: entries);
+
+        await SaveStatementDispatchAsync(response, cancellationToken);
+        return response;
+    }
+
+    public async Task<StatementDeliveryAuditHistoryResponse> GetStatementDeliveryAuditHistoryAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var entries = new List<StatementDeliveryAuditHistoryEntry>();
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureStatementDeliveryAuditTableAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              dispatch_audit_id,
+              delivery_id,
+              dispatch_id,
+              to_char(dispatched_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as dispatched_at_text,
+              to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_text,
+              pubpid,
+              legacy_pid,
+              patient_display_name,
+              statement_number,
+              statement_status,
+              statement_date::text as statement_date,
+              due_date::text as due_date,
+              balance_due_amount,
+              past_due_amount,
+              current_due_amount,
+              delivery_method,
+              destination,
+              file_name,
+              queue_name,
+              dispatch_status,
+              external_reference
+            from statement_delivery_audit_events
+            order by created_at desc, dispatch_audit_id
+            limit @limit;
+            """;
+        command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = boundedLimit;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(new StatementDeliveryAuditHistoryEntry(
+                DispatchAuditId: reader.GetString(reader.GetOrdinal("dispatch_audit_id")),
+                DeliveryId: reader.GetString(reader.GetOrdinal("delivery_id")),
+                DispatchId: reader.GetString(reader.GetOrdinal("dispatch_id")),
+                DispatchedAt: reader.GetString(reader.GetOrdinal("dispatched_at_text")),
+                CreatedAt: reader.GetString(reader.GetOrdinal("created_at_text")),
+                Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                StatementNumber: reader.GetString(reader.GetOrdinal("statement_number")),
+                StatementStatus: reader.GetString(reader.GetOrdinal("statement_status")),
+                StatementDate: reader.GetString(reader.GetOrdinal("statement_date")),
+                DueDate: reader.GetString(reader.GetOrdinal("due_date")),
+                BalanceDueAmount: reader.GetDecimal(reader.GetOrdinal("balance_due_amount")),
+                PastDueAmount: reader.GetDecimal(reader.GetOrdinal("past_due_amount")),
+                CurrentDueAmount: reader.GetDecimal(reader.GetOrdinal("current_due_amount")),
+                DeliveryMethod: reader.GetString(reader.GetOrdinal("delivery_method")),
+                Destination: reader.GetString(reader.GetOrdinal("destination")),
+                FileName: reader.GetString(reader.GetOrdinal("file_name")),
+                QueueName: reader.GetString(reader.GetOrdinal("queue_name")),
+                DispatchStatus: reader.GetString(reader.GetOrdinal("dispatch_status")),
+                ExternalReference: reader.GetString(reader.GetOrdinal("external_reference"))));
+        }
+
+        return new StatementDeliveryAuditHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            AsOfDate: metadata.BaseDate.ToString("yyyy-MM-dd"),
+            EventCount: entries.Count,
+            Entries: entries);
+    }
+
+    private async Task SaveStatementDispatchAsync(
+        StatementBatchDispatchResponse response,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureStatementDeliveryAuditTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        foreach (var entry in response.Entries)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into statement_delivery_audit_events (
+                  dispatch_audit_id, dataset_id, dataset_version, as_of_date, delivery_id, dispatch_id,
+                  dispatched_at, pubpid, legacy_pid, patient_display_name, statement_number, statement_status,
+                  statement_date, due_date, balance_due_amount, past_due_amount, current_due_amount,
+                  delivery_method, destination, file_name, queue_name, dispatch_status, external_reference, created_at
+                )
+                values (
+                  @dispatchAuditId, @datasetId, @datasetVersion, @asOfDate, @deliveryId, @dispatchId,
+                  @dispatchedAt, @pubpid, @legacyPid, @patientDisplayName, @statementNumber, @statementStatus,
+                  @statementDate, @dueDate, @balanceDueAmount, @pastDueAmount, @currentDueAmount,
+                  @deliveryMethod, @destination, @fileName, @queueName, @dispatchStatus, @externalReference, @createdAt
+                )
+                on conflict (dispatch_audit_id) do update set
+                  dataset_id = excluded.dataset_id,
+                  dataset_version = excluded.dataset_version,
+                  as_of_date = excluded.as_of_date,
+                  delivery_id = excluded.delivery_id,
+                  dispatch_id = excluded.dispatch_id,
+                  dispatched_at = excluded.dispatched_at,
+                  pubpid = excluded.pubpid,
+                  legacy_pid = excluded.legacy_pid,
+                  patient_display_name = excluded.patient_display_name,
+                  statement_number = excluded.statement_number,
+                  statement_status = excluded.statement_status,
+                  statement_date = excluded.statement_date,
+                  due_date = excluded.due_date,
+                  balance_due_amount = excluded.balance_due_amount,
+                  past_due_amount = excluded.past_due_amount,
+                  current_due_amount = excluded.current_due_amount,
+                  delivery_method = excluded.delivery_method,
+                  destination = excluded.destination,
+                  file_name = excluded.file_name,
+                  queue_name = excluded.queue_name,
+                  dispatch_status = excluded.dispatch_status,
+                  external_reference = excluded.external_reference,
+                  created_at = excluded.created_at;
+                """;
+            command.Parameters.Add("dispatchAuditId", NpgsqlDbType.Text).Value = entry.DispatchAuditId;
+            command.Parameters.Add("datasetId", NpgsqlDbType.Text).Value = response.DatasetId;
+            command.Parameters.Add("datasetVersion", NpgsqlDbType.Text).Value = response.DatasetVersion;
+            command.Parameters.Add("asOfDate", NpgsqlDbType.Date).Value = ReadDateOnly(response.AsOfDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("deliveryId", NpgsqlDbType.Text).Value = response.DeliveryId;
+            command.Parameters.Add("dispatchId", NpgsqlDbType.Text).Value = response.DispatchId;
+            command.Parameters.Add("dispatchedAt", NpgsqlDbType.Timestamp).Value = ReadDispatchTimestamp(response.DispatchedAt);
+            command.Parameters.Add("pubpid", NpgsqlDbType.Text).Value = entry.Pubpid;
+            command.Parameters.Add("legacyPid", NpgsqlDbType.Integer).Value = entry.LegacyPid;
+            command.Parameters.Add("patientDisplayName", NpgsqlDbType.Text).Value = entry.PatientDisplayName;
+            command.Parameters.Add("statementNumber", NpgsqlDbType.Text).Value = entry.StatementNumber;
+            command.Parameters.Add("statementStatus", NpgsqlDbType.Text).Value = entry.StatementStatus;
+            command.Parameters.Add("statementDate", NpgsqlDbType.Date).Value = ReadDateOnly(entry.StatementDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("dueDate", NpgsqlDbType.Date).Value = ReadDateOnly(entry.DueDate, ClaimScrubBusinessDate);
+            command.Parameters.Add("balanceDueAmount", NpgsqlDbType.Numeric).Value = entry.BalanceDueAmount;
+            command.Parameters.Add("pastDueAmount", NpgsqlDbType.Numeric).Value = entry.PastDueAmount;
+            command.Parameters.Add("currentDueAmount", NpgsqlDbType.Numeric).Value = entry.CurrentDueAmount;
+            command.Parameters.Add("deliveryMethod", NpgsqlDbType.Text).Value = entry.DeliveryMethod;
+            command.Parameters.Add("destination", NpgsqlDbType.Text).Value = entry.Destination;
+            command.Parameters.Add("fileName", NpgsqlDbType.Text).Value = entry.FileName;
+            command.Parameters.Add("queueName", NpgsqlDbType.Text).Value = entry.QueueName;
+            command.Parameters.Add("dispatchStatus", NpgsqlDbType.Text).Value = entry.DispatchStatus;
+            command.Parameters.Add("externalReference", NpgsqlDbType.Text).Value = entry.ExternalReference;
+            command.Parameters.Add("createdAt", NpgsqlDbType.Timestamp).Value = ReadDispatchTimestamp(response.DispatchedAt);
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task EnsureStatementDeliveryAuditTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists statement_delivery_audit_events (
+              dispatch_audit_id text primary key,
+              dataset_id text not null,
+              dataset_version text not null,
+              as_of_date date not null,
+              delivery_id text not null,
+              dispatch_id text not null,
+              dispatched_at timestamp not null,
+              pubpid text not null,
+              legacy_pid integer not null,
+              patient_display_name text not null,
+              statement_number text not null,
+              statement_status text not null,
+              statement_date date not null,
+              due_date date not null,
+              balance_due_amount numeric(12,2) not null default 0,
+              past_due_amount numeric(12,2) not null default 0,
+              current_due_amount numeric(12,2) not null default 0,
+              delivery_method text not null,
+              destination text not null,
+              file_name text not null,
+              queue_name text not null,
+              dispatch_status text not null,
+              external_reference text not null,
+              created_at timestamp not null
+            );
+            create index if not exists idx_statement_delivery_audit_dispatch
+              on statement_delivery_audit_events (dispatch_id, dispatched_at desc);
+            create index if not exists idx_statement_delivery_audit_pid_created
+              on statement_delivery_audit_events (legacy_pid, created_at desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static DateTime ReadDispatchTimestamp(string value)
+    {
+        var parsed = DateTime.Parse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+        return DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
     }
 
     public async Task<CollectionsWorkQueueResponse> GetCollectionsWorkQueueAsync(

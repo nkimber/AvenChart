@@ -2256,6 +2256,16 @@ billing.MapPost("/statements/batch/dispatch", async (
     .WithName("DispatchBillingStatementBatchDelivery")
     .AddEndpointFilter(AccessPermissionFilter("acct", "bill", "write"));
 
+billing.MapGet("/statements/batch/dispatch-history", async (
+        BillingRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetStatementDeliveryAuditHistoryAsync(limit ?? 10, cancellationToken);
+        return Results.Ok(history);
+    })
+    .WithName("GetBillingStatementDeliveryAuditHistory");
+
 billing.MapGet("/collections/work-queue", async (
         BillingRepository repository,
         int? limit,
