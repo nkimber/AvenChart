@@ -720,10 +720,17 @@ export type PatientChartSummary = {
   email?: string | null
   phone?: string | null
   phoneCell?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
   maritalStatus?: string | null
   occupation?: string | null
   race?: string | null
   ethnicity?: string | null
+  interpreter?: string | null
+  familySize?: string | null
+  monthlyIncome?: string | null
+  homeless?: string | null
+  financialReviewDate?: string | null
   portalEnabled: boolean
   registrationDate: string
   deceasedDate?: string | null
