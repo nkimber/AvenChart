@@ -335,7 +335,7 @@ export default function PatientSummary() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title"><Shield size={15} /> Insurance</h2>
-            <button className="cl-btn-icon" type="button" title="Add insurance" onClick={openAddInsurance}>
+            <button className="cl-btn-icon" type="button" aria-label="Add insurance" onClick={openAddInsurance}>
               <Plus size={15} />
             </button>
           </div>
@@ -353,7 +353,7 @@ export default function PatientSummary() {
                   </div>
                   <div className="cl-insurance-btns">
                     <button className="cl-link" type="button" onClick={() => openEditInsurance(ins.id)}>Edit</button>
-                    <button className="cl-clinical-action" type="button" title="Remove" disabled={deletingId === ins.id} onClick={() => handleDeleteInsurance(ins.id)}>
+                    <button className="cl-clinical-action" type="button" aria-label="Remove insurance" disabled={deletingId === ins.id} onClick={() => handleDeleteInsurance(ins.id)}>
                       <Trash2 size={13} />
                     </button>
                   </div>

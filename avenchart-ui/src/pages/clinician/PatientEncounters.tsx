@@ -276,7 +276,7 @@ export default function PatientEncounters() {
                 <div className="cl-card">
                   <div className="cl-card-header">
                     <h2 className="cl-card-title">Vitals</h2>
-                    <button className="cl-btn-icon" type="button" title="Record vitals" onClick={() => { setAddVitalsOpen((o) => !o); setAddSoapOpen(false) }}>
+                    <button className="cl-btn-icon" type="button" aria-label="Record vitals" onClick={() => { setAddVitalsOpen((o) => !o); setAddSoapOpen(false) }}>
                       <Plus size={14} />
                     </button>
                   </div>
@@ -325,7 +325,7 @@ export default function PatientEncounters() {
                 <div className="cl-card">
                   <div className="cl-card-header">
                     <h2 className="cl-card-title">SOAP note</h2>
-                    <button className="cl-btn-icon" type="button" title="Add SOAP note" onClick={() => {
+                    <button className="cl-btn-icon" type="button" aria-label="Add SOAP note" onClick={() => {
                       setAddSoapOpen((o) => !o); setAddVitalsOpen(false)
                       if (enc.soapNote) setSoapForm({
                         subjective: enc.soapNote.subjective ?? '',

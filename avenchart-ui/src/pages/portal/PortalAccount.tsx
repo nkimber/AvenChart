@@ -69,7 +69,7 @@ export default function PortalAccount() {
               <input id="pa-email" type="email" className="input" placeholder="(optional)" value={contactForm.email ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value || null }))} />
             </div>
             <div className="button-row">
-              <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+              <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               <button className="button-secondary" type="button" onClick={() => setEditOpen(false)} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
             </div>
           </form>

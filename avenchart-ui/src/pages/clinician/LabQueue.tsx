@@ -171,7 +171,7 @@ export default function LabQueue() {
                             <button
                               className="cl-btn-icon cl-btn-icon-teal"
                               type="button"
-                              title="Mark reviewed"
+                              aria-label="Mark reviewed"
                               disabled={isReviewing}
                               onClick={() => handleReview(r.reportId)}
                             >

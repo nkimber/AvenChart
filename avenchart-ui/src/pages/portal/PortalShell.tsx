@@ -220,7 +220,7 @@ export default function PortalShell() {
         </div>
       </nav>
 
-      <div className="portal-content">
+      <div className="portal-content" id="main-content">
         {homeLoading ? (
           <div className="portal-page">
             <div className="portal-section">

@@ -195,7 +195,7 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Problems ({data.problems.length})</h2>
-            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'problem' ? null : 'problem')} title="Add problem">
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'problem' ? null : 'problem')} aria-label="Add problem">
               <Plus size={15} />
             </button>
           </div>
@@ -228,7 +228,7 @@ export default function PatientChart() {
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      title="Mark inactive"
+                      aria-label="Mark inactive"
                       disabled={working}
                       onClick={() => handleDeactivateProblem(p.id)}
                     >
@@ -245,7 +245,7 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Allergies ({data.allergies.length})</h2>
-            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'allergy' ? null : 'allergy')} title="Add allergy">
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'allergy' ? null : 'allergy')} aria-label="Add allergy">
               <Plus size={15} />
             </button>
           </div>
@@ -284,7 +284,7 @@ export default function PatientChart() {
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      title="Mark inactive"
+                      aria-label="Mark inactive"
                       disabled={working}
                       onClick={() => handleDeactivateAllergy(a.id)}
                     >
@@ -301,7 +301,7 @@ export default function PatientChart() {
         <section className="cl-card">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Medications ({data.medications.length})</h2>
-            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'medication' ? null : 'medication')} title="Add medication">
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'medication' ? null : 'medication')} aria-label="Add medication">
               <Plus size={15} />
             </button>
           </div>
@@ -330,7 +330,7 @@ export default function PatientChart() {
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      title="Mark inactive"
+                      aria-label="Mark inactive"
                       disabled={working}
                       onClick={() => handleDeactivateMedication(m.id)}
                     >
@@ -372,7 +372,7 @@ export default function PatientChart() {
         <section className="cl-card cl-card-wide">
           <div className="cl-card-header">
             <h2 className="cl-card-title">Immunizations ({data.immunizations.length})</h2>
-            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'immunization' ? null : 'immunization')} title="Add immunization">
+            <button className="cl-btn-icon" type="button" onClick={() => setAddMode(addMode === 'immunization' ? null : 'immunization')} aria-label="Add immunization">
               <Plus size={15} />
             </button>
           </div>
@@ -410,7 +410,7 @@ export default function PatientChart() {
                   <button
                     className="cl-clinical-action"
                     type="button"
-                    title="Mark entered in error"
+                    aria-label="Mark entered in error"
                     disabled={working}
                     onClick={() => handleMarkImmunizationError(imm.id)}
                   >

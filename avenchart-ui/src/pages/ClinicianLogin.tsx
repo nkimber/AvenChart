@@ -40,7 +40,7 @@ export default function ClinicianLogin() {
     <div className="auth-shell">
       <div className="auth-hero">
         <div className="auth-hero-brand">
-          <span className="auth-hero-brand-mark">
+          <span className="auth-hero-brand-mark" aria-hidden="true">
             <Stethoscope size={16} />
           </span>
           Professional sign-in
@@ -54,7 +54,7 @@ export default function ClinicianLogin() {
         </div>
         <div className="auth-hero-badges">
           <span className="auth-hero-badge">
-            <span className="auth-hero-badge-icon">
+            <span className="auth-hero-badge-icon" aria-hidden="true">
               <ShieldCheck size={12} />
             </span>
             Real-time, secure session
@@ -64,7 +64,7 @@ export default function ClinicianLogin() {
       <div className="auth-panel">
         <div className="auth-card">
           <p className="eyebrow">Professional sign-in</p>
-          <h1 className="title">Welcome back</h1>
+          <h2 className="title">Welcome back</h2>
           <p className="subtitle">Sign in with your modernized Legacy EHR staff credentials.</p>
 
           <div className="hint-banner">Demo credentials are pre-filled: admin / pass.</div>
@@ -77,9 +77,12 @@ export default function ClinicianLogin() {
               <input
                 id="clinician-username"
                 className="input"
+                type="text"
+                name="username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="username"
+                spellCheck={false}
               />
             </div>
             <div className="field">
@@ -88,6 +91,7 @@ export default function ClinicianLogin() {
                 id="clinician-password"
                 className="input"
                 type="password"
+                name="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="current-password"

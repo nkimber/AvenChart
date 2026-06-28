@@ -4153,7 +4153,7 @@ a {
 .tl-filter-btn {
   display: flex; align-items: center; gap: 6px; padding: 6px 14px;
   border-radius: 20px; border: 1.5px solid var(--border); background: none;
-  font-size: 12px; cursor: pointer; color: var(--text-muted); transition: all .12s;
+  font-size: 12px; cursor: pointer; color: var(--text-muted); transition: color .12s, border-color .12s, background .12s;
 }
 .tl-filter-btn-active { color: #fff; border-color: transparent; }
 .tl-filter-encounter.tl-filter-btn-active { background: #2e37a4; }
@@ -4213,9 +4213,9 @@ a {
 .ne-label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .ne-input {
   width: 100%; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--border);
-  background: var(--bg); font-size: 13px; color: var(--text); outline: none; transition: border-color .12s;
+  background: var(--bg); font-size: 13px; color: var(--text); transition: border-color .12s;
 }
-.ne-input:focus { border-color: var(--teal); }
+.ne-input:focus { border-color: var(--teal); outline: 2px solid rgba(46, 55, 164, 0.25); outline-offset: 1px; }
 .ne-input-unit { display: flex; align-items: center; }
 .ne-input-unit .ne-input { border-radius: var(--radius-md) 0 0 var(--radius-md); flex: 1; }
 .ne-input-unit > span { padding: 8px 10px; background: var(--border); border: 1px solid var(--border); border-left: none; border-radius: 0 var(--radius-md) var(--radius-md) 0; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
@@ -4240,9 +4240,9 @@ a {
 .ne-soap-label-full { font-weight: 400; color: var(--text-muted); }
 .ne-soap-textarea {
   width: 100%; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--border);
-  background: var(--bg); font-size: 13px; color: var(--text); resize: vertical; font-family: inherit; outline: none; transition: border-color .12s;
+  background: var(--bg); font-size: 13px; color: var(--text); resize: vertical; font-family: inherit; transition: border-color .12s;
 }
-.ne-soap-textarea:focus { border-color: var(--teal); }
+.ne-soap-textarea:focus { border-color: var(--teal); outline: 2px solid rgba(46, 55, 164, 0.25); outline-offset: 1px; }
 .ne-tpl-controls { position: relative; }
 .ne-tpl-btn { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .ne-tpl-panel {
@@ -4320,7 +4320,7 @@ a {
 .cl-clinical-action:hover { color: #ef4444; background: #fee2e2; border-color: #fca5a5; }
 .cl-btn-icon {
   background: none; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 8px;
-  cursor: pointer; color: var(--text-muted); display: flex; align-items: center; transition: all .12s;
+  cursor: pointer; color: var(--text-muted); display: flex; align-items: center; transition: background .12s, color .12s, border-color .12s;
 }
 .cl-btn-icon:hover { background: var(--teal-soft); color: var(--teal); border-color: var(--teal); }
 .cl-btn-icon-teal { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
@@ -4366,3 +4366,43 @@ a {
 .cl-vitals-form { background: var(--bg); border-radius: var(--radius-md); padding: 12px; margin-bottom: 12px; }
 .cl-vitals-input-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
 @media (max-width: 768px) { .cl-vitals-input-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLOBAL INTERACTION & ACCESSIBILITY
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Prevent double-tap zoom delay on touch devices */
+body { touch-action: manipulation; }
+
+/* Headings prevent widow words */
+h1, h2, h3, h4 { text-wrap: balance; }
+
+/* Constrain scroll inside modals/drawers */
+.modal-overlay { overscroll-behavior: contain; }
+
+/* Skip link for keyboard users */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 8px;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--teal);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  text-decoration: none;
+  transition: top 0.1s;
+}
+.skip-link:focus { top: 0; }
+
+/* ─── Reduced motion ────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
