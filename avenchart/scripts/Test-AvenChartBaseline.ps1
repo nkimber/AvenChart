@@ -167,6 +167,23 @@ catch {
 }
 
 try {
+    $liveness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/live" -Method Get -TimeoutSec 15
+    $readiness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/ready" -Method Get -TimeoutSec 15
+    $readinessDependency = $readiness.dependencies.postgres
+    $healthFoundationPassed = $liveness.status -eq "healthy" `
+        -and $readiness.status -eq "healthy" `
+        -and $readinessDependency -eq "healthy"
+    Add-Check -Name "api liveness and PostgreSQL readiness" -Result $(if ($healthFoundationPassed) { "passed" } else { "failed" }) -Details @{
+        liveness = $liveness
+        readiness = $readiness
+        postgres = $readinessDependency
+    }
+}
+catch {
+    Add-Check -Name "api liveness and PostgreSQL readiness" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $loginBody = @{
         username = "admin"
         password = "pass"

@@ -1,11 +1,36 @@
+using System.Diagnostics;
 using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Npgsql;
+using AvenChart.Api.Configuration;
 using AvenChart.Api.Data;
+using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
+builder.Services.AddResponseCompression();
+builder.Services.AddHealthChecks()
+    .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
+
+builder.Services.AddOptions<RuntimeSafetyOptions>()
+    .BindConfiguration(RuntimeSafetyOptions.SectionName)
+    .Validate(
+        options => options.RateLimitPermitLimit > 0,
+        "RuntimeSafety:RateLimitPermitLimit must be greater than zero.")
+    .Validate(
+        options => options.RateLimitWindowSeconds > 0,
+        "RuntimeSafety:RateLimitWindowSeconds must be greater than zero.")
+    .Validate(
+        options => options.RateLimitQueueLimit >= 0,
+        "RuntimeSafety:RateLimitQueueLimit must not be negative.")
+    .ValidateOnStart();
 
 var connectionString = builder.Configuration.GetConnectionString("AvenChart")
     ?? "Host=localhost;Port=5433;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo";
@@ -41,6 +66,42 @@ builder.Services.AddCors(options =>
     });
 });
 
+var runtimeSafetyOptions = builder.Configuration
+    .GetSection(RuntimeSafetyOptions.SectionName)
+    .Get<RuntimeSafetyOptions>() ?? new RuntimeSafetyOptions();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/health"))
+        {
+            return RateLimitPartition.GetNoLimiter("health");
+        }
+
+        var partitionKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = runtimeSafetyOptions.RateLimitPermitLimit,
+                Window = TimeSpan.FromSeconds(runtimeSafetyOptions.RateLimitWindowSeconds),
+                QueueLimit = runtimeSafetyOptions.RateLimitQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            });
+    });
+    options.OnRejected = static async (context, cancellationToken) =>
+    {
+        await Results.Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Request limit reached",
+                detail: "Too many requests were received. Retry after the rate-limit window.")
+            .ExecuteAsync(context.HttpContext);
+    };
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -48,12 +109,54 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseExceptionHandler();
+
+var configuredRuntimeSafety = app.Services.GetRequiredService<IOptions<RuntimeSafetyOptions>>().Value;
+if (configuredRuntimeSafety.RequireHttps)
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
+app.UseResponseCompression();
 app.UseCors("local-app-clients");
+app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    var stopwatch = Stopwatch.StartNew();
+    try
+    {
+        await next(context);
+    }
+    finally
+    {
+        stopwatch.Stop();
+        var endpointName = context.GetEndpoint()?.DisplayName ?? "unmatched";
+        app.Logger.LogInformation(
+            "HTTP {Method} endpoint {Endpoint} returned {StatusCode} in {ElapsedMilliseconds} ms",
+            context.Request.Method,
+            endpointName,
+            context.Response.StatusCode,
+            stopwatch.ElapsedMilliseconds);
+    }
+});
 
 app.MapGet("/health", () => Results.Ok(new HealthResponse(
     Status: "healthy",
     Application: "avenchart-api",
     CheckedAtUtc: DateTimeOffset.UtcNow)));
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = static _ => false,
+    ResponseWriter = WriteHealthCheckResponseAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = static check => check.Tags.Contains("ready"),
+    ResponseWriter = WriteHealthCheckResponseAsync
+});
 
 var auth = app.MapGroup("/api/auth").WithTags("Authentication");
 
@@ -3147,6 +3250,19 @@ static IResult RegistrationValidationProblem(IReadOnlyList<PatientRegistrationVa
         errors,
         statusCode: StatusCodes.Status400BadRequest,
         title: "Patient registration validation failed");
+}
+
+static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+{
+    return context.Response.WriteAsJsonAsync(new
+    {
+        status = report.Status.ToString().ToLowerInvariant(),
+        application = "avenchart-api",
+        checkedAtUtc = DateTimeOffset.UtcNow,
+        dependencies = report.Entries.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value.Status.ToString().ToLowerInvariant())
+    });
 }
 
 static void RequireAccessPermission(

@@ -1,7 +1,6 @@
-using System.Security.Cryptography;
-using System.Text;
 using Npgsql;
 using AvenChart.Api.Models;
+using AvenChart.Api.Security;
 
 namespace AvenChart.Api.Data;
 
@@ -49,18 +48,19 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         var role = reader.GetString(reader.GetOrdinal("role"));
         int? staffId = reader.IsDBNull(reader.GetOrdinal("staff_id")) ? null : reader.GetInt32(reader.GetOrdinal("staff_id"));
         var storedHash = reader.GetString(reader.GetOrdinal("password_hash"));
-        var computedHash = HashPassword(
-            reader.GetString(reader.GetOrdinal("password_salt")),
-            request.Password);
+        var storedSalt = reader.GetString(reader.GetOrdinal("password_salt"));
         await reader.DisposeAsync();
 
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(storedHash),
-                Encoding.UTF8.GetBytes(computedHash)))
+        if (!PasswordHashing.Verify(storedHash, storedSalt, request.Password))
         {
             var failed = Failed(username);
             await RecordLoginAuditAsync(connection, username, success: false, sourceIp, failed.FailureReason, cancellationToken);
             return failed;
+        }
+
+        if (PasswordHashing.RequiresUpgrade(storedHash))
+        {
+            await UpgradePasswordHashAsync(connection, storedUsername, request.Password, cancellationToken);
         }
 
         var succeeded = new AuthLoginResponse(
@@ -385,10 +385,21 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static string HashPassword(string salt, string password)
+    private static async Task UpgradePasswordHashAsync(
+        NpgsqlConnection connection,
+        string username,
+        string password,
+        CancellationToken cancellationToken)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{salt}:{password}"));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update auth_accounts
+            set password_hash = @password_hash
+            where username = @username;
+            """;
+        command.Parameters.AddWithValue("password_hash", PasswordHashing.Hash(password));
+        command.Parameters.AddWithValue("username", username);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private sealed record AuthSessionRow(

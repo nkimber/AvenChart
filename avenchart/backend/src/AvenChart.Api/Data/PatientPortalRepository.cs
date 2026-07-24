@@ -5,6 +5,7 @@ using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
+using AvenChart.Api.Security;
 
 namespace AvenChart.Api.Data;
 
@@ -125,12 +126,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return Failed(username, "Patient portal access is disabled.");
         }
 
-        var computedHash = HashPassword(account.PasswordSalt, request.Password);
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(account.PasswordHash),
-                Encoding.UTF8.GetBytes(computedHash)))
+        if (!PasswordHashing.Verify(account.PasswordHash, account.PasswordSalt, request.Password))
         {
             return Failed(username, InvalidCredentialsMessage);
+        }
+
+        if (PasswordHashing.RequiresUpgrade(account.PasswordHash))
+        {
+            await UpgradePasswordHashAsync(connection, account.CanonicalId, request.Password, cancellationToken);
         }
 
         var session = await CreateSessionAsync(connection, account, cancellationToken);
@@ -6129,10 +6132,21 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             : null;
     }
 
-    private static string HashPassword(string salt, string password)
+    private static async Task UpgradePasswordHashAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        string password,
+        CancellationToken cancellationToken)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{salt}:{password}"));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update patient_portal_accounts
+            set password_hash = @password_hash
+            where patient_id = @patient_id;
+            """;
+        command.Parameters.AddWithValue("password_hash", PasswordHashing.Hash(password));
+        command.Parameters.AddWithValue("patient_id", patientId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private enum PortalMessageFolder

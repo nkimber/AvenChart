@@ -40,7 +40,10 @@ const portalMailboxMessages = dataset.messages
   .filter(Boolean)
 
 function hashDemoPassword(password) {
-  return crypto.createHash('sha256').update(`${demoCredentialSalt}:${password}`, 'utf8').digest('hex')
+  const iterations = 600_000
+  const salt = crypto.createHash('sha256').update(demoCredentialSalt, 'utf8').digest()
+  const hash = crypto.pbkdf2Sync(password, salt, iterations, 32, 'sha256')
+  return `pbkdf2-sha256$${iterations}$${salt.toString('base64')}$${hash.toString('base64')}`
 }
 
 const accessGroups = [
