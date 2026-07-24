@@ -3,12 +3,17 @@ import { useOutletContext } from 'react-router-dom'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import {
   createAdministrationFacility,
+  createAdministrationUser,
   deleteAdministrationFacility,
+  deleteAdministrationUser,
   getAdministrationDirectory,
   updateAdministrationFacility,
+  updateAdministrationUser,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
+  type AdministrationUserItem,
+  type AdministrationUserMutationInput,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -49,6 +54,39 @@ function normalizeFacilityForm(form: FacilityForm): AdministrationFacilityMutati
   }
 }
 
+type UserForm = {
+  username: string
+  firstName: string
+  lastName: string
+  role: string
+  calendar: boolean
+  facilityId: string
+  email: string
+  npi: string
+  active: boolean
+}
+
+function emptyUserForm(): UserForm {
+  return { username: '', firstName: '', lastName: '', role: 'provider', calendar: true, facilityId: '', email: '', npi: '', active: true }
+}
+
+function userToForm(user: AdministrationUserItem): UserForm {
+  return {
+    username: user.username, firstName: user.firstName, lastName: user.lastName, role: user.role,
+    calendar: user.calendar, facilityId: user.facilityId?.toString() ?? '', email: user.email ?? '', npi: user.npi ?? '', active: user.active,
+  }
+}
+
+function normalizeUserForm(form: UserForm): AdministrationUserMutationInput {
+  const optional = (value: string) => value.trim() || null
+  const facilityId = Number(form.facilityId)
+  return {
+    username: form.username.trim(), firstName: form.firstName.trim(), lastName: form.lastName.trim(), role: form.role.trim(),
+    calendar: form.calendar, facilityId: Number.isInteger(facilityId) && facilityId > 0 ? facilityId : null,
+    email: optional(form.email), npi: optional(form.npi), active: form.active,
+  }
+}
+
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
@@ -57,6 +95,10 @@ export default function AdminDirectory() {
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
   const [savingFacility, setSavingFacility] = useState(false)
   const [deletingFacilityId, setDeletingFacilityId] = useState<number | null>(null)
+  const [userForm, setUserForm] = useState<UserForm>(() => emptyUserForm())
+  const [editingUserId, setEditingUserId] = useState<number | 'new' | null>(null)
+  const [savingUser, setSavingUser] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null)
 
   useEffect(() => {
     getAdministrationDirectory(session.sessionId)
@@ -115,6 +157,60 @@ export default function AdminDirectory() {
     }
   }
 
+  function beginUserCreate() {
+    setUserForm(emptyUserForm())
+    setEditingUserId('new')
+  }
+
+  function beginUserEdit(user: AdministrationUserItem) {
+    setUserForm(userToForm(user))
+    setEditingUserId(user.id)
+  }
+
+  function cancelUserEdit() {
+    setEditingUserId(null)
+    setUserForm(emptyUserForm())
+  }
+
+  async function saveUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (editingUserId === null || savingUser) return
+    setSavingUser(true)
+    try {
+      const body = normalizeUserForm(userForm)
+      const mutation = editingUserId === 'new'
+        ? await createAdministrationUser(session.sessionId, body)
+        : await updateAdministrationUser(session.sessionId, editingUserId, body)
+      setState({ status: 'ready', data: mutation.detail })
+      showToast(editingUserId === 'new' ? 'Staff user created.' : 'Staff user updated.', 'success')
+      cancelUserEdit()
+    } catch {
+      showToast('Could not save this staff user. Check the required fields and try again.', 'error')
+    } finally {
+      setSavingUser(false)
+    }
+  }
+
+  async function removeUser(user: AdministrationUserItem) {
+    if (user.id === session.staffId) {
+      showToast('You cannot delete the signed-in staff user.', 'error')
+      return
+    }
+    if (deletingUserId !== null || !window.confirm(`Delete ${user.displayName}? This also removes their access-group memberships.`)) return
+    setDeletingUserId(user.id)
+    try {
+      await deleteAdministrationUser(session.sessionId, user.id)
+      const refreshed = await getAdministrationDirectory(session.sessionId)
+      setState({ status: 'ready', data: refreshed })
+      if (editingUserId === user.id) cancelUserEdit()
+      showToast('Staff user deleted.', 'success')
+    } catch {
+      showToast('Could not delete this staff user. It may still be in use.', 'error')
+    } finally {
+      setDeletingUserId(null)
+    }
+  }
+
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
@@ -155,6 +251,44 @@ export default function AdminDirectory() {
 
             {tab === 'users' && (
               <section className="cl-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="cl-admin-facility-header">
+                  <div>
+                    <h2 className="cl-card-title">Staff directory</h2>
+                    <p className="clinician-page-subtitle">Local staff identity, facility assignment, calendar availability, and directory attributes.</p>
+                  </div>
+                  {editingUserId === null && (
+                    <button className="cl-btn-primary" type="button" onClick={beginUserCreate}>
+                      <Plus size={15} /> Add staff user
+                    </button>
+                  )}
+                </div>
+
+                {editingUserId !== null && (
+                  <form className="cl-admin-facility-form" onSubmit={saveUser}>
+                    <div className="cl-admin-form-heading">
+                      <div>
+                        <p className="cl-form-section-label">{editingUserId === 'new' ? 'New staff user' : 'Edit staff user'}</p>
+                        <p className="cl-admin-form-copy">Password and production identity management remain outside this local directory workflow.</p>
+                      </div>
+                      <button className="cl-icon-button" type="button" onClick={cancelUserEdit} aria-label="Cancel staff user edit" title="Cancel"><X size={16} /></button>
+                    </div>
+                    <div className="cl-admin-form-grid">
+                      <label className="cl-admin-field"><span>First name <em>*</em></span><input className="ne-input" value={userForm.firstName} onChange={(event) => setUserForm((form) => ({ ...form, firstName: event.target.value }))} required /></label>
+                      <label className="cl-admin-field"><span>Last name <em>*</em></span><input className="ne-input" value={userForm.lastName} onChange={(event) => setUserForm((form) => ({ ...form, lastName: event.target.value }))} required /></label>
+                      <label className="cl-admin-field"><span>Username <em>*</em></span><input className="ne-input" autoCapitalize="none" value={userForm.username} onChange={(event) => setUserForm((form) => ({ ...form, username: event.target.value }))} required /></label>
+                      <label className="cl-admin-field"><span>Role <em>*</em></span><input className="ne-input" value={userForm.role} onChange={(event) => setUserForm((form) => ({ ...form, role: event.target.value }))} required /></label>
+                      <label className="cl-admin-field"><span>Facility</span><select className="ne-input" value={userForm.facilityId} onChange={(event) => setUserForm((form) => ({ ...form, facilityId: event.target.value }))}><option value="">No facility assigned</option>{data.facilities.map((facility) => <option key={facility.id} value={facility.id}>{facility.name}{facility.active ? '' : ' (inactive)'}</option>)}</select></label>
+                      <label className="cl-admin-field"><span>Email</span><input className="ne-input" type="email" value={userForm.email} onChange={(event) => setUserForm((form) => ({ ...form, email: event.target.value }))} /></label>
+                      <label className="cl-admin-field"><span>NPI</span><input className="ne-input" value={userForm.npi} onChange={(event) => setUserForm((form) => ({ ...form, npi: event.target.value }))} /></label>
+                      <label className="cl-admin-active-toggle"><input type="checkbox" checked={userForm.calendar} onChange={(event) => setUserForm((form) => ({ ...form, calendar: event.target.checked }))} /><span>Appears on calendar</span></label>
+                      <label className="cl-admin-active-toggle"><input type="checkbox" checked={userForm.active} onChange={(event) => setUserForm((form) => ({ ...form, active: event.target.checked }))} /><span>Staff user is active</span></label>
+                    </div>
+                    <div className="cl-inline-form-actions">
+                      <button className="cl-btn-primary" type="submit" disabled={savingUser}>{savingUser ? 'Saving...' : editingUserId === 'new' ? 'Create staff user' : 'Save changes'}</button>
+                      <button className="cl-btn-secondary" type="button" onClick={cancelUserEdit} disabled={savingUser}>Cancel</button>
+                    </div>
+                  </form>
+                )}
                 <table className="cl-table">
                   <thead>
                     <tr>
@@ -164,6 +298,7 @@ export default function AdminDirectory() {
                       <th>Facility</th>
                       <th>NPI</th>
                       <th>Active</th>
+                      <th><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -181,6 +316,10 @@ export default function AdminDirectory() {
                           <span className={`cl-badge ${u.active ? 'cl-badge-green' : 'cl-badge-muted'}`}>
                             {u.active ? 'Active' : 'Inactive'}
                           </span>
+                        </td>
+                        <td className="cl-admin-row-actions">
+                          <button className="cl-icon-button" type="button" onClick={() => beginUserEdit(u)} aria-label={`Edit ${u.displayName}`} title="Edit staff user"><Pencil size={15} /></button>
+                          <button className="cl-icon-button cl-icon-button-danger" type="button" onClick={() => removeUser(u)} disabled={deletingUserId === u.id || u.id === session.staffId} aria-label={`Delete ${u.displayName}`} title={u.id === session.staffId ? 'You cannot delete the signed-in staff user' : 'Delete staff user'}><Trash2 size={15} /></button>
                         </td>
                       </tr>
                     ))}

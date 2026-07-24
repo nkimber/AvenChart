@@ -6,6 +6,7 @@ export type ClinicianSession = {
   username: string
   displayName: string
   role: string
+  staffId?: number | null
 }
 
 export type PortalSession = {

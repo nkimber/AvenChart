@@ -1178,6 +1178,7 @@ export type AdministrationUserItem = {
   authorized: boolean
   active: boolean
   calendar: boolean
+  facilityId?: number | null
   facilityName?: string | null
   email?: string | null
   npi?: string | null
@@ -1268,6 +1269,48 @@ export async function deleteAdministrationFacility(
   signal?: AbortSignal,
 ): Promise<void> {
   return clinicianDelete(sessionId, `/api/administration/facilities/${facilityId}`, signal)
+}
+
+export type AdministrationUserMutationInput = {
+  username: string
+  firstName: string
+  lastName: string
+  role: string
+  calendar?: boolean | null
+  facilityId?: number | null
+  email?: string | null
+  npi?: string | null
+  active?: boolean | null
+}
+
+export type AdministrationUserMutationResponse = {
+  id: number
+  detail: AdministrationDirectoryResponse
+}
+
+export async function createAdministrationUser(
+  sessionId: string,
+  body: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
+  return clinicianPost(sessionId, '/api/administration/users', body, signal)
+}
+
+export async function updateAdministrationUser(
+  sessionId: string,
+  userId: number,
+  body: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
+  return clinicianPut(sessionId, `/api/administration/users/${userId}`, body, signal)
+}
+
+export async function deleteAdministrationUser(
+  sessionId: string,
+  userId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(sessionId, `/api/administration/users/${userId}`, signal)
 }
 
 export async function getLoginAudit(

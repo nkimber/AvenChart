@@ -28,6 +28,7 @@ export default function ClinicianLogin() {
         username: result.username,
         displayName: result.displayName,
         role: result.role,
+        staffId: result.staffId,
       })
       navigate('/home')
     } catch (err) {
