@@ -135,6 +135,29 @@ const permissionName = new Map(accessPermissions.map(([section, value, name]) =>
 const allNonPlaceholderPermissions = accessPermissions
   .filter(([section]) => section !== 'placeholder')
   .map(([section, value]) => [section, value, 'write'])
+
+const inventoryItems = [
+  [10001, 'SUP-GLV-NIT-M', 'Nitrile exam gloves, medium', 'Clinical supplies', 'box', 40, 120, true],
+  [10002, 'SUP-SYR-3ML', 'Luer-lock syringe, 3 mL', 'Clinical supplies', 'each', 120, 500, true],
+  [10003, 'VAC-FLU-QIV', 'Quadrivalent influenza vaccine', 'Immunization', 'dose', 20, 80, true],
+  [10004, 'SUP-SHARP-5QT', 'Sharps container, 5 quart', 'Safety', 'each', 8, 24, true],
+]
+
+const inventoryLots = [
+  [20001, 10001, 11, 'GLV-2026-01-A', '2029-01-31', 96, 8.75, 'active'],
+  [20002, 10001, 12, 'GLV-2026-02-B', '2029-02-28', 28, 8.9, 'active'],
+  [20003, 10002, 11, 'SYR-2026-04-A', '2030-04-30', 540, 0.18, 'active'],
+  [20004, 10003, 11, 'FLU-2026-24A', '2026-09-30', 14, 19.5, 'active'],
+  [20005, 10003, 13, 'FLU-2026-24B', '2026-10-31', 36, 19.5, 'active'],
+  [20006, 10004, 12, 'SHP-2026-03-A', null, 6, 7.25, 'active'],
+]
+
+const inventoryTransactions = [
+  ['00000000-0000-0000-0000-000000010001', 20001, 'purchase', 120, 'Opening controlled supply receipt', 'admin', '2026-06-01T08:30:00Z'],
+  ['00000000-0000-0000-0000-000000010002', 20001, 'consumption', -24, 'Exam room replenishment', 'gold-frontdesk-01', '2026-06-12T14:15:00Z'],
+  ['00000000-0000-0000-0000-000000010003', 20004, 'consumption', -6, 'Seasonal immunization clinic', 'gold-provider-01', '2026-06-14T11:00:00Z'],
+  ['00000000-0000-0000-0000-000000010004', 20006, 'adjustment', -2, 'Verified physical count', 'admin', '2026-06-16T16:20:00Z'],
+]
 const groupPermissionRules = {
   admin: allNonPlaceholderPermissions,
   breakglass: allNonPlaceholderPermissions,
@@ -239,6 +262,9 @@ lines.push('set client_min_messages to warning;')
 lines.push('begin;')
 lines.push(`
 drop table if exists medications;
+drop table if exists inventory_transactions;
+drop table if exists inventory_lots;
+drop table if exists inventory_items;
 drop table if exists allergies;
 drop table if exists problems;
 drop table if exists patient_document_versions;
@@ -785,6 +811,39 @@ create table medication_vocabulary (
   frequency text,
   duration_days integer,
   controlled_substance_schedule text
+);
+
+create table inventory_items (
+  item_id integer primary key,
+  item_code text not null unique,
+  name text not null,
+  category text not null,
+  unit text not null,
+  reorder_point numeric(12,2) not null default 0,
+  preferred_quantity numeric(12,2) not null default 0,
+  active boolean not null default true
+);
+
+create table inventory_lots (
+  lot_id integer primary key,
+  item_id integer not null references inventory_items(item_id),
+  facility_id integer not null references facilities(id),
+  lot_number text not null,
+  expiration_date date,
+  quantity_on_hand numeric(12,2) not null default 0,
+  unit_cost numeric(12,2) not null default 0,
+  status text not null default 'active',
+  unique (item_id, facility_id, lot_number)
+);
+
+create table inventory_transactions (
+  transaction_id uuid primary key,
+  lot_id integer not null references inventory_lots(lot_id),
+  transaction_type text not null,
+  quantity_delta numeric(12,2) not null,
+  reason text,
+  performed_by text not null,
+  occurred_at timestamptz not null
 );
 
 create table prescriptions (
@@ -1891,6 +1950,18 @@ copyRows('medication_vocabulary', [
   ['1049621', 'Oxycodone', 'Oxycodone 5 mg tablet', 'tablet', '5 mg', 'oral', 5, 'mg', 'every 6 hours as needed', 7, 'CII'],
 ])
 
+copyRows('inventory_items', [
+  'item_id', 'item_code', 'name', 'category', 'unit', 'reorder_point', 'preferred_quantity', 'active',
+], inventoryItems)
+
+copyRows('inventory_lots', [
+  'lot_id', 'item_id', 'facility_id', 'lot_number', 'expiration_date', 'quantity_on_hand', 'unit_cost', 'status',
+], inventoryLots)
+
+copyRows('inventory_transactions', [
+  'transaction_id', 'lot_id', 'transaction_type', 'quantity_delta', 'reason', 'performed_by', 'occurred_at',
+], inventoryTransactions)
+
 copyRows('prescriptions', [
   'id',
   'patient_id',
@@ -2529,6 +2600,8 @@ create index idx_integration_outbox_dispatch on integration_outbox (status, avai
 create index idx_integration_inbox_status on integration_inbox (status, received_at);
 create index idx_phi_access_audit_username_occurred on phi_access_audit_events (username, occurred_at desc);
 create index idx_phi_access_audit_endpoint_occurred on phi_access_audit_events (endpoint_name, occurred_at desc);
+create index idx_inventory_lots_item_facility on inventory_lots (item_id, facility_id, status);
+create index idx_inventory_transactions_lot_occurred on inventory_transactions (lot_id, occurred_at desc);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
@@ -2592,6 +2665,9 @@ fs.writeFileSync(summaryPath, JSON.stringify({
     problems: dataset.problems.length,
     allergies: dataset.allergies.length,
     medications: dataset.medicationLists.length,
+    inventoryItems: inventoryItems.length,
+    inventoryLots: inventoryLots.length,
+    inventoryTransactions: inventoryTransactions.length,
     accessGroups: accessGroups.length,
     accessPermissions: accessPermissions.length,
     accessGroupPermissions: accessGroupPermissions.length,

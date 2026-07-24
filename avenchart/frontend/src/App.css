@@ -6,6 +6,323 @@
   background: #eef3f6;
 }
 
+.inventory-workspace {
+  --inventory-ink: #173247;
+  --inventory-paper: #f7fbfa;
+  --inventory-line: #c9dcd7;
+  --inventory-teal: #14736c;
+  --inventory-amber: #a65f10;
+  --inventory-amber-paper: #fff5e5;
+}
+
+.inventory-header {
+  align-items: center;
+  border-bottom: 4px solid var(--inventory-teal);
+}
+
+.inventory-eyebrow,
+.inventory-panel-heading span {
+  color: var(--inventory-teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.inventory-header h1 {
+  color: var(--inventory-ink);
+}
+
+.inventory-header-mark {
+  min-width: 115px;
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid var(--inventory-line);
+  border-radius: 2px;
+  background: repeating-linear-gradient(135deg, #e4f2ef 0 8px, #f8fcfb 8px 16px);
+  color: var(--inventory-teal);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.inventory-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.inventory-metric {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-color: var(--inventory-line);
+  border: 1px solid var(--inventory-line);
+  border-radius: 2px;
+  background: var(--inventory-paper);
+}
+
+.inventory-metric span,
+.inventory-metric small {
+  color: #607779;
+  font-size: 12px;
+}
+
+.inventory-metric strong {
+  color: var(--inventory-ink);
+  font-size: 25px;
+  line-height: 1;
+}
+
+.inventory-metric.is-warning {
+  border-color: #e0bc80;
+  background: var(--inventory-amber-paper);
+}
+
+.inventory-ledger-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(270px, 0.75fr);
+  gap: 18px;
+}
+
+.inventory-ledger-panel,
+.inventory-action-panel,
+.inventory-activity-panel {
+  border: 1px solid var(--inventory-line);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.inventory-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--inventory-line);
+}
+
+.inventory-panel-heading h2 {
+  margin: 3px 0 0;
+  color: var(--inventory-ink);
+  font-size: 18px;
+}
+
+.inventory-panel-heading small {
+  color: #5f7475;
+  font-size: 12px;
+}
+
+.inventory-item-list {
+  display: grid;
+}
+
+.inventory-item-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  gap: 8px 18px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e0ece9;
+  border-left: 4px solid transparent;
+}
+
+.inventory-item-card:last-child {
+  border-bottom: 0;
+}
+
+.inventory-item-card.is-low {
+  border-left-color: var(--inventory-amber);
+  background: var(--inventory-amber-paper);
+}
+
+.inventory-item-main,
+.inventory-quantity,
+.inventory-lot-strip,
+.inventory-activity-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-item-code {
+  color: #647b7d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.inventory-item-main strong,
+.inventory-quantity strong {
+  color: var(--inventory-ink);
+}
+
+.inventory-item-main small,
+.inventory-quantity span,
+.inventory-lot-strip span,
+.inventory-activity-row small {
+  color: #5e7375;
+  font-size: 12px;
+}
+
+.inventory-quantity {
+  text-align: right;
+  align-content: center;
+}
+
+.inventory-quantity small {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inventory-lot-strip {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 5px;
+  padding-top: 5px;
+}
+
+.inventory-lot-strip span {
+  border-left: 2px solid #b7d5cf;
+  padding-left: 7px;
+}
+
+.inventory-action-panel {
+  align-self: start;
+}
+
+.inventory-transaction-form {
+  display: grid;
+  gap: 12px;
+  padding: 17px 18px;
+}
+
+.inventory-transaction-form label {
+  display: grid;
+  gap: 5px;
+  color: #466064;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inventory-transaction-form input,
+.inventory-transaction-form select {
+  min-height: 37px;
+  border: 1px solid #b9cfca;
+  border-radius: 2px;
+  padding: 7px 9px;
+  background: #fcfffe;
+  color: var(--inventory-ink);
+  font: inherit;
+}
+
+.inventory-record-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--inventory-teal);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-record-button:focus-visible,
+.inventory-transaction-form input:focus-visible,
+.inventory-transaction-form select:focus-visible {
+  outline: 3px solid #80c5ba;
+  outline-offset: 2px;
+}
+
+.inventory-boundary {
+  margin: 0;
+  padding: 0 18px 18px;
+  color: #687d7c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.inventory-activity-panel {
+  margin-top: 18px;
+}
+
+.inventory-activity-list {
+  display: grid;
+}
+
+.inventory-activity-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e0ece9;
+}
+
+.inventory-activity-row:last-child {
+  border-bottom: 0;
+}
+
+.inventory-activity-direction {
+  padding: 5px 7px;
+  border-radius: 2px;
+  background: #e5f3ef;
+  color: #0c665d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.inventory-activity-direction.out {
+  background: #fff0e7;
+  color: #9a4f14;
+}
+
+.inventory-activity-row time {
+  color: #697e80;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .inventory-metric-grid,
+  .inventory-ledger-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inventory-ledger-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .inventory-metric-grid,
+  .inventory-ledger-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-ledger-panel {
+    grid-column: auto;
+  }
+
+  .inventory-item-card {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-quantity {
+    text-align: left;
+  }
+
+  .inventory-activity-row {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .inventory-activity-row time {
+    grid-column: 2;
+  }
+}
+
 .entry-shell {
   min-height: 100vh;
   display: grid;

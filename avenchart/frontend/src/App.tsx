@@ -25,6 +25,7 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Package,
   Pencil,
   Reply,
   Search,
@@ -113,6 +114,7 @@ import {
   getProcedureReportReviewQueue,
   getProcedureResults,
   getOperationalReports,
+  getInventory,
   getOperationalReportsCsv,
   getLoginAudit,
   getCurrentSession,
@@ -161,6 +163,7 @@ import {
   createProcedureResult,
   assignProcedureReportReviewer,
   createPatient,
+  createInventoryTransaction,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
   findPatientDuplicates,
@@ -403,6 +406,8 @@ import {
   type StatementEmailOutboxResponse,
   type StatementPortalDeliveryResponse,
   type OperationalReportsResponse,
+  type InventoryResponse,
+  type InventoryTransactionCreateInput,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
   type ClinicalConditionReportItem,
@@ -449,6 +454,7 @@ type ModuleId =
   | 'procedures'
   | 'messages'
   | 'documents'
+  | 'inventory'
   | 'reports'
   | 'admin'
 
@@ -474,6 +480,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'procedures', label: 'Procedures', icon: FlaskConical, implemented: 'procedures' },
   { id: 'messages', label: 'Messages', icon: Mail, implemented: 'messages' },
   { id: 'documents', label: 'Documents', icon: FolderOpen, implemented: 'documents' },
+  { id: 'inventory', label: 'Inventory', icon: Package, implemented: 'inventory' },
   { id: 'reports', label: 'Reports', icon: FileText, implemented: 'reports' },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, implemented: 'admin' },
 ]
@@ -716,6 +723,11 @@ function App() {
   const [patientBilling, setPatientBilling] = useState<PatientBillingResponse | null>(null)
   const [billingStatus, setBillingStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [billingError, setBillingError] = useState<string | null>(null)
+
+  const [inventory, setInventory] = useState<InventoryResponse | null>(null)
+  const [inventoryStatus, setInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [inventoryError, setInventoryError] = useState<string | null>(null)
+  const [inventoryRefreshKey, setInventoryRefreshKey] = useState(0)
 
   const [administrationDirectory, setAdministrationDirectory] = useState<AdministrationDirectoryResponse | null>(null)
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -1380,6 +1392,40 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, billingPatientId, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'inventory') {
+      return
+    }
+    if (!openEmrSessionId) {
+      setInventory(null)
+      setInventoryStatus('idle')
+      setInventoryError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setInventoryStatus('loading')
+      setInventoryError(null)
+
+      try {
+        const result = await getInventory(openEmrSessionId, controller.signal)
+        setInventory(result)
+        setInventoryStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setInventoryStatus('error')
+          setInventoryError(loadError instanceof Error ? loadError.message : 'Inventory failed')
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, inventoryRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'admin') {
@@ -3413,6 +3459,24 @@ function App() {
       const message = deleteError instanceof Error ? deleteError.message : 'Clinical immunization delete failed'
       setClinicalError(message)
       throw deleteError
+    }
+  }
+
+  async function handleInventoryTransaction(input: InventoryTransactionCreateInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before recording inventory activity.')
+      return
+    }
+
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await createInventoryTransaction(input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory activity failed')
     }
   }
 
@@ -5682,6 +5746,8 @@ function App() {
             ? patientBilling?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'procedures'
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'inventory'
+            ? inventory?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'portal'
@@ -6129,6 +6195,14 @@ function App() {
             onDeleteDocument={handlePatientDocumentDelete}
             onCompleteOcr={handlePatientDocumentOcrComplete}
             onDisposeRetention={handlePatientDocumentRetentionDispose}
+          />
+        )}
+        {activeModule === 'inventory' && (
+          <InventoryWorkspace
+            inventory={inventory}
+            status={inventoryStatus}
+            error={inventoryError}
+            onCreateTransaction={handleInventoryTransaction}
           />
         )}
         {activeModule === 'reports' && (
@@ -20035,6 +20109,176 @@ function DocumentsWorkspace({
         )}
       </section>
     </section>
+  )
+}
+
+function InventoryWorkspace({
+  inventory,
+  status,
+  error,
+  onCreateTransaction,
+}: {
+  inventory: InventoryResponse | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
+}) {
+  const [lotId, setLotId] = useState('')
+  const [transactionType, setTransactionType] = useState('consumption')
+  const [quantity, setQuantity] = useState('1')
+  const [reason, setReason] = useState('')
+  const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
+
+  useEffect(() => {
+    if (!lotId && lots.length > 0) {
+      setLotId(String(lots[0].lotId))
+    }
+  }, [lotId, lots])
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const parsedLotId = Number(lotId)
+    const parsedQuantity = Number(quantity)
+    if (!Number.isInteger(parsedLotId) || parsedLotId <= 0 || !Number.isFinite(parsedQuantity) || parsedQuantity === 0) {
+      return
+    }
+
+    void onCreateTransaction({
+      lotId: parsedLotId,
+      transactionType,
+      quantity: parsedQuantity,
+      reason: reason.trim() || null,
+    })
+  }
+
+  return (
+    <section className="workspace inventory-workspace">
+      <header className="workspace-header inventory-header">
+        <div>
+          <span className="inventory-eyebrow">Supply control</span>
+          <h1>Inventory room</h1>
+          <p>Lots, stock pressure, and recorded handling activity across the practice.</p>
+        </div>
+        <div className="inventory-header-mark" aria-hidden="true">
+          <Package size={28} />
+          <span>{inventory?.asOfDate ?? 'Loading'}</span>
+        </div>
+      </header>
+
+      {status === 'loading' && <div className="workspace-status">Refreshing inventory ledger…</div>}
+      {error && <div className="workspace-error">{error}</div>}
+
+      {inventory && (
+        <>
+          <div className="inventory-metric-grid" aria-label="Inventory summary">
+            <InventoryMetric label="Active items" value={String(inventory.summary.activeItems)} detail={`${inventory.summary.activeLots} tracked lots`} />
+            <InventoryMetric label="Needs attention" value={String(inventory.summary.belowReorderPoint)} detail="at or below reorder point" warning />
+            <InventoryMetric label="Expiry watch" value={String(inventory.summary.expiringWithin90Days)} detail="within 90 days" warning />
+            <InventoryMetric label="On-hand value" value={formatCurrency(inventory.summary.inventoryValue)} detail="seeded local valuation" />
+          </div>
+
+          <div className="inventory-ledger-layout">
+            <div className="inventory-ledger-panel">
+              <div className="inventory-panel-heading">
+                <div>
+                  <span>Stock ledger</span>
+                  <h2>Items by handling priority</h2>
+                </div>
+                <small>{inventory.items.length} catalogued items</small>
+              </div>
+              <div className="inventory-item-list">
+                {inventory.items.map((item) => (
+                  <article className={`inventory-item-card ${item.belowReorderPoint ? 'is-low' : ''}`} key={item.itemId}>
+                    <div className="inventory-item-main">
+                      <span className="inventory-item-code">{item.itemCode}</span>
+                      <strong>{item.name}</strong>
+                      <small>{item.category} · {item.lots.length} lot{item.lots.length === 1 ? '' : 's'}</small>
+                    </div>
+                    <div className="inventory-quantity">
+                      <strong>{item.quantityOnHand.toLocaleString()} <small>{item.unit}</small></strong>
+                      <span>reorder at {item.reorderPoint}</span>
+                    </div>
+                    <div className="inventory-lot-strip">
+                      {item.lots.map((lot) => (
+                        <span key={lot.lotId} title={`${lot.facilityName} · ${lot.lotNumber}`}>
+                          {lot.facilityCode} {lot.quantityOnHand}{lot.expirationDate ? ` · exp ${lot.expirationDate}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <aside className="inventory-action-panel">
+              <div className="inventory-panel-heading">
+                <div>
+                  <span>Record activity</span>
+                  <h2>Update a lot</h2>
+                </div>
+              </div>
+              <form className="inventory-transaction-form" onSubmit={submit}>
+                <label>
+                  Lot
+                  <select value={lotId} onChange={(event) => setLotId(event.target.value)} required>
+                    <option value="">Select a lot</option>
+                    {lots.map((lot) => <option key={lot.lotId} value={lot.lotId}>{lot.item.itemCode} · {lot.facilityCode} · {lot.lotNumber}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Activity
+                  <select value={transactionType} onChange={(event) => setTransactionType(event.target.value)}>
+                    <option value="consumption">Consumption</option>
+                    <option value="purchase">Purchase receipt</option>
+                    <option value="adjustment">Count adjustment</option>
+                    <option value="destruction">Destruction</option>
+                    <option value="transfer">Transfer out</option>
+                  </select>
+                </label>
+                <label>
+                  Quantity
+                  <input type="number" min={transactionType === 'adjustment' ? undefined : '0.01'} step="0.01" value={quantity} onChange={(event) => setQuantity(event.target.value)} required />
+                </label>
+                <label>
+                  Reason
+                  <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="What changed?" />
+                </label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Record activity</button>
+              </form>
+              <p className="inventory-boundary">Local inventory records do not place a purchase order or dispatch stock externally.</p>
+            </aside>
+          </div>
+
+          <section className="inventory-activity-panel">
+            <div className="inventory-panel-heading">
+              <div>
+                <span>Activity trail</span>
+                <h2>Recent lot movements</h2>
+              </div>
+            </div>
+            <div className="inventory-activity-list">
+              {inventory.recentTransactions.map((transaction) => (
+                <article key={transaction.transactionId} className="inventory-activity-row">
+                  <span className={`inventory-activity-direction ${transaction.quantityDelta < 0 ? 'out' : 'in'}`}>{transaction.quantityDelta > 0 ? '+' : ''}{transaction.quantityDelta}</span>
+                  <div><strong>{transaction.itemName || transaction.itemCode}</strong><small>{transaction.transactionType} · {transaction.facilityCode} · {transaction.reason || 'No reason supplied'}</small></div>
+                  <time>{new Date(transaction.occurredAt).toLocaleDateString()}</time>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </section>
+  )
+}
+
+function InventoryMetric({ label, value, detail, warning = false }: { label: string; value: string; detail: string; warning?: boolean }) {
+  return (
+    <article className={`inventory-metric ${warning ? 'is-warning' : ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
   )
 }
 

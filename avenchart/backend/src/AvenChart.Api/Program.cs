@@ -51,6 +51,7 @@ builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
+builder.Services.AddScoped<InventoryRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -2682,6 +2683,41 @@ integrations.MapPost("/inbox", async (
         }
     })
     .WithName("ReceiveIntegrationInbox");
+
+var inventory = app.MapGroup("/api/inventory").WithTags("Inventory");
+RequireAccessPermission(inventory, "inventory", "reporting", "view");
+
+inventory.MapGet("/", async (
+        InventoryRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        return Results.Ok(await repository.GetInventoryAsync(cancellationToken));
+    })
+    .WithName("GetInventory");
+
+inventory.MapPost("/transactions", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryTransactionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.CreateTransactionAsync(request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Created($"/api/inventory/transactions/{mutation.Transaction.TransactionId}", mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("CreateInventoryTransaction")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 RequireAccessPermission(billing, "acct", "bill", "view");

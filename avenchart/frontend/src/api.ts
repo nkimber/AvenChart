@@ -3020,6 +3020,73 @@ export type OperationalReportsResponse = {
   clinicalConditions: ClinicalConditionReportItem[]
 }
 
+export type InventoryLot = {
+  lotId: number
+  facilityCode: string
+  facilityName: string
+  lotNumber: string
+  expirationDate?: string | null
+  quantityOnHand: number
+  unitCost: number
+  status: string
+}
+
+export type InventoryItem = {
+  itemId: number
+  itemCode: string
+  name: string
+  category: string
+  unit: string
+  reorderPoint: number
+  preferredQuantity: number
+  quantityOnHand: number
+  inventoryValue: number
+  belowReorderPoint: boolean
+  lots: InventoryLot[]
+}
+
+export type InventoryTransactionItem = {
+  transactionId: string
+  lotId: number
+  itemCode: string
+  itemName: string
+  facilityCode: string
+  transactionType: string
+  quantityDelta: number
+  reason?: string | null
+  performedBy: string
+  occurredAt: string
+}
+
+export type InventoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  summary: {
+    activeItems: number
+    activeLots: number
+    belowReorderPoint: number
+    expiringWithin90Days: number
+    inventoryValue: number
+  }
+  items: InventoryItem[]
+  recentTransactions: InventoryTransactionItem[]
+}
+
+export type InventoryTransactionCreateInput = {
+  lotId: number
+  transactionType: string
+  quantity: number
+  reason?: string | null
+}
+
+export type InventoryMutationResponse = {
+  transaction: InventoryTransactionItem
+  lot: InventoryLot
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
+}
+
 export type AuthLoginInput = {
   username: string
   password: string
@@ -8000,6 +8067,39 @@ export async function getOperationalReports(
     throw new Error(
       adminApiError('Operational reports load', response.status, 'Patient Report access', 'an active Legacy EHR session'),
     )
+  }
+
+  return response.json()
+}
+
+export async function getInventory(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createInventoryTransaction(
+  input: InventoryTransactionCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/transactions`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory transaction', response.status))
   }
 
   return response.json()
