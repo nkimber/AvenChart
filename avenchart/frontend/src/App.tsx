@@ -165,6 +165,7 @@ import {
   assignProcedureReportReviewer,
   createPatient,
   createInventoryTransaction,
+  createInventoryTransfer,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
   findPatientDuplicates,
@@ -410,6 +411,7 @@ import {
   type OperationalReportsResponse,
   type InventoryResponse,
   type InventoryTransactionCreateInput,
+  type InventoryTransferCreateInput,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
   type ClinicalConditionReportItem,
@@ -3524,6 +3526,24 @@ function App() {
     }
   }
 
+  async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before recording an inventory transfer.')
+      return
+    }
+
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await createInventoryTransfer(input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory transfer failed')
+    }
+  }
+
   async function handleFlowStatusChange(appointmentId: string, status: string) {
     if (!openEmrSessionId) {
       setFlowStatus('error')
@@ -6268,6 +6288,7 @@ function App() {
             status={inventoryStatus}
             error={inventoryError}
             onCreateTransaction={handleInventoryTransaction}
+            onCreateTransfer={handleInventoryTransfer}
           />
         )}
         {activeModule === 'flow' && (
@@ -20198,17 +20219,22 @@ function InventoryWorkspace({
   status,
   error,
   onCreateTransaction,
+  onCreateTransfer,
 }: {
   inventory: InventoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
+  onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
 }) {
   const [lotId, setLotId] = useState('')
   const [transactionType, setTransactionType] = useState('consumption')
   const [quantity, setQuantity] = useState('1')
   const [reason, setReason] = useState('')
+  const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
+  const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
+  const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
 
   useEffect(() => {
     if (!lotId && lots.length > 0) {
@@ -20216,11 +20242,34 @@ function InventoryWorkspace({
     }
   }, [lotId, lots])
 
+  useEffect(() => {
+    if (transactionType !== 'transfer') {
+      return
+    }
+    if (!destinationFacilities.some((facility) => String(facility.facilityId) === destinationFacilityId)) {
+      setDestinationFacilityId(destinationFacilities.length > 0 ? String(destinationFacilities[0].facilityId) : '')
+    }
+  }, [destinationFacilities, destinationFacilityId, transactionType])
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const parsedLotId = Number(lotId)
     const parsedQuantity = Number(quantity)
     if (!Number.isInteger(parsedLotId) || parsedLotId <= 0 || !Number.isFinite(parsedQuantity) || parsedQuantity === 0) {
+      return
+    }
+
+    if (transactionType === 'transfer') {
+      const parsedDestinationFacilityId = Number(destinationFacilityId)
+      if (!Number.isInteger(parsedDestinationFacilityId) || parsedDestinationFacilityId <= 0) {
+        return
+      }
+      void onCreateTransfer({
+        sourceLotId: parsedLotId,
+        destinationFacilityId: parsedDestinationFacilityId,
+        quantity: parsedQuantity,
+        reason: reason.trim() || null,
+      })
       return
     }
 
@@ -20313,20 +20362,29 @@ function InventoryWorkspace({
                     <option value="purchase">Purchase receipt</option>
                     <option value="adjustment">Count adjustment</option>
                     <option value="destruction">Destruction</option>
-                    <option value="transfer">Transfer out</option>
+                    <option value="transfer">Transfer to facility</option>
                   </select>
                 </label>
+                {transactionType === 'transfer' && (
+                  <label>
+                    Destination facility
+                    <select value={destinationFacilityId} onChange={(event) => setDestinationFacilityId(event.target.value)} required>
+                      <option value="">Select a destination</option>
+                      {destinationFacilities.map((facility) => <option key={facility.facilityId} value={facility.facilityId}>{facility.code} · {facility.name}</option>)}
+                    </select>
+                  </label>
+                )}
                 <label>
                   Quantity
                   <input type="number" min={transactionType === 'adjustment' ? undefined : '0.01'} step="0.01" value={quantity} onChange={(event) => setQuantity(event.target.value)} required />
                 </label>
                 <label>
                   Reason
-                  <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="What changed?" />
+                  <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder={transactionType === 'transfer' ? 'Why is stock moving?' : 'What changed?'} />
                 </label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Record activity</button>
               </form>
-              <p className="inventory-boundary">Local inventory records do not place a purchase order or dispatch stock externally.</p>
+              <p className="inventory-boundary">Transfers create matched source and destination ledger entries. Local inventory records do not place a purchase order or dispatch stock externally.</p>
             </aside>
           </div>
 
@@ -20341,7 +20399,7 @@ function InventoryWorkspace({
               {inventory.recentTransactions.map((transaction) => (
                 <article key={transaction.transactionId} className="inventory-activity-row">
                   <span className={`inventory-activity-direction ${transaction.quantityDelta < 0 ? 'out' : 'in'}`}>{transaction.quantityDelta > 0 ? '+' : ''}{transaction.quantityDelta}</span>
-                  <div><strong>{transaction.itemName || transaction.itemCode}</strong><small>{transaction.transactionType} · {transaction.facilityCode} · {transaction.reason || 'No reason supplied'}</small></div>
+                  <div><strong>{transaction.itemName || transaction.itemCode}</strong><small>{transaction.transactionType}{transaction.counterpartyFacilityCode ? ` ${transaction.quantityDelta < 0 ? 'to' : 'from'} ${transaction.counterpartyFacilityCode}` : ''} · {transaction.facilityCode} · {transaction.reason || 'No reason supplied'}</small></div>
                   <time>{new Date(transaction.occurredAt).toLocaleDateString()}</time>
                 </article>
               ))}

@@ -3057,6 +3057,12 @@ export type InventoryLot = {
   status: string
 }
 
+export type InventoryFacility = {
+  facilityId: number
+  code: string
+  name: string
+}
+
 export type InventoryItem = {
   itemId: number
   itemCode: string
@@ -3082,6 +3088,8 @@ export type InventoryTransactionItem = {
   reason?: string | null
   performedBy: string
   occurredAt: string
+  transferId?: string | null
+  counterpartyFacilityCode?: string | null
 }
 
 export type InventoryResponse = {
@@ -3093,8 +3101,9 @@ export type InventoryResponse = {
     activeLots: number
     belowReorderPoint: number
     expiringWithin90Days: number
-    inventoryValue: number
+  inventoryValue: number
   }
+  facilities: InventoryFacility[]
   items: InventoryItem[]
   recentTransactions: InventoryTransactionItem[]
 }
@@ -3106,11 +3115,20 @@ export type InventoryTransactionCreateInput = {
   reason?: string | null
 }
 
+export type InventoryTransferCreateInput = {
+  sourceLotId: number
+  destinationFacilityId: number
+  quantity: number
+  reason?: string | null
+}
+
 export type InventoryMutationResponse = {
   transaction: InventoryTransactionItem
   lot: InventoryLot
   itemQuantityOnHand: number
   belowReorderPoint: boolean
+  counterpartyLot?: InventoryLot | null
+  transferId?: string | null
 }
 
 export type AuthLoginInput = {
@@ -8147,6 +8165,24 @@ export async function createInventoryTransaction(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Inventory transaction', response.status))
+  }
+
+  return response.json()
+}
+
+export async function createInventoryTransfer(
+  input: InventoryTransferCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryMutationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/transfers`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory transfer', response.status))
   }
 
   return response.json()

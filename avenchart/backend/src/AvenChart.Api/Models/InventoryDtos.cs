@@ -5,6 +5,7 @@ public sealed record InventoryResponse(
     string DatasetVersion,
     string AsOfDate,
     InventorySummary Summary,
+    IReadOnlyList<InventoryFacility> Facilities,
     IReadOnlyList<InventoryItem> Items,
     IReadOnlyList<InventoryTransactionItem> RecentTransactions);
 
@@ -14,6 +15,11 @@ public sealed record InventorySummary(
     int BelowReorderPoint,
     int ExpiringWithin90Days,
     decimal InventoryValue);
+
+public sealed record InventoryFacility(
+    int FacilityId,
+    string Code,
+    string Name);
 
 public sealed record InventoryItem(
     int ItemId,
@@ -48,7 +54,9 @@ public sealed record InventoryTransactionItem(
     decimal QuantityDelta,
     string? Reason,
     string PerformedBy,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    Guid? TransferId,
+    string? CounterpartyFacilityCode);
 
 public sealed record InventoryTransactionCreateRequest(
     int LotId,
@@ -56,8 +64,16 @@ public sealed record InventoryTransactionCreateRequest(
     decimal Quantity,
     string? Reason);
 
+public sealed record InventoryTransferCreateRequest(
+    int SourceLotId,
+    int DestinationFacilityId,
+    decimal Quantity,
+    string? Reason);
+
 public sealed record InventoryMutationResponse(
     InventoryTransactionItem Transaction,
     InventoryLot Lot,
     decimal ItemQuantityOnHand,
-    bool BelowReorderPoint);
+    bool BelowReorderPoint,
+    InventoryLot? CounterpartyLot = null,
+    Guid? TransferId = null);

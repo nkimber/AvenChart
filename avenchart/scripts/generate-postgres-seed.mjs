@@ -264,6 +264,7 @@ lines.push(`
 drop table if exists medications;
 drop table if exists inventory_transactions;
 drop table if exists inventory_lots;
+drop sequence if exists inventory_lot_id_seq;
 drop table if exists inventory_items;
 drop table if exists allergies;
 drop table if exists problems;
@@ -824,8 +825,10 @@ create table inventory_items (
   active boolean not null default true
 );
 
+create sequence inventory_lot_id_seq;
+
 create table inventory_lots (
-  lot_id integer primary key,
+  lot_id integer primary key default nextval('inventory_lot_id_seq'),
   item_id integer not null references inventory_items(item_id),
   facility_id integer not null references facilities(id),
   lot_number text not null,
@@ -839,6 +842,7 @@ create table inventory_lots (
 create table inventory_transactions (
   transaction_id uuid primary key,
   lot_id integer not null references inventory_lots(lot_id),
+  transfer_id uuid,
   transaction_type text not null,
   quantity_delta numeric(12,2) not null,
   reason text,
@@ -1958,6 +1962,8 @@ copyRows('inventory_lots', [
   'lot_id', 'item_id', 'facility_id', 'lot_number', 'expiration_date', 'quantity_on_hand', 'unit_cost', 'status',
 ], inventoryLots)
 
+lines.push("select setval('inventory_lot_id_seq', (select max(lot_id) from inventory_lots));")
+
 copyRows('inventory_transactions', [
   'transaction_id', 'lot_id', 'transaction_type', 'quantity_delta', 'reason', 'performed_by', 'occurred_at',
 ], inventoryTransactions)
@@ -2602,6 +2608,7 @@ create index idx_phi_access_audit_username_occurred on phi_access_audit_events (
 create index idx_phi_access_audit_endpoint_occurred on phi_access_audit_events (endpoint_name, occurred_at desc);
 create index idx_inventory_lots_item_facility on inventory_lots (item_id, facility_id, status);
 create index idx_inventory_transactions_lot_occurred on inventory_transactions (lot_id, occurred_at desc);
+create index idx_inventory_transactions_transfer on inventory_transactions (transfer_id, occurred_at desc) where transfer_id is not null;
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);

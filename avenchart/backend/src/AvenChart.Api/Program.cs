@@ -2724,6 +2724,30 @@ inventory.MapPost("/transactions", async (
     .WithName("CreateInventoryTransaction")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
+inventory.MapPost("/transfers", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryTransferCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.CreateTransferAsync(request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Created($"/api/inventory/transfers/{mutation.TransferId}", mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["inventoryTransfer"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("CreateInventoryTransfer")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "transfers", "write"));
+
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 RequireAccessPermission(billing, "acct", "bill", "view");
 
