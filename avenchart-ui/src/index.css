@@ -1587,6 +1587,14 @@ a {
   margin: 0 0 20px;
   color: var(--text);
 }
+.thread-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.thread-heading-row .thread-title { flex: 1; }
+.thread-lifecycle-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.thread-action-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 8px; background: var(--surface); color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.thread-action-button:hover:not(:disabled) { border-color: #b8ddd2; background: var(--teal-soft); color: var(--teal); }
+.thread-action-danger:hover:not(:disabled) { border-color: #edc7ba; background: #faece7; color: #993c1d; }
+.thread-action-button:disabled { cursor: wait; opacity: .6; }
+@media (max-width: 560px) { .thread-heading-row { flex-direction: column; } .thread-lifecycle-actions { justify-content: flex-start; } }
 
 .thread-list {
   list-style: none;

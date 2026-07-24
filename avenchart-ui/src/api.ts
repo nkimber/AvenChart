@@ -324,6 +324,47 @@ export async function markPatientPortalMessageRead(
   return response.json()
 }
 
+export type PatientPortalMessageLifecycleResponse = {
+  authenticated: boolean
+  archived?: boolean
+  deleted?: boolean
+  archivedMessageCount?: number
+  deletedMessageCount?: number
+  failureReason?: string | null
+}
+
+export async function archivePatientPortalMessages(
+  sessionId: string,
+  messageIds: number[],
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageLifecycleResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/archive`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+    },
+    body: JSON.stringify({ messageIds }),
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal archive failed with ${response.status}`)
+  return response.json()
+}
+
+export async function deletePatientPortalMessage(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageLifecycleResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal delete failed with ${response.status}`)
+  return response.json()
+}
+
 export type PatientPortalDocumentItem = {
   id: number
   categoryName: string

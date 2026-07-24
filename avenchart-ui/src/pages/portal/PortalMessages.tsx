@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
-import { ArrowLeft, CheckCheck, PenLine, RefreshCw, Send } from 'lucide-react'
+import { Archive, ArrowLeft, CheckCheck, PenLine, RefreshCw, Send, Trash2 } from 'lucide-react'
 import {
+  archivePatientPortalMessages,
   composePatientPortalMessage,
+  deletePatientPortalMessage,
   getPatientPortalMessages,
   getPatientPortalMessageThread,
   markPatientPortalMessageRead,
@@ -66,6 +68,7 @@ export default function PortalMessages() {
 
   const [replyBody, setReplyBody] = useState('')
   const [replySubmitting, setReplySubmitting] = useState(false)
+  const [lifecycleAction, setLifecycleAction] = useState<'archive' | 'delete' | null>(null)
 
   useEffect(() => {
     loadMessages()
@@ -130,6 +133,46 @@ export default function PortalMessages() {
     setView('list')
     setSelectedMessage(null)
     setThreadState({ status: 'idle' })
+  }
+
+  async function archiveSelectedMessage() {
+    if (!selectedMessage || lifecycleAction) return
+    const id = Number(selectedMessage.id)
+    if (!Number.isInteger(id)) {
+      showToast('This message cannot be archived.', 'error')
+      return
+    }
+    setLifecycleAction('archive')
+    try {
+      const result = await archivePatientPortalMessages(session.sessionId, [id])
+      if (!result.archived) throw new Error(result.failureReason ?? 'Could not archive this message.')
+      showToast('Message archived.', 'success')
+      backToList()
+      loadMessages()
+      refreshHome()
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not archive this message.', 'error')
+    } finally {
+      setLifecycleAction(null)
+    }
+  }
+
+  async function deleteSelectedMessage() {
+    if (!selectedMessage || lifecycleAction) return
+    if (!window.confirm('Delete this message? This cannot be undone.')) return
+    setLifecycleAction('delete')
+    try {
+      const result = await deletePatientPortalMessage(session.sessionId, selectedMessage.id)
+      if (!result.deleted) throw new Error(result.failureReason ?? 'Could not delete this message.')
+      showToast('Message deleted.', 'success')
+      backToList()
+      loadMessages()
+      refreshHome()
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not delete this message.', 'error')
+    } finally {
+      setLifecycleAction(null)
+    }
   }
 
   function leaveCompose() {
@@ -231,7 +274,17 @@ export default function PortalMessages() {
           )}
           {threadState.status === 'ready' && (
             <>
-              <h2 className="thread-title">{selectedMessage.title}</h2>
+              <div className="thread-heading-row">
+                <h2 className="thread-title">{selectedMessage.title}</h2>
+                <div className="thread-lifecycle-actions">
+                  <button className="thread-action-button" type="button" disabled={lifecycleAction !== null} onClick={archiveSelectedMessage} title="Archive message">
+                    <Archive size={15} /> {lifecycleAction === 'archive' ? 'Archiving...' : 'Archive'}
+                  </button>
+                  <button className="thread-action-button thread-action-danger" type="button" disabled={lifecycleAction !== null} onClick={deleteSelectedMessage} title="Delete message">
+                    <Trash2 size={15} /> {lifecycleAction === 'delete' ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
               <ul className="thread-list" role="list" aria-label="Conversation thread">
                 {threadState.data.threadMessages.map((m) => (
                   <li
