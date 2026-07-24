@@ -257,6 +257,7 @@ drop table if exists lab_provider_address_book;
 drop table if exists encounter_signatures;
 drop table if exists integration_inbox;
 drop table if exists integration_outbox;
+drop table if exists phi_access_audit_events;
 drop table if exists statement_email_outbox;
 drop table if exists statement_delivery_audit_events;
 drop table if exists payment_activities;
@@ -1035,6 +1036,18 @@ create table integration_inbox (
   processed_at timestamptz,
   last_error text,
   unique (source, source_message_id)
+);
+
+create table phi_access_audit_events (
+  audit_id uuid primary key,
+  occurred_at timestamptz not null,
+  username text not null,
+  session_id uuid,
+  http_method text not null,
+  endpoint_name text not null,
+  required_permission text not null,
+  authorized boolean not null,
+  response_status integer not null
 );
 
 create table lab_orders (
@@ -2514,6 +2527,8 @@ create index idx_statement_email_outbox_batch on statement_email_outbox (outbox_
 create index idx_statement_email_outbox_pid_created on statement_email_outbox (legacy_pid, created_at desc);
 create index idx_integration_outbox_dispatch on integration_outbox (status, available_at, created_at);
 create index idx_integration_inbox_status on integration_inbox (status, received_at);
+create index idx_phi_access_audit_username_occurred on phi_access_audit_events (username, occurred_at desc);
+create index idx_phi_access_audit_endpoint_occurred on phi_access_audit_events (endpoint_name, occurred_at desc);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);

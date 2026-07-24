@@ -50,6 +50,7 @@ builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
+builder.Services.AddScoped<PhiAuditRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -3092,6 +3093,15 @@ administration.MapGet("/directory", async (
     })
     .WithName("GetAdministrationDirectory");
 
+administration.MapGet("/audit/phi", async (
+        PhiAuditRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        return Results.Ok(await repository.GetRecentAsync(limit ?? 50, cancellationToken));
+    })
+    .WithName("GetPhiAccessAudit");
+
 administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/accept", async (
         AdministrationRepository repository,
         AuthRepository authRepository,
@@ -3359,6 +3369,7 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
     return async (context, next) =>
     {
         var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
+        var phiAuditRepository = context.HttpContext.RequestServices.GetRequiredService<PhiAuditRepository>();
         var session = await GetSessionFromHeaderAsync(repository, context.HttpContext, context.HttpContext.RequestAborted);
         if (!session.Authenticated)
         {
@@ -3373,6 +3384,14 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
             context.HttpContext.RequestAborted);
         if (!authorized)
         {
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{sectionValue}:{permissionValue}:{returnValue}",
+                authorized: false,
+                responseStatus: StatusCodes.Status403Forbidden,
+                context.HttpContext.RequestAborted);
             return Results.Json(new AuthAuthorizationFailureResponse(
                 Authenticated: true,
                 Authorized: false,
@@ -3386,7 +3405,31 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 SessionSource: session.SessionSource), statusCode: StatusCodes.Status403Forbidden);
         }
 
-        return await next(context);
+        try
+        {
+            var result = await next(context);
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{sectionValue}:{permissionValue}:{returnValue}",
+                authorized: true,
+                responseStatus: context.HttpContext.Response.StatusCode,
+                context.HttpContext.RequestAborted);
+            return result;
+        }
+        catch
+        {
+            await phiAuditRepository.RecordAccessDecisionAsync(
+                session,
+                context.HttpContext.Request.Method,
+                context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
+                $"{sectionValue}:{permissionValue}:{returnValue}",
+                authorized: true,
+                responseStatus: StatusCodes.Status500InternalServerError,
+                context.HttpContext.RequestAborted);
+            throw;
+        }
     };
 }
 
