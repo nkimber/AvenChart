@@ -255,6 +255,7 @@ drop table if exists lab_order_catalog;
 drop table if exists lab_providers;
 drop table if exists lab_provider_address_book;
 drop table if exists encounter_signatures;
+drop table if exists statement_email_outbox;
 drop table if exists statement_delivery_audit_events;
 drop table if exists payment_activities;
 drop table if exists payment_sessions;
@@ -968,6 +969,34 @@ create table statement_delivery_audit_events (
   file_name text not null,
   queue_name text not null,
   dispatch_status text not null,
+  external_reference text not null,
+  created_at timestamp not null
+);
+
+create table statement_email_outbox (
+  outbox_message_id text primary key,
+  dataset_id text not null,
+  dataset_version text not null,
+  as_of_date date not null,
+  outbox_batch_id text not null,
+  queued_at timestamp not null,
+  pubpid text not null,
+  legacy_pid integer not null,
+  patient_display_name text not null,
+  statement_number text not null,
+  statement_status text not null,
+  statement_date date not null,
+  due_date date not null,
+  balance_due_amount numeric(12,2) not null default 0,
+  past_due_amount numeric(12,2) not null default 0,
+  current_due_amount numeric(12,2) not null default 0,
+  to_email text not null,
+  from_email text not null,
+  subject text not null,
+  body_preview text not null,
+  attachment_file_name text not null,
+  queue_name text not null,
+  delivery_status text not null,
   external_reference text not null,
   created_at timestamp not null
 );
@@ -2445,6 +2474,8 @@ create index idx_payment_sessions_pid on payment_sessions (pid);
 create index idx_payment_activities_pid_encounter on payment_activities (pid, encounter);
 create index idx_statement_delivery_audit_dispatch on statement_delivery_audit_events (dispatch_id, dispatched_at desc);
 create index idx_statement_delivery_audit_pid_created on statement_delivery_audit_events (legacy_pid, created_at desc);
+create index idx_statement_email_outbox_batch on statement_email_outbox (outbox_batch_id, queued_at desc);
+create index idx_statement_email_outbox_pid_created on statement_email_outbox (legacy_pid, created_at desc);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
