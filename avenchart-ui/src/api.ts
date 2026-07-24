@@ -1201,7 +1201,30 @@ export type AdministrationAccessGroupItem = {
   id: number
   value: string
   name: string
+  parentId?: number | null
   permissionCount: number
+}
+
+export type AdministrationAccessPermissionItem = {
+  sectionValue: string
+  value: string
+  name: string
+}
+
+export type AdministrationAccessGroupPermissionItem = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  permissionName: string
+  returnValue: string
+}
+
+export type AdministrationAccessUserMembershipItem = {
+  userValue: string
+  userName: string
+  groupValue: string
+  groupName: string
+  staffId?: number | null
 }
 
 export type AdministrationDirectoryCounts = {
@@ -1219,6 +1242,9 @@ export type AdministrationDirectoryResponse = {
   facilities: AdministrationFacilityItem[]
   accessControl: {
     groups: AdministrationAccessGroupItem[]
+    permissions: AdministrationAccessPermissionItem[]
+    groupPermissions: AdministrationAccessGroupPermissionItem[]
+    userMemberships: AdministrationAccessUserMembershipItem[]
   }
 }
 
@@ -1313,6 +1339,67 @@ export async function deleteAdministrationUser(
   return clinicianDelete(sessionId, `/api/administration/users/${userId}`, signal)
 }
 
+export type AdministrationAccessPermissionMutationInput = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  returnValue: 'addonly' | 'view' | 'write' | 'wsome'
+}
+
+export type AdministrationAccessPermissionMutationResponse = {
+  groupValue: string
+  sectionValue: string
+  permissionValue: string
+  returnValue?: string | null
+  detail: AdministrationDirectoryResponse
+}
+
+export type AdministrationAccessUserMembershipMutationInput = {
+  userValue: string
+  groupValue: string
+}
+
+export type AdministrationAccessUserMembershipMutationResponse = {
+  userValue: string
+  groupValue: string
+  detail: AdministrationDirectoryResponse
+}
+
+export async function grantAdministrationAccessPermission(
+  sessionId: string,
+  body: AdministrationAccessPermissionMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  return clinicianPut(sessionId, '/api/administration/access-control/group-permissions', body, signal)
+}
+
+export async function revokeAdministrationAccessPermission(
+  sessionId: string,
+  groupValue: string,
+  sectionValue: string,
+  permissionValue: string,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  return clinicianDeleteJson(sessionId, `/api/administration/access-control/group-permissions/${encodeURIComponent(groupValue)}/${encodeURIComponent(sectionValue)}/${encodeURIComponent(permissionValue)}`, signal)
+}
+
+export async function grantAdministrationAccessMembership(
+  sessionId: string,
+  body: AdministrationAccessUserMembershipMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  return clinicianPut(sessionId, '/api/administration/access-control/user-memberships', body, signal)
+}
+
+export async function revokeAdministrationAccessMembership(
+  sessionId: string,
+  userValue: string,
+  groupValue: string,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  return clinicianDeleteJson(sessionId, `/api/administration/access-control/user-memberships/${encodeURIComponent(userValue)}/${encodeURIComponent(groupValue)}`, signal)
+}
+
 export async function getLoginAudit(
   sessionId: string,
   limit?: number,
@@ -1331,6 +1418,16 @@ async function clinicianDelete(sessionId: string, path: string, signal?: AbortSi
     signal,
   })
   if (!response.ok) throw new Error(`DELETE ${path} failed with ${response.status}`)
+}
+
+async function clinicianDeleteJson<T>(sessionId: string, path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'DELETE',
+    headers: clinicianHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) throw new Error(`DELETE ${path} failed with ${response.status}`)
+  return response.json()
 }
 
 // ── Encounter mutations ───────────────────────────────────────────────────────

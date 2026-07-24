@@ -7,11 +7,17 @@ import {
   deleteAdministrationFacility,
   deleteAdministrationUser,
   getAdministrationDirectory,
+  grantAdministrationAccessMembership,
+  grantAdministrationAccessPermission,
+  revokeAdministrationAccessMembership,
+  revokeAdministrationAccessPermission,
   updateAdministrationFacility,
   updateAdministrationUser,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
+  type AdministrationAccessGroupPermissionItem,
+  type AdministrationAccessUserMembershipItem,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
 } from '../../api.ts'
@@ -87,6 +93,12 @@ function normalizeUserForm(form: UserForm): AdministrationUserMutationInput {
   }
 }
 
+type AccessMembershipForm = { userValue: string; groupValue: string }
+type AccessPermissionForm = { groupValue: string; permissionKey: string; returnValue: 'addonly' | 'view' | 'write' | 'wsome' }
+
+function emptyMembershipForm(): AccessMembershipForm { return { userValue: '', groupValue: '' } }
+function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', permissionKey: '', returnValue: 'view' } }
+
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
@@ -99,6 +111,12 @@ export default function AdminDirectory() {
   const [editingUserId, setEditingUserId] = useState<number | 'new' | null>(null)
   const [savingUser, setSavingUser] = useState(false)
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null)
+  const [membershipForm, setMembershipForm] = useState<AccessMembershipForm>(() => emptyMembershipForm())
+  const [permissionForm, setPermissionForm] = useState<AccessPermissionForm>(() => emptyPermissionForm())
+  const [savingMembership, setSavingMembership] = useState(false)
+  const [savingPermission, setSavingPermission] = useState(false)
+  const [removingMembership, setRemovingMembership] = useState<string | null>(null)
+  const [removingPermission, setRemovingPermission] = useState<string | null>(null)
 
   useEffect(() => {
     getAdministrationDirectory(session.sessionId)
@@ -208,6 +226,79 @@ export default function AdminDirectory() {
       showToast('Could not delete this staff user. It may still be in use.', 'error')
     } finally {
       setDeletingUserId(null)
+    }
+  }
+
+  async function saveMembership(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (savingMembership || !membershipForm.userValue || !membershipForm.groupValue) return
+    setSavingMembership(true)
+    try {
+      const mutation = await grantAdministrationAccessMembership(session.sessionId, membershipForm)
+      setState({ status: 'ready', data: mutation.detail })
+      setMembershipForm(emptyMembershipForm())
+      showToast('Access-group membership saved.', 'success')
+    } catch {
+      showToast('Could not save this access-group membership.', 'error')
+    } finally {
+      setSavingMembership(false)
+    }
+  }
+
+  async function removeMembership(membership: AdministrationAccessUserMembershipItem) {
+    const key = `${membership.userValue}:${membership.groupValue}`
+    if (membership.staffId === session.staffId) {
+      showToast('You cannot remove the signed-in staff user from an access group.', 'error')
+      return
+    }
+    if (removingMembership !== null || !window.confirm(`Remove ${membership.userName} from ${membership.groupName}?`)) return
+    setRemovingMembership(key)
+    try {
+      const mutation = await revokeAdministrationAccessMembership(session.sessionId, membership.userValue, membership.groupValue)
+      setState({ status: 'ready', data: mutation.detail })
+      showToast('Access-group membership removed.', 'success')
+    } catch {
+      showToast('Could not remove this access-group membership.', 'error')
+    } finally {
+      setRemovingMembership(null)
+    }
+  }
+
+  async function savePermission(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (savingPermission || !permissionForm.groupValue || !permissionForm.permissionKey) return
+    const [sectionValue, permissionValue] = permissionForm.permissionKey.split(':', 2)
+    if (!sectionValue || !permissionValue) return
+    setSavingPermission(true)
+    try {
+      const mutation = await grantAdministrationAccessPermission(session.sessionId, {
+        groupValue: permissionForm.groupValue,
+        sectionValue,
+        permissionValue,
+        returnValue: permissionForm.returnValue,
+      })
+      setState({ status: 'ready', data: mutation.detail })
+      setPermissionForm(emptyPermissionForm())
+      showToast('Access permission saved.', 'success')
+    } catch {
+      showToast('Could not save this access permission.', 'error')
+    } finally {
+      setSavingPermission(false)
+    }
+  }
+
+  async function removePermission(permission: AdministrationAccessGroupPermissionItem) {
+    const key = `${permission.groupValue}:${permission.sectionValue}:${permission.permissionValue}`
+    if (removingPermission !== null || !window.confirm(`Remove ${permission.permissionName} from ${permission.groupValue}?`)) return
+    setRemovingPermission(key)
+    try {
+      const mutation = await revokeAdministrationAccessPermission(session.sessionId, permission.groupValue, permission.sectionValue, permission.permissionValue)
+      setState({ status: 'ready', data: mutation.detail })
+      showToast('Access permission removed.', 'success')
+    } catch {
+      showToast('Could not remove this access permission.', 'error')
+    } finally {
+      setRemovingPermission(null)
     }
   }
 
@@ -431,6 +522,47 @@ export default function AdminDirectory() {
                     ))}
                   </ul>
                 )}
+                <div className="cl-access-grid">
+                  <section className="cl-access-panel">
+                    <div>
+                      <h3 className="cl-access-title">User memberships</h3>
+                      <p className="cl-admin-form-copy">Assign a staff user to an existing access group.</p>
+                    </div>
+                    <form className="cl-access-form" onSubmit={saveMembership}>
+                      <label className="cl-admin-field"><span>Staff user</span><select className="ne-input" value={membershipForm.userValue} onChange={(event) => setMembershipForm((form) => ({ ...form, userValue: event.target.value }))} required><option value="">Select staff user</option>{data.users.map((user) => <option key={user.id} value={user.username}>{user.displayName} ({user.username})</option>)}</select></label>
+                      <label className="cl-admin-field"><span>Access group</span><select className="ne-input" value={membershipForm.groupValue} onChange={(event) => setMembershipForm((form) => ({ ...form, groupValue: event.target.value }))} required><option value="">Select group</option>{data.accessControl.groups.map((group) => <option key={group.id} value={group.value}>{group.name}</option>)}</select></label>
+                      <button className="cl-btn-primary" type="submit" disabled={savingMembership || !membershipForm.userValue || !membershipForm.groupValue}>{savingMembership ? 'Saving...' : 'Add membership'}</button>
+                    </form>
+                    <ul className="cl-access-list">
+                      {data.accessControl.userMemberships.map((membership) => {
+                        const key = `${membership.userValue}:${membership.groupValue}`
+                        const isCurrentUser = membership.staffId === session.staffId
+                        return <li key={key} className="cl-access-row"><div><p>{membership.userName}</p><span>{membership.groupName}</span></div><button className="cl-icon-button cl-icon-button-danger" type="button" onClick={() => removeMembership(membership)} disabled={removingMembership === key || isCurrentUser} aria-label={`Remove ${membership.userName} from ${membership.groupName}`} title={isCurrentUser ? 'You cannot remove the signed-in user' : 'Remove membership'}><Trash2 size={15} /></button></li>
+                      })}
+                      {data.accessControl.userMemberships.length === 0 && <li className="cl-empty-text">No access-group memberships configured.</li>}
+                    </ul>
+                  </section>
+
+                  <section className="cl-access-panel">
+                    <div>
+                      <h3 className="cl-access-title">Group permissions</h3>
+                      <p className="cl-admin-form-copy">Grant or replace one existing permission on an access group.</p>
+                    </div>
+                    <form className="cl-access-form" onSubmit={savePermission}>
+                      <label className="cl-admin-field"><span>Access group</span><select className="ne-input" value={permissionForm.groupValue} onChange={(event) => setPermissionForm((form) => ({ ...form, groupValue: event.target.value }))} required><option value="">Select group</option>{data.accessControl.groups.map((group) => <option key={group.id} value={group.value}>{group.name}</option>)}</select></label>
+                      <label className="cl-admin-field"><span>Permission</span><select className="ne-input" value={permissionForm.permissionKey} onChange={(event) => setPermissionForm((form) => ({ ...form, permissionKey: event.target.value }))} required><option value="">Select permission</option>{data.accessControl.permissions.map((permission) => <option key={`${permission.sectionValue}:${permission.value}`} value={`${permission.sectionValue}:${permission.value}`}>{permission.name} ({permission.sectionValue})</option>)}</select></label>
+                      <label className="cl-admin-field"><span>Access level</span><select className="ne-input" value={permissionForm.returnValue} onChange={(event) => setPermissionForm((form) => ({ ...form, returnValue: event.target.value as AccessPermissionForm['returnValue'] }))}><option value="view">View</option><option value="addonly">Add only</option><option value="write">Write</option><option value="wsome">Write some</option></select></label>
+                      <button className="cl-btn-primary" type="submit" disabled={savingPermission || !permissionForm.groupValue || !permissionForm.permissionKey}>{savingPermission ? 'Saving...' : 'Save permission'}</button>
+                    </form>
+                    <ul className="cl-access-list">
+                      {data.accessControl.groupPermissions.map((permission) => {
+                        const key = `${permission.groupValue}:${permission.sectionValue}:${permission.permissionValue}`
+                        return <li key={key} className="cl-access-row"><div><p>{permission.permissionName}</p><span>{permission.groupValue} · {permission.returnValue}</span></div><button className="cl-icon-button cl-icon-button-danger" type="button" onClick={() => removePermission(permission)} disabled={removingPermission === key} aria-label={`Remove ${permission.permissionName} from ${permission.groupValue}`} title="Remove permission"><Trash2 size={15} /></button></li>
+                      })}
+                      {data.accessControl.groupPermissions.length === 0 && <li className="cl-empty-text">No access permissions configured.</li>}
+                    </ul>
+                  </section>
+                </div>
               </section>
             )}
           </>
