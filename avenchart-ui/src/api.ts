@@ -1906,8 +1906,12 @@ export async function markImmunizationEnteredInError(
 
 // ── Portal profile mutations ──────────────────────────────────────────────────
 
-export type PatientPortalProfile = {
-  displayName: string
+export type PatientPortalProfileDemographics = {
+  firstName: string
+  lastName: string
+  preferredName?: string | null
+  dateOfBirth?: string | null
+  sex?: string | null
   phoneHome?: string | null
   phoneCell?: string | null
   email?: string | null
@@ -1915,11 +1919,27 @@ export type PatientPortalProfile = {
   city?: string | null
   state?: string | null
   postalCode?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
+}
+
+export type PatientPortalProfileChangeRequest = {
+  id: number
+  status: string
+  pendingAction: string
+  narrative: string
+  requestedAt: string
+  updatedAt?: string | null
+  demographics: PatientPortalProfileDemographics
 }
 
 export type PatientPortalProfileResponse = {
   authenticated: boolean
-  profile: PatientPortalProfile
+  displayName: string
+  portalUsername: string
+  hasPendingProfileChanges: boolean
+  demographics: PatientPortalProfileDemographics
+  pendingChange?: PatientPortalProfileChangeRequest | null
   failureReason?: string | null
 }
 
@@ -1939,15 +1959,21 @@ export type PatientPortalProfileChangeInput = {
   phoneHome?: string | null
   phoneCell?: string | null
   email?: string | null
+  hipaaAllowSms?: string | null
+  hipaaAllowEmail?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
 }
 
-export async function updatePatientPortalProfile(
+export async function submitPatientPortalProfileChange(
   sessionId: string,
   body: PatientPortalProfileChangeInput,
   signal?: AbortSignal,
 ): Promise<PatientPortalProfileResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
-    method: 'PUT',
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile/changes`, {
+    method: 'POST',
     headers: {
       'content-type': 'application/json',
       'X-Legacy EHR-Patient-Portal-Session': sessionId,
@@ -1955,6 +1981,6 @@ export async function updatePatientPortalProfile(
     body: JSON.stringify(body),
     signal,
   })
-  if (!response.ok) throw new Error(`Patient portal profile update failed with ${response.status}`)
+  if (!response.ok) throw new Error(`Patient portal profile request failed with ${response.status}`)
   return response.json()
 }
