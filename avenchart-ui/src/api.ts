@@ -1228,6 +1228,48 @@ export async function getAdministrationDirectory(
   return clinicianGet(sessionId, '/api/administration/directory', signal)
 }
 
+export type AdministrationFacilityMutationInput = {
+  code: string
+  name: string
+  phone?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  color?: string | null
+  active?: boolean | null
+}
+
+export type AdministrationFacilityMutationResponse = {
+  id: number
+  detail: AdministrationDirectoryResponse
+}
+
+export async function createAdministrationFacility(
+  sessionId: string,
+  body: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  return clinicianPost(sessionId, '/api/administration/facilities', body, signal)
+}
+
+export async function updateAdministrationFacility(
+  sessionId: string,
+  facilityId: number,
+  body: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  return clinicianPut(sessionId, `/api/administration/facilities/${facilityId}`, body, signal)
+}
+
+export async function deleteAdministrationFacility(
+  sessionId: string,
+  facilityId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(sessionId, `/api/administration/facilities/${facilityId}`, signal)
+}
+
 export async function getLoginAudit(
   sessionId: string,
   limit?: number,
