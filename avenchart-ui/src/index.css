@@ -4445,6 +4445,12 @@ a {
 .portal-consent-row input { width: 16px; height: 16px; accent-color: var(--teal); }
 @media (max-width: 560px) { .portal-contact-grid { grid-template-columns: 1fr; } .portal-contact-grid-wide { grid-column: auto; } }
 
+/* Portal prescription-refill request */
+.portal-refill-form { margin-top: 12px; padding: 12px; border-radius: var(--radius-md); background: var(--bg); }
+.portal-refill-form .input { resize: vertical; }
+.portal-refill-actions { display: flex; gap: 8px; margin-top: 10px; }
+.portal-refill-actions .button-primary, .portal-refill-actions .button-secondary { width: auto; padding: 8px 12px; }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    GLOBAL INTERACTION & ACCESSIBILITY
    ═══════════════════════════════════════════════════════════════════════════ */

@@ -16,6 +16,7 @@ import {
   getPatientPortalClinicalSummary,
   getPatientPortalDocuments,
   getPatientPortalLabResults,
+  requestPatientPortalPrescriptionRefill,
   type PatientPortalClinicalSummaryResponse,
   type PatientPortalDocumentItem,
   type PatientPortalDocumentsResponse,
@@ -164,7 +165,7 @@ function LabOrder({ order }: { order: PatientPortalLabOrderItem }) {
 const SESSION_TAB_KEY = 'portal-records-tab'
 
 export default function PortalRecords() {
-  const { session } = useOutletContext<PortalOutletContext>()
+  const { session, refreshHome } = useOutletContext<PortalOutletContext>()
   const location = useLocation()
 
   // Persist active tab across navigations within the session (#3)
@@ -196,6 +197,9 @@ export default function PortalRecords() {
   )
 
   const [reportDownloading, setReportDownloading] = useState(false)
+  const [refillOpenId, setRefillOpenId] = useState<string | null>(null)
+  const [refillNote, setRefillNote] = useState('')
+  const [refillingId, setRefillingId] = useState<string | null>(null)
 
   // Prefetch all three data tabs in parallel on mount (#10)
   useEffect(() => {
@@ -263,6 +267,25 @@ export default function PortalRecords() {
       })
       .catch((err) => showToast(err instanceof Error ? err.message : 'Could not generate the report.', 'error'))
       .finally(() => setReportDownloading(false))
+  }
+
+  async function requestRefill(prescriptionId: string, drug: string) {
+    setRefillingId(prescriptionId)
+    try {
+      const result = await requestPatientPortalPrescriptionRefill(session.sessionId, prescriptionId, {
+        requestDate: new Date().toISOString().slice(0, 10),
+        note: refillNote.trim() || null,
+      })
+      if (!result.created) throw new Error(result.failureReason ?? 'Could not submit the refill request.')
+      setRefillOpenId(null)
+      setRefillNote('')
+      refreshHome()
+      showToast(`Refill request sent for ${drug}.`, 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not submit the refill request.', 'error')
+    } finally {
+      setRefillingId(null)
+    }
   }
 
   return (
@@ -437,14 +460,25 @@ export default function PortalRecords() {
                   items: s.prescriptions,
                   render: (item: typeof s.prescriptions[0]) => (
                     <li key={item.id} className="panel-row">
-                      <div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <p className="panel-row-title">{item.drug}</p>
                         <p className="panel-row-meta">
                           {item.dosage ?? ''}
                           {item.quantity ? ` · Qty ${item.quantity}` : ''}
                           {item.route ? ` · ${item.route}` : ''}
                         </p>
+                        {refillOpenId === item.id && (
+                          <div className="portal-refill-form">
+                            <label className="label" htmlFor={`refill-note-${item.id}`}>Note for your care team (optional)</label>
+                            <textarea id={`refill-note-${item.id}`} className="input" rows={2} value={refillNote} onChange={(event) => setRefillNote(event.target.value)} />
+                            <div className="portal-refill-actions">
+                              <button className="button-primary" type="button" disabled={refillingId === item.id} onClick={() => requestRefill(item.id, item.drug)}>{refillingId === item.id ? 'Sending...' : 'Send request'}</button>
+                              <button className="button-secondary" type="button" disabled={refillingId === item.id} onClick={() => { setRefillOpenId(null); setRefillNote('') }}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
+                      {refillOpenId !== item.id && <button className="link-button" type="button" onClick={() => { setRefillOpenId(item.id); setRefillNote('') }}>Request refill</button>}
                     </li>
                   ),
                   empty: 'No active prescriptions on file.',
