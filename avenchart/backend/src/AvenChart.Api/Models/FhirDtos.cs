@@ -49,3 +49,23 @@ public sealed record FhirReference(string Reference);
 public sealed record FhirPeriod(string Start);
 public sealed record FhirEncounterBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirEncounterSearchEntry> Entry);
 public sealed record FhirEncounterSearchEntry(string FullUrl, FhirEncounterResource Resource);
+
+public sealed record FhirObservationResource(
+    string ResourceType,
+    string Id,
+    string Status,
+    IReadOnlyList<FhirCodeableConcept> Category,
+    FhirCodeableConcept Code,
+    FhirReference Subject,
+    string EffectiveDateTime,
+    FhirQuantity? ValueQuantity,
+    string? ValueString,
+    IReadOnlyList<FhirObservationReferenceRange> ReferenceRange,
+    IReadOnlyList<FhirCodeableConcept> Interpretation);
+
+public sealed record FhirCodeableConcept(IReadOnlyList<FhirCoding> Coding, string? Text);
+public sealed record FhirCoding(string System, string Code, string? Display);
+public sealed record FhirQuantity(decimal Value, string? Unit);
+public sealed record FhirObservationReferenceRange(string? Text);
+public sealed record FhirObservationBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirObservationSearchEntry> Entry);
+public sealed record FhirObservationSearchEntry(string FullUrl, FhirObservationResource Resource);

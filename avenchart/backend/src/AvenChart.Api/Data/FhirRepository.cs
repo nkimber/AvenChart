@@ -71,6 +71,51 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         return new FhirEncounterBundle("Bundle", "searchset", total, entries);
     }
 
+    public async Task<FhirObservationResource?> GetObservationAsync(int observationId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = ObservationSelectSql + " where lrs.id = @id limit 1;";
+        command.Parameters.AddWithValue("id", observationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadObservation(reader) : null;
+    }
+
+    public async Task<FhirObservationBundle> SearchObservationsAsync(string? subject, int? count, CancellationToken cancellationToken)
+    {
+        var limit = Math.Clamp(count ?? 20, 1, MaximumSearchLimit);
+        var normalizedSubject = NormalizePatientReference(subject);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = """
+            select count(*)
+            from lab_results lrs
+            inner join lab_reports lr on lr.id = lrs.report_id
+            inner join lab_orders lo on lo.id = lr.order_id
+            inner join patients p on p.legacy_pid = lo.pid
+            where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);
+            """;
+        countCommand.Parameters.AddWithValue("subject", (object?)normalizedSubject ?? DBNull.Value);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = ObservationSelectSql + """
+             where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject)
+             order by lrs.result_date desc, lrs.id desc
+             limit @limit;
+            """;
+        command.Parameters.AddWithValue("subject", (object?)normalizedSubject ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", limit);
+        var entries = new List<FhirObservationSearchEntry>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var observation = ReadObservation(reader);
+            entries.Add(new FhirObservationSearchEntry($"Observation/{observation.Id}", observation));
+        }
+        return new FhirObservationBundle("Bundle", "searchset", total, entries);
+    }
+
     private const string SearchPredicate = """
         (@name is null or lower(concat(p.first_name, ' ', p.last_name)) like '%' || lower(@name) || '%')
         and (@identifier is null or p.canonical_id = @identifier or p.pubpid = @identifier)
@@ -85,6 +130,15 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
     private const string EncounterSelectSql = """
         select e.encounter, p.canonical_id, e.encounter_date, e.reason
         from encounters e join patients p on p.legacy_pid = e.pid
+        """;
+
+    private const string ObservationSelectSql = """
+        select lrs.id, p.canonical_id, lrs.result_status, lrs.code, lrs.text, lrs.result,
+               lrs.units, lrs.range, lrs.abnormal, lrs.result_date
+        from lab_results lrs
+        inner join lab_reports lr on lr.id = lrs.report_id
+        inner join lab_orders lo on lo.id = lr.order_id
+        inner join patients p on p.legacy_pid = lo.pid
         """;
 
     private static void AddSearchParameters(NpgsqlCommand command, string? name, string? identifier, int limit)
@@ -127,6 +181,37 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         new FhirPeriod(reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
         ReadNullableString(reader, 3));
 
+    private static FhirObservationResource ReadObservation(NpgsqlDataReader reader)
+    {
+        var result = ReadNullableString(reader, 5);
+        var unit = ReadNullableString(reader, 6);
+        var code = ReadNullableString(reader, 3);
+        var text = ReadNullableString(reader, 4);
+        var valueQuantity = decimal.TryParse(result, NumberStyles.Number, CultureInfo.InvariantCulture, out var numericResult)
+            ? new FhirQuantity(numericResult, unit)
+            : null;
+        var referenceRange = ReadNullableString(reader, 7);
+        var abnormal = ReadNullableString(reader, 8);
+        IReadOnlyList<FhirCoding> coding = string.IsNullOrWhiteSpace(code)
+            ? []
+            : [new FhirCoding("urn:legacy-ehr:procedure-result", code, text)];
+        IReadOnlyList<FhirCodeableConcept> interpretation = string.IsNullOrWhiteSpace(abnormal)
+            ? []
+            : [new FhirCodeableConcept([new FhirCoding("urn:legacy-ehr:abnormal-flag", abnormal, abnormal)], abnormal)];
+        return new FhirObservationResource(
+            "Observation",
+            reader.GetInt32(0).ToString(CultureInfo.InvariantCulture),
+            ToFhirObservationStatus(ReadNullableString(reader, 2)),
+            [new FhirCodeableConcept([new FhirCoding("http://terminology.hl7.org/CodeSystem/observation-category", "laboratory", "Laboratory")], "Laboratory")],
+            new FhirCodeableConcept(coding, text ?? code ?? "Laboratory result"),
+            new FhirReference($"Patient/{reader.GetString(1)}"),
+            reader.GetDateTime(9).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+            valueQuantity,
+            valueQuantity is null ? result : null,
+            string.IsNullOrWhiteSpace(referenceRange) ? [] : [new FhirObservationReferenceRange(referenceRange)],
+            interpretation);
+    }
+
     private static void AddTelecom(ICollection<FhirContactPoint> telecom, string system, string? value, string use)
     {
         if (!string.IsNullOrWhiteSpace(value)) telecom.Add(new FhirContactPoint(system, value, use));
@@ -141,4 +226,22 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         "other" or "o" => "other",
         _ => "unknown",
     };
+
+    private static string ToFhirObservationStatus(string? status) => status?.Trim().ToLowerInvariant() switch
+    {
+        "final" or "completed" or "reviewed" => "final",
+        "preliminary" or "prelim" => "preliminary",
+        "corrected" or "amended" => "corrected",
+        "cancelled" or "canceled" => "cancelled",
+        "entered-in-error" => "entered-in-error",
+        _ => "unknown",
+    };
+
+    private static string? NormalizePatientReference(string? subject)
+    {
+        var normalized = subject?.Trim();
+        return normalized?.StartsWith("Patient/", StringComparison.OrdinalIgnoreCase) is true
+            ? normalized["Patient/".Length..]
+            : normalized;
+    }
 }

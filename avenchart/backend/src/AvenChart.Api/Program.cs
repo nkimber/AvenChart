@@ -660,7 +660,11 @@ fhir.MapGet("/metadata", () =>
             "Encounter",
             [new FhirCapabilityInteraction("read"), new FhirCapabilityInteraction("search-type")],
             ["subject", "_count"]);
-        var server = new FhirCapabilityResource("server", [], [patientCapability, encounterCapability]);
+        var observationCapability = new FhirPatientCapability(
+            "Observation",
+            [new FhirCapabilityInteraction("read"), new FhirCapabilityInteraction("search-type")],
+            ["subject", "_count"]);
+        var server = new FhirCapabilityResource("server", [], [patientCapability, encounterCapability, observationCapability]);
         return Results.Ok(new FhirCapabilityStatement(
             "CapabilityStatement",
             "active",
@@ -693,6 +697,17 @@ fhir.MapGet("/Encounter/{id:int}", async (FhirRepository repository, int id, Can
 fhir.MapGet("/Encounter", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
     Results.Ok(await repository.SearchEncountersAsync(subject, _count, cancellationToken)))
     .WithName("SearchFhirEncounters");
+
+fhir.MapGet("/Observation/{id:int}", async (FhirRepository repository, int id, CancellationToken cancellationToken) =>
+    {
+        var observation = await repository.GetObservationAsync(id, cancellationToken);
+        return observation is null ? Results.NotFound() : Results.Ok(observation);
+    })
+    .WithName("GetFhirObservation");
+
+fhir.MapGet("/Observation", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.SearchObservationsAsync(subject, _count, cancellationToken)))
+    .WithName("SearchFhirObservations");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
