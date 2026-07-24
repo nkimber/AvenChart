@@ -814,6 +814,14 @@ export async function updateAppointmentStatus(
   await clinicianPut(sessionId, `/api/appointments/${appointmentId}/status`, { status }, signal)
 }
 
+export type FlowBoardItem = { appointmentId: string; patientId: string; patientDisplayName: string; startTime: string; title: string; room?: string | null; providerName?: string | null; facilityName?: string | null; appointmentStatus?: string | null; flowStatus: string }
+export type FlowBoardLane = { key: string; label: string; items: FlowBoardItem[] }
+export type FlowBoardResponse = { date: string; lanes: FlowBoardLane[] }
+export async function getAppointmentFlowBoard(sessionId: string, date?: string, signal?: AbortSignal): Promise<FlowBoardResponse> {
+  const suffix = date ? `?date=${encodeURIComponent(date)}` : ''
+  return clinicianGet(sessionId, `/api/appointments/flow-board${suffix}`, signal)
+}
+
 // ── Encounters ────────────────────────────────────────────────────────────────
 
 export type EncounterListItem = {

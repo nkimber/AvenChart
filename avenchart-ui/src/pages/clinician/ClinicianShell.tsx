@@ -16,6 +16,7 @@ import {
   ReceiptText,
   Settings,
   Users,
+  Workflow,
 } from 'lucide-react'
 import { getCurrentSession, getProcedureReportQueue, getOperationalReports } from '../../api.ts'
 import { clearClinicianSession, loadClinicianSession, type ClinicianSession } from '../../auth/session.ts'
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { path: '/clinician/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/clinician/schedule', label: 'Schedule', icon: CalendarClock },
   { path: '/clinician/calendar', label: 'Calendar', icon: CalendarDays },
+  { path: '/clinician/flow', label: 'Flow', icon: Workflow },
   { path: '/clinician/patients', label: 'Patients', icon: Users },
   { path: '/clinician/labs', label: 'Lab queue', icon: FlaskConical },
   { path: '/clinician/messages', label: 'Messages', icon: Mail },

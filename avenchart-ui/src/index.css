@@ -4420,6 +4420,21 @@ a {
 .cl-vitals-input-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
 @media (max-width: 768px) { .cl-vitals-input-grid { grid-template-columns: repeat(2, 1fr); } }
 
+/* Appointment flow board */
+.flow-board-grid { display: grid; grid-template-columns: repeat(5, minmax(205px, 1fr)); align-items: start; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.flow-lane { display: flex; min-height: 220px; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: #eef4f2; }
+.flow-lane-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.flow-lane-heading h2 { margin: 0; color: var(--text); font-size: 13px; font-weight: 700; }
+.flow-lane-heading span { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; padding: 0 6px; border-radius: 999px; background: #d5e7e1; color: var(--teal); font-size: 11px; font-weight: 700; }
+.flow-card { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #d5e7e1; border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 1px 2px rgb(20 56 46 / 7%); }
+.flow-card h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 700; }
+.flow-card p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
+.flow-card .flow-time { color: var(--teal); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+.flow-card small { color: var(--text-muted); font-size: 11px; }
+.flow-actions { display: flex; margin-top: 8px; }
+.flow-actions .cl-btn-primary, .flow-actions .cl-btn-secondary { width: 100%; justify-content: center; }
+@media (max-width: 760px) { .flow-board-grid { grid-template-columns: repeat(5, minmax(230px, 1fr)); } }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    GLOBAL INTERACTION & ACCESSIBILITY
    ═══════════════════════════════════════════════════════════════════════════ */
