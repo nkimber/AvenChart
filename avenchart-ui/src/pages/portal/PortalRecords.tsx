@@ -13,15 +13,21 @@ import {
 import {
   downloadPatientPortalDocuments,
   downloadPatientPortalGeneratedMedicalReportPdf,
+  downloadPatientPortalGeneratedMedicalReportPackage,
   getPatientPortalClinicalSummary,
   getPatientPortalDocuments,
   getPatientPortalLabResults,
+  getPatientPortalMedicalReport,
+  generatePatientPortalMedicalReport,
   requestPatientPortalPrescriptionRefill,
   type PatientPortalClinicalSummaryResponse,
   type PatientPortalDocumentItem,
   type PatientPortalDocumentsResponse,
   type PatientPortalLabOrderItem,
   type PatientPortalLabResultsResponse,
+  type PatientPortalGeneratedMedicalReportResponse,
+  type PatientPortalMedicalReportGenerationInput,
+  type PatientPortalMedicalReportResponse,
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
@@ -57,6 +63,13 @@ function triggerBlobDownload(blob: Blob, fileName: string) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+function toggleSelection(ids: Set<string>, id: string) {
+  const next = new Set(ids)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
 }
 
 function abnormalClass(flag?: string | null) {
@@ -197,6 +210,13 @@ export default function PortalRecords() {
   )
 
   const [reportDownloading, setReportDownloading] = useState(false)
+  const [reportOptions, setReportOptions] = useState<AsyncState<PatientPortalMedicalReportResponse>>({ status: 'idle' })
+  const [selectedSections, setSelectedSections] = useState<Set<string>>(() => new Set())
+  const [selectedIssues, setSelectedIssues] = useState<Set<string>>(() => new Set())
+  const [selectedForms, setSelectedForms] = useState<Set<string>>(() => new Set())
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(() => new Set())
+  const [generatedReport, setGeneratedReport] = useState<PatientPortalGeneratedMedicalReportResponse | null>(null)
+  const [generatingReport, setGeneratingReport] = useState(false)
   const [refillOpenId, setRefillOpenId] = useState<string | null>(null)
   const [refillNote, setRefillNote] = useState('')
   const [refillingId, setRefillingId] = useState<string | null>(null)
@@ -266,6 +286,44 @@ export default function PortalRecords() {
         showToast('Medical report downloaded.')
       })
       .catch((err) => showToast(err instanceof Error ? err.message : 'Could not generate the report.', 'error'))
+      .finally(() => setReportDownloading(false))
+  }
+
+  function reportInput(): PatientPortalMedicalReportGenerationInput {
+    return { sectionIds: [...selectedSections], issueIds: [...selectedIssues], encounterFormIds: [...selectedForms], procedureOrderIds: [...selectedOrders] }
+  }
+
+  function loadReportOptions() {
+    setReportOptions({ status: 'loading' })
+    getPatientPortalMedicalReport(session.sessionId)
+      .then((data) => {
+        if (!data.authenticated) throw new Error(data.failureReason ?? 'Medical report options are unavailable.')
+        setReportOptions({ status: 'ready', data })
+        setSelectedSections(new Set(data.sections.filter((section) => section.selected).map((section) => section.id)))
+        setSelectedIssues(new Set(data.issues.map((issue) => issue.id)))
+        setSelectedForms(new Set(data.encounters.flatMap((encounter) => encounter.forms.map((form) => form.id))))
+        setSelectedOrders(new Set(data.procedureOrders.map((order) => order.id)))
+      })
+      .catch((error) => setReportOptions({ status: 'error', message: error instanceof Error ? error.message : 'Could not load report options.' }))
+  }
+
+  async function generateReport() {
+    setGeneratingReport(true)
+    try {
+      const result = await generatePatientPortalMedicalReport(session.sessionId, reportInput())
+      if (!result.authenticated) throw new Error(result.failureReason ?? 'Could not generate the report.')
+      setGeneratedReport(result)
+      showToast('Medical report generated.', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not generate the report.', 'error')
+    } finally { setGeneratingReport(false) }
+  }
+
+  function downloadSelectedReport(kind: 'pdf' | 'package') {
+    const action = kind === 'pdf' ? downloadPatientPortalGeneratedMedicalReportPdf(session.sessionId, reportInput()) : downloadPatientPortalGeneratedMedicalReportPackage(session.sessionId, reportInput())
+    setReportDownloading(true)
+    action.then((blob) => triggerBlobDownload(blob, kind === 'pdf' ? `medical-report-${session.portalUsername}.pdf` : `medical-report-${session.portalUsername}.zip`))
+      .catch((error) => showToast(error instanceof Error ? error.message : 'Could not download the report.', 'error'))
       .finally(() => setReportDownloading(false))
   }
 
@@ -522,6 +580,23 @@ export default function PortalRecords() {
           <p className="muted" style={{ marginBottom: 20 }}>
             Download a comprehensive PDF summary of your medical record, generated fresh on demand.
           </p>
+
+          {reportOptions.status === 'idle' && <button className="button-secondary" style={{ width: 'auto', marginBottom: 18 }} type="button" onClick={loadReportOptions}>Choose report contents</button>}
+          {reportOptions.status === 'loading' && <div className="skeleton-list"><div className="skeleton-row" style={{ height: 130 }} /></div>}
+          {reportOptions.status === 'error' && <div className="error-banner">{reportOptions.message}</div>}
+          {reportOptions.status === 'ready' && (
+            <div className="report-builder">
+              <p className="report-contents-label">Choose what to include</p>
+              <div className="report-builder-grid">
+                <div><h3>Sections</h3>{reportOptions.data.sections.map((section) => <label key={section.id}><input type="checkbox" checked={selectedSections.has(section.id)} onChange={() => setSelectedSections((ids) => toggleSelection(ids, section.id))} /> {section.label}</label>)}</div>
+                <div><h3>Issues</h3>{reportOptions.data.issues.map((issue) => <label key={issue.id}><input type="checkbox" checked={selectedIssues.has(issue.id)} onChange={() => setSelectedIssues((ids) => toggleSelection(ids, issue.id))} /> {issue.typeLabel}: {issue.title}</label>)}{reportOptions.data.issues.length === 0 && <p className="muted">No issues available.</p>}</div>
+                <div><h3>Encounter forms</h3>{reportOptions.data.encounters.flatMap((encounter) => encounter.forms).map((form) => <label key={form.id}><input type="checkbox" checked={selectedForms.has(form.id)} onChange={() => setSelectedForms((ids) => toggleSelection(ids, form.id))} /> {form.display}</label>)}{reportOptions.data.encounters.every((encounter) => encounter.forms.length === 0) && <p className="muted">No forms available.</p>}</div>
+                <div><h3>Procedure orders</h3>{reportOptions.data.procedureOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedOrders.has(order.id)} onChange={() => setSelectedOrders((ids) => toggleSelection(ids, order.id))} /> {order.procedureName}</label>)}{reportOptions.data.procedureOrders.length === 0 && <p className="muted">No orders available.</p>}</div>
+              </div>
+              <button className="button-primary" style={{ width: 'auto' }} type="button" onClick={generateReport} disabled={generatingReport}>{generatingReport ? 'Generating...' : 'Generate selected report'}</button>
+              {generatedReport && <div className="report-generated"><strong>{generatedReport.title}</strong><span>Generated {generatedReport.generatedOn} with {generatedReport.summaryLines.length} summary lines.</span><div className="portal-refill-actions">{generatedReport.pdfDownloadAvailable && <button className="button-secondary" type="button" disabled={reportDownloading} onClick={() => downloadSelectedReport('pdf')}>Download PDF</button>}{generatedReport.packageDownloadAvailable && <button className="button-secondary" type="button" disabled={reportDownloading} onClick={() => downloadSelectedReport('package')}>Download package</button>}</div></div>}
+            </div>
+          )}
 
           {/* Report content summary from already-loaded health state (#9) */}
           {healthState.status === 'ready' && (() => {

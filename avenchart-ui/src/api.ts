@@ -654,6 +654,7 @@ export async function requestPatientPortalAppointment(
 
 export async function downloadPatientPortalGeneratedMedicalReportPdf(
   sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput = {},
   signal?: AbortSignal,
 ): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/pdf`, {
@@ -662,13 +663,44 @@ export async function downloadPatientPortalGeneratedMedicalReportPdf(
       'content-type': 'application/json',
       'X-Legacy EHR-Patient-Portal-Session': sessionId,
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
     const errorText = await response.text()
     throw new Error(errorText || `Patient portal medical report PDF download failed with ${response.status}`)
   }
+  return response.blob()
+}
+
+export type PatientPortalMedicalReportSection = { id: string; label: string; group: string; selected: boolean }
+export type PatientPortalMedicalReportIssue = { id: string; typeLabel: string; title: string; status: string }
+export type PatientPortalMedicalReportEncounterForm = { id: string; display: string; encounter: number }
+export type PatientPortalMedicalReportEncounter = { encounter: number; date: string; display: string; forms: PatientPortalMedicalReportEncounterForm[] }
+export type PatientPortalMedicalReportProcedureOrder = { id: string; procedureName: string; orderDate: string; orderStatus?: string | null; resultCount: number }
+export type PatientPortalMedicalReportGenerationInput = { sectionIds?: string[]; procedureOrderIds?: string[]; issueIds?: string[]; encounterFormIds?: string[] }
+export type PatientPortalMedicalReportResponse = {
+  authenticated: boolean; sections: PatientPortalMedicalReportSection[]; issues: PatientPortalMedicalReportIssue[]; encounters: PatientPortalMedicalReportEncounter[]; procedureOrders: PatientPortalMedicalReportProcedureOrder[]; failureReason?: string | null
+}
+export type PatientPortalGeneratedMedicalReportResponse = {
+  authenticated: boolean; title: string; generatedOn: string; includedSectionIds: string[]; includedIssueIds: string[]; includedEncounterFormIds: string[]; includedProcedureOrderIds: string[]; pdfDownloadAvailable: boolean; packageDownloadAvailable: boolean; summaryLines: string[]; failureReason?: string | null
+}
+
+export async function getPatientPortalMedicalReport(sessionId: string, signal?: AbortSignal): Promise<PatientPortalMedicalReportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report`, { headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId }, signal })
+  if (!response.ok) throw new Error(`Patient portal medical report failed with ${response.status}`)
+  return response.json()
+}
+
+export async function generatePatientPortalMedicalReport(sessionId: string, input: PatientPortalMedicalReportGenerationInput, signal?: AbortSignal): Promise<PatientPortalGeneratedMedicalReportResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/generate`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Legacy EHR-Patient-Portal-Session': sessionId }, body: JSON.stringify(input), signal })
+  if (!response.ok) throw new Error(`Patient portal medical report generation failed with ${response.status}`)
+  return response.json()
+}
+
+export async function downloadPatientPortalGeneratedMedicalReportPackage(sessionId: string, input: PatientPortalMedicalReportGenerationInput, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/package`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Legacy EHR-Patient-Portal-Session': sessionId }, body: JSON.stringify(input), signal })
+  if (!response.ok) throw new Error(`Patient portal medical report package failed with ${response.status}`)
   return response.blob()
 }
 
