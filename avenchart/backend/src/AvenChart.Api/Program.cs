@@ -53,6 +53,7 @@ builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
+builder.Services.AddScoped<FhirRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -645,6 +646,38 @@ patientPortal.MapDelete("/session", async (
                 SessionSource: "avenchart-portal"));
     })
     .WithName("EndPatientPortalSession");
+
+var fhir = app.MapGroup("/api/fhir/R4").WithTags("FHIR R4");
+RequireAccessPermission(fhir, "patients", "demo", "view");
+
+fhir.MapGet("/metadata", () =>
+    {
+        var patientCapability = new FhirPatientCapability(
+            "Patient",
+            [new FhirCapabilityInteraction("read"), new FhirCapabilityInteraction("search-type")],
+            ["name", "identifier", "_count"]);
+        var server = new FhirCapabilityResource("server", [new FhirCapabilityInteraction("transaction")], [patientCapability]);
+        return Results.Ok(new FhirCapabilityStatement(
+            "CapabilityStatement",
+            "active",
+            DateTimeOffset.UtcNow.ToString("O"),
+            "instance",
+            "4.0.1",
+            "json",
+            [server]));
+    })
+    .WithName("GetFhirCapabilityStatement");
+
+fhir.MapGet("/Patient/{id}", async (FhirRepository repository, string id, CancellationToken cancellationToken) =>
+    {
+        var patient = await repository.GetPatientAsync(id, cancellationToken);
+        return patient is null ? Results.NotFound() : Results.Ok(patient);
+    })
+    .WithName("GetFhirPatient");
+
+fhir.MapGet("/Patient", async (FhirRepository repository, string? name, string? identifier, int? _count, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.SearchPatientsAsync(name, identifier, _count, cancellationToken)))
+    .WithName("SearchFhirPatients");
 
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
