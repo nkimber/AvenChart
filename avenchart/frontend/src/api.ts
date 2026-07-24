@@ -709,6 +709,32 @@ export type AppointmentSearchResponse = {
   appointments: AppointmentListItem[]
 }
 
+export type FlowBoardItem = {
+  appointmentId: string
+  patientId: string
+  patientDisplayName: string
+  startTime: string
+  title: string
+  room?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  appointmentStatus?: string | null
+  flowStatus: string
+}
+
+export type FlowBoardLane = {
+  key: string
+  label: string
+  items: FlowBoardItem[]
+}
+
+export type FlowBoardResponse = {
+  datasetId: string
+  datasetVersion: string
+  date: string
+  lanes: FlowBoardLane[]
+}
+
 export type EncounterListItem = {
   id: number
   encounter: number
@@ -5187,6 +5213,27 @@ export async function getAppointmentDetail(
   })
   if (!response.ok) {
     throw new Error(appointmentApiError('Appointment detail load', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getAppointmentFlowBoard(
+  date?: string | null,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<FlowBoardResponse> {
+  const params = new URLSearchParams()
+  if (date?.trim()) {
+    params.set('date', date.trim())
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : ''
+  const response = await fetch(`${apiBaseUrl}/api/appointments/flow-board${suffix}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(appointmentApiError('Flow board load', response.status))
   }
 
   return response.json()

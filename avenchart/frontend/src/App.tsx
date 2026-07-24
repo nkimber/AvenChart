@@ -45,6 +45,7 @@ import {
 } from 'lucide-react'
 import {
   getAppointmentDetail,
+  getAppointmentFlowBoard,
   getAppointmentWaitlist,
   getAdministrationDirectory,
   acceptAdministrationPortalProfileReview,
@@ -281,6 +282,7 @@ import {
   type AppointmentSearchResponse,
   type AppointmentUpdateInput,
   type AppointmentWaitlistResponse,
+  type FlowBoardResponse,
   type AllergyListItem,
   type BillingEncounterItem,
   type BillingChargeTemplate,
@@ -448,6 +450,7 @@ type ModuleId =
   | 'patients'
   | 'portal'
   | 'calendar'
+  | 'flow'
   | 'encounters'
   | 'lists'
   | 'fees'
@@ -474,6 +477,7 @@ const moduleItems: Array<{ id: string; label: string; icon: LucideIcon; implemen
   { id: 'patients', label: 'Patient/Client', icon: UserRound, implemented: 'patients' },
   { id: 'portal', label: 'Portal', icon: KeyRound, implemented: 'portal' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, implemented: 'calendar' },
+  { id: 'flow', label: 'Flow', icon: Activity, implemented: 'flow' },
   { id: 'encounters', label: 'Encounters', icon: Stethoscope, implemented: 'encounters' },
   { id: 'lists', label: 'Lists', icon: ClipboardList, implemented: 'lists' },
   { id: 'fees', label: 'Fees', icon: WalletCards, implemented: 'fees' },
@@ -728,6 +732,12 @@ function App() {
   const [inventoryStatus, setInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [inventoryRefreshKey, setInventoryRefreshKey] = useState(0)
+
+  const [flowBoard, setFlowBoard] = useState<FlowBoardResponse | null>(null)
+  const [flowDate, setFlowDate] = useState('')
+  const [flowStatus, setFlowStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [flowError, setFlowError] = useState<string | null>(null)
+  const [flowRefreshKey, setFlowRefreshKey] = useState(0)
 
   const [administrationDirectory, setAdministrationDirectory] = useState<AdministrationDirectoryResponse | null>(null)
   const [administrationStatus, setAdministrationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -1426,6 +1436,40 @@ function App() {
       window.clearTimeout(timeout)
     }
   }, [activeModule, inventoryRefreshKey, openEmrSessionId])
+
+  useEffect(() => {
+    if (activeModule !== 'flow') {
+      return
+    }
+    if (!openEmrSessionId) {
+      setFlowBoard(null)
+      setFlowStatus('idle')
+      setFlowError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setFlowStatus('loading')
+      setFlowError(null)
+
+      try {
+        const result = await getAppointmentFlowBoard(flowDate, openEmrSessionId, controller.signal)
+        setFlowBoard(result)
+        setFlowStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setFlowStatus('error')
+          setFlowError(loadError instanceof Error ? loadError.message : 'Flow board failed')
+        }
+      }
+    }, 120)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [activeModule, flowDate, flowRefreshKey, openEmrSessionId])
 
   useEffect(() => {
     if (activeModule !== 'admin') {
@@ -3477,6 +3521,25 @@ function App() {
     } catch (mutationError) {
       setInventoryStatus('error')
       setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory activity failed')
+    }
+  }
+
+  async function handleFlowStatusChange(appointmentId: string, status: string) {
+    if (!openEmrSessionId) {
+      setFlowStatus('error')
+      setFlowError('Sign in before changing appointment flow status.')
+      return
+    }
+
+    setFlowStatus('loading')
+    setFlowError(null)
+    try {
+      await updateAppointmentStatus(appointmentId, { status }, openEmrSessionId)
+      setFlowRefreshKey((current) => current + 1)
+      setAppointmentRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setFlowStatus('error')
+      setFlowError(mutationError instanceof Error ? mutationError.message : 'Appointment flow update failed')
     }
   }
 
@@ -5748,6 +5811,8 @@ function App() {
             ? procedureResults?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'inventory'
             ? inventory?.datasetVersion ?? searchResult?.datasetVersion
+          : activeModule === 'flow'
+            ? flowBoard?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'messages'
             ? patientMessages?.datasetVersion ?? searchResult?.datasetVersion
           : activeModule === 'portal'
@@ -6205,6 +6270,16 @@ function App() {
             onCreateTransaction={handleInventoryTransaction}
           />
         )}
+        {activeModule === 'flow' && (
+          <FlowBoardWorkspace
+            board={flowBoard}
+            date={flowDate}
+            status={flowStatus}
+            error={flowError}
+            onDateChange={setFlowDate}
+            onStatusChange={handleFlowStatusChange}
+          />
+        )}
         {activeModule === 'reports' && (
           <ReportsWorkspace
             reports={operationalReports}
@@ -6538,6 +6613,9 @@ function moduleEyebrow(moduleId: ModuleId) {
   if (moduleId === 'calendar') {
     return 'Scheduling'
   }
+  if (moduleId === 'flow') {
+    return 'Clinic Operations'
+  }
   if (moduleId === 'encounters') {
     return 'Clinical Visits'
   }
@@ -6571,6 +6649,9 @@ function moduleTitle(moduleId: ModuleId) {
   }
   if (moduleId === 'calendar') {
     return 'Calendar'
+  }
+  if (moduleId === 'flow') {
+    return 'Flow'
   }
   if (moduleId === 'encounters') {
     return 'Encounters'
@@ -20279,6 +20360,122 @@ function InventoryMetric({ label, value, detail, warning = false }: { label: str
       <strong>{value}</strong>
       <small>{detail}</small>
     </article>
+  )
+}
+
+function FlowBoardWorkspace({
+  board,
+  date,
+  status,
+  error,
+  onDateChange,
+  onStatusChange,
+}: {
+  board: FlowBoardResponse | null
+  date: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+  onDateChange: (date: string) => void
+  onStatusChange: (appointmentId: string, status: string) => void | Promise<void>
+}) {
+  const totalAppointments = board?.lanes.reduce((total, lane) => total + lane.items.length, 0) ?? 0
+  const queuedAppointments = board?.lanes.find((lane) => lane.key === 'scheduled')?.items.length ?? 0
+  const activeAppointments = (board?.lanes.find((lane) => lane.key === 'arrived')?.items.length ?? 0)
+    + (board?.lanes.find((lane) => lane.key === 'in-room')?.items.length ?? 0)
+
+  function actionForLane(laneKey: string): { label: string; status: string } | null {
+    if (laneKey === 'scheduled') {
+      return { label: 'Mark arrived', status: '@' }
+    }
+    if (laneKey === 'arrived') {
+      return { label: 'Send to room', status: '>' }
+    }
+    if (laneKey === 'in-room') {
+      return { label: 'Check out', status: '<' }
+    }
+    return null
+  }
+
+  return (
+    <section className="workspace flow-workspace">
+      <header className="workspace-header flow-header">
+        <div>
+          <span className="flow-eyebrow">Live clinic movement</span>
+          <h1>Flow board</h1>
+          <p>Advance today&apos;s appointments using the same status recorded in the calendar.</p>
+        </div>
+        <label className="flow-date-control">
+          <span>Service date</span>
+          <input
+            type="date"
+            value={date || board?.date || ''}
+            onChange={(event) => onDateChange(event.target.value)}
+            aria-label="Flow board service date"
+          />
+        </label>
+      </header>
+
+      {status === 'loading' && <div className="workspace-status">Refreshing clinic flowâ€¦</div>}
+      {error && <div className="workspace-error">{error}</div>}
+
+      {board && (
+        <>
+          <div className="flow-summary" aria-label="Flow board summary">
+            <div><strong>{totalAppointments}</strong><span>on the board</span></div>
+            <div><strong>{queuedAppointments}</strong><span>scheduled to arrive</span></div>
+            <div><strong>{activeAppointments}</strong><span>in active care</span></div>
+            <time>{new Date(`${board.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</time>
+          </div>
+
+          <div className="flow-lanes" aria-label="Appointment flow lanes">
+            {board.lanes.map((lane) => {
+              const action = actionForLane(lane.key)
+              return (
+                <section className={`flow-lane flow-lane-${lane.key}`} key={lane.key} aria-label={`${lane.label} appointments`}>
+                  <header className="flow-lane-heading">
+                    <div>
+                      <span>{lane.label}</span>
+                      <strong>{lane.items.length}</strong>
+                    </div>
+                    <small>{lane.key === 'in-room' ? 'care underway' : lane.key === 'complete' ? 'visit closed' : 'appointments'}</small>
+                  </header>
+                  <div className="flow-card-stack">
+                    {lane.items.map((appointment) => (
+                      <article className="flow-card" key={appointment.appointmentId}>
+                        <time className="flow-card-time">{appointment.startTime}</time>
+                        <div className="flow-card-body">
+                          <strong>{appointment.patientDisplayName}</strong>
+                          <span>{appointment.title}</span>
+                          <small>
+                            {[appointment.room ? `Room ${appointment.room}` : null, appointment.providerName, appointment.facilityName]
+                              .filter(Boolean)
+                              .join(' Â· ') || 'Location not assigned'}
+                          </small>
+                        </div>
+                        {action && (
+                          <button
+                            type="button"
+                            className="flow-advance-button"
+                            disabled={status === 'loading'}
+                            onClick={() => void onStatusChange(appointment.appointmentId, action.status)}
+                          >
+                            {action.label}<ChevronRight size={14} aria-hidden="true" />
+                          </button>
+                        )}
+                      </article>
+                    ))}
+                    {lane.items.length === 0 && <p className="flow-empty-lane">No appointments</p>}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+          <p className="flow-boundary">Flow actions update the appointment status only; they do not create a separate tracker history.</p>
+        </>
+      )}
+
+      {!board && status !== 'loading' && !error && <div className="empty-chart">Choose Flow to load the day&apos;s appointment movement.</div>}
+    </section>
   )
 }
 
