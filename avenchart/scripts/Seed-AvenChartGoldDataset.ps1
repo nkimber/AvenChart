@@ -39,6 +39,11 @@ try {
         throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds."
     }
 
+    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized schema migrations failed with exit code $LASTEXITCODE."
+    }
+
     $sql = Get-Content -LiteralPath $SqlPath -Raw
     $sql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
     if ($LASTEXITCODE -ne 0) {
