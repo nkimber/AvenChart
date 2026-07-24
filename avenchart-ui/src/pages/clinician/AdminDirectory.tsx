@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import {
+  acceptAdministrationPortalProfileReview,
   createAdministrationFacility,
   createAdministrationUser,
   deleteAdministrationFacility,
@@ -11,6 +12,7 @@ import {
   grantAdministrationAccessPermission,
   revokeAdministrationAccessMembership,
   revokeAdministrationAccessPermission,
+  revertAdministrationPortalProfileReview,
   updateAdministrationFacility,
   updateAdministrationUser,
   type AdministrationDirectoryResponse,
@@ -18,6 +20,7 @@ import {
   type AdministrationFacilityMutationInput,
   type AdministrationAccessGroupPermissionItem,
   type AdministrationAccessUserMembershipItem,
+  type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
 } from '../../api.ts'
@@ -102,7 +105,7 @@ function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews'>('users')
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
   const [savingFacility, setSavingFacility] = useState(false)
@@ -117,6 +120,7 @@ export default function AdminDirectory() {
   const [savingPermission, setSavingPermission] = useState(false)
   const [removingMembership, setRemovingMembership] = useState<string | null>(null)
   const [removingPermission, setRemovingPermission] = useState<string | null>(null)
+  const [reviewActionId, setReviewActionId] = useState<string | null>(null)
 
   useEffect(() => {
     getAdministrationDirectory(session.sessionId)
@@ -302,6 +306,24 @@ export default function AdminDirectory() {
     }
   }
 
+  async function resolveProfileReview(request: AdministrationPortalProfileReviewRequest, action: 'accept' | 'revert') {
+    if (reviewActionId !== null) return
+    const verb = action === 'accept' ? 'commit these changes to the chart' : 'revert these requested changes'
+    if (!window.confirm(`Confirm: ${verb} for ${request.patientName}?`)) return
+    setReviewActionId(request.id)
+    try {
+      const mutation = action === 'accept'
+        ? await acceptAdministrationPortalProfileReview(session.sessionId, request.id)
+        : await revertAdministrationPortalProfileReview(session.sessionId, request.id)
+      setState({ status: 'ready', data: mutation.detail })
+      showToast(action === 'accept' ? 'Portal profile changes committed.' : 'Portal profile changes reverted.', 'success')
+    } catch {
+      showToast('Could not resolve this profile review. It may already have changed.', 'error')
+    } finally {
+      setReviewActionId(null)
+    }
+  }
+
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
@@ -328,6 +350,7 @@ export default function AdminDirectory() {
                 { id: 'users', label: `Users (${data.counts.users})` },
                 { id: 'facilities', label: `Facilities (${data.counts.facilities})` },
                 { id: 'access', label: `Access control (${data.counts.accessGroups})` },
+                { id: 'reviews', label: `Profile reviews (${data.counts.waitingProfileReviews})` },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -497,6 +520,31 @@ export default function AdminDirectory() {
                     ))}
                   </tbody>
                 </table>
+              </section>
+            )}
+
+            {tab === 'reviews' && (
+              <section className="cl-card">
+                <div className="cl-card-header">
+                  <div>
+                    <h2 className="cl-card-title">Portal profile reviews</h2>
+                    <p className="clinician-page-subtitle">Review requested patient portal profile changes before they reach the chart.</p>
+                  </div>
+                  <span className="cl-badge cl-badge-muted">{data.portalActivity.waitingAuditCount} audits waiting</span>
+                </div>
+                {data.portalActivity.profileReviewRequests.length === 0 ? (
+                  <p className="cl-empty-text">No portal profile changes are waiting for review.</p>
+                ) : (
+                  <div className="cl-review-list">
+                    {data.portalActivity.profileReviewRequests.map((request) => {
+                      const working = reviewActionId === request.id
+                      const demographic = request.requestedDemographics
+                      const contact = [demographic.email, demographic.phoneHome, demographic.phoneCell].filter(Boolean).join(' · ')
+                      const address = [demographic.street, demographic.city, demographic.state, demographic.postalCode].filter(Boolean).join(', ')
+                      return <article key={request.id} className="cl-review-card"><div className="cl-review-top"><div><p className="cl-form-section-label">{request.narrative}</p><h3>{request.patientName}</h3><p>{request.pubpid} · PID {request.legacyPid} · Requested {request.requestedAt}</p></div><span className="cl-badge cl-badge-muted">{request.status}</span></div><div className="cl-review-facts"><span><strong>Contact:</strong> {contact || 'Not supplied'}</span><span><strong>Address:</strong> {address || 'Not supplied'}</span><span><strong>Pending:</strong> {request.pendingAction}</span></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="button" disabled={working} onClick={() => resolveProfileReview(request, 'accept')}><Check size={15} /> {working ? 'Working...' : 'Commit to chart'}</button><button className="cl-btn-secondary" type="button" disabled={working} onClick={() => resolveProfileReview(request, 'revert')}><RotateCcw size={15} /> Revert edits</button></div></article>
+                    })}
+                  </div>
+                )}
               </section>
             )}
 

@@ -4397,6 +4397,13 @@ a {
 .cl-access-row:last-child { border-bottom: 0; }
 .cl-access-row p { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
 .cl-access-row span { display: block; margin-top: 2px; color: var(--text-muted); font-size: 11px; }
+.cl-review-list { display: flex; flex-direction: column; gap: 12px; }
+.cl-review-card { padding: 14px; border: 1px solid #d5e7e1; border-radius: var(--radius-md); background: #f8fbfa; }
+.cl-review-top { display: flex; justify-content: space-between; gap: 12px; }
+.cl-review-top h3 { margin: 0 0 4px; font-size: 15px; }
+.cl-review-top p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.cl-review-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; color: var(--text-muted); font-size: 12px; }
+.cl-review-facts strong { color: var(--text); }
 @media (max-width: 900px) { .cl-access-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .cl-admin-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) {
@@ -4404,6 +4411,7 @@ a {
   .cl-admin-facility-header .cl-btn-primary { justify-content: center; }
   .cl-admin-form-grid { grid-template-columns: 1fr; }
   .cl-access-form { grid-template-columns: 1fr; }
+  .cl-review-facts { grid-template-columns: 1fr; }
   .cl-admin-field-color { max-width: none; }
 }
 

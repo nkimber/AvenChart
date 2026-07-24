@@ -1234,6 +1234,22 @@ export type AdministrationDirectoryCounts = {
   accessGroups: number
   accessGroupPermissions: number
   accessUserMemberships: number
+  waitingPortalAudits: number
+  waitingProfileReviews: number
+}
+
+export type AdministrationPortalProfileReviewRequest = {
+  id: string
+  requestedAt: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientName: string
+  activity: string
+  pendingAction: string
+  status: string
+  narrative: string
+  requestedDemographics: { email?: string | null; phoneHome?: string | null; phoneCell?: string | null; street?: string | null; city?: string | null; state?: string | null; postalCode?: string | null }
 }
 
 export type AdministrationDirectoryResponse = {
@@ -1245,6 +1261,11 @@ export type AdministrationDirectoryResponse = {
     permissions: AdministrationAccessPermissionItem[]
     groupPermissions: AdministrationAccessGroupPermissionItem[]
     userMemberships: AdministrationAccessUserMembershipItem[]
+  }
+  portalActivity: {
+    waitingAuditCount: number
+    waitingProfileReviewCount: number
+    profileReviewRequests: AdministrationPortalProfileReviewRequest[]
   }
 }
 
@@ -1398,6 +1419,16 @@ export async function revokeAdministrationAccessMembership(
   signal?: AbortSignal,
 ): Promise<AdministrationAccessUserMembershipMutationResponse> {
   return clinicianDeleteJson(sessionId, `/api/administration/access-control/user-memberships/${encodeURIComponent(userValue)}/${encodeURIComponent(groupValue)}`, signal)
+}
+
+export type AdministrationPortalProfileReviewMutationResponse = { detail: AdministrationDirectoryResponse }
+
+export async function acceptAdministrationPortalProfileReview(sessionId: string, requestId: string, signal?: AbortSignal): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  return clinicianPut(sessionId, `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/accept`, {}, signal)
+}
+
+export async function revertAdministrationPortalProfileReview(sessionId: string, requestId: string, signal?: AbortSignal): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  return clinicianPut(sessionId, `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/revert`, {}, signal)
 }
 
 export async function getLoginAudit(
