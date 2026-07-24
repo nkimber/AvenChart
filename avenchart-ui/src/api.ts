@@ -1207,6 +1207,12 @@ export async function dispatchBillingStatementBatch(sessionId: string, limit = 1
   return clinicianPost(sessionId, `/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`, {}, signal)
 }
 
+export type CollectionsWorkQueueItem = { patientId: string; pubpid: string; patientDisplayName: string; statementNumber: string; balanceDueAmount: number; pastDueAmount: number; over90Amount: number; oldestOpenAgeDays: number; collectionTier: string; recommendedAction: string; contactMethod: string }
+export type CollectionsWorkQueueResponse = { asOfDate: string; accountCount: number; highPriorityCount: number; totalBalanceAmount: number; totalPastDueAmount: number; totalOver90Amount: number; items: CollectionsWorkQueueItem[] }
+export async function getBillingCollectionsWorkQueue(sessionId: string, limit = 10, signal?: AbortSignal): Promise<CollectionsWorkQueueResponse> {
+  return clinicianGet(sessionId, `/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, signal)
+}
+
 // ── Administration ────────────────────────────────────────────────────────────
 
 export type AdministrationUserItem = {
