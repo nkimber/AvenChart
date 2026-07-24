@@ -1166,6 +1166,47 @@ export async function getOperationalReports(
   return clinicianGet(sessionId, '/api/reports/operational', signal)
 }
 
+export type StatementBatchCandidate = {
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  statementNumber: string
+  statementStatus: string
+  statementDate: string
+  dueDate: string
+  balanceDueAmount: number
+  pastDueAmount: number
+  currentDueAmount: number
+  oldestOpenAgeDays: number
+  deliveryMethod: string
+}
+
+export type StatementBatchResponse = {
+  asOfDate: string
+  candidateCount: number
+  totalBalanceAmount: number
+  totalPastDueAmount: number
+  totalCurrentDueAmount: number
+  candidates: StatementBatchCandidate[]
+}
+
+export type StatementBatchDispatchResponse = {
+  dispatchId: string
+  dispatchedAt: string
+  dispatchedStatementCount: number
+  emailQueueCount: number
+  printQueueCount: number
+  totalBalanceAmount: number
+}
+
+export async function getBillingStatementBatch(sessionId: string, limit = 10, signal?: AbortSignal): Promise<StatementBatchResponse> {
+  return clinicianGet(sessionId, `/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`, signal)
+}
+
+export async function dispatchBillingStatementBatch(sessionId: string, limit = 10, signal?: AbortSignal): Promise<StatementBatchDispatchResponse> {
+  return clinicianPost(sessionId, `/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`, {}, signal)
+}
+
 // ── Administration ────────────────────────────────────────────────────────────
 
 export type AdministrationUserItem = {

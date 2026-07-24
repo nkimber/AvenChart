@@ -26,6 +26,7 @@ import PatientMessages from './pages/clinician/PatientMessages.tsx'
 import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
 import LabQueue from './pages/clinician/LabQueue.tsx'
 import OperationalReports from './pages/clinician/OperationalReports.tsx'
+import BillingWorkspace from './pages/clinician/BillingWorkspace.tsx'
 import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
 import NewEncounter from './pages/clinician/NewEncounter.tsx'
 import NewPatient from './pages/clinician/NewPatient.tsx'
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="messages" element={<ClinicianMessages />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
+          <Route path="billing" element={<BillingWorkspace />} />
           <Route path="admin" element={<AdminDirectory />} />
 
           {/* Standalone new encounter (no patient context) */}

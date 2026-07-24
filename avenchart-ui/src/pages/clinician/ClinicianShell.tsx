@@ -13,6 +13,7 @@ import {
   LogOut,
   Mail,
   Pill,
+  ReceiptText,
   Settings,
   Users,
 } from 'lucide-react'
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
+  { path: '/clinician/billing', label: 'Billing', icon: ReceiptText },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },
 ]
 
