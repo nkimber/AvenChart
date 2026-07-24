@@ -18,6 +18,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddResponseCompression();
 builder.Services.AddHealthChecks()
     .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
+builder.Services.AddSingleton<IIntegrationTransport, LocalDeterministicIntegrationTransport>();
 
 builder.Services.AddOptions<RuntimeSafetyOptions>()
     .BindConfiguration(RuntimeSafetyOptions.SectionName)
@@ -48,6 +49,7 @@ builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
+builder.Services.AddScoped<IntegrationRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -2604,6 +2606,81 @@ procedures.MapDelete("/orders/{orderId:int}", async (
     })
     .WithName("DeleteProcedureOrderCascade")
     .AddEndpointFilter(AccessPermissionFilter("patients", "lab", "write"));
+
+var integrations = app.MapGroup("/api/integrations").WithTags("Integrations");
+RequireAccessPermission(integrations, "admin", "super", "write");
+
+integrations.MapGet("/outbox", async (
+        IntegrationRepository repository,
+        string? status,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetOutboxAsync(status, limit ?? 25, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["status"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ListIntegrationOutbox");
+
+integrations.MapPost("/outbox", async (
+        IntegrationRepository repository,
+        IntegrationOutboxQueueRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var message = await repository.QueueAsync(request, cancellationToken);
+            return Results.Created($"/api/integrations/outbox/{message.EventId}", message);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("QueueIntegrationOutbox");
+
+integrations.MapPost("/outbox/{eventId:guid}/dispatch", async (
+        IntegrationRepository repository,
+        Guid eventId,
+        CancellationToken cancellationToken) =>
+    {
+        var dispatch = await repository.DispatchAsync(eventId, cancellationToken);
+        return dispatch is null ? Results.NotFound() : Results.Ok(dispatch);
+    })
+    .WithName("DispatchIntegrationOutbox");
+
+integrations.MapPost("/inbox", async (
+        IntegrationRepository repository,
+        IntegrationInboxReceiveRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var receipt = await repository.ReceiveAsync(request, cancellationToken);
+            return receipt.Duplicate
+                ? Results.Ok(receipt)
+                : Results.Created($"/api/integrations/inbox/{receipt.InboxId}", receipt);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["request"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ReceiveIntegrationInbox");
 
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 RequireAccessPermission(billing, "acct", "bill", "view");

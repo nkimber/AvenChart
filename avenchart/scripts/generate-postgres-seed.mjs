@@ -255,6 +255,8 @@ drop table if exists lab_order_catalog;
 drop table if exists lab_providers;
 drop table if exists lab_provider_address_book;
 drop table if exists encounter_signatures;
+drop table if exists integration_inbox;
+drop table if exists integration_outbox;
 drop table if exists statement_email_outbox;
 drop table if exists statement_delivery_audit_events;
 drop table if exists payment_activities;
@@ -999,6 +1001,40 @@ create table statement_email_outbox (
   delivery_status text not null,
   external_reference text not null,
   created_at timestamp not null
+);
+
+create table integration_outbox (
+  event_id uuid primary key,
+  idempotency_key text unique,
+  event_type text not null,
+  aggregate_type text not null,
+  aggregate_id text not null,
+  destination text not null,
+  payload jsonb not null,
+  status text not null,
+  attempt_count integer not null default 0,
+  available_at timestamptz not null,
+  locked_at timestamptz,
+  last_attempt_at timestamptz,
+  delivered_at timestamptz,
+  external_reference text,
+  last_error text,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
+);
+
+create table integration_inbox (
+  inbox_id uuid primary key,
+  source text not null,
+  source_message_id text not null,
+  message_type text not null,
+  payload jsonb not null,
+  status text not null,
+  attempt_count integer not null default 0,
+  received_at timestamptz not null,
+  processed_at timestamptz,
+  last_error text,
+  unique (source, source_message_id)
 );
 
 create table lab_orders (
@@ -2476,6 +2512,8 @@ create index idx_statement_delivery_audit_dispatch on statement_delivery_audit_e
 create index idx_statement_delivery_audit_pid_created on statement_delivery_audit_events (legacy_pid, created_at desc);
 create index idx_statement_email_outbox_batch on statement_email_outbox (outbox_batch_id, queued_at desc);
 create index idx_statement_email_outbox_pid_created on statement_email_outbox (legacy_pid, created_at desc);
+create index idx_integration_outbox_dispatch on integration_outbox (status, available_at, created_at);
+create index idx_integration_inbox_status on integration_inbox (status, received_at);
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
