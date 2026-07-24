@@ -246,6 +246,51 @@
   margin-top: 18px;
 }
 
+.inventory-activity-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e0ece9;
+  background: #fbfdfd;
+}
+
+.inventory-activity-filters label {
+  display: grid;
+  gap: 5px;
+  color: #466064;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.inventory-activity-filters input,
+.inventory-activity-filters select {
+  min-height: 35px;
+  border: 1px solid #b9cfca;
+  border-radius: 2px;
+  padding: 6px 8px;
+  background: #fff;
+  color: var(--inventory-ink);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.inventory-export-button {
+  min-height: 35px;
+  padding: 0 12px;
+  border: 1px solid #8bbab3;
+  border-radius: 2px;
+  background: #e8f4f1;
+  color: #12675f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .inventory-activity-list {
   display: grid;
 }
@@ -287,7 +332,8 @@
 
 @media (max-width: 900px) {
   .inventory-metric-grid,
-  .inventory-ledger-layout {
+  .inventory-ledger-layout,
+  .inventory-activity-filters {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -298,7 +344,8 @@
 
 @media (max-width: 620px) {
   .inventory-metric-grid,
-  .inventory-ledger-layout {
+  .inventory-ledger-layout,
+  .inventory-activity-filters {
     grid-template-columns: 1fr;
   }
 

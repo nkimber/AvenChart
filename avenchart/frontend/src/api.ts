@@ -3131,6 +3131,16 @@ export type InventoryMutationResponse = {
   transferId?: string | null
 }
 
+export type InventoryActivityReportResponse = {
+  datasetId: string
+  datasetVersion: string
+  fromDate?: string | null
+  toDate?: string | null
+  facilityId?: number | null
+  totalEntries: number
+  entries: InventoryTransactionItem[]
+}
+
 export type AuthLoginInput = {
   username: string
   password: string
@@ -8186,6 +8196,44 @@ export async function createInventoryTransfer(
   }
 
   return response.json()
+}
+
+export async function getInventoryActivityReport(
+  filters: { fromDate?: string; toDate?: string; facilityId?: string },
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryActivityReportResponse> {
+  const params = new URLSearchParams()
+  if (filters.fromDate?.trim()) params.set('from', filters.fromDate.trim())
+  if (filters.toDate?.trim()) params.set('to', filters.toDate.trim())
+  if (filters.facilityId?.trim()) params.set('facilityId', filters.facilityId.trim())
+  const response = await fetch(`${apiBaseUrl}/api/inventory/activity?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory activity report', response.status))
+  }
+  return response.json()
+}
+
+export async function getInventoryActivityCsv(
+  filters: { fromDate?: string; toDate?: string; facilityId?: string },
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<string> {
+  const params = new URLSearchParams()
+  if (filters.fromDate?.trim()) params.set('from', filters.fromDate.trim())
+  if (filters.toDate?.trim()) params.set('to', filters.toDate.trim())
+  if (filters.facilityId?.trim()) params.set('facilityId', filters.facilityId.trim())
+  const response = await fetch(`${apiBaseUrl}/api/inventory/activity/export?${params.toString()}`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory activity export', response.status))
+  }
+  return response.text()
 }
 
 export function getOperationalReportsCsvUrl() {

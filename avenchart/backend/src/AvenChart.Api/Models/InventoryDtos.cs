@@ -77,3 +77,12 @@ public sealed record InventoryMutationResponse(
     bool BelowReorderPoint,
     InventoryLot? CounterpartyLot = null,
     Guid? TransferId = null);
+
+public sealed record InventoryActivityReportResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string? FromDate,
+    string? ToDate,
+    int? FacilityId,
+    int TotalEntries,
+    IReadOnlyList<InventoryTransactionItem> Entries);

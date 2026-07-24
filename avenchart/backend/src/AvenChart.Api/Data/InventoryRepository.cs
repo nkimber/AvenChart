@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -248,6 +249,57 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             transferId);
     }
 
+    public async Task<InventoryActivityReportResponse> GetActivityReportAsync(
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate is not null && toDate is not null && fromDate > toDate)
+        {
+            throw new ArgumentException("The activity report start date cannot be after its end date.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var header = await GetHeaderAsync(connection, cancellationToken);
+        var totalEntries = await CountActivityEntriesAsync(connection, fromDate, toDate, facilityId, cancellationToken);
+        var entries = await GetActivityEntriesAsync(connection, fromDate, toDate, facilityId, 500, cancellationToken);
+        return new InventoryActivityReportResponse(
+            header.DatasetId,
+            header.DatasetVersion,
+            fromDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            toDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            facilityId,
+            totalEntries,
+            entries);
+    }
+
+    public async Task<string> GetActivityReportCsvAsync(
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? facilityId,
+        CancellationToken cancellationToken)
+    {
+        var report = await GetActivityReportAsync(fromDate, toDate, facilityId, cancellationToken);
+        var csv = new StringBuilder();
+        AppendCsvRow(csv, "Occurred At", "Item Code", "Item Name", "Facility", "Transaction Type", "Quantity Delta", "Counterparty Facility", "Reason", "Performed By", "Transfer ID");
+        foreach (var entry in report.Entries)
+        {
+            AppendCsvRow(csv,
+                entry.OccurredAt.ToString("O", CultureInfo.InvariantCulture),
+                entry.ItemCode,
+                entry.ItemName,
+                entry.FacilityCode,
+                entry.TransactionType,
+                entry.QuantityDelta.ToString(CultureInfo.InvariantCulture),
+                entry.CounterpartyFacilityCode ?? string.Empty,
+                entry.Reason ?? string.Empty,
+                entry.PerformedBy,
+                entry.TransferId?.ToString() ?? string.Empty);
+        }
+        return csv.ToString();
+    }
+
     private static async Task<IReadOnlyList<InventoryFacility>> GetFacilitiesAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -429,6 +481,37 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
     private static async Task<IReadOnlyList<InventoryTransactionItem>> GetTransactionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
+        return await GetActivityEntriesAsync(connection, null, null, null, 50, cancellationToken);
+    }
+
+    private static async Task<int> CountActivityEntriesAsync(
+        NpgsqlConnection connection,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select count(*)
+            from inventory_transactions t
+            join inventory_lots l on l.lot_id = t.lot_id
+            where (@from_date is null or t.occurred_at >= @from_date)
+              and (@to_date is null or t.occurred_at < @to_date)
+              and (@facility_id is null or l.facility_id = @facility_id);
+            """;
+        AddActivityFilterParameters(command, fromDate, toDate, facilityId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<IReadOnlyList<InventoryTransactionItem>> GetActivityEntriesAsync(
+        NpgsqlConnection connection,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? facilityId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select t.transaction_id, t.lot_id, i.item_code, i.name, f.code, t.transaction_type,
@@ -445,9 +528,14 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
               where paired.transfer_id = t.transfer_id and paired.transaction_id <> t.transaction_id
               limit 1
             ) counterpart_facility on t.transfer_id is not null
+            where (@from_date is null or t.occurred_at >= @from_date)
+              and (@to_date is null or t.occurred_at < @to_date)
+              and (@facility_id is null or l.facility_id = @facility_id)
             order by t.occurred_at desc
-            limit 50;
+            limit @limit;
             """;
+        AddActivityFilterParameters(command, fromDate, toDate, facilityId);
+        command.Parameters.AddWithValue("limit", limit);
         var entries = new List<InventoryTransactionItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -460,6 +548,20 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         return entries;
+    }
+
+    private static void AddActivityFilterParameters(NpgsqlCommand command, DateOnly? fromDate, DateOnly? toDate, int? facilityId)
+    {
+        DateTimeOffset? fromTimestamp = fromDate is null ? null : new DateTimeOffset(fromDate.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        DateTimeOffset? toTimestamp = toDate is null ? null : new DateTimeOffset(toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        command.Parameters.AddWithValue("from_date", (object?)fromTimestamp ?? DBNull.Value);
+        command.Parameters.AddWithValue("to_date", (object?)toTimestamp ?? DBNull.Value);
+        command.Parameters.AddWithValue("facility_id", (object?)facilityId ?? DBNull.Value);
+    }
+
+    private static void AppendCsvRow(StringBuilder builder, params string[] values)
+    {
+        builder.AppendLine(string.Join(',', values.Select(value => $"\"{value.Replace("\"", "\"\"")}\"")));
     }
 
     private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

@@ -116,6 +116,8 @@ import {
   getProcedureResults,
   getOperationalReports,
   getInventory,
+  getInventoryActivityCsv,
+  getInventoryActivityReport,
   getOperationalReportsCsv,
   getLoginAudit,
   getCurrentSession,
@@ -410,6 +412,7 @@ import {
   type StatementPortalDeliveryResponse,
   type OperationalReportsResponse,
   type InventoryResponse,
+  type InventoryActivityReportResponse,
   type InventoryTransactionCreateInput,
   type InventoryTransferCreateInput,
   type ProviderActivityReportItem,
@@ -6287,6 +6290,7 @@ function App() {
             inventory={inventory}
             status={inventoryStatus}
             error={inventoryError}
+            sessionId={openEmrSessionId}
             onCreateTransaction={handleInventoryTransaction}
             onCreateTransfer={handleInventoryTransfer}
           />
@@ -20218,12 +20222,14 @@ function InventoryWorkspace({
   inventory,
   status,
   error,
+  sessionId,
   onCreateTransaction,
   onCreateTransfer,
 }: {
   inventory: InventoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  sessionId: string | null
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
 }) {
@@ -20232,6 +20238,12 @@ function InventoryWorkspace({
   const [quantity, setQuantity] = useState('1')
   const [reason, setReason] = useState('')
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
+  const [reportFromDate, setReportFromDate] = useState('')
+  const [reportToDate, setReportToDate] = useState('')
+  const [reportFacilityId, setReportFacilityId] = useState('')
+  const [activityReport, setActivityReport] = useState<InventoryActivityReportResponse | null>(null)
+  const [activityReportStatus, setActivityReportStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [activityReportError, setActivityReportError] = useState<string | null>(null)
   const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
   const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
@@ -20250,6 +20262,60 @@ function InventoryWorkspace({
       setDestinationFacilityId(destinationFacilities.length > 0 ? String(destinationFacilities[0].facilityId) : '')
     }
   }, [destinationFacilities, destinationFacilityId, transactionType])
+
+  useEffect(() => {
+    if (!sessionId) {
+      setActivityReport(null)
+      setActivityReportStatus('idle')
+      return
+    }
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setActivityReportStatus('loading')
+      setActivityReportError(null)
+      try {
+        const report = await getInventoryActivityReport({
+          fromDate: reportFromDate,
+          toDate: reportToDate,
+          facilityId: reportFacilityId,
+        }, sessionId, controller.signal)
+        setActivityReport(report)
+        setActivityReportStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setActivityReportStatus('error')
+          setActivityReportError(loadError instanceof Error ? loadError.message : 'Inventory activity report failed')
+        }
+      }
+    }, 160)
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [reportFacilityId, reportFromDate, reportToDate, sessionId, status])
+
+  async function exportActivityReport() {
+    if (!sessionId) {
+      return
+    }
+    try {
+      const csv = await getInventoryActivityCsv({
+        fromDate: reportFromDate,
+        toDate: reportToDate,
+        facilityId: reportFacilityId,
+      }, sessionId)
+      const href = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+      const link = document.createElement('a')
+      link.href = href
+      link.download = 'legacy-ehr-inventory-activity.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(href)
+    } catch (exportError) {
+      setActivityReportError(exportError instanceof Error ? exportError.message : 'Inventory activity export failed')
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -20391,18 +20457,33 @@ function InventoryWorkspace({
           <section className="inventory-activity-panel">
             <div className="inventory-panel-heading">
               <div>
-                <span>Activity trail</span>
-                <h2>Recent lot movements</h2>
+                <span>Activity report</span>
+                <h2>Filtered lot movements</h2>
               </div>
+              <small>{activityReport?.totalEntries ?? inventory.recentTransactions.length} matching entries</small>
             </div>
+            <div className="inventory-activity-filters">
+              <label>From<input type="date" value={reportFromDate} onChange={(event) => setReportFromDate(event.target.value)} /></label>
+              <label>To<input type="date" value={reportToDate} onChange={(event) => setReportToDate(event.target.value)} /></label>
+              <label>Facility
+                <select value={reportFacilityId} onChange={(event) => setReportFacilityId(event.target.value)}>
+                  <option value="">All facilities</option>
+                  {inventory.facilities.map((facility) => <option key={facility.facilityId} value={facility.facilityId}>{facility.code} · {facility.name}</option>)}
+                </select>
+              </label>
+              <button type="button" className="inventory-export-button" onClick={() => void exportActivityReport()}>Export CSV</button>
+            </div>
+            {activityReportError && <div className="workspace-error">{activityReportError}</div>}
+            {activityReportStatus === 'loading' && <div className="workspace-status">Refreshing activity report…</div>}
             <div className="inventory-activity-list">
-              {inventory.recentTransactions.map((transaction) => (
+              {(activityReport?.entries ?? inventory.recentTransactions).map((transaction) => (
                 <article key={transaction.transactionId} className="inventory-activity-row">
                   <span className={`inventory-activity-direction ${transaction.quantityDelta < 0 ? 'out' : 'in'}`}>{transaction.quantityDelta > 0 ? '+' : ''}{transaction.quantityDelta}</span>
                   <div><strong>{transaction.itemName || transaction.itemCode}</strong><small>{transaction.transactionType}{transaction.counterpartyFacilityCode ? ` ${transaction.quantityDelta < 0 ? 'to' : 'from'} ${transaction.counterpartyFacilityCode}` : ''} · {transaction.facilityCode} · {transaction.reason || 'No reason supplied'}</small></div>
                   <time>{new Date(transaction.occurredAt).toLocaleDateString()}</time>
                 </article>
               ))}
+              {activityReport?.entries.length === 0 && <div className="timeline-placeholder">No matching inventory activity</div>}
             </div>
           </section>
         </>

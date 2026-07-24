@@ -2748,6 +2748,49 @@ inventory.MapPost("/transfers", async (
     .WithName("CreateInventoryTransfer")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "transfers", "write"));
 
+inventory.MapGet("/activity", async (
+        InventoryRepository repository,
+        DateOnly? from,
+        DateOnly? to,
+        int? facilityId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetActivityReportAsync(from, to, facilityId, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["inventoryActivity"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("GetInventoryActivityReport");
+
+inventory.MapGet("/activity/export", async (
+        InventoryRepository repository,
+        DateOnly? from,
+        DateOnly? to,
+        int? facilityId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var csv = await repository.GetActivityReportCsvAsync(from, to, facilityId, cancellationToken);
+            return Results.File(Encoding.UTF8.GetBytes(csv), contentType: "text/csv", fileDownloadName: "legacy-ehr-inventory-activity.csv");
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["inventoryActivity"] = [exception.Message]
+            });
+        }
+    })
+    .WithName("ExportInventoryActivityReport");
+
 var billing = app.MapGroup("/api/billing").WithTags("Billing");
 RequireAccessPermission(billing, "acct", "bill", "view");
 
