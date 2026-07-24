@@ -13,6 +13,7 @@ import {
   LogOut,
   Mail,
   Pill,
+  Package,
   ReceiptText,
   Settings,
   Users,
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
   { path: '/clinician/billing', label: 'Billing', icon: ReceiptText },
+  { path: '/clinician/inventory', label: 'Inventory', icon: Package },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },
 ]
 

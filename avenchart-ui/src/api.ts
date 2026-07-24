@@ -922,6 +922,12 @@ export async function getAppointmentFlowBoard(sessionId: string, date?: string, 
   return clinicianGet(sessionId, `/api/appointments/flow-board${suffix}`, signal)
 }
 
+export type InventoryLot = { lotId: number; facilityCode: string; facilityName: string; lotNumber: string; expirationDate?: string | null; quantityOnHand: number; status: string }
+export type InventoryItem = { itemId: number; itemCode: string; name: string; category: string; unit: string; reorderPoint: number; quantityOnHand: number; belowReorderPoint: boolean; lots: InventoryLot[] }
+export type InventoryTransactionItem = { transactionId: string; itemCode: string; itemName: string; facilityCode: string; transactionType: string; quantityDelta: number; reason?: string | null; occurredAt: string; counterpartyFacilityCode?: string | null }
+export type InventoryResponse = { asOfDate: string; summary: { activeItems: number; activeLots: number; belowReorderPoint: number; expiringWithin90Days: number; inventoryValue: number }; items: InventoryItem[]; recentTransactions: InventoryTransactionItem[] }
+export async function getInventory(sessionId: string, signal?: AbortSignal): Promise<InventoryResponse> { return clinicianGet(sessionId, '/api/inventory/', signal) }
+
 // ── Encounters ────────────────────────────────────────────────────────────────
 
 export type EncounterListItem = {
