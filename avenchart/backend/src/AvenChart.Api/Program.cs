@@ -52,6 +52,7 @@ builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<InventoryRepository>();
+builder.Services.AddScoped<FlowBoardRepository>();
 
 builder.Services.AddCors(options =>
 {
@@ -919,6 +920,10 @@ patients.MapDelete("/insurance/{insuranceId}", async (
 
 var appointments = app.MapGroup("/api/appointments").WithTags("Appointments");
 RequireAccessPermission(appointments, "patients", "appt", "view");
+
+appointments.MapGet("/flow-board", async (FlowBoardRepository repository, string? date, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetAsync(date, cancellationToken)))
+    .WithName("GetAppointmentFlowBoard");
 
 appointments.MapGet("/", async (
         AppointmentRepository repository,
