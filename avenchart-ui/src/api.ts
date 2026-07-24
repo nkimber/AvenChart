@@ -1212,6 +1212,9 @@ export type CollectionsWorkQueueResponse = { asOfDate: string; accountCount: num
 export async function getBillingCollectionsWorkQueue(sessionId: string, limit = 10, signal?: AbortSignal): Promise<CollectionsWorkQueueResponse> {
   return clinicianGet(sessionId, `/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, signal)
 }
+export async function createBillingCollectionsFollowUp(sessionId: string, body: { patientId: string; assignedTo?: string | null; action?: string | null; note?: string | null }, signal?: AbortSignal): Promise<unknown> {
+  return clinicianPost(sessionId, '/api/billing/collections/follow-ups', body, signal)
+}
 
 // ── Administration ────────────────────────────────────────────────────────────
 
