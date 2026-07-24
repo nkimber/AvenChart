@@ -42,6 +42,35 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         return new FhirSearchBundle("Bundle", "searchset", total, entries);
     }
 
+    public async Task<FhirEncounterResource?> GetEncounterAsync(int encounterId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = EncounterSelectSql + " where e.encounter = @encounter limit 1;";
+        command.Parameters.AddWithValue("encounter", encounterId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadEncounter(reader) : null;
+    }
+
+    public async Task<FhirEncounterBundle> SearchEncountersAsync(string? subject, int? count, CancellationToken cancellationToken)
+    {
+        var limit = Math.Clamp(count ?? 20, 1, MaximumSearchLimit);
+        var normalizedSubject = subject?.Trim();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = "select count(*) from encounters e join patients p on p.legacy_pid = e.pid where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject);";
+        countCommand.Parameters.AddWithValue("subject", (object?)normalizedSubject ?? DBNull.Value);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        await using var command = connection.CreateCommand();
+        command.CommandText = EncounterSelectSql + " where (@subject is null or p.canonical_id = @subject or p.pubpid = @subject) order by e.encounter_date desc, e.encounter desc limit @limit;";
+        command.Parameters.AddWithValue("subject", (object?)normalizedSubject ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", limit);
+        var entries = new List<FhirEncounterSearchEntry>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) { var encounter = ReadEncounter(reader); entries.Add(new FhirEncounterSearchEntry($"Encounter/{encounter.Id}", encounter)); }
+        return new FhirEncounterBundle("Bundle", "searchset", total, entries);
+    }
+
     private const string SearchPredicate = """
         (@name is null or lower(concat(p.first_name, ' ', p.last_name)) like '%' || lower(@name) || '%')
         and (@identifier is null or p.canonical_id = @identifier or p.pubpid = @identifier)
@@ -51,6 +80,11 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
         select p.canonical_id, p.pubpid, p.first_name, p.last_name, p.preferred_name, p.sex, p.date_of_birth,
           p.phone, p.phone_home, p.phone_cell, p.email, p.street, p.city, p.state, p.postal_code
         from patients p
+        """;
+
+    private const string EncounterSelectSql = """
+        select e.encounter, p.canonical_id, e.encounter_date, e.reason
+        from encounters e join patients p on p.legacy_pid = e.pid
         """;
 
     private static void AddSearchParameters(NpgsqlCommand command, string? name, string? identifier, int limit)
@@ -86,6 +120,12 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             telecom,
             address);
     }
+
+    private static FhirEncounterResource ReadEncounter(NpgsqlDataReader reader) => new(
+        "Encounter", reader.GetInt32(0).ToString(CultureInfo.InvariantCulture), "finished",
+        new FhirReference($"Patient/{reader.GetString(1)}"),
+        new FhirPeriod(reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+        ReadNullableString(reader, 3));
 
     private static void AddTelecom(ICollection<FhirContactPoint> telecom, string system, string? value, string use)
     {

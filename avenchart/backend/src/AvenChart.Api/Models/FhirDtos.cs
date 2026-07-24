@@ -43,3 +43,9 @@ public sealed record FhirSearchBundle(
     IReadOnlyList<FhirSearchEntry> Entry);
 
 public sealed record FhirSearchEntry(string FullUrl, FhirPatientResource Resource);
+
+public sealed record FhirEncounterResource(string ResourceType, string Id, string Status, FhirReference Subject, FhirPeriod Period, string? Reason);
+public sealed record FhirReference(string Reference);
+public sealed record FhirPeriod(string Start);
+public sealed record FhirEncounterBundle(string ResourceType, string Type, int Total, IReadOnlyList<FhirEncounterSearchEntry> Entry);
+public sealed record FhirEncounterSearchEntry(string FullUrl, FhirEncounterResource Resource);
