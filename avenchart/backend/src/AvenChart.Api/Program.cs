@@ -48,6 +48,7 @@ builder.Services.AddScoped<OfficeNoteRepository>();
 builder.Services.AddScoped<AddressBookRepository>();
 builder.Services.AddScoped<TrackAnythingRepository>();
 builder.Services.AddScoped<PatientEducationRepository>();
+builder.Services.AddScoped<RecallRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2365,6 +2366,10 @@ var patientEducation = app.MapGroup("/api/patient-education").WithTags("Patient 
 RequireAccessPermission(patientEducation, "patients", "demo", "view");
 patientEducation.MapGet("/resources", async (PatientEducationRepository repository,CancellationToken cancellationToken)=>Results.Ok(await repository.GetAsync(cancellationToken))).WithName("GetPatientEducationResources");
 patientEducation.MapPost("/search", async (PatientEducationRepository repository,PatientEducationSearchRequest request,CancellationToken cancellationToken)=>{var result=await repository.SearchAsync(request,cancellationToken);return result is null?Results.BadRequest("An active HTTPS resource and search text are required."):Results.Ok(result);}).WithName("SearchPatientEducation");
+var recalls=app.MapGroup("/api/recalls").WithTags("Recalls");RequireAccessPermission(recalls,"patients","appt","view");
+recalls.MapGet("/",async(RecallRepository repository,CancellationToken ct)=>Results.Ok(await repository.GetAsync(ct))).WithName("GetRecalls");
+recalls.MapPost("/",async(RecallRepository repository,RecallRequest request,CancellationToken ct)=>{var item=await repository.CreateAsync(request,ct);return item is null?Results.BadRequest():Results.Created($"/api/recalls/{item.Id}",item);}).WithName("CreateRecall").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
+recalls.MapDelete("/{id:guid}",async(RecallRepository repository,Guid id,CancellationToken ct)=>await repository.DeleteAsync(id,ct)?Results.NoContent():Results.NotFound()).WithName("DeleteRecall").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

@@ -1,0 +1,2 @@
+create table if not exists recalls(id uuid primary key,patient_id text not null references patients(canonical_id),recall_date date not null,reason text not null,provider_id integer references staff(id),facility_id integer references facilities(id),status text not null default 'active',created_at timestamptz not null default now());
+create table if not exists recall_activity(id uuid primary key,recall_id uuid not null references recalls(id) on delete cascade,activity_type text not null,note text,recorded_at timestamptz not null default now());

@@ -1719,6 +1719,10 @@ export async function deleteTrackAnything(sessionId: string, id: number): Promis
 export type PatientEducationResource = { key: string; title: string; searchTemplate: string; active: boolean }
 export async function getPatientEducationResources(sessionId: string): Promise<{ resources: PatientEducationResource[] }> { return clinicianGet(sessionId, '/api/patient-education/resources') }
 export async function searchPatientEducation(sessionId: string, resourceKey: string, searchText: string): Promise<{ url: string }> { return clinicianPost(sessionId, '/api/patient-education/search', { resourceKey, searchText }) }
+export type RecallItem = { id:string;patientId:string;patientName:string;recallDate:string;reason:string;providerId?:number|null;facilityId?:number|null;status:string;createdAt:string }
+export async function getRecalls(sessionId:string):Promise<RecallItem[]>{return clinicianGet(sessionId,'/api/recalls/')}
+export async function createRecall(sessionId:string,input:{patientId:string;recallDate:string;reason:string;providerId?:number|null;facilityId?:number|null}):Promise<RecallItem>{return clinicianPost(sessionId,'/api/recalls/',input)}
+export async function deleteRecall(sessionId:string,id:string):Promise<void>{await clinicianDelete(sessionId,`/api/recalls/${id}`)}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 
