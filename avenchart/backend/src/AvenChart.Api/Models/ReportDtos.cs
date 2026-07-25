@@ -49,3 +49,28 @@ public sealed record ClinicalConditionReportItem(
     string Title,
     string Diagnosis,
     int Patients);
+
+public sealed record SavedReportDefinitionRequest(string Name, string Schedule, bool Active);
+
+public sealed record SavedReportDefinitionItem(
+    Guid Id,
+    string Name,
+    string ReportType,
+    string Schedule,
+    bool Active,
+    string CreatedBy,
+    string CreatedAt,
+    string? LastRunAt,
+    int RunCount);
+
+public sealed record SavedReportDefinitionsResponse(
+    IReadOnlyList<SavedReportDefinitionItem> Definitions);
+
+public sealed record SavedReportRunResponse(
+    Guid DefinitionId,
+    string RunId,
+    string RanAt,
+    string RanBy,
+    string ReportType,
+    string OutputFormat,
+    int RowCount);

@@ -8,6 +8,61 @@ namespace AvenChart.Api.Data;
 
 public sealed class ReportRepository(NpgsqlDataSource dataSource)
 {
+    public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        await EnsureSavedReportSchemaAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, name, report_type, schedule, active, created_by, created_at, last_run_at, run_count
+            from saved_report_definitions order by created_at desc, name;
+            """;
+        var definitions = new List<SavedReportDefinitionItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            definitions.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O"), reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7).ToString("O"), reader.GetInt32(8)));
+        }
+        return new(definitions);
+    }
+
+    public async Task<SavedReportDefinitionItem> CreateSavedDefinitionAsync(SavedReportDefinitionRequest request, string username, CancellationToken cancellationToken)
+    {
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 120) throw new ArgumentException("Report name is required and must be 120 characters or fewer.");
+        var schedule = request.Schedule?.Trim().ToLowerInvariant();
+        if (schedule is not ("manual" or "daily" or "weekly")) throw new ArgumentException("Schedule must be manual, daily, or weekly.");
+        await EnsureSavedReportSchemaAsync(cancellationToken);
+        var id = Guid.NewGuid(); var createdAt = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into saved_report_definitions (id, name, report_type, schedule, active, created_by, created_at)
+            values (@id, @name, 'operational', @schedule, @active, @createdBy, @createdAt);
+            """;
+        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("name", name); command.Parameters.AddWithValue("schedule", schedule); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("createdBy", username); command.Parameters.AddWithValue("createdAt", createdAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new(id, name, "operational", schedule, request.Active, username, createdAt.ToString("O"), null, 0);
+    }
+
+    public async Task<SavedReportRunResponse?> RunSavedDefinitionAsync(Guid definitionId, string username, CancellationToken cancellationToken)
+    {
+        await EnsureSavedReportSchemaAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var definitionCommand = connection.CreateCommand(); definitionCommand.Transaction = transaction;
+        definitionCommand.CommandText = "select report_type, active from saved_report_definitions where id = @id for update;"; definitionCommand.Parameters.AddWithValue("id", definitionId);
+        await using var reader = await definitionCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || !reader.GetBoolean(1)) return null;
+        var reportType = reader.GetString(0); await reader.DisposeAsync();
+        var runId = $"RPT-{Guid.NewGuid():N}"; var ranAt = DateTimeOffset.UtcNow;
+        await using var insert = connection.CreateCommand(); insert.Transaction = transaction;
+        insert.CommandText = "insert into saved_report_runs (run_id, definition_id, ran_at, ran_by, output_format, row_count) values (@runId, @id, @ranAt, @ranBy, 'csv', 0); update saved_report_definitions set last_run_at = @ranAt, run_count = run_count + 1 where id = @id;";
+        insert.Parameters.AddWithValue("runId", runId); insert.Parameters.AddWithValue("id", definitionId); insert.Parameters.AddWithValue("ranAt", ranAt); insert.Parameters.AddWithValue("ranBy", username);
+        await insert.ExecuteNonQueryAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+        return new(definitionId, runId, ranAt.ToString("O"), username, reportType, "csv", 0);
+    }
+
     public async Task<OperationalReportsResponse> GetOperationalReportsAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -76,6 +131,16 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         }
 
         return builder.ToString();
+    }
+
+    private async Task EnsureSavedReportSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists saved_report_definitions (id uuid primary key, name text not null, report_type text not null, schedule text not null, active boolean not null default true, created_by text not null, created_at timestamptz not null, last_run_at timestamptz, run_count integer not null default 0);
+            create table if not exists saved_report_runs (run_id text primary key, definition_id uuid not null references saved_report_definitions(id), ran_at timestamptz not null, ran_by text not null, output_format text not null, row_count integer not null);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReportHeader> GetReportHeaderAsync(

@@ -3600,6 +3600,37 @@ reports.MapGet("/operational/export", async (
     })
     .WithName("ExportOperationalReports");
 
+reports.MapGet("/definitions", async (ReportRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetSavedDefinitionsAsync(cancellationToken)))
+    .WithName("GetSavedReportDefinitions");
+
+reports.MapPost("/definitions", async (
+        ReportRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        SavedReportDefinitionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/reports/definitions", await repository.CreateSavedDefinitionAsync(request, session.Username, cancellationToken)); }
+        catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    })
+    .WithName("CreateSavedReportDefinition")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+reports.MapPost("/definitions/{definitionId:guid}/run", async (
+        ReportRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid definitionId,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var run = await repository.RunSavedDefinitionAsync(definitionId, session.Username, cancellationToken);
+        return run is null ? Results.NotFound() : Results.Ok(run);
+    })
+    .WithName("RunSavedReportDefinition")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
 app.Run();
 
 static IResult RegistrationValidationProblem(IReadOnlyList<PatientRegistrationValidationIssue> issues)

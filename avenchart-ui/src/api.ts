@@ -1806,6 +1806,11 @@ export async function getOperationalReports(
   return clinicianGet(sessionId, '/api/reports/operational', signal)
 }
 
+export type SavedReportDefinition = { id: string; name: string; reportType: string; schedule: string; active: boolean; createdBy: string; createdAt: string; lastRunAt?: string | null; runCount: number }
+export async function getSavedReportDefinitions(sessionId: string, signal?: AbortSignal): Promise<{ definitions: SavedReportDefinition[] }> { return clinicianGet(sessionId, '/api/reports/definitions', signal) }
+export async function createSavedReportDefinition(sessionId: string, body: { name: string; schedule: string; active: boolean }, signal?: AbortSignal): Promise<SavedReportDefinition> { return clinicianPost(sessionId, '/api/reports/definitions', body, signal) }
+export async function runSavedReportDefinition(sessionId: string, id: string, signal?: AbortSignal): Promise<unknown> { return clinicianPost(sessionId, `/api/reports/definitions/${id}/run`, {}, signal) }
+
 export type StatementBatchCandidate = {
   patientId: string
   pubpid: string
