@@ -8,6 +8,8 @@ import {
   updatePatientInsurance,
   deletePatientInsurance,
   getPatientMergePreview,
+  updatePatientPortalAccountAccess,
+  updatePatientPortalAccountReset,
   type PatientInsuranceMutationInput,
   type PatientMergePreview,
 } from '../../api.ts'
@@ -66,6 +68,7 @@ export default function PatientSummary() {
   const [insForm, setInsForm] = useState<PatientInsuranceMutationInput>(BLANK_INS)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [mergePreviewState, setMergePreviewState] = useState<MergePreviewState>({ status: 'idle' })
+  const [portalAction, setPortalAction] = useState<'access' | 'reset' | null>(null)
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
 
@@ -125,6 +128,28 @@ export default function PatientSummary() {
     } catch {
       setMergePreviewState({ status: 'error', message: 'Could not load this merge preview. The candidate may have changed.' })
     }
+  }
+
+  async function changePortalAccess() {
+    const enable = !patient.portalEnabled
+    if (!window.confirm(`${enable ? 'Enable' : 'Disable'} patient portal access for ${patient.displayName}?`)) return
+    setPortalAction('access')
+    try {
+      await updatePatientPortalAccountAccess(session.sessionId, patientId, enable)
+      showToast(enable ? 'Patient portal access enabled.' : 'Patient portal access disabled.', 'success')
+      reload()
+    } catch { showToast('Could not update patient portal access.', 'error') } finally { setPortalAction(null) }
+  }
+
+  async function changePortalReset() {
+    const issue = !patient.portalAccount?.oneTimeLinkPending
+    if (!window.confirm(issue ? 'Mark a one-time portal reset link as pending? This local workflow does not deliver email or SMS.' : 'Clear the pending portal reset link?')) return
+    setPortalAction('reset')
+    try {
+      await updatePatientPortalAccountReset(session.sessionId, patientId, issue)
+      showToast(issue ? 'Portal reset link marked pending.' : 'Portal reset link cleared.', 'success')
+      reload()
+    } catch { showToast('Could not update portal reset state.', 'error') } finally { setPortalAction(null) }
   }
 
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) => setInsForm((f) => ({ ...f, ...patch }))
@@ -381,6 +406,17 @@ export default function PatientSummary() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header"><h2 className="cl-card-title">Patient portal access</h2><span className={`cl-badge ${patient.portalEnabled ? 'cl-badge-green' : 'cl-badge-muted'}`}>{patient.portalAccount?.accessStatusLabel ?? (patient.portalEnabled ? 'Enabled' : 'Disabled')}</span></div>
+          <ul className="fact-list">
+            {fact('Portal account', patient.portalAccount?.hasAccount ? patient.portalAccount.portalUsername ?? 'Provisioned' : 'No account provisioned')}
+            {fact('Password status', patient.portalAccount?.passwordStatusLabel)}
+            {fact('Reset status', patient.portalAccount?.resetStatusLabel)}
+          </ul>
+          <p className="cl-empty-text">Access and reset state are local account controls. No reset message is delivered from this workflow.</p>
+          <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" disabled={portalAction !== null} onClick={changePortalAccess}>{portalAction === 'access' ? 'Saving…' : patient.portalEnabled ? 'Disable portal access' : 'Enable portal access'}</button>{patient.portalAccount?.hasAccount && <button className="cl-btn-secondary" type="button" disabled={portalAction !== null} onClick={changePortalReset}>{portalAction === 'reset' ? 'Saving…' : patient.portalAccount.oneTimeLinkPending ? 'Clear reset link' : 'Issue reset link'}</button>}</div>
         </section>
 
         <section className="cl-card cl-card-wide">

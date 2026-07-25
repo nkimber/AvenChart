@@ -845,6 +845,19 @@ export type PatientCareTeamSummary = {
   members?: Array<{ displayName: string; role?: string | null }> | null
 }
 
+export type PatientPortalAccountSummary = {
+  portalEnabled: boolean
+  accessStatusLabel: string
+  cmsPortalLogin?: string | null
+  hasAccount: boolean
+  portalUsername?: string | null
+  portalLoginUsername?: string | null
+  passwordStatus?: number | null
+  passwordStatusLabel: string
+  oneTimeLinkPending: boolean
+  resetStatusLabel: string
+}
+
 export type PatientChartSummary = {
   canonicalId: string
   legacyPid: number
@@ -875,6 +888,7 @@ export type PatientChartSummary = {
   homeless?: string | null
   financialReviewDate?: string | null
   portalEnabled: boolean
+  portalAccount?: PatientPortalAccountSummary | null
   registrationDate: string
   deceasedDate?: string | null
   primaryProviderName?: string | null
@@ -919,6 +933,14 @@ export async function getPatientMergePreview(
 ): Promise<PatientMergePreview> {
   const query = new URLSearchParams({ targetPatientId, sourcePatientId })
   return clinicianGet(sessionId, `/api/patients/merge-preview?${query}`, signal)
+}
+
+export async function updatePatientPortalAccountAccess(sessionId: string, patientId: string, portalEnabled: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {
+  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/portal-account/access`, { portalEnabled }, signal)
+}
+
+export async function updatePatientPortalAccountReset(sessionId: string, patientId: string, oneTimeLinkPending: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {
+  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/portal-account/reset`, { oneTimeLinkPending }, signal)
 }
 
 // ── Appointments ──────────────────────────────────────────────────────────────
