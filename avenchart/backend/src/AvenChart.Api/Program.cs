@@ -47,6 +47,7 @@ builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
+builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
@@ -3616,6 +3617,15 @@ reports.MapPost("/definitions", async (
     })
     .WithName("CreateSavedReportDefinition")
     .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+var therapyGroups = app.MapGroup("/api/therapy-groups").WithTags("Therapy Groups");
+RequireAccessPermission(therapyGroups, "groups", "gadd", "view");
+therapyGroups.MapGet("/", async (TherapyGroupRepository repository, CancellationToken cancellationToken) => Results.Ok(await repository.GetAsync(cancellationToken))).WithName("GetTherapyGroups");
+therapyGroups.MapPost("/", async (TherapyGroupRepository repository, TherapyGroupCreateRequest request, CancellationToken cancellationToken) =>
+{
+    try { return Results.Created("/api/therapy-groups", await repository.CreateAsync(request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreateTherapyGroup").AddEndpointFilter(AccessPermissionFilter("groups", "gadd", "write"));
 
 reports.MapPost("/definitions/{definitionId:guid}/run", async (
         ReportRepository repository,

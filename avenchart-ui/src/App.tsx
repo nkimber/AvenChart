@@ -27,6 +27,7 @@ import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
 import FlowBoard from './pages/clinician/FlowBoard.tsx'
 import LabQueue from './pages/clinician/LabQueue.tsx'
 import OperationalReports from './pages/clinician/OperationalReports.tsx'
+import TherapyGroups from './pages/clinician/TherapyGroups.tsx'
 import BillingWorkspace from './pages/clinician/BillingWorkspace.tsx'
 import InventoryWorkspace from './pages/clinician/InventoryWorkspace.tsx'
 import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="messages" element={<ClinicianMessages />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
+          <Route path="groups" element={<TherapyGroups />} />
           <Route path="billing" element={<BillingWorkspace />} />
           <Route path="inventory" element={<InventoryWorkspace />} />
           <Route path="admin" element={<AdminDirectory />} />
