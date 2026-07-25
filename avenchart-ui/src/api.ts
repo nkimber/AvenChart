@@ -913,6 +913,7 @@ export async function updateAppointmentStatus(
 ): Promise<void> {
   await clinicianPut(sessionId, `/api/appointments/${appointmentId}/status`, { status }, signal)
 }
+export async function deleteAppointment(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<void> { await clinicianDelete(sessionId, `/api/appointments/${appointmentId}`, signal) }
 
 export type FlowBoardItem = { appointmentId: string; patientId: string; patientDisplayName: string; startTime: string; title: string; room?: string | null; providerName?: string | null; facilityName?: string | null; appointmentStatus?: string | null; flowStatus: string }
 export type FlowBoardLane = { key: string; label: string; items: FlowBoardItem[] }

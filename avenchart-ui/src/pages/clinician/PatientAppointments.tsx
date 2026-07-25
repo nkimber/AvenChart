@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { CalendarPlus } from 'lucide-react'
-import { createAppointment, searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
+import { createAppointment, deleteAppointment, searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
 import type { PatientOutletContext } from './PatientShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
 
@@ -71,6 +71,7 @@ export default function PatientAppointments() {
       setSaving(false)
     }
   }
+  async function cancelAppointment(id: string) { if (!window.confirm('Cancel this appointment?')) return; setUpdatingId(id); try { await deleteAppointment(session.sessionId, id); showToast('Appointment cancelled.', 'success'); load() } catch { showToast('Could not cancel appointment.', 'error') } finally { setUpdatingId(null) } }
 
   return (
     <div className="clinician-page">
@@ -143,7 +144,7 @@ export default function PatientAppointments() {
                 <th>Visit type</th>
                 <th>Provider</th>
                 <th>Facility</th>
-                <th>Status</th>
+                <th>Status</th><th />
               </tr>
             </thead>
             <tbody>
@@ -168,6 +169,7 @@ export default function PatientAppointments() {
                       ))}
                     </select>
                   </td>
+                  <td><button className="cl-btn-secondary" type="button" disabled={updatingId === appt.id} onClick={() => cancelAppointment(appt.id)}>Cancel</button></td>
                 </tr>
               ))}
             </tbody>
