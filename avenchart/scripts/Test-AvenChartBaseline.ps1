@@ -7476,6 +7476,65 @@ catch {
     Add-Check -Name "encounter clinical allergy-review alert" -Result "failed" -Details $_.Exception.Message
 }
 
+$appointmentReminderRule = $null
+try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $ruleCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $appointmentReminderRule = $ruleCatalog.rules | Where-Object { $_.key -eq "APPOINTMENT_REMINDER" } | Select-Object -First 1
+    if ($null -eq $appointmentReminderRule) { throw "The appointment reminder rule was not found." }
+    $inactiveRuleBody = @{
+        title = $appointmentReminderRule.title
+        triggerType = $appointmentReminderRule.triggerType
+        targetType = $appointmentReminderRule.targetType
+        severity = $appointmentReminderRule.severity
+        message = $appointmentReminderRule.message
+        sequence = $appointmentReminderRule.sequence
+        active = $false
+    } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $inactiveRuleBody -TimeoutSec 20 | Out-Null
+    $inactiveDispatchStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/appointments/APPT-MOD-PAT-0191-3/reminders/dispatch" -Method Post -Headers $administrationHeaders -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $inactiveDispatchStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
+    $restoreRuleBody = @{
+        title = $appointmentReminderRule.title
+        triggerType = $appointmentReminderRule.triggerType
+        targetType = $appointmentReminderRule.targetType
+        severity = $appointmentReminderRule.severity
+        message = $appointmentReminderRule.message
+        sequence = $appointmentReminderRule.sequence
+        active = $appointmentReminderRule.active
+    } | ConvertTo-Json
+    $restoredRules = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $restoreRuleBody -TimeoutSec 20
+    $restoredRule = $restoredRules.rules | Where-Object { $_.key -eq "APPOINTMENT_REMINDER" -and $_.active -eq $appointmentReminderRule.active } | Select-Object -First 1
+    $appointmentReminderRule = $null
+    Add-Check -Name "appointment reminder rule activation controls dispatch" -Result $(if ($inactiveDispatchStatus -eq 400 -and $null -ne $restoredRule) { "passed" } else { "failed" }) -Details @{ inactiveDispatchStatus = $inactiveDispatchStatus; restored = $null -ne $restoredRule }
+}
+catch {
+    Add-Check -Name "appointment reminder rule activation controls dispatch" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $appointmentReminderRule) {
+        try {
+            $restoreRuleBody = @{
+                title = $appointmentReminderRule.title
+                triggerType = $appointmentReminderRule.triggerType
+                targetType = $appointmentReminderRule.targetType
+                severity = $appointmentReminderRule.severity
+                message = $appointmentReminderRule.message
+                sequence = $appointmentReminderRule.sequence
+                active = $appointmentReminderRule.active
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreRuleBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $unauthenticatedProceduresStatus = 0
     try {

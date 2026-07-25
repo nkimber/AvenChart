@@ -1167,7 +1167,7 @@ appointments.MapPost("/{appointmentId}/reminders/dispatch", async (
         {
             var dispatch = await repository.DispatchReminderAsync(appointmentId, dispatchRequest?.TemplateId, cancellationToken);
             return dispatch is null
-                ? Results.BadRequest("Appointment reminder could not be dispatched because the appointment was not found or no reminder is due.")
+                ? Results.BadRequest("Appointment reminder could not be dispatched because the appointment was not found, no reminder is due, or the reminder rule is inactive.")
                 : Results.Ok(dispatch);
         }
         catch (ArgumentException ex)
@@ -1185,7 +1185,7 @@ appointments.MapPost("/{appointmentId}/reminders/dispatch/retry", async (
     {
         var dispatch = await repository.RetryReminderDispatchAsync(appointmentId, cancellationToken);
         return dispatch is null
-            ? Results.BadRequest("Appointment reminder could not be retried because no prior dispatch exists or no reminder is due.")
+            ? Results.BadRequest("Appointment reminder could not be retried because no prior dispatch exists, no reminder is due, or the reminder rule is inactive.")
             : Results.Ok(dispatch);
     })
     .WithName("RetryAppointmentReminderDispatch")

@@ -602,6 +602,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         string? templateId,
         CancellationToken cancellationToken)
     {
+        if (!await IsAppointmentReminderRuleActiveAsync(cancellationToken))
+        {
+            return null;
+        }
+
         var metadata = await GetMetadataAsync(cancellationToken);
         var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, templateId, cancellationToken);
         if (dispatch is null)
@@ -627,6 +632,11 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         string appointmentId,
         CancellationToken cancellationToken)
     {
+        if (!await IsAppointmentReminderRuleActiveAsync(cancellationToken))
+        {
+            return null;
+        }
+
         var metadata = await GetMetadataAsync(cancellationToken);
         var dispatch = await BuildReminderDispatchAsync(appointmentId, metadata, null, cancellationToken);
         if (dispatch is null)
@@ -783,6 +793,14 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             """;
         AddReminderDispatchParameters(command, dispatch, baseDate);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<bool> IsAppointmentReminderRuleActiveAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from clinical_alert_rules where rule_key='APPOINTMENT_REMINDER' and active=true and trigger_type='appointment' and target_type='reminder');";
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     public async Task<AppointmentReminderDispatchHistoryResponse> GetReminderDispatchHistoryAsync(
