@@ -1212,13 +1212,14 @@ export type EncounterSearchResponse = {
 
 export async function searchEncounters(
   sessionId: string,
-  params: { patientId?: string; fromDate?: string; limit?: number },
+  params: { patientId?: string; fromDate?: string; limit?: number; archived?: boolean },
   signal?: AbortSignal,
 ): Promise<EncounterSearchResponse> {
   const q = new URLSearchParams()
   if (params.patientId) q.set('patientId', params.patientId)
   if (params.fromDate) q.set('fromDate', params.fromDate)
   if (params.limit) q.set('limit', String(params.limit))
+  if (params.archived) q.set('archived', 'true')
   return clinicianGet(sessionId, `/api/encounters/?${q}`, signal)
 }
 
@@ -1229,6 +1230,11 @@ export async function getEncounterDetail(
 ): Promise<EncounterDetail> {
   return clinicianGet(sessionId, `/api/encounters/${encounterId}`, signal)
 }
+
+export type EncounterUpdateInput = { reason: string; sensitivity?: string | null; referralSource?: string | null; externalId?: string | null; posCode?: number | null; billingNote?: string | null }
+export async function updateEncounter(sessionId: string, encounterId: number, body: EncounterUpdateInput, signal?: AbortSignal): Promise<EncounterDetail> { return clinicianPut(sessionId, `/api/encounters/${encounterId}`, body, signal) }
+export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }
+export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal) }
 
 // ── Clinical Lists ────────────────────────────────────────────────────────────
 

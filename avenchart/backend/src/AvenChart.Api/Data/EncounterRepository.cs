@@ -15,7 +15,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         string? patientId,
         string? from,
         int limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool archived = false)
     {
         var safeLimit = Math.Clamp(limit, 1, MaximumSearchLimit);
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -23,7 +24,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         var fromDate = ParseDateOrDefault(from, new DateOnly(metadata.BaseDate.Year, 1, 1));
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, cancellationToken);
+        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
+        var totalMatches = await CountMatchesAsync(connection, normalizedPatientId, fromDate, archived, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -56,6 +58,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             left join staff s on s.id = e.provider_id
             left join facilities f on f.id = e.facility_id
             where {EncounterSearchPredicate}
+              and e.archived_at is {(archived ? "not" : string.Empty)} null
             order by e.encounter_date desc, e.encounter desc
             limit @limit;
             """;
@@ -690,6 +693,36 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         return Convert.ToInt32(deleted) > 0;
     }
 
+    public async Task<bool> ArchiveAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update encounters
+            set archived_at = now()
+            where encounter = @encounter
+              and archived_at is null;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    public async Task<bool> RestoreAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureEncounterArchiveColumnAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update encounters
+            set archived_at = null
+            where encounter = @encounter
+              and archived_at is not null;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -717,6 +750,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         string? normalizedPatientId,
         DateOnly fromDate,
+        bool archived,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -724,7 +758,8 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
             select count(*)
             from encounters e
             join patients p on p.legacy_pid = e.pid
-            where {EncounterSearchPredicate};
+            where {EncounterSearchPredicate}
+              and e.archived_at is {(archived ? "not" : string.Empty)} null;
             """;
         AddSearchParameters(command, normalizedPatientId, fromDate);
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -743,6 +778,15 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     {
         command.Parameters.Add("patientId", NpgsqlDbType.Text).Value = patientId is null ? DBNull.Value : patientId;
         command.Parameters.Add("fromDate", NpgsqlDbType.Date).Value = fromDate;
+    }
+
+    private static async Task EnsureEncounterArchiveColumnAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "alter table encounters add column if not exists archived_at timestamp null;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static EncounterListItem ReadListItem(DbDataReader reader) => new(

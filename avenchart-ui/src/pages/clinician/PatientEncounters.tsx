@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { ChevronRight, FileText, Plus, TrendingUp } from 'lucide-react'
 import {
+  archiveEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
   getEncounterDetail,
+  restoreEncounter,
   searchEncounters,
   type EncounterDetail,
   type EncounterListItem,
@@ -84,14 +86,31 @@ export default function PatientEncounters() {
   const [vitalsForm, setVitalsForm] = useState(BLANK_VITALS)
   const [soapForm, setSoapForm] = useState(BLANK_SOAP)
   const [saving, setSaving] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   useEffect(() => {
     setDetailCache(new Map())
-    searchEncounters(session.sessionId, { patientId, limit: 50 })
+    searchEncounters(session.sessionId, { patientId, limit: 50, archived: showArchived })
       .then((data) => setListState({ status: 'ready', data: data.encounters }))
       .catch((err) => setListState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId])
+  }, [patientId, showArchived])
+
+  async function changeArchiveState(encounter: number, restore = false) {
+    if (!restore && !window.confirm('Archive this encounter? Its notes, vitals, signatures, and documents remain intact and can be restored.')) return
+    setArchiving(true)
+    try {
+      if (restore) await restoreEncounter(session.sessionId, encounter)
+      else await archiveEncounter(session.sessionId, encounter)
+      showToast(restore ? 'Encounter restored.' : 'Encounter archived.', 'success')
+      setSelectedId(null)
+      setDetailState({ status: 'idle' })
+      const response = await searchEncounters(session.sessionId, { patientId, limit: 50, archived: showArchived })
+      setListState({ status: 'ready', data: response.encounters })
+    } catch { showToast(restore ? 'Could not restore encounter.' : 'Could not archive encounter.', 'error') }
+    finally { setArchiving(false) }
+  }
 
   const vitalSeries = useMemo(() => {
     if (listState.status !== 'ready') return []
@@ -196,6 +215,9 @@ export default function PatientEncounters() {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button className="cl-btn-secondary" type="button" onClick={() => { setSelectedId(null); setDetailState({ status: 'idle' }); setShowArchived((value) => !value) }} style={{ marginRight: 8 }}>
+          {showArchived ? 'Show active' : 'Show archived'}
+        </button>
         <button
           className="cl-btn-primary"
           type="button"
@@ -265,6 +287,9 @@ export default function PatientEncounters() {
                       {enc.date} — {enc.reason ?? 'Visit'}
                     </h2>
                     <span className="cl-badge cl-badge-muted">Enc #{enc.encounter}</span>
+                  </div>
+                  <div className="cl-inline-form-actions" style={{ marginTop: 10 }}>
+                    <button className="cl-btn-secondary" type="button" disabled={archiving} onClick={() => changeArchiveState(enc.encounter, showArchived)}>{archiving ? 'Saving…' : showArchived ? 'Restore encounter' : 'Archive encounter'}</button>
                   </div>
                   <ul className="fact-list">
                     {enc.providerName && <li className="fact-row"><span>Provider</span><span>{enc.providerName}</span></li>}

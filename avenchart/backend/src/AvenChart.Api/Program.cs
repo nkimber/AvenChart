@@ -1211,12 +1211,23 @@ encounters.MapGet("/", async (
         string? patientId,
         string? from,
         int? limit,
+        bool? archived,
         CancellationToken cancellationToken) =>
     {
-        var response = await repository.SearchAsync(patientId, from, limit ?? 25, cancellationToken);
+        var response = await repository.SearchAsync(patientId, from, limit ?? 25, cancellationToken, archived == true);
         return Results.Ok(response);
     })
     .WithName("SearchEncounters");
+
+encounters.MapPut("/{encounter:int}/archive", async (EncounterRepository repository, int encounter, CancellationToken cancellationToken) =>
+    await repository.ArchiveAsync(encounter, cancellationToken) ? Results.NoContent() : Results.NotFound())
+    .WithName("ArchiveEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+encounters.MapPut("/{encounter:int}/restore", async (EncounterRepository repository, int encounter, CancellationToken cancellationToken) =>
+    await repository.RestoreAsync(encounter, cancellationToken) ? Results.NoContent() : Results.NotFound())
+    .WithName("RestoreEncounter")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapGet("/soap-note-templates", async (
         EncounterRepository repository,
