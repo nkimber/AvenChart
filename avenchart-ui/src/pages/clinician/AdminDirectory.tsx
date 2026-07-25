@@ -8,6 +8,7 @@ import {
   deleteAdministrationFacility,
   deleteAdministrationUser,
   getAdministrationDirectory,
+  getPhiAccessAudit,
   grantAdministrationAccessMembership,
   grantAdministrationAccessPermission,
   revokeAdministrationAccessMembership,
@@ -20,6 +21,7 @@ import {
   type AdministrationFacilityMutationInput,
   type AdministrationAccessGroupPermissionItem,
   type AdministrationAccessUserMembershipItem,
+  type PhiAccessAuditResponse,
   type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
@@ -105,7 +107,8 @@ function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit'>('users')
+  const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
   const [savingFacility, setSavingFacility] = useState(false)
@@ -128,6 +131,14 @@ export default function AdminDirectory() {
       .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed.' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (tab !== 'audit') return
+    setAuditState({ status: 'loading' })
+    getPhiAccessAudit(session.sessionId)
+      .then((data) => setAuditState({ status: 'ready', data }))
+      .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
+  }, [session.sessionId, tab])
 
   function beginFacilityCreate() {
     setFacilityForm(emptyFacilityForm())
@@ -351,6 +362,7 @@ export default function AdminDirectory() {
                 { id: 'facilities', label: `Facilities (${data.counts.facilities})` },
                 { id: 'access', label: `Access control (${data.counts.accessGroups})` },
                 { id: 'reviews', label: `Profile reviews (${data.counts.waitingProfileReviews})` },
+                { id: 'audit', label: 'PHI access audit' },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -545,6 +557,22 @@ export default function AdminDirectory() {
                     })}
                   </div>
                 )}
+              </section>
+            )}
+
+            {tab === 'audit' && (
+              <section className="cl-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="cl-admin-facility-header">
+                  <div>
+                    <h2 className="cl-card-title">Recent PHI access decisions</h2>
+                    <p className="clinician-page-subtitle">Read-only access-control evidence from the protected audit endpoint. This view does not replace production retention or export policy.</p>
+                  </div>
+                  {auditState.status === 'ready' && <span className="cl-badge cl-badge-muted">{auditState.data.authorizedEvents} allowed · {auditState.data.deniedEvents} denied</span>}
+                </div>
+                {auditState.status === 'loading' && <div className="skeleton-list">{[0, 1, 2].map((item) => <div key={item} className="skeleton-row" style={{ height: 52 }} />)}</div>}
+                {auditState.status === 'error' && <div className="error-banner">{auditState.message}</div>}
+                {auditState.status === 'ready' && auditState.data.events.length === 0 && <p className="cl-empty-text" style={{ padding: '0 20px 20px' }}>No recent PHI access decisions are available.</p>}
+                {auditState.status === 'ready' && auditState.data.events.length > 0 && <table className="cl-table"><thead><tr><th>When</th><th>User</th><th>Request</th><th>Permission</th><th>Decision</th></tr></thead><tbody>{auditState.data.events.map((entry) => <tr key={entry.auditId}><td className="cl-td-muted">{entry.occurredAt}</td><td>{entry.username}</td><td className="cl-td-muted">{entry.httpMethod} {entry.requestPath}</td><td className="cl-td-muted">{entry.requiredPermission}</td><td><span className={`cl-badge ${entry.authorized ? 'cl-badge-green' : 'cl-badge-red'}`}>{entry.authorized ? `Allowed (${entry.responseStatus})` : `Denied (${entry.responseStatus})`}</span></td></tr>)}</tbody></table>}
               </section>
             )}
 

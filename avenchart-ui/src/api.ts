@@ -1762,6 +1762,28 @@ export async function getAdministrationDirectory(
   return clinicianGet(sessionId, '/api/administration/directory', signal)
 }
 
+export type PhiAccessAuditEvent = {
+  auditId: string
+  occurredAt: string
+  username: string
+  httpMethod: string
+  requestPath: string
+  requiredPermission: string
+  authorized: boolean
+  responseStatus: number
+}
+
+export type PhiAccessAuditResponse = {
+  totalEvents: number
+  authorizedEvents: number
+  deniedEvents: number
+  events: PhiAccessAuditEvent[]
+}
+
+export async function getPhiAccessAudit(sessionId: string, limit = 50, signal?: AbortSignal): Promise<PhiAccessAuditResponse> {
+  return clinicianGet(sessionId, `/api/administration/audit/phi?limit=${limit}`, signal)
+}
+
 export type AdministrationFacilityMutationInput = {
   code: string
   name: string
