@@ -16,3 +16,6 @@ public sealed record TherapyGroupCreateRequest(
     int Capacity);
 
 public sealed record TherapyGroupsResponse(IReadOnlyList<TherapyGroupItem> Groups);
+
+public sealed record TherapyGroupMemberRequest(string PatientId);
+public sealed record TherapyGroupMemberItem(Guid GroupId, string PatientId, int LegacyPid, string DisplayName, string JoinedAt);

@@ -1812,8 +1812,11 @@ export async function createSavedReportDefinition(sessionId: string, body: { nam
 export async function runSavedReportDefinition(sessionId: string, id: string, signal?: AbortSignal): Promise<unknown> { return clinicianPost(sessionId, `/api/reports/definitions/${id}/run`, {}, signal) }
 
 export type TherapyGroup = { id: string; name: string; status: string; facilitatorId?: number | null; description?: string | null; capacity: number; createdAt: string }
+export type TherapyGroupMember = { groupId: string; patientId: string; legacyPid: number; displayName: string; joinedAt: string }
 export async function getTherapyGroups(sessionId: string): Promise<{ groups: TherapyGroup[] }> { return clinicianGet(sessionId, '/api/therapy-groups/') }
 export async function createTherapyGroup(sessionId: string, body: { name: string; facilitatorId?: number | null; description?: string | null; capacity: number }): Promise<TherapyGroup> { return clinicianPost(sessionId, '/api/therapy-groups/', body) }
+export async function getTherapyGroupMembers(sessionId: string, groupId: string): Promise<TherapyGroupMember[]> { return clinicianGet(sessionId, `/api/therapy-groups/${groupId}/members`) }
+export async function addTherapyGroupMember(sessionId: string, groupId: string, patientId: string): Promise<TherapyGroupMember> { return clinicianPost(sessionId, `/api/therapy-groups/${groupId}/members`, { patientId }) }
 
 export type StatementBatchCandidate = {
   patientId: string
