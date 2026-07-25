@@ -49,6 +49,7 @@ builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
+builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
@@ -758,6 +759,22 @@ patients.MapPut("/{patientId}/referrals/{referralId:guid}/status", async (string
     try { return Results.Ok(await repository.UpdateStatusAsync(patientId, referralId, request, cancellationToken)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("UpdatePatientReferralStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+patients.MapGet("/{patientId}/authorizations", async (string patientId, AuthorizationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientAuthorizations");
+patients.MapPost("/{patientId}/authorizations", async (string patientId, AuthorizationCreateRequest request, AuthorizationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Created($"/api/patients/{patientId}/authorizations", await repository.CreateAsync(patientId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreatePatientAuthorization").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", async (string patientId, Guid authorizationId, AuthorizationStatusRequest request, AuthorizationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.UpdateStatusAsync(patientId, authorizationId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdatePatientAuthorizationStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 patients.MapGet("/duplicates", async (
         PatientRepository repository,
