@@ -368,6 +368,19 @@ export default function PatientChart() {
           )}
         </section>
 
+        <section className="cl-card cl-card-wide">
+          <div className="cl-card-header">
+            <div>
+              <h2 className="cl-card-title">Medication reconciliation</h2>
+              <p className="clinician-page-subtitle">Read-only comparison of the local medication and prescription lists. Review clinical context before changing either record.</p>
+            </div>
+            <span className="cl-badge cl-badge-muted">{data.medicationReconciliations.length} comparison{data.medicationReconciliations.length === 1 ? '' : 's'}</span>
+          </div>
+          {data.medicationDuplicates.length > 0 && <div className="error-banner" style={{ marginBottom: 12 }}><strong>Possible duplicate active medications:</strong> {data.medicationDuplicates.map((duplicate) => `${duplicate.displayTitle} (${duplicate.activeCount})`).join(', ')}</div>}
+          {data.medicationReconciliations.length === 0 ? <p className="cl-empty-text">No medication or prescription records are available to compare.</p> : <ul className="cl-clinical-list">{data.medicationReconciliations.map((item) => <li key={item.normalizedTitle} className="cl-clinical-row"><div><p className="cl-clinical-title">{item.displayTitle}</p><p className="cl-clinical-meta">{item.medicationCount} medication record{item.medicationCount === 1 ? '' : 's'} · {item.prescriptionCount} prescription record{item.prescriptionCount === 1 ? '' : 's'}{item.diagnoses.length > 0 ? ` · ${item.diagnoses.join(', ')}` : ''}</p></div><span className={`cl-badge ${item.status === 'matched' ? 'cl-badge-green' : 'cl-badge-muted'}`}>{item.status}</span></li>)}</ul>}
+          {data.prescriptionDiagnosisInteractions.length > 0 && <div style={{ marginTop: 14 }}><p className="cl-soap-label">Prescription diagnosis links</p><ul className="cl-clinical-list">{data.prescriptionDiagnosisInteractions.map((item) => <li key={item.diagnosis} className="cl-clinical-row"><div><p className="cl-clinical-title">{item.diagnosis}</p><p className="cl-clinical-meta">{item.drugs.join(', ')}</p></div><span className="cl-badge cl-badge-muted">{item.status}</span></li>)}</ul></div>}
+        </section>
+
         {/* Immunizations */}
         <section className="cl-card cl-card-wide">
           <div className="cl-card-header">

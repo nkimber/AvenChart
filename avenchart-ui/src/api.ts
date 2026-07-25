@@ -1463,14 +1463,51 @@ export type PrescriptionListItem = {
   providerName?: string | null
 }
 
+export type MedicationDuplicateSummary = {
+  normalizedTitle: string
+  displayTitle: string
+  activeCount: number
+  medicationIds: string[]
+  firstDate?: string | null
+  latestDate?: string | null
+  diagnoses: string[]
+}
+
+export type MedicationReconciliationSummary = {
+  normalizedTitle: string
+  displayTitle: string
+  status: string
+  medicationCount: number
+  prescriptionCount: number
+  medicationIds: string[]
+  prescriptionIds: string[]
+  medicationTitles: string[]
+  prescriptionDrugs: string[]
+  diagnoses: string[]
+}
+
+export type PrescriptionDiagnosisInteractionSummary = {
+  diagnosis: string
+  status: string
+  problemId?: string | null
+  problemTitle?: string | null
+  prescriptionCount: number
+  prescriptionIds: string[]
+  drugs: string[]
+}
+
 export type ClinicalListsResponse = {
   patientId: string
   patientDisplayName: string
   problems: ProblemListItem[]
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
+  medicationDuplicates: MedicationDuplicateSummary[]
+  medicationReconciliations: MedicationReconciliationSummary[]
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
+  prescriptionDiagnosisInteractions: PrescriptionDiagnosisInteractionSummary[]
+  prescriptionRefillRequests: unknown[]
 }
 
 export async function getClinicalLists(
