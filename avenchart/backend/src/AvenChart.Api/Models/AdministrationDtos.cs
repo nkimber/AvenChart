@@ -204,3 +204,6 @@ public sealed record ClinicalAlertRulesResponse(IReadOnlyList<ClinicalAlertRuleI
 public sealed record ClinicalAlertRuleMutationRequest(string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active);
 public sealed record ModuleCatalogItem(string Key, string DisplayName, string Category, string Status, string Description, string UpdatedAt, string UpdatedBy);
 public sealed record ModuleCatalogResponse(IReadOnlyList<ModuleCatalogItem> Modules);
+public sealed record ApiClientRegistryItem(string Key, string DisplayName, string RedirectUri, string Scopes, bool Active, string UpdatedAt, string UpdatedBy);
+public sealed record ApiClientRegistryResponse(IReadOnlyList<ApiClientRegistryItem> Clients);
+public sealed record ApiClientRegistryMutationRequest(string DisplayName, string RedirectUri, string Scopes, bool Active);

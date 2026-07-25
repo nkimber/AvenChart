@@ -2024,6 +2024,9 @@ export async function getClinicalAlertRules(sessionId: string): Promise<{ rules:
 export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input) }
 export type ModuleCatalogItem = { key: string; displayName: string; category: string; status: string; description: string }
 export async function getModuleCatalog(sessionId: string): Promise<{ modules: ModuleCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/modules') }
+export type ApiClientRegistryItem = { key: string; displayName: string; redirectUri: string; scopes: string; active: boolean }
+export async function getApiClients(sessionId: string): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianGet(sessionId, '/api/administration/api-clients') }
+export async function saveApiClient(sessionId: string, key: string, input: Omit<ApiClientRegistryItem, 'key'>): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianPut(sessionId, `/api/administration/api-clients/${key}`, input) }
 
 export type PhiAccessAuditEvent = {
   auditId: string
