@@ -45,6 +45,7 @@ builder.Services.AddScoped<ClinicalAlertEvaluationRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<OfficeNoteRepository>();
+builder.Services.AddScoped<AddressBookRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2343,6 +2344,13 @@ officeNotes.MapDelete("/{noteId:guid}", async (OfficeNoteRepository repository, 
     await repository.DeleteAsync(noteId, cancellationToken) ? Results.NoContent() : Results.NotFound())
     .WithName("DeleteOfficeNote")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "notes", "write"));
+
+var addressBook = app.MapGroup("/api/administration/address-book").WithTags("Address Book");
+RequireAccessPermission(addressBook, "admin", "practice", "view");
+addressBook.MapGet("/", async (AddressBookRepository repository, string? organization, string? firstName, string? lastName, string? specialty, string? npi, string? type, bool? externalOnly, CancellationToken cancellationToken) => Results.Ok(await repository.SearchAsync(organization, firstName, lastName, specialty, npi, type, externalOnly ?? false, cancellationToken))).WithName("SearchAddressBook");
+addressBook.MapPost("/", async (AddressBookRepository repository, AddressBookContactRequest request, CancellationToken cancellationToken) => { try { var item=await repository.SaveAsync(null,request,cancellationToken); return Results.Created($"/api/administration/address-book/{item!.Id}",item); } catch(ArgumentException e) { return Results.ValidationProblem(new Dictionary<string,string[]> { ["contact"]=[e.Message] }); } }).WithName("CreateAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
+addressBook.MapPut("/{contactId:int}", async (AddressBookRepository repository,int contactId,AddressBookContactRequest request,CancellationToken cancellationToken)=> { try { var item=await repository.SaveAsync(contactId,request,cancellationToken);return item is null?Results.NotFound():Results.Ok(item); }catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["contact"]=[e.Message] });}}).WithName("UpdateAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
+addressBook.MapDelete("/{contactId:int}", async (AddressBookRepository repository,int contactId,CancellationToken cancellationToken)=>await repository.DeleteAsync(contactId,cancellationToken)?Results.NoContent():Results.NotFound()).WithName("DeleteAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

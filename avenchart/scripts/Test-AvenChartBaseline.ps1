@@ -9763,6 +9763,20 @@ catch {
     Add-Check -Name "office note lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $addressHeaders = Get-AdministrationHeaders
+    $addressCreate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/address-book/" -Method Post -Headers $addressHeaders -ContentType "application/json" -Body (@{ organization = "Smoke Directory"; firstName = "Taylor"; lastName = "Contact"; specialty = "Care Coordination"; npi = "1234567890"; type = "external_provider"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $addressSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/address-book/?organization=Smoke%20Directory" -Method Get -Headers $addressHeaders -TimeoutSec 20
+    $addressUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/address-book/$($addressCreate.id)" -Method Put -Headers $addressHeaders -ContentType "application/json" -Body (@{ organization = "Smoke Directory"; firstName = "Taylor"; lastName = "Updated Contact"; specialty = "Care Coordination"; npi = "1234567890"; type = "external_provider"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/address-book/$($addressCreate.id)" -Method Delete -Headers $addressHeaders -TimeoutSec 20
+    $addressAfterDelete = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/address-book/?organization=Smoke%20Directory" -Method Get -Headers $addressHeaders -TimeoutSec 20
+    $addressPassed = ($addressSearch.entries.id -contains $addressCreate.id) -and $addressUpdate.lastName -eq "Updated Contact" -and ($addressAfterDelete.entries.id -notcontains $addressCreate.id)
+    Add-Check -Name "administration address book lifecycle" -Result $(if ($addressPassed) { "passed" } else { "failed" }) -Details @{ createdId = $addressCreate.id; updatedLastName = $addressUpdate.lastName; searchCount = $addressSearch.total; deletedAbsent = ($addressAfterDelete.entries.id -notcontains $addressCreate.id) }
+}
+catch {
+    Add-Check -Name "administration address book lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

@@ -1708,6 +1708,10 @@ export async function createOfficeNote(sessionId: string, body: string): Promise
 export async function updateOfficeNote(sessionId: string, id: string, body: string): Promise<OfficeNoteItem> { return clinicianPut(sessionId, `/api/office-notes/${id}`, { body }) }
 export async function setOfficeNoteActivity(sessionId: string, id: string, active: boolean): Promise<OfficeNoteItem> { return clinicianPut(sessionId, `/api/office-notes/${id}/activity`, { active }) }
 export async function deleteOfficeNote(sessionId: string, id: string): Promise<void> { await clinicianDelete(sessionId, `/api/office-notes/${id}`) }
+export type AddressBookEntry = { id: number; isInternal: boolean; username?: string | null; organization: string; firstName: string; lastName: string; specialty?: string | null; npi?: string | null; type: string; phone?: string | null; mobile?: string | null; fax?: string | null; email?: string | null; street?: string | null; city?: string | null; state?: string | null; postalCode?: string | null; active: boolean }
+export async function getAddressBook(sessionId: string, q = ''): Promise<{ entries: AddressBookEntry[]; total: number }> { return clinicianGet(sessionId, `/api/administration/address-book/?organization=${encodeURIComponent(q)}&lastName=${encodeURIComponent(q)}`) }
+export async function saveAddressBookContact(sessionId: string, input: Omit<AddressBookEntry, 'id' | 'isInternal' | 'username'>, id?: number): Promise<AddressBookEntry> { return id ? clinicianPut(sessionId, `/api/administration/address-book/${id}`, input) : clinicianPost(sessionId, '/api/administration/address-book/', input) }
+export async function deleteAddressBookContact(sessionId: string, id: number): Promise<void> { await clinicianDelete(sessionId, `/api/administration/address-book/${id}`) }
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 
