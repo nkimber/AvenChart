@@ -302,6 +302,7 @@ drop table if exists pharmacies;
 drop table if exists clinical_notes;
 drop table if exists vitals;
 drop table if exists encounter_audit_events;
+drop table if exists encounter_clinical_alert_acknowledgments;
 drop table if exists encounter_layout_form_values;
 drop table if exists encounter_layout_form_records;
 drop table if exists encounters;
@@ -834,6 +835,11 @@ create table encounter_layout_form_records (
 create table encounter_layout_form_values (
   record_id uuid not null references encounter_layout_form_records(record_id), field_key text not null, field_label text not null,
   field_value text not null, primary key (record_id, field_key)
+);
+create table encounter_clinical_alert_acknowledgments (
+  encounter integer not null, rule_key text not null references clinical_alert_rules(rule_key),
+  acknowledged_at timestamptz not null, acknowledged_by text not null, reopened_at timestamptz, reopened_by text,
+  primary key (encounter, rule_key)
 );
 
 create table encounter_signatures (

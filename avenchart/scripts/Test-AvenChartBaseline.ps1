@@ -7476,6 +7476,18 @@ catch {
     Add-Check -Name "encounter clinical allergy-review alert" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $acknowledgedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $reopenedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/reopen" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $reopenedAllergyReview = $reopenedAlerts.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
+    $acknowledgementPassed = $acknowledgedAlerts.alerts.Count -eq 0 -and $null -ne $reopenedAllergyReview
+    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result $(if ($acknowledgementPassed) { "passed" } else { "failed" }) -Details @{ encounter = 1009011; acknowledgedCount = $acknowledgedAlerts.alerts.Count; reopened = $null -ne $reopenedAllergyReview }
+}
+catch {
+    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $appointmentReminderRule = $null
 try {
     $administrationHeaders = Get-AdministrationHeaders

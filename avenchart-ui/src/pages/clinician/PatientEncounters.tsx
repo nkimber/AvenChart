@@ -11,6 +11,7 @@ import {
   getEncounterAuditHistory,
   getEncounterDetail,
   getEncounterClinicalAlerts,
+  acknowledgeEncounterClinicalAlert,
   getEncounterLayoutForm,
   getEncounterLayoutForms,
   moveEncounterDocument,
@@ -311,6 +312,7 @@ function EncounterLayoutFormPanel({ sessionId, encounter }: { sessionId: string;
 
 function EncounterClinicalAlerts({ sessionId, encounter }: { sessionId: string; encounter: number }) {
   const [alerts, setAlerts] = useState<EncounterClinicalAlert[]>([])
+  const [acknowledging, setAcknowledging] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -320,11 +322,19 @@ function EncounterClinicalAlerts({ sessionId, encounter }: { sessionId: string; 
     return () => { cancelled = true }
   }, [sessionId, encounter])
 
+  async function acknowledge(key: string) {
+    setAcknowledging(key)
+    try { setAlerts((await acknowledgeEncounterClinicalAlert(sessionId, encounter, key)).alerts); showToast('Clinical alert acknowledgement recorded for this encounter.', 'success') }
+    catch { showToast('Could not acknowledge this clinical alert.', 'error') }
+    finally { setAcknowledging(null) }
+  }
+
   if (alerts.length === 0) return null
   return <section className="cl-card" aria-label="Clinical alerts">
     <div className="cl-card-header"><div><h2 className="cl-card-title">Clinical alerts</h2><p className="cl-empty-text">Active rule definitions evaluated for this encounter.</p></div></div>
     {alerts.map((alert) => <div key={alert.key} className="cl-soap-section" style={{ borderLeft: `4px solid ${alert.severity === 'critical' ? '#b42318' : alert.severity === 'warning' ? '#b54708' : '#175cd3'}` }}>
       <p className="cl-soap-label">{alert.title} · {alert.severity}</p><p className="cl-soap-text">{alert.message}</p><p className="cl-empty-text">{alert.reason}</p>
+      <button className="cl-btn-secondary" type="button" onClick={() => void acknowledge(alert.key)} disabled={acknowledging === alert.key}>{acknowledging === alert.key ? 'Recording...' : 'Acknowledge review'}</button>
     </div>)}
   </section>
 }
