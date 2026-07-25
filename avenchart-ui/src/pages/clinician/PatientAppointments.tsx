@@ -10,6 +10,8 @@ import {
   searchAppointments,
   updateAppointment,
   updateAppointmentStatus,
+  validateAppointmentAvailability,
+  type AppointmentAvailabilityValidationResponse,
   type AppointmentListItem,
   type AppointmentOccurrenceRescheduleInput,
   type AppointmentSchedulingOptionsResponse,
@@ -77,12 +79,17 @@ export default function PatientAppointments() {
   const [reschedulingAppointment, setReschedulingAppointment] = useState<AppointmentListItem | null>(null)
   const [schedulingOptions, setSchedulingOptions] = useState<AppointmentSchedulingOptionsResponse | null>(null)
   const [schedulingOptionsError, setSchedulingOptionsError] = useState<string | null>(null)
+  const [availability, setAvailability] = useState<AppointmentAvailabilityValidationResponse | null>(null)
+  const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [saving, setSaving] = useState(false)
   const [apptForm, setApptForm] = useState({
     title: 'Office visit',
     date: todayStr(),
     startTime: '09:00',
     durationMinutes: 20,
+    providerId: '',
+    facilityId: '',
+    room: '',
     comments: '',
   })
   const [editForm, setEditForm] = useState<AppointmentEditForm | null>(null)
@@ -121,14 +128,70 @@ export default function PatientAppointments() {
     event.preventDefault()
     setSaving(true)
     try {
-      await createAppointment(session.sessionId, { patientId, ...apptForm })
+      const validation = await validateAppointmentAvailability(session.sessionId, {
+        patientId,
+        providerId: nullableId(apptForm.providerId),
+        facilityId: nullableId(apptForm.facilityId),
+        date: apptForm.date,
+        startTime: apptForm.startTime,
+        durationMinutes: apptForm.durationMinutes,
+        room: apptForm.room || null,
+      })
+      setAvailability(validation)
+      if (!validation.available) {
+        showToast('Choose an available appointment time before saving.', 'error')
+        return
+      }
+      await createAppointment(session.sessionId, {
+        patientId,
+        providerId: nullableId(apptForm.providerId),
+        facilityId: nullableId(apptForm.facilityId),
+        title: apptForm.title,
+        date: apptForm.date,
+        startTime: apptForm.startTime,
+        durationMinutes: apptForm.durationMinutes,
+        room: apptForm.room || null,
+        comments: apptForm.comments || null,
+        enforceConflictPolicy: true,
+      })
       showToast('Appointment created.', 'success')
       setNewApptOpen(false)
+      setAvailability(null)
       load()
     } catch {
       showToast('Could not create appointment.', 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  function openNewAppointment() {
+    setAvailability(null)
+    setNewApptOpen(true)
+    if (schedulingOptions || schedulingOptionsError) return
+
+    getAppointmentSchedulingOptions(session.sessionId)
+      .then(setSchedulingOptions)
+      .catch(() => setSchedulingOptionsError('Provider and facility options could not be loaded. Patient defaults can still be used.'))
+  }
+
+  async function checkAvailability() {
+    setCheckingAvailability(true)
+    try {
+      const validation = await validateAppointmentAvailability(session.sessionId, {
+        patientId,
+        providerId: nullableId(apptForm.providerId),
+        facilityId: nullableId(apptForm.facilityId),
+        date: apptForm.date,
+        startTime: apptForm.startTime,
+        durationMinutes: apptForm.durationMinutes,
+        room: apptForm.room || null,
+      })
+      setAvailability(validation)
+    } catch {
+      showToast('Could not validate appointment availability.', 'error')
+    } finally {
+      setCheckingAvailability(false)
     }
   }
 
@@ -315,40 +378,71 @@ export default function PatientAppointments() {
   return (
     <div className="clinician-page">
       {newApptOpen && (
-        <div className="modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) setNewApptOpen(false) }}>
+        <div className="modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) { setNewApptOpen(false); setAvailability(null) } }}>
           <div className="modal-panel" role="dialog" aria-modal="true" aria-label="New appointment">
             <div className="modal-header">
               <h2 className="modal-title">New appointment</h2>
-              <button className="modal-close" type="button" onClick={() => setNewApptOpen(false)} aria-label="Close">&times;</button>
+              <button className="modal-close" type="button" onClick={() => { setNewApptOpen(false); setAvailability(null) }} aria-label="Close">&times;</button>
             </div>
             <form onSubmit={handleCreateAppointment}>
               <div className="field">
                 <label className="label" htmlFor="appt-title">Visit type / title</label>
-                <input id="appt-title" className="input" value={apptForm.title} onChange={(event) => setApptForm((form) => ({ ...form, title: event.target.value }))} required />
+                <input id="appt-title" className="input" value={apptForm.title} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, title: event.target.value })) }} required />
               </div>
               <div className="form-row">
                 <div className="field">
                   <label className="label" htmlFor="appt-date">Date</label>
-                  <input id="appt-date" type="date" className="input" value={apptForm.date} onChange={(event) => setApptForm((form) => ({ ...form, date: event.target.value }))} required />
+                  <input id="appt-date" type="date" className="input" value={apptForm.date} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, date: event.target.value })) }} required />
                 </div>
                 <div className="field">
                   <label className="label" htmlFor="appt-time">Time</label>
-                  <input id="appt-time" type="time" className="input" value={apptForm.startTime} onChange={(event) => setApptForm((form) => ({ ...form, startTime: event.target.value }))} required />
+                  <input id="appt-time" type="time" className="input" value={apptForm.startTime} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, startTime: event.target.value })) }} required />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="appt-provider">Provider</label>
+                  <select id="appt-provider" className="select" value={apptForm.providerId} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, providerId: event.target.value })) }}>
+                    <option value="">Use patient default</option>
+                    {schedulingOptions?.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}{provider.facilityName ? ` · ${provider.facilityName}` : ''}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="appt-facility">Facility</label>
+                  <select id="appt-facility" className="select" value={apptForm.facilityId} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, facilityId: event.target.value })) }}>
+                    <option value="">Use patient default</option>
+                    {schedulingOptions?.facilities.map((facility) => <option key={facility.id} value={facility.id}>{facility.name}{facility.code ? ` (${facility.code})` : ''}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="field">
                 <label className="label" htmlFor="appt-dur">Duration (minutes)</label>
-                <select id="appt-dur" className="select" value={apptForm.durationMinutes} onChange={(event) => setApptForm((form) => ({ ...form, durationMinutes: Number(event.target.value) }))}>
+                <select id="appt-dur" className="select" value={apptForm.durationMinutes} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, durationMinutes: Number(event.target.value) })) }}>
                   {DURATION_OPTIONS.map((duration) => <option key={duration} value={duration}>{duration} min</option>)}
                 </select>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="appt-room">Room (optional)</label>
+                <input id="appt-room" className="input" value={apptForm.room} onChange={(event) => { setAvailability(null); setApptForm((form) => ({ ...form, room: event.target.value })) }} />
               </div>
               <div className="field">
                 <label className="label" htmlFor="appt-comments">Comments (optional)</label>
                 <textarea id="appt-comments" className="textarea" rows={2} value={apptForm.comments} onChange={(event) => setApptForm((form) => ({ ...form, comments: event.target.value }))} />
               </div>
+              {schedulingOptionsError && <p className="cl-table-sub" role="status">{schedulingOptionsError}</p>}
+              <button className="cl-btn-secondary" type="button" onClick={checkAvailability} disabled={checkingAvailability || saving}>
+                {checkingAvailability ? 'Checking…' : 'Check availability'}
+              </button>
+              {availability && (
+                <div className={availability.available ? 'hint-banner' : 'error-banner'} role="status" style={{ marginTop: 12 }}>
+                  <strong>{availability.available ? 'Time available' : 'Time unavailable'}</strong>
+                  {availability.messages.map((message) => <p key={message}>{message}</p>)}
+                  {availability.conflicts.map((conflict) => <p key={`${conflict.appointmentId}-${conflict.conflictType}`}>{conflict.conflictType}: {conflict.patientDisplayName} — {formatTime(conflict.startTime)}–{formatTime(conflict.endTime)} ({conflict.title})</p>)}
+                </div>
+              )}
               <div className="button-row">
                 <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create appointment'}</button>
-                <button className="button-secondary" type="button" onClick={() => setNewApptOpen(false)} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
+                <button className="button-secondary" type="button" onClick={() => { setNewApptOpen(false); setAvailability(null) }} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
               </div>
             </form>
           </div>
@@ -513,7 +607,7 @@ export default function PatientAppointments() {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <button className="cl-btn-primary" type="button" onClick={() => setNewApptOpen(true)}>
+        <button className="cl-btn-primary" type="button" onClick={openNewAppointment}>
           <CalendarPlus size={14} /> New appointment
         </button>
       </div>
