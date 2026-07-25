@@ -925,8 +925,11 @@ export async function getAppointmentFlowBoard(sessionId: string, date?: string, 
 export type InventoryLot = { lotId: number; facilityCode: string; facilityName: string; lotNumber: string; expirationDate?: string | null; quantityOnHand: number; status: string }
 export type InventoryItem = { itemId: number; itemCode: string; name: string; category: string; unit: string; reorderPoint: number; quantityOnHand: number; belowReorderPoint: boolean; lots: InventoryLot[] }
 export type InventoryTransactionItem = { transactionId: string; itemCode: string; itemName: string; facilityCode: string; transactionType: string; quantityDelta: number; reason?: string | null; occurredAt: string; counterpartyFacilityCode?: string | null }
-export type InventoryResponse = { asOfDate: string; summary: { activeItems: number; activeLots: number; belowReorderPoint: number; expiringWithin90Days: number; inventoryValue: number }; items: InventoryItem[]; recentTransactions: InventoryTransactionItem[] }
+export type InventoryFacility = { facilityId: number; code: string; name: string }
+export type InventoryResponse = { asOfDate: string; summary: { activeItems: number; activeLots: number; belowReorderPoint: number; expiringWithin90Days: number; inventoryValue: number }; facilities: InventoryFacility[]; items: InventoryItem[]; recentTransactions: InventoryTransactionItem[] }
 export async function getInventory(sessionId: string, signal?: AbortSignal): Promise<InventoryResponse> { return clinicianGet(sessionId, '/api/inventory/', signal) }
+export async function createInventoryTransaction(sessionId: string, input: { lotId: number; transactionType: string; quantity: number; reason?: string | null }) { return clinicianPost(sessionId, '/api/inventory/transactions', input) }
+export async function createInventoryTransfer(sessionId: string, input: { sourceLotId: number; destinationFacilityId: number; quantity: number; reason?: string | null }) { return clinicianPost(sessionId, '/api/inventory/transfers', input) }
 
 // ── Encounters ────────────────────────────────────────────────────────────────
 
