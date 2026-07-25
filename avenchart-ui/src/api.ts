@@ -902,6 +902,11 @@ export type AppointmentListItem = {
   recurrenceDays: number[]
   recurrenceEndDate?: string | null
   recurrenceExdates: string[]
+  reminderDue: boolean
+  reminderStatus: string
+  reminderChannel: string
+  reminderContact?: string | null
+  reminderLeadDays?: number | null
 }
 
 export type AppointmentSearchResponse = {
@@ -946,6 +951,91 @@ export async function getAppointmentSchedulingOptions(
   signal?: AbortSignal,
 ): Promise<AppointmentSchedulingOptionsResponse> {
   return clinicianGet(sessionId, '/api/appointments/scheduling-options', signal)
+}
+
+export type AppointmentWaitlistItem = {
+  appointmentId: string
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  date: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  title: string
+  status?: string | null
+  categoryName?: string | null
+  providerName?: string | null
+  facilityName?: string | null
+  room?: string | null
+  reason?: string | null
+  daysUntilRequestedSlot: number
+  priority: string
+  reminderCreated: boolean
+  reminderId?: string | null
+  reminderStatus?: string | null
+  reminderAssignedTo?: string | null
+}
+
+export type AppointmentWaitlistResponse = {
+  asOfDate: string
+  totalWaiting: number
+  items: AppointmentWaitlistItem[]
+}
+
+export type AppointmentReminderTemplateOption = {
+  templateId: string
+  name: string
+  channel: string
+  queueName: string
+  description: string
+  isDefault: boolean
+}
+
+export type AppointmentReminderTemplateCatalogResponse = {
+  templates: AppointmentReminderTemplateOption[]
+}
+
+export type AppointmentReminderDispatchResponse = {
+  appointmentId: string
+  dispatchId: string
+  auditId: string
+  dispatchedAt: string
+  patientDisplayName: string
+  appointmentDate: string
+  startTime: string
+  reminderStatus: string
+  reminderChannel: string
+  queueName: string
+  dispatchStatus: string
+  templateName: string
+  retryAttempt: number
+}
+
+export type AppointmentReminderDispatchHistoryResponse = {
+  eventCount: number
+  entries: AppointmentReminderDispatchResponse[]
+}
+
+export async function getAppointmentWaitlist(sessionId: string, signal?: AbortSignal): Promise<AppointmentWaitlistResponse> {
+  return clinicianGet(sessionId, '/api/appointments/waitlist', signal)
+}
+
+export async function getAppointmentReminderTemplates(sessionId: string, signal?: AbortSignal): Promise<AppointmentReminderTemplateCatalogResponse> {
+  return clinicianGet(sessionId, '/api/appointments/reminders/templates', signal)
+}
+
+export async function dispatchAppointmentReminder(sessionId: string, appointmentId: string, templateId?: string | null, signal?: AbortSignal): Promise<AppointmentReminderDispatchResponse> {
+  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`, { templateId: templateId || null }, signal)
+}
+
+export async function retryAppointmentReminderDispatch(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<AppointmentReminderDispatchResponse> {
+  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch/retry`, {}, signal)
+}
+
+export async function getAppointmentReminderDispatchHistory(sessionId: string, appointmentId?: string, signal?: AbortSignal): Promise<AppointmentReminderDispatchHistoryResponse> {
+  const suffix = appointmentId ? `?appointmentId=${encodeURIComponent(appointmentId)}` : ''
+  return clinicianGet(sessionId, `/api/appointments/reminders/dispatch-history${suffix}`, signal)
 }
 
 export async function updateAppointmentStatus(

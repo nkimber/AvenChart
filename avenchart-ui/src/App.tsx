@@ -33,6 +33,7 @@ import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
 import NewEncounter from './pages/clinician/NewEncounter.tsx'
 import NewPatient from './pages/clinician/NewPatient.tsx'
 import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
+import SchedulingOperations from './pages/clinician/SchedulingOperations.tsx'
 
 export default function App() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="schedule" element={<ClinicianSchedule />} />
           <Route path="calendar" element={<ClinicianCalendar />} />
           <Route path="flow" element={<FlowBoard />} />
+          <Route path="scheduling" element={<SchedulingOperations />} />
           <Route path="labs" element={<LabQueue />} />
           <Route path="messages" element={<ClinicianMessages />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />

@@ -4471,6 +4471,14 @@ a {
 .inventory-modern-item { display: grid; grid-template-columns: minmax(160px, 1fr) 140px minmax(220px, 2fr); gap: 14px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--border); }
 .inventory-modern-item:last-child { border-bottom: 0; }.inventory-modern-item strong { color: var(--text); }.inventory-modern-item p { margin: 3px 0 0; color: var(--text-muted); font-size: 12px; }.inventory-modern-low { padding-left: 10px; border-left: 3px solid #d98724; }.inventory-modern-lots { display: flex; flex-wrap: wrap; gap: 5px; }.inventory-modern-lots span { padding: 3px 6px; border-radius: 4px; background: var(--bg); color: var(--text-muted); font-size: 11px; }.inventory-modern-in { color: var(--teal) !important; }.inventory-modern-out { color: #993c1d !important; }@media (max-width: 700px) { .inventory-modern-item { grid-template-columns: 1fr; gap: 5px; } }
 
+.scheduling-operations-list { display: flex; flex-direction: column; }
+.scheduling-operation-item { display: flex; gap: 18px; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.scheduling-operation-item:last-child { border-bottom: 0; }
+.scheduling-operation-item strong { color: var(--text); }
+.scheduling-operation-item p { margin: 3px 0 0; color: var(--text-muted); font-size: 12px; }
+.scheduling-operation-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+@media (max-width: 700px) { .scheduling-operation-item { display: block; } .scheduling-operation-actions { justify-content: flex-start; margin-top: 12px; } }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    GLOBAL INTERACTION & ACCESSIBILITY
    ═══════════════════════════════════════════════════════════════════════════ */

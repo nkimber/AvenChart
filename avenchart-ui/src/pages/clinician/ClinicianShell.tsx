@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { path: '/clinician/schedule', label: 'Schedule', icon: CalendarClock },
   { path: '/clinician/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/clinician/flow', label: 'Flow', icon: Workflow },
+  { path: '/clinician/scheduling', label: 'Scheduling', icon: CalendarClock },
   { path: '/clinician/patients', label: 'Patients', icon: Users },
   { path: '/clinician/labs', label: 'Lab queue', icon: FlaskConical },
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
