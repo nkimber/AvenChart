@@ -7479,10 +7479,14 @@ catch {
 try {
     $administrationHeaders = Get-AdministrationHeaders
     $acknowledgedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/acknowledge" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $acknowledgementHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $acknowledgementEntry = $acknowledgementHistory.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.acknowledgedBy -eq "admin" -and $null -eq $_.reopenedAt } | Select-Object -First 1
     $reopenedAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/ALLERGY_REVIEW/reopen" -Method Post -Headers $administrationHeaders -TimeoutSec 20
+    $reopenedHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1009011/alerts/history" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $reopenedHistoryEntry = $reopenedHistory.acknowledgements | Where-Object { $_.ruleKey -eq "ALLERGY_REVIEW" -and $_.reopenedBy -eq "admin" -and $null -ne $_.reopenedAt } | Select-Object -First 1
     $reopenedAllergyReview = $reopenedAlerts.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
-    $acknowledgementPassed = $acknowledgedAlerts.alerts.Count -eq 0 -and $null -ne $reopenedAllergyReview
-    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result $(if ($acknowledgementPassed) { "passed" } else { "failed" }) -Details @{ encounter = 1009011; acknowledgedCount = $acknowledgedAlerts.alerts.Count; reopened = $null -ne $reopenedAllergyReview }
+    $acknowledgementPassed = $acknowledgedAlerts.alerts.Count -eq 0 -and $null -ne $acknowledgementEntry -and $null -ne $reopenedAllergyReview -and $null -ne $reopenedHistoryEntry
+    Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result $(if ($acknowledgementPassed) { "passed" } else { "failed" }) -Details @{ encounter = 1009011; acknowledgedCount = $acknowledgedAlerts.alerts.Count; acknowledgementRecorded = $null -ne $acknowledgementEntry; reopened = $null -ne $reopenedAllergyReview; reopenRecorded = $null -ne $reopenedHistoryEntry }
 }
 catch {
     Add-Check -Name "encounter clinical alert acknowledgement lifecycle" -Result "failed" -Details $_.Exception.Message

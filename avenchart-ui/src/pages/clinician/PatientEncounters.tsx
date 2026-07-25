@@ -11,7 +11,9 @@ import {
   getEncounterAuditHistory,
   getEncounterDetail,
   getEncounterClinicalAlerts,
+  getEncounterClinicalAlertHistory,
   acknowledgeEncounterClinicalAlert,
+  reopenEncounterClinicalAlert,
   getEncounterLayoutForm,
   getEncounterLayoutForms,
   moveEncounterDocument,
@@ -32,6 +34,7 @@ import {
   type EncounterAuditHistory,
   type EncounterLayoutForm,
   type EncounterClinicalAlert,
+  type EncounterClinicalAlertAcknowledgement,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -312,6 +315,7 @@ function EncounterLayoutFormPanel({ sessionId, encounter }: { sessionId: string;
 
 function EncounterClinicalAlerts({ sessionId, encounter }: { sessionId: string; encounter: number }) {
   const [alerts, setAlerts] = useState<EncounterClinicalAlert[]>([])
+  const [history, setHistory] = useState<EncounterClinicalAlertAcknowledgement[]>([])
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
 
   useEffect(() => {
@@ -322,20 +326,44 @@ function EncounterClinicalAlerts({ sessionId, encounter }: { sessionId: string; 
     return () => { cancelled = true }
   }, [sessionId, encounter])
 
+  useEffect(() => {
+    let cancelled = false
+    getEncounterClinicalAlertHistory(sessionId, encounter)
+      .then((response) => { if (!cancelled) setHistory(response.acknowledgements) })
+      .catch(() => { if (!cancelled) setHistory([]) })
+    return () => { cancelled = true }
+  }, [sessionId, encounter])
+
   async function acknowledge(key: string) {
     setAcknowledging(key)
-    try { setAlerts((await acknowledgeEncounterClinicalAlert(sessionId, encounter, key)).alerts); showToast('Clinical alert acknowledgement recorded for this encounter.', 'success') }
+    try {
+      setAlerts((await acknowledgeEncounterClinicalAlert(sessionId, encounter, key)).alerts)
+      setHistory((await getEncounterClinicalAlertHistory(sessionId, encounter)).acknowledgements)
+      showToast('Clinical alert acknowledgement recorded for this encounter.', 'success')
+    }
     catch { showToast('Could not acknowledge this clinical alert.', 'error') }
     finally { setAcknowledging(null) }
   }
 
-  if (alerts.length === 0) return null
+  async function reopen(key: string) {
+    setAcknowledging(key)
+    try {
+      setAlerts((await reopenEncounterClinicalAlert(sessionId, encounter, key)).alerts)
+      setHistory((await getEncounterClinicalAlertHistory(sessionId, encounter)).acknowledgements)
+      showToast('Clinical alert reopened for this encounter.', 'success')
+    }
+    catch { showToast('Could not reopen this clinical alert.', 'error') }
+    finally { setAcknowledging(null) }
+  }
+
+  if (alerts.length === 0 && history.length === 0) return null
   return <section className="cl-card" aria-label="Clinical alerts">
     <div className="cl-card-header"><div><h2 className="cl-card-title">Clinical alerts</h2><p className="cl-empty-text">Active rule definitions evaluated for this encounter.</p></div></div>
     {alerts.map((alert) => <div key={alert.key} className="cl-soap-section" style={{ borderLeft: `4px solid ${alert.severity === 'critical' ? '#b42318' : alert.severity === 'warning' ? '#b54708' : '#175cd3'}` }}>
       <p className="cl-soap-label">{alert.title} · {alert.severity}</p><p className="cl-soap-text">{alert.message}</p><p className="cl-empty-text">{alert.reason}</p>
       <button className="cl-btn-secondary" type="button" onClick={() => void acknowledge(alert.key)} disabled={acknowledging === alert.key}>{acknowledging === alert.key ? 'Recording...' : 'Acknowledge review'}</button>
     </div>)}
+    {history.length > 0 && <div className="cl-soap-section"><p className="cl-soap-label">Alert acknowledgement history</p>{history.map((entry) => <div key={entry.ruleKey} className="cl-empty-text" style={{ marginBottom: 10 }}><strong>{entry.title}</strong><br />Acknowledged by {entry.acknowledgedBy} at {new Date(entry.acknowledgedAt).toLocaleString()}.{entry.reopenedAt ? <><br />Reopened by {entry.reopenedBy} at {new Date(entry.reopenedAt).toLocaleString()}.</> : <><br /><button className="cl-btn-secondary" type="button" onClick={() => void reopen(entry.ruleKey)} disabled={acknowledging === entry.ruleKey}>{acknowledging === entry.ruleKey ? 'Reopening...' : 'Reopen alert'}</button></>}</div>)}</div>}
   </section>
 }
 

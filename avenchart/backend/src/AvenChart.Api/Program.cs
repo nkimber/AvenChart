@@ -1379,6 +1379,10 @@ encounters.MapGet("/{encounter:int}/alerts", async (ClinicalAlertEvaluationRepos
     (await repository.GetEncounterAlertsAsync(encounter, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound())
     .WithName("GetEncounterClinicalAlerts");
 
+encounters.MapGet("/{encounter:int}/alerts/history", async (ClinicalAlertEvaluationRepository repository, int encounter, CancellationToken cancellationToken) =>
+    (await repository.GetHistoryAsync(encounter, cancellationToken)) is { } history ? Results.Ok(history) : Results.NotFound())
+    .WithName("GetEncounterClinicalAlertHistory");
+
 encounters.MapPost("/{encounter:int}/alerts/{ruleKey}/acknowledge", async (ClinicalAlertEvaluationRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string ruleKey, CancellationToken cancellationToken) =>
 {
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AcknowledgeAsync(encounter, ruleKey, session.Username, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound(); }

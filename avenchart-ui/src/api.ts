@@ -1497,6 +1497,9 @@ export async function saveEncounterLayoutForm(sessionId: string, encounterId: nu
 export type EncounterClinicalAlert = { key: string; title: string; severity: 'info' | 'warning' | 'critical'; message: string; reason: string }
 export type EncounterClinicalAlerts = { encounter: number; alerts: EncounterClinicalAlert[] }
 export async function getEncounterClinicalAlerts(sessionId: string, encounterId: number): Promise<EncounterClinicalAlerts> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/alerts`) }
+export type EncounterClinicalAlertAcknowledgement = { ruleKey: string; title: string; acknowledgedAt: string; acknowledgedBy: string; reopenedAt?: string | null; reopenedBy?: string | null }
+export type EncounterClinicalAlertHistory = { encounter: number; acknowledgements: EncounterClinicalAlertAcknowledgement[] }
+export async function getEncounterClinicalAlertHistory(sessionId: string, encounterId: number): Promise<EncounterClinicalAlertHistory> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/alerts/history`) }
 export async function acknowledgeEncounterClinicalAlert(sessionId: string, encounterId: number, key: string): Promise<EncounterClinicalAlerts> { return clinicianPost(sessionId, `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/acknowledge`, {}) }
 export async function reopenEncounterClinicalAlert(sessionId: string, encounterId: number, key: string): Promise<EncounterClinicalAlerts> { return clinicianPost(sessionId, `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/reopen`, {}) }
 export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }

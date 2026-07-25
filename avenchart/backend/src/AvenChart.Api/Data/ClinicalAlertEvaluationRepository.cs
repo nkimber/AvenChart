@@ -92,6 +92,39 @@ public sealed class ClinicalAlertEvaluationRepository(NpgsqlDataSource dataSourc
         return await GetEncounterAlertsAsync(encounter, cancellationToken);
     }
 
+    public async Task<EncounterClinicalAlertHistoryResponse?> GetHistoryAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText = "select exists(select 1 from encounters where encounter=@encounter);";
+        existsCommand.Parameters.AddWithValue("encounter", encounter);
+        if (!(bool)(await existsCommand.ExecuteScalarAsync(cancellationToken) ?? false)) return null;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select a.rule_key,r.title,a.acknowledged_at,a.acknowledged_by,a.reopened_at,a.reopened_by
+            from encounter_clinical_alert_acknowledgments a
+            join clinical_alert_rules r on r.rule_key=a.rule_key
+            where a.encounter=@encounter
+            order by a.acknowledged_at desc,a.rule_key;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        var acknowledgements = new List<EncounterClinicalAlertAcknowledgementItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            acknowledgements.Add(new EncounterClinicalAlertAcknowledgementItem(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetFieldValue<DateTimeOffset>(2).ToString("O"),
+                reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4).ToString("O"),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return new EncounterClinicalAlertHistoryResponse(encounter, acknowledgements);
+    }
+
     private static void EnsureAllergyReviewRule(string ruleKey)
     {
         if (!string.Equals(ruleKey, "ALLERGY_REVIEW", StringComparison.Ordinal)) throw new ArgumentException("This clinical alert does not support acknowledgement.");
