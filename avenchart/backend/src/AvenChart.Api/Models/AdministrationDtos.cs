@@ -202,3 +202,5 @@ public sealed record FormLayoutFieldMutationRequest(string GroupKey, string Labe
 public sealed record ClinicalAlertRuleItem(string Key, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record ClinicalAlertRulesResponse(IReadOnlyList<ClinicalAlertRuleItem> Rules);
 public sealed record ClinicalAlertRuleMutationRequest(string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active);
+public sealed record ModuleCatalogItem(string Key, string DisplayName, string Category, string Status, string Description, string UpdatedAt, string UpdatedBy);
+public sealed record ModuleCatalogResponse(IReadOnlyList<ModuleCatalogItem> Modules);

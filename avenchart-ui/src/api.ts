@@ -2022,6 +2022,8 @@ export async function saveFormLayoutField(sessionId: string, layoutKey: string, 
 export type ClinicalAlertRuleItem = { key: string; title: string; triggerType: 'patient' | 'encounter' | 'appointment'; targetType: 'banner' | 'reminder'; severity: 'info' | 'warning' | 'critical'; message: string; sequence: number; active: boolean }
 export async function getClinicalAlertRules(sessionId: string): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianGet(sessionId, '/api/administration/clinical-alert-rules') }
 export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input) }
+export type ModuleCatalogItem = { key: string; displayName: string; category: string; status: string; description: string }
+export async function getModuleCatalog(sessionId: string): Promise<{ modules: ModuleCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/modules') }
 
 export type PhiAccessAuditEvent = {
   auditId: string

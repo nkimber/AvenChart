@@ -14,6 +14,7 @@ import {
   getClinicalAlertRules,
   getFormLayout,
   getFormLayouts,
+  getModuleCatalog,
   getPhiAccessAudit,
   getPracticeSettings,
   grantAdministrationAccessMembership,
@@ -44,6 +45,7 @@ import {
   type ClinicalAlertRuleItem,
   type FormLayoutDetail,
   type FormLayoutItem,
+  type ModuleCatalogItem,
   type PracticeSettingItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -129,7 +131,7 @@ function emptyCodingCatalogForm(): CodingCatalogForm { return { key: '', display
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration' | 'layouts' | 'rules'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration' | 'layouts' | 'rules' | 'modules'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
   const [codingCatalogs, setCodingCatalogs] = useState<CodingCatalogItem[]>([])
@@ -142,6 +144,7 @@ export default function AdminDirectory() {
   const [groupDraft, setGroupDraft] = useState({ key: '', title: '', sequence: 10 })
   const [fieldDraft, setFieldDraft] = useState({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: 10 })
   const [alertRules, setAlertRules] = useState<ClinicalAlertRuleItem[]>([])
+  const [modules, setModules] = useState<ModuleCatalogItem[]>([])
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -175,6 +178,7 @@ export default function AdminDirectory() {
   }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'layouts') getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'rules') getClinicalAlertRules(session.sessionId).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not load alert rules.', 'error')) }, [session.sessionId, tab])
+  useEffect(() => { if (tab === 'modules') getModuleCatalog(session.sessionId).then((result) => setModules(result.modules)).catch(() => showToast('Could not load modules.', 'error')) }, [session.sessionId, tab])
 
   async function openLayout(key: string) { try { setLayoutDetail(await getFormLayout(session.sessionId, key)); setLayoutKey(key) } catch { showToast('Could not load layout detail.', 'error') } }
   async function saveLayout(event: FormEvent) { event.preventDefault(); setSavingLayout(true); try { const detail = await saveFormLayout(session.sessionId, layoutKey, { title: layoutDetail?.layout.title ?? layoutKey, mapping: layoutDetail?.layout.mapping ?? 'Core', sequence: layoutDetail?.layout.sequence ?? ((layouts.at(-1)?.sequence ?? 0) + 10), active: layoutDetail?.layout.active ?? true }); setLayoutDetail(detail); setLayouts(await getFormLayouts(session.sessionId).then((result) => result.layouts)); showToast('Layout saved.', 'success') } catch { showToast('Could not save layout.', 'error') } finally { setSavingLayout(false) } }
@@ -442,6 +446,7 @@ export default function AdminDirectory() {
                 { id: 'configuration', label: 'Configuration' },
                 { id: 'layouts', label: 'Forms & layouts' },
                 { id: 'rules', label: 'Rules & alerts' },
+                { id: 'modules', label: 'Modules' },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -692,6 +697,8 @@ export default function AdminDirectory() {
             )}
 
             {tab === 'rules' && <section className="cl-card"><h2 className="cl-card-title">Rules and alerts</h2><p className="clinician-page-subtitle">Local rule definitions control which clinical context produces an in-app banner or reminder. No external notification is sent from this catalog.</p><table className="cl-table"><thead><tr><th>Rule</th><th>Trigger</th><th>Target</th><th>Severity</th><th>Active</th></tr></thead><tbody>{alertRules.map((rule) => <tr key={rule.key}><td><strong>{rule.title}</strong><p className="cl-table-sub">{rule.message}</p></td><td>{rule.triggerType}</td><td>{rule.targetType}</td><td>{rule.severity}</td><td><label><input type="checkbox" checked={rule.active} onChange={(event) => void saveClinicalAlertRule(session.sessionId, rule.key, { ...rule, active: event.target.checked }).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not save alert rule.', 'error'))} /> {rule.active ? 'Active' : 'Inactive'}</label></td></tr>)}</tbody></table></section>}
+
+            {tab === 'modules' && <section className="cl-card"><h2 className="cl-card-title">Module inventory</h2><p className="clinician-page-subtitle">Local modules can be enabled only through their own lifecycle. Decision-required and partner-gated modules remain visible until their accountable owners authorize them.</p><table className="cl-table"><thead><tr><th>Module</th><th>Category</th><th>Status</th><th>Scope</th></tr></thead><tbody>{modules.map((module) => <tr key={module.key}><td><strong>{module.displayName}</strong><p className="cl-table-sub">{module.key}</p></td><td>{module.category}</td><td><span className="cl-badge cl-badge-muted">{module.status}</span></td><td>{module.description}</td></tr>)}</tbody></table></section>}
 
             {tab === 'access' && (
               <section className="cl-card">
