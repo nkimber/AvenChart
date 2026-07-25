@@ -51,6 +51,7 @@ builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
+builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
@@ -764,6 +765,37 @@ patients.MapGet("/merge-preview", async (
         }
     })
     .WithName("GetPatientMergePreview")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapPost("/merge-audits", async (
+        PatientRepository patientRepository,
+        PatientMergeAuditRepository auditRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        PatientMergeAuditPlanRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var preview = await patientRepository.GetMergePreviewAsync(
+                request.TargetPatientId,
+                request.SourcePatientId,
+                cancellationToken);
+            if (preview is null)
+            {
+                return Results.NotFound();
+            }
+
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var audit = await auditRepository.RecordPreviewAsync(request, preview, session.Username, cancellationToken);
+            return Results.Created($"/api/patients/merge-audits/{audit.AuditId}", audit);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    })
+    .WithName("CreatePatientMergeAuditPlan")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapGet("/provider-options", async (

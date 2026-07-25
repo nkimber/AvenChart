@@ -8,6 +8,7 @@ import {
   updatePatientInsurance,
   deletePatientInsurance,
   getPatientMergePreview,
+  createPatientMergeAuditPlan,
   updatePatientPortalAccountAccess,
   updatePatientPortalAccountReset,
   type PatientInsuranceMutationInput,
@@ -68,6 +69,8 @@ export default function PatientSummary() {
   const [insForm, setInsForm] = useState<PatientInsuranceMutationInput>(BLANK_INS)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [mergePreviewState, setMergePreviewState] = useState<MergePreviewState>({ status: 'idle' })
+  const [mergeAuditRationale, setMergeAuditRationale] = useState('')
+  const [mergeAuditState, setMergeAuditState] = useState<{ status: 'idle' } | { status: 'saving' } | { status: 'ready'; auditId: string } | { status: 'error'; message: string }>({ status: 'idle' })
   const [portalAction, setPortalAction] = useState<'access' | 'reset' | null>(null)
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
@@ -122,11 +125,29 @@ export default function PatientSummary() {
 
   async function previewMerge(sourcePatientId: string) {
     setMergePreviewState({ status: 'loading', sourcePatientId })
+    setMergeAuditRationale('')
+    setMergeAuditState({ status: 'idle' })
     try {
       const preview = await getPatientMergePreview(session.sessionId, patientId, sourcePatientId)
       setMergePreviewState({ status: 'ready', data: preview })
     } catch {
       setMergePreviewState({ status: 'error', message: 'Could not load this merge preview. The candidate may have changed.' })
+    }
+  }
+
+  async function recordMergeReview() {
+    if (mergePreviewState.status !== 'ready') return
+    setMergeAuditState({ status: 'saving' })
+    try {
+      const audit = await createPatientMergeAuditPlan(session.sessionId, {
+        targetPatientId: mergePreviewState.data.targetPatient.canonicalId,
+        sourcePatientId: mergePreviewState.data.sourcePatient.canonicalId,
+        rationale: mergeAuditRationale || null,
+      })
+      setMergeAuditState({ status: 'ready', auditId: audit.auditId })
+      showToast('Merge review evidence recorded. No records were merged.', 'success')
+    } catch {
+      setMergeAuditState({ status: 'error', message: 'Could not record the merge review evidence.' })
     }
   }
 
@@ -448,6 +469,9 @@ export default function PatientSummary() {
             </div>
             <p className="cl-soap-label" style={{ marginTop: 12 }}>Safeguards</p>
             <ul className="fact-list">{mergePreviewState.data.safeguards.map((safeguard) => <li key={safeguard} className="fact-row"><span>{safeguard}</span></li>)}</ul>
+            <div className="field" style={{ marginTop: 12 }}><label className="label" htmlFor="merge-rationale">Review rationale (optional)</label><textarea id="merge-rationale" className="textarea" rows={2} value={mergeAuditRationale} onChange={(event) => setMergeAuditRationale(event.target.value)} disabled={mergeAuditState.status === 'saving' || mergeAuditState.status === 'ready'} /></div>
+            <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={recordMergeReview} disabled={mergeAuditState.status === 'saving' || mergeAuditState.status === 'ready'}>{mergeAuditState.status === 'saving' ? 'Recording…' : mergeAuditState.status === 'ready' ? 'Review recorded' : 'Record merge review'}</button>{mergeAuditState.status === 'ready' && <span className="cl-empty-text">Audit #{mergeAuditState.auditId}</span>}</div>
+            {mergeAuditState.status === 'error' && <div className="error-banner" style={{ marginTop: 10 }}>{mergeAuditState.message}</div>}
           </div>}
         </section>
 

@@ -817,6 +817,15 @@ export type PatientMergePreview = {
   safeguards: string[]
 }
 
+export type PatientMergeAuditPlan = {
+  auditId: string
+  plannedAt: string
+  plannedBy: string
+  status: string
+  rationale?: string | null
+  preview: PatientMergePreview
+}
+
 export type PatientTimelineItem = {
   id: string
   date: string
@@ -933,6 +942,14 @@ export async function getPatientMergePreview(
 ): Promise<PatientMergePreview> {
   const query = new URLSearchParams({ targetPatientId, sourcePatientId })
   return clinicianGet(sessionId, `/api/patients/merge-preview?${query}`, signal)
+}
+
+export async function createPatientMergeAuditPlan(
+  sessionId: string,
+  body: { targetPatientId: string; sourcePatientId: string; rationale?: string | null },
+  signal?: AbortSignal,
+): Promise<PatientMergeAuditPlan> {
+  return clinicianPost(sessionId, '/api/patients/merge-audits', body, signal)
 }
 
 export async function updatePatientPortalAccountAccess(sessionId: string, patientId: string, portalEnabled: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {
