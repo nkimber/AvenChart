@@ -38,6 +38,7 @@ import NewEncounter from './pages/clinician/NewEncounter.tsx'
 import NewPatient from './pages/clinician/NewPatient.tsx'
 import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
 import SchedulingOperations from './pages/clinician/SchedulingOperations.tsx'
+import OfficeNotes from './pages/clinician/OfficeNotes.tsx'
 
 export default function App() {
   return (
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="scheduling" element={<SchedulingOperations />} />
           <Route path="labs" element={<LabQueue />} />
           <Route path="messages" element={<ClinicianMessages />} />
+          <Route path="office-notes" element={<OfficeNotes />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
           <Route path="groups" element={<TherapyGroups />} />

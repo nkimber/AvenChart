@@ -9740,6 +9740,29 @@ catch {
     Add-Check -Name "operational reports csv export" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $officeHeaders = Get-AdministrationHeaders
+    $officeCreate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/" -Method Post -Headers $officeHeaders -ContentType "application/json" -Body (@{ body = "Smoke office note draft" } | ConvertTo-Json) -TimeoutSec 20
+    $officeUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/$($officeCreate.id)" -Method Put -Headers $officeHeaders -ContentType "application/json" -Body (@{ body = "Smoke office note revised" } | ConvertTo-Json) -TimeoutSec 20
+    $officeInactive = Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/$($officeCreate.id)/activity" -Method Put -Headers $officeHeaders -ContentType "application/json" -Body (@{ active = $false } | ConvertTo-Json) -TimeoutSec 20
+    $officeInactiveList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/?activity=inactive" -Method Get -Headers $officeHeaders -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/$($officeCreate.id)" -Method Delete -Headers $officeHeaders -TimeoutSec 20
+    $officeAllList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/office-notes/?activity=all" -Method Get -Headers $officeHeaders -TimeoutSec 20
+    $officePassed = $officeUpdate.body -eq "Smoke office note revised" `
+        -and $officeInactive.active -eq $false `
+        -and ($officeInactiveList.notes.id -contains $officeCreate.id) `
+        -and ($officeAllList.notes.id -notcontains $officeCreate.id)
+    Add-Check -Name "office note lifecycle" -Result $(if ($officePassed) { "passed" } else { "failed" }) -Details @{
+        createdId = $officeCreate.id
+        updatedBody = $officeUpdate.body
+        inactiveVisible = ($officeInactiveList.notes.id -contains $officeCreate.id)
+        deletedAbsent = ($officeAllList.notes.id -notcontains $officeCreate.id)
+    }
+}
+catch {
+    Add-Check -Name "office note lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

@@ -1701,6 +1701,14 @@ export async function updatePatientMessageStatus(
   return clinicianPut(sessionId, `/api/messages/${messageId}/status`, body, signal)
 }
 
+export type OfficeNoteItem = { id: string; body: string; author: string; groupName?: string | null; active: boolean; createdAt: string; updatedAt: string }
+export type OfficeNotesResponse = { notes: OfficeNoteItem[]; total: number }
+export async function getOfficeNotes(sessionId: string, activity: 'active' | 'inactive' | 'all' = 'active'): Promise<OfficeNotesResponse> { return clinicianGet(sessionId, `/api/office-notes/?activity=${activity}`) }
+export async function createOfficeNote(sessionId: string, body: string): Promise<OfficeNoteItem> { return clinicianPost(sessionId, '/api/office-notes/', { body }) }
+export async function updateOfficeNote(sessionId: string, id: string, body: string): Promise<OfficeNoteItem> { return clinicianPut(sessionId, `/api/office-notes/${id}`, { body }) }
+export async function setOfficeNoteActivity(sessionId: string, id: string, active: boolean): Promise<OfficeNoteItem> { return clinicianPut(sessionId, `/api/office-notes/${id}/activity`, { active }) }
+export async function deleteOfficeNote(sessionId: string, id: string): Promise<void> { await clinicianDelete(sessionId, `/api/office-notes/${id}`) }
+
 // ── Documents ─────────────────────────────────────────────────────────────────
 
 export type PatientDocumentItem = {

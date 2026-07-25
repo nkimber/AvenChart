@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { path: '/clinician/patients', label: 'Patients', icon: Users },
   { path: '/clinician/labs', label: 'Lab queue', icon: FlaskConical },
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
+  { path: '/clinician/office-notes', label: 'Office notes', icon: Mail },
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
   { path: '/clinician/groups', label: 'Groups', icon: Users },
