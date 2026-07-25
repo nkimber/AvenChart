@@ -1997,6 +1997,8 @@ export async function getAdministrationDirectory(
 ): Promise<AdministrationDirectoryResponse> {
   return clinicianGet(sessionId, '/api/administration/directory', signal)
 }
+export type ConfigurationCatalogItem = { key: string; family: string; classification: string; authority: string; validation: string; mutationState: string }
+export async function getConfigurationCatalog(sessionId: string): Promise<{ settings: ConfigurationCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/configuration-catalog') }
 
 export type PhiAccessAuditEvent = {
   auditId: string

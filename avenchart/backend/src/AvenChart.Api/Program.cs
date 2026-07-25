@@ -3396,6 +3396,15 @@ billing.MapDelete("/payments/{activityId}", async (
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 RequireAccessPermission(administration, "admin", "acl", "write");
 
+administration.MapGet("/configuration-catalog", () => Results.Ok(new ConfigurationCatalogResponse([
+    new("practice.identity", "Practice identity and contact", "Owner-gated", "Practice administrator", "Structured identity and contact validation", "No mutable source selected"),
+    new("practice.default-facility", "Default facility", "Local-ready after source selection", "Practice administrator", "Must reference an active facility", "No mutable source selected"),
+    new("practice.locale-timezone", "Locale and time zone", "Owner-gated", "Practice and operations owners", "Approved time-zone allowlist", "No mutable source selected"),
+    new("scheduling.defaults", "Appointment defaults", "Owner-gated", "Operations owner", "Facility/provider compatibility and bounded values", "No mutable source selected"),
+    new("clinical.templates", "Clinical forms and templates", "Clinical-governed", "Clinical owner", "Versioned content and activation date", "No mutable source selected"),
+    new("integrations.secrets", "Security and integration settings", "Deployment-only", "Security and operations owners", "Environment validation; never return secrets", "Excluded from application API")
+]))).WithName("GetConfigurationCatalog");
+
 administration.MapGet("/directory", async (
         AdministrationRepository repository,
         CancellationToken cancellationToken) =>

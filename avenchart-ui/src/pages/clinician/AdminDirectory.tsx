@@ -8,6 +8,7 @@ import {
   deleteAdministrationFacility,
   deleteAdministrationUser,
   getAdministrationDirectory,
+  getConfigurationCatalog,
   getPhiAccessAudit,
   grantAdministrationAccessMembership,
   grantAdministrationAccessPermission,
@@ -25,6 +26,7 @@ import {
   type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
+  type ConfigurationCatalogItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -107,7 +109,8 @@ function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration'>('users')
+  const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -139,6 +142,7 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
+  useEffect(() => { if (tab === 'configuration') getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error')) }, [session.sessionId, tab])
 
   function beginFacilityCreate() {
     setFacilityForm(emptyFacilityForm())
@@ -363,6 +367,7 @@ export default function AdminDirectory() {
                 { id: 'access', label: `Access control (${data.counts.accessGroups})` },
                 { id: 'reviews', label: `Profile reviews (${data.counts.waitingProfileReviews})` },
                 { id: 'audit', label: 'PHI access audit' },
+                { id: 'configuration', label: 'Configuration' },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -575,6 +580,8 @@ export default function AdminDirectory() {
                 {auditState.status === 'ready' && auditState.data.events.length > 0 && <table className="cl-table"><thead><tr><th>When</th><th>User</th><th>Request</th><th>Permission</th><th>Decision</th></tr></thead><tbody>{auditState.data.events.map((entry) => <tr key={entry.auditId}><td className="cl-td-muted">{entry.occurredAt}</td><td>{entry.username}</td><td className="cl-td-muted">{entry.httpMethod} {entry.requestPath}</td><td className="cl-td-muted">{entry.requiredPermission}</td><td><span className={`cl-badge ${entry.authorized ? 'cl-badge-green' : 'cl-badge-red'}`}>{entry.authorized ? `Allowed (${entry.responseStatus})` : `Denied (${entry.responseStatus})`}</span></td></tr>)}</tbody></table>}
               </section>
             )}
+
+            {tab === 'configuration' && <section className="cl-card"><h2 className="cl-card-title">Configuration catalog</h2><p className="clinician-page-subtitle">Settings remain read-only until their authoritative source, validation, audit, and rollback contract are approved. Deployment secrets are excluded.</p><table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table></section>}
 
             {tab === 'access' && (
               <section className="cl-card">
