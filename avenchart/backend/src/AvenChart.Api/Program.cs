@@ -529,6 +529,22 @@ patientPortal.MapGet("/messages/{messageId:int}/thread", async (
     })
     .WithName("GetPatientPortalMessageThread");
 
+patientPortal.MapGet("/messages/attachments/{attachmentId:guid}", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        Guid attachmentId,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        var attachment = Guid.TryParse(header, out var sessionId)
+            ? await repository.DownloadMessageAttachmentAsync(sessionId, attachmentId, cancellationToken)
+            : new PatientPortalMessageAttachmentDownload(false, string.Empty, "application/octet-stream", Array.Empty<byte>(), "Patient portal session header was not supplied.");
+        return attachment.Downloadable
+            ? Results.File(attachment.Content, attachment.ContentType, attachment.FileName)
+            : Results.BadRequest(new { attachment.FailureReason });
+    })
+    .WithName("DownloadPatientPortalMessageAttachment");
+
 patientPortal.MapPost("/messages", async (
         PatientPortalRepository repository,
         HttpContext httpContext,

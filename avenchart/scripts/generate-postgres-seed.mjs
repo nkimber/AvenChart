@@ -271,6 +271,7 @@ drop table if exists problems;
 drop table if exists patient_document_versions;
 drop table if exists patient_documents;
 drop table if exists patient_reminders;
+drop table if exists patient_portal_message_attachments;
 drop table if exists portal_mailbox_messages;
 drop table if exists messages;
 drop table if exists procedure_result_versions;
@@ -1278,6 +1279,19 @@ create table portal_mailbox_messages (
   reply_mail_chain integer not null,
   is_encrypted boolean not null default false,
   deleted integer not null default 0
+);
+
+create table patient_portal_message_attachments (
+  id uuid primary key,
+  message_id integer not null references portal_mailbox_messages(id) on delete cascade,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  file_name text not null,
+  content_type text not null,
+  size_bytes integer not null,
+  content bytea not null,
+  source text not null default 'portal-upload',
+  uploaded_at timestamptz not null default now()
 );
 
 create table patient_reminders (
@@ -2622,6 +2636,7 @@ create index idx_procedure_result_versions_result on procedure_result_versions (
 create index idx_messages_pid on messages (pid);
 create index idx_portal_mailbox_owner_recipient on portal_mailbox_messages (owner, recipient_id, deleted);
 create index idx_portal_mailbox_owner_sender on portal_mailbox_messages (owner, sender_id, deleted);
+create index idx_patient_portal_message_attachments_message on patient_portal_message_attachments (message_id, uploaded_at, id);
 create index idx_patient_reminders_pid_active_created on patient_reminders (pid, active, date_created desc);
 create index idx_patient_portal_report_audit_patient_created on patient_portal_report_audit_events (patient_id, created_at desc, id desc);
 create index idx_patient_portal_report_audit_session on patient_portal_report_audit_events (session_id);

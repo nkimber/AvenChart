@@ -738,7 +738,15 @@ public sealed record PatientPortalComposeMessageRequest(
 public sealed record PatientPortalMessageAttachmentSubmission(
     string? FileName,
     string? ContentType,
-    long? SizeBytes);
+    long? SizeBytes,
+    string? ContentBase64);
+
+public sealed record PatientPortalMessageAttachmentDownload(
+    bool Downloadable,
+    string FileName,
+    string ContentType,
+    byte[] Content,
+    string? FailureReason);
 
 public sealed record PatientPortalComposeMessageResponse(
     bool Authenticated,

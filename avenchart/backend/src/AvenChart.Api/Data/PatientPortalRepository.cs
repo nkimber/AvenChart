@@ -24,6 +24,9 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private const string PortalMessageArchivedEventType = "message_archived";
     private const string PortalMessagesArchivedEventType = "messages_archived";
     private const string ProtectedPortalMessageBody = "Encrypted secure message body is protected.";
+    private const int MaximumPortalMessageAttachmentCount = 5;
+    private const int MaximumPortalMessageAttachmentBytes = 4 * 1024 * 1024;
+    private const int MaximumPortalMessageAttachmentTotalBytes = 10 * 1024 * 1024;
     private static readonly PatientPortalMessageSubjectOption[] PortalMessageSubjectOptions =
     [
         new("General", "General", true),
@@ -1090,6 +1093,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return EmptyMessages(session, session.FailureReason ?? "Session is not active.");
         }
 
+        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var messages = await GetPortalMessagesAsync(
@@ -1317,6 +1321,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ThreadFailure(session, messageId.ToString(), 0, session.FailureReason ?? "Session is not active.");
         }
 
+        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         var anchor = await GetPortalOwnedMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
@@ -1359,6 +1364,40 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             SessionSource: session.SessionSource);
     }
 
+    public async Task<PatientPortalMessageAttachmentDownload> DownloadMessageAttachmentAsync(
+        Guid sessionId,
+        Guid attachmentId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return new(false, string.Empty, "application/octet-stream", Array.Empty<byte>(), session.FailureReason ?? "Session is not active.");
+        }
+
+        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select attachment.file_name, attachment.content_type, attachment.content
+            from patient_portal_message_attachments attachment
+            inner join portal_mailbox_messages message on message.id = attachment.message_id
+            where attachment.id = @attachmentId
+              and message.owner = @portalUsername
+              and message.deleted = 0
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("attachmentId", attachmentId);
+        command.Parameters.AddWithValue("portalUsername", session.PortalUsername);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new(false, string.Empty, "application/octet-stream", Array.Empty<byte>(), "Attachment was not found in the signed-in portal mailbox.");
+        }
+
+        return new(true, reader.GetString(0), reader.GetString(1), reader.GetFieldValue<byte[]>(2), null);
+    }
+
     public async Task<PatientPortalComposeMessageResponse> ComposeMessageAsync(
         Guid sessionId,
         PatientPortalComposeMessageRequest request,
@@ -1373,12 +1412,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         var recipientId = NormalizeText(request.RecipientId) ?? "admin";
         var title = NormalizeText(request.Title);
         var body = NormalizeText(request.Body);
-        if (HasRequestedAttachments(request.Attachments))
+        IReadOnlyList<PortalAttachmentUpload> attachments;
+        try
         {
-            return ComposeFailure(
-                session,
-                "Secure message attachments are not supported by the legacy-compatible patient portal message workflow.",
-                recipientId);
+            attachments = NormalizeMessageAttachments(request.Attachments);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ComposeFailure(session, ex.Message, recipientId);
         }
 
         if (string.IsNullOrWhiteSpace(title))
@@ -1391,6 +1432,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ComposeFailure(session, "Secure message body is required.", recipientId);
         }
 
+        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var recipientOptions = await GetPortalMessageRecipientOptionsAsync(connection, cancellationToken);
         var recipientOption = recipientOptions.FirstOrDefault(
@@ -1421,14 +1463,15 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             ReplyMailChain: nextId,
             PortalRelation: "portal:composed",
             IsEncrypted: false,
-            AttachmentCount: 0,
-            Attachments: Array.Empty<PatientPortalMessageAttachment>());
+            AttachmentCount: attachments.Count,
+            Attachments: CreateAttachmentItems(attachments));
         var recipientMessage = sentMessage with
         {
             Id = (nextId + 1).ToString(),
             MailChain = nextId + 1,
             SenderName = session.DisplayName,
-            RecipientName = recipientName
+            RecipientName = recipientName,
+            Attachments = CreateAttachmentItems(attachments)
         };
 
         await InsertPortalMailboxMessageAsync(
@@ -1451,6 +1494,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             replyMailChain: nextId,
             transaction: transaction,
             cancellationToken: cancellationToken);
+        await InsertPortalMessageAttachmentsAsync(connection, transaction, session, sentMessage, attachments, cancellationToken);
+        await InsertPortalMessageAttachmentsAsync(connection, transaction, session, recipientMessage, attachments, cancellationToken);
         await RecordPortalMessageAuditEventAsync(
             connection,
             session,
@@ -1622,12 +1667,14 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         var body = NormalizeText(request.Body);
-        if (HasRequestedAttachments(request.Attachments))
+        IReadOnlyList<PortalAttachmentUpload> attachments;
+        try
         {
-            return ReplyFailure(
-                session,
-                messageId.ToString(),
-                "Secure message attachments are not supported by the legacy-compatible patient portal message workflow.");
+            attachments = NormalizeMessageAttachments(request.Attachments);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ReplyFailure(session, messageId.ToString(), ex.Message);
         }
 
         if (string.IsNullOrWhiteSpace(body))
@@ -1635,6 +1682,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             return ReplyFailure(session, messageId.ToString(), "Secure message reply body is required.");
         }
 
+        await EnsureMessageAttachmentSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var original = await GetPortalInboxMessageAsync(connection, session.PortalUsername, messageId, cancellationToken);
         if (original is null)
@@ -1672,12 +1720,13 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             ReplyMailChain: replyThreadId,
             PortalRelation: "portal:reply",
             IsEncrypted: false,
-            AttachmentCount: 0,
-            Attachments: Array.Empty<PatientPortalMessageAttachment>());
+            AttachmentCount: attachments.Count,
+            Attachments: CreateAttachmentItems(attachments));
         var recipientMessage = sentMessage with
         {
             Id = (nextId + 1).ToString(),
-            MailChain = nextId + 1
+            MailChain = nextId + 1,
+            Attachments = CreateAttachmentItems(attachments)
         };
 
         await InsertPortalMailboxMessageAsync(
@@ -1700,6 +1749,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             replyMailChain: replyThreadId,
             transaction: transaction,
             cancellationToken: cancellationToken);
+        await InsertPortalMessageAttachmentsAsync(connection, transaction, session, sentMessage, attachments, cancellationToken);
+        await InsertPortalMessageAttachmentsAsync(connection, transaction, session, recipientMessage, attachments, cancellationToken);
         await RecordPortalMessageAuditEventAsync(
             connection,
             session,
@@ -5195,7 +5246,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             messages.AddRange(notifications);
         }
 
-        return messages
+        var populatedMessages = await PopulatePortalMessageAttachmentsAsync(connection, messages, cancellationToken);
+        return populatedMessages
             .OrderByDescending(message => message.Date, StringComparer.Ordinal)
             .ThenByDescending(message => int.TryParse(message.Id, out var id) ? id : 0)
             .ToArray();
@@ -5321,7 +5373,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             messages.Add(ReadPortalMessageItem(reader));
         }
 
-        return messages;
+        await reader.DisposeAsync();
+        return await PopulatePortalMessageAttachmentsAsync(connection, messages, cancellationToken);
     }
 
     private static async Task<PortalMailboxMessageRow?> GetPortalInboxMessageAsync(
@@ -5380,6 +5433,177 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             IsEncrypted: isEncrypted,
             AttachmentCount: 0,
             Attachments: Array.Empty<PatientPortalMessageAttachment>());
+    }
+
+    private static async Task<IReadOnlyList<PatientPortalMessageItem>> PopulatePortalMessageAttachmentsAsync(
+        NpgsqlConnection connection,
+        IReadOnlyList<PatientPortalMessageItem> messages,
+        CancellationToken cancellationToken)
+    {
+        var messageIds = messages
+            .Where(message => string.Equals(message.Type, "Message", StringComparison.OrdinalIgnoreCase))
+            .Select(message => int.TryParse(message.Id, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+        if (messageIds.Length == 0)
+        {
+            return messages;
+        }
+
+        var attachmentsByMessage = new Dictionary<int, List<PatientPortalMessageAttachment>>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, message_id, file_name, content_type, size_bytes, source
+            from patient_portal_message_attachments
+            where message_id = any(@messageIds)
+            order by uploaded_at, id;
+            """;
+        command.Parameters.AddWithValue("messageIds", NpgsqlDbType.Array | NpgsqlDbType.Integer, messageIds);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var messageId = reader.GetInt32(1);
+            if (!attachmentsByMessage.TryGetValue(messageId, out var attachments))
+            {
+                attachments = [];
+                attachmentsByMessage[messageId] = attachments;
+            }
+
+            attachments.Add(new PatientPortalMessageAttachment(
+                reader.GetGuid(0).ToString(),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt32(4),
+                reader.GetString(5)));
+        }
+
+        return messages.Select(message =>
+        {
+            var messageId = int.TryParse(message.Id, out var id) ? id : 0;
+            var attachments = attachmentsByMessage.TryGetValue(messageId, out var values)
+                ? values.ToArray()
+                : Array.Empty<PatientPortalMessageAttachment>();
+            return message with { AttachmentCount = attachments.Length, Attachments = attachments };
+        }).ToArray();
+    }
+
+    private static IReadOnlyList<PortalAttachmentUpload> NormalizeMessageAttachments(
+        IReadOnlyList<PatientPortalMessageAttachmentSubmission>? submissions)
+    {
+        var supplied = submissions ?? Array.Empty<PatientPortalMessageAttachmentSubmission>();
+        if (supplied.Count > MaximumPortalMessageAttachmentCount)
+        {
+            throw new InvalidOperationException($"A secure message can include at most {MaximumPortalMessageAttachmentCount} attachments.");
+        }
+
+        var attachments = new List<PortalAttachmentUpload>();
+        var totalBytes = 0;
+        foreach (var submission in supplied)
+        {
+            var fileName = Path.GetFileName(NormalizeText(submission.FileName) ?? string.Empty);
+            var contentType = NormalizeText(submission.ContentType)?.ToLowerInvariant() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(contentType) || string.IsNullOrWhiteSpace(submission.ContentBase64))
+            {
+                throw new InvalidOperationException("Each secure-message attachment requires a file name, content type, and file content.");
+            }
+
+            if (fileName.Length > 180 || !IsSupportedPortalAttachmentContentType(contentType))
+            {
+                throw new InvalidOperationException("Secure-message attachments must be PDF, PNG, JPEG, or plain-text files with safe names.");
+            }
+
+            byte[] content;
+            try
+            {
+                content = Convert.FromBase64String(submission.ContentBase64);
+            }
+            catch (FormatException)
+            {
+                throw new InvalidOperationException("Secure-message attachment content is not valid base64 data.");
+            }
+
+            if (content.Length == 0 || content.Length > MaximumPortalMessageAttachmentBytes)
+            {
+                throw new InvalidOperationException("Each secure-message attachment must be between 1 byte and 4 MiB.");
+            }
+
+            totalBytes += content.Length;
+            if (totalBytes > MaximumPortalMessageAttachmentTotalBytes)
+            {
+                throw new InvalidOperationException("Secure-message attachments may not exceed 10 MiB in total.");
+            }
+
+            attachments.Add(new PortalAttachmentUpload(fileName, contentType, content));
+        }
+
+        return attachments;
+    }
+
+    private static bool IsSupportedPortalAttachmentContentType(string contentType) =>
+        contentType is "application/pdf" or "image/png" or "image/jpeg" or "text/plain";
+
+    private static IReadOnlyList<PatientPortalMessageAttachment> CreateAttachmentItems(IReadOnlyList<PortalAttachmentUpload> attachments) =>
+        attachments.Select(attachment => new PatientPortalMessageAttachment(
+            Guid.NewGuid().ToString(),
+            attachment.FileName,
+            attachment.ContentType,
+            attachment.Content.LongLength,
+            "portal-upload")).ToArray();
+
+    private static async Task InsertPortalMessageAttachmentsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PatientPortalSessionResponse session,
+        PatientPortalMessageItem message,
+        IReadOnlyList<PortalAttachmentUpload> attachments,
+        CancellationToken cancellationToken)
+    {
+        for (var index = 0; index < attachments.Count; index++)
+        {
+            var attachment = attachments[index];
+            var item = message.Attachments[index];
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_portal_message_attachments
+                    (id, message_id, patient_id, pid, file_name, content_type, size_bytes, content, source)
+                values
+                    (@id, @messageId, @patientId, @pid, @fileName, @contentType, @sizeBytes, @content, 'portal-upload');
+                """;
+            command.Parameters.AddWithValue("id", Guid.Parse(item.Id));
+            command.Parameters.AddWithValue("messageId", int.Parse(message.Id));
+            command.Parameters.AddWithValue("patientId", session.CanonicalId);
+            command.Parameters.AddWithValue("pid", session.LegacyPid ?? 0);
+            command.Parameters.AddWithValue("fileName", attachment.FileName);
+            command.Parameters.AddWithValue("contentType", attachment.ContentType);
+            command.Parameters.AddWithValue("sizeBytes", attachment.Content.Length);
+            command.Parameters.AddWithValue("content", attachment.Content);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private async Task EnsureMessageAttachmentSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists patient_portal_message_attachments (
+              id uuid primary key,
+              message_id integer not null references portal_mailbox_messages(id) on delete cascade,
+              patient_id text not null references patients(canonical_id),
+              pid integer not null,
+              file_name text not null,
+              content_type text not null,
+              size_bytes integer not null,
+              content bytea not null,
+              source text not null default 'portal-upload',
+              uploaded_at timestamptz not null default now()
+            );
+            create index if not exists idx_patient_portal_message_attachments_message
+              on patient_portal_message_attachments (message_id, uploaded_at, id);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static int ResolvePortalThreadId(PatientPortalMessageItem message, int fallbackMessageId)
@@ -6243,6 +6467,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private sealed record AppointmentSummaryRows(
         int TotalCount,
         IReadOnlyList<PatientPortalHomeAppointmentSummary> Items);
+
+    private sealed record PortalAttachmentUpload(string FileName, string ContentType, byte[] Content);
 
     private sealed record PatientPortalSessionReadRow(
         Guid SessionId,

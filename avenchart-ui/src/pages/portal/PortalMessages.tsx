@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
-import { Archive, ArrowLeft, CheckCheck, PenLine, RefreshCw, Send, Trash2 } from 'lucide-react'
+import { Archive, ArrowLeft, CheckCheck, Download, Paperclip, PenLine, RefreshCw, Send, Trash2 } from 'lucide-react'
 import {
   archivePatientPortalMessages,
   composePatientPortalMessage,
   deletePatientPortalMessage,
   getPatientPortalMessages,
   getPatientPortalMessageComposeOptions,
+  downloadPatientPortalMessageAttachment,
   getPatientPortalMessageThread,
   markPatientPortalMessageRead,
   replyToPatientPortalMessage,
@@ -44,6 +45,34 @@ function relativeDate(dateStr: string): string {
   return msgDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+async function serializeAttachments(files: File[]) {
+  if (files.length > 5) throw new Error('A secure message can include at most 5 attachments.')
+  const totalBytes = files.reduce((total, file) => total + file.size, 0)
+  if (files.some((file) => file.size === 0 || file.size > 4 * 1024 * 1024)) throw new Error('Each attachment must be between 1 byte and 4 MiB.')
+  if (totalBytes > 10 * 1024 * 1024) throw new Error('Attachments may not exceed 10 MiB in total.')
+  const allowed = new Set(['application/pdf', 'image/png', 'image/jpeg', 'text/plain'])
+  if (files.some((file) => !allowed.has(file.type))) throw new Error('Attachments must be PDF, PNG, JPEG, or plain-text files.')
+  return Promise.all(files.map(async (file) => ({
+    fileName: file.name,
+    contentType: file.type,
+    sizeBytes: file.size,
+    contentBase64: await fileToBase64(file),
+  })))
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      const separator = result.indexOf(',')
+      separator >= 0 ? resolve(result.slice(separator + 1)) : reject(new Error('Could not read attachment content.'))
+    }
+    reader.onerror = () => reject(new Error('Could not read attachment content.'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function PortalMessages() {
   const { session, refreshHome, markReadOptimistic } = useOutletContext<PortalOutletContext>()
   const location = useLocation()
@@ -66,11 +95,13 @@ export default function PortalMessages() {
   const [composeTitle, setComposeTitle] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeRecipientId, setComposeRecipientId] = useState('')
+  const [composeAttachments, setComposeAttachments] = useState<File[]>([])
   const [composeOptions, setComposeOptions] = useState<AsyncState<PatientPortalMessageComposeOptions>>({ status: 'idle' })
   const [composeSubmitting, setComposeSubmitting] = useState(false)
   const [composeDone, setComposeDone] = useState(false)
 
   const [replyBody, setReplyBody] = useState('')
+  const [replyAttachments, setReplyAttachments] = useState<File[]>([])
   const [replySubmitting, setReplySubmitting] = useState(false)
   const [lifecycleAction, setLifecycleAction] = useState<'archive' | 'delete' | null>(null)
 
@@ -121,6 +152,7 @@ export default function PortalMessages() {
   function openThread(msg: PatientPortalMessageItem) {
     setSelectedMessage(msg)
     setReplyBody('')
+    setReplyAttachments([])
     setView('thread')
     setThreadState({ status: 'loading' })
     // Optimistically mark read so badge drops immediately (#2)
@@ -197,6 +229,7 @@ export default function PortalMessages() {
     setView('list')
     setComposeTitle('')
     setComposeBody('')
+    setComposeAttachments([])
     setComposeDone(false)
   }
 
@@ -218,45 +251,35 @@ export default function PortalMessages() {
     })
   }
 
-  function submitCompose(event: FormEvent) {
+  async function submitCompose(event: FormEvent) {
     event.preventDefault()
     setComposeSubmitting(true)
-    composePatientPortalMessage(session.sessionId, { recipientId: composeRecipientId || undefined, title: composeTitle, body: composeBody })
-      .then((result) => {
-        if (!result.created) {
-          showToast(result.failureReason ?? 'The message was not sent.', 'error')
-          return
-        }
-        showToast(`Message sent to ${result.recipientName}.`)
-        setComposeDone(true)
-        setComposeTitle('')
-        setComposeBody('')
-        setComposeRecipientId('')
-        loadMessages()
-        refreshHome()
-      })
-      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not send the message.', 'error'))
-      .finally(() => setComposeSubmitting(false))
+    try {
+      const attachments = await serializeAttachments(composeAttachments)
+      const result = await composePatientPortalMessage(session.sessionId, { recipientId: composeRecipientId || undefined, title: composeTitle, body: composeBody, attachments })
+      if (!result.created) throw new Error(result.failureReason ?? 'The message was not sent.')
+      showToast(`Message sent to ${result.recipientName}.`)
+      setComposeDone(true); setComposeTitle(''); setComposeBody(''); setComposeRecipientId(''); setComposeAttachments([])
+      loadMessages(); refreshHome()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not send the message.', 'error')
+    } finally { setComposeSubmitting(false) }
   }
 
-  function submitReply(event: FormEvent) {
+  async function submitReply(event: FormEvent) {
     event.preventDefault()
     if (!selectedMessage) return
     setReplySubmitting(true)
-    replyToPatientPortalMessage(session.sessionId, selectedMessage.id, { body: replyBody })
-      .then((result) => {
-        if (!result.created) {
-          showToast(result.failureReason ?? 'The reply was not sent.', 'error')
-          return
-        }
-        showToast('Reply sent.')
-        setReplyBody('')
-        return getPatientPortalMessageThread(session.sessionId, selectedMessage.id).then((data) =>
-          setThreadState({ status: 'ready', data }),
-        )
-      })
-      .catch((err) => showToast(err instanceof Error ? err.message : 'Could not send the reply.', 'error'))
-      .finally(() => setReplySubmitting(false))
+    try {
+      const attachments = await serializeAttachments(replyAttachments)
+      const result = await replyToPatientPortalMessage(session.sessionId, selectedMessage.id, { body: replyBody, attachments })
+      if (!result.created) throw new Error(result.failureReason ?? 'The reply was not sent.')
+      showToast('Reply sent.'); setReplyBody(''); setReplyAttachments([])
+      const data = await getPatientPortalMessageThread(session.sessionId, selectedMessage.id)
+      setThreadState({ status: 'ready', data })
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not send the reply.', 'error')
+    } finally { setReplySubmitting(false) }
   }
 
   function isSentByPatient(msg: PatientPortalMessageItem): boolean {
@@ -266,6 +289,16 @@ export default function PortalMessages() {
   // Compute effective unread status considering optimistic reads
   function isUnread(msg: PatientPortalMessageItem): boolean {
     return msg.status === 'New' && !readOptimistic.has(msg.id)
+  }
+
+  async function downloadAttachment(attachment: NonNullable<PatientPortalMessageItem['attachments']>[number]) {
+    try {
+      const blob = await downloadPatientPortalMessageAttachment(session.sessionId, attachment.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = attachment.fileName; link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Could not download this attachment.', 'error') }
   }
 
   return (
@@ -314,6 +347,7 @@ export default function PortalMessages() {
                       <time dateTime={m.date}>{relativeDate(m.date)}</time>
                     </div>
                     <div className="thread-bubble-body">{m.body}</div>
+                    {(m.attachments?.length ?? 0) > 0 && <div className="cl-inline-form-actions" style={{ marginTop: 8 }}>{m.attachments?.map((attachment) => <button className="cl-btn-secondary" type="button" key={attachment.id} onClick={() => downloadAttachment(attachment)}><Download size={13} /> {attachment.fileName}</button>)}</div>}
                   </li>
                 ))}
               </ul>
@@ -339,6 +373,8 @@ export default function PortalMessages() {
                     <Send size={16} />
                   </button>
                 </div>
+                <label className="cl-empty-text" style={{ display: 'block', marginTop: 8 }}><Paperclip size={13} /> Attach files (PDF, PNG, JPEG, TXT; max 5 / 10 MiB)<input type="file" accept="application/pdf,image/png,image/jpeg,text/plain" multiple onChange={(event) => setReplyAttachments(Array.from(event.target.files ?? []))} /></label>
+                {replyAttachments.length > 0 && <p className="cl-empty-text">{replyAttachments.map((file) => file.name).join(', ')}</p>}
               </form>
             </>
           )}
@@ -378,6 +414,11 @@ export default function PortalMessages() {
                   {composeOptions.status === 'ready' && composeOptions.data.recipients.filter((recipient) => recipient.active).map((recipient) => <option key={recipient.id} value={recipient.id}>{recipient.displayName}{recipient.fallback ? ' (default)' : ''}</option>)}
                 </select>
                 {composeOptions.status === 'error' && <p className="field-error">{composeOptions.message}</p>}
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="compose-attachments"><Paperclip size={14} /> Attach files (optional)</label>
+                <input id="compose-attachments" className="input" type="file" accept="application/pdf,image/png,image/jpeg,text/plain" multiple onChange={(event) => setComposeAttachments(Array.from(event.target.files ?? []))} />
+                <p className="cl-empty-text">PDF, PNG, JPEG, or TXT. Up to 5 files, 4 MiB each, 10 MiB total.{composeAttachments.length > 0 ? ` Selected: ${composeAttachments.map((file) => file.name).join(', ')}` : ''}</p>
               </div>
               <div className="field">
                 <label className="label" htmlFor="compose-subject">Subject</label>

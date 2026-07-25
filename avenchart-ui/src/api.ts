@@ -186,6 +186,16 @@ export type PatientPortalMessageItem = {
   status: string
   senderName: string
   recipientName: string
+  attachmentCount?: number
+  attachments?: PatientPortalMessageAttachment[]
+}
+
+export type PatientPortalMessageAttachment = {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes?: number | null
+  source: string
 }
 
 export type PatientPortalMessagesResponse = {
@@ -213,6 +223,7 @@ export type PatientPortalComposeMessageInput = {
   recipientId?: string
   title: string
   body: string
+  attachments?: Array<{ fileName: string; contentType: string; sizeBytes: number; contentBase64: string }>
 }
 
 export type PatientPortalMessageComposeOptions = {
@@ -263,6 +274,19 @@ export async function composePatientPortalMessage(
   return response.json()
 }
 
+export async function downloadPatientPortalMessageAttachment(
+  sessionId: string,
+  attachmentId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/attachments/${encodeURIComponent(attachmentId)}`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal attachment download failed with ${response.status}`)
+  return response.blob()
+}
+
 export type PatientPortalMessageThreadResponse = {
   authenticated: boolean
   messageId: string
@@ -290,6 +314,7 @@ export async function getPatientPortalMessageThread(
 
 export type PatientPortalReplyMessageInput = {
   body?: string | null
+  attachments?: Array<{ fileName: string; contentType: string; sizeBytes: number; contentBase64: string }>
 }
 
 export type PatientPortalReplyMessageResponse = {
