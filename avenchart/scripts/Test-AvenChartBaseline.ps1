@@ -1810,8 +1810,9 @@ try {
         assessmentDate = "2026-07-25"
         screeningTool = "Hunger Vital Signs"
         assessor = ""
+        hungerQuestionOne = "LA28397-0"
+        hungerQuestionTwo = "LA6729-3"
         domains = @{
-            food_insecurity = @{ status = "at_risk"; notes = "Smoke food-access concern" }
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
         }
@@ -1822,8 +1823,9 @@ try {
         assessmentDate = "2026-07-25"
         screeningTool = "Hunger Vital Signs"
         assessor = "Smoke assessor"
+        hungerQuestionOne = "LA6729-3"
+        hungerQuestionTwo = "LA6729-3"
         domains = @{
-            food_insecurity = @{ status = "no"; notes = "Follow-up confirmed food access" }
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
         }
@@ -1835,10 +1837,13 @@ try {
     $sdohPassed = $createdSdoh.assessmentDate -eq "2026-07-25" `
         -and $createdSdoh.assessor -eq "admin" `
         -and $createdSdoh.instrumentScore -eq 2 `
+        -and $createdSdoh.hungerScore -eq 1 `
+        -and $createdSdoh.hungerQuestionOne -eq "LA28397-0" `
         -and $createdSdoh.domains.food_insecurity.status -eq "at_risk" `
         -and $updatedSdoh.assessor -eq "Smoke assessor" `
         -and $updatedSdoh.instrumentScore -eq 1 `
-        -and $updatedSdoh.domains.food_insecurity.status -eq "no" `
+        -and $updatedSdoh.hungerScore -eq 0 `
+        -and $updatedSdoh.domains.food_insecurity.status -eq "no_risk" `
         -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
         -and $updatedSdoh.interventions -eq "Transportation resources retained." `
         -and $null -ne $historySdoh `

@@ -29,7 +29,7 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                   domains, interventions, created_at, created_by, updated_at, updated_by
+                   hunger_q1, hunger_q2, hunger_score, domains, interventions, created_at, created_by, updated_at, updated_by
             from patient_sdoh_assessments
             where patient_id = @patientId
             order by assessment_date desc, updated_at desc, assessment_id desc;
@@ -52,12 +52,12 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             insert into patient_sdoh_assessments (
                 assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                domains, interventions, created_at, created_by, updated_at, updated_by)
+                hunger_q1, hunger_q2, hunger_score, domains, interventions, created_at, created_by, updated_at, updated_by)
             values (
                 @assessmentId, @patientId, @pid, @assessmentDate, @screeningTool, @assessor, @instrumentScore,
-                @domains, @interventions, now(), @username, now(), @username)
+                @hungerQuestionOne, @hungerQuestionTwo, @hungerScore, @domains, @interventions, now(), @username, now(), @username)
             returning assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                      domains, interventions, created_at, created_by, updated_at, updated_by;
+                      hunger_q1, hunger_q2, hunger_score, domains, interventions, created_at, created_by, updated_at, updated_by;
             """;
         AddMutationParameters(command, assessmentId, patient, normalized, username);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -75,11 +75,12 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             update patient_sdoh_assessments
             set assessment_date = @assessmentDate, screening_tool = @screeningTool, assessor = @assessor,
-                instrument_score = @instrumentScore, domains = @domains, interventions = @interventions,
+                instrument_score = @instrumentScore, hunger_q1 = @hungerQuestionOne, hunger_q2 = @hungerQuestionTwo,
+                hunger_score = @hungerScore, domains = @domains, interventions = @interventions,
                 updated_at = now(), updated_by = @username
             where assessment_id = @assessmentId and patient_id = @patientId
             returning assessment_id, patient_id, pid, assessment_date, screening_tool, assessor, instrument_score,
-                      domains, interventions, created_at, created_by, updated_at, updated_by;
+                      hunger_q1, hunger_q2, hunger_score, domains, interventions, created_at, created_by, updated_at, updated_by;
             """;
         AddMutationParameters(command, assessmentId, patient, normalized, username);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -96,6 +97,9 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("screeningTool", (object?)assessment.ScreeningTool ?? DBNull.Value);
         command.Parameters.AddWithValue("assessor", assessment.Assessor);
         command.Parameters.AddWithValue("instrumentScore", assessment.InstrumentScore);
+        command.Parameters.AddWithValue("hungerQuestionOne", (object?)assessment.HungerQuestionOne ?? DBNull.Value);
+        command.Parameters.AddWithValue("hungerQuestionTwo", (object?)assessment.HungerQuestionTwo ?? DBNull.Value);
+        command.Parameters.AddWithValue("hungerScore", assessment.HungerScore);
         command.Parameters.Add("domains", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(assessment.Domains);
         command.Parameters.AddWithValue("interventions", (object?)assessment.Interventions ?? DBNull.Value);
         command.Parameters.AddWithValue("username", username);
@@ -116,13 +120,28 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             domains[key] = new PatientSdohDomainValue(status ?? string.Empty, notes);
         }
 
+        var hungerQuestionOne = NormalizeHungerAnswer(request.HungerQuestionOne);
+        var hungerQuestionTwo = NormalizeHungerAnswer(request.HungerQuestionTwo);
+        var hungerScore = CountHungerRisk(hungerQuestionOne) + CountHungerRisk(hungerQuestionTwo);
+        if (hungerScore > 0)
+        {
+            domains["food_insecurity"] = new PatientSdohDomainValue("at_risk", domains.GetValueOrDefault("food_insecurity")?.Notes);
+        }
+        else if (hungerQuestionOne is not null && hungerQuestionTwo is not null)
+        {
+            domains["food_insecurity"] = new PatientSdohDomainValue("no_risk", domains.GetValueOrDefault("food_insecurity")?.Notes);
+        }
+
         return new NormalizedAssessment(
             assessmentDate,
             NormalizeText(request.ScreeningTool, 120),
             NormalizeText(request.Assessor, 120) ?? username,
             domains,
             NormalizeText(request.Interventions, 4000),
-            domains.Values.Count(value => PositiveStatuses.Contains(value.Status)));
+            domains.Values.Count(value => PositiveStatuses.Contains(value.Status)),
+            hungerQuestionOne,
+            hungerQuestionTwo,
+            hungerScore);
     }
 
     private static async Task<PatientIdentity?> ResolvePatientAsync(NpgsqlConnection connection, string patientId, CancellationToken cancellationToken)
@@ -143,12 +162,13 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
 
     private static PatientSdohAssessmentResponse ToResponse(NpgsqlDataReader reader)
     {
-        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(reader.GetString(7)) ?? [];
+        var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(reader.GetString(10)) ?? [];
         return new(
             reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),
-            reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6), domains,
-            reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O"), reader.GetString(10),
-            reader.GetFieldValue<DateTimeOffset>(11).ToString("O"), reader.GetString(12));
+            reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
+            reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt32(9), domains,
+            reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetFieldValue<DateTimeOffset>(12).ToString("O"), reader.GetString(13),
+            reader.GetFieldValue<DateTimeOffset>(14).ToString("O"), reader.GetString(15));
     }
 
     private static string? NormalizeText(string? value, int maximumLength)
@@ -159,6 +179,15 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         return normalized;
     }
 
+    private static string? NormalizeHungerAnswer(string? value)
+    {
+        var normalized = NormalizeText(value, 16);
+        if (normalized is not null && normalized is not ("LA28397-0" or "LA28398-8" or "LA6729-3")) throw new ArgumentException("Hunger Vital Signs answers are invalid.");
+        return normalized;
+    }
+
+    private static int CountHungerRisk(string? answer) => answer is "LA28397-0" or "LA28398-8" ? 1 : 0;
+
     private sealed record PatientIdentity(string CanonicalId, int LegacyPid);
-    private sealed record NormalizedAssessment(DateOnly AssessmentDate, string? ScreeningTool, string Assessor, IReadOnlyDictionary<string, PatientSdohDomainValue> Domains, string? Interventions, int InstrumentScore);
+    private sealed record NormalizedAssessment(DateOnly AssessmentDate, string? ScreeningTool, string Assessor, IReadOnlyDictionary<string, PatientSdohDomainValue> Domains, string? Interventions, int InstrumentScore, string? HungerQuestionOne, string? HungerQuestionTwo, int HungerScore);
 }

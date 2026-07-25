@@ -7,6 +7,8 @@ public sealed record PatientSdohAssessmentRequest(
     string? ScreeningTool,
     string? Assessor,
     IReadOnlyDictionary<string, PatientSdohDomainValue?> Domains,
+    string? HungerQuestionOne,
+    string? HungerQuestionTwo,
     string? Interventions);
 
 public sealed record PatientSdohAssessmentResponse(
@@ -17,6 +19,9 @@ public sealed record PatientSdohAssessmentResponse(
     string? ScreeningTool,
     string Assessor,
     int InstrumentScore,
+    string? HungerQuestionOne,
+    string? HungerQuestionTwo,
+    int HungerScore,
     IReadOnlyDictionary<string, PatientSdohDomainValue> Domains,
     string? Interventions,
     string CreatedAt,
