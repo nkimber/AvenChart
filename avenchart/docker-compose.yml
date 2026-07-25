@@ -21,6 +21,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__AvenChart: Host=postgres;Port=5432;Database=legacy-ehr_modernized;Username=legacy-ehr;Password=legacy-ehr_demo
+      RuntimeSafety__RateLimitPermitLimit: 5000
     ports:
       - "5001:8080"
     depends_on:

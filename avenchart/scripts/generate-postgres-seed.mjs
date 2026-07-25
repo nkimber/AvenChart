@@ -41,7 +41,9 @@ const portalMailboxMessages = dataset.messages
 
 function hashDemoPassword(password) {
   const iterations = 600_000
-  const salt = crypto.createHash('sha256').update(demoCredentialSalt, 'utf8').digest()
+  // Keep this deterministic for the gold dataset while matching the 16-byte
+  // PBKDF2 salt contract enforced by the API's PasswordHashing verifier.
+  const salt = crypto.createHash('sha256').update(demoCredentialSalt, 'utf8').digest().subarray(0, 16)
   const hash = crypto.pbkdf2Sync(password, salt, iterations, 32, 'sha256')
   return `pbkdf2-sha256$${iterations}$${salt.toString('base64')}$${hash.toString('base64')}`
 }

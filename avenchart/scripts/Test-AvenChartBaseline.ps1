@@ -6571,11 +6571,11 @@ try {
     $patientDocumentReplacementRevisionPassed = $null -ne $createdReplaceContent `
         -and $null -ne $replacedContent `
         -and $createdReplaceContent.currentVersion -eq 1 `
-        -and $replacedContent.currentVersion -eq 1 `
-        -and $replacedContent.versionLabel -eq "Version 1" `
+        -and $replacedContent.currentVersion -eq 2 `
+        -and $replacedContent.versionLabel -eq "Version 2" `
         -and $replacedContent.versionStatus -eq "Current version" `
-        -and $replacedContent.versionHistoryCount -eq 1 `
-        -and -not $replacedContent.hasPriorVersions `
+        -and $replacedContent.versionHistoryCount -eq 2 `
+        -and $replacedContent.hasPriorVersions `
         -and $createdReplaceContent.revisionHash -eq $createdReplaceContent.hash `
         -and $replacedContent.revisionHash -eq $replacedContent.hash `
         -and $replacedContent.hash -ne $createdReplaceContent.hash `
@@ -6990,10 +6990,10 @@ try {
         -and $replacedBinaryContent.contentBase64 -ne $binaryReplaceOriginalBase64 `
         -and $replacedBinaryContent.previewKind -eq "pdf" `
         -and $replacedBinaryContent.previewStatus -eq "Inline PDF preview" `
-        -and $replacedBinaryContent.versionLabel -eq "Version 1" `
+        -and $replacedBinaryContent.versionLabel -eq "Version 2" `
         -and $replacedBinaryContent.versionStatus -eq "Current version" `
-        -and $replacedBinaryContent.versionHistoryCount -eq 1 `
-        -and -not $replacedBinaryContent.hasPriorVersions `
+        -and $replacedBinaryContent.versionHistoryCount -eq 2 `
+        -and $replacedBinaryContent.hasPriorVersions `
         -and $replacedBinaryContent.revisionHash -eq $replacedBinaryContent.hash `
         -and $replacedBinaryContent.hash -ne $createdBinaryReplaceContent.hash `
         -and $replacedBinaryContent.revisionAt -ne $createdBinaryReplaceContent.revisionAt `
