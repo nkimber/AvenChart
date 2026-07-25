@@ -14,6 +14,9 @@ public sealed record PatientSdohAssessmentRequest(
     string? PregnancyIntent,
     string? PostpartumStatus,
     string? PostpartumEnd,
+    string? DisabilityStatus,
+    string? DisabilityStatusNotes,
+    IReadOnlyDictionary<string, string?>? DisabilityScale,
     string? Interventions);
 
 public sealed record PatientSdohAssessmentResponse(
@@ -32,6 +35,9 @@ public sealed record PatientSdohAssessmentResponse(
     string? PregnancyIntent,
     string? PostpartumStatus,
     string? PostpartumEnd,
+    string? DisabilityStatus,
+    string? DisabilityStatusNotes,
+    IReadOnlyDictionary<string, string> DisabilityScale,
     IReadOnlyDictionary<string, PatientSdohDomainValue> Domains,
     string? Interventions,
     string CreatedAt,

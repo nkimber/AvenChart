@@ -1817,6 +1817,16 @@ try {
         pregnancyIntent = "wants_pregnancy"
         postpartumStatus = "postpartum"
         postpartumEnd = "2026-09-05"
+        disabilityStatus = "im_at_risk"
+        disabilityStatusNotes = "Uses a mobility aid on stairs."
+        disabilityScale = @{
+            walk_climb = "yes"
+            seeing = "no"
+            hearing = "declined"
+            cognitive = "no"
+            dressing_bathing = "no"
+            errands = "no"
+        }
         domains = @{
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
@@ -1835,6 +1845,16 @@ try {
         pregnancyIntent = "no_desire"
         postpartumStatus = ""
         postpartumEnd = ""
+        disabilityStatus = "im_safe"
+        disabilityStatusNotes = ""
+        disabilityScale = @{
+            walk_climb = "no"
+            seeing = "no"
+            hearing = "no"
+            cognitive = "no"
+            dressing_bathing = "no"
+            errands = "no"
+        }
         domains = @{
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
@@ -1846,7 +1866,7 @@ try {
     $historySdoh = $sdohHistory | Where-Object { $_.assessmentId -eq $createdSdoh.assessmentId } | Select-Object -First 1
     $sdohPassed = $createdSdoh.assessmentDate -eq "2026-07-25" `
         -and $createdSdoh.assessor -eq "admin" `
-        -and $createdSdoh.instrumentScore -eq 2 `
+        -and $createdSdoh.instrumentScore -eq 3 `
         -and $createdSdoh.hungerScore -eq 1 `
         -and $createdSdoh.hungerQuestionOne -eq "LA28397-0" `
         -and $createdSdoh.domains.food_insecurity.status -eq "at_risk" `
@@ -1855,6 +1875,10 @@ try {
         -and $createdSdoh.pregnancyIntent -eq "wants_pregnancy" `
         -and $createdSdoh.postpartumStatus -eq "postpartum" `
         -and $createdSdoh.postpartumEnd -eq "2026-09-05" `
+        -and $createdSdoh.disabilityStatus -eq "im_at_risk" `
+        -and $createdSdoh.disabilityStatusNotes -eq "Uses a mobility aid on stairs." `
+        -and $createdSdoh.disabilityScale.walk_climb -eq "yes" `
+        -and $createdSdoh.disabilityScale.hearing -eq "declined" `
         -and $updatedSdoh.assessor -eq "Smoke assessor" `
         -and $updatedSdoh.instrumentScore -eq 1 `
         -and $updatedSdoh.hungerScore -eq 0 `
@@ -1864,6 +1888,9 @@ try {
         -and $updatedSdoh.pregnancyIntent -eq "no_desire" `
         -and $null -eq $updatedSdoh.postpartumStatus `
         -and $null -eq $updatedSdoh.postpartumEnd `
+        -and $updatedSdoh.disabilityStatus -eq "im_safe" `
+        -and $null -eq $updatedSdoh.disabilityStatusNotes `
+        -and $updatedSdoh.disabilityScale.walk_climb -eq "no" `
         -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
         -and $updatedSdoh.interventions -eq "Transportation resources retained." `
         -and $null -ne $historySdoh `
