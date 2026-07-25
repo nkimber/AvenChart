@@ -327,6 +327,7 @@ drop table if exists coding_catalogs;
 drop table if exists form_layout_fields;
 drop table if exists form_layout_groups;
 drop table if exists form_layouts;
+drop table if exists clinical_alert_rules;
 drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
@@ -390,6 +391,10 @@ create table coding_catalog_audit_events (
 create table form_layouts (
   layout_key text primary key, title text not null, mapping text not null, sequence integer not null,
   active boolean not null, updated_at timestamptz not null, updated_by text not null
+);
+create table clinical_alert_rules (
+  rule_key text primary key, title text not null, trigger_type text not null, target_type text not null, severity text not null,
+  message text not null, sequence integer not null, active boolean not null, updated_at timestamptz not null, updated_by text not null
 );
 create table form_layout_groups (
   layout_key text not null references form_layouts(layout_key), group_key text not null, title text not null,
@@ -1524,6 +1529,10 @@ copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active'
 ])
 copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'Demographics', 'Core', 10, true, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('clinical_alert_rules', ['rule_key', 'title', 'trigger_type', 'target_type', 'severity', 'message', 'sequence', 'active', 'updated_at', 'updated_by'], [
+  ['APPOINTMENT_REMINDER', 'Upcoming appointment', 'appointment', 'reminder', 'info', 'Appointment reminder is due.', 10, true, '2026-01-01T00:00:00Z', 'seed'],
+  ['ALLERGY_REVIEW', 'Allergy review', 'encounter', 'banner', 'warning', 'Review documented allergies before completing the encounter.', 20, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_layout_groups', ['layout_key', 'group_key', 'title', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'who', 'Who', 10, true, '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'contact', 'Contact', 20, true, '2026-01-01T00:00:00Z', 'seed'],

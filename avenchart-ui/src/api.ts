@@ -2019,6 +2019,9 @@ export async function getFormLayout(sessionId: string, key: string): Promise<For
 export async function saveFormLayout(sessionId: string, key: string, input: Omit<FormLayoutItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${key}`, input) }
 export async function saveFormLayoutGroup(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutGroupItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/groups/${key}`, input) }
 export async function saveFormLayoutField(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutFieldItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/fields/${key}`, input) }
+export type ClinicalAlertRuleItem = { key: string; title: string; triggerType: 'patient' | 'encounter' | 'appointment'; targetType: 'banner' | 'reminder'; severity: 'info' | 'warning' | 'critical'; message: string; sequence: number; active: boolean }
+export async function getClinicalAlertRules(sessionId: string): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianGet(sessionId, '/api/administration/clinical-alert-rules') }
+export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input) }
 
 export type PhiAccessAuditEvent = {
   auditId: string

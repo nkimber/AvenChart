@@ -199,3 +199,6 @@ public sealed record FormLayoutDetailResponse(FormLayoutItem Layout, IReadOnlyLi
 public sealed record FormLayoutMutationRequest(string Title, string Mapping, int Sequence, bool Active);
 public sealed record FormLayoutGroupMutationRequest(string Title, int Sequence, bool Active);
 public sealed record FormLayoutFieldMutationRequest(string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string? ListId, string? DefaultValue);
+public sealed record ClinicalAlertRuleItem(string Key, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
+public sealed record ClinicalAlertRulesResponse(IReadOnlyList<ClinicalAlertRuleItem> Rules);
+public sealed record ClinicalAlertRuleMutationRequest(string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active);
