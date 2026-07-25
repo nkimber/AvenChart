@@ -14,6 +14,7 @@ import {
   restoreEncounter,
   restoreEncounterDocument,
   searchEncounters,
+  signEncounter,
   signEncounterDocument,
   updateEncounterDocumentMetadata,
   updateEncounter,
@@ -197,6 +198,37 @@ function EncounterDocuments({ sessionId, detail, targetEncounters, onDetailChang
           {reviewingId === document.id && <form onSubmit={(event) => saveReview(event, document)} style={{ marginTop: 10 }}><div className="form-row"><div className="field"><label className="label" htmlFor={`review-status-${document.id}`}>Review decision</label><select id={`review-status-${document.id}`} className="input" value={reviewForm.reviewStatus} onChange={(event) => setReviewForm((current) => ({ ...current, reviewStatus: event.target.value }))}><option>Reviewed</option><option>Signed</option><option>Denied</option></select></div><div className="field"><label className="label" htmlFor={`reviewer-${document.id}`}>Reviewed by</label><input id={`reviewer-${document.id}`} className="input" required value={reviewForm.reviewedBy} onChange={(event) => setReviewForm((current) => ({ ...current, reviewedBy: event.target.value }))} /></div></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>Save review</button><button className="cl-btn-secondary" type="button" onClick={() => setReviewingId(null)} disabled={saving}>Cancel</button></div></form>}
         </div>
       ))}
+    </div>
+  )
+}
+
+function EncounterSignatures({ sessionId, username, detail, onDetailChange }: { sessionId: string; username: string; detail: EncounterDetail; onDetailChange: (detail: EncounterDetail) => void }) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ signerUsername: username, isLock: false, amendment: '' })
+
+  function openForm() {
+    setForm({ signerUsername: username, isLock: false, amendment: '' })
+    setOpen(true)
+  }
+
+  async function saveSignature(event: React.FormEvent) {
+    event.preventDefault()
+    if (!window.confirm(form.isLock ? 'Record and lock this encounter signature?' : 'Record this encounter signature?')) return
+    setSaving(true)
+    try {
+      const result = await signEncounter(sessionId, detail.encounter, { signerUsername: form.signerUsername, signedAt: new Date().toISOString(), isLock: form.isLock, amendment: form.amendment || null })
+      onDetailChange(result.detail); setOpen(false); showToast(form.amendment ? 'Signature and amendment recorded.' : 'Encounter signature recorded.', 'success')
+    } catch { showToast('Could not record encounter signature.', 'error') } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="cl-card">
+      <div className="cl-card-header"><h2 className="cl-card-title">Signatures and amendments</h2><button className="cl-btn-secondary" type="button" onClick={openForm} disabled={saving}>Record signature</button></div>
+      {open && <form onSubmit={saveSignature}><div className="form-row"><div className="field"><label className="label" htmlFor="encounter-signer">Signer</label><input id="encounter-signer" className="input" readOnly value={form.signerUsername} /></div><div className="field"><label className="label" htmlFor="encounter-lock">Lock encounter</label><select id="encounter-lock" className="input" value={form.isLock ? 'yes' : 'no'} onChange={(event) => setForm((current) => ({ ...current, isLock: event.target.value === 'yes' }))}><option value="no">No — signature only</option><option value="yes">Yes — lock this signature</option></select></div></div><div className="field" style={{ marginBottom: 10 }}><label className="label" htmlFor="encounter-amendment">Amendment note (optional)</label><textarea id="encounter-amendment" className="textarea" rows={3} value={form.amendment} onChange={(event) => setForm((current) => ({ ...current, amendment: event.target.value }))} /></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Record signature'}</button><button className="cl-btn-secondary" type="button" disabled={saving} onClick={() => setOpen(false)}>Cancel</button></div></form>}
+      {detail.signatures.length === 0 && !open && <p className="cl-empty-text">No encounter signatures recorded.</p>}
+      {detail.signatures.map((signature) => <div key={signature.id} className="cl-soap-section"><div className="cl-card-header"><p className="cl-soap-label">{signature.signerUsername}</p><span className="cl-badge cl-badge-muted">{signature.isLock ? 'Locked' : 'Signed'}</span></div><p className="cl-empty-text">{signature.signedAt}</p>{signature.amendment && <p className="cl-soap-text">Amendment: {signature.amendment}</p>}</div>)}
+      {detail.amendmentHistory.length > 0 && <div style={{ marginTop: 12 }}><p className="cl-soap-label">Amendment history</p>{detail.amendmentHistory.map((amendment) => <p key={amendment.signatureId} className="cl-empty-text">{amendment.signedAt} · {amendment.signerUsername}: {amendment.amendment}</p>)}</div>}
     </div>
   )
 }
@@ -625,6 +657,16 @@ export default function PatientEncounters() {
                     <p className="cl-empty-text">No SOAP note. <button className="cl-link" type="button" onClick={() => setAddSoapOpen(true)}>Add note</button></p>
                   )}
                 </div>
+
+                <EncounterSignatures
+                  sessionId={session.sessionId}
+                  username={session.username}
+                  detail={enc}
+                  onDetailChange={(updated) => {
+                    setDetailState({ status: 'ready', data: updated })
+                    setDetailCache((current) => new Map(current).set(updated.id, updated))
+                  }}
+                />
 
                 <EncounterDocuments
                   sessionId={session.sessionId}

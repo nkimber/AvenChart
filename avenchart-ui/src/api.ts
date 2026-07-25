@@ -1225,6 +1225,26 @@ export type EncounterDocumentAttachment = {
   canDownload: boolean
 }
 
+export type EncounterSignature = {
+  id: number
+  signerUsername: string
+  signedAt: string
+  isLock: boolean
+  amendment?: string | null
+  hash: string
+  signatureHash: string
+}
+
+export type EncounterAmendmentHistoryItem = {
+  signatureId: number
+  signerUsername: string
+  signedAt: string
+  isLock: boolean
+  amendment: string
+  hash: string
+  signatureHash: string
+}
+
 export type EncounterDetail = {
   id: number
   encounter: number
@@ -1247,6 +1267,8 @@ export type EncounterDetail = {
   billingLineCount: number
   diagnosisCodes: EncounterDiagnosisCode[]
   documents: EncounterDocumentAttachment[]
+  signatures: EncounterSignature[]
+  amendmentHistory: EncounterAmendmentHistoryItem[]
 }
 
 export type EncounterSearchResponse = {
