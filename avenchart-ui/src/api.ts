@@ -210,8 +210,29 @@ export async function getPatientPortalMessages(
 }
 
 export type PatientPortalComposeMessageInput = {
+  recipientId?: string
   title: string
   body: string
+}
+
+export type PatientPortalMessageComposeOptions = {
+  authenticated: boolean
+  defaultSubject: string
+  subjectOptions: Array<{ value: string; label: string; default: boolean }>
+  recipients: Array<{ id: string; displayName: string; type: string; active: boolean; fallback: boolean }>
+  failureReason?: string | null
+}
+
+export async function getPatientPortalMessageComposeOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageComposeOptions> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/compose-options`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Patient portal compose options failed with ${response.status}`)
+  return response.json()
 }
 
 export type PatientPortalComposeMessageResponse = {

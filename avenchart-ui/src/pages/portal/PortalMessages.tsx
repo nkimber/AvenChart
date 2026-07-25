@@ -6,12 +6,14 @@ import {
   composePatientPortalMessage,
   deletePatientPortalMessage,
   getPatientPortalMessages,
+  getPatientPortalMessageComposeOptions,
   getPatientPortalMessageThread,
   markPatientPortalMessageRead,
   replyToPatientPortalMessage,
   type PatientPortalMessageItem,
   type PatientPortalMessagesResponse,
   type PatientPortalMessageThreadResponse,
+  type PatientPortalMessageComposeOptions,
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
@@ -63,6 +65,8 @@ export default function PortalMessages() {
 
   const [composeTitle, setComposeTitle] = useState('')
   const [composeBody, setComposeBody] = useState('')
+  const [composeRecipientId, setComposeRecipientId] = useState('')
+  const [composeOptions, setComposeOptions] = useState<AsyncState<PatientPortalMessageComposeOptions>>({ status: 'idle' })
   const [composeSubmitting, setComposeSubmitting] = useState(false)
   const [composeDone, setComposeDone] = useState(false)
 
@@ -89,6 +93,18 @@ export default function PortalMessages() {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [view, composeTitle, composeBody])
+
+  useEffect(() => {
+    if (view !== 'compose' || composeOptions.status === 'loading' || composeOptions.status === 'ready') return
+    setComposeOptions({ status: 'loading' })
+    getPatientPortalMessageComposeOptions(session.sessionId)
+      .then((data) => {
+        setComposeOptions({ status: 'ready', data })
+        if (!composeTitle) setComposeTitle(data.defaultSubject)
+        if (!composeRecipientId) setComposeRecipientId(data.recipients.find((recipient) => recipient.active)?.id ?? '')
+      })
+      .catch((error) => setComposeOptions({ status: 'error', message: error instanceof Error ? error.message : 'Could not load message recipients.' }))
+  }, [view, session.sessionId, composeOptions.status, composeTitle, composeRecipientId])
 
   function loadMessages() {
     setMessagesState({ status: 'loading' })
@@ -205,7 +221,7 @@ export default function PortalMessages() {
   function submitCompose(event: FormEvent) {
     event.preventDefault()
     setComposeSubmitting(true)
-    composePatientPortalMessage(session.sessionId, { title: composeTitle, body: composeBody })
+    composePatientPortalMessage(session.sessionId, { recipientId: composeRecipientId || undefined, title: composeTitle, body: composeBody })
       .then((result) => {
         if (!result.created) {
           showToast(result.failureReason ?? 'The message was not sent.', 'error')
@@ -215,6 +231,7 @@ export default function PortalMessages() {
         setComposeDone(true)
         setComposeTitle('')
         setComposeBody('')
+        setComposeRecipientId('')
         loadMessages()
         refreshHome()
       })
@@ -354,6 +371,15 @@ export default function PortalMessages() {
           ) : (
             <form className="compose-form" onSubmit={submitCompose}>
               <div className="field">
+                <label className="label" htmlFor="compose-recipient">Send to</label>
+                <select id="compose-recipient" className="input" value={composeRecipientId} onChange={(e) => setComposeRecipientId(e.target.value)} disabled={composeOptions.status === 'loading'} required>
+                  {composeOptions.status === 'loading' && <option value="">Loading recipients…</option>}
+                  {composeOptions.status === 'error' && <option value="">Routing directory unavailable</option>}
+                  {composeOptions.status === 'ready' && composeOptions.data.recipients.filter((recipient) => recipient.active).map((recipient) => <option key={recipient.id} value={recipient.id}>{recipient.displayName}{recipient.fallback ? ' (default)' : ''}</option>)}
+                </select>
+                {composeOptions.status === 'error' && <p className="field-error">{composeOptions.message}</p>}
+              </div>
+              <div className="field">
                 <label className="label" htmlFor="compose-subject">Subject</label>
                 <input
                   id="compose-subject"
@@ -365,7 +391,7 @@ export default function PortalMessages() {
                   required
                 />
                 <datalist id="subject-presets">
-                  {SUBJECT_PRESETS.map((s) => <option key={s} value={s} />)}
+                  {(composeOptions.status === 'ready' ? composeOptions.data.subjectOptions.map((option) => option.value) : SUBJECT_PRESETS).map((subject) => <option key={subject} value={subject} />)}
                 </datalist>
               </div>
               <div className="field">
