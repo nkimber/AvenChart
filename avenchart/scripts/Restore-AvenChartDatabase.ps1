@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$SnapshotPath,[switch]$Force)
+param([Parameter(Mandatory=$true)][string]$SnapshotPath,[switch]$Force,[int]$PostgresWaitSeconds = 90)
 $ErrorActionPreference = 'Stop'
 if (-not $Force) { throw 'Restore is destructive. Re-run with -Force after verifying the snapshot path.' }
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -9,6 +9,13 @@ if (-not $SnapshotPath.StartsWith($BackupsRoot, [StringComparison]::OrdinalIgnor
 Push-Location $SolutionRoot
 try {
   docker compose up -d postgres; if ($LASTEXITCODE -ne 0) { throw 'Could not start the PostgreSQL service.' }
+  $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds); $ready = $false
+  while ((Get-Date) -lt $deadline) {
+    docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $ready) { throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds." }
   docker compose exec -T postgres psql -U legacy-ehr -d postgres -v ON_ERROR_STOP=1 -c 'drop database if exists legacy-ehr_modernized with (force);' -c 'create database legacy-ehr_modernized owner legacy-ehr;'
   if ($LASTEXITCODE -ne 0) { throw 'Could not recreate the target database.' }
   $containerId = (docker compose ps -q postgres).Trim(); if (-not $containerId) { throw 'Could not resolve PostgreSQL container.' }

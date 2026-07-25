@@ -1,4 +1,4 @@
-param([string]$OutputDirectory)
+param([string]$OutputDirectory,[int]$PostgresWaitSeconds = 90)
 $ErrorActionPreference = 'Stop'
 $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $SolutionRoot 'artifacts\backups' }
@@ -11,6 +11,13 @@ Push-Location $SolutionRoot
 try {
   docker compose up -d postgres
   if ($LASTEXITCODE -ne 0) { throw 'Could not start the PostgreSQL service.' }
+  $deadline = (Get-Date).AddSeconds($PostgresWaitSeconds); $ready = $false
+  while ((Get-Date) -lt $deadline) {
+    docker compose exec -T postgres pg_isready -U legacy-ehr -d legacy-ehr_modernized *> $null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $ready) { throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds." }
   docker compose exec -T postgres pg_dump -U legacy-ehr -d legacy-ehr_modernized -Fc -f $containerDump
   if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed.' }
   $containerId = (docker compose ps -q postgres).Trim(); if (-not $containerId) { throw 'Could not resolve PostgreSQL container.' }
