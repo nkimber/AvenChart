@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { ChevronRight, FileText, Pencil, Plus, TrendingUp } from 'lucide-react'
+import { ArchiveRestore, ChevronRight, FileText, Pencil, Plus, TrendingUp } from 'lucide-react'
 import {
   archiveEncounter,
+  archiveEncounterDocument,
+  createEncounterDocument,
   createEncounterSoapNote,
   createEncounterVitals,
   getEncounterSoapNoteTemplates,
   getEncounterDetail,
+  moveEncounterDocument,
+  replaceEncounterDocumentContent,
   restoreEncounter,
+  restoreEncounterDocument,
   searchEncounters,
+  signEncounterDocument,
+  updateEncounterDocumentMetadata,
   updateEncounter,
+  type EncounterDocumentAttachment,
   type EncounterDetail,
   type EncounterListItem,
   type EncounterSoapNoteTemplate,
@@ -75,6 +83,123 @@ const BLANK_VITALS = {
   systolic: '', diastolic: '', pulse: '', temperature: '', respiration: '', oxygenSaturation: '', weight: '', height: '',
 }
 const BLANK_SOAP = { subjective: '', objective: '', assessment: '', plan: '' }
+const today = () => new Date().toISOString().slice(0, 10)
+
+type DocumentForm = { categoryId: string; name: string; docDate: string; notes: string; content: string }
+
+function EncounterDocuments({ sessionId, detail, targetEncounters, onDetailChange }: { sessionId: string; detail: EncounterDetail; targetEncounters: EncounterListItem[]; onDetailChange: (detail: EncounterDetail) => void }) {
+  const [addOpen, setAddOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [reviewingId, setReviewingId] = useState<number | null>(null)
+  const [replacingId, setReplacingId] = useState<number | null>(null)
+  const [movingId, setMovingId] = useState<number | null>(null)
+  const [replacementContent, setReplacementContent] = useState('')
+  const [targetEncounter, setTargetEncounter] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<DocumentForm>({ categoryId: String(detail.documents.find((document) => document.deleted === 0)?.categoryId ?? 1), name: '', docDate: today(), notes: '', content: '' })
+  const [reviewForm, setReviewForm] = useState({ reviewStatus: 'Reviewed', reviewedBy: '' })
+
+  function openAdd() {
+    setEditingId(null); setReviewingId(null)
+    setForm({ categoryId: String(detail.documents.find((document) => document.deleted === 0)?.categoryId ?? 1), name: '', docDate: today(), notes: '', content: '' })
+    setAddOpen(true)
+  }
+
+  function openEdit(document: EncounterDocumentAttachment) {
+    setAddOpen(false); setReviewingId(null); setEditingId(document.id)
+    setForm({ categoryId: String(document.categoryId), name: document.name, docDate: document.docDate, notes: document.notes ?? '', content: '' })
+  }
+
+  async function saveDocument(event: React.FormEvent) {
+    event.preventDefault()
+    const categoryId = Number(form.categoryId)
+    if (!Number.isInteger(categoryId) || categoryId <= 0) { showToast('Enter a valid numeric category ID.', 'error'); return }
+    setSaving(true)
+    try {
+      const result = editingId == null
+        ? await createEncounterDocument(sessionId, detail.encounter, { categoryId, name: form.name, docDate: form.docDate, content: form.content, notes: form.notes || null })
+        : await updateEncounterDocumentMetadata(sessionId, detail.encounter, editingId, { categoryId, name: form.name, docDate: form.docDate, notes: form.notes || null })
+      onDetailChange(result.detail); setAddOpen(false); setEditingId(null)
+      showToast(editingId == null ? 'Text attachment added.' : 'Document filing updated.', 'success')
+    } catch { showToast(editingId == null ? 'Could not add attachment.' : 'Could not update document filing.', 'error') } finally { setSaving(false) }
+  }
+
+  async function changeArchive(document: EncounterDocumentAttachment, restore = false) {
+    if (!restore && !window.confirm(`Archive “${document.name}”? It can be restored later.`)) return
+    setSaving(true)
+    try {
+      const result = restore
+        ? await restoreEncounterDocument(sessionId, detail.encounter, document.id)
+        : await archiveEncounterDocument(sessionId, detail.encounter, document.id)
+      onDetailChange(result.detail); showToast(restore ? 'Document restored.' : 'Document archived.', 'success')
+    } catch { showToast(restore ? 'Could not restore document.' : 'Could not archive document.', 'error') } finally { setSaving(false) }
+  }
+
+  async function saveReview(event: React.FormEvent, document: EncounterDocumentAttachment) {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const result = await signEncounterDocument(sessionId, detail.encounter, document.id, reviewForm)
+      onDetailChange(result.detail); setReviewingId(null); showToast(`Document marked ${reviewForm.reviewStatus.toLowerCase()}.`, 'success')
+    } catch { showToast('Could not record document review.', 'error') } finally { setSaving(false) }
+  }
+
+  async function replaceContent(event: React.FormEvent, document: EncounterDocumentAttachment) {
+    event.preventDefault()
+    if (!window.confirm(`Replace the current content of “${document.name}”? A new version will be retained by the protected document lifecycle.`)) return
+    setSaving(true)
+    try {
+      const result = await replaceEncounterDocumentContent(sessionId, detail.encounter, document.id, { fileName: document.name, content: replacementContent })
+      onDetailChange(result.detail); setReplacingId(null); setReplacementContent(''); showToast('Document content replaced as a new version.', 'success')
+    } catch { showToast('Could not replace document content.', 'error') } finally { setSaving(false) }
+  }
+
+  async function moveDocument(event: React.FormEvent, document: EncounterDocumentAttachment) {
+    event.preventDefault()
+    const target = Number(targetEncounter)
+    if (!Number.isInteger(target) || target === detail.encounter) { showToast('Choose another encounter for this patient.', 'error'); return }
+    if (!window.confirm(`Move “${document.name}” to encounter #${target}?`)) return
+    setSaving(true)
+    try {
+      const result = await moveEncounterDocument(sessionId, detail.encounter, document.id, target)
+      onDetailChange(result.sourceDetail); setMovingId(null); setTargetEncounter(''); showToast('Document moved to the selected encounter.', 'success')
+    } catch { showToast('Could not move document.', 'error') } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="cl-card">
+      <div className="cl-card-header">
+        <h2 className="cl-card-title">Attachments</h2>
+        <button className="cl-btn-icon" type="button" aria-label="Add text attachment" onClick={openAdd}><Plus size={14} /></button>
+      </div>
+      {(addOpen || editingId != null) && (
+        <form onSubmit={saveDocument}>
+          <div className="form-row">
+            <div className="field"><label className="label" htmlFor="attachment-name">Name</label><input id="attachment-name" className="input" required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
+            <div className="field"><label className="label" htmlFor="attachment-date">Document date</label><input id="attachment-date" className="input" type="date" required value={form.docDate} onChange={(event) => setForm((current) => ({ ...current, docDate: event.target.value }))} /></div>
+            <div className="field"><label className="label" htmlFor="attachment-category">Category ID</label><input id="attachment-category" className="input" type="number" min="1" required value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))} /></div>
+          </div>
+          {editingId == null && <div className="field" style={{ marginBottom: 10 }}><label className="label" htmlFor="attachment-content">Attachment text</label><textarea id="attachment-content" className="textarea" rows={4} required value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} /></div>}
+          <div className="field" style={{ marginBottom: 10 }}><label className="label" htmlFor="attachment-notes">Filing note</label><input id="attachment-notes" className="input" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></div>
+          <div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingId == null ? 'Add attachment' : 'Save filing'}</button><button className="cl-btn-secondary" type="button" disabled={saving} onClick={() => { setAddOpen(false); setEditingId(null) }}>Cancel</button></div>
+        </form>
+      )}
+      {detail.documents.length === 0 && !addOpen && <p className="cl-empty-text">No encounter attachments. Add a text attachment to begin this local workflow.</p>}
+      {detail.documents.map((document) => (
+        <div key={document.id} className="cl-soap-section" style={{ opacity: document.deleted ? 0.65 : 1 }}>
+          <div className="cl-card-header"><p className="cl-soap-label">{document.name}</p><span className="cl-badge cl-badge-muted">{document.deleted ? 'Archived' : document.reviewStatus}</span></div>
+          <p className="cl-empty-text">{document.categoryName} · {document.docDate} · {document.versionLabel}{document.reviewedBy ? ` · ${document.reviewedBy}` : ''}</p>
+          {document.notes && <p className="cl-soap-text">{document.notes}</p>}
+          {!document.deleted && <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={() => openEdit(document)} disabled={saving}>Edit filing</button><button className="cl-btn-secondary" type="button" onClick={() => { setReplacingId(document.id); setMovingId(null); setReviewingId(null); setReplacementContent('') }} disabled={saving}>Replace text</button><button className="cl-btn-secondary" type="button" onClick={() => { setMovingId(document.id); setReplacingId(null); setReviewingId(null); setTargetEncounter('') }} disabled={saving}>Move</button><button className="cl-btn-secondary" type="button" onClick={() => { setReviewingId(document.id); setReplacingId(null); setMovingId(null); setReviewForm({ reviewStatus: 'Reviewed', reviewedBy: '' }) }} disabled={saving}>Review</button><button className="cl-btn-secondary" type="button" onClick={() => changeArchive(document)} disabled={saving}><ArchiveRestore size={14} /> Archive</button></div>}
+          {document.deleted && <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={() => changeArchive(document, true)} disabled={saving}>Restore</button></div>}
+          {replacingId === document.id && <form onSubmit={(event) => replaceContent(event, document)} style={{ marginTop: 10 }}><div className="field"><label className="label" htmlFor={`replacement-${document.id}`}>Replacement text</label><textarea id={`replacement-${document.id}`} className="textarea" rows={4} required value={replacementContent} onChange={(event) => setReplacementContent(event.target.value)} /></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>Replace content</button><button className="cl-btn-secondary" type="button" disabled={saving} onClick={() => setReplacingId(null)}>Cancel</button></div></form>}
+          {movingId === document.id && <form onSubmit={(event) => moveDocument(event, document)} style={{ marginTop: 10 }}><div className="field"><label className="label" htmlFor={`move-${document.id}`}>Target encounter</label><select id={`move-${document.id}`} className="input" required value={targetEncounter} onChange={(event) => setTargetEncounter(event.target.value)}><option value="">Choose encounter</option>{targetEncounters.filter((encounter) => encounter.encounter !== detail.encounter).map((encounter) => <option key={encounter.encounter} value={encounter.encounter}>#{encounter.encounter} · {encounter.date} · {encounter.reason ?? 'Visit'}</option>)}</select></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>Move attachment</button><button className="cl-btn-secondary" type="button" disabled={saving} onClick={() => setMovingId(null)}>Cancel</button></div></form>}
+          {reviewingId === document.id && <form onSubmit={(event) => saveReview(event, document)} style={{ marginTop: 10 }}><div className="form-row"><div className="field"><label className="label" htmlFor={`review-status-${document.id}`}>Review decision</label><select id={`review-status-${document.id}`} className="input" value={reviewForm.reviewStatus} onChange={(event) => setReviewForm((current) => ({ ...current, reviewStatus: event.target.value }))}><option>Reviewed</option><option>Signed</option><option>Denied</option></select></div><div className="field"><label className="label" htmlFor={`reviewer-${document.id}`}>Reviewed by</label><input id={`reviewer-${document.id}`} className="input" required value={reviewForm.reviewedBy} onChange={(event) => setReviewForm((current) => ({ ...current, reviewedBy: event.target.value }))} /></div></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={saving}>Save review</button><button className="cl-btn-secondary" type="button" onClick={() => setReviewingId(null)} disabled={saving}>Cancel</button></div></form>}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function PatientEncounters() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
@@ -161,7 +286,7 @@ export default function PatientEncounters() {
     setVitalsForm(BLANK_VITALS)
     setSoapForm(BLANK_SOAP)
     setDetailState({ status: 'loading', id })
-    getEncounterDetail(session.sessionId, id)
+    getEncounterDetail(session.sessionId, id, undefined, true)
       .then((data) => {
         setDetailState({ status: 'ready', data })
         setDetailCache((prev) => new Map(prev).set(id, data))
@@ -500,6 +625,16 @@ export default function PatientEncounters() {
                     <p className="cl-empty-text">No SOAP note. <button className="cl-link" type="button" onClick={() => setAddSoapOpen(true)}>Add note</button></p>
                   )}
                 </div>
+
+                <EncounterDocuments
+                  sessionId={session.sessionId}
+                  detail={enc}
+                  targetEncounters={listState.status === 'ready' ? listState.data : []}
+                  onDetailChange={(updated) => {
+                    setDetailState({ status: 'ready', data: updated })
+                    setDetailCache((current) => new Map(current).set(updated.id, updated))
+                  }}
+                />
 
                 {enc.diagnosisCodes.length > 0 && (
                   <div className="cl-card">

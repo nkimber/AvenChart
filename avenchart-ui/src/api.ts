@@ -1204,6 +1204,27 @@ export type EncounterDiagnosisCode = {
   billingLineCount: number
 }
 
+export type EncounterDocumentAttachment = {
+  id: number
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  revisionAt: string
+  currentVersion: number
+  versionLabel: string
+  versionStatus: string
+  notes?: string | null
+  deleted: number
+  reviewStatus: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  contentPreview?: string | null
+  previewKind: string
+  canDownload: boolean
+}
+
 export type EncounterDetail = {
   id: number
   encounter: number
@@ -1225,6 +1246,7 @@ export type EncounterDetail = {
   soapNote?: EncounterSoapNote | null
   billingLineCount: number
   diagnosisCodes: EncounterDiagnosisCode[]
+  documents: EncounterDocumentAttachment[]
 }
 
 export type EncounterSearchResponse = {
@@ -1249,14 +1271,48 @@ export async function getEncounterDetail(
   sessionId: string,
   encounterId: number,
   signal?: AbortSignal,
+  includeArchivedDocuments = false,
 ): Promise<EncounterDetail> {
-  return clinicianGet(sessionId, `/api/encounters/${encounterId}`, signal)
+  return clinicianGet(sessionId, `/api/encounters/${encounterId}${includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''}`, signal)
 }
 
 export type EncounterUpdateInput = { reason: string; sensitivity?: string | null; referralSource?: string | null; externalId?: string | null; posCode?: number | null; billingNote?: string | null }
 export async function updateEncounter(sessionId: string, encounterId: number, body: EncounterUpdateInput, signal?: AbortSignal): Promise<EncounterDetail> { return clinicianPut(sessionId, `/api/encounters/${encounterId}`, body, signal) }
 export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }
 export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal) }
+
+export type EncounterDocumentMutationResponse = { id: number; detail: EncounterDetail }
+
+export type EncounterDocumentCreateInput = { categoryId: number; name: string; docDate: string; content: string; notes?: string | null }
+export async function createEncounterDocument(sessionId: string, encounterId: number, body: EncounterDocumentCreateInput, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPost(sessionId, `/api/encounters/${encounterId}/documents`, body, signal)
+}
+
+export type EncounterDocumentMetadataInput = { categoryId: number; name: string; docDate: string; notes?: string | null }
+export async function updateEncounterDocumentMetadata(sessionId: string, encounterId: number, documentId: number, body: EncounterDocumentMetadataInput, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/metadata`, body, signal)
+}
+
+export async function archiveEncounterDocument(sessionId: string, encounterId: number, documentId: number, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/soft-delete`, {}, signal)
+}
+
+export async function restoreEncounterDocument(sessionId: string, encounterId: number, documentId: number, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/restore`, {}, signal)
+}
+
+export async function signEncounterDocument(sessionId: string, encounterId: number, documentId: number, body: { reviewStatus: string; reviewedBy: string }, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/sign`, body, signal)
+}
+
+export async function replaceEncounterDocumentContent(sessionId: string, encounterId: number, documentId: number, body: { fileName: string; content: string }, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/content`, body, signal)
+}
+
+export type EncounterDocumentMoveResponse = { id: number; sourceDetail: EncounterDetail; targetDetail: EncounterDetail }
+export async function moveEncounterDocument(sessionId: string, encounterId: number, documentId: number, targetEncounter: number, signal?: AbortSignal): Promise<EncounterDocumentMoveResponse> {
+  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/move`, { targetEncounter }, signal)
+}
 
 // ── Clinical Lists ────────────────────────────────────────────────────────────
 
