@@ -5,10 +5,13 @@ import {
   createAppointment,
   deleteAppointment,
   getAppointmentSchedulingOptions,
+  rescheduleAppointmentOccurrence,
+  restoreAppointmentOccurrence,
   searchAppointments,
   updateAppointment,
   updateAppointmentStatus,
   type AppointmentListItem,
+  type AppointmentOccurrenceRescheduleInput,
   type AppointmentSchedulingOptionsResponse,
   type AppointmentUpdateInput,
 } from '../../api.ts'
@@ -67,6 +70,7 @@ export default function PatientAppointments() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [newApptOpen, setNewApptOpen] = useState(false)
   const [editingAppointment, setEditingAppointment] = useState<AppointmentListItem | null>(null)
+  const [reschedulingAppointment, setReschedulingAppointment] = useState<AppointmentListItem | null>(null)
   const [schedulingOptions, setSchedulingOptions] = useState<AppointmentSchedulingOptionsResponse | null>(null)
   const [schedulingOptionsError, setSchedulingOptionsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -78,6 +82,8 @@ export default function PatientAppointments() {
     comments: '',
   })
   const [editForm, setEditForm] = useState<AppointmentEditForm | null>(null)
+  const [rescheduleForm, setRescheduleForm] = useState<AppointmentEditForm | null>(null)
+  const [restoringDate, setRestoringDate] = useState<string | null>(null)
 
   function load() {
     setState({ status: 'loading' })
@@ -128,10 +134,26 @@ export default function PatientAppointments() {
       .catch(() => setSchedulingOptionsError('Provider and facility options could not be loaded. Existing assignments can still be retained.'))
   }
 
+  function openRescheduler(appointment: AppointmentListItem) {
+    setReschedulingAppointment(appointment)
+    setRescheduleForm(formFromAppointment(appointment))
+    if (schedulingOptions || schedulingOptionsError) return
+
+    getAppointmentSchedulingOptions(session.sessionId)
+      .then(setSchedulingOptions)
+      .catch(() => setSchedulingOptionsError('Provider and facility options could not be loaded. Existing assignments can still be retained.'))
+  }
+
   function closeEditor() {
     if (saving) return
     setEditingAppointment(null)
     setEditForm(null)
+  }
+
+  function closeRescheduler() {
+    if (saving) return
+    setReschedulingAppointment(null)
+    setRescheduleForm(null)
   }
 
   async function handleAppointmentUpdate(event: React.FormEvent) {
@@ -177,6 +199,53 @@ export default function PatientAppointments() {
     }
   }
 
+  async function handleOccurrenceReschedule(event: React.FormEvent) {
+    event.preventDefault()
+    if (!reschedulingAppointment || !rescheduleForm) return
+
+    const update: AppointmentOccurrenceRescheduleInput = {
+      providerId: nullableId(rescheduleForm.providerId),
+      title: rescheduleForm.title,
+      date: rescheduleForm.date,
+      startTime: rescheduleForm.startTime,
+      durationMinutes: rescheduleForm.durationMinutes,
+      facilityId: nullableId(rescheduleForm.facilityId),
+      billingLocationId: reschedulingAppointment.billingLocationId ?? null,
+      categoryId: reschedulingAppointment.categoryId ?? null,
+      room: rescheduleForm.room || null,
+      status: rescheduleForm.status || null,
+      comments: rescheduleForm.comments || null,
+    }
+
+    setSaving(true)
+    try {
+      await rescheduleAppointmentOccurrence(session.sessionId, reschedulingAppointment.id, reschedulingAppointment.date, update)
+      showToast(`Occurrence on ${reschedulingAppointment.date} rescheduled.`, 'success')
+      setReschedulingAppointment(null)
+      setRescheduleForm(null)
+      load()
+    } catch {
+      showToast('Could not reschedule this occurrence.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleOccurrenceRestore(appointment: AppointmentListItem, occurrenceDate: string) {
+    setRestoringDate(occurrenceDate)
+    try {
+      await restoreAppointmentOccurrence(session.sessionId, appointment.id, occurrenceDate)
+      showToast(`Occurrence on ${occurrenceDate} restored.`, 'success')
+      setEditingAppointment(null)
+      setEditForm(null)
+      load()
+    } catch {
+      showToast('Could not restore this occurrence.', 'error')
+    } finally {
+      setRestoringDate(null)
+    }
+  }
+
   async function cancelAppointment(id: string) {
     if (!window.confirm('Cancel this appointment?')) return
     setUpdatingId(id)
@@ -198,6 +267,14 @@ export default function PatientAppointments() {
   const editorHasFacility = !!(
     editForm?.facilityId
     && schedulingOptions?.facilities.some((facility) => facility.id === Number(editForm.facilityId))
+  )
+  const reschedulerHasProvider = !!(
+    rescheduleForm?.providerId
+    && schedulingOptions?.providers.some((provider) => provider.id === Number(rescheduleForm.providerId))
+  )
+  const reschedulerHasFacility = !!(
+    rescheduleForm?.facilityId
+    && schedulingOptions?.facilities.some((facility) => facility.id === Number(rescheduleForm.facilityId))
   )
 
   return (
@@ -310,9 +387,90 @@ export default function PatientAppointments() {
                 <label className="label" htmlFor="edit-appt-comments">Comments</label>
                 <textarea id="edit-appt-comments" className="textarea" rows={3} value={editForm.comments} onChange={(event) => setEditForm((form) => form && ({ ...form, comments: event.target.value }))} />
               </div>
+              {editingAppointment.isRecurringSeries && editingAppointment.recurrenceExdates.length > 0 && (
+                <div className="field">
+                  <span className="label">Skipped occurrences</span>
+                  <p className="cl-table-sub">Restore a previously cancelled occurrence to its original time.</p>
+                  <div className="button-row" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                    {editingAppointment.recurrenceExdates.map((occurrenceDate) => (
+                      <button key={occurrenceDate} className="cl-btn-secondary" type="button" disabled={saving || restoringDate === occurrenceDate} onClick={() => handleOccurrenceRestore(editingAppointment, occurrenceDate)}>
+                        {restoringDate === occurrenceDate ? 'Restoring…' : `Restore ${occurrenceDate}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="button-row">
                 <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
                 <button className="button-secondary" type="button" onClick={closeEditor} disabled={saving} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {reschedulingAppointment && rescheduleForm && (
+        <div className="modal-overlay" onClick={(event) => { if (event.target === event.currentTarget) closeRescheduler() }}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-label="Reschedule appointment occurrence">
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title">Reschedule one occurrence</h2>
+                <p className="cl-table-sub">Only the {reschedulingAppointment.date} occurrence moves. The recurring series stays unchanged.</p>
+              </div>
+              <button className="modal-close" type="button" onClick={closeRescheduler} aria-label="Close">&times;</button>
+            </div>
+            <form onSubmit={handleOccurrenceReschedule}>
+              <div className="field">
+                <label className="label" htmlFor="reschedule-appt-title">Visit type / title</label>
+                <input id="reschedule-appt-title" className="input" value={rescheduleForm.title} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, title: event.target.value }))} required />
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-date">New date</label>
+                  <input id="reschedule-appt-date" type="date" className="input" value={rescheduleForm.date} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, date: event.target.value }))} required />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-time">New time</label>
+                  <input id="reschedule-appt-time" type="time" className="input" value={rescheduleForm.startTime} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, startTime: event.target.value }))} required />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-provider">Provider</label>
+                  <select id="reschedule-appt-provider" className="select" value={rescheduleForm.providerId} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, providerId: event.target.value }))}>
+                    {!reschedulerHasProvider && rescheduleForm.providerId && <option value={rescheduleForm.providerId}>{reschedulingAppointment.providerName ?? 'Current provider'}</option>}
+                    <option value="">Keep current provider</option>
+                    {schedulingOptions?.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}{provider.facilityName ? ` · ${provider.facilityName}` : ''}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-facility">Facility</label>
+                  <select id="reschedule-appt-facility" className="select" value={rescheduleForm.facilityId} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, facilityId: event.target.value }))}>
+                    {!reschedulerHasFacility && rescheduleForm.facilityId && <option value={rescheduleForm.facilityId}>{reschedulingAppointment.facilityName ?? 'Current facility'}</option>}
+                    <option value="">Keep current facility</option>
+                    {schedulingOptions?.facilities.map((facility) => <option key={facility.id} value={facility.id}>{facility.name}{facility.code ? ` (${facility.code})` : ''}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-duration">Duration</label>
+                  <select id="reschedule-appt-duration" className="select" value={rescheduleForm.durationMinutes} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, durationMinutes: Number(event.target.value) }))}>
+                    {DURATION_OPTIONS.map((duration) => <option key={duration} value={duration}>{duration} min</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="reschedule-appt-room">Room</label>
+                  <input id="reschedule-appt-room" className="input" value={rescheduleForm.room} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, room: event.target.value }))} />
+                </div>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="reschedule-appt-comments">Comments</label>
+                <textarea id="reschedule-appt-comments" className="textarea" rows={3} value={rescheduleForm.comments} onChange={(event) => setRescheduleForm((form) => form && ({ ...form, comments: event.target.value }))} />
+              </div>
+              <div className="button-row">
+                <button className="button-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Reschedule occurrence'}</button>
+                <button className="button-secondary" type="button" onClick={closeRescheduler} disabled={saving} style={{ flex: 'none', width: 'auto' }}>Cancel</button>
               </div>
             </form>
           </div>
@@ -348,6 +506,7 @@ export default function PatientAppointments() {
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openEditor(appointment)} aria-label={`Edit appointment on ${appointment.date}`}><Pencil size={13} /> Edit</button>
+                    {appointment.isRecurringSeries && <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openRescheduler(appointment)} style={{ marginLeft: 6 }}>Reschedule</button>}
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment.id)} style={{ marginLeft: 6 }}>Cancel</button>
                   </td>
                 </tr>

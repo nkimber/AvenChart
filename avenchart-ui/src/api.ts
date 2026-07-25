@@ -989,6 +989,49 @@ export async function updateAppointment(
   return clinicianPut(sessionId, `/api/appointments/${appointmentId}`, body, signal)
 }
 
+export type AppointmentOccurrenceRescheduleInput = {
+  providerId?: number | null
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  billingLocationId?: number | null
+  categoryId?: number | null
+  room?: string | null
+  status?: string | null
+  comments?: string | null
+}
+
+export async function rescheduleAppointmentOccurrence(
+  sessionId: string,
+  appointmentId: string,
+  occurrenceDate: string,
+  body: AppointmentOccurrenceRescheduleInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`,
+    body,
+    signal,
+  )
+}
+
+export async function restoreAppointmentOccurrence(
+  sessionId: string,
+  appointmentId: string,
+  occurrenceDate: string,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
+    undefined,
+    signal,
+  )
+}
+
 export async function deleteAppointment(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<void> { await clinicianDelete(sessionId, `/api/appointments/${appointmentId}`, signal) }
 
 export type FlowBoardItem = { appointmentId: string; patientId: string; patientDisplayName: string; startTime: string; title: string; room?: string | null; providerName?: string | null; facilityName?: string | null; appointmentStatus?: string | null; flowStatus: string }
