@@ -23,3 +23,6 @@ public sealed record TherapyGroupMemberItem(Guid GroupId, string PatientId, int 
 public sealed record TherapyGroupSessionCreateRequest(string StartsAt, int DurationMinutes, string? Topic);
 public sealed record TherapyGroupSessionStatusRequest(string Status);
 public sealed record TherapyGroupSessionItem(Guid Id, Guid GroupId, string StartsAt, int DurationMinutes, string? Topic, string Status, string CreatedAt);
+public sealed record TherapyGroupSessionEncounterRequest(int? ProviderId, int? FacilityId, int? BillingFacilityId, string? Sensitivity, string? ReferralSource, int? PosCode, string? BillingNote);
+public sealed record TherapyGroupSessionEncounterItem(Guid SessionId, string PatientId, int LegacyPid, string DisplayName, int? Encounter, string Status);
+public sealed record TherapyGroupSessionEncounterResponse(Guid SessionId, IReadOnlyList<TherapyGroupSessionEncounterItem> Encounters);
