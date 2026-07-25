@@ -686,8 +686,16 @@ export default function PatientEncounters() {
                     <ul className="cl-clinical-list">
                       {enc.diagnosisCodes.map((dx) => (
                         <li key={dx.code} className="cl-clinical-row">
-                          <span className="cl-dx-code">{dx.code}</span>
-                          <span>{dx.description ?? ''}</span>
+                          <div>
+                            <span className="cl-dx-code">{dx.code}</span>
+                            <span>{dx.description ?? ''}</span>
+                            <p className="cl-empty-text" style={{ margin: '4px 0 0' }}>
+                              {dx.sources.join(' · ') || 'Encounter diagnosis'}
+                              {dx.billingLineCount > 0 && ` · ${dx.billingLineCount} billing link${dx.billingLineCount === 1 ? '' : 's'}`}
+                              {dx.procedureOrderCount > 0 && ` · ${dx.procedureOrderCount} procedure link${dx.procedureOrderCount === 1 ? '' : 's'}`}
+                            </p>
+                            {dx.supportingBillingCodes.length > 0 && <p className="cl-empty-text" style={{ margin: '2px 0 0' }}>Billing support: {dx.supportingBillingCodes.join(', ')}</p>}
+                          </div>
                         </li>
                       ))}
                     </ul>

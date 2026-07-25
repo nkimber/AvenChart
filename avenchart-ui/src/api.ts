@@ -1201,7 +1201,10 @@ export type EncounterSoapNoteTemplateCatalog = {
 export type EncounterDiagnosisCode = {
   code: string
   description?: string | null
+  sources: string[]
   billingLineCount: number
+  procedureOrderCount: number
+  supportingBillingCodes: string[]
 }
 
 export type EncounterDocumentAttachment = {
