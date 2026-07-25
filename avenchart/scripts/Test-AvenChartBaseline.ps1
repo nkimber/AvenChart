@@ -1812,6 +1812,11 @@ try {
         assessor = ""
         hungerQuestionOne = "LA28397-0"
         hungerQuestionTwo = "LA6729-3"
+        pregnancyStatus = "pregnant"
+        pregnancyEdd = "2026-12-30"
+        pregnancyIntent = "wants_pregnancy"
+        postpartumStatus = "postpartum"
+        postpartumEnd = "2026-09-05"
         domains = @{
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
@@ -1825,6 +1830,11 @@ try {
         assessor = "Smoke assessor"
         hungerQuestionOne = "LA6729-3"
         hungerQuestionTwo = "LA6729-3"
+        pregnancyStatus = "not_pregnant"
+        pregnancyEdd = ""
+        pregnancyIntent = "no_desire"
+        postpartumStatus = ""
+        postpartumEnd = ""
         domains = @{
             housing_instability = @{ status = "no"; notes = "Stable housing reported" }
             transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
@@ -1840,10 +1850,20 @@ try {
         -and $createdSdoh.hungerScore -eq 1 `
         -and $createdSdoh.hungerQuestionOne -eq "LA28397-0" `
         -and $createdSdoh.domains.food_insecurity.status -eq "at_risk" `
+        -and $createdSdoh.pregnancyStatus -eq "pregnant" `
+        -and $createdSdoh.pregnancyEdd -eq "2026-12-30" `
+        -and $createdSdoh.pregnancyIntent -eq "wants_pregnancy" `
+        -and $createdSdoh.postpartumStatus -eq "postpartum" `
+        -and $createdSdoh.postpartumEnd -eq "2026-09-05" `
         -and $updatedSdoh.assessor -eq "Smoke assessor" `
         -and $updatedSdoh.instrumentScore -eq 1 `
         -and $updatedSdoh.hungerScore -eq 0 `
         -and $updatedSdoh.domains.food_insecurity.status -eq "no_risk" `
+        -and $updatedSdoh.pregnancyStatus -eq "not_pregnant" `
+        -and $null -eq $updatedSdoh.pregnancyEdd `
+        -and $updatedSdoh.pregnancyIntent -eq "no_desire" `
+        -and $null -eq $updatedSdoh.postpartumStatus `
+        -and $null -eq $updatedSdoh.postpartumEnd `
         -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
         -and $updatedSdoh.interventions -eq "Transportation resources retained." `
         -and $null -ne $historySdoh `

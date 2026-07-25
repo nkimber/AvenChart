@@ -9,6 +9,11 @@ public sealed record PatientSdohAssessmentRequest(
     IReadOnlyDictionary<string, PatientSdohDomainValue?> Domains,
     string? HungerQuestionOne,
     string? HungerQuestionTwo,
+    string? PregnancyStatus,
+    string? PregnancyEdd,
+    string? PregnancyIntent,
+    string? PostpartumStatus,
+    string? PostpartumEnd,
     string? Interventions);
 
 public sealed record PatientSdohAssessmentResponse(
@@ -22,6 +27,11 @@ public sealed record PatientSdohAssessmentResponse(
     string? HungerQuestionOne,
     string? HungerQuestionTwo,
     int HungerScore,
+    string? PregnancyStatus,
+    string? PregnancyEdd,
+    string? PregnancyIntent,
+    string? PostpartumStatus,
+    string? PostpartumEnd,
     IReadOnlyDictionary<string, PatientSdohDomainValue> Domains,
     string? Interventions,
     string CreatedAt,
