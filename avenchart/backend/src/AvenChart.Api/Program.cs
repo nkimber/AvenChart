@@ -3633,6 +3633,18 @@ therapyGroups.MapPost("/{groupId:guid}/members", async (Guid groupId, TherapyGro
     try { return Results.Created($"/api/therapy-groups/{groupId}/members", await repository.AddMemberAsync(groupId, request, cancellationToken)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("AddTherapyGroupMember").AddEndpointFilter(AccessPermissionFilter("groups", "gadd", "write"));
+therapyGroups.MapGet("/{groupId:guid}/sessions", async (Guid groupId, TherapyGroupRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetSessionsAsync(groupId, cancellationToken))).WithName("GetTherapyGroupSessions");
+therapyGroups.MapPost("/{groupId:guid}/sessions", async (Guid groupId, TherapyGroupSessionCreateRequest request, TherapyGroupRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Created($"/api/therapy-groups/{groupId}/sessions", await repository.CreateSessionAsync(groupId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreateTherapyGroupSession").AddEndpointFilter(AccessPermissionFilter("groups", "gadd", "write"));
+therapyGroups.MapPut("/{groupId:guid}/sessions/{sessionId:guid}/status", async (Guid groupId, Guid sessionId, TherapyGroupSessionStatusRequest request, TherapyGroupRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.UpdateSessionStatusAsync(groupId, sessionId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdateTherapyGroupSessionStatus").AddEndpointFilter(AccessPermissionFilter("groups", "gadd", "write"));
 
 reports.MapPost("/definitions/{definitionId:guid}/run", async (
         ReportRepository repository,

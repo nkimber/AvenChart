@@ -38,6 +38,7 @@ const NAV_ITEMS = [
   { path: '/clinician/messages', label: 'Messages', icon: Mail },
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
+  { path: '/clinician/groups', label: 'Groups', icon: Users },
   { path: '/clinician/billing', label: 'Billing', icon: ReceiptText },
   { path: '/clinician/inventory', label: 'Inventory', icon: Package },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },

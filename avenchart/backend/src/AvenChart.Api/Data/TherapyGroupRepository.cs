@@ -93,12 +93,61 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
         return new(groupId, canonicalPatientId, legacyPid, displayName, joinedAt.ToString("O"));
     }
 
+    public async Task<IReadOnlyList<TherapyGroupSessionItem>> GetSessionsAsync(Guid groupId, CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select id, group_id, starts_at, duration_minutes, topic, status, created_at from therapy_group_sessions where group_id = @groupId order by starts_at desc;";
+        command.Parameters.AddWithValue("groupId", groupId);
+        var sessions = new List<TherapyGroupSessionItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            sessions.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateTimeOffset>(2).ToString("O"), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O")));
+        return sessions;
+    }
+
+    public async Task<TherapyGroupSessionItem> CreateSessionAsync(Guid groupId, TherapyGroupSessionCreateRequest request, CancellationToken cancellationToken)
+    {
+        if (!DateTimeOffset.TryParse(request.StartsAt, out var startsAt)) throw new ArgumentException("A valid session start date and time is required.");
+        if (request.DurationMinutes is < 15 or > 480) throw new ArgumentException("Session duration must be between 15 and 480 minutes.");
+        var topic = request.Topic?.Trim(); if (topic?.Length > 400) throw new ArgumentException("Session topic must be 400 characters or fewer.");
+        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var groupCommand = connection.CreateCommand(); groupCommand.CommandText = "select status from therapy_groups where id = @groupId;"; groupCommand.Parameters.AddWithValue("groupId", groupId);
+        var status = await groupCommand.ExecuteScalarAsync(cancellationToken) as string;
+        if (status is null) throw new ArgumentException("Therapy group was not found.");
+        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Sessions can only be scheduled for an active therapy group.");
+        var id = Guid.NewGuid(); var createdAt = DateTimeOffset.UtcNow;
+        await using var command = connection.CreateCommand();
+        command.CommandText = "insert into therapy_group_sessions (id, group_id, starts_at, duration_minutes, topic, status, created_at) values (@id, @groupId, @startsAt, @duration, @topic, 'scheduled', @createdAt);";
+        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("groupId", groupId); command.Parameters.AddWithValue("startsAt", startsAt); command.Parameters.AddWithValue("duration", request.DurationMinutes); command.Parameters.AddWithValue("topic", (object?)topic ?? DBNull.Value); command.Parameters.AddWithValue("createdAt", createdAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new(id, groupId, startsAt.ToString("O"), request.DurationMinutes, topic, "scheduled", createdAt.ToString("O"));
+    }
+
+    public async Task<TherapyGroupSessionItem> UpdateSessionStatusAsync(Guid groupId, Guid sessionId, TherapyGroupSessionStatusRequest request, CancellationToken cancellationToken)
+    {
+        var status = request.Status?.Trim().ToLowerInvariant();
+        if (status is not ("completed" or "cancelled")) throw new ArgumentException("Session status must be completed or cancelled.");
+        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = """
+            update therapy_group_sessions set status = @status
+            where id = @sessionId and group_id = @groupId and status = 'scheduled'
+            returning id, group_id, starts_at, duration_minutes, topic, status, created_at;
+            """;
+        command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("sessionId", sessionId); command.Parameters.AddWithValue("groupId", groupId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("Scheduled therapy-group session was not found.");
+        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateTimeOffset>(2).ToString("O"), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O"));
+    }
+
     private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
         command.CommandText = """
             create table if not exists therapy_groups (id uuid primary key, name text not null, status text not null, facilitator_id integer references staff(id), description text, capacity integer not null, created_at timestamptz not null);
             create table if not exists therapy_group_members (group_id uuid not null references therapy_groups(id), patient_id text not null references patients(canonical_id), joined_at timestamptz not null, primary key (group_id, patient_id));
+            create table if not exists therapy_group_sessions (id uuid primary key, group_id uuid not null references therapy_groups(id), starts_at timestamptz not null, duration_minutes integer not null, topic text, status text not null, created_at timestamptz not null);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
