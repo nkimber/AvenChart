@@ -46,6 +46,7 @@ builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<OfficeNoteRepository>();
 builder.Services.AddScoped<AddressBookRepository>();
+builder.Services.AddScoped<TrackAnythingRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2351,6 +2352,13 @@ addressBook.MapGet("/", async (AddressBookRepository repository, string? organiz
 addressBook.MapPost("/", async (AddressBookRepository repository, AddressBookContactRequest request, CancellationToken cancellationToken) => { try { var item=await repository.SaveAsync(null,request,cancellationToken); return Results.Created($"/api/administration/address-book/{item!.Id}",item); } catch(ArgumentException e) { return Results.ValidationProblem(new Dictionary<string,string[]> { ["contact"]=[e.Message] }); } }).WithName("CreateAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
 addressBook.MapPut("/{contactId:int}", async (AddressBookRepository repository,int contactId,AddressBookContactRequest request,CancellationToken cancellationToken)=> { try { var item=await repository.SaveAsync(contactId,request,cancellationToken);return item is null?Results.NotFound():Results.Ok(item); }catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["contact"]=[e.Message] });}}).WithName("UpdateAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
 addressBook.MapDelete("/{contactId:int}", async (AddressBookRepository repository,int contactId,CancellationToken cancellationToken)=>await repository.DeleteAsync(contactId,cancellationToken)?Results.NoContent():Results.NotFound()).WithName("DeleteAddressBookContact").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
+
+var tracks = app.MapGroup("/api/administration/tracks").WithTags("Track Anything");
+RequireAccessPermission(tracks, "admin", "practice", "view");
+tracks.MapGet("/", async (TrackAnythingRepository repository, CancellationToken cancellationToken) => Results.Ok(await repository.GetAsync(cancellationToken))).WithName("GetTrackAnythingTypes");
+tracks.MapPost("/", async (TrackAnythingRepository repository, TrackAnythingRequest request, CancellationToken cancellationToken) => { try { var item=await repository.SaveAsync(null,request,cancellationToken);return Results.Created($"/api/administration/tracks/{item!.Id}",item); }catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["track"]=[e.Message] });}}).WithName("CreateTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
+tracks.MapPut("/{trackId:int}", async (TrackAnythingRepository repository,int trackId,TrackAnythingRequest request,CancellationToken cancellationToken)=>{try{var item=await repository.SaveAsync(trackId,request,cancellationToken);return item is null?Results.NotFound():Results.Ok(item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["track"]=[e.Message] });}}).WithName("UpdateTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
+tracks.MapDelete("/{trackId:int}", async (TrackAnythingRepository repository,int trackId,CancellationToken cancellationToken)=>await repository.DeleteAsync(trackId,cancellationToken)?Results.NoContent():Results.NotFound()).WithName("DeleteTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","super","write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

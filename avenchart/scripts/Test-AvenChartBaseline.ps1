@@ -9777,6 +9777,19 @@ catch {
     Add-Check -Name "administration address book lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $trackHeaders = Get-AdministrationHeaders
+    $trackParent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ name = "Smoke Track"; description = "Parent"; position = 20; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $trackChild = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ parentId = $trackParent.id; name = "Smoke Track Item"; description = "Child"; position = 10; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $trackList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Get -Headers $trackHeaders -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/$($trackParent.id)" -Method Delete -Headers $trackHeaders -TimeoutSec 20
+    $trackPassed = ($trackList.items.id -contains $trackParent.id) -and ($trackList.items.parentId -contains $trackParent.id)
+    Add-Check -Name "track anything hierarchy lifecycle" -Result $(if ($trackPassed) { "passed" } else { "failed" }) -Details @{ parentId = $trackParent.id; childId = $trackChild.id; childParentId = $trackChild.parentId }
+}
+catch {
+    Add-Check -Name "track anything hierarchy lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

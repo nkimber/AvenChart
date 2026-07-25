@@ -40,6 +40,7 @@ import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
 import SchedulingOperations from './pages/clinician/SchedulingOperations.tsx'
 import OfficeNotes from './pages/clinician/OfficeNotes.tsx'
 import AddressBook from './pages/clinician/AddressBook.tsx'
+import TrackAnything from './pages/clinician/TrackAnything.tsx'
 
 export default function App() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="messages" element={<ClinicianMessages />} />
           <Route path="office-notes" element={<OfficeNotes />} />
           <Route path="address-book" element={<AddressBook />} />
+          <Route path="tracks" element={<TrackAnything />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
           <Route path="groups" element={<TherapyGroups />} />

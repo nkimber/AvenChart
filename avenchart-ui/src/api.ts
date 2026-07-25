@@ -1712,6 +1712,10 @@ export type AddressBookEntry = { id: number; isInternal: boolean; username?: str
 export async function getAddressBook(sessionId: string, q = ''): Promise<{ entries: AddressBookEntry[]; total: number }> { return clinicianGet(sessionId, `/api/administration/address-book/?organization=${encodeURIComponent(q)}&lastName=${encodeURIComponent(q)}`) }
 export async function saveAddressBookContact(sessionId: string, input: Omit<AddressBookEntry, 'id' | 'isInternal' | 'username'>, id?: number): Promise<AddressBookEntry> { return id ? clinicianPut(sessionId, `/api/administration/address-book/${id}`, input) : clinicianPost(sessionId, '/api/administration/address-book/', input) }
 export async function deleteAddressBookContact(sessionId: string, id: number): Promise<void> { await clinicianDelete(sessionId, `/api/administration/address-book/${id}`) }
+export type TrackAnythingItem = { id: number; parentId?: number | null; name: string; description?: string | null; position: number; active: boolean }
+export async function getTrackAnything(sessionId: string): Promise<{ items: TrackAnythingItem[] }> { return clinicianGet(sessionId, '/api/administration/tracks/') }
+export async function saveTrackAnything(sessionId: string, input: Omit<TrackAnythingItem, 'id'>, id?: number): Promise<TrackAnythingItem> { return id ? clinicianPut(sessionId, `/api/administration/tracks/${id}`, input) : clinicianPost(sessionId, '/api/administration/tracks/', input) }
+export async function deleteTrackAnything(sessionId: string, id: number): Promise<void> { await clinicianDelete(sessionId, `/api/administration/tracks/${id}`) }
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 
