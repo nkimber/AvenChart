@@ -301,6 +301,7 @@ drop table if exists medication_vocabulary;
 drop table if exists pharmacies;
 drop table if exists clinical_notes;
 drop table if exists vitals;
+drop table if exists encounter_audit_events;
 drop table if exists encounters;
 drop table if exists appointments;
 drop table if exists insurance_records;
@@ -765,6 +766,15 @@ create table encounter_signatures (
   amendment text,
   hash text not null,
   signature_hash text not null
+);
+
+create table encounter_audit_events (
+  event_id uuid primary key,
+  encounter integer not null,
+  occurred_at timestamptz not null,
+  username text not null,
+  action text not null,
+  changed_fields text not null
 );
 
 create table vitals (
@@ -2608,6 +2618,7 @@ create index idx_insurance_records_pid on insurance_records (pid);
 create index idx_appointments_pid_date on appointments (pid, appointment_date, start_time);
 create index idx_encounters_pid_date on encounters (pid, encounter_date);
 create index idx_encounter_signatures_encounter on encounter_signatures (encounter, signed_at);
+create index idx_encounter_audit_events_encounter on encounter_audit_events (encounter, occurred_at desc);
 create index idx_vitals_pid_date on vitals (pid, vital_datetime);
 create index idx_clinical_notes_pid_date on clinical_notes (pid, note_datetime);
 create index idx_prescriptions_pid on prescriptions (pid);

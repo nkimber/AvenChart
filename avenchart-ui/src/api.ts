@@ -1482,6 +1482,9 @@ export async function getEncounterDetail(
 
 export type EncounterUpdateInput = { reason: string; sensitivity?: string | null; referralSource?: string | null; externalId?: string | null; posCode?: number | null; billingNote?: string | null }
 export async function updateEncounter(sessionId: string, encounterId: number, body: EncounterUpdateInput, signal?: AbortSignal): Promise<EncounterDetail> { return clinicianPut(sessionId, `/api/encounters/${encounterId}`, body, signal) }
+export type EncounterAuditEvent = { eventId: string; occurredAt: string; username: string; action: string; changedFields: string[] }
+export type EncounterAuditHistory = { encounter: number; eventCount: number; events: EncounterAuditEvent[] }
+export async function getEncounterAuditHistory(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<EncounterAuditHistory> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/audit`, signal) }
 export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }
 export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal) }
 

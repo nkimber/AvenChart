@@ -353,6 +353,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     public async Task<EncounterDetail?> UpdateSummaryAsync(
         int encounter,
         EncounterUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         var reason = NormalizeText(request.Reason);
@@ -362,6 +363,11 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var prior = await ReadSummaryAuditValuesAsync(connection, encounter, cancellationToken);
+        if (prior is null)
+        {
+            return null;
+        }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update encounters
@@ -383,9 +389,58 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
         AddNullableText(command, "billingNote", NormalizeText(request.BillingNote));
 
         var updated = await command.ExecuteScalarAsync(cancellationToken);
-        return updated is null || updated is DBNull
-            ? null
-            : await GetByEncounterAsync(Convert.ToInt32(updated), cancellationToken);
+        if (updated is null || updated is DBNull)
+        {
+            return null;
+        }
+
+        var changedFields = new List<string>();
+        AddChangedField(changedFields, "reason", prior.Reason, reason);
+        AddChangedField(changedFields, "sensitivity", prior.Sensitivity, NormalizeText(request.Sensitivity));
+        AddChangedField(changedFields, "referralSource", prior.ReferralSource, NormalizeText(request.ReferralSource));
+        AddChangedField(changedFields, "externalId", prior.ExternalId, NormalizeText(request.ExternalId));
+        AddChangedField(changedFields, "posCode", prior.PosCode?.ToString(), request.PosCode?.ToString());
+        AddChangedField(changedFields, "billingNote", prior.BillingNote, NormalizeText(request.BillingNote));
+        if (changedFields.Count > 0)
+        {
+            await RecordSummaryAuditAsync(connection, encounter, username, changedFields, cancellationToken);
+        }
+
+        return await GetByEncounterAsync(Convert.ToInt32(updated), cancellationToken);
+    }
+
+    public async Task<EncounterAuditHistoryResponse?> GetAuditHistoryAsync(int encounter, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var exists = connection.CreateCommand();
+        exists.CommandText = "select exists(select 1 from encounters where encounter = @encounter);";
+        exists.Parameters.AddWithValue("encounter", encounter);
+        if (await exists.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select event_id, occurred_at, username, action, changed_fields
+            from encounter_audit_events
+            where encounter = @encounter
+            order by occurred_at desc, event_id desc
+            limit 100;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        var events = new List<EncounterAuditEventItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new EncounterAuditEventItem(
+                reader.GetGuid(0),
+                reader.GetFieldValue<DateTimeOffset>(1).ToString("O"),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
+        }
+        return new EncounterAuditHistoryResponse(encounter, events.Count, events);
     }
 
     public async Task<EncounterFormMutationResponse?> CreateVitalsAsync(
@@ -1734,6 +1789,43 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
 
     private static string NormalizePreviewText(string? value) => value?.Trim() ?? string.Empty;
 
+    private static async Task<EncounterSummaryAuditValues?> ReadSummaryAuditValuesAsync(
+        NpgsqlConnection connection, int encounter, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select reason, sensitivity, referral_source, external_id, pos_code, billing_note
+            from encounters where encounter = @encounter;
+            """;
+        command.Parameters.AddWithValue("encounter", encounter);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new EncounterSummaryAuditValues(
+            ReadNullableString(reader, "reason"), ReadNullableString(reader, "sensitivity"),
+            ReadNullableString(reader, "referral_source"), ReadNullableString(reader, "external_id"),
+            ReadNullableInt(reader, "pos_code"), ReadNullableString(reader, "billing_note"));
+    }
+
+    private static async Task RecordSummaryAuditAsync(NpgsqlConnection connection, int encounter, string username, IReadOnlyList<string> changedFields, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into encounter_audit_events (event_id, encounter, occurred_at, username, action, changed_fields)
+            values (@eventId, @encounter, @occurredAt, @username, 'summary-updated', @changedFields);
+            """;
+        command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+        command.Parameters.AddWithValue("encounter", encounter);
+        command.Parameters.AddWithValue("occurredAt", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("changedFields", string.Join(',', changedFields));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void AddChangedField(List<string> fields, string name, string? prior, string? updated)
+    {
+        if (!string.Equals(prior, updated, StringComparison.Ordinal)) fields.Add(name);
+    }
+
     private static string? Normalize(string? value)
     {
         var trimmed = value?.Trim();
@@ -1914,4 +2006,7 @@ public sealed class EncounterRepository(NpgsqlDataSource dataSource)
     }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record EncounterSummaryAuditValues(
+        string? Reason, string? Sensitivity, string? ReferralSource, string? ExternalId, int? PosCode, string? BillingNote);
 }

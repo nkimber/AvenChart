@@ -87,6 +87,18 @@ public sealed record EncounterAmendmentHistoryItem(
     string Hash,
     string SignatureHash);
 
+public sealed record EncounterAuditEventItem(
+    Guid EventId,
+    string OccurredAt,
+    string Username,
+    string Action,
+    IReadOnlyList<string> ChangedFields);
+
+public sealed record EncounterAuditHistoryResponse(
+    int Encounter,
+    int EventCount,
+    IReadOnlyList<EncounterAuditEventItem> Events);
+
 public sealed record EncounterDiagnosisCode(
     string Code,
     string? Description,

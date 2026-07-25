@@ -8,6 +8,7 @@ import {
   createEncounterSoapNote,
   createEncounterVitals,
   getEncounterSoapNoteTemplates,
+  getEncounterAuditHistory,
   getEncounterDetail,
   moveEncounterDocument,
   replaceEncounterDocumentContent,
@@ -23,6 +24,7 @@ import {
   type EncounterListItem,
   type EncounterSoapNoteTemplate,
   type EncounterVitals,
+  type EncounterAuditHistory,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -231,6 +233,26 @@ function EncounterSignatures({ sessionId, username, detail, onDetailChange }: { 
       {detail.amendmentHistory.length > 0 && <div style={{ marginTop: 12 }}><p className="cl-soap-label">Amendment history</p>{detail.amendmentHistory.map((amendment) => <p key={amendment.signatureId} className="cl-empty-text">{amendment.signedAt} · {amendment.signerUsername}: {amendment.amendment}</p>)}</div>}
     </div>
   )
+}
+
+function EncounterAudit({ sessionId, detail }: { sessionId: string; detail: EncounterDetail }) {
+  const [history, setHistory] = useState<EncounterAuditHistory | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  async function load() {
+    try { setHistory(await getEncounterAuditHistory(sessionId, detail.encounter)); setFailed(false) }
+    catch { setFailed(true) }
+  }
+
+  return <div className="cl-card">
+    <div className="cl-card-header"><h2 className="cl-card-title">Encounter audit</h2><button className="cl-btn-secondary" type="button" onClick={() => { setExpanded((current) => !current); if (!history) void load() }}>{expanded ? 'Hide history' : 'View history'}</button></div>
+    {!expanded && <p className="cl-empty-text">Local summary changes retain actor, time, action, and changed-field evidence without duplicating clinical values.</p>}
+    {expanded && !history && !failed && <p className="cl-empty-text">Loading audit historyâ€¦</p>}
+    {expanded && failed && <p className="cl-empty-text">Audit history could not be loaded.</p>}
+    {expanded && history?.events.length === 0 && <p className="cl-empty-text">No audited summary changes for this encounter.</p>}
+    {expanded && history?.events.map((event) => <div key={event.eventId} className="cl-soap-section"><div className="cl-card-header"><p className="cl-soap-label">{event.action}</p><span className="cl-badge cl-badge-muted">{event.username}</span></div><p className="cl-empty-text">{new Date(event.occurredAt).toLocaleString()} Â· {event.changedFields.join(', ')}</p></div>)}
+  </div>
 }
 
 export default function PatientEncounters() {
@@ -667,6 +689,8 @@ export default function PatientEncounters() {
                     setDetailCache((current) => new Map(current).set(updated.id, updated))
                   }}
                 />
+
+                <EncounterAudit sessionId={session.sessionId} detail={enc} />
 
                 <EncounterDocuments
                   sessionId={session.sessionId}

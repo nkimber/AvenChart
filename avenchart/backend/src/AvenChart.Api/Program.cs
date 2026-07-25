@@ -1394,15 +1394,22 @@ encounters.MapPost("/", async (
 
 encounters.MapPut("/{encounter:int}", async (
         EncounterRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         EncounterUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var encounterDetail = await repository.UpdateSummaryAsync(encounter, request, session.Username, cancellationToken);
         return encounterDetail is null ? Results.NotFound() : Results.Ok(encounterDetail);
     })
     .WithName("UpdateEncounter")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+encounters.MapGet("/{encounter:int}/audit", async (EncounterRepository repository, int encounter, CancellationToken cancellationToken) =>
+    (await repository.GetAuditHistoryAsync(encounter, cancellationToken)) is { } history ? Results.Ok(history) : Results.NotFound())
+    .WithName("GetEncounterAuditHistory");
 
 encounters.MapPost("/{encounter:int}/vitals", async (
         EncounterRepository repository,
