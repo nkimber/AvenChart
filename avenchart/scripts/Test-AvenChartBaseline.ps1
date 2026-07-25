@@ -1881,6 +1881,8 @@ try {
         -and $createdSdoh.disabilityScale.hearing -eq "declined" `
         -and @($createdSdoh.generatedGoals).Count -eq 2 `
         -and (@($createdSdoh.generatedGoals | Where-Object { $_.domain -eq "food_insecurity" -and $_.description -eq "Improve Food insecurity" }).Count -eq 1) `
+        -and @($createdSdoh.generatedInterventions).Count -eq 1 `
+        -and (@($createdSdoh.generatedInterventions | Where-Object { $_.domain -eq "food_insecurity" -and $_.description -eq "Assistance with application for food pantry program" }).Count -eq 1) `
         -and $updatedSdoh.assessor -eq "Smoke assessor" `
         -and $updatedSdoh.instrumentScore -eq 1 `
         -and $updatedSdoh.hungerScore -eq 0 `
@@ -1895,6 +1897,7 @@ try {
         -and $updatedSdoh.disabilityScale.walk_climb -eq "no" `
         -and @($updatedSdoh.generatedGoals).Count -eq 1 `
         -and (@($updatedSdoh.generatedGoals | Where-Object { $_.domain -eq "transportation_insecurity" -and $_.description -eq "Improve Transportation insecurity" }).Count -eq 1) `
+        -and @($updatedSdoh.generatedInterventions).Count -eq 0 `
         -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
         -and $updatedSdoh.interventions -eq "Transportation resources retained." `
         -and $null -ne $historySdoh `

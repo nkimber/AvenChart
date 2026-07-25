@@ -44,6 +44,19 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         ["digital_access"] = "Digital access barrier"
     };
 
+    private static readonly IReadOnlyDictionary<string, (string Description, string Reason)> InterventionGuidance = new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+    {
+        ["food_insecurity"] = ("Assistance with application for food pantry program", "Food insecurity risk"),
+        ["housing_instability"] = ("Referral to local housing assistance resources", "Housing instability risk"),
+        ["transportation_insecurity"] = ("Arrange transportation for appointments (medical or social services)", "Transportation barrier present"),
+        ["utilities_insecurity"] = ("Referral to utility bill assistance program", "Utility shutoff risk"),
+        ["financial_strain"] = ("Referral to financial counseling / benefits navigator", "Financial strain"),
+        ["social_isolation"] = ("Referral to community/social connection programs", "Loneliness / social isolation"),
+        ["childcare_needs"] = ("Provide childcare resources and referral", "Childcare needs present"),
+        ["digital_access"] = ("Assist with device/internet access and digital literacy", "Limited digital access"),
+        ["interpersonal_safety"] = ("Provide IPV resources and safety planning; social work referral", "IPV risk present")
+    };
+
     public async Task<IReadOnlyList<PatientSdohAssessmentResponse>> GetAsync(string patientId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -229,6 +242,10 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             .Where(pair => domains.TryGetValue(pair.Key, out var value) && GoalPositiveStatuses.Contains(value.Status))
             .Select(pair => new PatientSdohGeneratedGoal(pair.Key, $"Improve {pair.Value}", goalDueDate))
             .ToArray();
+        var generatedInterventions = InterventionGuidance
+            .Where(pair => domains.TryGetValue(pair.Key, out var value) && value.Status is "present" or "at_risk" or "yes")
+            .Select(pair => new PatientSdohGeneratedIntervention(pair.Key, pair.Value.Description, pair.Value.Reason))
+            .ToArray();
         return new(
             reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
@@ -237,6 +254,7 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14).ToString("yyyy-MM-dd"),
             reader.IsDBNull(15) ? null : reader.GetString(15), reader.IsDBNull(16) ? null : reader.GetString(16), disabilityScale,
             generatedGoals,
+            generatedInterventions,
             domains,
             reader.IsDBNull(19) ? null : reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O"), reader.GetString(21),
             reader.GetFieldValue<DateTimeOffset>(22).ToString("O"), reader.GetString(23));

@@ -2,6 +2,7 @@ namespace AvenChart.Api.Models;
 
 public sealed record PatientSdohDomainValue(string Status, string? Notes);
 public sealed record PatientSdohGeneratedGoal(string Domain, string Description, string DueDate);
+public sealed record PatientSdohGeneratedIntervention(string Domain, string Description, string Reason);
 
 public sealed record PatientSdohAssessmentRequest(
     string AssessmentDate,
@@ -40,6 +41,7 @@ public sealed record PatientSdohAssessmentResponse(
     string? DisabilityStatusNotes,
     IReadOnlyDictionary<string, string> DisabilityScale,
     IReadOnlyList<PatientSdohGeneratedGoal> GeneratedGoals,
+    IReadOnlyList<PatientSdohGeneratedIntervention> GeneratedInterventions,
     IReadOnlyDictionary<string, PatientSdohDomainValue> Domains,
     string? Interventions,
     string CreatedAt,
