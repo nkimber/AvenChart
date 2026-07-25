@@ -64,6 +64,10 @@ function nullableId(value: string): number | null {
   return value ? Number(value) : null
 }
 
+function isCancelledStatus(status?: string | null) {
+  return status?.toLowerCase().includes('cancel') ?? false
+}
+
 export default function PatientAppointments() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
@@ -97,6 +101,10 @@ export default function PatientAppointments() {
   useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleStatusChange(apptId: string, status: string) {
+    if (status === 'Cancelled') {
+      await cancelAppointment(apptId)
+      return
+    }
     setUpdatingId(apptId)
     try {
       await updateAppointmentStatus(session.sessionId, apptId, status)
@@ -250,11 +258,38 @@ export default function PatientAppointments() {
     if (!window.confirm('Cancel this appointment?')) return
     setUpdatingId(id)
     try {
-      await deleteAppointment(session.sessionId, id)
+      await updateAppointmentStatus(session.sessionId, id, 'Cancelled')
       showToast('Appointment cancelled.', 'success')
       load()
     } catch {
       showToast('Could not cancel appointment.', 'error')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  async function restoreAppointment(id: string) {
+    setUpdatingId(id)
+    try {
+      await updateAppointmentStatus(session.sessionId, id, 'Scheduled')
+      showToast('Appointment restored to scheduled.', 'success')
+      load()
+    } catch {
+      showToast('Could not restore appointment.', 'error')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  async function deleteAppointmentPermanently(id: string) {
+    if (!window.confirm('Permanently delete this appointment? This cannot be undone.')) return
+    setUpdatingId(id)
+    try {
+      await deleteAppointment(session.sessionId, id)
+      showToast('Appointment deleted.', 'success')
+      load()
+    } catch {
+      showToast('Could not delete appointment.', 'error')
     } finally {
       setUpdatingId(null)
     }
@@ -507,7 +542,10 @@ export default function PatientAppointments() {
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openEditor(appointment)} aria-label={`Edit appointment on ${appointment.date}`}><Pencil size={13} /> Edit</button>
                     {appointment.isRecurringSeries && <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openRescheduler(appointment)} style={{ marginLeft: 6 }}>Reschedule</button>}
-                    <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment.id)} style={{ marginLeft: 6 }}>Cancel</button>
+                    {isCancelledStatus(appointment.status)
+                      ? <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => restoreAppointment(appointment.id)} style={{ marginLeft: 6 }}>Restore</button>
+                      : <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment.id)} style={{ marginLeft: 6 }}>Cancel</button>}
+                    <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => deleteAppointmentPermanently(appointment.id)} style={{ marginLeft: 6 }}>Delete</button>
                   </td>
                 </tr>
               ))}
