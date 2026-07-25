@@ -5,12 +5,14 @@ import {
   archiveEncounter,
   createEncounterSoapNote,
   createEncounterVitals,
+  getEncounterSoapNoteTemplates,
   getEncounterDetail,
   restoreEncounter,
   searchEncounters,
   updateEncounter,
   type EncounterDetail,
   type EncounterListItem,
+  type EncounterSoapNoteTemplate,
   type EncounterVitals,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -86,6 +88,9 @@ export default function PatientEncounters() {
   const [addSoapOpen, setAddSoapOpen] = useState(false)
   const [vitalsForm, setVitalsForm] = useState(BLANK_VITALS)
   const [soapForm, setSoapForm] = useState(BLANK_SOAP)
+  const [soapTemplates, setSoapTemplates] = useState<EncounterSoapNoteTemplate[]>([])
+  const [soapTemplateError, setSoapTemplateError] = useState<string | null>(null)
+  const [selectedSoapTemplateId, setSelectedSoapTemplateId] = useState('')
   const [saving, setSaving] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [archiving, setArchiving] = useState(false)
@@ -99,6 +104,20 @@ export default function PatientEncounters() {
       .catch((err) => setListState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId, showArchived])
+
+  useEffect(() => {
+    let cancelled = false
+    getEncounterSoapNoteTemplates(session.sessionId)
+      .then((catalog) => {
+        if (cancelled) return
+        setSoapTemplates(catalog.templates)
+        setSelectedSoapTemplateId((current) => current || catalog.templates.find((template) => template.isDefault)?.templateId || '')
+      })
+      .catch(() => {
+        if (!cancelled) setSoapTemplateError('SOAP templates are unavailable. You can still write a note manually.')
+      })
+    return () => { cancelled = true }
+  }, [session.sessionId])
 
   async function changeArchiveState(encounter: number, restore = false) {
     if (!restore && !window.confirm('Archive this encounter? Its notes, vitals, signatures, and documents remain intact and can be restored.')) return
@@ -132,6 +151,7 @@ export default function PatientEncounters() {
     if (listState.status !== 'ready') return []
     return extractVitalSeries(listState.data, detailCache)
   }, [listState, detailCache])
+  const selectedSoapTemplate = soapTemplates.find((template) => template.templateId === selectedSoapTemplateId)
 
   function openEncounter(id: number) {
     setSelectedId(id)
@@ -188,6 +208,19 @@ export default function PatientEncounters() {
       openEncounter(selectedId)
     } catch { showToast('Could not save SOAP note.', 'error') }
     finally { setSaving(false) }
+  }
+
+  function applySoapTemplate() {
+    const template = soapTemplates.find((item) => item.templateId === selectedSoapTemplateId)
+    if (!template) return
+    const hasDraft = Object.values(soapForm).some(Boolean)
+    if (hasDraft && !window.confirm('Apply this template and replace the current SOAP draft?')) return
+    setSoapForm({
+      subjective: template.subjective,
+      objective: template.objective,
+      assessment: template.assessment,
+      plan: template.plan,
+    })
   }
 
   return (
@@ -424,6 +457,20 @@ export default function PatientEncounters() {
                   </div>
                   {addSoapOpen && (
                     <form onSubmit={handleAddSoap}>
+                      <div className="form-row" style={{ alignItems: 'end', marginBottom: 12 }}>
+                        <div className="field">
+                          <label className="label" htmlFor="soap-template">SOAP template</label>
+                          <select id="soap-template" className="input" value={selectedSoapTemplateId} onChange={(event) => setSelectedSoapTemplateId(event.target.value)}>
+                            <option value="">Manual SOAP note</option>
+                            {soapTemplates.map((template) => <option key={template.templateId} value={template.templateId}>{template.category}: {template.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="field" style={{ flex: '0 0 auto' }}>
+                          <button className="cl-btn-secondary" type="button" onClick={applySoapTemplate} disabled={!selectedSoapTemplate}>Apply template</button>
+                        </div>
+                      </div>
+                      {selectedSoapTemplate && <p className="cl-empty-text" style={{ marginTop: -4, marginBottom: 12 }}>{selectedSoapTemplate.description}</p>}
+                      {soapTemplateError && <p className="cl-empty-text" style={{ marginTop: -4, marginBottom: 12 }}>{soapTemplateError}</p>}
                       {(['subjective', 'objective', 'assessment', 'plan'] as const).map((field) => (
                         <div key={field} className="field" style={{ marginBottom: 10 }}>
                           <label className="label" htmlFor={`soap-${field}`} style={{ textTransform: 'capitalize' }}>{field}</label>

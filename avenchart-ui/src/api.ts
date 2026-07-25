@@ -1179,6 +1179,25 @@ export type EncounterSoapNote = {
   plan?: string | null
 }
 
+export type EncounterSoapNoteTemplate = {
+  templateId: string
+  name: string
+  category: string
+  description: string
+  subjective: string
+  objective: string
+  assessment: string
+  plan: string
+  isDefault: boolean
+}
+
+export type EncounterSoapNoteTemplateCatalog = {
+  datasetId: string
+  datasetVersion: string
+  asOfDate: string
+  templates: EncounterSoapNoteTemplate[]
+}
+
 export type EncounterDiagnosisCode = {
   code: string
   description?: string | null
@@ -1903,6 +1922,13 @@ export async function createEncounterSoapNote(
   signal?: AbortSignal,
 ): Promise<{ id: number; detail: EncounterDetail }> {
   return clinicianPost(sessionId, `/api/encounters/${encounterId}/soap-notes`, body, signal)
+}
+
+export async function getEncounterSoapNoteTemplates(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<EncounterSoapNoteTemplateCatalog> {
+  return clinicianGet(sessionId, '/api/encounters/soap-note-templates', signal)
 }
 
 export async function signEncounter(
