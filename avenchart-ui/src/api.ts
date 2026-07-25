@@ -1494,6 +1494,9 @@ export type EncounterLayoutFormCatalog = { encounter: number; forms: { key: stri
 export async function getEncounterLayoutForms(sessionId: string, encounterId: number): Promise<EncounterLayoutFormCatalog> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms`) }
 export async function getEncounterLayoutForm(sessionId: string, encounterId: number, key: string): Promise<EncounterLayoutForm> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms/${key}`) }
 export async function saveEncounterLayoutForm(sessionId: string, encounterId: number, key: string, values: Record<string, string>): Promise<EncounterLayoutForm> { return clinicianPut(sessionId, `/api/encounters/${encounterId}/forms/${key}`, { values }) }
+export type EncounterClinicalAlert = { key: string; title: string; severity: 'info' | 'warning' | 'critical'; message: string; reason: string }
+export type EncounterClinicalAlerts = { encounter: number; alerts: EncounterClinicalAlert[] }
+export async function getEncounterClinicalAlerts(sessionId: string, encounterId: number): Promise<EncounterClinicalAlerts> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/alerts`) }
 export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }
 export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal) }
 

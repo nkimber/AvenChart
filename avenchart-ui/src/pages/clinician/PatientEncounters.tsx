@@ -10,6 +10,7 @@ import {
   getEncounterSoapNoteTemplates,
   getEncounterAuditHistory,
   getEncounterDetail,
+  getEncounterClinicalAlerts,
   getEncounterLayoutForm,
   getEncounterLayoutForms,
   moveEncounterDocument,
@@ -29,6 +30,7 @@ import {
   type EncounterVitals,
   type EncounterAuditHistory,
   type EncounterLayoutForm,
+  type EncounterClinicalAlert,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -304,6 +306,26 @@ function EncounterLayoutFormPanel({ sessionId, encounter }: { sessionId: string;
   return <section className="cl-card">
     <div className="cl-card-header"><div><h2 className="cl-card-title">Configured encounter form</h2><p className="cl-empty-text">Layout-backed values are saved as immutable revisions and do not modify core demographics.</p></div><div className="cl-inline-form-actions"><select className="input" value={selectedKey} onChange={(event) => { setSelectedKey(event.target.value); setOpen(false); setForm(null) }}>{forms.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}</select><button className="cl-btn-secondary" type="button" onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : open ? 'Reload' : 'Open form'}</button></div></div>
     {open && form && <form onSubmit={save}>{form.groups.map((group) => <fieldset key={group.key} className="cl-soap-section"><legend className="cl-soap-label">{group.title}</legend>{group.fields.map((field) => <div className="field" key={field.key} style={{ marginBottom: 10 }}><label className="label" htmlFor={`layout-${form.layoutKey}-${field.key}`}>{field.label}{field.required ? ' *' : ''}</label>{field.fieldType === 'textarea' ? <textarea id={`layout-${form.layoutKey}-${field.key}`} className="textarea" rows={3} maxLength={field.maxLength || undefined} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required} /> : field.fieldType === 'select' ? <select id={`layout-${form.layoutKey}-${field.key}`} className="input" value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required}><option value="">Select…</option>{field.options.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}</select> : field.fieldType === 'checkbox' ? <label><input id={`layout-${form.layoutKey}-${field.key}`} type="checkbox" checked={values[field.key] === 'true'} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.checked ? 'true' : 'false' }))} /> Yes</label> : <input id={`layout-${form.layoutKey}-${field.key}`} className="input" type={field.fieldType === 'number' ? 'number' : field.fieldType === 'date' ? 'date' : 'text'} maxLength={field.maxLength || undefined} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required} />}</div>)}</fieldset>)}<div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={savingForm}>{savingForm ? 'Saving…' : form.latestRecord ? 'Save new revision' : 'Save form'}</button><button className="cl-btn-secondary" type="button" onClick={() => setOpen(false)} disabled={savingForm}>Close</button></div>{form.latestRecord && <p className="cl-empty-text">Latest revision {form.latestRecord.revision} saved by {form.latestRecord.savedBy} at {new Date(form.latestRecord.savedAt).toLocaleString()}.</p>}</form>}
+  </section>
+}
+
+function EncounterClinicalAlerts({ sessionId, encounter }: { sessionId: string; encounter: number }) {
+  const [alerts, setAlerts] = useState<EncounterClinicalAlert[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    getEncounterClinicalAlerts(sessionId, encounter)
+      .then((response) => { if (!cancelled) setAlerts(response.alerts) })
+      .catch(() => { if (!cancelled) setAlerts([]) })
+    return () => { cancelled = true }
+  }, [sessionId, encounter])
+
+  if (alerts.length === 0) return null
+  return <section className="cl-card" aria-label="Clinical alerts">
+    <div className="cl-card-header"><div><h2 className="cl-card-title">Clinical alerts</h2><p className="cl-empty-text">Active rule definitions evaluated for this encounter.</p></div></div>
+    {alerts.map((alert) => <div key={alert.key} className="cl-soap-section" style={{ borderLeft: `4px solid ${alert.severity === 'critical' ? '#b42318' : alert.severity === 'warning' ? '#b54708' : '#175cd3'}` }}>
+      <p className="cl-soap-label">{alert.title} · {alert.severity}</p><p className="cl-soap-text">{alert.message}</p><p className="cl-empty-text">{alert.reason}</p>
+    </div>)}
   </section>
 }
 
@@ -731,6 +753,8 @@ export default function PatientEncounters() {
                     <p className="cl-empty-text">No SOAP note. <button className="cl-link" type="button" onClick={() => setAddSoapOpen(true)}>Add note</button></p>
                   )}
                 </div>
+
+                <EncounterClinicalAlerts sessionId={session.sessionId} encounter={enc.encounter} />
 
                 <EncounterLayoutFormPanel sessionId={session.sessionId} encounter={enc.encounter} />
 

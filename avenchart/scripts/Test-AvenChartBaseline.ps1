@@ -7462,6 +7462,21 @@ catch {
 }
 
 try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $allergyReviewEncounter = 1009011
+    $clinicalAlerts = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$allergyReviewEncounter/alerts" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $allergyReview = $clinicalAlerts.alerts | Where-Object { $_.key -eq "ALLERGY_REVIEW" } | Select-Object -First 1
+    $clinicalAlertPassed = $null -ne $allergyReview `
+        -and $allergyReview.severity -eq "warning" `
+        -and $allergyReview.message -eq "Review documented allergies before completing the encounter." `
+        -and $allergyReview.reason -eq "No active allergy records are documented for this patient."
+    Add-Check -Name "encounter clinical allergy-review alert" -Result $(if ($clinicalAlertPassed) { "passed" } else { "failed" }) -Details @{ encounter = $allergyReviewEncounter; alert = $allergyReview }
+}
+catch {
+    Add-Check -Name "encounter clinical allergy-review alert" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $unauthenticatedProceduresStatus = 0
     try {
         $unauthenticatedProcedures = Invoke-WebRequest `

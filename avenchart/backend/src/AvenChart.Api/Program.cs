@@ -41,6 +41,7 @@ builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
 builder.Services.AddScoped<EncounterLayoutFormRepository>();
+builder.Services.AddScoped<ClinicalAlertEvaluationRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<DocumentRepository>();
@@ -1373,6 +1374,10 @@ encounters.MapGet("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFo
 encounters.MapGet("/{encounter:int}/forms", async (EncounterLayoutFormRepository repository, int encounter, CancellationToken cancellationToken) =>
     (await repository.GetAvailableAsync(encounter, cancellationToken)) is { } forms ? Results.Ok(forms) : Results.NotFound())
     .WithName("GetEncounterLayoutFormCatalog");
+
+encounters.MapGet("/{encounter:int}/alerts", async (ClinicalAlertEvaluationRepository repository, int encounter, CancellationToken cancellationToken) =>
+    (await repository.GetEncounterAlertsAsync(encounter, cancellationToken)) is { } alerts ? Results.Ok(alerts) : Results.NotFound())
+    .WithName("GetEncounterClinicalAlerts");
 
 encounters.MapPut("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFormRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string layoutKey, EncounterLayoutFormSaveRequest request, CancellationToken cancellationToken) =>
 {
