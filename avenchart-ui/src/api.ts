@@ -1485,6 +1485,15 @@ export async function updateEncounter(sessionId: string, encounterId: number, bo
 export type EncounterAuditEvent = { eventId: string; occurredAt: string; username: string; action: string; changedFields: string[] }
 export type EncounterAuditHistory = { encounter: number; eventCount: number; events: EncounterAuditEvent[] }
 export async function getEncounterAuditHistory(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<EncounterAuditHistory> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/audit`, signal) }
+export type EncounterLayoutFormOption = { key: string; title: string; value: string; isDefault: boolean }
+export type EncounterLayoutFormField = { key: string; groupKey: string; label: string; fieldType: 'text' | 'date' | 'select' | 'textarea' | 'checkbox' | 'number'; required: boolean; maxLength: number; defaultValue: string; options: EncounterLayoutFormOption[] }
+export type EncounterLayoutFormGroup = { key: string; title: string; fields: EncounterLayoutFormField[] }
+export type EncounterLayoutFormRecord = { recordId: string; revision: number; savedAt: string; savedBy: string; values: Record<string, string> }
+export type EncounterLayoutForm = { encounter: number; layoutKey: string; title: string; groups: EncounterLayoutFormGroup[]; latestRecord?: EncounterLayoutFormRecord | null }
+export type EncounterLayoutFormCatalog = { encounter: number; forms: { key: string; title: string }[] }
+export async function getEncounterLayoutForms(sessionId: string, encounterId: number): Promise<EncounterLayoutFormCatalog> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms`) }
+export async function getEncounterLayoutForm(sessionId: string, encounterId: number, key: string): Promise<EncounterLayoutForm> { return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms/${key}`) }
+export async function saveEncounterLayoutForm(sessionId: string, encounterId: number, key: string, values: Record<string, string>): Promise<EncounterLayoutForm> { return clinicianPut(sessionId, `/api/encounters/${encounterId}/forms/${key}`, { values }) }
 export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal) }
 export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> { await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal) }
 

@@ -10,12 +10,15 @@ import {
   getEncounterSoapNoteTemplates,
   getEncounterAuditHistory,
   getEncounterDetail,
+  getEncounterLayoutForm,
+  getEncounterLayoutForms,
   moveEncounterDocument,
   replaceEncounterDocumentContent,
   restoreEncounter,
   restoreEncounterDocument,
   searchEncounters,
   signEncounter,
+  saveEncounterLayoutForm,
   signEncounterDocument,
   updateEncounterDocumentMetadata,
   updateEncounter,
@@ -25,6 +28,7 @@ import {
   type EncounterSoapNoteTemplate,
   type EncounterVitals,
   type EncounterAuditHistory,
+  type EncounterLayoutForm,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -253,6 +257,54 @@ function EncounterAudit({ sessionId, detail }: { sessionId: string; detail: Enco
     {expanded && history?.events.length === 0 && <p className="cl-empty-text">No audited summary changes for this encounter.</p>}
     {expanded && history?.events.map((event) => <div key={event.eventId} className="cl-soap-section"><div className="cl-card-header"><p className="cl-soap-label">{event.action}</p><span className="cl-badge cl-badge-muted">{event.username}</span></div><p className="cl-empty-text">{new Date(event.occurredAt).toLocaleString()} Â· {event.changedFields.join(', ')}</p></div>)}
   </div>
+}
+
+function EncounterLayoutFormPanel({ sessionId, encounter }: { sessionId: string; encounter: number }) {
+  const [forms, setForms] = useState<{ key: string; title: string }[]>([])
+  const [selectedKey, setSelectedKey] = useState('')
+  const [form, setForm] = useState<EncounterLayoutForm | null>(null)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [savingForm, setSavingForm] = useState(false)
+
+  function initialValues(detail: EncounterLayoutForm) {
+    const saved = detail.latestRecord?.values ?? {}
+    return Object.fromEntries(detail.groups.flatMap((group) => group.fields.map((field) => [field.key, saved[field.key] ?? field.defaultValue ?? field.options.find((option) => option.isDefault)?.key ?? ''])))
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    getEncounterLayoutForms(sessionId, encounter).then((catalog) => {
+      if (cancelled) return
+      setForms(catalog.forms)
+      setSelectedKey(catalog.forms[0]?.key ?? '')
+    }).catch(() => { if (!cancelled) setForms([]) })
+    return () => { cancelled = true }
+  }, [encounter, sessionId])
+
+  async function load() {
+    if (!selectedKey) return
+    setLoading(true)
+    try { const detail = await getEncounterLayoutForm(sessionId, encounter, selectedKey); setForm(detail); setValues(initialValues(detail)); setOpen(true) }
+    catch { showToast('Could not load the configured form.', 'error') }
+    finally { setLoading(false) }
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault()
+    if (!form) return
+    setSavingForm(true)
+    try { const saved = await saveEncounterLayoutForm(sessionId, encounter, form.layoutKey, values); setForm(saved); setValues(initialValues(saved)); showToast(`${saved.title} saved as revision ${saved.latestRecord?.revision}.`, 'success') }
+    catch { showToast('Could not save the configured form. Complete required fields and use valid list values.', 'error') }
+    finally { setSavingForm(false) }
+  }
+
+  if (forms.length === 0) return null
+  return <section className="cl-card">
+    <div className="cl-card-header"><div><h2 className="cl-card-title">Configured encounter form</h2><p className="cl-empty-text">Layout-backed values are saved as immutable revisions and do not modify core demographics.</p></div><div className="cl-inline-form-actions"><select className="input" value={selectedKey} onChange={(event) => { setSelectedKey(event.target.value); setOpen(false); setForm(null) }}>{forms.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}</select><button className="cl-btn-secondary" type="button" onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : open ? 'Reload' : 'Open form'}</button></div></div>
+    {open && form && <form onSubmit={save}>{form.groups.map((group) => <fieldset key={group.key} className="cl-soap-section"><legend className="cl-soap-label">{group.title}</legend>{group.fields.map((field) => <div className="field" key={field.key} style={{ marginBottom: 10 }}><label className="label" htmlFor={`layout-${form.layoutKey}-${field.key}`}>{field.label}{field.required ? ' *' : ''}</label>{field.fieldType === 'textarea' ? <textarea id={`layout-${form.layoutKey}-${field.key}`} className="textarea" rows={3} maxLength={field.maxLength || undefined} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required} /> : field.fieldType === 'select' ? <select id={`layout-${form.layoutKey}-${field.key}`} className="input" value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required}><option value="">Select…</option>{field.options.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}</select> : field.fieldType === 'checkbox' ? <label><input id={`layout-${form.layoutKey}-${field.key}`} type="checkbox" checked={values[field.key] === 'true'} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.checked ? 'true' : 'false' }))} /> Yes</label> : <input id={`layout-${form.layoutKey}-${field.key}`} className="input" type={field.fieldType === 'number' ? 'number' : field.fieldType === 'date' ? 'date' : 'text'} maxLength={field.maxLength || undefined} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required={field.required} />}</div>)}</fieldset>)}<div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={savingForm}>{savingForm ? 'Saving…' : form.latestRecord ? 'Save new revision' : 'Save form'}</button><button className="cl-btn-secondary" type="button" onClick={() => setOpen(false)} disabled={savingForm}>Close</button></div>{form.latestRecord && <p className="cl-empty-text">Latest revision {form.latestRecord.revision} saved by {form.latestRecord.savedBy} at {new Date(form.latestRecord.savedAt).toLocaleString()}.</p>}</form>}
+  </section>
 }
 
 export default function PatientEncounters() {
@@ -679,6 +731,8 @@ export default function PatientEncounters() {
                     <p className="cl-empty-text">No SOAP note. <button className="cl-link" type="button" onClick={() => setAddSoapOpen(true)}>Add note</button></p>
                   )}
                 </div>
+
+                <EncounterLayoutFormPanel sessionId={session.sessionId} encounter={enc.encounter} />
 
                 <EncounterSignatures
                   sessionId={session.sessionId}

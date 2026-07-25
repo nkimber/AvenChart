@@ -302,6 +302,8 @@ drop table if exists pharmacies;
 drop table if exists clinical_notes;
 drop table if exists vitals;
 drop table if exists encounter_audit_events;
+drop table if exists encounter_layout_form_values;
+drop table if exists encounter_layout_form_records;
 drop table if exists encounters;
 drop table if exists appointments;
 drop table if exists insurance_records;
@@ -824,6 +826,14 @@ create table encounters (
   pos_code integer,
   billing_note text,
   source_appointment_id text references appointments(id)
+);
+create table encounter_layout_form_records (
+  record_id uuid primary key, encounter integer not null, layout_key text not null references form_layouts(layout_key),
+  revision integer not null, saved_at timestamptz not null, saved_by text not null, unique (encounter, layout_key, revision)
+);
+create table encounter_layout_form_values (
+  record_id uuid not null references encounter_layout_form_records(record_id), field_key text not null, field_label text not null,
+  field_value text not null, primary key (record_id, field_key)
 );
 
 create table encounter_signatures (
@@ -1550,14 +1560,18 @@ copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active'
 ])
 copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'Demographics', 'Core', 10, true, '2026-01-01T00:00:00Z', 'seed'],
+  ['INTAKE', 'Encounter intake', 'Encounter', 20, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_option_lists', ['list_key', 'title', 'active', 'updated_at', 'updated_by'], [
   ['state', 'State or province', true, '2026-01-01T00:00:00Z', 'seed'],
+  ['yesno', 'Yes or no', true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_option_values', ['list_key', 'option_key', 'title', 'sequence', 'is_default', 'active', 'option_value', 'updated_at', 'updated_by'], [
   ['state', 'MA', 'Massachusetts', 10, false, true, 'MA', '2026-01-01T00:00:00Z', 'seed'],
   ['state', 'NY', 'New York', 20, false, true, 'NY', '2026-01-01T00:00:00Z', 'seed'],
   ['state', 'PA', 'Pennsylvania', 30, false, true, 'PA', '2026-01-01T00:00:00Z', 'seed'],
+  ['yesno', 'yes', 'Yes', 10, false, true, 'yes', '2026-01-01T00:00:00Z', 'seed'],
+  ['yesno', 'no', 'No', 20, true, true, 'no', '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('clinical_alert_rules', ['rule_key', 'title', 'trigger_type', 'target_type', 'severity', 'message', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['APPOINTMENT_REMINDER', 'Upcoming appointment', 'appointment', 'reminder', 'info', 'Appointment reminder is due.', 10, true, '2026-01-01T00:00:00Z', 'seed'],
@@ -1573,12 +1587,15 @@ copyRows('api_client_registry', ['client_key', 'display_name', 'redirect_uri', '
 ])
 copyRows('form_layout_groups', ['layout_key', 'group_key', 'title', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'who', 'Who', 10, true, '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'contact', 'Contact', 20, true, '2026-01-01T00:00:00Z', 'seed'],
+  ['INTAKE', 'screening', 'Screening', 10, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
   ['DEM', 'first_name', 'who', 'First name', 'text', 10, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'last_name', 'who', 'Last name', 'text', 20, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'birth_date', 'who', 'Date of birth', 'date', 30, true, true, 10, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'phone', 'contact', 'Phone', 'text', 10, false, true, 40, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'email', 'contact', 'Email', 'text', 20, false, true, 95, '', '', '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
   ['DEM', 'state', 'contact', 'State or province', 'select', 30, false, true, 2, 'state', '', '2026-01-01T00:00:00Z', 'seed'],
+  ['INTAKE', 'chief_concern', 'screening', 'Chief concern', 'textarea', 10, true, true, 1000, '', '', '2026-01-01T00:00:00Z', 'seed'],
+  ['INTAKE', 'follow_up_needed', 'screening', 'Follow-up needed', 'select', 20, true, true, 3, 'yesno', 'no', '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)

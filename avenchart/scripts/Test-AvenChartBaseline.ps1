@@ -7437,6 +7437,31 @@ finally {
 }
 
 try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $encounterSearch = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/?patientId=MOD-PAT-0001&limit=1" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $formEncounter = $encounterSearch.encounters | Select-Object -First 1
+    if ($null -eq $formEncounter) { throw "An encounter fixture was not found." }
+    $formCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($formEncounter.encounter)/forms" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $intakeCatalog = $formCatalog.forms | Where-Object { $_.key -eq "INTAKE" } | Select-Object -First 1
+    $beforeForm = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($formEncounter.encounter)/forms/INTAKE" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $expectedRevision = if ($null -eq $beforeForm.latestRecord) { 1 } else { $beforeForm.latestRecord.revision + 1 }
+    $savedForm = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/$($formEncounter.encounter)/forms/INTAKE" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body (@{ values = @{ chief_concern = "Smoke intake revision $expectedRevision"; follow_up_needed = "no" } } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $formValues = $savedForm.latestRecord.values
+    $encounterFormPassed = $null -ne $intakeCatalog `
+        -and $savedForm.groups.Count -eq 1 `
+        -and $savedForm.groups[0].fields.Count -eq 2 `
+        -and $savedForm.groups[0].fields[1].options.Count -eq 2 `
+        -and $savedForm.latestRecord.revision -eq $expectedRevision `
+        -and $savedForm.latestRecord.savedBy -eq "admin" `
+        -and $formValues.chief_concern -eq "Smoke intake revision $expectedRevision" `
+        -and $formValues.follow_up_needed -eq "no"
+    Add-Check -Name "encounter configured form revision lifecycle" -Result $(if ($encounterFormPassed) { "passed" } else { "failed" }) -Details @{ encounter = $formEncounter.encounter; expectedRevision = $expectedRevision; catalog = $formCatalog.forms; latestRecord = $savedForm.latestRecord }
+}
+catch {
+    Add-Check -Name "encounter configured form revision lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $unauthenticatedProceduresStatus = 0
     try {
         $unauthenticatedProcedures = Invoke-WebRequest `

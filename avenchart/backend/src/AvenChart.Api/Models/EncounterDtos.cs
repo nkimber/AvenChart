@@ -235,6 +235,15 @@ public sealed record EncounterFormMutationResponse(
     int Id,
     EncounterDetail Detail);
 
+public sealed record EncounterLayoutFormOption(string Key, string Title, string Value, bool IsDefault);
+public sealed record EncounterLayoutFormField(string Key, string GroupKey, string Label, string FieldType, bool Required, int MaxLength, string DefaultValue, IReadOnlyList<EncounterLayoutFormOption> Options);
+public sealed record EncounterLayoutFormGroup(string Key, string Title, IReadOnlyList<EncounterLayoutFormField> Fields);
+public sealed record EncounterLayoutFormRecord(Guid RecordId, int Revision, string SavedAt, string SavedBy, IReadOnlyDictionary<string, string> Values);
+public sealed record EncounterLayoutFormCatalogItem(string Key, string Title);
+public sealed record EncounterLayoutFormCatalogResponse(int Encounter, IReadOnlyList<EncounterLayoutFormCatalogItem> Forms);
+public sealed record EncounterLayoutFormResponse(int Encounter, string LayoutKey, string Title, IReadOnlyList<EncounterLayoutFormGroup> Groups, EncounterLayoutFormRecord? LatestRecord);
+public sealed record EncounterLayoutFormSaveRequest(IReadOnlyDictionary<string, string?> Values);
+
 public sealed record EncounterSignRequest(
     string SignerUsername,
     string SignedAt,

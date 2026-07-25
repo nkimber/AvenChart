@@ -40,6 +40,7 @@ builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
+builder.Services.AddScoped<EncounterLayoutFormRepository>();
 builder.Services.AddScoped<ClinicalListRepository>();
 builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<DocumentRepository>();
@@ -1363,6 +1364,22 @@ encounters.MapGet("/soap-note-templates", async (
         return Results.Ok(response);
     })
     .WithName("GetEncounterSoapNoteTemplates")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+encounters.MapGet("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFormRepository repository, int encounter, string layoutKey, CancellationToken cancellationToken) =>
+    (await repository.GetAsync(encounter, layoutKey, cancellationToken)) is { } form ? Results.Ok(form) : Results.NotFound())
+    .WithName("GetEncounterLayoutForm");
+
+encounters.MapGet("/{encounter:int}/forms", async (EncounterLayoutFormRepository repository, int encounter, CancellationToken cancellationToken) =>
+    (await repository.GetAvailableAsync(encounter, cancellationToken)) is { } forms ? Results.Ok(forms) : Results.NotFound())
+    .WithName("GetEncounterLayoutFormCatalog");
+
+encounters.MapPut("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFormRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, string layoutKey, EncounterLayoutFormSaveRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.SaveAsync(encounter, layoutKey, request, session.Username, cancellationToken)) is { } form ? Results.Ok(form) : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
+    .WithName("SaveEncounterLayoutForm")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 encounters.MapGet("/{encounter:int}", async (
