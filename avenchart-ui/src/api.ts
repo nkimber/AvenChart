@@ -2002,6 +2002,9 @@ export async function getAdministrationDirectory(
 }
 export type ConfigurationCatalogItem = { key: string; family: string; classification: string; authority: string; validation: string; mutationState: string }
 export async function getConfigurationCatalog(sessionId: string): Promise<{ settings: ConfigurationCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/configuration-catalog') }
+export type PracticeSettingItem = { key: string; label: string; value: string; valueType: string; updatedAt: string; updatedBy: string }
+export async function getPracticeSettings(sessionId: string): Promise<{ settings: PracticeSettingItem[] }> { return clinicianGet(sessionId, '/api/administration/practice-settings') }
+export async function updatePracticeSetting(sessionId: string, key: string, value: string): Promise<{ settings: PracticeSettingItem[] }> { return clinicianPut(sessionId, `/api/administration/practice-settings/${key}`, { value }) }
 
 export type PhiAccessAuditEvent = {
   auditId: string

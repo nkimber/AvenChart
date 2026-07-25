@@ -10,6 +10,7 @@ import {
   getAdministrationDirectory,
   getConfigurationCatalog,
   getPhiAccessAudit,
+  getPracticeSettings,
   grantAdministrationAccessMembership,
   grantAdministrationAccessPermission,
   revokeAdministrationAccessMembership,
@@ -17,6 +18,7 @@ import {
   revertAdministrationPortalProfileReview,
   updateAdministrationFacility,
   updateAdministrationUser,
+  updatePracticeSetting,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
@@ -27,6 +29,7 @@ import {
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
   type ConfigurationCatalogItem,
+  type PracticeSettingItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -111,6 +114,7 @@ export default function AdminDirectory() {
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
   const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
+  const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -142,7 +146,7 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
-  useEffect(() => { if (tab === 'configuration') getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error')) }, [session.sessionId, tab])
+  useEffect(() => { if (tab === 'configuration') { getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error')); getPracticeSettings(session.sessionId).then((result) => setPracticeSettings(result.settings)).catch(() => showToast('Could not load practice settings.', 'error')) } }, [session.sessionId, tab])
 
   function beginFacilityCreate() {
     setFacilityForm(emptyFacilityForm())
@@ -581,7 +585,7 @@ export default function AdminDirectory() {
               </section>
             )}
 
-            {tab === 'configuration' && <section className="cl-card"><h2 className="cl-card-title">Configuration catalog</h2><p className="clinician-page-subtitle">Settings remain read-only until their authoritative source, validation, audit, and rollback contract are approved. Deployment secrets are excluded.</p><table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table></section>}
+            {tab === 'configuration' && <section className="cl-card"><h2 className="cl-card-title">Practice settings</h2><p className="clinician-page-subtitle">Non-secret legacy-style globals save only when changed and retain an authenticated audit event.</p>{practiceSettings.map((item) => <div className="form-row" key={item.key}><div className="field" style={{ flex: 1 }}><label className="label">{item.label}</label><input className="input" defaultValue={item.value} onBlur={async (event) => { if (event.target.value === item.value) return; try { const result = await updatePracticeSetting(session.sessionId, item.key, event.target.value); setPracticeSettings(result.settings); showToast(`${item.label} saved.`, 'success') } catch { event.target.value = item.value; showToast(`Could not save ${item.label}.`, 'error') } }} /></div><p className="cl-empty-text">{item.updatedBy}</p></div>)}<h2 className="cl-card-title">Configuration catalog</h2><table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table></section>}
 
             {tab === 'access' && (
               <section className="cl-card">

@@ -172,3 +172,16 @@ public sealed record AdministrationUserMutationRequest(
 public sealed record AdministrationUserMutationResponse(
     int Id,
     AdministrationDirectoryResponse Detail);
+
+public sealed record PracticeSettingItem(
+    string Key,
+    string Label,
+    string Value,
+    string ValueType,
+    string UpdatedAt,
+    string UpdatedBy);
+
+public sealed record PracticeSettingsResponse(
+    IReadOnlyList<PracticeSettingItem> Settings);
+
+public sealed record PracticeSettingUpdateRequest(string Value);

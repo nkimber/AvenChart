@@ -3412,6 +3412,15 @@ administration.MapGet("/configuration-catalog", () => Results.Ok(new Configurati
     new("integrations.secrets", "Security and integration settings", "Deployment-only", "Security and operations owners", "Environment validation; never return secrets", "Excluded from application API")
 ]))).WithName("GetConfigurationCatalog");
 
+administration.MapGet("/practice-settings", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");
+
+administration.MapPut("/practice-settings/{key}", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, string key, PracticeSettingUpdateRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.UpdatePracticeSettingAsync(key, request.Value, session.Username, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("UpdatePracticeSetting");
+
 administration.MapGet("/directory", async (
         AdministrationRepository repository,
         CancellationToken cancellationToken) =>

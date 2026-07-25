@@ -315,10 +315,13 @@ drop table if exists patient_portal_message_audit_events;
 drop table if exists patient_portal_report_audit_events;
 drop table if exists patient_portal_sessions;
 drop table if exists patient_portal_accounts;
+drop table if exists referrals;
 drop table if exists patients;
 drop table if exists access_user_memberships;
 drop table if exists auth_sessions;
 drop table if exists auth_audit_events;
+drop table if exists practice_setting_audit_events;
+drop table if exists practice_settings;
 drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
@@ -361,6 +364,22 @@ create table staff (
   email text,
   npi text,
   active boolean not null default true
+);
+
+create table practice_settings (
+  setting_key text primary key,
+  setting_value text not null,
+  value_type text not null,
+  updated_at timestamptz not null,
+  updated_by text not null
+);
+create table practice_setting_audit_events (
+  event_id uuid primary key,
+  setting_key text not null,
+  prior_value text not null,
+  new_value text not null,
+  occurred_at timestamptz not null,
+  username text not null
 );
 
 create table auth_accounts (
@@ -1462,6 +1481,12 @@ copyRows('auth_accounts', ['username', 'display_name', 'role', 'staff_id', 'acti
   ['admin', 'Administrator', 'administrator', null, true, demoCredentialSalt, hashDemoPassword('pass')],
   ['gold-frontdesk-01', 'Parker Fleming', 'frontdesk', 117, true, demoCredentialSalt, hashDemoPassword('pass')],
   ['gold-provider-01', 'Alex Walker', 'provider', 101, true, demoCredentialSalt, hashDemoPassword('pass')],
+])
+
+copyRows('practice_settings', ['setting_key', 'setting_value', 'value_type', 'updated_at', 'updated_by'], [
+  ['practice.name', 'Modernized Legacy EHR Practice', 'text', '2026-01-01T00:00:00Z', 'seed'],
+  ['practice.default-facility-id', '10', 'facility-id', '2026-01-01T00:00:00Z', 'seed'],
+  ['practice.time-zone', 'America/New_York', 'iana-time-zone', '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)

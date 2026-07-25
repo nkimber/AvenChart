@@ -19,6 +19,32 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         "wsome"
     };
 
+    public async Task<PracticeSettingsResponse> GetPracticeSettingsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select setting_key, setting_value, value_type, updated_at, updated_by from practice_settings order by setting_key;";
+        var settings = new List<PracticeSettingItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) settings.Add(new(reader.GetString(0), reader.GetString(0) switch { "practice.name" => "Practice name", "practice.default-facility-id" => "Default facility", _ => "Time zone" }, reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3).ToString("O"), reader.GetString(4)));
+        return new PracticeSettingsResponse(settings);
+    }
+
+    public async Task<PracticeSettingsResponse> UpdatePracticeSettingAsync(string key, string value, string username, CancellationToken cancellationToken)
+    {
+        if (key is not ("practice.name" or "practice.default-facility-id" or "practice.time-zone")) throw new ArgumentException("The requested practice setting is not mutable.");
+        var normalized = value.Trim();
+        if (string.IsNullOrWhiteSpace(normalized)) throw new ArgumentException("A setting value is required.");
+        if (key == "practice.default-facility-id" && (!int.TryParse(normalized, out var facilityId) || facilityId <= 0)) throw new ArgumentException("Default facility must be a valid facility identifier.");
+        if (key == "practice.time-zone" && !TimeZoneInfo.GetSystemTimeZones().Any(zone => zone.Id == normalized)) throw new ArgumentException("Time zone must be a supported IANA or Windows time-zone identifier.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var existing = connection.CreateCommand(); existing.Transaction = transaction; existing.CommandText = "select setting_value from practice_settings where setting_key = @key for update;"; existing.Parameters.AddWithValue("key", key);
+        var prior = await existing.ExecuteScalarAsync(cancellationToken) as string ?? throw new ArgumentException("The requested practice setting was not found.");
+        if (prior != normalized) { await using var update = connection.CreateCommand(); update.Transaction = transaction; update.CommandText = "update practice_settings set setting_value=@value, updated_at=now(), updated_by=@username where setting_key=@key; insert into practice_setting_audit_events(event_id,setting_key,prior_value,new_value,occurred_at,username) values(@eventId,@key,@prior,@value,now(),@username);"; update.Parameters.AddWithValue("key", key); update.Parameters.AddWithValue("value", normalized); update.Parameters.AddWithValue("prior", prior); update.Parameters.AddWithValue("username", username); update.Parameters.AddWithValue("eventId", Guid.NewGuid()); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await transaction.CommitAsync(cancellationToken); return await GetPracticeSettingsAsync(cancellationToken);
+    }
+
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
