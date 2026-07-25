@@ -122,6 +122,62 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             Appointments: appointments);
     }
 
+    public async Task<AppointmentSchedulingOptionsResponse> GetSchedulingOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        await using var providersCommand = connection.CreateCommand();
+        providersCommand.CommandText = """
+            select
+                s.id,
+                trim(concat(s.last_name, ', ', s.first_name)) as display_name,
+                s.facility_id,
+                f.name as facility_name
+            from staff s
+            left join facilities f on f.id = s.facility_id
+            where s.active = true
+              and s.calendar = true
+              and s.username <> ''
+            order by s.last_name, s.first_name, s.id;
+            """;
+
+        var providers = new List<AppointmentSchedulingProviderOption>();
+        await using (var reader = await providersCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                providers.Add(new AppointmentSchedulingProviderOption(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    DisplayName: ReadNullableString(reader, "display_name") ?? string.Empty,
+                    FacilityId: ReadNullableInt(reader, "facility_id"),
+                    FacilityName: ReadNullableString(reader, "facility_name")));
+            }
+        }
+
+        await using var facilitiesCommand = connection.CreateCommand();
+        facilitiesCommand.CommandText = """
+            select id, name, code
+            from facilities
+            where inactive = false
+            order by name, id;
+            """;
+
+        var facilities = new List<AppointmentSchedulingFacilityOption>();
+        await using (var reader = await facilitiesCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                facilities.Add(new AppointmentSchedulingFacilityOption(
+                    Id: reader.GetInt32(reader.GetOrdinal("id")),
+                    Name: ReadNullableString(reader, "name") ?? string.Empty,
+                    Code: ReadNullableString(reader, "code")));
+            }
+        }
+
+        return new AppointmentSchedulingOptionsResponse(providers, facilities);
+    }
+
     public async Task<AppointmentDetail?> GetByIdAsync(string appointmentId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);

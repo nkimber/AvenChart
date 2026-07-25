@@ -9,6 +9,21 @@ public sealed record AppointmentSearchResponse(
     int TotalMatches,
     IReadOnlyList<AppointmentListItem> Appointments);
 
+public sealed record AppointmentSchedulingOptionsResponse(
+    IReadOnlyList<AppointmentSchedulingProviderOption> Providers,
+    IReadOnlyList<AppointmentSchedulingFacilityOption> Facilities);
+
+public sealed record AppointmentSchedulingProviderOption(
+    int Id,
+    string DisplayName,
+    int? FacilityId,
+    string? FacilityName);
+
+public sealed record AppointmentSchedulingFacilityOption(
+    int Id,
+    string Name,
+    string? Code);
+
 public sealed record AppointmentListItem(
     string Id,
     string SeriesRootId,

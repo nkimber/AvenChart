@@ -988,6 +988,10 @@ appointments.MapGet("/flow-board", async (FlowBoardRepository repository, string
     Results.Ok(await repository.GetAsync(date, cancellationToken)))
     .WithName("GetAppointmentFlowBoard");
 
+appointments.MapGet("/scheduling-options", async (AppointmentRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetSchedulingOptionsAsync(cancellationToken)))
+    .WithName("GetAppointmentSchedulingOptions");
+
 appointments.MapGet("/", async (
         AppointmentRepository repository,
         string? patientId,

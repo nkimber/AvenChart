@@ -871,6 +871,10 @@ export async function getPatientChartSummary(
 
 export type AppointmentListItem = {
   id: string
+  seriesRootId: string
+  isRecurringSeries: boolean
+  isVirtualOccurrence: boolean
+  occurrenceNumber?: number | null
   patientId: string
   patientDisplayName: string
   pubpid: string
@@ -880,15 +884,47 @@ export type AppointmentListItem = {
   title: string
   status?: string | null
   room?: string | null
+  categoryId?: number | null
   categoryName?: string | null
+  providerId?: number | null
   providerName?: string | null
+  facilityId?: number | null
   facilityName?: string | null
+  billingLocationId?: number | null
+  billingLocationName?: string | null
   comments?: string | null
+  recurrenceType: number
+  repeatFrequency?: number | null
+  repeatUnit?: number | null
+  repeatOnNum?: number | null
+  repeatOnDay?: number | null
+  repeatOnFrequency?: number | null
+  recurrenceDays: number[]
+  recurrenceEndDate?: string | null
+  recurrenceExdates: string[]
 }
 
 export type AppointmentSearchResponse = {
   totalMatches: number
   appointments: AppointmentListItem[]
+}
+
+export type AppointmentSchedulingProviderOption = {
+  id: number
+  displayName: string
+  facilityId?: number | null
+  facilityName?: string | null
+}
+
+export type AppointmentSchedulingFacilityOption = {
+  id: number
+  name: string
+  code?: string | null
+}
+
+export type AppointmentSchedulingOptionsResponse = {
+  providers: AppointmentSchedulingProviderOption[]
+  facilities: AppointmentSchedulingFacilityOption[]
 }
 
 export async function searchAppointments(
@@ -905,6 +941,13 @@ export async function searchAppointments(
   return clinicianGet(sessionId, `/api/appointments/?${q}`, signal)
 }
 
+export async function getAppointmentSchedulingOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentSchedulingOptionsResponse> {
+  return clinicianGet(sessionId, '/api/appointments/scheduling-options', signal)
+}
+
 export async function updateAppointmentStatus(
   sessionId: string,
   appointmentId: string,
@@ -913,6 +956,39 @@ export async function updateAppointmentStatus(
 ): Promise<void> {
   await clinicianPut(sessionId, `/api/appointments/${appointmentId}/status`, { status }, signal)
 }
+
+export type AppointmentUpdateInput = {
+  providerId?: number | null
+  title: string
+  date: string
+  startTime: string
+  durationMinutes: number
+  facilityId?: number | null
+  billingLocationId?: number | null
+  categoryId?: number | null
+  room?: string | null
+  status?: string | null
+  comments?: string | null
+  recurrenceType?: number | null
+  repeatFrequency?: number | null
+  repeatUnit?: number | null
+  repeatOnNum?: number | null
+  repeatOnDay?: number | null
+  repeatOnFrequency?: number | null
+  recurrenceDays?: number[] | null
+  recurrenceEndDate?: string | null
+  recurrenceExdates?: string[] | null
+}
+
+export async function updateAppointment(
+  sessionId: string,
+  appointmentId: string,
+  body: AppointmentUpdateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPut(sessionId, `/api/appointments/${appointmentId}`, body, signal)
+}
+
 export async function deleteAppointment(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<void> { await clinicianDelete(sessionId, `/api/appointments/${appointmentId}`, signal) }
 
 export type FlowBoardItem = { appointmentId: string; patientId: string; patientDisplayName: string; startTime: string; title: string; room?: string | null; providerName?: string | null; facilityName?: string | null; appointmentStatus?: string | null; flowStatus: string }
