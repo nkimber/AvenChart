@@ -318,6 +318,9 @@ drop table if exists patient_portal_message_audit_events;
 drop table if exists patient_portal_report_audit_events;
 drop table if exists patient_portal_sessions;
 drop table if exists patient_portal_accounts;
+drop table if exists patient_merge_execution_manifest_rows;
+drop table if exists patient_merge_executions;
+drop table if exists patient_merge_audit_plans;
 drop table if exists referrals;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -563,6 +566,45 @@ create table patients (
   deceased_date date,
   deceased_reason text
 );
+
+create table patient_merge_audit_plans (
+  audit_id uuid primary key,
+  target_patient_id text not null,
+  source_patient_id text not null,
+  target_legacy_pid integer not null,
+  source_legacy_pid integer not null,
+  match_score integer not null,
+  match_reasons text[] not null,
+  rationale text,
+  planned_by text not null,
+  planned_at timestamptz not null,
+  status text not null
+);
+
+create table patient_merge_executions (
+  execution_id uuid primary key,
+  audit_id uuid not null references patient_merge_audit_plans(audit_id),
+  target_patient_id text not null references patients(canonical_id),
+  source_patient_id text not null references patients(canonical_id),
+  executed_by text not null,
+  executed_at timestamptz not null,
+  rolled_back_by text,
+  rolled_back_at timestamptz,
+  status text not null
+);
+
+create table patient_merge_execution_manifest_rows (
+  execution_id uuid not null references patient_merge_executions(execution_id),
+  table_name text not null,
+  record_id text not null,
+  primary key (execution_id, table_name, record_id)
+);
+
+create index ix_patient_merge_executions_source_patient
+  on patient_merge_executions(source_patient_id);
+
+create index ix_patient_merge_executions_target_patient
+  on patient_merge_executions(target_patient_id);
 
 create table patient_portal_accounts (
   patient_id text primary key references patients(canonical_id) on delete cascade,

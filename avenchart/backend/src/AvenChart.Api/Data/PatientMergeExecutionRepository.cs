@@ -190,13 +190,17 @@ public sealed class PatientMergeExecutionRepository(NpgsqlDataSource dataSource)
               and column_name in ('patient_id', 'pid')
             group by table_name;
             """;
-        await using var reader = await columnsCommand.ExecuteReaderAsync(cancellationToken);
         var discovered = new List<(string TableName, bool HasPatientId, bool HasPid)>();
-        while (await reader.ReadAsync(cancellationToken))
         {
-            discovered.Add((reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2)));
+            await using var reader = await columnsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                discovered.Add((reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2)));
+            }
         }
 
+        // Npgsql permits one active command per connection. Dispose the schema reader
+        // before counting dependencies using the same transactional connection.
         foreach (var table in discovered.Where(table => !SupportedTableNames.Contains(table.TableName) && table.TableName != "patient_care_teams" && table.TableName != "patient_care_team_members"))
         {
             var count = await CountRowsAsync(connection, transaction, table.TableName, table.HasPatientId, table.HasPid, source, cancellationToken);

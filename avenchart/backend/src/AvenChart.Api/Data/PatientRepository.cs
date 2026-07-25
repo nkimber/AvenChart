@@ -593,7 +593,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             {
                 "Preview only; no patient rows or clinical records are changed.",
                 "Source and target must be separate patient records.",
-                "Full destructive merge remains blocked until record-move auditing and rollback are implemented."
+                "Constrained merge execution requires this audited preview and blocks care-team, one-to-one, and unsupported-record conflicts."
             });
     }
 
@@ -933,17 +933,61 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<bool> DeleteTemporaryPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from patients
-            where (lower(canonical_id) = lower(@patientId)
-                   or lower(pubpid) = lower(@patientId)
-                   or legacy_pid::text = @patientId)
-              and (canonical_id like 'TMP-PAT-REG-%' or pubpid like 'TMP-PAT-REG-%')
-            returning canonical_id;
-            """;
-        command.Parameters.AddWithValue("patientId", patientId);
-        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? canonicalId;
+        await using (var lookup = connection.CreateCommand())
+        {
+            lookup.Transaction = transaction;
+            lookup.CommandText = """
+                select canonical_id
+                from patients
+                where (lower(canonical_id) = lower(@patientId)
+                       or lower(pubpid) = lower(@patientId)
+                       or legacy_pid::text = @patientId)
+                  and (canonical_id like 'TMP-PAT-REG-%' or pubpid like 'TMP-PAT-REG-%')
+                for update;
+                """;
+            lookup.Parameters.AddWithValue("patientId", patientId);
+            canonicalId = (string?)await lookup.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (canonicalId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        // Temporary patient fixtures can participate in the merge smoke workflow.
+        // Remove only their merge metadata before removing the synthetic patient.
+        await using (var cleanup = connection.CreateCommand())
+        {
+            cleanup.Transaction = transaction;
+            cleanup.CommandText = """
+                delete from patient_merge_execution_manifest_rows
+                where execution_id in (
+                    select execution_id
+                    from patient_merge_executions
+                    where source_patient_id = @canonicalId or target_patient_id = @canonicalId
+                );
+
+                delete from patient_merge_executions
+                where source_patient_id = @canonicalId or target_patient_id = @canonicalId;
+
+                delete from patient_merge_audit_plans
+                where source_patient_id = @canonicalId or target_patient_id = @canonicalId;
+
+                delete from insurance_records
+                where patient_id = @canonicalId
+                   or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
+
+                delete from patients where canonical_id = @canonicalId;
+                """;
+            cleanup.Parameters.AddWithValue("canonicalId", canonicalId);
+            await cleanup.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     public async Task<PatientChartSummary?> UpdateContactAsync(

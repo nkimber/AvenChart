@@ -1513,6 +1513,111 @@ catch {
     Add-Check -Name "patient registration lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+$mergeTargetPubpid = $null
+$mergeSourcePubpid = $null
+try {
+    $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $mergeTargetPubpid = "TMP-PAT-REG-MERGE-T-SMK$suffix"
+    $mergeSourcePubpid = "TMP-PAT-REG-MERGE-S-SMK$suffix"
+    $mergePatientDefaults = @{
+        firstName = "Morgan"
+        lastName = "Merge"
+        sex = "Female"
+        dateOfBirth = "1987-03-12"
+        street = "20 Merge Verification Way"
+        city = "Hartford"
+        state = "CT"
+        postalCode = "06103"
+        maritalStatus = "single"
+        occupation = "Merge Smoke Fixture"
+        phoneHome = "(860) 555-2020"
+        phoneCell = "(860) 555-2021"
+        hipaaAllowSms = "YES"
+        hipaaAllowEmail = "YES"
+    }
+    $mergeTargetBody = $mergePatientDefaults.Clone()
+    $mergeTargetBody.pubpid = $mergeTargetPubpid
+    $mergeTargetBody.preferredName = "Merge Target"
+    $mergeTargetBody.email = "merge-target-$suffix@example.test"
+    $mergeSourceBody = $mergePatientDefaults.Clone()
+    $mergeSourceBody.pubpid = $mergeSourcePubpid
+    $mergeSourceBody.preferredName = "Merge Source"
+    $mergeSourceBody.email = "merge-source-$suffix@example.test"
+
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($mergeTargetBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($mergeSourceBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
+
+    $mergePolicyNumber = "MRG$suffix"
+    $mergeCoverageBody = @{
+        type = "primary"
+        provider = "Acme Health"
+        planName = "Merge Smoke Plan"
+        policyNumber = $mergePolicyNumber
+        groupNumber = "MRG-GRP"
+        relationship = "self"
+        subscriberFirstName = "Morgan"
+        subscriberMiddleName = ""
+        subscriberLastName = "Merge"
+        subscriberDateOfBirth = "1987-03-12"
+        subscriberSex = "Female"
+        subscriberStreet = "20 Merge Verification Way"
+        subscriberStreetLine2 = ""
+        subscriberCity = "Hartford"
+        subscriberState = "CT"
+        subscriberPostalCode = "06103"
+        subscriberCountry = "US"
+        subscriberPhone = "(860) 555-2020"
+        subscriberEmployer = "Merge Smoke Fixture"
+        subscriberEmployerStreet = ""
+        subscriberEmployerStreetLine2 = ""
+        subscriberEmployerCity = ""
+        subscriberEmployerState = ""
+        subscriberEmployerPostalCode = ""
+        subscriberEmployerCountry = "US"
+    }
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeSourcePubpid/insurance" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($mergeCoverageBody | ConvertTo-Json -Depth 5) -TimeoutSec 20 | Out-Null
+
+    $mergePreview = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-preview?targetPatientId=$([System.Uri]::EscapeDataString($mergeTargetPubpid))&sourcePatientId=$([System.Uri]::EscapeDataString($mergeSourcePubpid))" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $mergeAudit = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-audits" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ targetPatientId = $mergeTargetPubpid; sourcePatientId = $mergeSourcePubpid; rationale = "Smoke execution and rollback verification" } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $mergeExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ auditId = $mergeAudit.auditId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $mergeTargetAfterExecution = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeTargetPubpid" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $movedCoverage = @($mergeTargetAfterExecution.insurance) | Where-Object { $_.policyNumber -eq $mergePolicyNumber } | Select-Object -First 1
+    $mergeRollback = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/merge-executions/rollback" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body (@{ executionId = $mergeExecution.executionId } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $mergeSourceAfterRollback = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$mergeSourcePubpid" -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $restoredCoverage = @($mergeSourceAfterRollback.insurance) | Where-Object { $_.policyNumber -eq $mergePolicyNumber } | Select-Object -First 1
+
+    $mergePassed = $mergePreview.previewOnly -eq $true `
+        -and $mergeAudit.status -eq "Previewed" `
+        -and $mergeExecution.status -eq "Executed" `
+        -and $mergeExecution.movedRecords.tableName -contains "insurance_records" `
+        -and $null -ne $movedCoverage `
+        -and $mergeRollback.status -eq "RolledBack" `
+        -and $null -ne $restoredCoverage
+
+    Add-Check -Name "patient merge execution and rollback lifecycle" -Result $(if ($mergePassed) { "passed" } else { "failed" }) -Details @{
+        auditId = $mergeAudit.auditId
+        executionId = $mergeExecution.executionId
+        executedStatus = $mergeExecution.status
+        rollbackStatus = $mergeRollback.status
+        movedCoverage = $null -ne $movedCoverage
+        restoredCoverage = $null -ne $restoredCoverage
+    }
+}
+catch {
+    Add-Check -Name "patient merge execution and rollback lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    foreach ($temporaryPatientId in @($mergeSourcePubpid, $mergeTargetPubpid)) {
+        if ($temporaryPatientId) {
+            try {
+                Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$temporaryPatientId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null
+            }
+            catch {
+            }
+        }
+    }
+}
+
 $invalidRegistrationPubpid = "TMP-PAT-REG-VAL-SMK$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
 try {
     $invalidRegistrationBody = @{
