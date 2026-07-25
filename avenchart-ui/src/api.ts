@@ -774,6 +774,49 @@ export type PatientActivityCounts = {
   medications: number
 }
 
+export type PatientDuplicateCandidate = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  phone?: string | null
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+  matchScore: number
+  matchReasons: string[]
+}
+
+export type PatientMergePreviewPatient = {
+  canonicalId: string
+  legacyPid: number
+  pubpid: string
+  displayName: string
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  phoneHome?: string | null
+  phoneCell?: string | null
+  email?: string | null
+}
+
+export type PatientMergePreview = {
+  datasetId: string
+  datasetVersion: string
+  previewOnly: boolean
+  targetPatient: PatientMergePreviewPatient
+  sourcePatient: PatientMergePreviewPatient
+  targetCounts: PatientActivityCounts
+  sourceCounts: PatientActivityCounts
+  combinedCounts: PatientActivityCounts
+  matchScore: number
+  matchReasons: string[]
+  safeguards: string[]
+}
+
 export type PatientTimelineItem = {
   id: string
   date: string
@@ -838,6 +881,7 @@ export type PatientChartSummary = {
   facilityName?: string | null
   careTeam?: PatientCareTeamSummary | null
   insurance: PatientInsuranceItem[]
+  duplicateCandidates: PatientDuplicateCandidate[]
   counts: PatientActivityCounts
   nextAppointment?: PatientTimelineItem | null
   latestEncounter?: PatientTimelineItem | null
@@ -865,6 +909,16 @@ export async function getPatientChartSummary(
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
+}
+
+export async function getPatientMergePreview(
+  sessionId: string,
+  targetPatientId: string,
+  sourcePatientId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergePreview> {
+  const query = new URLSearchParams({ targetPatientId, sourcePatientId })
+  return clinicianGet(sessionId, `/api/patients/merge-preview?${query}`, signal)
 }
 
 // ── Appointments ──────────────────────────────────────────────────────────────

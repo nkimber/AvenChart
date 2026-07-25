@@ -7,7 +7,9 @@ import {
   createPatientInsurance,
   updatePatientInsurance,
   deletePatientInsurance,
+  getPatientMergePreview,
   type PatientInsuranceMutationInput,
+  type PatientMergePreview,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -29,6 +31,13 @@ const BLANK_INS: PatientInsuranceMutationInput = {
 }
 
 type InsuranceMode = { kind: 'none' } | { kind: 'add' } | { kind: 'edit'; insuranceId: string }
+type MergePreviewState = { status: 'idle' } | { status: 'loading'; sourcePatientId: string } | { status: 'ready'; data: PatientMergePreview } | { status: 'error'; message: string }
+
+const mergeCountLabels: Array<{ key: keyof PatientMergePreview['combinedCounts']; label: string }> = [
+  { key: 'appointments', label: 'Appointments' }, { key: 'encounters', label: 'Encounters' }, { key: 'prescriptions', label: 'Prescriptions' },
+  { key: 'billingItems', label: 'Billing items' }, { key: 'labOrders', label: 'Lab orders' }, { key: 'messages', label: 'Messages' },
+  { key: 'problems', label: 'Problems' }, { key: 'allergies', label: 'Allergies' }, { key: 'medications', label: 'Medications' },
+]
 
 export default function PatientSummary() {
   const { session, patient, patientId, reload } = useOutletContext<PatientOutletContext>()
@@ -56,6 +65,7 @@ export default function PatientSummary() {
   const [insMode, setInsMode] = useState<InsuranceMode>({ kind: 'none' })
   const [insForm, setInsForm] = useState<PatientInsuranceMutationInput>(BLANK_INS)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [mergePreviewState, setMergePreviewState] = useState<MergePreviewState>({ status: 'idle' })
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
 
@@ -105,6 +115,16 @@ export default function PatientSummary() {
       showToast('Insurance removed.', 'success'); reload()
     } catch { showToast('Could not remove insurance.', 'error') }
     finally { setDeletingId(null) }
+  }
+
+  async function previewMerge(sourcePatientId: string) {
+    setMergePreviewState({ status: 'loading', sourcePatientId })
+    try {
+      const preview = await getPatientMergePreview(session.sessionId, patientId, sourcePatientId)
+      setMergePreviewState({ status: 'ready', data: preview })
+    } catch {
+      setMergePreviewState({ status: 'error', message: 'Could not load this merge preview. The candidate may have changed.' })
+    }
   }
 
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) => setInsForm((f) => ({ ...f, ...patch }))
@@ -363,6 +383,38 @@ export default function PatientSummary() {
           )}
         </section>
 
+        <section className="cl-card cl-card-wide">
+          <div className="cl-card-header">
+            <div>
+              <h2 className="cl-card-title">Potential duplicate records</h2>
+              <p className="clinician-page-subtitle">Review-only match evidence. No patient records or clinical data are changed from this screen.</p>
+            </div>
+            <span className="cl-badge cl-badge-muted">{patient.duplicateCandidates.length} candidate{patient.duplicateCandidates.length === 1 ? '' : 's'}</span>
+          </div>
+          {patient.duplicateCandidates.length === 0 && <p className="cl-empty-text">No likely duplicate records were identified from the available name, birth-date, phone, and email evidence.</p>}
+          {patient.duplicateCandidates.length > 0 && <ul className="cl-clinical-list">
+            {patient.duplicateCandidates.map((candidate) => (
+              <li key={candidate.canonicalId} className="cl-clinical-row">
+                <div>
+                  <p className="cl-clinical-title">{candidate.displayName} <span className="cl-badge cl-badge-muted">{candidate.matchScore}% match</span></p>
+                  <p className="cl-clinical-meta">{candidate.dateOfBirth} · #{candidate.pubpid} · {candidate.matchReasons.join(' · ')}</p>
+                </div>
+                <button className="cl-btn-secondary" type="button" onClick={() => previewMerge(candidate.canonicalId)} disabled={mergePreviewState.status === 'loading'}>{mergePreviewState.status === 'loading' && mergePreviewState.sourcePatientId === candidate.canonicalId ? 'Loading…' : 'Preview merge'}</button>
+              </li>
+            ))}
+          </ul>}
+          {mergePreviewState.status === 'error' && <div className="error-banner" style={{ marginTop: 12 }}>{mergePreviewState.message}</div>}
+          {mergePreviewState.status === 'ready' && <div className="cl-soap-section" style={{ marginTop: 12 }}>
+            <div className="cl-card-header"><p className="cl-soap-label">Merge impact preview — {mergePreviewState.data.matchScore}% match</p><span className="cl-badge cl-badge-muted">Preview only</span></div>
+            <p className="cl-empty-text">Target: {mergePreviewState.data.targetPatient.displayName} (#{mergePreviewState.data.targetPatient.pubpid}) · Source: {mergePreviewState.data.sourcePatient.displayName} (#{mergePreviewState.data.sourcePatient.pubpid})</p>
+            <div className="cl-counts-grid" style={{ marginTop: 10 }}>
+              {mergeCountLabels.map(({ key, label }) => <div key={key} className="cl-count-tile" style={{ cursor: 'default' }}><span className="cl-count-value">{mergePreviewState.data.targetCounts[key]} + {mergePreviewState.data.sourceCounts[key]} = {mergePreviewState.data.combinedCounts[key]}</span><span className="cl-count-label">{label}</span></div>)}
+            </div>
+            <p className="cl-soap-label" style={{ marginTop: 12 }}>Safeguards</p>
+            <ul className="fact-list">{mergePreviewState.data.safeguards.map((safeguard) => <li key={safeguard} className="fact-row"><span>{safeguard}</span></li>)}</ul>
+          </div>}
+        </section>
+
         {/* Timeline */}
         <section className="cl-card">
           <div className="cl-card-header">
@@ -435,4 +487,3 @@ export default function PatientSummary() {
     </div>
   )
 }
-
