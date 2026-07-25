@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
-import { Activity, CalendarClock, FileText, FlaskConical, FolderOpen, GitCommitHorizontal, Mail, UserCircle, X } from 'lucide-react'
+import { Activity, CalendarClock, FileText, FlaskConical, FolderOpen, GitCommitHorizontal, Mail, Send, UserCircle, X } from 'lucide-react'
 import { getPatientChartSummary, type PatientChartSummary } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
@@ -21,6 +21,7 @@ const CHART_TABS = [
   { path: 'labs', label: 'Labs', icon: FlaskConical },
   { path: 'appointments', label: 'Appointments', icon: CalendarClock },
   { path: 'messages', label: 'Messages', icon: Mail },
+  { path: 'referrals', label: 'Referrals', icon: Send },
 ]
 
 export default function PatientShell() {

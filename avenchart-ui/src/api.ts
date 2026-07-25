@@ -992,6 +992,11 @@ export async function getPatientChartSummary(
   return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
 }
 
+export type PatientReferral = { id: string; patientId: string; encounterId?: number | null; destination: string; reason: string; status: string; externalReference?: string | null; notes?: string | null; requestedAt: string; createdAt: string; updatedAt: string }
+export async function getPatientReferrals(sessionId: string, patientId: string): Promise<PatientReferral[]> { return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals`) }
+export async function createPatientReferral(sessionId: string, patientId: string, body: { encounterId?: number | null; destination: string; reason: string; externalReference?: string; notes?: string; requestedAt?: string }): Promise<PatientReferral> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals`, body) }
+export async function updatePatientReferralStatus(sessionId: string, patientId: string, referralId: string, status: 'sent' | 'received' | 'closed' | 'cancelled'): Promise<PatientReferral> { return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/status`, { status }) }
+
 export async function getPatientMergePreview(
   sessionId: string,
   targetPatientId: string,

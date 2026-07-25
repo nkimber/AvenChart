@@ -48,6 +48,7 @@ builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
+builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
@@ -741,6 +742,22 @@ patients.MapGet("/", async (
         return Results.Ok(response);
     })
     .WithName("SearchPatients");
+
+patients.MapGet("/{patientId}/referrals", async (string patientId, ReferralRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientReferrals");
+patients.MapPost("/{patientId}/referrals", async (string patientId, ReferralCreateRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Created($"/api/patients/{patientId}/referrals", await repository.CreateAsync(patientId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreatePatientReferral").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+patients.MapPut("/{patientId}/referrals/{referralId:guid}/status", async (string patientId, Guid referralId, ReferralStatusRequest request, ReferralRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.UpdateStatusAsync(patientId, referralId, request, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdatePatientReferralStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 patients.MapGet("/duplicates", async (
         PatientRepository repository,
