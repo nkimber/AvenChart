@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -114,6 +115,43 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             entries.Add(new FhirObservationSearchEntry($"Observation/{observation.Id}", observation));
         }
         return new FhirObservationBundle("Bundle", "searchset", total, entries);
+    }
+
+    public async Task<FhirObservationBundle> SearchSdohObservationsAsync(string? subject, int? count, CancellationToken cancellationToken)
+    {
+        var limit = Math.Clamp(count ?? 20, 1, MaximumSearchLimit);
+        var normalizedSubject = NormalizePatientReference(subject);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select assessment_id::text, patient_id, assessment_date, domains::text
+            from patient_sdoh_assessments
+            where (@subject is null or patient_id = @subject or patient_id in (select canonical_id from patients where pubpid = @subject))
+            order by assessment_date desc, updated_at desc, assessment_id desc
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("subject", (object?)normalizedSubject ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", limit);
+        var entries = new List<FhirObservationSearchEntry>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var assessmentId = reader.GetString(0);
+            var patientId = reader.GetString(1);
+            var effectiveDate = reader.GetFieldValue<DateOnly>(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(reader.GetString(3)) ?? [];
+            foreach (var (domain, value) in domains.Where(pair => !string.IsNullOrWhiteSpace(pair.Value.Status)))
+            {
+                var observation = new FhirObservationResource(
+                    "Observation", $"sdoh-{assessmentId}-{domain}", "final",
+                    [new FhirCodeableConcept([new FhirCoding("http://terminology.hl7.org/CodeSystem/observation-category", "social-history", "Social History")], "Social History")],
+                    new FhirCodeableConcept([new FhirCoding("urn:legacy-ehr:sdoh-domain", domain, ToSdohDomainDisplay(domain))], ToSdohDomainDisplay(domain)),
+                    new FhirReference($"Patient/{patientId}"), $"{effectiveDate}T00:00:00", null, value.Status,
+                    string.IsNullOrWhiteSpace(value.Notes) ? [] : [new FhirObservationReferenceRange(value.Notes)], []);
+                entries.Add(new FhirObservationSearchEntry($"Observation/{observation.Id}", observation));
+            }
+        }
+        return new FhirObservationBundle("Bundle", "searchset", entries.Count, entries);
     }
 
     private const string SearchPredicate = """
@@ -244,4 +282,18 @@ public sealed class FhirRepository(NpgsqlDataSource dataSource)
             ? normalized["Patient/".Length..]
             : normalized;
     }
+
+    private static string ToSdohDomainDisplay(string domain) => domain.Replace('_', ' ') switch
+    {
+        "food insecurity" => "Food insecurity",
+        "housing instability" => "Housing instability",
+        "transportation insecurity" => "Transportation insecurity",
+        "utilities insecurity" => "Utilities insecurity",
+        "interpersonal safety" => "Interpersonal safety",
+        "financial strain" => "Financial strain",
+        "social isolation" => "Social isolation",
+        "childcare needs" => "Childcare needs",
+        "digital access" => "Digital access",
+        _ => domain.Replace('_', ' ')
+    };
 }

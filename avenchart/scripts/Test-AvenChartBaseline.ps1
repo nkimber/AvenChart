@@ -1863,6 +1863,7 @@ try {
     }
     $updatedSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments/$($createdSdoh.assessmentId)" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($sdohUpdateBody | ConvertTo-Json -Depth 8) -TimeoutSec 20
     $sdohHistory = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
+    $fhirSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/fhir/R4/Observation/sdoh?subject=$sdohPatientId" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $historySdoh = $sdohHistory | Where-Object { $_.assessmentId -eq $createdSdoh.assessmentId } | Select-Object -First 1
     $sdohPassed = $createdSdoh.assessmentDate -eq "2026-07-25" `
         -and $createdSdoh.assessor -eq "admin" `
@@ -1898,6 +1899,8 @@ try {
         -and @($updatedSdoh.generatedGoals).Count -eq 1 `
         -and (@($updatedSdoh.generatedGoals | Where-Object { $_.domain -eq "transportation_insecurity" -and $_.description -eq "Improve Transportation insecurity" }).Count -eq 1) `
         -and @($updatedSdoh.generatedInterventions).Count -eq 0 `
+        -and $fhirSdoh.resourceType -eq "Bundle" `
+        -and (@($fhirSdoh.entry | Where-Object { $_.resource.id -eq "sdoh-$($createdSdoh.assessmentId)-transportation_insecurity" -and $_.resource.subject.reference -eq "Patient/$sdohPatientId" -and $_.resource.code.coding[0].code -eq "transportation_insecurity" -and $_.resource.valueString -eq "sometimes" }).Count -eq 1) `
         -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
         -and $updatedSdoh.interventions -eq "Transportation resources retained." `
         -and $null -ne $historySdoh `

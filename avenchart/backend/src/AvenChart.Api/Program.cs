@@ -734,6 +734,10 @@ fhir.MapGet("/Observation", async (FhirRepository repository, string? subject, i
     Results.Ok(await repository.SearchObservationsAsync(subject, _count, cancellationToken)))
     .WithName("SearchFhirObservations");
 
+fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, string? subject, int? _count, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.SearchSdohObservationsAsync(subject, _count, cancellationToken)))
+    .WithName("SearchFhirSdohObservations");
+
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
 
