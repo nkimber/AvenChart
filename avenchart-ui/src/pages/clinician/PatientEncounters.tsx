@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import { ChevronRight, FileText, Plus, TrendingUp } from 'lucide-react'
+import { ChevronRight, FileText, Pencil, Plus, TrendingUp } from 'lucide-react'
 import {
   archiveEncounter,
   createEncounterSoapNote,
@@ -8,6 +8,7 @@ import {
   getEncounterDetail,
   restoreEncounter,
   searchEncounters,
+  updateEncounter,
   type EncounterDetail,
   type EncounterListItem,
   type EncounterVitals,
@@ -88,6 +89,8 @@ export default function PatientEncounters() {
   const [saving, setSaving] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [editSummaryOpen, setEditSummaryOpen] = useState(false)
+  const [summaryForm, setSummaryForm] = useState({ reason: '', sensitivity: '', referralSource: '', externalId: '', posCode: '', billingNote: '' })
 
   useEffect(() => {
     setDetailCache(new Map())
@@ -112,6 +115,19 @@ export default function PatientEncounters() {
     finally { setArchiving(false) }
   }
 
+  function openSummaryEditor(enc: EncounterDetail) {
+    setSummaryForm({ reason: enc.reason ?? '', sensitivity: enc.sensitivity ?? '', referralSource: enc.referralSource ?? '', externalId: enc.externalId ?? '', posCode: enc.posCode?.toString() ?? '', billingNote: enc.billingNote ?? '' })
+    setEditSummaryOpen(true)
+  }
+
+  async function saveSummary(event: React.FormEvent, encounter: number) {
+    event.preventDefault(); setSaving(true)
+    try {
+      const updated = await updateEncounter(session.sessionId, encounter, { reason: summaryForm.reason, sensitivity: summaryForm.sensitivity || null, referralSource: summaryForm.referralSource || null, externalId: summaryForm.externalId || null, posCode: summaryForm.posCode ? Number(summaryForm.posCode) : null, billingNote: summaryForm.billingNote || null })
+      setDetailState({ status: 'ready', data: updated }); setDetailCache((current) => new Map(current).set(updated.id, updated)); setEditSummaryOpen(false); showToast('Encounter summary updated.', 'success')
+    } catch { showToast('Could not update encounter summary.', 'error') } finally { setSaving(false) }
+  }
+
   const vitalSeries = useMemo(() => {
     if (listState.status !== 'ready') return []
     return extractVitalSeries(listState.data, detailCache)
@@ -121,6 +137,7 @@ export default function PatientEncounters() {
     setSelectedId(id)
     setAddVitalsOpen(false)
     setAddSoapOpen(false)
+    setEditSummaryOpen(false)
     setVitalsForm(BLANK_VITALS)
     setSoapForm(BLANK_SOAP)
     setDetailState({ status: 'loading', id })
@@ -288,6 +305,49 @@ export default function PatientEncounters() {
                     </h2>
                     <span className="cl-badge cl-badge-muted">Enc #{enc.encounter}</span>
                   </div>
+                  <div className="cl-inline-form-actions" style={{ marginTop: 10 }}>
+                    <button className="cl-btn-secondary" type="button" onClick={() => openSummaryEditor(enc)} disabled={saving}>
+                      <Pencil size={14} /> Edit summary
+                    </button>
+                  </div>
+                  {editSummaryOpen && (
+                    <form onSubmit={(event) => saveSummary(event, enc.encounter)} style={{ marginTop: 14 }}>
+                      <div className="form-row">
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-reason">Reason</label>
+                          <input id="encounter-reason" className="input" required value={summaryForm.reason} onChange={(event) => setSummaryForm((form) => ({ ...form, reason: event.target.value }))} />
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-pos">Place of service</label>
+                          <input id="encounter-pos" className="input" type="number" min="0" value={summaryForm.posCode} onChange={(event) => setSummaryForm((form) => ({ ...form, posCode: event.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-sensitivity">Sensitivity</label>
+                          <input id="encounter-sensitivity" className="input" value={summaryForm.sensitivity} onChange={(event) => setSummaryForm((form) => ({ ...form, sensitivity: event.target.value }))} />
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-referral">Referral source</label>
+                          <input id="encounter-referral" className="input" value={summaryForm.referralSource} onChange={(event) => setSummaryForm((form) => ({ ...form, referralSource: event.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-external-id">External reference</label>
+                          <input id="encounter-external-id" className="input" value={summaryForm.externalId} onChange={(event) => setSummaryForm((form) => ({ ...form, externalId: event.target.value }))} />
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="encounter-billing-note">Billing note</label>
+                          <input id="encounter-billing-note" className="input" value={summaryForm.billingNote} onChange={(event) => setSummaryForm((form) => ({ ...form, billingNote: event.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="cl-inline-form-actions">
+                        <button className="cl-btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save summary'}</button>
+                        <button className="cl-btn-secondary" type="button" onClick={() => setEditSummaryOpen(false)} disabled={saving}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
                   <div className="cl-inline-form-actions" style={{ marginTop: 10 }}>
                     <button className="cl-btn-secondary" type="button" disabled={archiving} onClick={() => changeArchiveState(enc.encounter, showArchived)}>{archiving ? 'Saving…' : showArchived ? 'Restore encounter' : 'Archive encounter'}</button>
                   </div>

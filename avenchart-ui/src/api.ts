@@ -1198,6 +1198,9 @@ export type EncounterDetail = {
   providerName?: string | null
   facilityName?: string | null
   sensitivity?: string | null
+  referralSource?: string | null
+  externalId?: string | null
+  posCode?: number | null
   billingNote?: string | null
   vitals?: EncounterVitals | null
   soapNote?: EncounterSoapNote | null
