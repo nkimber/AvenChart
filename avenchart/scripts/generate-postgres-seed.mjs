@@ -328,6 +328,7 @@ drop table if exists form_layout_fields;
 drop table if exists form_layout_groups;
 drop table if exists form_layouts;
 drop table if exists clinical_alert_rules;
+drop table if exists module_catalog;
 drop table if exists api_client_registry;
 drop table if exists auth_accounts;
 drop table if exists staff;
@@ -396,6 +397,10 @@ create table form_layouts (
 create table clinical_alert_rules (
   rule_key text primary key, title text not null, trigger_type text not null, target_type text not null, severity text not null,
   message text not null, sequence integer not null, active boolean not null, updated_at timestamptz not null, updated_by text not null
+);
+create table module_catalog (
+  module_key text primary key, display_name text not null, category text not null, status text not null,
+  description text not null, updated_at timestamptz not null, updated_by text not null
 );
 create table api_client_registry (
   client_key text primary key, display_name text not null, redirect_uri text not null, scopes text not null,
@@ -1538,6 +1543,11 @@ copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active'
 copyRows('clinical_alert_rules', ['rule_key', 'title', 'trigger_type', 'target_type', 'severity', 'message', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['APPOINTMENT_REMINDER', 'Upcoming appointment', 'appointment', 'reminder', 'info', 'Appointment reminder is due.', 10, true, '2026-01-01T00:00:00Z', 'seed'],
   ['ALLERGY_REVIEW', 'Allergy review', 'encounter', 'banner', 'warning', 'Review documented allergies before completing the encounter.', 20, true, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('module_catalog', ['module_key', 'display_name', 'category', 'status', 'description', 'updated_at', 'updated_by'], [
+  ['THERAPY_GROUPS', 'Therapy groups', 'specialty', 'enabled', 'Local group workflow.', '2026-01-01T00:00:00Z', 'seed'],
+  ['EASIPRO', 'EasiPRO', 'specialty', 'decision-required', 'Requires accountable owner decision.', '2026-01-01T00:00:00Z', 'seed'],
+  ['FAX_SMS', 'Fax/SMS', 'communications', 'partner-gated', 'Requires approved delivery provider.', '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('api_client_registry', ['client_key', 'display_name', 'redirect_uri', 'scopes', 'active', 'updated_at', 'updated_by'], [
   ['LOCAL_PORTAL', 'Local patient portal', 'https://portal.example.test/callback', 'patient.read patient.write', true, '2026-01-01T00:00:00Z', 'seed'],

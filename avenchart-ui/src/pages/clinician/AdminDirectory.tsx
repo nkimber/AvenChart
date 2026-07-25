@@ -31,6 +31,7 @@ import {
   saveFormLayoutField,
   saveFormLayoutGroup,
   saveClinicalAlertRule,
+  saveApiClient,
   type AdministrationDirectoryResponse,
   type ApiClientRegistryItem,
   type AdministrationFacilityItem,
@@ -125,10 +126,13 @@ function normalizeUserForm(form: UserForm): AdministrationUserMutationInput {
 type AccessMembershipForm = { userValue: string; groupValue: string }
 type AccessPermissionForm = { groupValue: string; permissionKey: string; returnValue: 'addonly' | 'view' | 'write' | 'wsome' }
 type CodingCatalogForm = CodingCatalogMutationInput & { key: string }
+type ApiClientForm = Omit<ApiClientRegistryItem, 'key'> & { key: string }
 
 function emptyMembershipForm(): AccessMembershipForm { return { userValue: '', groupValue: '' } }
 function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', permissionKey: '', returnValue: 'view' } }
 function emptyCodingCatalogForm(): CodingCatalogForm { return { key: '', displayName: '', sequence: 40, active: true, claimEnabled: false, feeEnabled: false, modifierLength: 0 } }
+function emptyApiClientForm(): ApiClientForm { return { key: '', displayName: '', redirectUri: '', scopes: '', active: true } }
+function apiClientToForm(client: ApiClientRegistryItem): ApiClientForm { return { ...client } }
 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
@@ -148,6 +152,9 @@ export default function AdminDirectory() {
   const [alertRules, setAlertRules] = useState<ClinicalAlertRuleItem[]>([])
   const [modules, setModules] = useState<ModuleCatalogItem[]>([])
   const [apiClients, setApiClients] = useState<ApiClientRegistryItem[]>([])
+  const [apiClientForm, setApiClientForm] = useState<ApiClientForm>(() => emptyApiClientForm())
+  const [editingApiClientKey, setEditingApiClientKey] = useState<string | null>(null)
+  const [savingApiClient, setSavingApiClient] = useState(false)
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -221,6 +228,26 @@ export default function AdminDirectory() {
       showToast('Could not create coding catalog.', 'error')
     } finally {
       setSavingCodingCatalog(false)
+    }
+  }
+
+  function beginApiClientCreate() { setApiClientForm(emptyApiClientForm()); setEditingApiClientKey('new') }
+  function beginApiClientEdit(client: ApiClientRegistryItem) { setApiClientForm(apiClientToForm(client)); setEditingApiClientKey(client.key) }
+  function cancelApiClientEdit() { setApiClientForm(emptyApiClientForm()); setEditingApiClientKey(null) }
+  async function submitApiClient(event: FormEvent) {
+    event.preventDefault()
+    if (!apiClientForm.key.trim() || savingApiClient) return
+    setSavingApiClient(true)
+    try {
+      const { key, ...input } = apiClientForm
+      const result = await saveApiClient(session.sessionId, key, input)
+      setApiClients(result.clients)
+      cancelApiClientEdit()
+      showToast(`${key.trim().toUpperCase()} API client saved.`, 'success')
+    } catch {
+      showToast('Could not save API client. Use an HTTPS redirect URI and at least one scope.', 'error')
+    } finally {
+      setSavingApiClient(false)
     }
   }
 
@@ -705,7 +732,7 @@ export default function AdminDirectory() {
 
             {tab === 'modules' && <section className="cl-card"><h2 className="cl-card-title">Module inventory</h2><p className="clinician-page-subtitle">Local modules can be enabled only through their own lifecycle. Decision-required and partner-gated modules remain visible until their accountable owners authorize them.</p><table className="cl-table"><thead><tr><th>Module</th><th>Category</th><th>Status</th><th>Scope</th></tr></thead><tbody>{modules.map((module) => <tr key={module.key}><td><strong>{module.displayName}</strong><p className="cl-table-sub">{module.key}</p></td><td>{module.category}</td><td><span className="cl-badge cl-badge-muted">{module.status}</span></td><td>{module.description}</td></tr>)}</tbody></table></section>}
 
-            {tab === 'apiClients' && <section className="cl-card"><h2 className="cl-card-title">API clients</h2><p className="clinician-page-subtitle">Redirect URIs and scopes are managed here. Client credentials and secrets remain deployment-managed and are never returned by this application.</p><table className="cl-table"><thead><tr><th>Client</th><th>Redirect URI</th><th>Scopes</th><th>State</th></tr></thead><tbody>{apiClients.map((client) => <tr key={client.key}><td><strong>{client.displayName}</strong><p className="cl-table-sub">{client.key}</p></td><td>{client.redirectUri}</td><td>{client.scopes}</td><td>{client.active ? 'Active' : 'Inactive'}</td></tr>)}</tbody></table></section>}
+            {tab === 'apiClients' && <section className="cl-card"><div className="cl-admin-facility-header"><div><h2 className="cl-card-title">API clients</h2><p className="clinician-page-subtitle">Redirect URIs and scopes are managed here. Client credentials and secrets remain deployment-managed and are never returned by this application.</p></div>{editingApiClientKey === null && <button className="cl-btn-primary" type="button" onClick={beginApiClientCreate}><Plus size={15} /> Add API client</button>}</div>{editingApiClientKey !== null && <form className="cl-admin-facility-form" onSubmit={submitApiClient}><div className="cl-admin-form-heading"><div><p className="cl-form-section-label">{editingApiClientKey === 'new' ? 'New API client' : 'Edit API client'}</p><p className="cl-admin-form-copy">This registry stores identity and routing metadata only; it never stores or returns client secrets.</p></div><button className="cl-icon-button" type="button" onClick={cancelApiClientEdit} aria-label="Cancel API client edit" title="Cancel"><X size={16} /></button></div><div className="cl-admin-form-grid"><label className="cl-admin-field"><span>Client key <em>*</em></span><input className="ne-input" autoCapitalize="characters" value={apiClientForm.key} disabled={editingApiClientKey !== 'new'} onChange={(event) => setApiClientForm((form) => ({ ...form, key: event.target.value.toUpperCase() }))} maxLength={64} required /></label><label className="cl-admin-field"><span>Display name <em>*</em></span><input className="ne-input" value={apiClientForm.displayName} onChange={(event) => setApiClientForm((form) => ({ ...form, displayName: event.target.value }))} maxLength={120} required /></label><label className="cl-admin-field"><span>HTTPS redirect URI <em>*</em></span><input className="ne-input" type="url" value={apiClientForm.redirectUri} onChange={(event) => setApiClientForm((form) => ({ ...form, redirectUri: event.target.value }))} placeholder="https://client.example/callback" required /></label><label className="cl-admin-field"><span>Scopes <em>*</em></span><input className="ne-input" value={apiClientForm.scopes} onChange={(event) => setApiClientForm((form) => ({ ...form, scopes: event.target.value }))} placeholder="patient.read patient.write" maxLength={500} required /></label><label className="cl-admin-active-toggle"><input type="checkbox" checked={apiClientForm.active} onChange={(event) => setApiClientForm((form) => ({ ...form, active: event.target.checked }))} /><span>API client is active</span></label></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="submit" disabled={savingApiClient}>{savingApiClient ? 'Saving...' : editingApiClientKey === 'new' ? 'Create API client' : 'Save changes'}</button><button className="cl-btn-secondary" type="button" onClick={cancelApiClientEdit} disabled={savingApiClient}>Cancel</button></div></form>}<table className="cl-table"><thead><tr><th>Client</th><th>Redirect URI</th><th>Scopes</th><th>State</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{apiClients.map((client) => <tr key={client.key}><td><strong>{client.displayName}</strong><p className="cl-table-sub">{client.key}</p></td><td>{client.redirectUri}</td><td>{client.scopes}</td><td>{client.active ? 'Active' : 'Inactive'}</td><td className="cl-admin-row-actions"><button className="cl-icon-button" type="button" onClick={() => beginApiClientEdit(client)} aria-label={`Edit ${client.displayName}`} title="Edit API client"><Pencil size={15} /></button></td></tr>)}</tbody></table></section>}
 
             {tab === 'access' && (
               <section className="cl-card">
