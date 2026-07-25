@@ -1609,6 +1609,7 @@ copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active'
 copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'Demographics', 'Core', 10, true, '2026-01-01T00:00:00Z', 'seed'],
   ['INTAKE', 'Encounter intake', 'Encounter', 20, true, '2026-01-01T00:00:00Z', 'seed'],
+  ['FOLLOWUP', 'Follow-up plan', 'Encounter', 30, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_option_lists', ['list_key', 'title', 'active', 'updated_at', 'updated_by'], [
   ['state', 'State or province', true, '2026-01-01T00:00:00Z', 'seed'],
@@ -1636,6 +1637,7 @@ copyRows('api_client_registry', ['client_key', 'display_name', 'redirect_uri', '
 copyRows('form_layout_groups', ['layout_key', 'group_key', 'title', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'who', 'Who', 10, true, '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'contact', 'Contact', 20, true, '2026-01-01T00:00:00Z', 'seed'],
   ['INTAKE', 'screening', 'Screening', 10, true, '2026-01-01T00:00:00Z', 'seed'],
+  ['FOLLOWUP', 'plan', 'Plan', 10, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
 copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
   ['DEM', 'first_name', 'who', 'First name', 'text', 10, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'last_name', 'who', 'Last name', 'text', 20, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'birth_date', 'who', 'Date of birth', 'date', 30, true, true, 10, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'phone', 'contact', 'Phone', 'text', 10, false, true, 40, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'email', 'contact', 'Email', 'text', 20, false, true, 95, '', '', '2026-01-01T00:00:00Z', 'seed'],
@@ -1644,6 +1646,7 @@ copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label',
   ['DEM', 'state', 'contact', 'State or province', 'select', 30, false, true, 2, 'state', '', '2026-01-01T00:00:00Z', 'seed'],
   ['INTAKE', 'chief_concern', 'screening', 'Chief concern', 'textarea', 10, true, true, 1000, '', '', '2026-01-01T00:00:00Z', 'seed'],
   ['INTAKE', 'follow_up_needed', 'screening', 'Follow-up needed', 'select', 20, true, true, 3, 'yesno', 'no', '2026-01-01T00:00:00Z', 'seed'],
+  ['FOLLOWUP', 'plan', 'plan', 'Follow-up plan', 'textarea', 10, true, true, 1000, '', '', '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)
