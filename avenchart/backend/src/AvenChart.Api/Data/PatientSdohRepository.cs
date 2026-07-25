@@ -26,6 +26,24 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
         "walk_climb", "seeing", "hearing", "cognitive", "dressing_bathing", "errands"
     };
 
+    private static readonly HashSet<string> GoalPositiveStatuses = new(StringComparer.Ordinal)
+    {
+        "yes", "positive", "present", "high", "at_risk", "often", "sometimes", "frequently", "severe", "moderate"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> GoalDomainLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["food_insecurity"] = "Food insecurity",
+        ["housing_instability"] = "Housing instability",
+        ["transportation_insecurity"] = "Transportation insecurity",
+        ["utilities_insecurity"] = "Utilities insecurity",
+        ["interpersonal_safety"] = "Interpersonal safety concern",
+        ["financial_strain"] = "Financial resource strain",
+        ["social_isolation"] = "Social isolation",
+        ["childcare_needs"] = "Childcare need",
+        ["digital_access"] = "Digital access barrier"
+    };
+
     public async Task<IReadOnlyList<PatientSdohAssessmentResponse>> GetAsync(string patientId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -206,6 +224,11 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
     {
         var disabilityScale = JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(17)) ?? [];
         var domains = JsonSerializer.Deserialize<Dictionary<string, PatientSdohDomainValue>>(reader.GetString(18)) ?? [];
+        var goalDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(90).ToString("yyyy-MM-dd");
+        var generatedGoals = GoalDomainLabels
+            .Where(pair => domains.TryGetValue(pair.Key, out var value) && GoalPositiveStatuses.Contains(value.Status))
+            .Select(pair => new PatientSdohGeneratedGoal(pair.Key, $"Improve {pair.Value}", goalDueDate))
+            .ToArray();
         return new(
             reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd"),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
@@ -213,6 +236,7 @@ public sealed class PatientSdohRepository(NpgsqlDataSource dataSource)
             reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11).ToString("yyyy-MM-dd"),
             reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14).ToString("yyyy-MM-dd"),
             reader.IsDBNull(15) ? null : reader.GetString(15), reader.IsDBNull(16) ? null : reader.GetString(16), disabilityScale,
+            generatedGoals,
             domains,
             reader.IsDBNull(19) ? null : reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O"), reader.GetString(21),
             reader.GetFieldValue<DateTimeOffset>(22).ToString("O"), reader.GetString(23));
