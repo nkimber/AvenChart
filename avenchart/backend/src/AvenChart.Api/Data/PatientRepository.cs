@@ -10,6 +10,7 @@ namespace AvenChart.Api.Data;
 public sealed class PatientRepository(NpgsqlDataSource dataSource)
 {
     private const int MaximumSearchLimit = 100;
+    private static int mergeColumnsInitialized;
 
     public async Task<PatientSearchResponse> SearchAsync(string? search, int limit, CancellationToken cancellationToken)
     {
@@ -1571,6 +1572,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
+        await EnsureMergeColumnsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -1590,6 +1592,24 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             reader.GetString(reader.GetOrdinal("dataset_id")),
             reader.GetString(reader.GetOrdinal("version")),
             reader.GetFieldValue<DateOnly>(reader.GetOrdinal("base_date")));
+    }
+
+    private async Task EnsureMergeColumnsAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref mergeColumnsInitialized) == 1)
+        {
+            return;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            alter table patients add column if not exists merged_into_patient_id text references patients(canonical_id);
+            alter table patients add column if not exists merged_at timestamptz;
+            alter table patients add column if not exists merged_by text;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        Volatile.Write(ref mergeColumnsInitialized, 1);
     }
 
     private static async Task<int> CountMatchesAsync(NpgsqlConnection connection, string? normalizedSearch, CancellationToken cancellationToken)
@@ -1626,7 +1646,8 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     }
 
     private const string PatientSearchPredicate = """
-        (@search is null
+        p.merged_into_patient_id is null
+        and (@search is null
          or lower(p.canonical_id) like @search
          or lower(p.pubpid) like @search
          or lower(p.first_name) like @search

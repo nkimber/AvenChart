@@ -52,6 +52,7 @@ builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
+builder.Services.AddScoped<PatientMergeExecutionRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
@@ -796,6 +797,48 @@ patients.MapPost("/merge-audits", async (
         }
     })
     .WithName("CreatePatientMergeAuditPlan")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapPost("/merge-executions", async (
+        PatientMergeExecutionRepository mergeRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        PatientMergeExecutionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var execution = await mergeRepository.ExecuteAsync(request.AuditId, session.Username, cancellationToken);
+            return Results.Created($"/api/patients/merge-executions/{execution.ExecutionId}", execution);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    })
+    .WithName("ExecutePatientMerge")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapPost("/merge-executions/rollback", async (
+        PatientMergeExecutionRepository mergeRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        PatientMergeRollbackRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var rollback = await mergeRepository.RollbackAsync(request.ExecutionId, session.Username, cancellationToken);
+            return Results.Ok(rollback);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    })
+    .WithName("RollbackPatientMerge")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
 patients.MapGet("/provider-options", async (

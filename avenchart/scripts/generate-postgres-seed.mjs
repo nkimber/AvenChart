@@ -475,6 +475,9 @@ create table patients (
   facility_id integer references facilities(id),
   portal_enabled boolean not null,
   cms_portal_login text,
+  merged_into_patient_id text references patients(canonical_id),
+  merged_at timestamptz,
+  merged_by text,
   registration_date date not null,
   deceased_date date,
   deceased_reason text

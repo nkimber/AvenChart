@@ -826,6 +826,18 @@ export type PatientMergeAuditPlan = {
   preview: PatientMergePreview
 }
 
+export type PatientMergeExecution = {
+  executionId: string
+  auditId: string
+  status: 'Executed' | 'RolledBack'
+  executedAt: string
+  executedBy: string
+  targetPatientId: string
+  sourcePatientId: string
+  movedRecords: Array<{ tableName: string; recordCount: number }>
+  safeguards: string[]
+}
+
 export type PatientTimelineItem = {
   id: string
   date: string
@@ -950,6 +962,22 @@ export async function createPatientMergeAuditPlan(
   signal?: AbortSignal,
 ): Promise<PatientMergeAuditPlan> {
   return clinicianPost(sessionId, '/api/patients/merge-audits', body, signal)
+}
+
+export async function executePatientMerge(
+  sessionId: string,
+  auditId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergeExecution> {
+  return clinicianPost(sessionId, '/api/patients/merge-executions', { auditId }, signal)
+}
+
+export async function rollbackPatientMerge(
+  sessionId: string,
+  executionId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergeExecution> {
+  return clinicianPost(sessionId, '/api/patients/merge-executions/rollback', { executionId }, signal)
 }
 
 export async function updatePatientPortalAccountAccess(sessionId: string, patientId: string, portalEnabled: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {

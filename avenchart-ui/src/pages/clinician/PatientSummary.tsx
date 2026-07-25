@@ -9,6 +9,8 @@ import {
   deletePatientInsurance,
   getPatientMergePreview,
   createPatientMergeAuditPlan,
+  executePatientMerge,
+  rollbackPatientMerge,
   updatePatientPortalAccountAccess,
   updatePatientPortalAccountReset,
   type PatientInsuranceMutationInput,
@@ -71,6 +73,8 @@ export default function PatientSummary() {
   const [mergePreviewState, setMergePreviewState] = useState<MergePreviewState>({ status: 'idle' })
   const [mergeAuditRationale, setMergeAuditRationale] = useState('')
   const [mergeAuditState, setMergeAuditState] = useState<{ status: 'idle' } | { status: 'saving' } | { status: 'ready'; auditId: string } | { status: 'error'; message: string }>({ status: 'idle' })
+  const [mergeExecutionConfirmed, setMergeExecutionConfirmed] = useState(false)
+  const [mergeExecutionState, setMergeExecutionState] = useState<{ status: 'idle' } | { status: 'saving' } | { status: 'ready'; executionId: string; movedCount: number } | { status: 'rolling-back'; executionId: string } | { status: 'rolled-back'; executionId: string } | { status: 'error'; message: string }>({ status: 'idle' })
   const [portalAction, setPortalAction] = useState<'access' | 'reset' | null>(null)
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
@@ -127,6 +131,8 @@ export default function PatientSummary() {
     setMergePreviewState({ status: 'loading', sourcePatientId })
     setMergeAuditRationale('')
     setMergeAuditState({ status: 'idle' })
+    setMergeExecutionConfirmed(false)
+    setMergeExecutionState({ status: 'idle' })
     try {
       const preview = await getPatientMergePreview(session.sessionId, patientId, sourcePatientId)
       setMergePreviewState({ status: 'ready', data: preview })
@@ -148,6 +154,33 @@ export default function PatientSummary() {
       showToast('Merge review evidence recorded. No records were merged.', 'success')
     } catch {
       setMergeAuditState({ status: 'error', message: 'Could not record the merge review evidence.' })
+    }
+  }
+
+  async function executeMerge() {
+    if (mergeAuditState.status !== 'ready' || !mergeExecutionConfirmed) return
+    setMergeExecutionState({ status: 'saving' })
+    try {
+      const execution = await executePatientMerge(session.sessionId, mergeAuditState.auditId)
+      const movedCount = execution.movedRecords.reduce((total, item) => total + item.recordCount, 0)
+      setMergeExecutionState({ status: 'ready', executionId: execution.executionId, movedCount })
+      showToast(`Constrained merge completed with ${movedCount} manifest-recorded records.`, 'success')
+      reload()
+    } catch (error) {
+      setMergeExecutionState({ status: 'error', message: error instanceof Error ? error.message : 'The constrained merge was blocked.' })
+    }
+  }
+
+  async function rollbackMerge(executionId: string) {
+    if (!window.confirm('Rollback this merge? Only the records listed in its immutable manifest will be restored to the source patient.')) return
+    setMergeExecutionState({ status: 'rolling-back', executionId })
+    try {
+      await rollbackPatientMerge(session.sessionId, executionId)
+      setMergeExecutionState({ status: 'rolled-back', executionId })
+      showToast('Merge rollback completed from the immutable manifest.', 'success')
+      reload()
+    } catch (error) {
+      setMergeExecutionState({ status: 'error', message: error instanceof Error ? error.message : 'Could not roll back the merge.' })
     }
   }
 
@@ -472,6 +505,14 @@ export default function PatientSummary() {
             <div className="field" style={{ marginTop: 12 }}><label className="label" htmlFor="merge-rationale">Review rationale (optional)</label><textarea id="merge-rationale" className="textarea" rows={2} value={mergeAuditRationale} onChange={(event) => setMergeAuditRationale(event.target.value)} disabled={mergeAuditState.status === 'saving' || mergeAuditState.status === 'ready'} /></div>
             <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={recordMergeReview} disabled={mergeAuditState.status === 'saving' || mergeAuditState.status === 'ready'}>{mergeAuditState.status === 'saving' ? 'Recording…' : mergeAuditState.status === 'ready' ? 'Review recorded' : 'Record merge review'}</button>{mergeAuditState.status === 'ready' && <span className="cl-empty-text">Audit #{mergeAuditState.auditId}</span>}</div>
             {mergeAuditState.status === 'error' && <div className="error-banner" style={{ marginTop: 10 }}>{mergeAuditState.message}</div>}
+            {mergeAuditState.status === 'ready' && mergeExecutionState.status !== 'ready' && mergeExecutionState.status !== 'rolling-back' && mergeExecutionState.status !== 'rolled-back' && <div style={{ marginTop: 12 }}>
+              <label className="cl-empty-text" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><input type="checkbox" checked={mergeExecutionConfirmed} onChange={(event) => setMergeExecutionConfirmed(event.target.checked)} /><span>I verified the target and source, understand that a constrained merge moves supported records, and will resolve any blocked dependencies before retrying.</span></label>
+              <div className="cl-inline-form-actions" style={{ marginTop: 10 }}><button className="cl-btn-primary" type="button" onClick={executeMerge} disabled={!mergeExecutionConfirmed || mergeExecutionState.status === 'saving'}>{mergeExecutionState.status === 'saving' ? 'Executing…' : 'Execute constrained merge'}</button></div>
+            </div>}
+            {mergeExecutionState.status === 'ready' && <div className="cl-soap-section" style={{ marginTop: 12 }}><p className="cl-soap-label">Merge executed</p><p className="cl-empty-text">Execution #{mergeExecutionState.executionId} recorded {mergeExecutionState.movedCount} moved records in an immutable manifest.</p><div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={() => rollbackMerge(mergeExecutionState.executionId)}>Rollback this merge</button></div></div>}
+            {mergeExecutionState.status === 'rolling-back' && <p className="cl-empty-text" style={{ marginTop: 10 }}>Restoring manifest-recorded rows…</p>}
+            {mergeExecutionState.status === 'rolled-back' && <p className="cl-empty-text" style={{ marginTop: 10 }}>Rollback completed for execution #{mergeExecutionState.executionId}.</p>}
+            {mergeExecutionState.status === 'error' && <div className="error-banner" style={{ marginTop: 10 }}>{mergeExecutionState.message}</div>}
           </div>}
         </section>
 
