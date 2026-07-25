@@ -1,0 +1,25 @@
+namespace AvenChart.Api.Models;
+
+public sealed record PatientSdohDomainValue(string Status, string? Notes);
+
+public sealed record PatientSdohAssessmentRequest(
+    string AssessmentDate,
+    string? ScreeningTool,
+    string? Assessor,
+    IReadOnlyDictionary<string, PatientSdohDomainValue?> Domains,
+    string? Interventions);
+
+public sealed record PatientSdohAssessmentResponse(
+    Guid AssessmentId,
+    string PatientId,
+    int LegacyPid,
+    string AssessmentDate,
+    string? ScreeningTool,
+    string Assessor,
+    int InstrumentScore,
+    IReadOnlyDictionary<string, PatientSdohDomainValue> Domains,
+    string? Interventions,
+    string CreatedAt,
+    string CreatedBy,
+    string UpdatedAt,
+    string UpdatedBy);

@@ -1805,6 +1805,51 @@ finally {
 }
 
 try {
+    $sdohPatientId = "MOD-PAT-0010"
+    $sdohCreateBody = @{
+        assessmentDate = "2026-07-25"
+        screeningTool = "Hunger Vital Signs"
+        assessor = ""
+        domains = @{
+            food_insecurity = @{ status = "at_risk"; notes = "Smoke food-access concern" }
+            housing_instability = @{ status = "no"; notes = "Stable housing reported" }
+            transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
+        }
+        interventions = "Provide local food and transportation resources."
+    }
+    $createdSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($sdohCreateBody | ConvertTo-Json -Depth 8) -TimeoutSec 20
+    $sdohUpdateBody = @{
+        assessmentDate = "2026-07-25"
+        screeningTool = "Hunger Vital Signs"
+        assessor = "Smoke assessor"
+        domains = @{
+            food_insecurity = @{ status = "no"; notes = "Follow-up confirmed food access" }
+            housing_instability = @{ status = "no"; notes = "Stable housing reported" }
+            transportation_insecurity = @{ status = "sometimes"; notes = "Occasional transit barrier" }
+        }
+        interventions = "Transportation resources retained."
+    }
+    $updatedSdoh = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments/$($createdSdoh.assessmentId)" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body ($sdohUpdateBody | ConvertTo-Json -Depth 8) -TimeoutSec 20
+    $sdohHistory = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$sdohPatientId/sdoh-assessments" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
+    $historySdoh = $sdohHistory | Where-Object { $_.assessmentId -eq $createdSdoh.assessmentId } | Select-Object -First 1
+    $sdohPassed = $createdSdoh.assessmentDate -eq "2026-07-25" `
+        -and $createdSdoh.assessor -eq "admin" `
+        -and $createdSdoh.instrumentScore -eq 2 `
+        -and $createdSdoh.domains.food_insecurity.status -eq "at_risk" `
+        -and $updatedSdoh.assessor -eq "Smoke assessor" `
+        -and $updatedSdoh.instrumentScore -eq 1 `
+        -and $updatedSdoh.domains.food_insecurity.status -eq "no" `
+        -and $updatedSdoh.domains.transportation_insecurity.status -eq "sometimes" `
+        -and $updatedSdoh.interventions -eq "Transportation resources retained." `
+        -and $null -ne $historySdoh `
+        -and $historySdoh.updatedBy -eq "admin"
+    Add-Check -Name "patient SDOH assessment lifecycle" -Result $(if ($sdohPassed) { "passed" } else { "failed" }) -Details @{ assessmentId = $createdSdoh.assessmentId; created = $createdSdoh; updated = $updatedSdoh }
+}
+catch {
+    Add-Check -Name "patient SDOH assessment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)
     $primary = $coverage | Where-Object { $_.type -eq "primary" } | Select-Object -First 1

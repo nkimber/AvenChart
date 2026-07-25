@@ -59,6 +59,7 @@ builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<PatientMergeExecutionRepository>();
 builder.Services.AddScoped<PatientRecordRequestRepository>();
+builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
@@ -807,6 +808,33 @@ patients.MapPost("/{patientId}/record-requests/{requestId:guid}/complete", async
     catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CompletePatientRecordRequest").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
+
+patients.MapGet("/{patientId}/sdoh-assessments", async (string patientId, PatientSdohRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientSdohAssessments").AddEndpointFilter(AccessPermissionFilter("patients", "med", "view"));
+
+patients.MapPost("/{patientId}/sdoh-assessments", async (string patientId, PatientSdohAssessmentRequest request, PatientSdohRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var assessment = await repository.CreateAsync(patientId, request, session.Username, cancellationToken);
+        return Results.Created($"/api/patients/{patientId}/sdoh-assessments/{assessment.AssessmentId}", assessment);
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreatePatientSdohAssessment").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
+
+patients.MapPut("/{patientId}/sdoh-assessments/{assessmentId:guid}", async (string patientId, Guid assessmentId, PatientSdohAssessmentRequest request, PatientSdohRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return Results.Ok(await repository.UpdateAsync(patientId, assessmentId, request, session.Username, cancellationToken));
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdatePatientSdohAssessment").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 patients.MapGet("/duplicates", async (
         PatientRepository repository,

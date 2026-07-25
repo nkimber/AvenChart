@@ -1006,6 +1006,13 @@ export async function getPatientRecordRequests(sessionId: string, patientId: str
 export async function createPatientRecordRequest(sessionId: string, patientId: string): Promise<PatientRecordRequest> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests`, {}) }
 export async function completePatientRecordRequest(sessionId: string, patientId: string, requestId: string): Promise<PatientRecordRequest> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests/${encodeURIComponent(requestId)}/complete`, {}) }
 
+export type PatientSdohDomainValue = { status: string; notes?: string | null }
+export type PatientSdohAssessment = { assessmentId: string; patientId: string; legacyPid: number; assessmentDate: string; screeningTool?: string | null; assessor: string; instrumentScore: number; domains: Record<string, PatientSdohDomainValue>; interventions?: string | null; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
+export type PatientSdohAssessmentInput = { assessmentDate: string; screeningTool?: string; assessor?: string; domains: Record<string, PatientSdohDomainValue>; interventions?: string }
+export async function getPatientSdohAssessments(sessionId: string, patientId: string): Promise<PatientSdohAssessment[]> { return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`) }
+export async function createPatientSdohAssessment(sessionId: string, patientId: string, body: PatientSdohAssessmentInput): Promise<PatientSdohAssessment> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`, body) }
+export async function updatePatientSdohAssessment(sessionId: string, patientId: string, assessmentId: string, body: PatientSdohAssessmentInput): Promise<PatientSdohAssessment> { return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments/${encodeURIComponent(assessmentId)}`, body) }
+
 export async function getPatientMergePreview(
   sessionId: string,
   targetPatientId: string,

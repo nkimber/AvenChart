@@ -322,6 +322,7 @@ drop table if exists patient_merge_execution_manifest_rows;
 drop table if exists patient_merge_executions;
 drop table if exists patient_merge_audit_plans;
 drop table if exists patient_record_requests;
+drop table if exists patient_sdoh_assessments;
 drop table if exists referrals;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -623,6 +624,25 @@ create unique index ux_patient_record_requests_one_open_per_patient
 
 create index ix_patient_record_requests_patient_history
   on patient_record_requests(patient_id, requested_at desc);
+
+create table patient_sdoh_assessments (
+  assessment_id uuid primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  assessment_date date not null,
+  screening_tool text,
+  assessor text not null,
+  instrument_score integer not null,
+  domains jsonb not null default '{}'::jsonb,
+  interventions text,
+  created_at timestamptz not null,
+  created_by text not null,
+  updated_at timestamptz not null,
+  updated_by text not null
+);
+
+create index ix_patient_sdoh_assessments_patient_history
+  on patient_sdoh_assessments(patient_id, assessment_date desc, updated_at desc);
 
 create table patient_portal_accounts (
   patient_id text primary key references patients(canonical_id) on delete cascade,

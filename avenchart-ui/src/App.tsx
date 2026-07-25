@@ -25,6 +25,7 @@ import PatientAppointments from './pages/clinician/PatientAppointments.tsx'
 import PatientMessages from './pages/clinician/PatientMessages.tsx'
 import PatientReferrals from './pages/clinician/PatientReferrals.tsx'
 import PatientAuthorizations from './pages/clinician/PatientAuthorizations.tsx'
+import PatientSdoh from './pages/clinician/PatientSdoh.tsx'
 import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
 import FlowBoard from './pages/clinician/FlowBoard.tsx'
 import LabQueue from './pages/clinician/LabQueue.tsx'
@@ -85,6 +86,7 @@ export default function App() {
             <Route path="messages" element={<PatientMessages />} />
             <Route path="referrals" element={<PatientReferrals />} />
             <Route path="authorizations" element={<PatientAuthorizations />} />
+            <Route path="sdoh" element={<PatientSdoh />} />
           </Route>
 
           {/* Catch-all within clinician */}
