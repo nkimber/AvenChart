@@ -1763,6 +1763,47 @@ catch {
     Add-Check -Name "patient duplicate detection readiness" -Result "failed" -Details $_.Exception.Message
 }
 
+$recordRequestId = $null
+try {
+    $recordRequestPatientId = "MOD-PAT-0010"
+    $initialRecordRequests = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
+    if (@($initialRecordRequests | Where-Object { $_.status -eq "Open" }).Count -ne 0) { throw "The record-request fixture already has an open request." }
+    $createdRecordRequest = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $recordRequestId = $createdRecordRequest.requestId
+    $duplicateRecordRequestStatus = $null
+    try {
+        Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body "{}" -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $duplicateRecordRequestStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    $openRecordRequests = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
+    $openRecordRequest = $openRecordRequests | Where-Object { $_.requestId -eq $recordRequestId } | Select-Object -First 1
+    $completedRecordRequest = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests/$recordRequestId/complete" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $recordRequestId = $null
+    $recordRequestHistory = @(Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/$recordRequestPatientId/record-requests" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20)
+    $historyRecordRequest = $recordRequestHistory | Where-Object { $_.requestId -eq $completedRecordRequest.requestId } | Select-Object -First 1
+    $recordRequestPassed = $createdRecordRequest.status -eq "Open" `
+        -and $createdRecordRequest.requestedBy -eq "admin" `
+        -and $duplicateRecordRequestStatus -eq 400 `
+        -and $null -ne $openRecordRequest `
+        -and $openRecordRequest.status -eq "Open" `
+        -and $completedRecordRequest.status -eq "Completed" `
+        -and $completedRecordRequest.completedBy -eq "admin" `
+        -and $null -ne $completedRecordRequest.completedAt `
+        -and $null -ne $historyRecordRequest `
+        -and $historyRecordRequest.status -eq "Completed"
+    Add-Check -Name "patient record request lifecycle" -Result $(if ($recordRequestPassed) { "passed" } else { "failed" }) -Details @{ requestId = $completedRecordRequest.requestId; duplicateStatus = $duplicateRecordRequestStatus; created = $createdRecordRequest; completed = $completedRecordRequest }
+}
+catch {
+    Add-Check -Name "patient record request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($recordRequestId) {
+        try { Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0010/record-requests/$recordRequestId/complete" -Method Post -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body "{}" -TimeoutSec 20 | Out-Null } catch { }
+    }
+}
+
 try {
     $coverageChart = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0005" -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
     $coverage = @($coverageChart.insurance)

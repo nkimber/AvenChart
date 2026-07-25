@@ -1001,6 +1001,11 @@ export async function getPatientAuthorizations(sessionId: string, patientId: str
 export async function createPatientAuthorization(sessionId: string, patientId: string, body: { payer: string; service: string; expiresAt?: string }): Promise<PatientAuthorization> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/authorizations`, body) }
 export async function updatePatientAuthorizationStatus(sessionId: string, patientId: string, authorizationId: string, status: 'submitted' | 'approved' | 'denied' | 'expired' | 'cancelled', authorizationNumber?: string): Promise<PatientAuthorization> { return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/status`, { status, authorizationNumber }) }
 
+export type PatientRecordRequest = { requestId: string; patientId: string; legacyPid: number; status: 'Open' | 'Completed'; requestedAt: string; requestedBy: string; completedAt?: string | null; completedBy?: string | null }
+export async function getPatientRecordRequests(sessionId: string, patientId: string): Promise<PatientRecordRequest[]> { return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests`) }
+export async function createPatientRecordRequest(sessionId: string, patientId: string): Promise<PatientRecordRequest> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests`, {}) }
+export async function completePatientRecordRequest(sessionId: string, patientId: string, requestId: string): Promise<PatientRecordRequest> { return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests/${encodeURIComponent(requestId)}/complete`, {}) }
+
 export async function getPatientMergePreview(
   sessionId: string,
   targetPatientId: string,

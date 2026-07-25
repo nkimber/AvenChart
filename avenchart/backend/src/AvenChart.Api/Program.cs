@@ -58,6 +58,7 @@ builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<PatientMergeExecutionRepository>();
+builder.Services.AddScoped<PatientRecordRequestRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
@@ -777,6 +778,35 @@ patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", asy
     try { return Results.Ok(await repository.UpdateStatusAsync(patientId, authorizationId, request, cancellationToken)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("UpdatePatientAuthorizationStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+patients.MapGet("/{patientId}/record-requests", async (string patientId, PatientRecordRequestRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientRecordRequests").AddEndpointFilter(AccessPermissionFilter("patients", "med", "view"));
+
+patients.MapPost("/{patientId}/record-requests", async (string patientId, PatientRecordRequestRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var request = await repository.CreateAsync(patientId, session.Username, cancellationToken);
+        return Results.Created($"/api/patients/{patientId}/record-requests/{request.RequestId}", request);
+    }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CreatePatientRecordRequest").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
+
+patients.MapPost("/{patientId}/record-requests/{requestId:guid}/complete", async (string patientId, Guid requestId, PatientRecordRequestRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        return Results.Ok(await repository.CompleteAsync(patientId, requestId, session.Username, cancellationToken));
+    }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("CompletePatientRecordRequest").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
 
 patients.MapGet("/duplicates", async (
         PatientRepository repository,

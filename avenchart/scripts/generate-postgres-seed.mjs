@@ -321,6 +321,7 @@ drop table if exists patient_portal_accounts;
 drop table if exists patient_merge_execution_manifest_rows;
 drop table if exists patient_merge_executions;
 drop table if exists patient_merge_audit_plans;
+drop table if exists patient_record_requests;
 drop table if exists referrals;
 drop table if exists patients;
 drop table if exists access_user_memberships;
@@ -605,6 +606,23 @@ create index ix_patient_merge_executions_source_patient
 
 create index ix_patient_merge_executions_target_patient
   on patient_merge_executions(target_patient_id);
+
+create table patient_record_requests (
+  request_id uuid primary key,
+  patient_id text not null references patients(canonical_id),
+  pid integer not null,
+  requested_at timestamptz not null,
+  requested_by text not null,
+  completed_at timestamptz,
+  completed_by text
+);
+
+create unique index ux_patient_record_requests_one_open_per_patient
+  on patient_record_requests(patient_id)
+  where completed_at is null;
+
+create index ix_patient_record_requests_patient_history
+  on patient_record_requests(patient_id, requested_at desc);
 
 create table patient_portal_accounts (
   patient_id text primary key references patients(canonical_id) on delete cascade,

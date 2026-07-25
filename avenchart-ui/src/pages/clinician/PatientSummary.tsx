@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { CalendarClock, FileText, Phone, Plus, Printer, Shield, Trash2 } from 'lucide-react'
 import {
@@ -11,10 +11,14 @@ import {
   createPatientMergeAuditPlan,
   executePatientMerge,
   rollbackPatientMerge,
+  getPatientRecordRequests,
+  createPatientRecordRequest,
+  completePatientRecordRequest,
   updatePatientPortalAccountAccess,
   updatePatientPortalAccountReset,
   type PatientInsuranceMutationInput,
   type PatientMergePreview,
+  type PatientRecordRequest,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
@@ -76,6 +80,18 @@ export default function PatientSummary() {
   const [mergeExecutionConfirmed, setMergeExecutionConfirmed] = useState(false)
   const [mergeExecutionState, setMergeExecutionState] = useState<{ status: 'idle' } | { status: 'saving' } | { status: 'ready'; executionId: string; movedCount: number } | { status: 'rolling-back'; executionId: string } | { status: 'rolled-back'; executionId: string } | { status: 'error'; message: string }>({ status: 'idle' })
   const [portalAction, setPortalAction] = useState<'access' | 'reset' | null>(null)
+  const [recordRequests, setRecordRequests] = useState<PatientRecordRequest[]>([])
+  const [recordRequestLoading, setRecordRequestLoading] = useState(true)
+  const [recordRequestAction, setRecordRequestAction] = useState<'create' | string | null>(null)
+
+  async function loadRecordRequests() {
+    setRecordRequestLoading(true)
+    try { setRecordRequests(await getPatientRecordRequests(session.sessionId, patientId)) }
+    catch { setRecordRequests([]) }
+    finally { setRecordRequestLoading(false) }
+  }
+
+  useEffect(() => { void loadRecordRequests() }, [session.sessionId, patientId])
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
 
@@ -204,6 +220,27 @@ export default function PatientSummary() {
       showToast(issue ? 'Portal reset link marked pending.' : 'Portal reset link cleared.', 'success')
       reload()
     } catch { showToast('Could not update portal reset state.', 'error') } finally { setPortalAction(null) }
+  }
+
+  async function createRecordRequest() {
+    setRecordRequestAction('create')
+    try {
+      await createPatientRecordRequest(session.sessionId, patientId)
+      showToast('Patient record request recorded.', 'success')
+      await loadRecordRequests()
+    } catch { showToast('An open patient record request already exists or could not be recorded.', 'error') }
+    finally { setRecordRequestAction(null) }
+  }
+
+  async function completeRecordRequest(request: PatientRecordRequest) {
+    if (!window.confirm('Mark this patient record request complete? This preserves its original request evidence.')) return
+    setRecordRequestAction(request.requestId)
+    try {
+      await completePatientRecordRequest(session.sessionId, patientId, request.requestId)
+      showToast('Patient record request completed.', 'success')
+      await loadRecordRequests()
+    } catch { showToast('Could not complete this patient record request.', 'error') }
+    finally { setRecordRequestAction(null) }
   }
 
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) => setInsForm((f) => ({ ...f, ...patch }))
@@ -460,6 +497,12 @@ export default function PatientSummary() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header"><div><h2 className="cl-card-title">Patient record requests</h2><p className="cl-empty-text">Legacy-compatible request tracking: one request remains open until staff completes it.</p></div><span className={`cl-badge ${recordRequests.some((request) => request.status === 'Open') ? 'cl-badge-muted' : 'cl-badge-green'}`}>{recordRequests.some((request) => request.status === 'Open') ? 'Open request' : 'No open request'}</span></div>
+          {recordRequestLoading ? <p className="cl-empty-text">Loading request history…</p> : recordRequests.length === 0 ? <p className="cl-empty-text">No patient record requests have been recorded.</p> : <ul className="cl-clinical-list">{recordRequests.map((request) => <li key={request.requestId} className="cl-clinical-row"><div><p className="cl-clinical-title">{request.status === 'Open' ? 'Open patient record request' : 'Completed patient record request'}</p><p className="cl-clinical-meta">Requested by {request.requestedBy} on {new Date(request.requestedAt).toLocaleString()}{request.completedAt ? ` · Completed by ${request.completedBy ?? 'staff'} on ${new Date(request.completedAt).toLocaleString()}` : ''}</p></div>{request.status === 'Open' && <button className="cl-btn-secondary" type="button" onClick={() => void completeRecordRequest(request)} disabled={recordRequestAction === request.requestId}>{recordRequestAction === request.requestId ? 'Completing…' : 'Complete'}</button>}</li>)}</ul>}
+          {!recordRequests.some((request) => request.status === 'Open') && <div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={() => void createRecordRequest()} disabled={recordRequestAction === 'create'}>{recordRequestAction === 'create' ? 'Recording…' : 'Record request'}</button></div>}
         </section>
 
         <section className="cl-card">
