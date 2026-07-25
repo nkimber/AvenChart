@@ -322,6 +322,8 @@ drop table if exists auth_sessions;
 drop table if exists auth_audit_events;
 drop table if exists practice_setting_audit_events;
 drop table if exists practice_settings;
+drop table if exists coding_catalog_audit_events;
+drop table if exists coding_catalogs;
 drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
@@ -372,6 +374,15 @@ create table practice_settings (
   value_type text not null,
   updated_at timestamptz not null,
   updated_by text not null
+);
+create table coding_catalogs (
+  catalog_key text primary key, display_name text not null, sequence integer not null,
+  active boolean not null, claim_enabled boolean not null, fee_enabled boolean not null,
+  modifier_length integer not null, updated_at timestamptz not null, updated_by text not null
+);
+create table coding_catalog_audit_events (
+  event_id uuid primary key, catalog_key text not null references coding_catalogs(catalog_key),
+  action text not null, occurred_at timestamptz not null, username text not null
 );
 create table practice_setting_audit_events (
   event_id uuid primary key,
@@ -1487,6 +1498,11 @@ copyRows('practice_settings', ['setting_key', 'setting_value', 'value_type', 'up
   ['practice.name', 'Modernized Legacy EHR Practice', 'text', '2026-01-01T00:00:00Z', 'seed'],
   ['practice.default-facility-id', '10', 'facility-id', '2026-01-01T00:00:00Z', 'seed'],
   ['practice.time-zone', 'America/New_York', 'iana-time-zone', '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active', 'claim_enabled', 'fee_enabled', 'modifier_length', 'updated_at', 'updated_by'], [
+  ['ICD10', 'ICD-10-CM', 10, true, true, false, 0, '2026-01-01T00:00:00Z', 'seed'],
+  ['CPT4', 'CPT', 20, true, true, true, 2, '2026-01-01T00:00:00Z', 'seed'],
+  ['SNOMED', 'SNOMED CT', 30, true, false, false, 0, '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)

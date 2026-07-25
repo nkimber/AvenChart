@@ -7324,6 +7324,63 @@ finally {
     }
 }
 
+$codingCatalogOriginal = $null
+try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $codingCatalogs = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $codingCatalogOriginal = $codingCatalogs.catalogs | Where-Object { $_.key -eq "CPT4" } | Select-Object -First 1
+    if ($null -eq $codingCatalogOriginal) { throw "Seeded CPT catalog was not found." }
+
+    $inactiveCatalogBody = @{
+        displayName = $codingCatalogOriginal.displayName
+        sequence = $codingCatalogOriginal.sequence
+        active = $false
+        claimEnabled = $codingCatalogOriginal.claimEnabled
+        feeEnabled = $codingCatalogOriginal.feeEnabled
+        modifierLength = $codingCatalogOriginal.modifierLength
+    } | ConvertTo-Json
+    $inactivatedCatalogs = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $inactiveCatalogBody -TimeoutSec 20
+    $inactivatedCatalog = $inactivatedCatalogs.catalogs | Where-Object { $_.key -eq "CPT4" -and -not $_.active } | Select-Object -First 1
+
+    $restoredCatalogBody = @{
+        displayName = $codingCatalogOriginal.displayName
+        sequence = $codingCatalogOriginal.sequence
+        active = $codingCatalogOriginal.active
+        claimEnabled = $codingCatalogOriginal.claimEnabled
+        feeEnabled = $codingCatalogOriginal.feeEnabled
+        modifierLength = $codingCatalogOriginal.modifierLength
+    } | ConvertTo-Json
+    $restoredCatalogs = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $restoredCatalogBody -TimeoutSec 20
+    $restoredCatalog = $restoredCatalogs.catalogs | Where-Object { $_.key -eq "CPT4" -and $_.active -eq $codingCatalogOriginal.active -and $_.updatedBy -eq "admin" } | Select-Object -First 1
+    $codingCatalogOriginal = $null
+
+    Add-Check -Name "administration coding catalog activation lifecycle" -Result $(if ($null -ne $inactivatedCatalog -and $null -ne $restoredCatalog) { "passed" } else { "failed" }) -Details @{
+        catalog = "CPT4"
+        inactivated = $null -ne $inactivatedCatalog
+        restored = $null -ne $restoredCatalog
+    }
+}
+catch {
+    Add-Check -Name "administration coding catalog activation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $codingCatalogOriginal) {
+        try {
+            $restoreCatalogBody = @{
+                displayName = $codingCatalogOriginal.displayName
+                sequence = $codingCatalogOriginal.sequence
+                active = $codingCatalogOriginal.active
+                claimEnabled = $codingCatalogOriginal.claimEnabled
+                feeEnabled = $codingCatalogOriginal.feeEnabled
+                modifierLength = $codingCatalogOriginal.modifierLength
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreCatalogBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $unauthenticatedProceduresStatus = 0
     try {

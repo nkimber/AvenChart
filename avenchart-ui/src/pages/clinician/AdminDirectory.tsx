@@ -5,10 +5,12 @@ import {
   acceptAdministrationPortalProfileReview,
   createAdministrationFacility,
   createAdministrationUser,
+  createCodingCatalog,
   deleteAdministrationFacility,
   deleteAdministrationUser,
   getAdministrationDirectory,
   getConfigurationCatalog,
+  getCodingCatalogs,
   getPhiAccessAudit,
   getPracticeSettings,
   grantAdministrationAccessMembership,
@@ -18,6 +20,7 @@ import {
   revertAdministrationPortalProfileReview,
   updateAdministrationFacility,
   updateAdministrationUser,
+  updateCodingCatalog,
   updatePracticeSetting,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
@@ -29,6 +32,8 @@ import {
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
   type ConfigurationCatalogItem,
+  type CodingCatalogItem,
+  type CodingCatalogMutationInput,
   type PracticeSettingItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -105,9 +110,11 @@ function normalizeUserForm(form: UserForm): AdministrationUserMutationInput {
 
 type AccessMembershipForm = { userValue: string; groupValue: string }
 type AccessPermissionForm = { groupValue: string; permissionKey: string; returnValue: 'addonly' | 'view' | 'write' | 'wsome' }
+type CodingCatalogForm = CodingCatalogMutationInput & { key: string }
 
 function emptyMembershipForm(): AccessMembershipForm { return { userValue: '', groupValue: '' } }
 function emptyPermissionForm(): AccessPermissionForm { return { groupValue: '', permissionKey: '', returnValue: 'view' } }
+function emptyCodingCatalogForm(): CodingCatalogForm { return { key: '', displayName: '', sequence: 40, active: true, claimEnabled: false, feeEnabled: false, modifierLength: 0 } }
 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
@@ -115,6 +122,9 @@ export default function AdminDirectory() {
   const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
+  const [codingCatalogs, setCodingCatalogs] = useState<CodingCatalogItem[]>([])
+  const [codingCatalogForm, setCodingCatalogForm] = useState<CodingCatalogForm>(() => emptyCodingCatalogForm())
+  const [savingCodingCatalog, setSavingCodingCatalog] = useState(false)
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -146,7 +156,41 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
-  useEffect(() => { if (tab === 'configuration') { getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error')); getPracticeSettings(session.sessionId).then((result) => setPracticeSettings(result.settings)).catch(() => showToast('Could not load practice settings.', 'error')) } }, [session.sessionId, tab])
+  useEffect(() => {
+    if (tab !== 'configuration') return
+    getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error'))
+    getPracticeSettings(session.sessionId).then((result) => setPracticeSettings(result.settings)).catch(() => showToast('Could not load practice settings.', 'error'))
+    getCodingCatalogs(session.sessionId).then((result) => setCodingCatalogs(result.catalogs)).catch(() => showToast('Could not load coding catalogs.', 'error'))
+  }, [session.sessionId, tab])
+
+  async function saveCodingCatalog(catalog: CodingCatalogItem, patch: Partial<CodingCatalogMutationInput>) {
+    setSavingCodingCatalog(true)
+    try {
+      const result = await updateCodingCatalog(session.sessionId, catalog.key, { ...catalog, ...patch })
+      setCodingCatalogs(result.catalogs)
+      showToast(`${catalog.key} catalog saved.`, 'success')
+    } catch {
+      showToast(`Could not save ${catalog.key}.`, 'error')
+    } finally {
+      setSavingCodingCatalog(false)
+    }
+  }
+
+  async function createCatalog(event: FormEvent) {
+    event.preventDefault()
+    setSavingCodingCatalog(true)
+    try {
+      const { key, ...input } = codingCatalogForm
+      const result = await createCodingCatalog(session.sessionId, key, input)
+      setCodingCatalogs(result.catalogs)
+      setCodingCatalogForm(emptyCodingCatalogForm())
+      showToast(`${key.trim().toUpperCase()} catalog created.`, 'success')
+    } catch {
+      showToast('Could not create coding catalog.', 'error')
+    } finally {
+      setSavingCodingCatalog(false)
+    }
+  }
 
   function beginFacilityCreate() {
     setFacilityForm(emptyFacilityForm())
@@ -585,7 +629,30 @@ export default function AdminDirectory() {
               </section>
             )}
 
-            {tab === 'configuration' && <section className="cl-card"><h2 className="cl-card-title">Practice settings</h2><p className="clinician-page-subtitle">Non-secret legacy-style globals save only when changed and retain an authenticated audit event.</p>{practiceSettings.map((item) => <div className="form-row" key={item.key}><div className="field" style={{ flex: 1 }}><label className="label">{item.label}</label><input className="input" defaultValue={item.value} onBlur={async (event) => { if (event.target.value === item.value) return; try { const result = await updatePracticeSetting(session.sessionId, item.key, event.target.value); setPracticeSettings(result.settings); showToast(`${item.label} saved.`, 'success') } catch { event.target.value = item.value; showToast(`Could not save ${item.label}.`, 'error') } }} /></div><p className="cl-empty-text">{item.updatedBy}</p></div>)}<h2 className="cl-card-title">Configuration catalog</h2><table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table></section>}
+            {tab === 'configuration' && (
+              <section className="cl-card">
+                <h2 className="cl-card-title">Practice settings</h2>
+                <p className="clinician-page-subtitle">Non-secret legacy-style globals save only when changed and retain an authenticated audit event.</p>
+                {practiceSettings.map((item) => <div className="form-row" key={item.key}><div className="field" style={{ flex: 1 }}><label className="label">{item.label}</label><input className="input" defaultValue={item.value} onBlur={async (event) => { if (event.target.value === item.value) return; try { const result = await updatePracticeSetting(session.sessionId, item.key, event.target.value); setPracticeSettings(result.settings); showToast(`${item.label} saved.`, 'success') } catch { event.target.value = item.value; showToast(`Could not save ${item.label}.`, 'error') } }} /></div><p className="cl-empty-text">{item.updatedBy}</p></div>)}
+
+                <h2 className="cl-card-title">Coding catalogs</h2>
+                <p className="clinician-page-subtitle">Legacy code types are ordered, active or inactive, and carry claim, fee, and modifier capabilities. Inactivation preserves the catalog key and its historical references.</p>
+                <form className="cl-access-form" onSubmit={createCatalog}>
+                  <label className="cl-admin-field"><span>Code system key</span><input className="ne-input" value={codingCatalogForm.key} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, key: event.target.value.toUpperCase() }))} maxLength={32} placeholder="LOINC" required /></label>
+                  <label className="cl-admin-field"><span>Display name</span><input className="ne-input" value={codingCatalogForm.displayName} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, displayName: event.target.value }))} maxLength={120} placeholder="LOINC" required /></label>
+                  <label className="cl-admin-field"><span>Order</span><input className="ne-input" type="number" min="0" value={codingCatalogForm.sequence} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, sequence: Number(event.target.value) }))} required /></label>
+                  <label className="cl-admin-field"><span>Modifier length</span><input className="ne-input" type="number" min="0" max="12" value={codingCatalogForm.modifierLength} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, modifierLength: Number(event.target.value) }))} required /></label>
+                  <label className="cl-admin-field"><span><input type="checkbox" checked={codingCatalogForm.active} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, active: event.target.checked }))} /> Active</span></label>
+                  <label className="cl-admin-field"><span><input type="checkbox" checked={codingCatalogForm.claimEnabled} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, claimEnabled: event.target.checked }))} /> Claims</span></label>
+                  <label className="cl-admin-field"><span><input type="checkbox" checked={codingCatalogForm.feeEnabled} onChange={(event) => setCodingCatalogForm((form) => ({ ...form, feeEnabled: event.target.checked }))} /> Fees</span></label>
+                  <button className="cl-btn-primary" type="submit" disabled={savingCodingCatalog || !codingCatalogForm.key.trim() || !codingCatalogForm.displayName.trim()}>{savingCodingCatalog ? 'Saving...' : 'Add catalog'}</button>
+                </form>
+                <table className="cl-table"><thead><tr><th>Catalog</th><th>Order</th><th>Modifier length</th><th>Capabilities</th><th>Active</th></tr></thead><tbody>{codingCatalogs.map((catalog) => <tr key={catalog.key}><td><strong>{catalog.key}</strong><input className="ne-input" defaultValue={catalog.displayName} aria-label={`${catalog.key} display name`} onBlur={(event) => { if (event.target.value !== catalog.displayName) void saveCodingCatalog(catalog, { displayName: event.target.value }) }} /></td><td><input className="ne-input" type="number" min="0" defaultValue={catalog.sequence} aria-label={`${catalog.key} order`} onBlur={(event) => { const sequence = Number(event.target.value); if (Number.isInteger(sequence) && sequence !== catalog.sequence) void saveCodingCatalog(catalog, { sequence }) }} /></td><td><input className="ne-input" type="number" min="0" max="12" defaultValue={catalog.modifierLength} aria-label={`${catalog.key} modifier length`} onBlur={(event) => { const modifierLength = Number(event.target.value); if (Number.isInteger(modifierLength) && modifierLength !== catalog.modifierLength) void saveCodingCatalog(catalog, { modifierLength }) }} /></td><td><label><input type="checkbox" checked={catalog.claimEnabled} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { claimEnabled: event.target.checked })} /> Claims</label><br /><label><input type="checkbox" checked={catalog.feeEnabled} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { feeEnabled: event.target.checked })} /> Fees</label></td><td><label><input type="checkbox" checked={catalog.active} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { active: event.target.checked })} /> {catalog.active ? 'Active' : 'Inactive'}</label></td></tr>)}</tbody></table>
+
+                <h2 className="cl-card-title">Configuration catalog</h2>
+                <table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table>
+              </section>
+            )}
 
             {tab === 'access' && (
               <section className="cl-card">

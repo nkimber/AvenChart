@@ -30,6 +30,74 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new PracticeSettingsResponse(settings);
     }
 
+    public async Task<CodingCatalogResponse> GetCodingCatalogsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select catalog_key, display_name, sequence, active, claim_enabled, fee_enabled, modifier_length, updated_at, updated_by from coding_catalogs order by sequence, catalog_key;";
+        var catalogs = new List<CodingCatalogItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) catalogs.Add(new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetBoolean(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7).ToString("O"), reader.GetString(8)));
+        return new CodingCatalogResponse(catalogs);
+    }
+
+    public async Task<CodingCatalogResponse> UpdateCodingCatalogAsync(string key, CodingCatalogUpdateRequest request, string username, CancellationToken cancellationToken)
+    {
+        var catalogKey = NormalizeCatalogKey(key);
+        ValidateCodingCatalog(request.DisplayName, request.Sequence, request.ModifierLength);
+        var displayName = request.DisplayName.Trim();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        bool changed;
+        await using (var existing = connection.CreateCommand())
+        {
+            existing.Transaction = transaction;
+            existing.CommandText = "select display_name,sequence,active,claim_enabled,fee_enabled,modifier_length from coding_catalogs where catalog_key=@key for update;";
+            existing.Parameters.AddWithValue("key", catalogKey);
+            await using var reader = await existing.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("Catalog was not found.");
+            changed = reader.GetString(0) != displayName || reader.GetInt32(1) != request.Sequence || reader.GetBoolean(2) != request.Active || reader.GetBoolean(3) != request.ClaimEnabled || reader.GetBoolean(4) != request.FeeEnabled || reader.GetInt32(5) != request.ModifierLength;
+        }
+        if (changed)
+        {
+            await using var command = connection.CreateCommand(); command.Transaction = transaction;
+            command.CommandText = "update coding_catalogs set display_name=@name,sequence=@sequence,active=@active,claim_enabled=@claim,fee_enabled=@fee,modifier_length=@modifier,updated_at=now(),updated_by=@user where catalog_key=@key;";
+            command.Parameters.AddWithValue("key", catalogKey); command.Parameters.AddWithValue("name", displayName); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("claim", request.ClaimEnabled); command.Parameters.AddWithValue("fee", request.FeeEnabled); command.Parameters.AddWithValue("modifier", request.ModifierLength); command.Parameters.AddWithValue("user", username);
+            try { await command.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("Catalog key and sequence must be unique."); }
+            await using var audit = connection.CreateCommand(); audit.Transaction = transaction; audit.CommandText = "insert into coding_catalog_audit_events(event_id,catalog_key,action,occurred_at,username) values(@eventId,@key,'updated',now(),@user);"; audit.Parameters.AddWithValue("eventId", Guid.NewGuid()); audit.Parameters.AddWithValue("key", catalogKey); audit.Parameters.AddWithValue("user", username); await audit.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return await GetCodingCatalogsAsync(cancellationToken);
+    }
+
+    public async Task<CodingCatalogResponse> CreateCodingCatalogAsync(CodingCatalogCreateRequest request, string username, CancellationToken cancellationToken)
+    {
+        var catalogKey = NormalizeCatalogKey(request.Key);
+        ValidateCodingCatalog(request.DisplayName, request.Sequence, request.ModifierLength);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "insert into coding_catalogs(catalog_key,display_name,sequence,active,claim_enabled,fee_enabled,modifier_length,updated_at,updated_by) values(@key,@name,@sequence,@active,@claim,@fee,@modifier,now(),@user); insert into coding_catalog_audit_events(event_id,catalog_key,action,occurred_at,username) values(@eventId,@key,'created',now(),@user);";
+        command.Parameters.AddWithValue("key", catalogKey); command.Parameters.AddWithValue("name", request.DisplayName.Trim()); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("claim", request.ClaimEnabled); command.Parameters.AddWithValue("fee", request.FeeEnabled); command.Parameters.AddWithValue("modifier", request.ModifierLength); command.Parameters.AddWithValue("user", username); command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+        try { await command.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("Catalog key and sequence must be unique."); }
+        await transaction.CommitAsync(cancellationToken);
+        return await GetCodingCatalogsAsync(cancellationToken);
+    }
+
+    private static void ValidateCodingCatalog(string displayName, int sequence, int modifierLength)
+    {
+        if (string.IsNullOrWhiteSpace(displayName) || displayName.Trim().Length > 120 || sequence < 0 || modifierLength is < 0 or > 12)
+            throw new ArgumentException("Catalog label, sequence, and modifier length are invalid.");
+    }
+
+    private static string NormalizeCatalogKey(string key)
+    {
+        var normalized = key.Trim().ToUpperInvariant();
+        if (normalized.Length is < 2 or > 32 || !normalized.All(character => char.IsAsciiLetterOrDigit(character) || character == '_'))
+            throw new ArgumentException("Catalog key must be 2-32 uppercase letters, numbers, or underscores.");
+        return normalized;
+    }
+
     public async Task<PracticeSettingsResponse> UpdatePracticeSettingAsync(string key, string value, string username, CancellationToken cancellationToken)
     {
         if (key is not ("practice.name" or "practice.default-facility-id" or "practice.time-zone")) throw new ArgumentException("The requested practice setting is not mutable.");

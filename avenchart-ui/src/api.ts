@@ -2005,6 +2005,11 @@ export async function getConfigurationCatalog(sessionId: string): Promise<{ sett
 export type PracticeSettingItem = { key: string; label: string; value: string; valueType: string; updatedAt: string; updatedBy: string }
 export async function getPracticeSettings(sessionId: string): Promise<{ settings: PracticeSettingItem[] }> { return clinicianGet(sessionId, '/api/administration/practice-settings') }
 export async function updatePracticeSetting(sessionId: string, key: string, value: string): Promise<{ settings: PracticeSettingItem[] }> { return clinicianPut(sessionId, `/api/administration/practice-settings/${key}`, { value }) }
+export type CodingCatalogItem = { key: string; displayName: string; sequence: number; active: boolean; claimEnabled: boolean; feeEnabled: boolean; modifierLength: number }
+export async function getCodingCatalogs(sessionId: string): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/coding-catalogs') }
+export type CodingCatalogMutationInput = { displayName: string; sequence: number; active: boolean; claimEnabled: boolean; feeEnabled: boolean; modifierLength: number }
+export async function createCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPost(sessionId, '/api/administration/coding-catalogs', { key, ...input }) }
+export async function updateCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPut(sessionId, `/api/administration/coding-catalogs/${key}`, input) }
 
 export type PhiAccessAuditEvent = {
   auditId: string
