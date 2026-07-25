@@ -324,6 +324,9 @@ drop table if exists practice_setting_audit_events;
 drop table if exists practice_settings;
 drop table if exists coding_catalog_audit_events;
 drop table if exists coding_catalogs;
+drop table if exists form_layout_fields;
+drop table if exists form_layout_groups;
+drop table if exists form_layouts;
 drop table if exists auth_accounts;
 drop table if exists staff;
 drop table if exists facilities;
@@ -383,6 +386,21 @@ create table coding_catalogs (
 create table coding_catalog_audit_events (
   event_id uuid primary key, catalog_key text not null references coding_catalogs(catalog_key),
   action text not null, occurred_at timestamptz not null, username text not null
+);
+create table form_layouts (
+  layout_key text primary key, title text not null, mapping text not null, sequence integer not null,
+  active boolean not null, updated_at timestamptz not null, updated_by text not null
+);
+create table form_layout_groups (
+  layout_key text not null references form_layouts(layout_key), group_key text not null, title text not null,
+  sequence integer not null, active boolean not null, updated_at timestamptz not null, updated_by text not null,
+  primary key (layout_key, group_key)
+);
+create table form_layout_fields (
+  layout_key text not null, field_key text not null, group_key text not null, label text not null, field_type text not null,
+  sequence integer not null, required boolean not null, active boolean not null, max_length integer not null,
+  list_id text, default_value text, updated_at timestamptz not null, updated_by text not null,
+  primary key (layout_key, field_key), foreign key (layout_key, group_key) references form_layout_groups(layout_key, group_key)
 );
 create table practice_setting_audit_events (
   event_id uuid primary key,
@@ -1503,6 +1521,15 @@ copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active'
   ['ICD10', 'ICD-10-CM', 10, true, true, false, 0, '2026-01-01T00:00:00Z', 'seed'],
   ['CPT4', 'CPT', 20, true, true, true, 2, '2026-01-01T00:00:00Z', 'seed'],
   ['SNOMED', 'SNOMED CT', 30, true, false, false, 0, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active', 'updated_at', 'updated_by'], [
+  ['DEM', 'Demographics', 'Core', 10, true, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('form_layout_groups', ['layout_key', 'group_key', 'title', 'sequence', 'active', 'updated_at', 'updated_by'], [
+  ['DEM', 'who', 'Who', 10, true, '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'contact', 'Contact', 20, true, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
+  ['DEM', 'first_name', 'who', 'First name', 'text', 10, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'last_name', 'who', 'Last name', 'text', 20, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'birth_date', 'who', 'Date of birth', 'date', 30, true, true, 10, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'phone', 'contact', 'Phone', 'text', 10, false, true, 40, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'email', 'contact', 'Email', 'text', 20, false, true, 95, '', '', '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)

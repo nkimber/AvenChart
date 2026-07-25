@@ -98,6 +98,51 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return normalized;
     }
 
+    public async Task<FormLayoutCatalogResponse> GetFormLayoutsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = "select layout_key,title,mapping,sequence,active,updated_at,updated_by from form_layouts order by sequence,layout_key;";
+        var layouts = new List<FormLayoutItem>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) layouts.Add(ReadLayout(reader));
+        return new FormLayoutCatalogResponse(layouts);
+    }
+
+    public async Task<FormLayoutDetailResponse> GetFormLayoutAsync(string key, CancellationToken cancellationToken)
+    {
+        var layoutKey = NormalizeCatalogKey(key); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var layoutCommand = connection.CreateCommand(); layoutCommand.CommandText = "select layout_key,title,mapping,sequence,active,updated_at,updated_by from form_layouts where layout_key=@key;"; layoutCommand.Parameters.AddWithValue("key", layoutKey);
+        await using var layoutReader = await layoutCommand.ExecuteReaderAsync(cancellationToken); if (!await layoutReader.ReadAsync(cancellationToken)) throw new ArgumentException("Layout was not found."); var layout = ReadLayout(layoutReader); await layoutReader.CloseAsync();
+        await using var groupCommand = connection.CreateCommand(); groupCommand.CommandText = "select group_key,title,sequence,active,updated_at,updated_by from form_layout_groups where layout_key=@key order by sequence,group_key;"; groupCommand.Parameters.AddWithValue("key", layoutKey);
+        var groups = new List<FormLayoutGroupItem>(); await using (var groupReader = await groupCommand.ExecuteReaderAsync(cancellationToken)) while (await groupReader.ReadAsync(cancellationToken)) groups.Add(new(groupReader.GetString(0), groupReader.GetString(1), groupReader.GetInt32(2), groupReader.GetBoolean(3), groupReader.GetFieldValue<DateTimeOffset>(4).ToString("O"), groupReader.GetString(5)));
+        await using var fieldCommand = connection.CreateCommand(); fieldCommand.CommandText = "select field_key,group_key,label,field_type,sequence,required,active,max_length,list_id,default_value,updated_at,updated_by from form_layout_fields where layout_key=@key order by group_key,sequence,field_key;"; fieldCommand.Parameters.AddWithValue("key", layoutKey);
+        var fields = new List<FormLayoutFieldItem>(); await using var fieldReader = await fieldCommand.ExecuteReaderAsync(cancellationToken); while (await fieldReader.ReadAsync(cancellationToken)) fields.Add(new(fieldReader.GetString(0), fieldReader.GetString(1), fieldReader.GetString(2), fieldReader.GetString(3), fieldReader.GetInt32(4), fieldReader.GetBoolean(5), fieldReader.GetBoolean(6), fieldReader.GetInt32(7), fieldReader.IsDBNull(8) ? "" : fieldReader.GetString(8), fieldReader.IsDBNull(9) ? "" : fieldReader.GetString(9), fieldReader.GetFieldValue<DateTimeOffset>(10).ToString("O"), fieldReader.GetString(11)));
+        return new FormLayoutDetailResponse(layout, groups, fields);
+    }
+
+    public async Task<FormLayoutDetailResponse> UpsertFormLayoutAsync(string key, FormLayoutMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        var layoutKey = NormalizeCatalogKey(key); ValidateLayoutText(request.Title, request.Mapping); if (request.Sequence < 0) throw new ArgumentException("Layout sequence must be non-negative.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = "insert into form_layouts(layout_key,title,mapping,sequence,active,updated_at,updated_by) values(@key,@title,@mapping,@sequence,@active,now(),@user) on conflict(layout_key) do update set title=excluded.title,mapping=excluded.mapping,sequence=excluded.sequence,active=excluded.active,updated_at=now(),updated_by=excluded.updated_by;";
+        command.Parameters.AddWithValue("key", layoutKey); command.Parameters.AddWithValue("title", request.Title.Trim()); command.Parameters.AddWithValue("mapping", request.Mapping.Trim()); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("user", username); try { await command.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("Layout sequence must be unique."); }
+        return await GetFormLayoutAsync(layoutKey, cancellationToken);
+    }
+
+    public async Task<FormLayoutDetailResponse> UpsertFormLayoutGroupAsync(string layoutKey, string groupKey, FormLayoutGroupMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        layoutKey = NormalizeCatalogKey(layoutKey); groupKey = NormalizeCatalogKey(groupKey); ValidateLayoutText(request.Title, "x"); if (request.Sequence < 0) throw new ArgumentException("Group sequence must be non-negative.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand(); command.CommandText = "insert into form_layout_groups(layout_key,group_key,title,sequence,active,updated_at,updated_by) values(@layout,@key,@title,@sequence,@active,now(),@user) on conflict(layout_key,group_key) do update set title=excluded.title,sequence=excluded.sequence,active=excluded.active,updated_at=now(),updated_by=excluded.updated_by;"; command.Parameters.AddWithValue("layout", layoutKey); command.Parameters.AddWithValue("key", groupKey); command.Parameters.AddWithValue("title", request.Title.Trim()); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("user", username); try { await command.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23503") { throw new ArgumentException("Layout was not found."); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("Group sequence must be unique within a layout."); } return await GetFormLayoutAsync(layoutKey, cancellationToken);
+    }
+
+    public async Task<FormLayoutDetailResponse> UpsertFormLayoutFieldAsync(string layoutKey, string fieldKey, FormLayoutFieldMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        layoutKey = NormalizeCatalogKey(layoutKey); fieldKey = NormalizeCatalogKey(fieldKey); var groupKey = NormalizeCatalogKey(request.GroupKey); if (string.IsNullOrWhiteSpace(request.Label) || request.Label.Trim().Length > 120 || request.Sequence < 0 || request.MaxLength is < 0 or > 4096 || request.FieldType is not ("text" or "date" or "select" or "textarea" or "checkbox" or "number")) throw new ArgumentException("Field definition is invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand(); command.CommandText = "insert into form_layout_fields(layout_key,field_key,group_key,label,field_type,sequence,required,active,max_length,list_id,default_value,updated_at,updated_by) values(@layout,@key,@group,@label,@type,@sequence,@required,@active,@length,@list,@default,now(),@user) on conflict(layout_key,field_key) do update set group_key=excluded.group_key,label=excluded.label,field_type=excluded.field_type,sequence=excluded.sequence,required=excluded.required,active=excluded.active,max_length=excluded.max_length,list_id=excluded.list_id,default_value=excluded.default_value,updated_at=now(),updated_by=excluded.updated_by;"; command.Parameters.AddWithValue("layout", layoutKey); command.Parameters.AddWithValue("key", fieldKey); command.Parameters.AddWithValue("group", groupKey); command.Parameters.AddWithValue("label", request.Label.Trim()); command.Parameters.AddWithValue("type", request.FieldType); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("required", request.Required); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("length", request.MaxLength); command.Parameters.AddWithValue("list", request.ListId?.Trim() ?? ""); command.Parameters.AddWithValue("default", request.DefaultValue?.Trim() ?? ""); command.Parameters.AddWithValue("user", username); try { await command.ExecuteNonQueryAsync(cancellationToken); } catch (PostgresException exception) when (exception.SqlState == "23503") { throw new ArgumentException("Group was not found in the selected layout."); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("Field sequence must be unique within a group."); } return await GetFormLayoutAsync(layoutKey, cancellationToken);
+    }
+
+    private static FormLayoutItem ReadLayout(NpgsqlDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetBoolean(4), reader.GetFieldValue<DateTimeOffset>(5).ToString("O"), reader.GetString(6));
+    private static void ValidateLayoutText(string title, string mapping) { if (string.IsNullOrWhiteSpace(title) || title.Trim().Length > 120 || string.IsNullOrWhiteSpace(mapping) || mapping.Trim().Length > 64) throw new ArgumentException("Layout title or mapping is invalid."); }
+
     public async Task<PracticeSettingsResponse> UpdatePracticeSettingAsync(string key, string value, string username, CancellationToken cancellationToken)
     {
         if (key is not ("practice.name" or "practice.default-facility-id" or "practice.time-zone")) throw new ArgumentException("The requested practice setting is not mutable.");

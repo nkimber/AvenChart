@@ -11,6 +11,8 @@ import {
   getAdministrationDirectory,
   getConfigurationCatalog,
   getCodingCatalogs,
+  getFormLayout,
+  getFormLayouts,
   getPhiAccessAudit,
   getPracticeSettings,
   grantAdministrationAccessMembership,
@@ -22,6 +24,9 @@ import {
   updateAdministrationUser,
   updateCodingCatalog,
   updatePracticeSetting,
+  saveFormLayout,
+  saveFormLayoutField,
+  saveFormLayoutGroup,
   type AdministrationDirectoryResponse,
   type AdministrationFacilityItem,
   type AdministrationFacilityMutationInput,
@@ -34,6 +39,8 @@ import {
   type ConfigurationCatalogItem,
   type CodingCatalogItem,
   type CodingCatalogMutationInput,
+  type FormLayoutDetail,
+  type FormLayoutItem,
   type PracticeSettingItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -119,12 +126,18 @@ function emptyCodingCatalogForm(): CodingCatalogForm { return { key: '', display
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration' | 'layouts'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
   const [codingCatalogs, setCodingCatalogs] = useState<CodingCatalogItem[]>([])
   const [codingCatalogForm, setCodingCatalogForm] = useState<CodingCatalogForm>(() => emptyCodingCatalogForm())
   const [savingCodingCatalog, setSavingCodingCatalog] = useState(false)
+  const [layouts, setLayouts] = useState<FormLayoutItem[]>([])
+  const [layoutDetail, setLayoutDetail] = useState<FormLayoutDetail | null>(null)
+  const [layoutKey, setLayoutKey] = useState('')
+  const [savingLayout, setSavingLayout] = useState(false)
+  const [groupDraft, setGroupDraft] = useState({ key: '', title: '', sequence: 10 })
+  const [fieldDraft, setFieldDraft] = useState({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: 10 })
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -156,6 +169,12 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
+  useEffect(() => { if (tab === 'layouts') getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')) }, [session.sessionId, tab])
+
+  async function openLayout(key: string) { try { setLayoutDetail(await getFormLayout(session.sessionId, key)); setLayoutKey(key) } catch { showToast('Could not load layout detail.', 'error') } }
+  async function saveLayout(event: FormEvent) { event.preventDefault(); setSavingLayout(true); try { const detail = await saveFormLayout(session.sessionId, layoutKey, { title: layoutDetail?.layout.title ?? layoutKey, mapping: layoutDetail?.layout.mapping ?? 'Core', sequence: layoutDetail?.layout.sequence ?? ((layouts.at(-1)?.sequence ?? 0) + 10), active: layoutDetail?.layout.active ?? true }); setLayoutDetail(detail); setLayouts(await getFormLayouts(session.sessionId).then((result) => result.layouts)); showToast('Layout saved.', 'success') } catch { showToast('Could not save layout.', 'error') } finally { setSavingLayout(false) } }
+  async function saveGroup(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutGroup(session.sessionId, layoutDetail.layout.key, groupDraft.key, { title: groupDraft.title, sequence: groupDraft.sequence, active: true })); setGroupDraft({ key: '', title: '', sequence: groupDraft.sequence + 10 }); showToast('Group saved.', 'success') } catch { showToast('Could not save group.', 'error') } }
+  async function saveField(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutField(session.sessionId, layoutDetail.layout.key, fieldDraft.key, { groupKey: fieldDraft.groupKey, label: fieldDraft.label, fieldType: fieldDraft.fieldType, sequence: fieldDraft.sequence, required: false, active: true, maxLength: 255, listId: '', defaultValue: '' })); setFieldDraft({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: fieldDraft.sequence + 10 }); showToast('Field saved.', 'success') } catch { showToast('Could not save field.', 'error') } }
   useEffect(() => {
     if (tab !== 'configuration') return
     getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error'))
@@ -416,6 +435,7 @@ export default function AdminDirectory() {
                 { id: 'reviews', label: `Profile reviews (${data.counts.waitingProfileReviews})` },
                 { id: 'audit', label: 'PHI access audit' },
                 { id: 'configuration', label: 'Configuration' },
+                { id: 'layouts', label: 'Forms & layouts' },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -651,6 +671,17 @@ export default function AdminDirectory() {
 
                 <h2 className="cl-card-title">Configuration catalog</h2>
                 <table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table>
+              </section>
+            )}
+
+            {tab === 'layouts' && (
+              <section className="cl-card">
+                <h2 className="cl-card-title">Forms and layouts</h2>
+                <p className="clinician-page-subtitle">Manage the metadata that organizes legacy-style forms. This registry does not alter patient records or database columns.</p>
+                <div className="cl-access-grid">
+                  <section className="cl-access-panel"><h3 className="cl-access-title">Layout registry</h3><ul className="cl-access-list">{layouts.map((layout) => <li className="cl-access-row" key={layout.key}><div><p>{layout.title}</p><span>{layout.key} · {layout.mapping} · {layout.active ? 'Active' : 'Inactive'}</span></div><button className="cl-btn-secondary" type="button" onClick={() => void openLayout(layout.key)}>Edit</button></li>)}{layouts.length === 0 && <li className="cl-empty-text">No layouts configured.</li>}</ul></section>
+                  <section className="cl-access-panel"><h3 className="cl-access-title">Layout editor</h3><form className="cl-access-form" onSubmit={saveLayout}><label className="cl-admin-field"><span>Layout key</span><input className="ne-input" value={layoutKey} onChange={(event) => { setLayoutKey(event.target.value.toUpperCase()); setLayoutDetail(null) }} placeholder="LBFINTAKE" required /></label><label className="cl-admin-field"><span>Title</span><input className="ne-input" value={layoutDetail?.layout.title ?? ''} onChange={(event) => setLayoutDetail((detail) => detail ? { ...detail, layout: { ...detail.layout, title: event.target.value } } : { layout: { key: layoutKey, title: event.target.value, mapping: 'Core', sequence: 10, active: true }, groups: [], fields: [] })} required /></label><button className="cl-btn-primary" type="submit" disabled={savingLayout || !layoutKey.trim()}>Save layout</button></form>{layoutDetail && <div><p className="cl-admin-form-copy">{layoutDetail.groups.length} groups · {layoutDetail.fields.length} fields</p><form className="cl-access-form" onSubmit={saveGroup}><input className="ne-input" placeholder="Group key" value={groupDraft.key} onChange={(e) => setGroupDraft({ ...groupDraft, key: e.target.value.toUpperCase() })} required /><input className="ne-input" placeholder="Group title" value={groupDraft.title} onChange={(e) => setGroupDraft({ ...groupDraft, title: e.target.value })} required /><button className="cl-btn-secondary">Add group</button></form><form className="cl-access-form" onSubmit={saveField}><input className="ne-input" placeholder="Field key" value={fieldDraft.key} onChange={(e) => setFieldDraft({ ...fieldDraft, key: e.target.value.toUpperCase() })} required /><select className="ne-input" value={fieldDraft.groupKey} onChange={(e) => setFieldDraft({ ...fieldDraft, groupKey: e.target.value })} required><option value="">Group</option>{layoutDetail.groups.map((g) => <option key={g.key} value={g.key}>{g.title}</option>)}</select><input className="ne-input" placeholder="Field label" value={fieldDraft.label} onChange={(e) => setFieldDraft({ ...fieldDraft, label: e.target.value })} required /><button className="cl-btn-secondary">Add field</button></form><ul className="cl-access-list">{layoutDetail.groups.map((group) => <li className="cl-access-row" key={group.key}><div><p>{group.title}</p><span>{group.key} · {layoutDetail.fields.filter((field) => field.groupKey === group.key).length} fields</span></div></li>)}</ul></div>}</section>
+                </div>
               </section>
             )}
 

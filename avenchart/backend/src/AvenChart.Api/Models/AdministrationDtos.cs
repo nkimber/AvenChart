@@ -190,3 +190,12 @@ public sealed record CodingCatalogItem(string Key, string DisplayName, int Seque
 public sealed record CodingCatalogResponse(IReadOnlyList<CodingCatalogItem> Catalogs);
 public sealed record CodingCatalogCreateRequest(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength);
 public sealed record CodingCatalogUpdateRequest(string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength);
+
+public sealed record FormLayoutItem(string Key, string Title, string Mapping, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
+public sealed record FormLayoutGroupItem(string Key, string Title, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
+public sealed record FormLayoutFieldItem(string Key, string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string ListId, string DefaultValue, string UpdatedAt, string UpdatedBy);
+public sealed record FormLayoutCatalogResponse(IReadOnlyList<FormLayoutItem> Layouts);
+public sealed record FormLayoutDetailResponse(FormLayoutItem Layout, IReadOnlyList<FormLayoutGroupItem> Groups, IReadOnlyList<FormLayoutFieldItem> Fields);
+public sealed record FormLayoutMutationRequest(string Title, string Mapping, int Sequence, bool Active);
+public sealed record FormLayoutGroupMutationRequest(string Title, int Sequence, bool Active);
+public sealed record FormLayoutFieldMutationRequest(string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string? ListId, string? DefaultValue);

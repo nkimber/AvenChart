@@ -2010,6 +2010,15 @@ export async function getCodingCatalogs(sessionId: string): Promise<{ catalogs: 
 export type CodingCatalogMutationInput = { displayName: string; sequence: number; active: boolean; claimEnabled: boolean; feeEnabled: boolean; modifierLength: number }
 export async function createCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPost(sessionId, '/api/administration/coding-catalogs', { key, ...input }) }
 export async function updateCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPut(sessionId, `/api/administration/coding-catalogs/${key}`, input) }
+export type FormLayoutItem = { key: string; title: string; mapping: string; sequence: number; active: boolean }
+export type FormLayoutGroupItem = { key: string; title: string; sequence: number; active: boolean }
+export type FormLayoutFieldItem = { key: string; groupKey: string; label: string; fieldType: string; sequence: number; required: boolean; active: boolean; maxLength: number; listId: string; defaultValue: string }
+export type FormLayoutDetail = { layout: FormLayoutItem; groups: FormLayoutGroupItem[]; fields: FormLayoutFieldItem[] }
+export async function getFormLayouts(sessionId: string): Promise<{ layouts: FormLayoutItem[] }> { return clinicianGet(sessionId, '/api/administration/form-layouts') }
+export async function getFormLayout(sessionId: string, key: string): Promise<FormLayoutDetail> { return clinicianGet(sessionId, `/api/administration/form-layouts/${key}`) }
+export async function saveFormLayout(sessionId: string, key: string, input: Omit<FormLayoutItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${key}`, input) }
+export async function saveFormLayoutGroup(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutGroupItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/groups/${key}`, input) }
+export async function saveFormLayoutField(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutFieldItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/fields/${key}`, input) }
 
 export type PhiAccessAuditEvent = {
   auditId: string
