@@ -1716,6 +1716,9 @@ export type TrackAnythingItem = { id: number; parentId?: number | null; name: st
 export async function getTrackAnything(sessionId: string): Promise<{ items: TrackAnythingItem[] }> { return clinicianGet(sessionId, '/api/administration/tracks/') }
 export async function saveTrackAnything(sessionId: string, input: Omit<TrackAnythingItem, 'id'>, id?: number): Promise<TrackAnythingItem> { return id ? clinicianPut(sessionId, `/api/administration/tracks/${id}`, input) : clinicianPost(sessionId, '/api/administration/tracks/', input) }
 export async function deleteTrackAnything(sessionId: string, id: number): Promise<void> { await clinicianDelete(sessionId, `/api/administration/tracks/${id}`) }
+export type PatientEducationResource = { key: string; title: string; searchTemplate: string; active: boolean }
+export async function getPatientEducationResources(sessionId: string): Promise<{ resources: PatientEducationResource[] }> { return clinicianGet(sessionId, '/api/patient-education/resources') }
+export async function searchPatientEducation(sessionId: string, resourceKey: string, searchText: string): Promise<{ url: string }> { return clinicianPost(sessionId, '/api/patient-education/search', { resourceKey, searchText }) }
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

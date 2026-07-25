@@ -47,6 +47,7 @@ builder.Services.AddScoped<MessageRepository>();
 builder.Services.AddScoped<OfficeNoteRepository>();
 builder.Services.AddScoped<AddressBookRepository>();
 builder.Services.AddScoped<TrackAnythingRepository>();
+builder.Services.AddScoped<PatientEducationRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2359,6 +2360,11 @@ tracks.MapGet("/", async (TrackAnythingRepository repository, CancellationToken 
 tracks.MapPost("/", async (TrackAnythingRepository repository, TrackAnythingRequest request, CancellationToken cancellationToken) => { try { var item=await repository.SaveAsync(null,request,cancellationToken);return Results.Created($"/api/administration/tracks/{item!.Id}",item); }catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["track"]=[e.Message] });}}).WithName("CreateTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
 tracks.MapPut("/{trackId:int}", async (TrackAnythingRepository repository,int trackId,TrackAnythingRequest request,CancellationToken cancellationToken)=>{try{var item=await repository.SaveAsync(trackId,request,cancellationToken);return item is null?Results.NotFound():Results.Ok(item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["track"]=[e.Message] });}}).WithName("UpdateTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","practice","write"));
 tracks.MapDelete("/{trackId:int}", async (TrackAnythingRepository repository,int trackId,CancellationToken cancellationToken)=>await repository.DeleteAsync(trackId,cancellationToken)?Results.NoContent():Results.NotFound()).WithName("DeleteTrackAnythingType").AddEndpointFilter(AccessPermissionFilter("admin","super","write"));
+
+var patientEducation = app.MapGroup("/api/patient-education").WithTags("Patient Education");
+RequireAccessPermission(patientEducation, "patients", "demo", "view");
+patientEducation.MapGet("/resources", async (PatientEducationRepository repository,CancellationToken cancellationToken)=>Results.Ok(await repository.GetAsync(cancellationToken))).WithName("GetPatientEducationResources");
+patientEducation.MapPost("/search", async (PatientEducationRepository repository,PatientEducationSearchRequest request,CancellationToken cancellationToken)=>{var result=await repository.SearchAsync(request,cancellationToken);return result is null?Results.BadRequest("An active HTTPS resource and search text are required."):Results.Ok(result);}).WithName("SearchPatientEducation");
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

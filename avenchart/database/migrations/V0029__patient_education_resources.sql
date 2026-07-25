@@ -1,0 +1,2 @@
+create table if not exists patient_education_resources (resource_key text primary key,title text not null,search_template text not null,active boolean not null default true,check(search_template like 'https://%[%]%'));
+insert into patient_education_resources(resource_key,title,search_template,active) values ('medlineplus','MedlinePlus','https://medlineplus.gov/search/?query=[%]',true) on conflict(resource_key) do nothing;
