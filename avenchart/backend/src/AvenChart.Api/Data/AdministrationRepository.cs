@@ -143,6 +143,61 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
     private static FormLayoutItem ReadLayout(NpgsqlDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetBoolean(4), reader.GetFieldValue<DateTimeOffset>(5).ToString("O"), reader.GetString(6));
     private static void ValidateLayoutText(string title, string mapping) { if (string.IsNullOrWhiteSpace(title) || title.Trim().Length > 120 || string.IsNullOrWhiteSpace(mapping) || mapping.Trim().Length > 64) throw new ArgumentException("Layout title or mapping is invalid."); }
 
+    public async Task<FormOptionListCatalogResponse> GetFormOptionListsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = "select l.list_key,l.title,l.active,count(v.option_key),l.updated_at,l.updated_by from form_option_lists l left join form_option_values v on v.list_key=l.list_key group by l.list_key,l.title,l.active,l.updated_at,l.updated_by order by l.title,l.list_key;";
+        var lists = new List<FormOptionListItem>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) lists.Add(new(reader.GetString(0), reader.GetString(1), reader.GetBoolean(2), Convert.ToInt32(reader.GetInt64(3)), reader.GetFieldValue<DateTimeOffset>(4).ToString("O"), reader.GetString(5)));
+        return new(lists);
+    }
+
+    public async Task<FormOptionListDetailResponse> GetFormOptionListAsync(string key, CancellationToken cancellationToken)
+    {
+        var listKey = NormalizeFormOptionListKey(key); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var listCommand = connection.CreateCommand(); listCommand.CommandText = "select list_key,title,active,updated_at,updated_by from form_option_lists where list_key=@key;"; listCommand.Parameters.AddWithValue("key", listKey);
+        await using var listReader = await listCommand.ExecuteReaderAsync(cancellationToken); if (!await listReader.ReadAsync(cancellationToken)) throw new ArgumentException("Form option list was not found.");
+        var list = new FormOptionListItem(listReader.GetString(0), listReader.GetString(1), listReader.GetBoolean(2), 0, listReader.GetFieldValue<DateTimeOffset>(3).ToString("O"), listReader.GetString(4)); await listReader.CloseAsync();
+        await using var optionCommand = connection.CreateCommand(); optionCommand.CommandText = "select option_key,title,sequence,is_default,active,option_value,updated_at,updated_by from form_option_values where list_key=@key order by sequence,option_key;"; optionCommand.Parameters.AddWithValue("key", listKey);
+        var options = new List<FormOptionValueItem>(); await using var optionReader = await optionCommand.ExecuteReaderAsync(cancellationToken); while (await optionReader.ReadAsync(cancellationToken)) options.Add(new(optionReader.GetString(0), optionReader.GetString(1), optionReader.GetInt32(2), optionReader.GetBoolean(3), optionReader.GetBoolean(4), optionReader.GetString(5), optionReader.GetFieldValue<DateTimeOffset>(6).ToString("O"), optionReader.GetString(7)));
+        return new(list with { OptionCount = options.Count }, options);
+    }
+
+    public async Task<FormOptionListDetailResponse> UpsertFormOptionListAsync(string key, FormOptionListMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        var listKey = NormalizeFormOptionListKey(key); if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 120) throw new ArgumentException("List title is invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = "insert into form_option_lists(list_key,title,active,updated_at,updated_by) values(@key,@title,@active,now(),@user) on conflict(list_key) do update set title=excluded.title,active=excluded.active,updated_at=now(),updated_by=excluded.updated_by;";
+        command.Parameters.AddWithValue("key", listKey); command.Parameters.AddWithValue("title", request.Title.Trim()); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("user", username); await command.ExecuteNonQueryAsync(cancellationToken);
+        return await GetFormOptionListAsync(listKey, cancellationToken);
+    }
+
+    public async Task<FormOptionListDetailResponse> UpsertFormOptionValueAsync(string listKey, string optionKey, FormOptionValueMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        listKey = NormalizeFormOptionListKey(listKey); optionKey = NormalizeFormOptionKey(optionKey);
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 255 || request.Sequence < 0 || request.Value?.Trim().Length > 255) throw new ArgumentException("List option definition is invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "insert into form_option_values(list_key,option_key,title,sequence,is_default,active,option_value,updated_at,updated_by) values(@list,@key,@title,@sequence,@default,@active,@value,now(),@user) on conflict(list_key,option_key) do update set title=excluded.title,sequence=excluded.sequence,is_default=excluded.is_default,active=excluded.active,option_value=excluded.option_value,updated_at=now(),updated_by=excluded.updated_by; update form_option_lists set updated_at=now(),updated_by=@user where list_key=@list;";
+        command.Parameters.AddWithValue("list", listKey); command.Parameters.AddWithValue("key", optionKey); command.Parameters.AddWithValue("title", request.Title.Trim()); command.Parameters.AddWithValue("sequence", request.Sequence); command.Parameters.AddWithValue("default", request.IsDefault); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("value", request.Value?.Trim() ?? ""); command.Parameters.AddWithValue("user", username);
+        try { if (await command.ExecuteNonQueryAsync(cancellationToken) == 0) throw new ArgumentException("Form option list was not found."); } catch (PostgresException exception) when (exception.SqlState == "23503") { throw new ArgumentException("Form option list was not found."); }
+        await transaction.CommitAsync(cancellationToken); return await GetFormOptionListAsync(listKey, cancellationToken);
+    }
+
+    private static string NormalizeFormOptionListKey(string key)
+    {
+        var normalized = key.Trim().ToLowerInvariant();
+        if (normalized.Length is < 2 or > 64 || !normalized.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-')) throw new ArgumentException("List key must be 2-64 lowercase letters, numbers, underscores, or hyphens.");
+        return normalized;
+    }
+
+    private static string NormalizeFormOptionKey(string key)
+    {
+        var normalized = key.Trim();
+        if (normalized.Length is < 1 or > 64 || !normalized.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-')) throw new ArgumentException("Option key must be 1-64 letters, numbers, underscores, or hyphens.");
+        return normalized;
+    }
+
     public async Task<ClinicalAlertRulesResponse> GetClinicalAlertRulesAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand(); command.CommandText = "select rule_key,title,trigger_type,target_type,severity,message,sequence,active,updated_at,updated_by from clinical_alert_rules order by sequence,rule_key;"; var rules = new List<ClinicalAlertRuleItem>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) rules.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetBoolean(7), reader.GetFieldValue<DateTimeOffset>(8).ToString("O"), reader.GetString(9))); return new(rules);

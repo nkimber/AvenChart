@@ -15,6 +15,8 @@ import {
   getClinicalAlertRules,
   getFormLayout,
   getFormLayouts,
+  getFormOptionList,
+  getFormOptionLists,
   getModuleCatalog,
   getPhiAccessAudit,
   getPracticeSettings,
@@ -30,6 +32,8 @@ import {
   saveFormLayout,
   saveFormLayoutField,
   saveFormLayoutGroup,
+  saveFormOptionList,
+  saveFormOptionValue,
   saveClinicalAlertRule,
   saveApiClient,
   type AdministrationDirectoryResponse,
@@ -48,6 +52,8 @@ import {
   type ClinicalAlertRuleItem,
   type FormLayoutDetail,
   type FormLayoutItem,
+  type FormOptionListDetail,
+  type FormOptionListItem,
   type ModuleCatalogItem,
   type PracticeSettingItem,
 } from '../../api.ts'
@@ -148,7 +154,12 @@ export default function AdminDirectory() {
   const [layoutKey, setLayoutKey] = useState('')
   const [savingLayout, setSavingLayout] = useState(false)
   const [groupDraft, setGroupDraft] = useState({ key: '', title: '', sequence: 10 })
-  const [fieldDraft, setFieldDraft] = useState({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: 10 })
+  const [fieldDraft, setFieldDraft] = useState({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: 10, listId: '' })
+  const [formOptionLists, setFormOptionLists] = useState<FormOptionListItem[]>([])
+  const [formOptionListDetail, setFormOptionListDetail] = useState<FormOptionListDetail | null>(null)
+  const [formOptionListKey, setFormOptionListKey] = useState('')
+  const [savingFormOptionList, setSavingFormOptionList] = useState(false)
+  const [formOptionDraft, setFormOptionDraft] = useState({ key: '', title: '', sequence: 10, value: '', isDefault: false, active: true })
   const [alertRules, setAlertRules] = useState<ClinicalAlertRuleItem[]>([])
   const [modules, setModules] = useState<ModuleCatalogItem[]>([])
   const [apiClients, setApiClients] = useState<ApiClientRegistryItem[]>([])
@@ -186,7 +197,7 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
-  useEffect(() => { if (tab === 'layouts') getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')) }, [session.sessionId, tab])
+  useEffect(() => { if (tab === 'layouts') { getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')); getFormOptionLists(session.sessionId).then((result) => setFormOptionLists(result.lists)).catch(() => showToast('Could not load form option lists.', 'error')) } }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'rules') getClinicalAlertRules(session.sessionId).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not load alert rules.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'modules') getModuleCatalog(session.sessionId).then((result) => setModules(result.modules)).catch(() => showToast('Could not load modules.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'apiClients') getApiClients(session.sessionId).then((result) => setApiClients(result.clients)).catch(() => showToast('Could not load API clients.', 'error')) }, [session.sessionId, tab])
@@ -194,7 +205,10 @@ export default function AdminDirectory() {
   async function openLayout(key: string) { try { setLayoutDetail(await getFormLayout(session.sessionId, key)); setLayoutKey(key) } catch { showToast('Could not load layout detail.', 'error') } }
   async function saveLayout(event: FormEvent) { event.preventDefault(); setSavingLayout(true); try { const detail = await saveFormLayout(session.sessionId, layoutKey, { title: layoutDetail?.layout.title ?? layoutKey, mapping: layoutDetail?.layout.mapping ?? 'Core', sequence: layoutDetail?.layout.sequence ?? ((layouts.at(-1)?.sequence ?? 0) + 10), active: layoutDetail?.layout.active ?? true }); setLayoutDetail(detail); setLayouts(await getFormLayouts(session.sessionId).then((result) => result.layouts)); showToast('Layout saved.', 'success') } catch { showToast('Could not save layout.', 'error') } finally { setSavingLayout(false) } }
   async function saveGroup(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutGroup(session.sessionId, layoutDetail.layout.key, groupDraft.key, { title: groupDraft.title, sequence: groupDraft.sequence, active: true })); setGroupDraft({ key: '', title: '', sequence: groupDraft.sequence + 10 }); showToast('Group saved.', 'success') } catch { showToast('Could not save group.', 'error') } }
-  async function saveField(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutField(session.sessionId, layoutDetail.layout.key, fieldDraft.key, { groupKey: fieldDraft.groupKey, label: fieldDraft.label, fieldType: fieldDraft.fieldType, sequence: fieldDraft.sequence, required: false, active: true, maxLength: 255, listId: '', defaultValue: '' })); setFieldDraft({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: fieldDraft.sequence + 10 }); showToast('Field saved.', 'success') } catch { showToast('Could not save field.', 'error') } }
+  async function saveField(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutField(session.sessionId, layoutDetail.layout.key, fieldDraft.key, { groupKey: fieldDraft.groupKey, label: fieldDraft.label, fieldType: fieldDraft.fieldType, sequence: fieldDraft.sequence, required: false, active: true, maxLength: 255, listId: fieldDraft.listId, defaultValue: '' })); setFieldDraft({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: fieldDraft.sequence + 10, listId: '' }); showToast('Field saved.', 'success') } catch { showToast('Could not save field.', 'error') } }
+  async function openFormOptionList(key: string) { try { setFormOptionListDetail(await getFormOptionList(session.sessionId, key)); setFormOptionListKey(key) } catch { showToast('Could not load form option list.', 'error') } }
+  async function saveFormOptionListDefinition(event: FormEvent) { event.preventDefault(); if (!formOptionListKey.trim()) return; setSavingFormOptionList(true); try { const detail = await saveFormOptionList(session.sessionId, formOptionListKey, { title: formOptionListDetail?.list.title ?? formOptionListKey, active: formOptionListDetail?.list.active ?? true }); setFormOptionListDetail(detail); setFormOptionLists((await getFormOptionLists(session.sessionId)).lists); showToast('Form option list saved.', 'success') } catch { showToast('Could not save form option list.', 'error') } finally { setSavingFormOptionList(false) } }
+  async function saveFormOption(event: FormEvent) { event.preventDefault(); if (!formOptionListDetail || !formOptionDraft.key.trim()) return; try { const detail = await saveFormOptionValue(session.sessionId, formOptionListDetail.list.key, formOptionDraft.key, { title: formOptionDraft.title, sequence: formOptionDraft.sequence, isDefault: formOptionDraft.isDefault, active: formOptionDraft.active, value: formOptionDraft.value }); setFormOptionListDetail(detail); setFormOptionLists((await getFormOptionLists(session.sessionId)).lists); setFormOptionDraft({ key: '', title: '', sequence: formOptionDraft.sequence + 10, value: '', isDefault: false, active: true }); showToast('Form option saved.', 'success') } catch { showToast('Could not save form option.', 'error') } }
   useEffect(() => {
     if (tab !== 'configuration') return
     getConfigurationCatalog(session.sessionId).then((result) => setConfiguration(result.settings)).catch(() => showToast('Could not load configuration catalog.', 'error'))
@@ -724,6 +738,30 @@ export default function AdminDirectory() {
                 <div className="cl-access-grid">
                   <section className="cl-access-panel"><h3 className="cl-access-title">Layout registry</h3><ul className="cl-access-list">{layouts.map((layout) => <li className="cl-access-row" key={layout.key}><div><p>{layout.title}</p><span>{layout.key} · {layout.mapping} · {layout.active ? 'Active' : 'Inactive'}</span></div><button className="cl-btn-secondary" type="button" onClick={() => void openLayout(layout.key)}>Edit</button></li>)}{layouts.length === 0 && <li className="cl-empty-text">No layouts configured.</li>}</ul></section>
                   <section className="cl-access-panel"><h3 className="cl-access-title">Layout editor</h3><form className="cl-access-form" onSubmit={saveLayout}><label className="cl-admin-field"><span>Layout key</span><input className="ne-input" value={layoutKey} onChange={(event) => { setLayoutKey(event.target.value.toUpperCase()); setLayoutDetail(null) }} placeholder="LBFINTAKE" required /></label><label className="cl-admin-field"><span>Title</span><input className="ne-input" value={layoutDetail?.layout.title ?? ''} onChange={(event) => setLayoutDetail((detail) => detail ? { ...detail, layout: { ...detail.layout, title: event.target.value } } : { layout: { key: layoutKey, title: event.target.value, mapping: 'Core', sequence: 10, active: true }, groups: [], fields: [] })} required /></label><button className="cl-btn-primary" type="submit" disabled={savingLayout || !layoutKey.trim()}>Save layout</button></form>{layoutDetail && <div><p className="cl-admin-form-copy">{layoutDetail.groups.length} groups · {layoutDetail.fields.length} fields</p><form className="cl-access-form" onSubmit={saveGroup}><input className="ne-input" placeholder="Group key" value={groupDraft.key} onChange={(e) => setGroupDraft({ ...groupDraft, key: e.target.value.toUpperCase() })} required /><input className="ne-input" placeholder="Group title" value={groupDraft.title} onChange={(e) => setGroupDraft({ ...groupDraft, title: e.target.value })} required /><button className="cl-btn-secondary">Add group</button></form><form className="cl-access-form" onSubmit={saveField}><input className="ne-input" placeholder="Field key" value={fieldDraft.key} onChange={(e) => setFieldDraft({ ...fieldDraft, key: e.target.value.toUpperCase() })} required /><select className="ne-input" value={fieldDraft.groupKey} onChange={(e) => setFieldDraft({ ...fieldDraft, groupKey: e.target.value })} required><option value="">Group</option>{layoutDetail.groups.map((g) => <option key={g.key} value={g.key}>{g.title}</option>)}</select><input className="ne-input" placeholder="Field label" value={fieldDraft.label} onChange={(e) => setFieldDraft({ ...fieldDraft, label: e.target.value })} required /><button className="cl-btn-secondary">Add field</button></form><ul className="cl-access-list">{layoutDetail.groups.map((group) => <li className="cl-access-row" key={group.key}><div><p>{group.title}</p><span>{group.key} · {layoutDetail.fields.filter((field) => field.groupKey === group.key).length} fields</span></div></li>)}</ul></div>}</section>
+                </div>
+                <div className="cl-access-grid" style={{ marginTop: 20 }}>
+                  <section className="cl-access-panel"><h3 className="cl-access-title">Option-list registry</h3><p className="cl-admin-form-copy">Legacy forms use reusable list IDs with ordered active values.</p><ul className="cl-access-list">{formOptionLists.map((list) => <li className="cl-access-row" key={list.key}><div><p>{list.title}</p><span>{list.key} Â· {list.optionCount} options Â· {list.active ? 'Active' : 'Inactive'}</span></div><button className="cl-btn-secondary" type="button" onClick={() => void openFormOptionList(list.key)}>Edit</button></li>)}{formOptionLists.length === 0 && <li className="cl-empty-text">No form option lists configured.</li>}</ul></section>
+                  <section className="cl-access-panel">
+                    <h3 className="cl-access-title">Option-list editor</h3>
+                    <form className="cl-access-form" onSubmit={saveFormOptionListDefinition}>
+                      <label className="cl-admin-field"><span>List key</span><input className="ne-input" value={formOptionListKey} onChange={(event) => { setFormOptionListKey(event.target.value.toLowerCase()); setFormOptionListDetail(null) }} placeholder="state" required /></label>
+                      <label className="cl-admin-field"><span>Title</span><input className="ne-input" value={formOptionListDetail?.list.title ?? ''} onChange={(event) => setFormOptionListDetail((detail) => detail ? { ...detail, list: { ...detail.list, title: event.target.value } } : { list: { key: formOptionListKey, title: event.target.value, active: true, optionCount: 0 }, options: [] })} required /></label>
+                      <button className="cl-btn-primary" type="submit" disabled={savingFormOptionList || !formOptionListKey.trim()}>Save list</button>
+                    </form>
+                    {formOptionListDetail && <div>
+                      <p className="cl-admin-form-copy">Reuse an option key to update it. Inactivation preserves historical form data.</p>
+                      <form className="cl-access-form" onSubmit={saveFormOption}>
+                        <input className="ne-input" placeholder="Option key" value={formOptionDraft.key} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, key: event.target.value }))} required />
+                        <input className="ne-input" placeholder="Label" value={formOptionDraft.title} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, title: event.target.value }))} required />
+                        <input className="ne-input" placeholder="Stored value" value={formOptionDraft.value} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, value: event.target.value }))} />
+                        <input className="ne-input" type="number" min="0" value={formOptionDraft.sequence} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, sequence: Number(event.target.value) }))} required />
+                        <label className="cl-admin-field"><span><input type="checkbox" checked={formOptionDraft.isDefault} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, isDefault: event.target.checked }))} /> Default</span></label>
+                        <label className="cl-admin-field"><span><input type="checkbox" checked={formOptionDraft.active} onChange={(event) => setFormOptionDraft((draft) => ({ ...draft, active: event.target.checked }))} /> Active</span></label>
+                        <button className="cl-btn-secondary" type="submit">Add or update option</button>
+                      </form>
+                      <table className="cl-table"><thead><tr><th>Option</th><th>Value</th><th>Order</th><th>Default</th><th>State</th></tr></thead><tbody>{formOptionListDetail.options.map((option) => <tr key={option.key}><td>{option.title}<p className="cl-table-sub">{option.key}</p></td><td>{option.value}</td><td>{option.sequence}</td><td>{option.isDefault ? 'Default' : '—'}</td><td>{option.active ? 'Active' : 'Inactive'}</td></tr>)}</tbody></table>
+                    </div>}
+                  </section>
                 </div>
               </section>
             )}

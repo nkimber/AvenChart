@@ -7381,6 +7381,61 @@ finally {
     }
 }
 
+$formOptionOriginal = $null
+try {
+    $administrationHeaders = Get-AdministrationHeaders
+    $formOptionList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state" -Method Get -Headers $administrationHeaders -TimeoutSec 20
+    $formOptionOriginal = $formOptionList.options | Where-Object { $_.key -eq "PA" } | Select-Object -First 1
+    if ($formOptionList.list.key -ne "state" -or $formOptionList.options.Count -ne 3 -or $null -eq $formOptionOriginal) { throw "Seeded state option list was not found." }
+
+    $inactivateOptionBody = @{
+        title = $formOptionOriginal.title
+        sequence = $formOptionOriginal.sequence
+        isDefault = $formOptionOriginal.isDefault
+        active = $false
+        value = $formOptionOriginal.value
+    } | ConvertTo-Json
+    $inactivatedList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/options/PA" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $inactivateOptionBody -TimeoutSec 20
+    $inactivatedOption = $inactivatedList.options | Where-Object { $_.key -eq "PA" -and -not $_.active } | Select-Object -First 1
+
+    $restoreOptionBody = @{
+        title = $formOptionOriginal.title
+        sequence = $formOptionOriginal.sequence
+        isDefault = $formOptionOriginal.isDefault
+        active = $formOptionOriginal.active
+        value = $formOptionOriginal.value
+    } | ConvertTo-Json
+    $restoredList = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/options/PA" -Method Put -Headers $administrationHeaders -ContentType "application/json" -Body $restoreOptionBody -TimeoutSec 20
+    $restoredOption = $restoredList.options | Where-Object { $_.key -eq "PA" -and $_.active -eq $formOptionOriginal.active -and $_.updatedBy -eq "admin" } | Select-Object -First 1
+    $formOptionOriginal = $null
+
+    Add-Check -Name "administration form option-list activation lifecycle" -Result $(if ($null -ne $inactivatedOption -and $null -ne $restoredOption) { "passed" } else { "failed" }) -Details @{
+        list = "state"
+        option = "PA"
+        inactivated = $null -ne $inactivatedOption
+        restored = $null -ne $restoredOption
+    }
+}
+catch {
+    Add-Check -Name "administration form option-list activation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $formOptionOriginal) {
+        try {
+            $restoreOptionBody = @{
+                title = $formOptionOriginal.title
+                sequence = $formOptionOriginal.sequence
+                isDefault = $formOptionOriginal.isDefault
+                active = $formOptionOriginal.active
+                value = $formOptionOriginal.value
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/options/PA" -Method Put -Headers (Get-AdministrationHeaders) -ContentType "application/json" -Body $restoreOptionBody -TimeoutSec 20 | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
 try {
     $unauthenticatedProceduresStatus = 0
     try {

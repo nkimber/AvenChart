@@ -2019,6 +2019,13 @@ export async function getFormLayout(sessionId: string, key: string): Promise<For
 export async function saveFormLayout(sessionId: string, key: string, input: Omit<FormLayoutItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${key}`, input) }
 export async function saveFormLayoutGroup(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutGroupItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/groups/${key}`, input) }
 export async function saveFormLayoutField(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutFieldItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/fields/${key}`, input) }
+export type FormOptionListItem = { key: string; title: string; active: boolean; optionCount: number }
+export type FormOptionValueItem = { key: string; title: string; sequence: number; isDefault: boolean; active: boolean; value: string }
+export type FormOptionListDetail = { list: FormOptionListItem; options: FormOptionValueItem[] }
+export async function getFormOptionLists(sessionId: string): Promise<{ lists: FormOptionListItem[] }> { return clinicianGet(sessionId, '/api/administration/form-option-lists') }
+export async function getFormOptionList(sessionId: string, key: string): Promise<FormOptionListDetail> { return clinicianGet(sessionId, `/api/administration/form-option-lists/${key}`) }
+export async function saveFormOptionList(sessionId: string, key: string, input: Omit<FormOptionListItem, 'key' | 'optionCount'>): Promise<FormOptionListDetail> { return clinicianPut(sessionId, `/api/administration/form-option-lists/${key}`, input) }
+export async function saveFormOptionValue(sessionId: string, listKey: string, key: string, input: Omit<FormOptionValueItem, 'key'>): Promise<FormOptionListDetail> { return clinicianPut(sessionId, `/api/administration/form-option-lists/${listKey}/options/${key}`, input) }
 export type ClinicalAlertRuleItem = { key: string; title: string; triggerType: 'patient' | 'encounter' | 'appointment'; targetType: 'banner' | 'reminder'; severity: 'info' | 'warning' | 'critical'; message: string; sequence: number; active: boolean }
 export async function getClinicalAlertRules(sessionId: string): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianGet(sessionId, '/api/administration/clinical-alert-rules') }
 export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input) }

@@ -327,6 +327,8 @@ drop table if exists coding_catalogs;
 drop table if exists form_layout_fields;
 drop table if exists form_layout_groups;
 drop table if exists form_layouts;
+drop table if exists form_option_values;
+drop table if exists form_option_lists;
 drop table if exists clinical_alert_rules;
 drop table if exists module_catalog;
 drop table if exists api_client_registry;
@@ -393,6 +395,15 @@ create table coding_catalog_audit_events (
 create table form_layouts (
   layout_key text primary key, title text not null, mapping text not null, sequence integer not null,
   active boolean not null, updated_at timestamptz not null, updated_by text not null
+);
+create table form_option_lists (
+  list_key text primary key, title text not null, active boolean not null,
+  updated_at timestamptz not null, updated_by text not null
+);
+create table form_option_values (
+  list_key text not null references form_option_lists(list_key), option_key text not null, title text not null,
+  sequence integer not null, is_default boolean not null, active boolean not null, option_value text not null,
+  updated_at timestamptz not null, updated_by text not null, primary key (list_key, option_key)
 );
 create table clinical_alert_rules (
   rule_key text primary key, title text not null, trigger_type text not null, target_type text not null, severity text not null,
@@ -1540,6 +1551,14 @@ copyRows('coding_catalogs', ['catalog_key', 'display_name', 'sequence', 'active'
 copyRows('form_layouts', ['layout_key', 'title', 'mapping', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['DEM', 'Demographics', 'Core', 10, true, '2026-01-01T00:00:00Z', 'seed'],
 ])
+copyRows('form_option_lists', ['list_key', 'title', 'active', 'updated_at', 'updated_by'], [
+  ['state', 'State or province', true, '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('form_option_values', ['list_key', 'option_key', 'title', 'sequence', 'is_default', 'active', 'option_value', 'updated_at', 'updated_by'], [
+  ['state', 'MA', 'Massachusetts', 10, false, true, 'MA', '2026-01-01T00:00:00Z', 'seed'],
+  ['state', 'NY', 'New York', 20, false, true, 'NY', '2026-01-01T00:00:00Z', 'seed'],
+  ['state', 'PA', 'Pennsylvania', 30, false, true, 'PA', '2026-01-01T00:00:00Z', 'seed'],
+])
 copyRows('clinical_alert_rules', ['rule_key', 'title', 'trigger_type', 'target_type', 'severity', 'message', 'sequence', 'active', 'updated_at', 'updated_by'], [
   ['APPOINTMENT_REMINDER', 'Upcoming appointment', 'appointment', 'reminder', 'info', 'Appointment reminder is due.', 10, true, '2026-01-01T00:00:00Z', 'seed'],
   ['ALLERGY_REVIEW', 'Allergy review', 'encounter', 'banner', 'warning', 'Review documented allergies before completing the encounter.', 20, true, '2026-01-01T00:00:00Z', 'seed'],
@@ -1557,6 +1576,9 @@ copyRows('form_layout_groups', ['layout_key', 'group_key', 'title', 'sequence', 
 ])
 copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
   ['DEM', 'first_name', 'who', 'First name', 'text', 10, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'last_name', 'who', 'Last name', 'text', 20, true, true, 63, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'birth_date', 'who', 'Date of birth', 'date', 30, true, true, 10, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'phone', 'contact', 'Phone', 'text', 10, false, true, 40, '', '', '2026-01-01T00:00:00Z', 'seed'], ['DEM', 'email', 'contact', 'Email', 'text', 20, false, true, 95, '', '', '2026-01-01T00:00:00Z', 'seed'],
+])
+copyRows('form_layout_fields', ['layout_key', 'field_key', 'group_key', 'label', 'field_type', 'sequence', 'required', 'active', 'max_length', 'list_id', 'default_value', 'updated_at', 'updated_by'], [
+  ['DEM', 'state', 'contact', 'State or province', 'select', 30, false, true, 2, 'state', '', '2026-01-01T00:00:00Z', 'seed'],
 ])
 
 copyRows('access_groups', ['id', 'value', 'name', 'parent_id'], accessGroups)
