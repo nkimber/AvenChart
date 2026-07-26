@@ -9822,6 +9822,17 @@ catch {
     Add-Check -Name "batch communication recipient preview" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $trackerHeaders = Get-AdministrationHeaders
+    $trackerPatient = Invoke-RestMethod -Uri "$ApiBaseUrl/api/chart-tracker/lookup/MOD-PAT-0001" -Method Get -Headers $trackerHeaders -TimeoutSec 20
+    $trackerOptions = Invoke-RestMethod -Uri "$ApiBaseUrl/api/chart-tracker/options" -Method Get -Headers $trackerHeaders -TimeoutSec 20
+    $trackerPassed = $trackerPatient.patientId -eq "MOD-PAT-0001" -and ($trackerOptions.locations -contains "Front Desk") -and @($trackerOptions.users).Count -gt 0
+    Add-Check -Name "chart tracker patient lookup" -Result $(if ($trackerPassed) { "passed" } else { "failed" }) -Details @{ patientId = $trackerPatient.patientId; currentLocation = $trackerPatient.current.location; locationCount = @($trackerOptions.locations).Count; userCount = @($trackerOptions.users).Count }
+}
+catch {
+    Add-Check -Name "chart tracker patient lookup" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

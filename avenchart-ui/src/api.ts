@@ -1734,6 +1734,13 @@ export async function previewBatchCommunication(sessionId:string,filter:BatchCom
 export async function createBatchCommunicationCampaign(sessionId:string,input:{filter:BatchCommunicationFilter;emailSender?:string;emailSubject?:string;emailBody?:string}):Promise<BatchCommunicationDetail>{return clinicianPost(sessionId,'/api/batch-communication/campaigns',input)}
 export async function getBatchCommunicationCampaigns(sessionId:string):Promise<BatchCommunicationCampaign[]>{return clinicianGet(sessionId,'/api/batch-communication/campaigns')}
 export async function downloadBatchCommunicationCampaign(sessionId:string,id:string):Promise<Blob>{const response=await fetch(`${apiBaseUrl}/api/batch-communication/campaigns/${id}/output`,{headers:{'X-Legacy EHR-Session':sessionId}});if(!response.ok)throw new Error(`Batch communication download failed with ${response.status}`);return response.blob()}
+export type ChartTrackerEvent={id:string;location?:string|null;userId?:number|null;userName?:string|null;recordedAt:string}
+export type ChartTrackerPatient={patientId:string;publicId:string;displayName:string;dateOfBirth:string;current?:ChartTrackerEvent|null}
+export type ChartTrackerOptions={locations:string[];users:{id:number;displayName:string}[]}
+export async function getChartTrackerOptions(sessionId:string):Promise<ChartTrackerOptions>{return clinicianGet(sessionId,'/api/chart-tracker/options')}
+export async function lookupChartTrackerPatient(sessionId:string,identifier:string):Promise<ChartTrackerPatient>{return clinicianGet(sessionId,`/api/chart-tracker/lookup/${encodeURIComponent(identifier)}`)}
+export async function getChartTrackerHistory(sessionId:string,patientId:string):Promise<ChartTrackerEvent[]>{return clinicianGet(sessionId,`/api/chart-tracker/patients/${encodeURIComponent(patientId)}/history`)}
+export async function recordChartTrackerEvent(sessionId:string,patientId:string,input:{location?:string;userId?:number}):Promise<ChartTrackerEvent>{return clinicianPost(sessionId,`/api/chart-tracker/patients/${encodeURIComponent(patientId)}/events`,input)}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

@@ -50,6 +50,7 @@ builder.Services.AddScoped<TrackAnythingRepository>();
 builder.Services.AddScoped<PatientEducationRepository>();
 builder.Services.AddScoped<RecallRepository>();
 builder.Services.AddScoped<BatchCommunicationRepository>();
+builder.Services.AddScoped<ChartTrackerRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2380,6 +2381,12 @@ batchCommunication.MapPost("/campaigns",async(BatchCommunicationRepository repos
 batchCommunication.MapGet("/campaigns",async(BatchCommunicationRepository repository,CancellationToken ct)=>Results.Ok(await repository.GetAsync(ct))).WithName("GetBatchCommunicationCampaigns");
 batchCommunication.MapGet("/campaigns/{id:guid}",async(BatchCommunicationRepository repository,Guid id,CancellationToken ct)=>{var campaign=await repository.GetAsync(id,ct);return campaign is null?Results.NotFound():Results.Ok(campaign);}).WithName("GetBatchCommunicationCampaign");
 batchCommunication.MapGet("/campaigns/{id:guid}/output",async(BatchCommunicationRepository repository,Guid id,CancellationToken ct)=>{var campaign=await repository.GetAsync(id,ct);if(campaign is null)return Results.NotFound();var csv=new System.Text.StringBuilder("Patient ID,Name,Email,Home Phone,Cell Phone,Postal Code,Next Appointment,Last Appointment,Last Visit,Subject,Body\n");foreach(var item in campaign.Recipients)csv.AppendLine(string.Join(',',new[]{item.PatientId,item.DisplayName,item.Email,item.PhoneHome,item.PhoneCell,item.PostalCode,item.NextAppointmentDate,item.LastAppointmentDate,item.LastVisitDate,item.RenderedSubject,item.RenderedBody}.Select(value=>$"\"{(value??string.Empty).Replace("\"","\"\"")}\"")));return Results.File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()),"text/csv",$"batch-communication-{id}.csv");}).WithName("ExportBatchCommunicationCampaign");
+
+var chartTracker=app.MapGroup("/api/chart-tracker").WithTags("Chart Tracker");RequireAccessPermission(chartTracker,"patients","appt","view");
+chartTracker.MapGet("/options",async(ChartTrackerRepository repository,CancellationToken ct)=>Results.Ok(await repository.GetOptionsAsync(ct))).WithName("GetChartTrackerOptions");
+chartTracker.MapGet("/lookup/{identifier}",async(ChartTrackerRepository repository,string identifier,CancellationToken ct)=>{var patient=await repository.FindAsync(identifier,ct);return patient is null?Results.NotFound():Results.Ok(patient);}).WithName("LookupChartTrackerPatient");
+chartTracker.MapGet("/patients/{patientId}/history",async(ChartTrackerRepository repository,string patientId,CancellationToken ct)=>{var history=await repository.GetHistoryAsync(patientId,ct);return history is null?Results.NotFound():Results.Ok(history);}).WithName("GetChartTrackerHistory");
+chartTracker.MapPost("/patients/{patientId}/events",async(ChartTrackerRepository repository,string patientId,ChartTrackerUpdateRequest request,CancellationToken ct)=>{try{var item=await repository.RecordAsync(patientId,request,ct);return item is null?Results.NotFound():Results.Created($"/api/chart-tracker/patients/{patientId}/events/{item.Id}",item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["tracker"]=[e.Message] });}}).WithName("RecordChartTrackerEvent").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");
