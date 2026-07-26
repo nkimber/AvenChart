@@ -9846,6 +9846,19 @@ catch {
     Add-Check -Name "document template render and retirement lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $reportHeaders = Get-AdministrationHeaders
+    $reportDefinition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body (@{ name = "Smoke saved report $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; schedule = "weekly"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $reportRun = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions/$($reportDefinition.id)/run" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $reportDefinitions = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Get -Headers $reportHeaders -TimeoutSec 20
+    $persistedReport = $reportDefinitions.definitions | Where-Object { $_.id -eq $reportDefinition.id } | Select-Object -First 1
+    $reportPassed = $reportRun.definitionId -eq $reportDefinition.id -and $reportRun.outputFormat -eq "csv" -and $persistedReport.runCount -eq 1 -and $persistedReport.schedule -eq "weekly"
+    Add-Check -Name "saved operational report definition and run evidence" -Result $(if ($reportPassed) { "passed" } else { "failed" }) -Details @{ definitionId = $reportDefinition.id; runId = $reportRun.runId; runCount = $persistedReport.runCount }
+}
+catch {
+    Add-Check -Name "saved operational report definition and run evidence" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl
