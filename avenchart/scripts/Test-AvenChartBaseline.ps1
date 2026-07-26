@@ -9893,6 +9893,21 @@ catch {
     Add-Check -Name "printable patient output suite" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $binaryTemplateHeaders = Get-AdministrationHeaders
+    $binaryTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $binaryTemplateHeaders -ContentType "application/json" -Body (@{ name = "Smoke binary template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; content = "Attachment for ***NAME***"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $binaryBytes = [Text.Encoding]::UTF8.GetBytes("Smoke binary template content")
+    $binaryVersion = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/$($binaryTemplate.id)/binary-versions" -Method Post -Headers $binaryTemplateHeaders -ContentType "application/json" -Body (@{ fileName = "smoke-template.txt"; mimetype = "text/plain"; contentBase64 = [Convert]::ToBase64String($binaryBytes) } | ConvertTo-Json) -TimeoutSec 20
+    $binaryDownload = Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/document-templates/$($binaryTemplate.id)/binary-versions/$($binaryVersion.id)/download" -Method Get -Headers $binaryTemplateHeaders -UseBasicParsing -TimeoutSec 20
+    $textAttachment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/$($binaryTemplate.id)/generate-attachment" -Method Post -Headers $binaryTemplateHeaders -ContentType "application/json" -Body (@{ patientId = "MOD-PAT-0001"; categoryId = 3 } | ConvertTo-Json) -TimeoutSec 20
+    $binaryAttachment = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/$($binaryTemplate.id)/generate-attachment" -Method Post -Headers $binaryTemplateHeaders -ContentType "application/json" -Body (@{ patientId = "MOD-PAT-0001"; categoryId = 3; binaryVersionId = $binaryVersion.id } | ConvertTo-Json) -TimeoutSec 20
+    $binaryTemplatePassed = $binaryVersion.version -eq 1 -and $binaryDownload.Content -eq "Smoke binary template content" -and $textAttachment.id -gt 0 -and $binaryAttachment.id -gt 0
+    Add-Check -Name "document template binary version and attachment lifecycle" -Result $(if ($binaryTemplatePassed) { "passed" } else { "failed" }) -Details @{ templateId = $binaryTemplate.id; versionId = $binaryVersion.id; textDocumentId = $textAttachment.id; binaryDocumentId = $binaryAttachment.id }
+}
+catch {
+    Add-Check -Name "document template binary version and attachment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl
