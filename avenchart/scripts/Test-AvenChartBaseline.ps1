@@ -9811,6 +9811,17 @@ finally {
     }
 }
 
+try {
+    $batchHeaders = Get-AdministrationHeaders
+    $batchPreview = Invoke-RestMethod -Uri "$ApiBaseUrl/api/batch-communication/preview" -Method Post -Headers $batchHeaders -ContentType "application/json" -Body (@{ filter = @{ processType = "email"; gender = "any"; requireConsent = $false; ageFrom = 18; ageTo = 120; sortBy = "lastName" } } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $firstBatchRecipient = $batchPreview.recipients | Select-Object -First 1
+    $batchPreviewPassed = @($batchPreview.recipients).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($firstBatchRecipient.email)
+    Add-Check -Name "batch communication recipient preview" -Result $(if ($batchPreviewPassed) { "passed" } else { "failed" }) -Details @{ recipientCount = @($batchPreview.recipients).Count; firstRecipient = $firstBatchRecipient.patientId }
+}
+catch {
+    Add-Check -Name "batch communication recipient preview" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

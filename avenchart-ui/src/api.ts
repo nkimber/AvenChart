@@ -1726,6 +1726,14 @@ export async function deleteRecall(sessionId:string,id:string):Promise<void>{awa
 export type RecallActivityItem = { id:string;activityType:'phone'|'postcard'|'label';note?:string|null;recordedAt:string }
 export async function getRecallActivity(sessionId:string,id:string):Promise<RecallActivityItem[]>{return clinicianGet(sessionId,`/api/recalls/${id}/activity`)}
 export async function addRecallActivity(sessionId:string,id:string,input:{activityType:'phone'|'postcard'|'label';note?:string|null}):Promise<RecallActivityItem>{return clinicianPost(sessionId,`/api/recalls/${id}/activity`,input)}
+export type BatchCommunicationFilter={processType:'csv'|'email'|'phone';gender?:'any'|'male'|'female';requireConsent:boolean;ageFrom?:number;ageTo?:number;appointmentStart?:string;appointmentEnd?:string;seenSince?:string;seenBefore?:string;sortBy?:'zipCode'|'lastName'|'appointmentDate'}
+export type BatchCommunicationRecipient={patientId:string;displayName:string;email?:string|null;phoneHome?:string|null;phoneCell?:string|null;postalCode?:string|null;nextAppointmentDate?:string|null;lastAppointmentDate?:string|null;lastVisitDate?:string|null;renderedSubject?:string|null;renderedBody?:string|null}
+export type BatchCommunicationCampaign={id:string;filter:BatchCommunicationFilter;processType:string;emailSender?:string|null;emailSubject?:string|null;emailBody?:string|null;recipientCount:number;createdAt:string}
+export type BatchCommunicationDetail={campaign:BatchCommunicationCampaign;recipients:BatchCommunicationRecipient[]}
+export async function previewBatchCommunication(sessionId:string,filter:BatchCommunicationFilter):Promise<{filter:BatchCommunicationFilter;recipients:BatchCommunicationRecipient[]}>{return clinicianPost(sessionId,'/api/batch-communication/preview',{filter})}
+export async function createBatchCommunicationCampaign(sessionId:string,input:{filter:BatchCommunicationFilter;emailSender?:string;emailSubject?:string;emailBody?:string}):Promise<BatchCommunicationDetail>{return clinicianPost(sessionId,'/api/batch-communication/campaigns',input)}
+export async function getBatchCommunicationCampaigns(sessionId:string):Promise<BatchCommunicationCampaign[]>{return clinicianGet(sessionId,'/api/batch-communication/campaigns')}
+export async function downloadBatchCommunicationCampaign(sessionId:string,id:string):Promise<Blob>{const response=await fetch(`${apiBaseUrl}/api/batch-communication/campaigns/${id}/output`,{headers:{'X-Legacy EHR-Session':sessionId}});if(!response.ok)throw new Error(`Batch communication download failed with ${response.status}`);return response.blob()}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

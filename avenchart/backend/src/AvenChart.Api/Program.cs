@@ -49,6 +49,7 @@ builder.Services.AddScoped<AddressBookRepository>();
 builder.Services.AddScoped<TrackAnythingRepository>();
 builder.Services.AddScoped<PatientEducationRepository>();
 builder.Services.AddScoped<RecallRepository>();
+builder.Services.AddScoped<BatchCommunicationRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2372,6 +2373,13 @@ recalls.MapPost("/",async(RecallRepository repository,RecallRequest request,Canc
 recalls.MapDelete("/{id:guid}",async(RecallRepository repository,Guid id,CancellationToken ct)=>await repository.DeleteAsync(id,ct)?Results.NoContent():Results.NotFound()).WithName("DeleteRecall").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
 recalls.MapGet("/{id:guid}/activity",async(RecallRepository repository,Guid id,CancellationToken ct)=>{var activity=await repository.GetActivityAsync(id,ct);return activity is null?Results.NotFound():Results.Ok(activity);}).WithName("GetRecallActivity");
 recalls.MapPost("/{id:guid}/activity",async(RecallRepository repository,Guid id,RecallActivityRequest request,CancellationToken ct)=>{try{var result=await repository.AddActivityAsync(id,request,ct);return result is null?Results.NotFound():Results.Created($"/api/recalls/{id}/activity/{result.Id}",result);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["activity"]=[e.Message] });}}).WithName("AddRecallActivity").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
+
+var batchCommunication=app.MapGroup("/api/batch-communication").WithTags("Batch Communication");RequireAccessPermission(batchCommunication,"admin","batchcom","view");
+batchCommunication.MapPost("/preview",async(BatchCommunicationRepository repository,BatchCommunicationPreviewRequest request,CancellationToken ct)=>{try{return Results.Ok(await repository.PreviewAsync(request,ct));}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["filter"]=[e.Message] });}}).WithName("PreviewBatchCommunication");
+batchCommunication.MapPost("/campaigns",async(BatchCommunicationRepository repository,BatchCommunicationCampaignCreateRequest request,CancellationToken ct)=>{try{var campaign=await repository.CreateAsync(request,ct);return Results.Created($"/api/batch-communication/campaigns/{campaign.Campaign.Id}",campaign);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["campaign"]=[e.Message] });}}).WithName("CreateBatchCommunicationCampaign").AddEndpointFilter(AccessPermissionFilter("admin","batchcom","write"));
+batchCommunication.MapGet("/campaigns",async(BatchCommunicationRepository repository,CancellationToken ct)=>Results.Ok(await repository.GetAsync(ct))).WithName("GetBatchCommunicationCampaigns");
+batchCommunication.MapGet("/campaigns/{id:guid}",async(BatchCommunicationRepository repository,Guid id,CancellationToken ct)=>{var campaign=await repository.GetAsync(id,ct);return campaign is null?Results.NotFound():Results.Ok(campaign);}).WithName("GetBatchCommunicationCampaign");
+batchCommunication.MapGet("/campaigns/{id:guid}/output",async(BatchCommunicationRepository repository,Guid id,CancellationToken ct)=>{var campaign=await repository.GetAsync(id,ct);if(campaign is null)return Results.NotFound();var csv=new System.Text.StringBuilder("Patient ID,Name,Email,Home Phone,Cell Phone,Postal Code,Next Appointment,Last Appointment,Last Visit,Subject,Body\n");foreach(var item in campaign.Recipients)csv.AppendLine(string.Join(',',new[]{item.PatientId,item.DisplayName,item.Email,item.PhoneHome,item.PhoneCell,item.PostalCode,item.NextAppointmentDate,item.LastAppointmentDate,item.LastVisitDate,item.RenderedSubject,item.RenderedBody}.Select(value=>$"\"{(value??string.Empty).Replace("\"","\"\"")}\"")));return Results.File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()),"text/csv",$"batch-communication-{id}.csv");}).WithName("ExportBatchCommunicationCampaign");
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");
