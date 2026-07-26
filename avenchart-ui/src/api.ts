@@ -1723,6 +1723,9 @@ export type RecallItem = { id:string;patientId:string;patientName:string;recallD
 export async function getRecalls(sessionId:string):Promise<RecallItem[]>{return clinicianGet(sessionId,'/api/recalls/')}
 export async function createRecall(sessionId:string,input:{patientId:string;recallDate:string;reason:string;providerId?:number|null;facilityId?:number|null}):Promise<RecallItem>{return clinicianPost(sessionId,'/api/recalls/',input)}
 export async function deleteRecall(sessionId:string,id:string):Promise<void>{await clinicianDelete(sessionId,`/api/recalls/${id}`)}
+export type RecallActivityItem = { id:string;activityType:'phone'|'postcard'|'label';note?:string|null;recordedAt:string }
+export async function getRecallActivity(sessionId:string,id:string):Promise<RecallActivityItem[]>{return clinicianGet(sessionId,`/api/recalls/${id}/activity`)}
+export async function addRecallActivity(sessionId:string,id:string,input:{activityType:'phone'|'postcard'|'label';note?:string|null}):Promise<RecallActivityItem>{return clinicianPost(sessionId,`/api/recalls/${id}/activity`,input)}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

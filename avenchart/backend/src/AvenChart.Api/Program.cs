@@ -2370,6 +2370,8 @@ var recalls=app.MapGroup("/api/recalls").WithTags("Recalls");RequireAccessPermis
 recalls.MapGet("/",async(RecallRepository repository,CancellationToken ct)=>Results.Ok(await repository.GetAsync(ct))).WithName("GetRecalls");
 recalls.MapPost("/",async(RecallRepository repository,RecallRequest request,CancellationToken ct)=>{var item=await repository.CreateAsync(request,ct);return item is null?Results.BadRequest():Results.Created($"/api/recalls/{item.Id}",item);}).WithName("CreateRecall").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
 recalls.MapDelete("/{id:guid}",async(RecallRepository repository,Guid id,CancellationToken ct)=>await repository.DeleteAsync(id,ct)?Results.NoContent():Results.NotFound()).WithName("DeleteRecall").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
+recalls.MapGet("/{id:guid}/activity",async(RecallRepository repository,Guid id,CancellationToken ct)=>{var activity=await repository.GetActivityAsync(id,ct);return activity is null?Results.NotFound():Results.Ok(activity);}).WithName("GetRecallActivity");
+recalls.MapPost("/{id:guid}/activity",async(RecallRepository repository,Guid id,RecallActivityRequest request,CancellationToken ct)=>{try{var result=await repository.AddActivityAsync(id,request,ct);return result is null?Results.NotFound():Results.Created($"/api/recalls/{id}/activity/{result.Id}",result);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["activity"]=[e.Message] });}}).WithName("AddRecallActivity").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");

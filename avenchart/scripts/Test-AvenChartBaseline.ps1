@@ -9790,6 +9790,27 @@ catch {
     Add-Check -Name "track anything hierarchy lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+$recallMutationId = $null
+try {
+    $recallHeaders = Get-AdministrationHeaders
+    $recall = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/" -Method Post -Headers $recallHeaders -ContentType "application/json" -Body (@{ patientId = "MOD-PAT-0001"; recallDate = "2026-12-01"; reason = "Smoke outreach evidence" } | ConvertTo-Json) -TimeoutSec 20
+    $recallMutationId = $recall.id
+    $activity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/activity" -Method Post -Headers $recallHeaders -ContentType "application/json" -Body (@{ activityType = "phone"; note = "Smoke phone evidence" } | ConvertTo-Json) -TimeoutSec 20
+    $history = Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId/activity" -Method Get -Headers $recallHeaders -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId" -Method Delete -Headers $recallHeaders -TimeoutSec 20 | Out-Null
+    $recallMutationId = $null
+    $recallPassed = $activity.activityType -eq "phone" -and $activity.note -eq "Smoke phone evidence" -and ($history.id -contains $activity.id)
+    Add-Check -Name "recall board outreach activity lifecycle" -Result $(if ($recallPassed) { "passed" } else { "failed" }) -Details @{ recallId = $recall.id; activityId = $activity.id; activityCount = @($history).Count }
+}
+catch {
+    Add-Check -Name "recall board outreach activity lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $recallMutationId) {
+        try { Invoke-RestMethod -Uri "$ApiBaseUrl/api/recalls/$recallMutationId" -Method Delete -Headers (Get-AdministrationHeaders) -TimeoutSec 20 | Out-Null } catch { }
+    }
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

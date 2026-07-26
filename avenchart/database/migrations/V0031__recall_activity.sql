@@ -1,0 +1,1 @@
+create table if not exists recall_activity(id uuid primary key,recall_id uuid not null references recalls(id) on delete cascade,activity_type text not null check(activity_type in ('phone','postcard','label')),note text,recorded_at timestamptz not null default now());
