@@ -38,6 +38,7 @@ var connectionString = builder.Configuration.GetConnectionString("AvenChart")
 
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
+builder.Services.AddScoped<PatientXmlExchangeRepository>();
 builder.Services.AddScoped<PatientPrintRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
@@ -1005,6 +1006,10 @@ patients.MapGet("/{canonicalId}", async (
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("GetPatientChartSummary");
+patients.MapGet("/{patientId}/xml-export",async(string patientId,PatientXmlExchangeRepository repository,CancellationToken ct)=>{var xml=await repository.ExportAsync(patientId,ct);return xml is null?Results.NotFound():Results.File(Encoding.UTF8.GetBytes(xml),"application/xml",$"legacy-ehr-patient-{patientId}.xml");}).WithName("ExportPatientXml");
+patients.MapPost("/xml-import/preview",async(PatientXmlExchangeRepository repository,PatientXmlImportRequest request,CancellationToken ct)=>{try{var preview=await repository.PreviewAsync(request,ct);return preview is null?Results.NotFound():Results.Ok(preview);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]>{{"xml",[e.Message]}});}}).WithName("PreviewPatientXmlImport").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
+patients.MapPost("/xml-import",async(PatientXmlExchangeRepository repository,AuthRepository auth,HttpContext context,PatientXmlImportRequest request,CancellationToken ct)=>{try{var session=await GetSessionFromHeaderAsync(auth,context,ct);var result=await repository.ImportAsync(request,session.Username,ct);return result is null?Results.NotFound():Results.Ok(result);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]>{{"xml",[e.Message]}});}}).WithName("ImportPatientXml").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
+patients.MapPost("/xml-import/{auditId:guid}/rollback",async(PatientXmlExchangeRepository repository,AuthRepository auth,HttpContext context,Guid auditId,CancellationToken ct)=>{var session=await GetSessionFromHeaderAsync(auth,context,ct);return await repository.RollbackAsync(auditId,session.Username,ct)?Results.NoContent():Results.NotFound();}).WithName("RollbackPatientXmlImport").AddEndpointFilter(AccessPermissionFilter("patients","demo","write"));
 
 patients.MapGet("/{patientId}/print/{output}", async (string patientId, string output, Guid? referralId, int? encounterId, int? labelCount, PatientPrintRepository repository, CancellationToken cancellationToken) =>
 {
