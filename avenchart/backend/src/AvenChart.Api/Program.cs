@@ -38,6 +38,7 @@ var connectionString = builder.Configuration.GetConnectionString("AvenChart")
 
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<PatientRepository>();
+builder.Services.AddScoped<PatientPrintRepository>();
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<EncounterRepository>();
 builder.Services.AddScoped<EncounterLayoutFormRepository>();
@@ -1004,6 +1005,17 @@ patients.MapGet("/{canonicalId}", async (
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("GetPatientChartSummary");
+
+patients.MapGet("/{patientId}/print/{output}", async (string patientId, string output, Guid? referralId, int? encounterId, int? labelCount, PatientPrintRepository repository, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var html = await repository.RenderAsync(patientId, output, referralId, encounterId, labelCount, cancellationToken);
+        return html is null ? Results.NotFound() : Results.Content(html, "text/html; charset=utf-8");
+    }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["print"] = [exception.Message] }); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+}).WithName("GetPatientPrintableOutput").AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
 
 patients.MapPut("/{patientId}/contact", async (
         PatientRepository repository,

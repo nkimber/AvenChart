@@ -9873,6 +9873,26 @@ catch {
     Add-Check -Name "patient duplicate review disposition lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $printHeaders = Get-AdministrationHeaders
+    $printReferral = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/referrals" -Method Post -Headers $printHeaders -ContentType "application/json" -Body (@{ destination = "Smoke specialty practice"; reason = "Printable referral verification"; notes = "Local print only" } | ConvertTo-Json) -TimeoutSec 20
+    $demographicsOutput = Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/print/demographics" -Method Get -Headers $printHeaders -UseBasicParsing -TimeoutSec 20
+    $labelsOutput = Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/print/chart-labels?labelCount=2" -Method Get -Headers $printHeaders -UseBasicParsing -TimeoutSec 20
+    $addressOutput = Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/print/address-label" -Method Get -Headers $printHeaders -UseBasicParsing -TimeoutSec 20
+    $referralOutput = Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/print/referral?referralId=$($printReferral.id)" -Method Get -Headers $printHeaders -UseBasicParsing -TimeoutSec 20
+    $feeSheetOutput = Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/print/fee-sheet?encounterId=1000013" -Method Get -Headers $printHeaders -UseBasicParsing -TimeoutSec 20
+    $printPassed = $demographicsOutput.Content.Contains("Patient demographics") `
+        -and $labelsOutput.Content.Contains("2 labels") `
+        -and $addressOutput.Content.Contains("Patient address label") `
+        -and $referralOutput.Content.Contains("Smoke specialty practice") `
+        -and $feeSheetOutput.Content.Contains("Superbill / fee sheet") `
+        -and $feeSheetOutput.Content.Contains("99214")
+    Add-Check -Name "printable patient output suite" -Result $(if ($printPassed) { "passed" } else { "failed" }) -Details @{ referralId = $printReferral.id; demographics = $demographicsOutput.StatusCode; labels = $labelsOutput.StatusCode; address = $addressOutput.StatusCode; referral = $referralOutput.StatusCode; feeSheet = $feeSheetOutput.StatusCode }
+}
+catch {
+    Add-Check -Name "printable patient output suite" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl
