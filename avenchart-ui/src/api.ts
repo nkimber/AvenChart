@@ -1746,6 +1746,9 @@ export async function getDocumentTemplates(sessionId:string,includeInactive=true
 export async function createDocumentTemplate(sessionId:string,input:{name:string;content:string;active:boolean}):Promise<DocumentTemplateItem>{return clinicianPost(sessionId,'/api/administration/document-templates/',input)}
 export async function updateDocumentTemplate(sessionId:string,id:string,input:{name:string;content:string;active:boolean}):Promise<DocumentTemplateItem>{return clinicianPut(sessionId,`/api/administration/document-templates/${id}`,input)}
 export async function renderDocumentTemplate(sessionId:string,id:string,patientId:string):Promise<{content:string}>{return clinicianPost(sessionId,`/api/administration/document-templates/${id}/render`,{patientId})}
+export type DuplicateReviewItem={targetPatientId:string;sourcePatientId:string;targetDisplayName:string;sourceDisplayName:string;dateOfBirth:string;matchScore:number;matchReasons:string[];status:string}
+export async function getDuplicateReviewQueue(sessionId:string):Promise<{items:DuplicateReviewItem[]}>{return clinicianGet(sessionId,'/api/patients/duplicates/review-queue')}
+export async function setDuplicateReviewDisposition(sessionId:string,input:{targetPatientId:string;sourcePatientId:string;status:string;note?:string}):Promise<DuplicateReviewItem>{return clinicianPut(sessionId,'/api/patients/duplicates/review-disposition',input)}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

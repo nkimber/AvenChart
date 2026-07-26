@@ -558,6 +558,44 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Candidates: candidates);
     }
 
+    public async Task<PatientDuplicateReviewQueueResponse> GetDuplicateReviewQueueAsync(int limit, CancellationToken cancellationToken)
+    {
+        var safeLimit = Math.Clamp(limit, 1, 200);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select p1.canonical_id,p2.canonical_id,p1.last_name||', '||p1.first_name,p2.last_name||', '||p2.first_name,p1.date_of_birth,
+              (case when lower(p1.first_name)=lower(p2.first_name) then 35 else 0 end + case when lower(p1.last_name)=lower(p2.last_name) then 35 else 0 end + case when coalesce(nullif(lower(p1.email),''),'')<>'' and lower(p1.email)=lower(p2.email) then 20 else 0 end + case when coalesce(nullif(p1.phone_cell,''),'')<>'' and p1.phone_cell=p2.phone_cell then 10 else 0 end) as score,
+              coalesce(d.status,'pending')
+            from patients p1 join patients p2 on p1.canonical_id<p2.canonical_id and p1.date_of_birth=p2.date_of_birth
+            left join patient_duplicate_review_dispositions d on d.target_patient_id=p1.canonical_id and d.source_patient_id=p2.canonical_id
+            where p1.merged_into_patient_id is null and p2.merged_into_patient_id is null and
+              (lower(p1.first_name)=lower(p2.first_name) or lower(p1.last_name)=lower(p2.last_name) or (coalesce(nullif(lower(p1.email),''),'')<>'' and lower(p1.email)=lower(p2.email)) or (coalesce(nullif(p1.phone_cell,''),'')<>'' and p1.phone_cell=p2.phone_cell))
+            order by score desc,p1.last_name,p1.first_name limit @limit;
+            """;
+        command.Parameters.AddWithValue("limit", safeLimit);
+        var items = new List<PatientDuplicateReviewItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var reasons = new List<string>(); var score = reader.GetInt32(5);
+            if (score >= 70) reasons.Add("same name and date of birth"); else reasons.Add("same date of birth with matching demographics");
+            items.Add(new(reader.GetString(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.GetFieldValue<DateOnly>(4).ToString("yyyy-MM-dd"),score,reasons,reader.GetString(6)));
+        }
+        return new(items);
+    }
+
+    public async Task<PatientDuplicateReviewItem?> SetDuplicateReviewDispositionAsync(PatientDuplicateReviewDispositionRequest request, CancellationToken cancellationToken)
+    {
+        var status = request.Status?.Trim().ToLowerInvariant(); if (status is not ("pending" or "unique" or "reviewed")) throw new ArgumentException("Status must be pending, unique, or reviewed.");
+        if (request.TargetPatientId == request.SourcePatientId) throw new ArgumentException("Duplicate review records require two different patients.");
+        var target = string.CompareOrdinal(request.TargetPatientId,request.SourcePatientId)<0?request.TargetPatientId:request.SourcePatientId; var source = target==request.TargetPatientId?request.SourcePatientId:request.TargetPatientId;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText="insert into patient_duplicate_review_dispositions(target_patient_id,source_patient_id,status,note,updated_at) values(@target,@source,@status,@note,now()) on conflict(target_patient_id,source_patient_id) do update set status=excluded.status,note=excluded.note,updated_at=now();";
+        command.Parameters.AddWithValue("target",target);command.Parameters.AddWithValue("source",source);command.Parameters.AddWithValue("status",status);command.Parameters.AddWithValue("note",(object?)request.Note?.Trim()??DBNull.Value);await command.ExecuteNonQueryAsync(cancellationToken);
+        return (await GetDuplicateReviewQueueAsync(200,cancellationToken)).Items.FirstOrDefault(x=>x.TargetPatientId==target&&x.SourcePatientId==source);
+    }
+
     public async Task<PatientMergePreviewResponse?> GetMergePreviewAsync(
         string targetPatientId,
         string sourcePatientId,

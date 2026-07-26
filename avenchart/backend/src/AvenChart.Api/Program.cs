@@ -872,6 +872,14 @@ patients.MapGet("/duplicates", async (
     })
     .WithName("FindPatientDuplicateCandidates");
 
+patients.MapGet("/duplicates/review-queue", async (PatientRepository repository, int? limit, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetDuplicateReviewQueueAsync(limit ?? 50, cancellationToken))).WithName("GetPatientDuplicateReviewQueue").AddEndpointFilter(AccessPermissionFilter("admin", "super", "view"));
+patients.MapPut("/duplicates/review-disposition", async (PatientRepository repository, PatientDuplicateReviewDispositionRequest request, CancellationToken cancellationToken) =>
+{
+    try { var item = await repository.SetDuplicateReviewDispositionAsync(request, cancellationToken); return item is null ? Results.NotFound() : Results.Ok(item); }
+    catch (ArgumentException ex) { return Results.ValidationProblem(new Dictionary<string,string[]> { ["duplicateReview"] = [ex.Message] }); }
+}).WithName("SetPatientDuplicateReviewDisposition").AddEndpointFilter(AccessPermissionFilter("admin", "super", "write"));
+
 patients.MapGet("/merge-preview", async (
         PatientRepository repository,
         string targetPatientId,

@@ -46,6 +46,7 @@ import RecallBoard from './pages/clinician/RecallBoard.tsx'
 import BatchCommunication from './pages/clinician/BatchCommunication.tsx'
 import ChartTracker from './pages/clinician/ChartTracker.tsx'
 import DocumentTemplates from './pages/clinician/DocumentTemplates.tsx'
+import DuplicateReview from './pages/clinician/DuplicateReview.tsx'
 
 export default function App() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="batch-communication" element={<BatchCommunication />} />
           <Route path="chart-tracker" element={<ChartTracker />} />
           <Route path="document-templates" element={<DocumentTemplates />} />
+          <Route path="duplicate-review" element={<DuplicateReview />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />
           <Route path="groups" element={<TherapyGroups />} />

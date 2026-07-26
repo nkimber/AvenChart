@@ -9859,6 +9859,20 @@ catch {
     Add-Check -Name "saved operational report definition and run evidence" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $duplicateHeaders = Get-AdministrationHeaders
+    $duplicateQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/duplicates/review-queue?limit=1" -Method Get -Headers $duplicateHeaders -TimeoutSec 20
+    $duplicateCandidate = @($duplicateQueue.items) | Select-Object -First 1
+    if ($null -eq $duplicateCandidate) { throw "The synthetic dataset did not provide a duplicate-review candidate." }
+    $duplicateUnique = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/duplicates/review-disposition" -Method Put -Headers $duplicateHeaders -ContentType "application/json" -Body (@{ targetPatientId = $duplicateCandidate.targetPatientId; sourcePatientId = $duplicateCandidate.sourcePatientId; status = "unique"; note = "Smoke verification" } | ConvertTo-Json) -TimeoutSec 20
+    $duplicateRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/duplicates/review-disposition" -Method Put -Headers $duplicateHeaders -ContentType "application/json" -Body (@{ targetPatientId = $duplicateCandidate.targetPatientId; sourcePatientId = $duplicateCandidate.sourcePatientId; status = "pending"; note = "" } | ConvertTo-Json) -TimeoutSec 20
+    $duplicatePassed = $duplicateUnique.status -eq "unique" -and $duplicateRestored.status -eq "pending"
+    Add-Check -Name "patient duplicate review disposition lifecycle" -Result $(if ($duplicatePassed) { "passed" } else { "failed" }) -Details @{ targetPatientId = $duplicateCandidate.targetPatientId; sourcePatientId = $duplicateCandidate.sourcePatientId; uniqueStatus = $duplicateUnique.status; restoredStatus = $duplicateRestored.status }
+}
+catch {
+    Add-Check -Name "patient duplicate review disposition lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl

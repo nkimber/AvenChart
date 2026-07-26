@@ -46,6 +46,7 @@ const NAV_ITEMS = [
   { path: '/clinician/batch-communication', label: 'Batch communication', icon: Mail },
   { path: '/clinician/chart-tracker', label: 'Chart tracker', icon: MapPin },
   { path: '/clinician/document-templates', label: 'Document templates', icon: FileText },
+  { path: '/clinician/duplicate-review', label: 'Duplicate review', icon: Users },
   { path: '/clinician/renewals', label: 'Renewals', icon: Pill },
   { path: '/clinician/reports', label: 'Reports', icon: BarChart2 },
   { path: '/clinician/groups', label: 'Groups', icon: Users },
