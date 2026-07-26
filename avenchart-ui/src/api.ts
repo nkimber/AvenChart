@@ -1741,6 +1741,11 @@ export async function getChartTrackerOptions(sessionId:string):Promise<ChartTrac
 export async function lookupChartTrackerPatient(sessionId:string,identifier:string):Promise<ChartTrackerPatient>{return clinicianGet(sessionId,`/api/chart-tracker/lookup/${encodeURIComponent(identifier)}`)}
 export async function getChartTrackerHistory(sessionId:string,patientId:string):Promise<ChartTrackerEvent[]>{return clinicianGet(sessionId,`/api/chart-tracker/patients/${encodeURIComponent(patientId)}/history`)}
 export async function recordChartTrackerEvent(sessionId:string,patientId:string,input:{location?:string;userId?:number}):Promise<ChartTrackerEvent>{return clinicianPost(sessionId,`/api/chart-tracker/patients/${encodeURIComponent(patientId)}/events`,input)}
+export type DocumentTemplateItem={id:string;name:string;content:string;active:boolean;createdAt:string;updatedAt:string}
+export async function getDocumentTemplates(sessionId:string,includeInactive=true):Promise<DocumentTemplateItem[]>{return clinicianGet(sessionId,`/api/administration/document-templates/?includeInactive=${includeInactive}`)}
+export async function createDocumentTemplate(sessionId:string,input:{name:string;content:string;active:boolean}):Promise<DocumentTemplateItem>{return clinicianPost(sessionId,'/api/administration/document-templates/',input)}
+export async function updateDocumentTemplate(sessionId:string,id:string,input:{name:string;content:string;active:boolean}):Promise<DocumentTemplateItem>{return clinicianPut(sessionId,`/api/administration/document-templates/${id}`,input)}
+export async function renderDocumentTemplate(sessionId:string,id:string,patientId:string):Promise<{content:string}>{return clinicianPost(sessionId,`/api/administration/document-templates/${id}/render`,{patientId})}
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 

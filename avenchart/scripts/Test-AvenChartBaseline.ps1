@@ -9833,6 +9833,19 @@ catch {
     Add-Check -Name "chart tracker patient lookup" -Result "failed" -Details $_.Exception.Message
 }
 
+try {
+    $templateHeaders = Get-AdministrationHeaders
+    $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $renderedTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/$($template.id)/render" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ patientId = "MOD-PAT-0001" } | ConvertTo-Json) -TimeoutSec 20
+    $retiredTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/$($template.id)" -Method Put -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME***"; active = $false } | ConvertTo-Json) -TimeoutSec 20
+    $templatePassed = $renderedTemplate.content -like "Dear Avery Stone*MOD-PAT-0001" -and -not $retiredTemplate.active
+    Add-Check -Name "document template render and retirement lifecycle" -Result $(if ($templatePassed) { "passed" } else { "failed" }) -Details @{ id = $template.id; rendered = $renderedTemplate.content; retired = $retiredTemplate.active }
+}
+catch {
+    Add-Check -Name "document template render and retirement lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
 $result = [ordered]@{
     status = $status
     apiBaseUrl = $ApiBaseUrl
