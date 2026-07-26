@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { createSavedReportDefinition, getOperationalReports, getSavedReportDefinitions, runSavedReportDefinition, type OperationalReportsResponse, type SavedReportDefinition } from '../../api.ts'
+import { createSavedReportDefinition, downloadReportFamilyCsv, getOperationalReports, getReportFamilies, getSavedReportDefinitions, runSavedReportDefinition, type OperationalReportsResponse, type ReportFamily, type SavedReportDefinition } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 type AsyncState<T> =
@@ -28,6 +28,10 @@ export default function OperationalReports() {
   const [definitions, setDefinitions] = useState<SavedReportDefinition[]>([])
   const [definitionName, setDefinitionName] = useState('Operational snapshot')
   const [schedule, setSchedule] = useState('manual')
+  const [families, setFamilies] = useState<ReportFamily[]>([])
+  const [reportType, setReportType] = useState('operational')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   useEffect(() => {
     getOperationalReports(session.sessionId)
@@ -37,7 +41,9 @@ export default function OperationalReports() {
   }, [])
   function loadDefinitions() { getSavedReportDefinitions(session.sessionId).then((data) => setDefinitions(data.definitions)).catch(() => {}) }
   useEffect(() => { loadDefinitions() }, [])
-  async function saveDefinition() { try { await createSavedReportDefinition(session.sessionId, { name: definitionName, schedule, active: true }); loadDefinitions() } catch {} }
+  useEffect(() => { getReportFamilies(session.sessionId).then(setFamilies).catch(() => {}) }, [session.sessionId])
+  async function saveDefinition() { try { await createSavedReportDefinition(session.sessionId, { name: definitionName, schedule, active: true, reportType }); loadDefinitions() } catch {} }
+  async function exportFamily() { try { const blob = await downloadReportFamilyCsv(session.sessionId, reportType, fromDate || undefined, toDate || undefined); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `legacy-ehr-${reportType}-report.csv`; link.click(); URL.revokeObjectURL(link.href) } catch {} }
 
   return (
     <div className="clinician-page">
@@ -59,7 +65,7 @@ export default function OperationalReports() {
         const c = data.counts
         return (
           <>
-            <section className="cl-card"><div className="cl-card-header"><div><h2 className="cl-card-title">Saved operational reports</h2><p className="cl-empty-text">Local schedules record run evidence; external delivery is not configured.</p></div></div><div className="cl-inline-form"><label className="cl-admin-field"><span>Name</span><input className="ne-input" value={definitionName} onChange={(event) => setDefinitionName(event.target.value)} /></label><label className="cl-admin-field"><span>Schedule</span><select className="ne-input" value={schedule} onChange={(event) => setSchedule(event.target.value)}><option value="manual">Manual</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="button" onClick={saveDefinition}>Save definition</button></div></div>{definitions.length > 0 && <table className="cl-table"><thead><tr><th>Name</th><th>Schedule</th><th>Runs</th><th></th></tr></thead><tbody>{definitions.map((definition) => <tr key={definition.id}><td>{definition.name}</td><td>{definition.schedule}</td><td>{definition.runCount}</td><td><button className="cl-btn-secondary" type="button" onClick={() => runSavedReportDefinition(session.sessionId, definition.id).then(loadDefinitions)}>Run now</button></td></tr>)}</tbody></table>}</section>
+            <section className="cl-card"><div className="cl-card-header"><div><h2 className="cl-card-title">Report families and saved reports</h2><p className="cl-empty-text">Exports are local CSV output; schedules record run evidence and never deliver externally.</p></div></div><div className="cl-inline-form"><label className="cl-admin-field"><span>Family</span><select className="ne-input" value={reportType} onChange={(event) => setReportType(event.target.value)}>{families.map((family) => <option key={family.key} value={family.key}>{family.name}</option>)}</select></label><label className="cl-admin-field"><span>From</span><input className="ne-input" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="cl-admin-field"><span>To</span><input className="ne-input" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><div className="cl-inline-form-actions"><button className="cl-btn-secondary" type="button" onClick={exportFamily}>Export CSV</button></div></div><div className="cl-inline-form"><label className="cl-admin-field"><span>Name</span><input className="ne-input" value={definitionName} onChange={(event) => setDefinitionName(event.target.value)} /></label><label className="cl-admin-field"><span>Schedule</span><select className="ne-input" value={schedule} onChange={(event) => setSchedule(event.target.value)}><option value="manual">Manual</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="button" onClick={saveDefinition}>Save definition</button></div></div>{definitions.length > 0 && <table className="cl-table"><thead><tr><th>Name</th><th>Family</th><th>Schedule</th><th>Runs</th><th></th></tr></thead><tbody>{definitions.map((definition) => <tr key={definition.id}><td>{definition.name}</td><td>{definition.reportType}</td><td>{definition.schedule}</td><td>{definition.runCount}</td><td><button className="cl-btn-secondary" type="button" onClick={() => runSavedReportDefinition(session.sessionId, definition.id).then(loadDefinitions)}>Run now</button></td></tr>)}</tbody></table>}</section>
             {/* Patients & portal */}
             <section className="cl-card">
               <div className="cl-card-header"><h2 className="cl-card-title">Patients</h2></div>

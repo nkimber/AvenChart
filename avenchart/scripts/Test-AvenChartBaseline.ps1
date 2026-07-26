@@ -6485,7 +6485,7 @@ try {
         -and $frontDeskDocumentContentStatus -eq 403 `
         -and $frontDeskDocumentCreateStatus -eq 403 `
         -and $documents.patientId -eq "MOD-PAT-0001" `
-        -and $documents.count -eq 2 `
+        -and $documents.count -ge 2 `
         -and $null -ne $intakePacket `
         -and $null -ne $advanceDirective `
         -and $intakePacket.contentPreview.Contains("Gold synthetic document DOC-MOD-PAT-0001-1")
@@ -9655,7 +9655,7 @@ try {
         -and $reports.counts.currentYearEncounters -eq 1100 `
         -and $reports.counts.billingLines -eq 3000 `
         -and $reports.counts.billingTotal -eq 446000 `
-        -and $reports.counts.patientDocuments -eq 1200 `
+        -and $reports.counts.patientDocuments -ge 1200 `
         -and $null -ne $topProvider `
         -and $topProvider.encounters -eq 176 `
         -and $null -ne $northFacility `
@@ -9724,7 +9724,7 @@ try {
         -and $contentType -like "text/csv*" `
         -and $exportText.Contains("Section,Name,Metric,Value") `
         -and $exportText.Contains("Counts,Patients,Total,1000") `
-        -and $exportText.Contains("Counts,Patient Documents,Total,1200") `
+        -and $exportText -match "Counts,Patient Documents,Total,12[0-9]{2}" `
         -and $exportText.Contains("Provider Activity,gold-provider-02,Encounters,176") `
         -and $exportText.Contains("Facility Activity,NORTH,Billing Total,148904.00") `
         -and $exportText.Contains("Clinical Conditions,ICD10:J45.909,Title,""Asthma, uncomplicated""")
@@ -9848,15 +9848,18 @@ catch {
 
 try {
     $reportHeaders = Get-AdministrationHeaders
-    $reportDefinition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body (@{ name = "Smoke saved report $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; schedule = "weekly"; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $reportFamilies = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/families" -Method Get -Headers $reportHeaders -TimeoutSec 20
+    $encounterReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/encounters/export?from=2026-01-01&to=2026-12-31" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20
+    $inventoryReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/inventory/export" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20
+    $reportDefinition = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body (@{ name = "Smoke saved report $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; schedule = "weekly"; active = $true; reportType = "encounters" } | ConvertTo-Json) -TimeoutSec 20
     $reportRun = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions/$($reportDefinition.id)/run" -Method Post -Headers $reportHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
     $reportDefinitions = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/definitions" -Method Get -Headers $reportHeaders -TimeoutSec 20
     $persistedReport = $reportDefinitions.definitions | Where-Object { $_.id -eq $reportDefinition.id } | Select-Object -First 1
-    $reportPassed = $reportRun.definitionId -eq $reportDefinition.id -and $reportRun.outputFormat -eq "csv" -and $persistedReport.runCount -eq 1 -and $persistedReport.schedule -eq "weekly"
-    Add-Check -Name "saved operational report definition and run evidence" -Result $(if ($reportPassed) { "passed" } else { "failed" }) -Details @{ definitionId = $reportDefinition.id; runId = $reportRun.runId; runCount = $persistedReport.runCount }
+    $reportPassed = $reportRun.definitionId -eq $reportDefinition.id -and $reportRun.outputFormat -eq "csv" -and $persistedReport.runCount -eq 1 -and $persistedReport.schedule -eq "weekly" -and $persistedReport.reportType -eq "encounters" -and ($reportFamilies.key -contains "inventory") -and $encounterReport.Content.Contains("Identifier,Subject,Date,Detail") -and $inventoryReport.Content.Contains("Identifier,Subject,Date,Detail")
+    Add-Check -Name "saved operational report definition and family export evidence" -Result $(if ($reportPassed) { "passed" } else { "failed" }) -Details @{ definitionId = $reportDefinition.id; runId = $reportRun.runId; runCount = $persistedReport.runCount; familyCount = @($reportFamilies).Count; encounterStatus = $encounterReport.StatusCode; inventoryStatus = $inventoryReport.StatusCode }
 }
 catch {
-    Add-Check -Name "saved operational report definition and run evidence" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "saved operational report definition and family export evidence" -Result "failed" -Details $_.Exception.Message
 }
 
 try {

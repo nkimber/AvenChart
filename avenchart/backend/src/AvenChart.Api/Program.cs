@@ -3916,6 +3916,13 @@ reports.MapGet("/operational/export", async (
     })
     .WithName("ExportOperationalReports");
 
+reports.MapGet("/families", (ReportRepository repository) => Results.Ok(repository.GetFamilies())).WithName("GetReportFamilies");
+reports.MapGet("/families/{family}/export", async (ReportRepository repository, string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken) =>
+{
+    try { var csv = await repository.GetFamilyCsvAsync(family, from, to, cancellationToken); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv", $"legacy-ehr-{family}-report.csv"); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["report"] = [exception.Message] }); }
+}).WithName("ExportReportFamily");
+
 reports.MapGet("/definitions", async (ReportRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetSavedDefinitionsAsync(cancellationToken)))
     .WithName("GetSavedReportDefinitions");

@@ -1909,7 +1909,10 @@ export async function getOperationalReports(
 
 export type SavedReportDefinition = { id: string; name: string; reportType: string; schedule: string; active: boolean; createdBy: string; createdAt: string; lastRunAt?: string | null; runCount: number }
 export async function getSavedReportDefinitions(sessionId: string, signal?: AbortSignal): Promise<{ definitions: SavedReportDefinition[] }> { return clinicianGet(sessionId, '/api/reports/definitions', signal) }
-export async function createSavedReportDefinition(sessionId: string, body: { name: string; schedule: string; active: boolean }, signal?: AbortSignal): Promise<SavedReportDefinition> { return clinicianPost(sessionId, '/api/reports/definitions', body, signal) }
+export type ReportFamily={key:string;name:string;description:string;supportsDateRange:boolean}
+export async function getReportFamilies(sessionId:string):Promise<ReportFamily[]>{return clinicianGet(sessionId,'/api/reports/families')}
+export async function downloadReportFamilyCsv(sessionId:string,family:string,from?:string,to?:string):Promise<Blob>{const q=new URLSearchParams();if(from)q.set('from',from);if(to)q.set('to',to);const r=await fetch(`${apiBaseUrl}/api/reports/families/${encodeURIComponent(family)}/export?${q}`,{headers:{'X-Legacy EHR-Session':sessionId}});if(!r.ok)throw new Error(`Report export failed with ${r.status}`);return r.blob()}
+export async function createSavedReportDefinition(sessionId: string, body: { name: string; schedule: string; active: boolean; reportType?: string }, signal?: AbortSignal): Promise<SavedReportDefinition> { return clinicianPost(sessionId, '/api/reports/definitions', body, signal) }
 export async function runSavedReportDefinition(sessionId: string, id: string, signal?: AbortSignal): Promise<unknown> { return clinicianPost(sessionId, `/api/reports/definitions/${id}/run`, {}, signal) }
 
 export type TherapyGroup = { id: string; name: string; status: string; facilitatorId?: number | null; description?: string | null; capacity: number; createdAt: string }

@@ -2,12 +2,15 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
 public sealed class ReportRepository(NpgsqlDataSource dataSource)
 {
+    private static readonly IReadOnlyList<ReportFamilyItem> Families = [new("operational", "Operational snapshot", "Practice counts and activity summary.", false), new("patients", "Patient list", "Registered patient demographics.", false), new("appointments", "Appointments", "Scheduled appointment activity.", true), new("encounters", "Encounters", "Clinical encounter activity.", true), new("referrals", "Referrals", "Local referral lifecycle activity.", true), new("chart-tracker", "Chart tracker", "Recorded chart-location handoffs.", true), new("inventory", "Inventory transactions", "Immutable inventory transaction activity.", true)];
+    public IReadOnlyList<ReportFamilyItem> GetFamilies() => Families;
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
     {
         await EnsureSavedReportSchemaAsync(cancellationToken);
@@ -32,17 +35,18 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         if (string.IsNullOrWhiteSpace(name) || name.Length > 120) throw new ArgumentException("Report name is required and must be 120 characters or fewer.");
         var schedule = request.Schedule?.Trim().ToLowerInvariant();
         if (schedule is not ("manual" or "daily" or "weekly")) throw new ArgumentException("Schedule must be manual, daily, or weekly.");
+        var reportType = string.IsNullOrWhiteSpace(request.ReportType) ? "operational" : request.ReportType.Trim().ToLowerInvariant(); if (!Families.Any(f => f.Key == reportType)) throw new ArgumentException("Report type must be a supported operational report family.");
         await EnsureSavedReportSchemaAsync(cancellationToken);
         var id = Guid.NewGuid(); var createdAt = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             insert into saved_report_definitions (id, name, report_type, schedule, active, created_by, created_at)
-            values (@id, @name, 'operational', @schedule, @active, @createdBy, @createdAt);
+            values (@id, @name, @reportType, @schedule, @active, @createdBy, @createdAt);
             """;
-        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("name", name); command.Parameters.AddWithValue("schedule", schedule); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("createdBy", username); command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("name", name); command.Parameters.AddWithValue("reportType", reportType); command.Parameters.AddWithValue("schedule", schedule); command.Parameters.AddWithValue("active", request.Active); command.Parameters.AddWithValue("createdBy", username); command.Parameters.AddWithValue("createdAt", createdAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        return new(id, name, "operational", schedule, request.Active, username, createdAt.ToString("O"), null, 0);
+        return new(id, name, reportType, schedule, request.Active, username, createdAt.ToString("O"), null, 0);
     }
 
     public async Task<SavedReportRunResponse?> RunSavedDefinitionAsync(Guid definitionId, string username, CancellationToken cancellationToken)
@@ -131,6 +135,24 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         }
 
         return builder.ToString();
+    }
+
+    public async Task<string> GetFamilyCsvAsync(string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
+    {
+        var key = family.Trim().ToLowerInvariant(); if (!Families.Any(item => item.Key == key)) throw new ArgumentException("Unsupported report family."); if (from is not null && to is not null && from > to) throw new ArgumentException("From date cannot be after to date."); if (key == "operational") return await GetOperationalReportsCsvAsync(cancellationToken);
+        await EnsureSavedReportSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = key switch
+        {
+            "patients" => "select p.canonical_id, trim(concat(p.last_name, ', ', p.first_name)), p.date_of_birth::text, coalesce(p.phone_cell,p.phone_home,p.email,'') from patients p where p.merged_into_patient_id is null order by p.last_name,p.first_name limit 5000;",
+            "appointments" => "select a.id::text, p.pubpid, a.appointment_date::text, concat(coalesce(a.title,''),' | ',coalesce(a.status,'')) from appointments a join patients p on p.legacy_pid=a.pid where (@from is null or a.appointment_date>=@from) and (@to is null or a.appointment_date<=@to) order by a.appointment_date,a.start_time limit 5000;",
+            "encounters" => "select e.encounter::text, p.pubpid, e.encounter_date::text, coalesce(e.reason,'') from encounters e join patients p on p.legacy_pid=e.pid where (@from is null or e.encounter_date>=@from) and (@to is null or e.encounter_date<=@to) order by e.encounter_date desc,e.encounter desc limit 5000;",
+            "referrals" => "select r.id::text, p.pubpid, r.requested_at::date::text, concat(r.destination,' | ',r.status) from referrals r join patients p on p.canonical_id=r.patient_id where (@from is null or r.requested_at::date>=@from) and (@to is null or r.requested_at::date<=@to) order by r.requested_at desc limit 5000;",
+            "chart-tracker" => "select e.id::text, p.pubpid, e.recorded_at::date::text, coalesce(e.location, trim(concat(s.first_name,' ',s.last_name)),'') from chart_tracker_events e join patients p on p.canonical_id=e.patient_id left join staff s on s.id=e.user_id where (@from is null or e.recorded_at::date>=@from) and (@to is null or e.recorded_at::date<=@to) order by e.recorded_at desc limit 5000;",
+            "inventory" => "select t.transaction_id::text, i.item_code, t.occurred_at::date::text, concat(t.transaction_type,' | ',t.quantity_delta::text,' | ',coalesce(t.reason,'')) from inventory_transactions t join inventory_lots l on l.lot_id=t.lot_id join inventory_items i on i.item_id=l.item_id where (@from is null or t.occurred_at::date>=@from) and (@to is null or t.occurred_at::date<=@to) order by t.occurred_at desc limit 5000;",
+            _ => throw new ArgumentException("Unsupported report family.")
+        };
+        command.Parameters.Add("from", NpgsqlDbType.Date).Value = (object?)from ?? DBNull.Value; command.Parameters.Add("to", NpgsqlDbType.Date).Value = (object?)to ?? DBNull.Value;
+        var csv = new StringBuilder(); AppendCsvRow(csv, "Identifier", "Subject", "Date", "Detail"); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) AppendCsvRow(csv, reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)); return csv.ToString();
     }
 
     private async Task EnsureSavedReportSchemaAsync(CancellationToken cancellationToken)

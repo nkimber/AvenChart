@@ -50,7 +50,8 @@ public sealed record ClinicalConditionReportItem(
     string Diagnosis,
     int Patients);
 
-public sealed record SavedReportDefinitionRequest(string Name, string Schedule, bool Active);
+public sealed record ReportFamilyItem(string Key, string Name, string Description, bool SupportsDateRange);
+public sealed record SavedReportDefinitionRequest(string Name, string Schedule, bool Active, string? ReportType = null);
 
 public sealed record SavedReportDefinitionItem(
     Guid Id,
