@@ -51,6 +51,7 @@ builder.Services.AddScoped<PatientEducationRepository>();
 builder.Services.AddScoped<RecallRepository>();
 builder.Services.AddScoped<BatchCommunicationRepository>();
 builder.Services.AddScoped<ChartTrackerRepository>();
+builder.Services.AddScoped<DocumentTemplateRepository>();
 builder.Services.AddScoped<DocumentRepository>();
 builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
@@ -2387,6 +2388,12 @@ chartTracker.MapGet("/options",async(ChartTrackerRepository repository,Cancellat
 chartTracker.MapGet("/lookup/{identifier}",async(ChartTrackerRepository repository,string identifier,CancellationToken ct)=>{var patient=await repository.FindAsync(identifier,ct);return patient is null?Results.NotFound():Results.Ok(patient);}).WithName("LookupChartTrackerPatient");
 chartTracker.MapGet("/patients/{patientId}/history",async(ChartTrackerRepository repository,string patientId,CancellationToken ct)=>{var history=await repository.GetHistoryAsync(patientId,ct);return history is null?Results.NotFound():Results.Ok(history);}).WithName("GetChartTrackerHistory");
 chartTracker.MapPost("/patients/{patientId}/events",async(ChartTrackerRepository repository,string patientId,ChartTrackerUpdateRequest request,CancellationToken ct)=>{try{var item=await repository.RecordAsync(patientId,request,ct);return item is null?Results.NotFound():Results.Created($"/api/chart-tracker/patients/{patientId}/events/{item.Id}",item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["tracker"]=[e.Message] });}}).WithName("RecordChartTrackerEvent").AddEndpointFilter(AccessPermissionFilter("patients","appt","write"));
+
+var documentTemplates=app.MapGroup("/api/administration/document-templates").WithTags("Document Templates");RequireAccessPermission(documentTemplates,"admin","super","view");
+documentTemplates.MapGet("/",async(DocumentTemplateRepository repository,bool includeInactive,CancellationToken ct)=>Results.Ok(await repository.GetAsync(includeInactive,ct))).WithName("GetDocumentTemplates");
+documentTemplates.MapPost("/",async(DocumentTemplateRepository repository,DocumentTemplateRequest request,CancellationToken ct)=>{try{var item=await repository.SaveAsync(null,request,ct);return Results.Created($"/api/administration/document-templates/{item!.Id}",item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["template"]=[e.Message] });}}).WithName("CreateDocumentTemplate").AddEndpointFilter(AccessPermissionFilter("admin","super","write"));
+documentTemplates.MapPut("/{id:guid}",async(DocumentTemplateRepository repository,Guid id,DocumentTemplateRequest request,CancellationToken ct)=>{try{var item=await repository.SaveAsync(id,request,ct);return item is null?Results.NotFound():Results.Ok(item);}catch(ArgumentException e){return Results.ValidationProblem(new Dictionary<string,string[]> { ["template"]=[e.Message] });}}).WithName("UpdateDocumentTemplate").AddEndpointFilter(AccessPermissionFilter("admin","super","write"));
+documentTemplates.MapPost("/{id:guid}/render",async(DocumentTemplateRepository repository,Guid id,DocumentTemplateRenderRequest request,CancellationToken ct)=>{var item=await repository.RenderAsync(id,request,ct);return item is null?Results.NotFound():Results.Ok(item);}).WithName("RenderDocumentTemplate");
 
 var documents = app.MapGroup("/api/documents").WithTags("Documents");
 RequireAccessPermission(documents, "patients", "docs", "view");
