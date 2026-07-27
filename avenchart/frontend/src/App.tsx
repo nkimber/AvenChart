@@ -20475,6 +20475,7 @@ function InventoryWorkspace({
   const [receiptUnitCost, setReceiptUnitCost] = useState('0')
   const [receiptReference, setReceiptReference] = useState('')
   const [receiptNotes, setReceiptNotes] = useState('')
+  const [receiptRequisitionId, setReceiptRequisitionId] = useState('')
   const [purchaseRequisitions, setPurchaseRequisitions] = useState<InventoryPurchaseRequisition[]>([])
   const [purchaseRequisitionError, setPurchaseRequisitionError] = useState<string | null>(null)
   const [requisitionFacilityId, setRequisitionFacilityId] = useState('')
@@ -20484,6 +20485,7 @@ function InventoryWorkspace({
   const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
   const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
+  const receivableRequisitions = purchaseRequisitions.filter((requisition) => requisition.status === 'approved' && requisition.receiptStatus !== 'complete')
 
   function selectLot(value: string) {
     setLotId(value)
@@ -20760,7 +20762,21 @@ function InventoryWorkspace({
       unitCost: unitCostValue,
       referenceNumber: receiptReference.trim() || null,
       notes: receiptNotes.trim(),
+      requisitionId: receiptRequisitionId || null,
     })
+  }
+
+  function selectReceiptRequisition(requisitionId: string) {
+    setReceiptRequisitionId(requisitionId)
+    const requisition = purchaseRequisitions.find((candidate) => candidate.requisitionId === requisitionId)
+    if (!requisition) return
+    setReceiptFacilityId(String(requisition.facilityId))
+    if (requisition.vendorId) setReceiptVendorId(requisition.vendorId)
+    const outstandingLine = requisition.lines.find((line) => line.outstandingQuantity > 0)
+    if (outstandingLine) {
+      setReceiptItemId(String(outstandingLine.itemId))
+      setReceiptQuantity(String(outstandingLine.outstandingQuantity))
+    }
   }
 
   function submitPurchaseRequisition(event: FormEvent<HTMLFormElement>) {
@@ -20963,6 +20979,7 @@ function InventoryWorkspace({
                 {vendorError && <div className="workspace-error">{vendorError}</div>}
               </form>
               <form className="inventory-receipt-form" onSubmit={submitPurchaseReceipt}>
+                <label>Approved requisition (optional)<select value={receiptRequisitionId} onChange={(event) => selectReceiptRequisition(event.target.value)}><option value="">Unlinked receipt</option>{receivableRequisitions.map((requisition) => <option key={requisition.requisitionId} value={requisition.requisitionId}>{requisition.facilityCode} - {requisition.vendorName || 'Any vendor'} ({requisition.receiptStatus})</option>)}</select></label>
                 <label>Vendor<select value={receiptVendorId} onChange={(event) => setReceiptVendorId(event.target.value)} required><option value="">Select vendor</option>{vendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.name}</option>)}</select></label>
                 <label>Facility<select value={receiptFacilityId} onChange={(event) => setReceiptFacilityId(event.target.value)} required>{inventory.facilities.map((facility) => <option key={facility.facilityId} value={facility.facilityId}>{facility.code} · {facility.name}</option>)}</select></label>
                 <label>Item<select value={receiptItemId} onChange={(event) => setReceiptItemId(event.target.value)} required>{inventory.items.map((item) => <option key={item.itemId} value={item.itemId}>{item.itemCode} · {item.name}</option>)}</select></label>
@@ -21002,7 +21019,7 @@ function InventoryWorkspace({
                 {purchaseRequisitionError && <div className="workspace-error">{purchaseRequisitionError}</div>}
                 {purchaseRequisitions.map((requisition) => (
                   <article className="inventory-activity-row" key={requisition.requisitionId}>
-                    <div><strong>{requisition.status} - {requisition.facilityCode}{requisition.vendorName ? ` - ${requisition.vendorName}` : ''}</strong><small>{requisition.lines.map((line) => `${line.itemCode} ${line.requestedQuantity} ${line.unit}`).join(', ')}</small><small>Requested by {requisition.requestedBy}; {requisition.notes || 'No request note'}</small>{requisition.decisionNotes && <small>Decision: {requisition.decisionNotes}</small>}</div>
+                    <div><strong>{requisition.status} - {requisition.facilityCode}{requisition.vendorName ? ` - ${requisition.vendorName}` : ''}</strong><small>Receipt status: {requisition.receiptStatus}</small><small>{requisition.lines.map((line) => `${line.itemCode} ${line.receivedQuantity}/${line.requestedQuantity} ${line.unit} (${line.outstandingQuantity} outstanding)`).join(', ')}</small><small>Requested by {requisition.requestedBy}; {requisition.notes || 'No request note'}</small>{requisition.decisionNotes && <small>Decision: {requisition.decisionNotes}</small>}</div>
                     <div className="inventory-activity-filters">
                       {requisition.status === 'draft' && <button type="button" className="inventory-export-button" onClick={() => void onSubmitPurchaseRequisition(requisition.requisitionId)} disabled={status === 'loading'}>Submit</button>}
                       {requisition.status === 'submitted' && <><button type="button" className="inventory-export-button" onClick={() => void onDecidePurchaseRequisition(requisition.requisitionId, 'approve', { notes: null })} disabled={status === 'loading'}>Approve</button><button type="button" className="inventory-export-button" onClick={() => { const note = window.prompt('Reason for rejection'); if (note?.trim()) void onDecidePurchaseRequisition(requisition.requisitionId, 'reject', { notes: note.trim() }) }} disabled={status === 'loading'}>Reject</button></>}
@@ -21012,7 +21029,7 @@ function InventoryWorkspace({
                 {purchaseRequisitions.length === 0 && <div className="timeline-placeholder">No purchase requisitions recorded</div>}
               </div>
             </div>
-            <p className="inventory-boundary">Approval records an operations decision only. It does not reserve stock, issue a vendor purchase order, or receive inventory; receiving reconciliation is the next workflow.</p>
+            <p className="inventory-boundary">Approval records an operations decision only. A linked receipt creates stock and immutable reconciliation evidence together; partial receipts remain outstanding, and the workflow does not issue a purchase order or invoice/AP posting.</p>
           </section>
 
           <section className="inventory-activity-panel">

@@ -860,6 +860,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             ?? throw new ArgumentException("The selected facility was not found.");
         var item = await GetActiveItemAsync(connection, transaction, request.ItemId, cancellationToken)
             ?? throw new ArgumentException("The selected inventory item was not found or is inactive.");
+        var requisitionReconciliation = request.RequisitionId is { } requisitionId
+            ? await GetReceiptReconciliationContextAsync(connection, transaction, requisitionId, vendor.VendorId, facility.FacilityId, item.ItemId, request.Quantity, cancellationToken)
+            : null;
 
         await using (var receiptCommand = connection.CreateCommand())
         {
@@ -899,11 +902,25 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         var itemQuantity = await GetItemQuantityAsync(connection, transaction, item.ItemId, cancellationToken);
+        InventoryPurchaseReceiptReconciliation? reconciliation = null;
+        if (requisitionReconciliation is not null)
+        {
+            var reconciliationId = Guid.NewGuid();
+            await using (var reconciliationCommand = connection.CreateCommand())
+            {
+                reconciliationCommand.Transaction = transaction;
+                reconciliationCommand.CommandText = "insert into inventory_purchase_requisition_receipts (reconciliation_id,requisition_id,requisition_line_id,receipt_id,received_quantity,reconciled_by,reconciled_at) values (@id,@requisitionId,@lineId,@receiptId,@quantity,@user,@at);";
+                reconciliationCommand.Parameters.AddWithValue("id", reconciliationId); reconciliationCommand.Parameters.AddWithValue("requisitionId", requisitionReconciliation.RequisitionId); reconciliationCommand.Parameters.AddWithValue("lineId", requisitionReconciliation.RequisitionLineId); reconciliationCommand.Parameters.AddWithValue("receiptId", receiptId); reconciliationCommand.Parameters.AddWithValue("quantity", request.Quantity); reconciliationCommand.Parameters.AddWithValue("user", username); reconciliationCommand.Parameters.AddWithValue("at", now);
+                await reconciliationCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await InsertPurchaseRequisitionEventAsync(connection, transaction, requisitionReconciliation.RequisitionId, "receipt_reconciled", $"Receipt {receiptId} reconciled: {request.Quantity.ToString(CultureInfo.InvariantCulture)}", username, now, cancellationToken);
+            reconciliation = new InventoryPurchaseReceiptReconciliation(reconciliationId, requisitionReconciliation.RequisitionId, requisitionReconciliation.RequisitionLineId, request.Quantity, username, now.ToString("O", CultureInfo.InvariantCulture));
+        }
         await transaction.CommitAsync(cancellationToken);
         var ledgerEntry = new InventoryTransactionItem(transactionId, lot.LotId, item.ItemCode, item.Name, facility.Code, "purchase", request.Quantity,
             request.Notes.Trim(), username, now, null, null, receiptId, referenceNumber);
         return new InventoryPurchaseReceiptResponse(receiptId, vendor, facility.Code, facility.Name, referenceNumber, now.ToString("O", CultureInfo.InvariantCulture), username,
-            request.Notes.Trim(), lot, ledgerEntry, itemQuantity, itemQuantity <= item.ReorderPoint);
+            request.Notes.Trim(), lot, ledgerEntry, itemQuantity, itemQuantity <= item.ReorderPoint, reconciliation);
     }
 
     public async Task<InventoryCountReconciliationResponse?> CreateCountReconciliationAsync(
@@ -1006,15 +1023,19 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         header.Parameters.AddWithValue("id", requisitionId);
         await using var reader = await header.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
-        var result = new InventoryPurchaseRequisition(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(14) ? null : reader.GetString(14), [], []);
+        var result = new InventoryPurchaseRequisition(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(14) ? null : reader.GetString(14), "pending", [], []);
         await reader.DisposeAsync();
         var lines = new List<InventoryPurchaseRequisitionLine>();
         await using (var lineCommand = connection.CreateCommand())
         {
-            lineCommand.CommandText = "select l.requisition_line_id,l.item_id,i.item_code,i.name,l.requested_quantity,i.unit from inventory_purchase_requisition_lines l join inventory_items i on i.item_id=l.item_id where l.requisition_id=@id order by i.name,l.requisition_line_id;";
+            lineCommand.CommandText = "select l.requisition_line_id,l.item_id,i.item_code,i.name,l.requested_quantity,coalesce(sum(rr.received_quantity),0),i.unit from inventory_purchase_requisition_lines l join inventory_items i on i.item_id=l.item_id left join inventory_purchase_requisition_receipts rr on rr.requisition_line_id=l.requisition_line_id where l.requisition_id=@id group by l.requisition_line_id,l.item_id,i.item_code,i.name,l.requested_quantity,i.unit order by i.name,l.requisition_line_id;";
             lineCommand.Parameters.AddWithValue("id", requisitionId);
             await using var lineReader = await lineCommand.ExecuteReaderAsync(cancellationToken);
-            while (await lineReader.ReadAsync(cancellationToken)) lines.Add(new(lineReader.GetGuid(0), lineReader.GetInt32(1), lineReader.GetString(2), lineReader.GetString(3), lineReader.GetDecimal(4), lineReader.GetString(5)));
+            while (await lineReader.ReadAsync(cancellationToken))
+            {
+                var requestedQuantity = lineReader.GetDecimal(4); var receivedQuantity = lineReader.GetDecimal(5);
+                lines.Add(new(lineReader.GetGuid(0), lineReader.GetInt32(1), lineReader.GetString(2), lineReader.GetString(3), requestedQuantity, receivedQuantity, requestedQuantity - receivedQuantity, lineReader.GetString(6)));
+            }
         }
         var events = new List<InventoryPurchaseRequisitionEvent>();
         await using (var eventCommand = connection.CreateCommand())
@@ -1024,7 +1045,37 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await using var eventReader = await eventCommand.ExecuteReaderAsync(cancellationToken);
             while (await eventReader.ReadAsync(cancellationToken)) events.Add(new(eventReader.GetGuid(0), eventReader.GetString(1), eventReader.IsDBNull(2) ? null : eventReader.GetString(2), eventReader.GetString(3), eventReader.GetFieldValue<DateTimeOffset>(4).ToString("O", CultureInfo.InvariantCulture)));
         }
-        return result with { Lines = lines, Events = events };
+        var receiptStatus = lines.All(line => line.OutstandingQuantity == 0) ? "complete" : lines.Any(line => line.ReceivedQuantity > 0) ? "partial" : "pending";
+        return result with { ReceiptStatus = receiptStatus, Lines = lines, Events = events };
+    }
+
+    private sealed record ReceiptReconciliationContext(Guid RequisitionId, Guid RequisitionLineId);
+
+    private static async Task<ReceiptReconciliationContext> GetReceiptReconciliationContextAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid requisitionId, Guid vendorId, int facilityId, int itemId, decimal quantity, CancellationToken cancellationToken)
+    {
+        if (requisitionId == Guid.Empty) throw new ArgumentException("The purchase requisition is invalid.");
+        Guid? requisitionVendorId; int requisitionFacilityId; string status;
+        await using (var requisitionCommand = connection.CreateCommand())
+        {
+            requisitionCommand.Transaction = transaction;
+            requisitionCommand.CommandText = "select vendor_id,facility_id,status from inventory_purchase_requisitions where requisition_id=@id for update;";
+            requisitionCommand.Parameters.AddWithValue("id", requisitionId);
+            await using var reader = await requisitionCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The selected purchase requisition was not found.");
+            requisitionVendorId = reader.IsDBNull(0) ? null : reader.GetGuid(0); requisitionFacilityId = reader.GetInt32(1); status = reader.GetString(2);
+        }
+        if (!string.Equals(status, "approved", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only approved purchase requisitions can be reconciled with a receipt.");
+        if (requisitionFacilityId != facilityId) throw new ArgumentException("The receipt facility must match the purchase requisition.");
+        if (requisitionVendorId is { } expectedVendorId && expectedVendorId != vendorId) throw new ArgumentException("The receipt vendor must match the purchase requisition vendor.");
+        await using var lineCommand = connection.CreateCommand();
+        lineCommand.Transaction = transaction;
+        lineCommand.CommandText = "select l.requisition_line_id,l.requested_quantity,coalesce(sum(rr.received_quantity),0) from inventory_purchase_requisition_lines l left join inventory_purchase_requisition_receipts rr on rr.requisition_line_id=l.requisition_line_id where l.requisition_id=@requisitionId and l.item_id=@itemId group by l.requisition_line_id,l.requested_quantity;";
+        lineCommand.Parameters.AddWithValue("requisitionId", requisitionId); lineCommand.Parameters.AddWithValue("itemId", itemId);
+        await using var lineReader = await lineCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await lineReader.ReadAsync(cancellationToken)) throw new ArgumentException("The receipt item is not requested by the selected purchase requisition.");
+        var outstandingQuantity = lineReader.GetDecimal(1) - lineReader.GetDecimal(2);
+        if (quantity > outstandingQuantity) throw new ArgumentException("The receipt quantity exceeds the outstanding requisition quantity.");
+        return new ReceiptReconciliationContext(requisitionId, lineReader.GetGuid(0));
     }
 
     private static async Task<bool> PurchaseRequisitionExistsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid requisitionId, CancellationToken cancellationToken)

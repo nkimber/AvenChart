@@ -276,6 +276,7 @@ lines.push(`
 drop table if exists medications;
 drop table if exists inventory_patient_sales;
 drop table if exists inventory_patient_sale_batches;
+drop table if exists inventory_purchase_requisition_receipts;
 drop table if exists inventory_purchase_requisition_events;
 drop table if exists inventory_purchase_requisition_lines;
 drop table if exists inventory_purchase_requisitions;

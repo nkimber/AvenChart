@@ -3288,6 +3288,16 @@ export type InventoryPurchaseReceiptCreateInput = {
   unitCost: number
   referenceNumber?: string | null
   notes: string
+  requisitionId?: string | null
+}
+
+export type InventoryPurchaseReceiptReconciliation = {
+  reconciliationId: string
+  requisitionId: string
+  requisitionLineId: string
+  receivedQuantity: number
+  reconciledBy: string
+  reconciledAt: string
 }
 
 export type InventoryPurchaseReceiptResponse = {
@@ -3303,6 +3313,7 @@ export type InventoryPurchaseReceiptResponse = {
   transaction: InventoryTransactionItem
   itemQuantityOnHand: number
   belowReorderPoint: boolean
+  requisitionReconciliation?: InventoryPurchaseReceiptReconciliation | null
 }
 
 export type InventoryPurchaseRequisitionLineInput = { itemId: number; quantity: number }
@@ -3329,7 +3340,8 @@ export type InventoryPurchaseRequisition = {
   decidedBy?: string | null
   decidedAt?: string | null
   decisionNotes?: string | null
-  lines: Array<{ requisitionLineId: string; itemId: number; itemCode: string; itemName: string; requestedQuantity: number; unit: string }>
+  receiptStatus: 'pending' | 'partial' | 'complete'
+  lines: Array<{ requisitionLineId: string; itemId: number; itemCode: string; itemName: string; requestedQuantity: number; receivedQuantity: number; outstandingQuantity: number; unit: string }>
   events: Array<{ eventId: string; action: string; note?: string | null; actor: string; occurredAt: string }>
 }
 

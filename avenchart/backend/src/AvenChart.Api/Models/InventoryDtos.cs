@@ -234,7 +234,16 @@ public sealed record InventoryPurchaseReceiptCreateRequest(
     decimal Quantity,
     decimal UnitCost,
     string? ReferenceNumber,
-    string Notes);
+    string Notes,
+    Guid? RequisitionId = null);
+
+public sealed record InventoryPurchaseReceiptReconciliation(
+    Guid ReconciliationId,
+    Guid RequisitionId,
+    Guid RequisitionLineId,
+    decimal ReceivedQuantity,
+    string ReconciledBy,
+    string ReconciledAt);
 
 public sealed record InventoryPurchaseReceiptResponse(
     Guid ReceiptId,
@@ -248,7 +257,8 @@ public sealed record InventoryPurchaseReceiptResponse(
     InventoryLot Lot,
     InventoryTransactionItem Transaction,
     decimal ItemQuantityOnHand,
-    bool BelowReorderPoint);
+    bool BelowReorderPoint,
+    InventoryPurchaseReceiptReconciliation? RequisitionReconciliation = null);
 
 public sealed record InventoryPurchaseRequisitionLineCreateRequest(int ItemId, decimal Quantity);
 
@@ -266,6 +276,8 @@ public sealed record InventoryPurchaseRequisitionLine(
     string ItemCode,
     string ItemName,
     decimal RequestedQuantity,
+    decimal ReceivedQuantity,
+    decimal OutstandingQuantity,
     string Unit);
 
 public sealed record InventoryPurchaseRequisitionEvent(
@@ -291,6 +303,7 @@ public sealed record InventoryPurchaseRequisition(
     string? DecidedBy,
     string? DecidedAt,
     string? DecisionNotes,
+    string ReceiptStatus,
     IReadOnlyList<InventoryPurchaseRequisitionLine> Lines,
     IReadOnlyList<InventoryPurchaseRequisitionEvent> Events);
 
