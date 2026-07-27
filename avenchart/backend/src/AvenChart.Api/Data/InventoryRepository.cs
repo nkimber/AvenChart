@@ -87,6 +87,11 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         var existingQuantity = lotReader.GetDecimal(6);
+        var lotStatus = lotReader.GetString(8);
+        if (!string.Equals(lotStatus, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Only active inventory lots can receive stock activity.");
+        }
         var updatedQuantity = existingQuantity + quantityDelta;
         if (updatedQuantity < 0)
         {
@@ -96,7 +101,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var lot = new InventoryLot(
             lotReader.GetInt32(0), lotReader.GetString(2), lotReader.GetString(3), lotReader.GetString(4),
             lotReader.IsDBNull(5) ? null : lotReader.GetFieldValue<DateOnly>(5).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            updatedQuantity, lotReader.GetDecimal(7), lotReader.GetString(8));
+            updatedQuantity, lotReader.GetDecimal(7), lotStatus);
         var itemId = lotReader.GetInt32(1);
         var reorderPoint = lotReader.GetDecimal(9);
         await lotReader.DisposeAsync();
@@ -343,6 +348,88 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             new InventoryLot(lotId, facilityCode, facilityName, lotNumber, expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), quantityOnHand, unitCost, status),
             username,
             changedAt.ToString("O", CultureInfo.InvariantCulture));
+    }
+
+    public async Task<InventoryLotDestructionResponse?> DestroyLotAsync(
+        int lotId,
+        InventoryLotDestructionRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (lotId <= 0 || string.IsNullOrWhiteSpace(username)
+            || request.Method?.Trim().Length > 250
+            || request.Witness?.Trim().Length > 250
+            || request.Notes?.Trim().Length > 250)
+        {
+            throw new ArgumentException("A valid lot, authenticated user, and destruction details of 250 characters or fewer are required.");
+        }
+
+        var destructionDate = ParseOptionalDate(request.DestructionDate, "Destruction date must be an ISO date.")
+            ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var method = NormalizeOptional(request.Method);
+        var witness = NormalizeOptional(request.Witness);
+        var notes = NormalizeOptional(request.Notes);
+        var recordedAt = DateTimeOffset.UtcNow;
+        var destructionId = Guid.NewGuid();
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var lotCommand = connection.CreateCommand();
+        lotCommand.Transaction = transaction;
+        lotCommand.CommandText = """
+            select f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status
+            from inventory_lots l
+            join facilities f on f.id = l.facility_id
+            where l.lot_id = @lotId
+            for update;
+            """;
+        lotCommand.Parameters.AddWithValue("lotId", lotId);
+        await using var reader = await lotCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var facilityCode = reader.GetString(0);
+        var facilityName = reader.GetString(1);
+        var lotNumber = reader.GetString(2);
+        var expirationDate = reader.IsDBNull(3) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(3);
+        var quantityOnHand = reader.GetDecimal(4);
+        var unitCost = reader.GetDecimal(5);
+        var status = reader.GetString(6);
+        await reader.DisposeAsync();
+        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("The inventory lot has already been destroyed or is inactive.");
+        }
+
+        await using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText = "update inventory_lots set status = 'inactive' where lot_id = @lotId;";
+            updateCommand.Parameters.AddWithValue("lotId", lotId);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var auditCommand = connection.CreateCommand())
+        {
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText = "insert into inventory_lot_destructions (destruction_id, lot_id, destruction_date, destruction_method, destruction_witness, destruction_notes, destroyed_by, recorded_at) values (@id, @lotId, @date, @method, @witness, @notes, @user, @recordedAt);";
+            auditCommand.Parameters.AddWithValue("id", destructionId);
+            auditCommand.Parameters.AddWithValue("lotId", lotId);
+            auditCommand.Parameters.AddWithValue("date", destructionDate);
+            auditCommand.Parameters.AddWithValue("method", (object?)method ?? DBNull.Value);
+            auditCommand.Parameters.AddWithValue("witness", (object?)witness ?? DBNull.Value);
+            auditCommand.Parameters.AddWithValue("notes", (object?)notes ?? DBNull.Value);
+            auditCommand.Parameters.AddWithValue("user", username);
+            auditCommand.Parameters.AddWithValue("recordedAt", recordedAt);
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new InventoryLotDestructionResponse(
+            destructionId,
+            new InventoryLot(lotId, facilityCode, facilityName, lotNumber,
+                expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), quantityOnHand, unitCost, "inactive"),
+            destructionDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), method, witness, notes, username,
+            recordedAt.ToString("O", CultureInfo.InvariantCulture));
     }
 
     public async Task<IReadOnlyList<InventoryLotMetadataAuditItem>?> GetLotMetadataHistoryAsync(int lotId, CancellationToken cancellationToken)
@@ -858,7 +945,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             select i.item_id, i.item_code, i.name, i.category, i.unit, i.reorder_point, i.preferred_quantity,
               l.lot_id, f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status
             from inventory_items i
-            left join inventory_lots l on l.item_id = i.item_id
+            left join inventory_lots l on l.item_id = i.item_id and l.status = 'active'
             left join facilities f on f.id = l.facility_id
             where i.active = true
             order by i.category, i.name, l.expiration_date nulls last, l.lot_id;

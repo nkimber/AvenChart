@@ -3157,6 +3157,24 @@ export type InventoryLotMetadataAuditItem = {
   changedAt: string
 }
 
+export type InventoryLotDestructionInput = {
+  destructionDate?: string | null
+  method?: string | null
+  witness?: string | null
+  notes?: string | null
+}
+
+export type InventoryLotDestructionResponse = {
+  destructionId: string
+  lot: InventoryLot
+  destructionDate: string
+  method?: string | null
+  witness?: string | null
+  notes?: string | null
+  destroyedBy: string
+  recordedAt: string
+}
+
 export type InventoryActivityReportResponse = {
   datasetId: string
   datasetVersion: string
@@ -8305,6 +8323,25 @@ export async function getInventoryLotMetadataHistory(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Inventory lot history', response.status))
+  }
+
+  return response.json()
+}
+
+export async function destroyInventoryLot(
+  lotId: number,
+  input: InventoryLotDestructionInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryLotDestructionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/destructions`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory lot destruction', response.status))
   }
 
   return response.json()

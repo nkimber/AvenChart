@@ -168,6 +168,7 @@ import {
   assignProcedureReportReviewer,
   createPatient,
   createInventoryTransaction,
+  destroyInventoryLot,
   getInventoryLotMetadataHistory,
   updateInventoryLotMetadata,
   createInventoryTransfer,
@@ -422,6 +423,7 @@ import {
   type InventoryTransactionCreateInput,
   type InventoryLotMetadataUpdateInput,
   type InventoryLotMetadataAuditItem,
+  type InventoryLotDestructionInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
   type InventoryCountReconciliationCreateInput,
@@ -3558,6 +3560,24 @@ function App() {
     }
   }
 
+  async function handleInventoryLotDestruction(lotId: number, input: InventoryLotDestructionInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before destroying an inventory lot.')
+      return
+    }
+
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await destroyInventoryLot(lotId, input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory lot destruction failed')
+    }
+  }
+
   async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6357,6 +6377,7 @@ function App() {
             sessionId={openEmrSessionId}
             onCreateTransaction={handleInventoryTransaction}
             onUpdateLotMetadata={handleInventoryLotMetadataUpdate}
+            onDestroyLot={handleInventoryLotDestruction}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
             onCreateCountReconciliation={handleInventoryCountReconciliation}
@@ -20292,6 +20313,7 @@ function InventoryWorkspace({
   sessionId,
   onCreateTransaction,
   onUpdateLotMetadata,
+  onDestroyLot,
   onCreateTransfer,
   onCreatePurchaseReceipt,
   onCreateCountReconciliation,
@@ -20302,6 +20324,7 @@ function InventoryWorkspace({
   sessionId: string | null
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onUpdateLotMetadata: (lotId: number, input: InventoryLotMetadataUpdateInput) => void | Promise<void>
+  onDestroyLot: (lotId: number, input: InventoryLotDestructionInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
   onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
@@ -20314,6 +20337,10 @@ function InventoryWorkspace({
   const [metadataExpirationDate, setMetadataExpirationDate] = useState('')
   const [metadataHistory, setMetadataHistory] = useState<InventoryLotMetadataAuditItem[]>([])
   const [metadataHistoryError, setMetadataHistoryError] = useState<string | null>(null)
+  const [destructionDate, setDestructionDate] = useState('')
+  const [destructionMethod, setDestructionMethod] = useState('')
+  const [destructionWitness, setDestructionWitness] = useState('')
+  const [destructionNotes, setDestructionNotes] = useState('')
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [reportFromDate, setReportFromDate] = useState('')
   const [reportToDate, setReportToDate] = useState('')
@@ -20503,6 +20530,18 @@ function InventoryWorkspace({
     })
   }
 
+  function submitLotDestruction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const parsedLotId = Number(lotId)
+    if (!Number.isInteger(parsedLotId) || parsedLotId <= 0 || !sourceLot) return
+    void onDestroyLot(parsedLotId, {
+      destructionDate: destructionDate || null,
+      method: destructionMethod.trim() || null,
+      witness: destructionWitness.trim() || null,
+      notes: destructionNotes.trim() || null,
+    })
+  }
+
   async function loadLotMetadataHistory() {
     const parsedLotId = Number(lotId)
     if (!sessionId || !Number.isInteger(parsedLotId) || parsedLotId <= 0) return
@@ -20666,7 +20705,16 @@ function InventoryWorkspace({
                 {metadataHistoryError && <div className="workspace-error">{metadataHistoryError}</div>}
                 {metadataHistory.map((entry) => <small key={entry.auditId}>{entry.changedAt.slice(0, 16).replace('T', ' ')} · {entry.changedBy}: {entry.priorLotNumber} → {entry.newLotNumber}</small>)}
               </form>
-              <p className="inventory-boundary">Transfers create matched source and destination ledger entries. Use the purchase receipt workspace below to record the vendor, lot, cost, and receiving evidence.</p>
+              <form className="inventory-transaction-form" onSubmit={submitLotDestruction}>
+                <div className="inventory-form-kicker">Destroy lot record</div>
+                <small>Legacy behavior preserves the lot and its movements but removes it from active stock.</small>
+                <label>Date destroyed<input type="date" value={destructionDate} onChange={(event) => setDestructionDate(event.target.value)} /></label>
+                <label>Method (optional)<input value={destructionMethod} onChange={(event) => setDestructionMethod(event.target.value)} maxLength={250} /></label>
+                <label>Witness (optional)<input value={destructionWitness} onChange={(event) => setDestructionWitness(event.target.value)} maxLength={250} /></label>
+                <label>Notes (optional)<input value={destructionNotes} onChange={(event) => setDestructionNotes(event.target.value)} maxLength={250} /></label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Destroy selected lot</button>
+              </form>
+              <p className="inventory-boundary">Stock destruction changes quantity; destroying a lot record instead removes the lot from active inventory and preserves its destruction evidence. Transfers create matched source and destination ledger entries.</p>
             </aside>
           </div>
 

@@ -102,6 +102,22 @@ public sealed record InventoryLotMetadataAuditItem(
     string ChangedBy,
     string ChangedAt);
 
+public sealed record InventoryLotDestructionRequest(
+    string? DestructionDate,
+    string? Method,
+    string? Witness,
+    string? Notes);
+
+public sealed record InventoryLotDestructionResponse(
+    Guid DestructionId,
+    InventoryLot Lot,
+    string DestructionDate,
+    string? Method,
+    string? Witness,
+    string? Notes,
+    string DestroyedBy,
+    string RecordedAt);
+
 public sealed record InventoryActivityReportResponse(
     string DatasetId,
     string DatasetVersion,

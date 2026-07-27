@@ -3369,6 +3369,30 @@ inventory.MapGet("/lots/{lotId:int}/metadata-history", async (
     .WithName("GetInventoryLotMetadataHistory")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+inventory.MapPost("/lots/{lotId:int}/destructions", async (
+        int lotId,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryLotDestructionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var destruction = await repository.DestroyLotAsync(lotId, request, session.Username, cancellationToken);
+            return destruction is null
+                ? Results.NotFound()
+                : Results.Created($"/api/inventory/lots/{lotId}/destructions/{destruction.DestructionId}", destruction);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryLotDestruction"] = [exception.Message] });
+        }
+    })
+    .WithName("DestroyInventoryLot")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "destruction", "write"));
+
 inventory.MapPost("/count-reconciliations", async (
         InventoryRepository repository,
         AuthRepository authRepository,
