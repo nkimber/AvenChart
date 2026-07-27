@@ -218,8 +218,11 @@ public sealed record ClinicalAlertRulesResponse(IReadOnlyList<ClinicalAlertRuleI
 public sealed record ClinicalAlertRuleRevision(long RevisionId, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
 public sealed record ClinicalAlertRuleHistoryResponse(ClinicalAlertRuleItem Rule, IReadOnlyList<ClinicalAlertRuleRevision> Revisions);
 public sealed record ClinicalAlertRuleMutationRequest(string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active);
-public sealed record ModuleCatalogItem(string Key, string DisplayName, string Category, string Status, string Description, string UpdatedAt, string UpdatedBy);
+public sealed record ModuleCatalogItem(string Key, string DisplayName, string Category, string Status, string Description, bool CanChangeStatus, string UpdatedAt, string UpdatedBy);
 public sealed record ModuleCatalogResponse(IReadOnlyList<ModuleCatalogItem> Modules);
+public sealed record ModuleCatalogRevision(long RevisionId, string DisplayName, string Category, string Status, string Description, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record ModuleCatalogHistoryResponse(ModuleCatalogItem Module, IReadOnlyList<ModuleCatalogRevision> Revisions);
+public sealed record ModuleCatalogStatusUpdateRequest(string Status);
 public sealed record ApiClientRegistryItem(string Key, string DisplayName, string RedirectUri, string Scopes, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record ApiClientRegistryResponse(IReadOnlyList<ApiClientRegistryItem> Clients);
 public sealed record ApiClientRegistryMutationRequest(string DisplayName, string RedirectUri, string Scopes, bool Active);

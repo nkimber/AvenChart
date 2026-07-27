@@ -21,7 +21,7 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
     {
         var name = request.Name?.Trim(); if (string.IsNullOrWhiteSpace(name) || name.Length > 120) throw new ArgumentException("Group name is required and must be 120 characters or fewer.");
         var capacity = Math.Clamp(request.Capacity, 1, 200); var id = Guid.NewGuid(); var created = DateTimeOffset.UtcNow;
-        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        await EnsureSchemaAsync(cancellationToken); await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
         command.CommandText = "insert into therapy_groups (id, name, status, facilitator_id, description, capacity, created_at) values (@id, @name, 'active', @facilitator, @description, @capacity, @created);";
         command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("name", name); command.Parameters.AddWithValue("facilitator", (object?)request.FacilitatorId ?? DBNull.Value); command.Parameters.AddWithValue("description", (object?)request.Description?.Trim() ?? DBNull.Value); command.Parameters.AddWithValue("capacity", capacity); command.Parameters.AddWithValue("created", created); await command.ExecuteNonQueryAsync(cancellationToken);
         return new(id, name, "active", request.FacilitatorId, request.Description?.Trim(), capacity, created.ToString("O"));
@@ -52,7 +52,7 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
     {
         var patientId = request.PatientId?.Trim();
         if (string.IsNullOrWhiteSpace(patientId)) throw new ArgumentException("Patient identifier is required.");
-        await EnsureSchemaAsync(cancellationToken);
+        await EnsureSchemaAsync(cancellationToken); await EnsureModuleEnabledAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -112,7 +112,7 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
         if (!DateTimeOffset.TryParse(request.StartsAt, out var startsAt)) throw new ArgumentException("A valid session start date and time is required.");
         if (request.DurationMinutes is < 15 or > 480) throw new ArgumentException("Session duration must be between 15 and 480 minutes.");
         var topic = request.Topic?.Trim(); if (topic?.Length > 400) throw new ArgumentException("Session topic must be 400 characters or fewer.");
-        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureSchemaAsync(cancellationToken); await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var groupCommand = connection.CreateCommand(); groupCommand.CommandText = "select status from therapy_groups where id = @groupId;"; groupCommand.Parameters.AddWithValue("groupId", groupId);
         var status = await groupCommand.ExecuteScalarAsync(cancellationToken) as string;
         if (status is null) throw new ArgumentException("Therapy group was not found.");
@@ -129,7 +129,7 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
     {
         var status = request.Status?.Trim().ToLowerInvariant();
         if (status is not ("completed" or "cancelled")) throw new ArgumentException("Session status must be completed or cancelled.");
-        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        await EnsureSchemaAsync(cancellationToken); await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken); await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             update therapy_group_sessions set status = @status
@@ -171,7 +171,7 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
 
     public async Task<TherapyGroupSessionEncounterResponse> CreateSessionEncountersAsync(Guid groupId, Guid sessionId, TherapyGroupSessionEncounterRequest request, EncounterRepository encounterRepository, CancellationToken cancellationToken)
     {
-        await EnsureSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await EnsureSchemaAsync(cancellationToken); await EnsureModuleEnabledAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var sessionCommand = connection.CreateCommand(); sessionCommand.Transaction = transaction;
         sessionCommand.CommandText = """
             select s.starts_at, coalesce(nullif(s.topic, ''), g.name)
@@ -226,5 +226,13 @@ public sealed class TherapyGroupRepository(NpgsqlDataSource dataSource)
             create table if not exists therapy_group_session_encounters (session_id uuid not null references therapy_group_sessions(id), patient_id text not null references patients(canonical_id), encounter_id integer not null, created_at timestamptz not null, primary key (session_id, patient_id));
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task EnsureModuleEnabledAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from module_catalog where module_key='THERAPY_GROUPS' and status='enabled');";
+        if (!(bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("The Therapy Groups module is disabled.");
     }
 }

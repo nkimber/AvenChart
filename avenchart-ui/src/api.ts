@@ -2154,8 +2154,13 @@ export type ClinicalAlertRuleRevision = { revisionId: number; title: string; tri
 export type ClinicalAlertRuleHistory = { rule: ClinicalAlertRuleItem; revisions: ClinicalAlertRuleRevision[] }
 export async function getClinicalAlertRuleHistory(sessionId: string, key: string): Promise<ClinicalAlertRuleHistory> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rules/${key}/history`) }
 export async function rollbackClinicalAlertRule(sessionId: string, key: string, revisionId: number): Promise<ClinicalAlertRuleHistory> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rules/${key}/revisions/${revisionId}/rollback`, {}) }
-export type ModuleCatalogItem = { key: string; displayName: string; category: string; status: string; description: string }
+export type ModuleCatalogItem = { key: string; displayName: string; category: string; status: string; description: string; canChangeStatus: boolean }
 export async function getModuleCatalog(sessionId: string): Promise<{ modules: ModuleCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/modules') }
+export type ModuleCatalogRevision = { revisionId: number; displayName: string; category: string; status: string; description: string; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type ModuleCatalogHistory = { module: ModuleCatalogItem; revisions: ModuleCatalogRevision[] }
+export async function getModuleCatalogHistory(sessionId: string, key: string): Promise<ModuleCatalogHistory> { return clinicianGet(sessionId, `/api/administration/modules/${key}/history`) }
+export async function updateModuleCatalogStatus(sessionId: string, key: string, status: 'enabled' | 'disabled'): Promise<ModuleCatalogHistory> { return clinicianPut(sessionId, `/api/administration/modules/${key}/status`, { status }) }
+export async function rollbackModuleCatalog(sessionId: string, key: string, revisionId: number): Promise<ModuleCatalogHistory> { return clinicianPost(sessionId, `/api/administration/modules/${key}/revisions/${revisionId}/rollback`, {}) }
 export type ApiClientRegistryItem = { key: string; displayName: string; redirectUri: string; scopes: string; active: boolean }
 export async function getApiClients(sessionId: string): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianGet(sessionId, '/api/administration/api-clients') }
 export async function saveApiClient(sessionId: string, key: string, input: Omit<ApiClientRegistryItem, 'key'>): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianPut(sessionId, `/api/administration/api-clients/${key}`, input) }

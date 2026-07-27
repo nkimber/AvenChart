@@ -1870,6 +1870,27 @@ catch {
 }
 
 try {
+    $moduleHeaders = Get-AdministrationHeaders
+    $moduleHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules/THERAPY_GROUPS/history" -Method Get -Headers $moduleHeaders -TimeoutSec 20
+    $moduleBaselineRevision = $moduleHistoryBefore.revisions | Where-Object { $_.action -eq "baseline" } | Select-Object -First 1
+    if ($null -eq $moduleBaselineRevision -or -not $moduleHistoryBefore.module.canChangeStatus) { throw "The local Therapy Groups module baseline was not found." }
+    $moduleDisabled = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules/THERAPY_GROUPS/status" -Method Put -Headers $moduleHeaders -ContentType "application/json" -Body '{"status":"disabled"}' -TimeoutSec 20
+    $moduleBlockedStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/therapy-groups/" -Method Post -Headers $moduleHeaders -ContentType "application/json" -Body '{"name":"Disabled module smoke group","facilitatorId":null,"description":null,"capacity":2}' -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $moduleBlockedStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
+    $moduleHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/modules/THERAPY_GROUPS/revisions/$($moduleBaselineRevision.revisionId)/rollback" -Method Post -Headers $moduleHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $moduleRevisionPassed = $moduleDisabled.module.status -eq "disabled" -and $moduleBlockedStatus -eq 400 -and $moduleHistoryRestored.module.status -eq "enabled" -and $moduleHistoryRestored.revisions[0].action -eq "rolled-back" -and $moduleHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "local module lifecycle revision and runtime gate" -Result $(if ($moduleRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $moduleBaselineRevision.revisionId; blockedStatus = $moduleBlockedStatus; restoredStatus = $moduleHistoryRestored.module.status; action = $moduleHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "local module lifecycle revision and runtime gate" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $sdohPatientId = "MOD-PAT-0010"
     $sdohCreateBody = @{
         assessmentDate = "2026-07-25"
