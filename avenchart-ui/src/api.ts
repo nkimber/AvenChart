@@ -2164,6 +2164,10 @@ export async function rollbackModuleCatalog(sessionId: string, key: string, revi
 export type ApiClientRegistryItem = { key: string; displayName: string; redirectUri: string; scopes: string; active: boolean }
 export async function getApiClients(sessionId: string): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianGet(sessionId, '/api/administration/api-clients') }
 export async function saveApiClient(sessionId: string, key: string, input: Omit<ApiClientRegistryItem, 'key'>): Promise<{ clients: ApiClientRegistryItem[] }> { return clinicianPut(sessionId, `/api/administration/api-clients/${key}`, input) }
+export type ApiClientRegistryRevision = { revisionId: number; displayName: string; redirectUri: string; scopes: string; active: boolean; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type ApiClientRegistryHistory = { client: ApiClientRegistryItem; revisions: ApiClientRegistryRevision[] }
+export async function getApiClientRegistryHistory(sessionId: string, key: string): Promise<ApiClientRegistryHistory> { return clinicianGet(sessionId, `/api/administration/api-clients/${key}/history`) }
+export async function rollbackApiClientRegistry(sessionId: string, key: string, revisionId: number): Promise<ApiClientRegistryHistory> { return clinicianPost(sessionId, `/api/administration/api-clients/${key}/revisions/${revisionId}/rollback`, {}) }
 
 export type PhiAccessAuditEvent = {
   auditId: string

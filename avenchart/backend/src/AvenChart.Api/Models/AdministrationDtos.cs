@@ -225,4 +225,6 @@ public sealed record ModuleCatalogHistoryResponse(ModuleCatalogItem Module, IRea
 public sealed record ModuleCatalogStatusUpdateRequest(string Status);
 public sealed record ApiClientRegistryItem(string Key, string DisplayName, string RedirectUri, string Scopes, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record ApiClientRegistryResponse(IReadOnlyList<ApiClientRegistryItem> Clients);
+public sealed record ApiClientRegistryRevision(long RevisionId, string DisplayName, string RedirectUri, string Scopes, bool Active, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record ApiClientRegistryHistoryResponse(ApiClientRegistryItem Client, IReadOnlyList<ApiClientRegistryRevision> Revisions);
 public sealed record ApiClientRegistryMutationRequest(string DisplayName, string RedirectUri, string Scopes, bool Active);

@@ -1891,6 +1891,23 @@ catch {
 }
 
 try {
+    $apiClientRevisionHeaders = Get-AdministrationHeaders
+    $apiClientHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/history" -Method Get -Headers $apiClientRevisionHeaders -TimeoutSec 20
+    $apiClientBaselineRevision = $apiClientHistoryBefore.revisions | Where-Object { $_.action -eq "baseline" } | Select-Object -First 1
+    if ($null -eq $apiClientBaselineRevision) { throw "The local portal API-client baseline revision was not found." }
+    $apiClient = $apiClientHistoryBefore.client
+    $apiClientRevisionBody = @{ displayName = "$($apiClient.displayName) smoke revision"; redirectUri = $apiClient.redirectUri; scopes = "$($apiClient.scopes) smoke.read"; active = $apiClient.active } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL" -Method Put -Headers $apiClientRevisionHeaders -ContentType "application/json" -Body $apiClientRevisionBody -TimeoutSec 20 | Out-Null
+    $apiClientHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/history" -Method Get -Headers $apiClientRevisionHeaders -TimeoutSec 20
+    $apiClientHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/revisions/$($apiClientBaselineRevision.revisionId)/rollback" -Method Post -Headers $apiClientRevisionHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $apiClientRevisionPassed = $apiClientHistoryChanged.revisions.Count -gt $apiClientHistoryBefore.revisions.Count -and $apiClientHistoryRestored.client.displayName -eq $apiClient.displayName -and $apiClientHistoryRestored.client.scopes -eq $apiClient.scopes -and $apiClientHistoryRestored.revisions[0].action -eq "rolled-back" -and $apiClientHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "API client revision and rollback history" -Result $(if ($apiClientRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $apiClientBaselineRevision.revisionId; restoredName = $apiClientHistoryRestored.client.displayName; action = $apiClientHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "API client revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $sdohPatientId = "MOD-PAT-0010"
     $sdohCreateBody = @{
         assessmentDate = "2026-07-25"
