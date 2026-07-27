@@ -2119,6 +2119,10 @@ export async function getCodingCatalogs(sessionId: string): Promise<{ catalogs: 
 export type CodingCatalogMutationInput = { displayName: string; sequence: number; active: boolean; claimEnabled: boolean; feeEnabled: boolean; modifierLength: number }
 export async function createCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPost(sessionId, '/api/administration/coding-catalogs', { key, ...input }) }
 export async function updateCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> { return clinicianPut(sessionId, `/api/administration/coding-catalogs/${key}`, input) }
+export type CodingCatalogRevision = { revisionId: number; displayName: string; sequence: number; active: boolean; claimEnabled: boolean; feeEnabled: boolean; modifierLength: number; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type CodingCatalogHistory = { catalog: CodingCatalogItem; revisions: CodingCatalogRevision[] }
+export async function getCodingCatalogHistory(sessionId: string, key: string): Promise<CodingCatalogHistory> { return clinicianGet(sessionId, `/api/administration/coding-catalogs/${key}/history`) }
+export async function rollbackCodingCatalog(sessionId: string, key: string, revisionId: number): Promise<CodingCatalogHistory> { return clinicianPost(sessionId, `/api/administration/coding-catalogs/${key}/revisions/${revisionId}/rollback`, {}) }
 export type FormLayoutItem = { key: string; title: string; mapping: string; sequence: number; active: boolean }
 export type FormLayoutGroupItem = { key: string; title: string; sequence: number; active: boolean }
 export type FormLayoutFieldItem = { key: string; groupKey: string; label: string; fieldType: string; sequence: number; required: boolean; active: boolean; maxLength: number; listId: string; defaultValue: string }

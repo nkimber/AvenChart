@@ -192,6 +192,8 @@ public sealed record CodingCatalogItem(string Key, string DisplayName, int Seque
 public sealed record CodingCatalogResponse(IReadOnlyList<CodingCatalogItem> Catalogs);
 public sealed record CodingCatalogCreateRequest(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength);
 public sealed record CodingCatalogUpdateRequest(string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength);
+public sealed record CodingCatalogRevision(long RevisionId, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record CodingCatalogHistoryResponse(CodingCatalogItem Catalog, IReadOnlyList<CodingCatalogRevision> Revisions);
 
 public sealed record FormLayoutItem(string Key, string Title, string Mapping, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record FormLayoutGroupItem(string Key, string Title, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);

@@ -9931,6 +9931,21 @@ catch {
 }
 
 try {
+    $codingHeaders = Get-AdministrationHeaders
+    $catalogHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4/history" -Method Get -Headers $codingHeaders -TimeoutSec 20
+    $catalog = $catalogHistoryBefore.catalog
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4" -Method Put -Headers $codingHeaders -ContentType "application/json" -Body (@{ displayName = $catalog.displayName; sequence = $catalog.sequence; active = -not $catalog.active; claimEnabled = $catalog.claimEnabled; feeEnabled = $catalog.feeEnabled; modifierLength = $catalog.modifierLength } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $catalogHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4/history" -Method Get -Headers $codingHeaders -TimeoutSec 20
+    $catalogBaseline = @($catalogHistoryChanged.revisions | Where-Object { $_.active -eq $catalogHistoryBefore.catalog.active }) | Select-Object -First 1
+    $catalogHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4/revisions/$($catalogBaseline.revisionId)/rollback" -Method Post -Headers $codingHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $catalogRevisionPassed = @($catalogHistoryBefore.revisions).Count -gt 0 -and @($catalogHistoryChanged.revisions).Count -gt @($catalogHistoryBefore.revisions).Count -and $catalogHistoryRestored.catalog.active -eq $catalogHistoryBefore.catalog.active -and $catalogHistoryRestored.revisions[0].action -eq "rolled-back" -and $catalogHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "coding catalog revision and rollback history" -Result $(if ($catalogRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $catalogBaseline.revisionId; active = $catalogHistoryRestored.catalog.active; action = $catalogHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "coding catalog revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $templateHeaders = Get-AdministrationHeaders
     $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20

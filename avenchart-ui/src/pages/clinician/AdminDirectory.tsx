@@ -12,6 +12,7 @@ import {
   getApiClients,
   getConfigurationCatalog,
   getCodingCatalogs,
+  getCodingCatalogHistory,
   getClinicalAlertRules,
   getFormLayout,
   getFormLayouts,
@@ -31,6 +32,7 @@ import {
   updateCodingCatalog,
   updatePracticeSetting,
   rollbackPracticeSetting,
+  rollbackCodingCatalog,
   saveFormLayout,
   saveFormLayoutField,
   saveFormLayoutGroup,
@@ -46,6 +48,7 @@ import {
   type AdministrationAccessUserMembershipItem,
   type PhiAccessAuditResponse,
   type PracticeSettingHistory,
+  type CodingCatalogHistory,
   type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
@@ -151,6 +154,7 @@ export default function AdminDirectory() {
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
   const [practiceSettingHistory, setPracticeSettingHistory] = useState<PracticeSettingHistory | null>(null)
   const [codingCatalogs, setCodingCatalogs] = useState<CodingCatalogItem[]>([])
+  const [codingCatalogHistory, setCodingCatalogHistory] = useState<CodingCatalogHistory | null>(null)
   const [codingCatalogForm, setCodingCatalogForm] = useState<CodingCatalogForm>(() => emptyCodingCatalogForm())
   const [savingCodingCatalog, setSavingCodingCatalog] = useState(false)
   const [layouts, setLayouts] = useState<FormLayoutItem[]>([])
@@ -203,6 +207,8 @@ export default function AdminDirectory() {
   }, [session.sessionId, tab])
   async function openPracticeSettingHistory(key: string) { try { setPracticeSettingHistory(await getPracticeSettingHistory(session.sessionId, key)) } catch { showToast('Could not load setting history.', 'error') } }
   async function rollbackPracticeSettingRevision(revisionId: number) { if (!practiceSettingHistory || !window.confirm(`Restore ${practiceSettingHistory.setting.label} to the selected historical value?`)) return; try { const result = await rollbackPracticeSetting(session.sessionId, practiceSettingHistory.setting.key, revisionId); setPracticeSettingHistory(result); setPracticeSettings((await getPracticeSettings(session.sessionId)).settings); showToast('Practice setting restored.', 'success') } catch { showToast('Could not restore the practice setting.', 'error') } }
+  async function openCodingCatalogHistory(key: string) { try { setCodingCatalogHistory(await getCodingCatalogHistory(session.sessionId, key)) } catch { showToast('Could not load catalog history.', 'error') } }
+  async function rollbackCodingCatalogRevision(revisionId: number) { if (!codingCatalogHistory || !window.confirm(`Restore ${codingCatalogHistory.catalog.key} to the selected historical definition?`)) return; try { const result = await rollbackCodingCatalog(session.sessionId, codingCatalogHistory.catalog.key, revisionId); setCodingCatalogHistory(result); setCodingCatalogs((await getCodingCatalogs(session.sessionId)).catalogs); showToast('Coding catalog restored.', 'success') } catch { showToast('Could not restore the coding catalog.', 'error') } }
   useEffect(() => { if (tab === 'layouts') { getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')); getFormOptionLists(session.sessionId).then((result) => setFormOptionLists(result.lists)).catch(() => showToast('Could not load form option lists.', 'error')) } }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'rules') getClinicalAlertRules(session.sessionId).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not load alert rules.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'modules') getModuleCatalog(session.sessionId).then((result) => setModules(result.modules)).catch(() => showToast('Could not load modules.', 'error')) }, [session.sessionId, tab])
@@ -732,6 +738,8 @@ export default function AdminDirectory() {
                   <button className="cl-btn-primary" type="submit" disabled={savingCodingCatalog || !codingCatalogForm.key.trim() || !codingCatalogForm.displayName.trim()}>{savingCodingCatalog ? 'Saving...' : 'Add catalog'}</button>
                 </form>
                 <table className="cl-table"><thead><tr><th>Catalog</th><th>Order</th><th>Modifier length</th><th>Capabilities</th><th>Active</th></tr></thead><tbody>{codingCatalogs.map((catalog) => <tr key={catalog.key}><td><strong>{catalog.key}</strong><input className="ne-input" defaultValue={catalog.displayName} aria-label={`${catalog.key} display name`} onBlur={(event) => { if (event.target.value !== catalog.displayName) void saveCodingCatalog(catalog, { displayName: event.target.value }) }} /></td><td><input className="ne-input" type="number" min="0" defaultValue={catalog.sequence} aria-label={`${catalog.key} order`} onBlur={(event) => { const sequence = Number(event.target.value); if (Number.isInteger(sequence) && sequence !== catalog.sequence) void saveCodingCatalog(catalog, { sequence }) }} /></td><td><input className="ne-input" type="number" min="0" max="12" defaultValue={catalog.modifierLength} aria-label={`${catalog.key} modifier length`} onBlur={(event) => { const modifierLength = Number(event.target.value); if (Number.isInteger(modifierLength) && modifierLength !== catalog.modifierLength) void saveCodingCatalog(catalog, { modifierLength }) }} /></td><td><label><input type="checkbox" checked={catalog.claimEnabled} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { claimEnabled: event.target.checked })} /> Claims</label><br /><label><input type="checkbox" checked={catalog.feeEnabled} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { feeEnabled: event.target.checked })} /> Fees</label></td><td><label><input type="checkbox" checked={catalog.active} disabled={savingCodingCatalog} onChange={(event) => void saveCodingCatalog(catalog, { active: event.target.checked })} /> {catalog.active ? 'Active' : 'Inactive'}</label></td></tr>)}</tbody></table>
+                <div className="cl-actions" style={{ marginTop: 12 }}>{codingCatalogs.map((catalog) => <button className="cl-btn-secondary" type="button" key={catalog.key} onClick={() => void openCodingCatalogHistory(catalog.key)}>History: {catalog.key}</button>)}</div>
+                {codingCatalogHistory ? <div className="cl-card" style={{ marginTop: 12 }}><h3 className="cl-card-title">{codingCatalogHistory.catalog.key} revisions</h3><table className="cl-table"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Definition</th><th /></tr></thead><tbody>{codingCatalogHistory.revisions.map((revision) => <tr key={revision.revisionId}><td>{new Date(revision.occurredAt).toLocaleString()}</td><td>{revision.username}</td><td>{revision.action}</td><td>{revision.displayName} · order {revision.sequence} · modifier {revision.modifierLength} · {revision.active ? 'active' : 'inactive'}</td><td><button className="cl-btn-secondary" type="button" disabled={revision.displayName === codingCatalogHistory.catalog.displayName && revision.sequence === codingCatalogHistory.catalog.sequence && revision.active === codingCatalogHistory.catalog.active && revision.claimEnabled === codingCatalogHistory.catalog.claimEnabled && revision.feeEnabled === codingCatalogHistory.catalog.feeEnabled && revision.modifierLength === codingCatalogHistory.catalog.modifierLength} onClick={() => void rollbackCodingCatalogRevision(revision.revisionId)}>Restore</button></td></tr>)}</tbody></table></div> : null}
 
                 <h2 className="cl-card-title">Configuration catalog</h2>
                 <table className="cl-table"><thead><tr><th>Family</th><th>Classification</th><th>Authority</th><th>Mutation state</th></tr></thead><tbody>{configuration.map((item) => <tr key={item.key}><td><strong>{item.family}</strong><p className="cl-table-sub">{item.validation}</p></td><td>{item.classification}</td><td>{item.authority}</td><td>{item.mutationState}</td></tr>)}</tbody></table>
