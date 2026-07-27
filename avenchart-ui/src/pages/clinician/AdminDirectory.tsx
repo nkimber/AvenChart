@@ -15,6 +15,7 @@ import {
   getCodingCatalogHistory,
   getClinicalAlertRules,
   getFormLayout,
+  getFormLayoutHistory,
   getFormLayouts,
   getFormOptionList,
   getFormOptionListHistory,
@@ -35,6 +36,7 @@ import {
   rollbackPracticeSetting,
   rollbackCodingCatalog,
   rollbackFormOptionList,
+  rollbackFormLayout,
   saveFormLayout,
   saveFormLayoutField,
   saveFormLayoutGroup,
@@ -52,6 +54,7 @@ import {
   type PracticeSettingHistory,
   type CodingCatalogHistory,
   type FormOptionListHistory,
+  type FormLayoutHistory,
   type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
@@ -162,6 +165,7 @@ export default function AdminDirectory() {
   const [savingCodingCatalog, setSavingCodingCatalog] = useState(false)
   const [layouts, setLayouts] = useState<FormLayoutItem[]>([])
   const [layoutDetail, setLayoutDetail] = useState<FormLayoutDetail | null>(null)
+  const [layoutHistory, setLayoutHistory] = useState<FormLayoutHistory | null>(null)
   const [layoutKey, setLayoutKey] = useState('')
   const [savingLayout, setSavingLayout] = useState(false)
   const [groupDraft, setGroupDraft] = useState({ key: '', title: '', sequence: 10 })
@@ -219,6 +223,8 @@ export default function AdminDirectory() {
   useEffect(() => { if (tab === 'apiClients') getApiClients(session.sessionId).then((result) => setApiClients(result.clients)).catch(() => showToast('Could not load API clients.', 'error')) }, [session.sessionId, tab])
 
   async function openLayout(key: string) { try { setLayoutDetail(await getFormLayout(session.sessionId, key)); setLayoutKey(key) } catch { showToast('Could not load layout detail.', 'error') } }
+  async function openLayoutHistory(key: string) { try { setLayoutHistory(await getFormLayoutHistory(session.sessionId, key)) } catch { showToast('Could not load layout history.', 'error') } }
+  async function rollbackLayoutRevision(revisionId: number) { if (!layoutHistory || !window.confirm(`Restore ${layoutHistory.detail.layout.title}, its groups, and its fields to this revision?`)) return; try { const result = await rollbackFormLayout(session.sessionId, layoutHistory.detail.layout.key, revisionId); setLayoutHistory(result); setLayoutDetail(result.detail); setLayouts((await getFormLayouts(session.sessionId)).layouts); showToast('Layout restored.', 'success') } catch { showToast('Could not restore the layout.', 'error') } }
   async function saveLayout(event: FormEvent) { event.preventDefault(); setSavingLayout(true); try { const detail = await saveFormLayout(session.sessionId, layoutKey, { title: layoutDetail?.layout.title ?? layoutKey, mapping: layoutDetail?.layout.mapping ?? 'Core', sequence: layoutDetail?.layout.sequence ?? ((layouts.at(-1)?.sequence ?? 0) + 10), active: layoutDetail?.layout.active ?? true }); setLayoutDetail(detail); setLayouts(await getFormLayouts(session.sessionId).then((result) => result.layouts)); showToast('Layout saved.', 'success') } catch { showToast('Could not save layout.', 'error') } finally { setSavingLayout(false) } }
   async function saveGroup(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutGroup(session.sessionId, layoutDetail.layout.key, groupDraft.key, { title: groupDraft.title, sequence: groupDraft.sequence, active: true })); setGroupDraft({ key: '', title: '', sequence: groupDraft.sequence + 10 }); showToast('Group saved.', 'success') } catch { showToast('Could not save group.', 'error') } }
   async function saveField(event: FormEvent) { event.preventDefault(); if (!layoutDetail) return; try { setLayoutDetail(await saveFormLayoutField(session.sessionId, layoutDetail.layout.key, fieldDraft.key, { groupKey: fieldDraft.groupKey, label: fieldDraft.label, fieldType: fieldDraft.fieldType, sequence: fieldDraft.sequence, required: false, active: true, maxLength: 255, listId: fieldDraft.listId, defaultValue: '' })); setFieldDraft({ key: '', groupKey: '', label: '', fieldType: 'text', sequence: fieldDraft.sequence + 10, listId: '' }); showToast('Field saved.', 'success') } catch { showToast('Could not save field.', 'error') } }
@@ -757,7 +763,7 @@ export default function AdminDirectory() {
                 <h2 className="cl-card-title">Forms and layouts</h2>
                 <p className="clinician-page-subtitle">Manage the metadata that organizes legacy-style forms. This registry does not alter patient records or database columns.</p>
                 <div className="cl-access-grid">
-                  <section className="cl-access-panel"><h3 className="cl-access-title">Layout registry</h3><ul className="cl-access-list">{layouts.map((layout) => <li className="cl-access-row" key={layout.key}><div><p>{layout.title}</p><span>{layout.key} · {layout.mapping} · {layout.active ? 'Active' : 'Inactive'}</span></div><button className="cl-btn-secondary" type="button" onClick={() => void openLayout(layout.key)}>Edit</button></li>)}{layouts.length === 0 && <li className="cl-empty-text">No layouts configured.</li>}</ul></section>
+                  <section className="cl-access-panel"><h3 className="cl-access-title">Layout registry</h3><ul className="cl-access-list">{layouts.map((layout) => <li className="cl-access-row" key={layout.key}><div><p>{layout.title}</p><span>{layout.key} · {layout.mapping} · {layout.active ? 'Active' : 'Inactive'}</span></div><button className="cl-btn-secondary" type="button" onClick={() => void openLayout(layout.key)}>Edit</button><button className="cl-btn-secondary" type="button" onClick={() => void openLayoutHistory(layout.key)}>History</button></li>)}{layouts.length === 0 && <li className="cl-empty-text">No layouts configured.</li>}</ul>{layoutHistory ? <div className="cl-card" style={{ marginTop: 12 }}><h3 className="cl-card-title">{layoutHistory.detail.layout.title} revisions</h3><table className="cl-table"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Shape</th><th /></tr></thead><tbody>{layoutHistory.revisions.map((revision) => <tr key={revision.revisionId}><td>{new Date(revision.occurredAt).toLocaleString()}</td><td>{revision.username}</td><td>{revision.action}</td><td>{revision.groupCount} groups · {revision.fieldCount} fields</td><td><button className="cl-btn-secondary" type="button" disabled={revision.title === layoutHistory.detail.layout.title && revision.mapping === layoutHistory.detail.layout.mapping && revision.sequence === layoutHistory.detail.layout.sequence && revision.active === layoutHistory.detail.layout.active && revision.groupCount === layoutHistory.detail.groups.length && revision.fieldCount === layoutHistory.detail.fields.length} onClick={() => void rollbackLayoutRevision(revision.revisionId)}>Restore</button></td></tr>)}</tbody></table></div> : null}</section>
                   <section className="cl-access-panel"><h3 className="cl-access-title">Layout editor</h3><form className="cl-access-form" onSubmit={saveLayout}><label className="cl-admin-field"><span>Layout key</span><input className="ne-input" value={layoutKey} onChange={(event) => { setLayoutKey(event.target.value.toUpperCase()); setLayoutDetail(null) }} placeholder="LBFINTAKE" required /></label><label className="cl-admin-field"><span>Title</span><input className="ne-input" value={layoutDetail?.layout.title ?? ''} onChange={(event) => setLayoutDetail((detail) => detail ? { ...detail, layout: { ...detail.layout, title: event.target.value } } : { layout: { key: layoutKey, title: event.target.value, mapping: 'Core', sequence: 10, active: true }, groups: [], fields: [] })} required /></label><button className="cl-btn-primary" type="submit" disabled={savingLayout || !layoutKey.trim()}>Save layout</button></form>{layoutDetail && <div><p className="cl-admin-form-copy">{layoutDetail.groups.length} groups · {layoutDetail.fields.length} fields</p><form className="cl-access-form" onSubmit={saveGroup}><input className="ne-input" placeholder="Group key" value={groupDraft.key} onChange={(e) => setGroupDraft({ ...groupDraft, key: e.target.value.toUpperCase() })} required /><input className="ne-input" placeholder="Group title" value={groupDraft.title} onChange={(e) => setGroupDraft({ ...groupDraft, title: e.target.value })} required /><button className="cl-btn-secondary">Add group</button></form><form className="cl-access-form" onSubmit={saveField}><input className="ne-input" placeholder="Field key" value={fieldDraft.key} onChange={(e) => setFieldDraft({ ...fieldDraft, key: e.target.value.toUpperCase() })} required /><select className="ne-input" value={fieldDraft.groupKey} onChange={(e) => setFieldDraft({ ...fieldDraft, groupKey: e.target.value })} required><option value="">Group</option>{layoutDetail.groups.map((g) => <option key={g.key} value={g.key}>{g.title}</option>)}</select><input className="ne-input" placeholder="Field label" value={fieldDraft.label} onChange={(e) => setFieldDraft({ ...fieldDraft, label: e.target.value })} required /><button className="cl-btn-secondary">Add field</button></form><ul className="cl-access-list">{layoutDetail.groups.map((group) => <li className="cl-access-row" key={group.key}><div><p>{group.title}</p><span>{group.key} · {layoutDetail.fields.filter((field) => field.groupKey === group.key).length} fields</span></div></li>)}</ul></div>}</section>
                 </div>
                 <div className="cl-access-grid" style={{ marginTop: 20 }}>

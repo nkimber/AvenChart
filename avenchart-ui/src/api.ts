@@ -2129,6 +2129,10 @@ export type FormLayoutFieldItem = { key: string; groupKey: string; label: string
 export type FormLayoutDetail = { layout: FormLayoutItem; groups: FormLayoutGroupItem[]; fields: FormLayoutFieldItem[] }
 export async function getFormLayouts(sessionId: string): Promise<{ layouts: FormLayoutItem[] }> { return clinicianGet(sessionId, '/api/administration/form-layouts') }
 export async function getFormLayout(sessionId: string, key: string): Promise<FormLayoutDetail> { return clinicianGet(sessionId, `/api/administration/form-layouts/${key}`) }
+export type FormLayoutRevision = { revisionId: number; title: string; mapping: string; sequence: number; active: boolean; groupCount: number; fieldCount: number; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type FormLayoutHistory = { detail: FormLayoutDetail; revisions: FormLayoutRevision[] }
+export async function getFormLayoutHistory(sessionId: string, key: string): Promise<FormLayoutHistory> { return clinicianGet(sessionId, `/api/administration/form-layouts/${key}/history`) }
+export async function rollbackFormLayout(sessionId: string, key: string, revisionId: number): Promise<FormLayoutHistory> { return clinicianPost(sessionId, `/api/administration/form-layouts/${key}/revisions/${revisionId}/rollback`, {}) }
 export async function saveFormLayout(sessionId: string, key: string, input: Omit<FormLayoutItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${key}`, input) }
 export async function saveFormLayoutGroup(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutGroupItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/groups/${key}`, input) }
 export async function saveFormLayoutField(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutFieldItem, 'key'>): Promise<FormLayoutDetail> { return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/fields/${key}`, input) }

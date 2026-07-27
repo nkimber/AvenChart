@@ -201,6 +201,8 @@ public sealed record FormLayoutFieldItem(string Key, string GroupKey, string Lab
 public sealed record FormLayoutCatalogResponse(IReadOnlyList<FormLayoutItem> Layouts);
 public sealed record FormLayoutDetailResponse(FormLayoutItem Layout, IReadOnlyList<FormLayoutGroupItem> Groups, IReadOnlyList<FormLayoutFieldItem> Fields);
 public sealed record FormLayoutMutationRequest(string Title, string Mapping, int Sequence, bool Active);
+public sealed record FormLayoutRevision(long RevisionId, string Title, string Mapping, int Sequence, bool Active, int GroupCount, int FieldCount, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record FormLayoutHistoryResponse(FormLayoutDetailResponse Detail, IReadOnlyList<FormLayoutRevision> Revisions);
 public sealed record FormLayoutGroupMutationRequest(string Title, int Sequence, bool Active);
 public sealed record FormLayoutFieldMutationRequest(string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string? ListId, string? DefaultValue);
 public sealed record FormOptionListItem(string Key, string Title, bool Active, int OptionCount, string UpdatedAt, string UpdatedBy);

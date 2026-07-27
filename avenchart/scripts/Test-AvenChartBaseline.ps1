@@ -9962,6 +9962,21 @@ catch {
 }
 
 try {
+    $layoutHeaders = Get-AdministrationHeaders
+    $layoutHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/INTAKE/history" -Method Get -Headers $layoutHeaders -TimeoutSec 20
+    $layout = $layoutHistoryBefore.detail.layout
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/INTAKE" -Method Put -Headers $layoutHeaders -ContentType "application/json" -Body (@{ title = "Encounter intake smoke revision"; mapping = $layout.mapping; sequence = $layout.sequence; active = $layout.active } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $layoutHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/INTAKE/history" -Method Get -Headers $layoutHeaders -TimeoutSec 20
+    $layoutBaseline = @($layoutHistoryChanged.revisions | Sort-Object revisionId | Select-Object -First 1)
+    $layoutHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/INTAKE/revisions/$($layoutBaseline.revisionId)/rollback" -Method Post -Headers $layoutHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $layoutRevisionPassed = @($layoutHistoryBefore.revisions).Count -gt 0 -and @($layoutHistoryChanged.revisions).Count -gt @($layoutHistoryBefore.revisions).Count -and $layoutHistoryRestored.detail.layout.title -eq "Encounter intake" -and @($layoutHistoryRestored.detail.groups).Count -eq 1 -and @($layoutHistoryRestored.detail.fields).Count -eq 2 -and $layoutHistoryRestored.revisions[0].action -eq "rolled-back" -and $layoutHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "form layout composite revision and rollback history" -Result $(if ($layoutRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $layoutBaseline.revisionId; restoredTitle = $layoutHistoryRestored.detail.layout.title; groupCount = @($layoutHistoryRestored.detail.groups).Count; fieldCount = @($layoutHistoryRestored.detail.fields).Count; action = $layoutHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "form layout composite revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $templateHeaders = Get-AdministrationHeaders
     $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20
