@@ -758,6 +758,89 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         return vendor;
     }
 
+    public async Task<IReadOnlyList<InventoryPurchaseRequisition>> GetPurchaseRequisitionsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select requisition_id from inventory_purchase_requisitions order by requested_at desc, requisition_id desc limit 100;";
+        var ids = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) ids.Add(reader.GetGuid(0));
+        await reader.DisposeAsync();
+        var result = new List<InventoryPurchaseRequisition>();
+        foreach (var id in ids)
+        {
+            var requisition = await GetPurchaseRequisitionAsync(connection, id, cancellationToken);
+            if (requisition is not null) result.Add(requisition);
+        }
+        return result;
+    }
+
+    public async Task<InventoryPurchaseRequisition?> CreatePurchaseRequisitionAsync(InventoryPurchaseRequisitionCreateRequest request, string username, CancellationToken cancellationToken)
+    {
+        ValidatePurchaseRequisition(request, username);
+        var now = DateTimeOffset.UtcNow; var requisitionId = Guid.NewGuid(); var notes = NormalizeOptional(request.Notes);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var facility = await GetFacilityAsync(connection, transaction, request.FacilityId, cancellationToken);
+        if (facility is null) throw new ArgumentException("The requisition facility was not found.");
+        if (request.VendorId is { } vendorId && await GetActiveVendorAsync(connection, transaction, vendorId, cancellationToken) is null) throw new ArgumentException("The requisition vendor was not found or is inactive.");
+        foreach (var line in request.Lines)
+            if (await GetActiveItemAsync(connection, transaction, line.ItemId, cancellationToken) is null) throw new ArgumentException("Each requisition line must reference an active inventory item.");
+        await using (var header = connection.CreateCommand())
+        {
+            header.Transaction = transaction;
+            header.CommandText = "insert into inventory_purchase_requisitions (requisition_id,facility_id,vendor_id,status,notes,requested_by,requested_at) values (@id,@facility,@vendor,'draft',@notes,@user,@at);";
+            header.Parameters.AddWithValue("id", requisitionId); header.Parameters.AddWithValue("facility", request.FacilityId); header.Parameters.AddWithValue("vendor", (object?)request.VendorId ?? DBNull.Value); header.Parameters.AddWithValue("notes", (object?)notes ?? DBNull.Value); header.Parameters.AddWithValue("user", username); header.Parameters.AddWithValue("at", now);
+            await header.ExecuteNonQueryAsync(cancellationToken);
+        }
+        foreach (var line in request.Lines)
+        {
+            await using var insertLine = connection.CreateCommand(); insertLine.Transaction = transaction;
+            insertLine.CommandText = "insert into inventory_purchase_requisition_lines (requisition_line_id,requisition_id,item_id,requested_quantity) values (@lineId,@requisitionId,@itemId,@quantity);";
+            insertLine.Parameters.AddWithValue("lineId", Guid.NewGuid()); insertLine.Parameters.AddWithValue("requisitionId", requisitionId); insertLine.Parameters.AddWithValue("itemId", line.ItemId); insertLine.Parameters.AddWithValue("quantity", line.Quantity);
+            await insertLine.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await InsertPurchaseRequisitionEventAsync(connection, transaction, requisitionId, "created", notes, username, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetPurchaseRequisitionAsync(connection, requisitionId, cancellationToken);
+    }
+
+    public async Task<InventoryPurchaseRequisition?> SubmitPurchaseRequisitionAsync(Guid requisitionId, string username, CancellationToken cancellationToken)
+        => await ChangePurchaseRequisitionStatusAsync(requisitionId, "submitted", null, username, cancellationToken);
+
+    public async Task<InventoryPurchaseRequisition?> DecidePurchaseRequisitionAsync(Guid requisitionId, bool approved, InventoryPurchaseRequisitionDecisionRequest request, string username, CancellationToken cancellationToken)
+    {
+        var note = NormalizeOptional(request.Notes);
+        if (!approved && string.IsNullOrWhiteSpace(note)) throw new ArgumentException("A rejection reason is required.");
+        return await ChangePurchaseRequisitionStatusAsync(requisitionId, approved ? "approved" : "rejected", note, username, cancellationToken);
+    }
+
+    private async Task<InventoryPurchaseRequisition?> ChangePurchaseRequisitionStatusAsync(Guid requisitionId, string nextStatus, string? note, string username, CancellationToken cancellationToken)
+    {
+        if (requisitionId == Guid.Empty || string.IsNullOrWhiteSpace(username)) throw new ArgumentException("A requisition and authenticated user are required.");
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var expectedStatus = nextStatus == "submitted" ? "draft" : "submitted";
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = nextStatus == "submitted"
+                ? "update inventory_purchase_requisitions set status='submitted',submitted_by=@user,submitted_at=@at where requisition_id=@id and status='draft';"
+                : "update inventory_purchase_requisitions set status=@status,decided_by=@user,decided_at=@at,decision_notes=@note where requisition_id=@id and status='submitted';";
+            update.Parameters.AddWithValue("id", requisitionId); update.Parameters.AddWithValue("user", username); update.Parameters.AddWithValue("at", now);
+            if (nextStatus != "submitted") { update.Parameters.AddWithValue("status", nextStatus); update.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value); }
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                var exists = await PurchaseRequisitionExistsAsync(connection, transaction, requisitionId, cancellationToken);
+                if (!exists) return null;
+                throw new ArgumentException($"Only {expectedStatus} purchase requisitions can be {nextStatus}.");
+            }
+        }
+        await InsertPurchaseRequisitionEventAsync(connection, transaction, requisitionId, nextStatus, note, username, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetPurchaseRequisitionAsync(connection, requisitionId, cancellationToken);
+    }
+
     public async Task<InventoryPurchaseReceiptResponse> CreatePurchaseReceiptAsync(
         InventoryPurchaseReceiptCreateRequest request,
         string username,
@@ -914,6 +997,49 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             facilities.Add(new InventoryFacility(reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
         }
         return facilities;
+    }
+
+    private static async Task<InventoryPurchaseRequisition?> GetPurchaseRequisitionAsync(NpgsqlConnection connection, Guid requisitionId, CancellationToken cancellationToken)
+    {
+        await using var header = connection.CreateCommand();
+        header.CommandText = "select r.requisition_id,r.facility_id,f.code,f.name,r.vendor_id,v.name,r.status,r.notes,r.requested_by,r.requested_at,r.submitted_by,r.submitted_at,r.decided_by,r.decided_at,r.decision_notes from inventory_purchase_requisitions r join facilities f on f.id=r.facility_id left join inventory_vendors v on v.vendor_id=r.vendor_id where r.requisition_id=@id;";
+        header.Parameters.AddWithValue("id", requisitionId);
+        await using var reader = await header.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var result = new InventoryPurchaseRequisition(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(14) ? null : reader.GetString(14), [], []);
+        await reader.DisposeAsync();
+        var lines = new List<InventoryPurchaseRequisitionLine>();
+        await using (var lineCommand = connection.CreateCommand())
+        {
+            lineCommand.CommandText = "select l.requisition_line_id,l.item_id,i.item_code,i.name,l.requested_quantity,i.unit from inventory_purchase_requisition_lines l join inventory_items i on i.item_id=l.item_id where l.requisition_id=@id order by i.name,l.requisition_line_id;";
+            lineCommand.Parameters.AddWithValue("id", requisitionId);
+            await using var lineReader = await lineCommand.ExecuteReaderAsync(cancellationToken);
+            while (await lineReader.ReadAsync(cancellationToken)) lines.Add(new(lineReader.GetGuid(0), lineReader.GetInt32(1), lineReader.GetString(2), lineReader.GetString(3), lineReader.GetDecimal(4), lineReader.GetString(5)));
+        }
+        var events = new List<InventoryPurchaseRequisitionEvent>();
+        await using (var eventCommand = connection.CreateCommand())
+        {
+            eventCommand.CommandText = "select event_id,action,note,actor,occurred_at from inventory_purchase_requisition_events where requisition_id=@id order by occurred_at,event_id;";
+            eventCommand.Parameters.AddWithValue("id", requisitionId);
+            await using var eventReader = await eventCommand.ExecuteReaderAsync(cancellationToken);
+            while (await eventReader.ReadAsync(cancellationToken)) events.Add(new(eventReader.GetGuid(0), eventReader.GetString(1), eventReader.IsDBNull(2) ? null : eventReader.GetString(2), eventReader.GetString(3), eventReader.GetFieldValue<DateTimeOffset>(4).ToString("O", CultureInfo.InvariantCulture)));
+        }
+        return result with { Lines = lines, Events = events };
+    }
+
+    private static async Task<bool> PurchaseRequisitionExistsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid requisitionId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select exists(select 1 from inventory_purchase_requisitions where requisition_id=@id);"; command.Parameters.AddWithValue("id", requisitionId);
+        return await command.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
+    private static async Task InsertPurchaseRequisitionEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid requisitionId, string action, string? note, string actor, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "insert into inventory_purchase_requisition_events (event_id,requisition_id,action,note,actor,occurred_at) values (@id,@requisitionId,@action,@note,@actor,@at);";
+        command.Parameters.AddWithValue("id", Guid.NewGuid()); command.Parameters.AddWithValue("requisitionId", requisitionId); command.Parameters.AddWithValue("action", action); command.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value); command.Parameters.AddWithValue("actor", actor); command.Parameters.AddWithValue("at", occurredAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<InventoryVendor?> GetActiveVendorAsync(
@@ -1309,6 +1435,17 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             || request.ContactName?.Trim().Length > 160 || request.Phone?.Trim().Length > 80 || request.Email?.Trim().Length > 254)
         {
             throw new ArgumentException("Vendor name or contact details are invalid.");
+        }
+    }
+
+    private static void ValidatePurchaseRequisition(InventoryPurchaseRequisitionCreateRequest request, string username)
+    {
+        if (request.FacilityId <= 0 || request.Notes?.Trim().Length > 500 || string.IsNullOrWhiteSpace(username)
+            || request.Lines is null || request.Lines.Count is < 1 or > 25
+            || request.Lines.Any(line => line.ItemId <= 0 || line.Quantity <= 0)
+            || request.Lines.Select(line => line.ItemId).Distinct().Count() != request.Lines.Count)
+        {
+            throw new ArgumentException("A facility, one to 25 distinct active items with positive quantities, and valid requisition details are required.");
         }
     }
 

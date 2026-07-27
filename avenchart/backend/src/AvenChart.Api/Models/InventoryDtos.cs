@@ -250,6 +250,50 @@ public sealed record InventoryPurchaseReceiptResponse(
     decimal ItemQuantityOnHand,
     bool BelowReorderPoint);
 
+public sealed record InventoryPurchaseRequisitionLineCreateRequest(int ItemId, decimal Quantity);
+
+public sealed record InventoryPurchaseRequisitionCreateRequest(
+    int FacilityId,
+    Guid? VendorId,
+    string? Notes,
+    IReadOnlyList<InventoryPurchaseRequisitionLineCreateRequest> Lines);
+
+public sealed record InventoryPurchaseRequisitionDecisionRequest(string? Notes);
+
+public sealed record InventoryPurchaseRequisitionLine(
+    Guid RequisitionLineId,
+    int ItemId,
+    string ItemCode,
+    string ItemName,
+    decimal RequestedQuantity,
+    string Unit);
+
+public sealed record InventoryPurchaseRequisitionEvent(
+    Guid EventId,
+    string Action,
+    string? Note,
+    string Actor,
+    string OccurredAt);
+
+public sealed record InventoryPurchaseRequisition(
+    Guid RequisitionId,
+    int FacilityId,
+    string FacilityCode,
+    string FacilityName,
+    Guid? VendorId,
+    string? VendorName,
+    string Status,
+    string? Notes,
+    string RequestedBy,
+    string RequestedAt,
+    string? SubmittedBy,
+    string? SubmittedAt,
+    string? DecidedBy,
+    string? DecidedAt,
+    string? DecisionNotes,
+    IReadOnlyList<InventoryPurchaseRequisitionLine> Lines,
+    IReadOnlyList<InventoryPurchaseRequisitionEvent> Events);
+
 public sealed record InventoryCountReconciliationCreateRequest(
     int LotId,
     decimal CountedQuantity,

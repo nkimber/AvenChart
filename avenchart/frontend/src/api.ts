@@ -3305,6 +3305,34 @@ export type InventoryPurchaseReceiptResponse = {
   belowReorderPoint: boolean
 }
 
+export type InventoryPurchaseRequisitionLineInput = { itemId: number; quantity: number }
+export type InventoryPurchaseRequisitionCreateInput = {
+  facilityId: number
+  vendorId?: string | null
+  notes?: string | null
+  lines: InventoryPurchaseRequisitionLineInput[]
+}
+export type InventoryPurchaseRequisitionDecisionInput = { notes?: string | null }
+export type InventoryPurchaseRequisition = {
+  requisitionId: string
+  facilityId: number
+  facilityCode: string
+  facilityName: string
+  vendorId?: string | null
+  vendorName?: string | null
+  status: 'draft' | 'submitted' | 'approved' | 'rejected'
+  notes?: string | null
+  requestedBy: string
+  requestedAt: string
+  submittedBy?: string | null
+  submittedAt?: string | null
+  decidedBy?: string | null
+  decidedAt?: string | null
+  decisionNotes?: string | null
+  lines: Array<{ requisitionLineId: string; itemId: number; itemCode: string; itemName: string; requestedQuantity: number; unit: string }>
+  events: Array<{ eventId: string; action: string; note?: string | null; actor: string; occurredAt: string }>
+}
+
 export type InventoryCountReconciliationCreateInput = {
   lotId: number
   countedQuantity: number
@@ -8524,6 +8552,30 @@ export async function createInventoryPurchaseReceipt(
   if (!response.ok) {
     throw new Error(adminApiError('Inventory purchase receipt', response.status))
   }
+  return response.json()
+}
+
+export async function getInventoryPurchaseRequisitions(sessionId?: string | null, signal?: AbortSignal): Promise<InventoryPurchaseRequisition[]> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { headers: buildLegacyEhrSessionHeaders(sessionId), signal })
+  if (!response.ok) throw new Error(adminApiError('Inventory purchase requisitions', response.status))
+  return response.json()
+}
+
+export async function createInventoryPurchaseRequisition(input: InventoryPurchaseRequisitionCreateInput, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError('Inventory purchase requisition', response.status))
+  return response.json()
+}
+
+export async function submitInventoryPurchaseRequisition(requisitionId: string, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/submit`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: '{}' })
+  if (!response.ok) throw new Error(adminApiError('Inventory purchase requisition submit', response.status))
+  return response.json()
+}
+
+export async function decideInventoryPurchaseRequisition(requisitionId: string, decision: 'approve' | 'reject', input: InventoryPurchaseRequisitionDecisionInput, sessionId?: string | null): Promise<InventoryPurchaseRequisition> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-requisitions/${requisitionId}/decisions/${decision}`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError(`Inventory purchase requisition ${decision}`, response.status))
   return response.json()
 }
 

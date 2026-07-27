@@ -178,8 +178,12 @@ import {
   updateInventoryLotMetadata,
   createInventoryTransfer,
   createInventoryPurchaseReceipt,
+  createInventoryPurchaseRequisition,
   createInventoryCountReconciliation,
   createInventoryVendor,
+  getInventoryPurchaseRequisitions,
+  submitInventoryPurchaseRequisition,
+  decideInventoryPurchaseRequisition,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
   findPatientDuplicates,
@@ -436,6 +440,9 @@ import {
   type InventoryPrescriptionDispenseInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
+  type InventoryPurchaseRequisitionCreateInput,
+  type InventoryPurchaseRequisitionDecisionInput,
+  type InventoryPurchaseRequisition,
   type InventoryCountReconciliationCreateInput,
   type InventoryVendor,
   type ProviderActivityReportItem,
@@ -3662,6 +3669,27 @@ function App() {
     }
   }
 
+  async function handleInventoryPurchaseRequisition(input: InventoryPurchaseRequisitionCreateInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before creating a purchase requisition.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await createInventoryPurchaseRequisition(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition failed') }
+  }
+
+  async function handleInventoryPurchaseRequisitionSubmit(requisitionId: string) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before submitting a purchase requisition.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await submitInventoryPurchaseRequisition(requisitionId, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition submit failed') }
+  }
+
+  async function handleInventoryPurchaseRequisitionDecision(requisitionId: string, decision: 'approve' | 'reject', input: InventoryPurchaseRequisitionDecisionInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before deciding a purchase requisition.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await decideInventoryPurchaseRequisition(requisitionId, decision, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase requisition decision failed') }
+  }
+
   async function handleInventoryCountReconciliation(input: InventoryCountReconciliationCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6432,6 +6460,9 @@ function App() {
             onDispensePrescription={handleInventoryPrescriptionDispense}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
+            onCreatePurchaseRequisition={handleInventoryPurchaseRequisition}
+            onSubmitPurchaseRequisition={handleInventoryPurchaseRequisitionSubmit}
+            onDecidePurchaseRequisition={handleInventoryPurchaseRequisitionDecision}
             onCreateCountReconciliation={handleInventoryCountReconciliation}
           />
         )}
@@ -20372,6 +20403,9 @@ function InventoryWorkspace({
   onDispensePrescription,
   onCreateTransfer,
   onCreatePurchaseReceipt,
+  onCreatePurchaseRequisition,
+  onSubmitPurchaseRequisition,
+  onDecidePurchaseRequisition,
   onCreateCountReconciliation,
 }: {
   inventory: InventoryResponse | null
@@ -20387,6 +20421,9 @@ function InventoryWorkspace({
   onDispensePrescription: (input: InventoryPrescriptionDispenseInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
+  onCreatePurchaseRequisition: (input: InventoryPurchaseRequisitionCreateInput) => void | Promise<void>
+  onSubmitPurchaseRequisition: (requisitionId: string) => void | Promise<void>
+  onDecidePurchaseRequisition: (requisitionId: string, decision: 'approve' | 'reject', input: InventoryPurchaseRequisitionDecisionInput) => void | Promise<void>
   onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
 }) {
   const [lotId, setLotId] = useState('')
@@ -20438,6 +20475,12 @@ function InventoryWorkspace({
   const [receiptUnitCost, setReceiptUnitCost] = useState('0')
   const [receiptReference, setReceiptReference] = useState('')
   const [receiptNotes, setReceiptNotes] = useState('')
+  const [purchaseRequisitions, setPurchaseRequisitions] = useState<InventoryPurchaseRequisition[]>([])
+  const [purchaseRequisitionError, setPurchaseRequisitionError] = useState<string | null>(null)
+  const [requisitionFacilityId, setRequisitionFacilityId] = useState('')
+  const [requisitionVendorId, setRequisitionVendorId] = useState('')
+  const [requisitionNotes, setRequisitionNotes] = useState('')
+  const [requisitionLines, setRequisitionLines] = useState<Array<{ itemId: string; quantity: string }>>([{ itemId: '', quantity: '1' }])
   const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
   const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
@@ -20543,7 +20586,17 @@ function InventoryWorkspace({
   useEffect(() => {
     if (!receiptFacilityId && inventory?.facilities.length) setReceiptFacilityId(String(inventory.facilities[0].facilityId))
     if (!receiptItemId && inventory?.items.length) setReceiptItemId(String(inventory.items[0].itemId))
-  }, [inventory, receiptFacilityId, receiptItemId])
+    if (!requisitionFacilityId && inventory?.facilities.length) setRequisitionFacilityId(String(inventory.facilities[0].facilityId))
+  }, [inventory, receiptFacilityId, receiptItemId, requisitionFacilityId])
+
+  useEffect(() => {
+    if (!sessionId) { setPurchaseRequisitions([]); return }
+    const controller = new AbortController()
+    void getInventoryPurchaseRequisitions(sessionId, controller.signal)
+      .then((items) => { setPurchaseRequisitions(items); setPurchaseRequisitionError(null) })
+      .catch((loadError) => { if (!controller.signal.aborted) setPurchaseRequisitionError(loadError instanceof Error ? loadError.message : 'Purchase requisitions unavailable') })
+    return () => controller.abort()
+  }, [sessionId, status])
 
   useEffect(() => {
     if (!medicationItemId && inventory?.items.length) setMedicationItemId(String(inventory.items[0].itemId))
@@ -20708,6 +20761,14 @@ function InventoryWorkspace({
       referenceNumber: receiptReference.trim() || null,
       notes: receiptNotes.trim(),
     })
+  }
+
+  function submitPurchaseRequisition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const facilityId = Number(requisitionFacilityId)
+    const lines = requisitionLines.map((line) => ({ itemId: Number(line.itemId), quantity: Number(line.quantity) }))
+    if (!Number.isInteger(facilityId) || facilityId <= 0 || lines.length === 0 || lines.some((line) => !Number.isInteger(line.itemId) || line.itemId <= 0 || line.quantity <= 0)) return
+    void onCreatePurchaseRequisition({ facilityId, vendorId: requisitionVendorId || null, notes: requisitionNotes.trim() || null, lines })
   }
 
   return (
@@ -20915,6 +20976,43 @@ function InventoryWorkspace({
               </form>
             </div>
             {vendors.length === 0 && vendorStatus === 'ready' && <p className="inventory-receipt-empty">Add a vendor to begin receiving stock.</p>}
+          </section>
+
+          <section className="inventory-receipt-panel" aria-labelledby="purchase-requisition-heading">
+            <header className="inventory-panel-heading">
+              <div><span>Purchase control</span><h2 id="purchase-requisition-heading">Purchase requisitions</h2></div>
+              <small>Draft, submit, and approve before receiving stock</small>
+            </header>
+            <div className="inventory-receipt-grid">
+              <form className="inventory-requisition-form" onSubmit={submitPurchaseRequisition}>
+                <label>Facility<select value={requisitionFacilityId} onChange={(event) => setRequisitionFacilityId(event.target.value)} required>{inventory.facilities.map((facility) => <option key={facility.facilityId} value={facility.facilityId}>{facility.code} - {facility.name}</option>)}</select></label>
+                <label>Vendor (optional)<select value={requisitionVendorId} onChange={(event) => setRequisitionVendorId(event.target.value)}><option value="">Unassigned</option>{vendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.name}</option>)}</select></label>
+                {requisitionLines.map((line, index) => (
+                  <div className="inventory-activity-filters" key={index}>
+                    <label>Item<select value={line.itemId} onChange={(event) => setRequisitionLines((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, itemId: event.target.value } : candidate))} required><option value="">Select item</option>{inventory.items.map((item) => <option key={item.itemId} value={item.itemId}>{item.itemCode} - {item.name}</option>)}</select></label>
+                    <label>Requested quantity<input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => setRequisitionLines((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, quantity: event.target.value } : candidate))} required /></label>
+                    {requisitionLines.length > 1 && <button type="button" className="inventory-export-button" onClick={() => setRequisitionLines((current) => current.filter((_, candidateIndex) => candidateIndex !== index))}>Remove</button>}
+                  </div>
+                ))}
+                <button type="button" className="inventory-export-button" onClick={() => setRequisitionLines((current) => [...current, { itemId: '', quantity: '1' }])} disabled={requisitionLines.length >= 25}>Add item</button>
+                <label className="inventory-receipt-notes">Request notes (optional)<textarea value={requisitionNotes} onChange={(event) => setRequisitionNotes(event.target.value)} maxLength={500} placeholder="Why is this stock needed?" /></label>
+                <button className="inventory-receipt-button" type="submit" disabled={status === 'loading'}>Create draft requisition</button>
+              </form>
+              <div className="inventory-activity-list" aria-label="Purchase requisition history">
+                {purchaseRequisitionError && <div className="workspace-error">{purchaseRequisitionError}</div>}
+                {purchaseRequisitions.map((requisition) => (
+                  <article className="inventory-activity-row" key={requisition.requisitionId}>
+                    <div><strong>{requisition.status} - {requisition.facilityCode}{requisition.vendorName ? ` - ${requisition.vendorName}` : ''}</strong><small>{requisition.lines.map((line) => `${line.itemCode} ${line.requestedQuantity} ${line.unit}`).join(', ')}</small><small>Requested by {requisition.requestedBy}; {requisition.notes || 'No request note'}</small>{requisition.decisionNotes && <small>Decision: {requisition.decisionNotes}</small>}</div>
+                    <div className="inventory-activity-filters">
+                      {requisition.status === 'draft' && <button type="button" className="inventory-export-button" onClick={() => void onSubmitPurchaseRequisition(requisition.requisitionId)} disabled={status === 'loading'}>Submit</button>}
+                      {requisition.status === 'submitted' && <><button type="button" className="inventory-export-button" onClick={() => void onDecidePurchaseRequisition(requisition.requisitionId, 'approve', { notes: null })} disabled={status === 'loading'}>Approve</button><button type="button" className="inventory-export-button" onClick={() => { const note = window.prompt('Reason for rejection'); if (note?.trim()) void onDecidePurchaseRequisition(requisition.requisitionId, 'reject', { notes: note.trim() }) }} disabled={status === 'loading'}>Reject</button></>}
+                    </div>
+                  </article>
+                ))}
+                {purchaseRequisitions.length === 0 && <div className="timeline-placeholder">No purchase requisitions recorded</div>}
+              </div>
+            </div>
+            <p className="inventory-boundary">Approval records an operations decision only. It does not reserve stock, issue a vendor purchase order, or receive inventory; receiving reconciliation is the next workflow.</p>
           </section>
 
           <section className="inventory-activity-panel">

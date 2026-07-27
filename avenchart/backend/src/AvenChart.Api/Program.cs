@@ -3342,6 +3342,77 @@ inventory.MapPost("/vendors", async (
     .WithName("CreateInventoryVendor")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
 
+inventory.MapGet("/purchase-requisitions", async (InventoryRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetPurchaseRequisitionsAsync(cancellationToken)))
+    .WithName("GetInventoryPurchaseRequisitions")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+inventory.MapPost("/purchase-requisitions", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryPurchaseRequisitionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var requisition = await repository.CreatePurchaseRequisitionAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/inventory/purchase-requisitions/{requisition!.RequisitionId}", requisition);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPurchaseRequisition"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryPurchaseRequisition")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapPost("/purchase-requisitions/{requisitionId:guid}/submit", async (
+        Guid requisitionId,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var requisition = await repository.SubmitPurchaseRequisitionAsync(requisitionId, session.Username, cancellationToken);
+            return requisition is null ? Results.NotFound() : Results.Ok(requisition);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPurchaseRequisition"] = [exception.Message] });
+        }
+    })
+    .WithName("SubmitInventoryPurchaseRequisition")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapPost("/purchase-requisitions/{requisitionId:guid}/decisions/{decision}", async (
+        Guid requisitionId,
+        string decision,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryPurchaseRequisitionDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        if (!string.Equals(decision, "approve", StringComparison.OrdinalIgnoreCase) && !string.Equals(decision, "reject", StringComparison.OrdinalIgnoreCase)) return Results.NotFound();
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var requisition = await repository.DecidePurchaseRequisitionAsync(requisitionId, string.Equals(decision, "approve", StringComparison.OrdinalIgnoreCase), request, session.Username, cancellationToken);
+            return requisition is null ? Results.NotFound() : Results.Ok(requisition);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPurchaseRequisition"] = [exception.Message] });
+        }
+    })
+    .WithName("DecideInventoryPurchaseRequisition")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
 inventory.MapPost("/purchase-receipts", async (
         InventoryRepository repository,
         AuthRepository authRepository,
