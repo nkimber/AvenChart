@@ -10390,6 +10390,9 @@ try {
     $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke approved compensating count correction"; idempotencyKey = "count-correction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledMovementReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "movement"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledWasteReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "waste"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledPatientDispenseReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "patient-dispense"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId; patientId = "MOD-PAT-0001" } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountAfterCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $countCorrectionRetryRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
@@ -10420,6 +10423,17 @@ try {
         -and $controlledAsOfReport.lines[0].lotId -eq $receipt.lot.lotId `
         -and $controlledAsOfReport.lines[0].quantityOnHand -eq 6 `
         -and $controlledAsOfReport.run.resultChecksum.Length -eq 64 `
+        -and $controlledMovementReport.run.reportKey -eq "custody_activity" `
+        -and $controlledMovementReport.run.reportType -eq "movement" `
+        -and $controlledMovementReport.run.resultChecksum.Length -eq 64 `
+        -and @($controlledMovementReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.action -eq "receipt" }).Count -eq 1 `
+        -and @($controlledMovementReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.action -eq "transfer" }).Count -eq 1 `
+        -and $controlledWasteReport.run.reportType -eq "waste" `
+        -and $controlledWasteReport.run.resultChecksum.Length -eq 64 `
+        -and @($controlledWasteReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.action -eq "waste" }).Count -eq 1 `
+        -and $controlledPatientDispenseReport.run.reportType -eq "patient-dispense" `
+        -and $controlledPatientDispenseReport.run.patientId -eq "MOD-PAT-0001" `
+        -and @($controlledPatientDispenseReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.patientId -eq "MOD-PAT-0001" -and $_.action -in @("dispense", "administration") }).Count -eq 2 `
         -and $countLockRejected `
         -and $countResubmitRejected `
         -and $countCorrectionRetryRejected

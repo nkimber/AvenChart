@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -111,6 +112,152 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
                 checksum),
             lines);
     }
+
+    public async Task<ControlledInventoryActivityReportResponse> RunControlledInventoryActivityReportAsync(
+        ControlledInventoryActivityReportRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var reportType = request.ReportType?.Trim().ToLowerInvariant();
+        if (reportType is not ("movement" or "waste" or "patient-dispense"))
+        {
+            throw new ArgumentException("Controlled activity report type must be movement, waste, or patient-dispense.");
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var toDate = request.ToDate ?? today;
+        var fromDate = request.FromDate ?? toDate;
+        if (fromDate < new DateOnly(2000, 1, 1) || toDate > today || fromDate > toDate || toDate.DayNumber - fromDate.DayNumber > 366)
+        {
+            throw new ArgumentException("Controlled activity report dates must be ordered dates between 2000 and today with a maximum 366-day range.");
+        }
+
+        if (request.LocationId == Guid.Empty)
+        {
+            throw new ArgumentException("Controlled activity report location must be a valid secure location.");
+        }
+
+        var patientId = string.IsNullOrWhiteSpace(request.PatientId) ? null : request.PatientId.Trim();
+        if (patientId is { Length: > 128 })
+        {
+            throw new ArgumentException("Controlled activity report patient identifier must be 128 characters or fewer.");
+        }
+
+        if (patientId is not null && reportType != "patient-dispense")
+        {
+            throw new ArgumentException("A patient filter is available only for the patient-dispense report.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var lines = new List<ControlledInventoryActivityReportLine>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select e.event_id, e.action, e.lot_id, i.item_code, i.controlled_schedule,
+                       f.code, l.lot_number, source.location_code as source_location_code,
+                       destination.location_code as destination_location_code,
+                       e.patient_id, e.encounter, e.quantity, e.quantity_delta, e.reason,
+                       e.related_event_id, e.performed_by, e.occurred_at,
+                       e.witness_username, e.witnessed_at
+                from inventory_controlled_custody_events e
+                join inventory_lots l on l.lot_id = e.lot_id
+                join inventory_items i on i.item_id = l.item_id
+                join facilities f on f.id = l.facility_id
+                left join inventory_controlled_locations source on source.location_id = e.source_location_id
+                left join inventory_controlled_locations destination on destination.location_id = e.destination_location_id
+                where e.occurred_at::date >= @fromDate
+                  and e.occurred_at::date <= @toDate
+                  and (@locationId is null or e.source_location_id = @locationId or e.destination_location_id = @locationId)
+                  and (@patientId is null or e.patient_id = @patientId)
+                  and ((@reportType = 'movement' and e.action in ('receipt', 'transfer', 'return', 'correction'))
+                    or (@reportType = 'waste' and e.action = 'waste')
+                    or (@reportType = 'patient-dispense' and e.action in ('dispense', 'administration')))
+                order by e.occurred_at, e.event_id;
+                """;
+            command.Parameters.AddWithValue("fromDate", NpgsqlDbType.Date, fromDate);
+            command.Parameters.AddWithValue("toDate", NpgsqlDbType.Date, toDate);
+            command.Parameters.AddWithValue("locationId", NpgsqlDbType.Uuid, (object?)request.LocationId ?? DBNull.Value);
+            command.Parameters.AddWithValue("patientId", NpgsqlDbType.Text, (object?)patientId ?? DBNull.Value);
+            command.Parameters.AddWithValue("reportType", NpgsqlDbType.Text, reportType);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lines.Add(new(
+                    reader.GetGuid(0),
+                    reader.GetString(1),
+                    reader.GetInt32(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.GetString(6),
+                    ReadNullableString(reader, "source_location_code"),
+                    ReadNullableString(reader, "destination_location_code"),
+                    ReadNullableString(reader, "patient_id"),
+                    reader.IsDBNull(10) ? null : reader.GetInt32(10),
+                    reader.GetDecimal(11),
+                    reader.GetDecimal(12),
+                    reader.GetString(13),
+                    reader.IsDBNull(14) ? null : reader.GetGuid(14),
+                    reader.GetString(15),
+                    reader.GetFieldValue<DateTimeOffset>(16).ToString("O"),
+                    ReadNullableString(reader, "witness_username"),
+                    reader.IsDBNull(18) ? null : reader.GetFieldValue<DateTimeOffset>(18).ToString("O")));
+            }
+        }
+
+        var filterEvidence = JsonSerializer.Serialize(new
+        {
+            reportType,
+            fromDate = fromDate.ToString("yyyy-MM-dd"),
+            toDate = toDate.ToString("yyyy-MM-dd"),
+            request.LocationId,
+            patientId
+        });
+        var payload = string.Join("\n", new[] { filterEvidence }.Concat(lines.Select(line =>
+            $"{line.EventId}|{line.Action}|{line.LotId}|{line.ItemCode}|{line.ScheduleCode}|{line.FacilityCode}|{line.LotNumber}|{line.SourceLocationCode}|{line.DestinationLocationCode}|{line.PatientId}|{line.Encounter}|{line.Quantity.ToString(CultureInfo.InvariantCulture)}|{line.QuantityDelta.ToString(CultureInfo.InvariantCulture)}|{line.Reason}|{line.RelatedEventId}|{line.PerformedBy}|{line.OccurredAt}|{line.WitnessUsername}|{line.WitnessedAt}")));
+        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var runId = Guid.NewGuid();
+        var requestedAt = DateTimeOffset.UtcNow;
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.CommandText = """
+                insert into inventory_controlled_report_runs (
+                  run_id, report_key, as_of_date, date_from, location_id, input_filters,
+                  requested_by, requested_at, row_count, result_checksum)
+                values (
+                  @runId, 'custody_activity', @toDate, @fromDate, @locationId, @inputFilters,
+                  @requestedBy, @requestedAt, @rowCount, @resultChecksum);
+                """;
+            insert.Parameters.AddWithValue("runId", runId);
+            insert.Parameters.AddWithValue("toDate", toDate);
+            insert.Parameters.AddWithValue("fromDate", fromDate);
+            insert.Parameters.AddWithValue("locationId", (object?)request.LocationId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("inputFilters", NpgsqlDbType.Jsonb, filterEvidence);
+            insert.Parameters.AddWithValue("requestedBy", username);
+            insert.Parameters.AddWithValue("requestedAt", requestedAt);
+            insert.Parameters.AddWithValue("rowCount", lines.Count);
+            insert.Parameters.AddWithValue("resultChecksum", checksum);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return new(
+            new(
+                runId,
+                "custody_activity",
+                reportType,
+                fromDate.ToString("yyyy-MM-dd"),
+                toDate.ToString("yyyy-MM-dd"),
+                request.LocationId,
+                patientId,
+                username,
+                requestedAt.ToString("O"),
+                lines.Count,
+                checksum),
+            lines);
+    }
+
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
     {
         await EnsureSavedReportSchemaAsync(cancellationToken);

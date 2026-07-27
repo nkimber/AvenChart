@@ -4502,6 +4502,27 @@ reports.MapPost("/controlled-inventory/as-of", async (
     .WithName("RunControlledInventoryAsOfReport")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+reports.MapPost("/controlled-inventory/activity", async (
+        ControlledInventoryActivityReportRequest request,
+        ReportRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var report = await repository.RunControlledInventoryActivityReportAsync(request, session.Username, cancellationToken);
+            return Results.Created("/api/reports/controlled-inventory/activity", report);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledReport"] = [exception.Message] });
+        }
+    })
+    .WithName("RunControlledInventoryActivityReport")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 reports.MapGet("/operational/export", async (
         ReportRepository repository,
         CancellationToken cancellationToken) =>

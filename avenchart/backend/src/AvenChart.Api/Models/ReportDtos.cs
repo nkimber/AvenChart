@@ -100,3 +100,48 @@ public sealed record ControlledInventoryReportRun(
 public sealed record ControlledInventoryReportResponse(
     ControlledInventoryReportRun Run,
     IReadOnlyList<ControlledInventoryReportLine> Lines);
+
+public sealed record ControlledInventoryActivityReportRequest(
+    string ReportType,
+    DateOnly? FromDate,
+    DateOnly? ToDate,
+    Guid? LocationId,
+    string? PatientId);
+
+public sealed record ControlledInventoryActivityReportLine(
+    Guid EventId,
+    string Action,
+    int LotId,
+    string ItemCode,
+    string ScheduleCode,
+    string FacilityCode,
+    string LotNumber,
+    string? SourceLocationCode,
+    string? DestinationLocationCode,
+    string? PatientId,
+    int? Encounter,
+    decimal Quantity,
+    decimal QuantityDelta,
+    string Reason,
+    Guid? RelatedEventId,
+    string PerformedBy,
+    string OccurredAt,
+    string? WitnessUsername,
+    string? WitnessedAt);
+
+public sealed record ControlledInventoryActivityReportRun(
+    Guid RunId,
+    string ReportKey,
+    string ReportType,
+    string FromDate,
+    string ToDate,
+    Guid? LocationId,
+    string? PatientId,
+    string RequestedBy,
+    string RequestedAt,
+    int RowCount,
+    string ResultChecksum);
+
+public sealed record ControlledInventoryActivityReportResponse(
+    ControlledInventoryActivityReportRun Run,
+    IReadOnlyList<ControlledInventoryActivityReportLine> Lines);
