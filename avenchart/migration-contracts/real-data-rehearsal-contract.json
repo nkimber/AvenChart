@@ -1,0 +1,44 @@
+{
+  "contractId": "legacy-ehr-real-data-rehearsal-v1",
+  "contractVersion": 1,
+  "status": "owner-approval-required",
+  "dataAccessAuthorized": false,
+  "source": {
+    "system": "legacy-legacy-ehr",
+    "database": "MariaDB",
+    "environment": "controlled-owner-approved-environment-required"
+  },
+  "target": {
+    "system": "avenchart",
+    "database": "PostgreSQL",
+    "environment": "controlled-owner-approved-environment-required"
+  },
+  "mappingFamilies": [
+    { "key": "patients", "classification": "PHI", "sourceEvidence": "legacy patient_data and related demographic tables", "targetOutcome": "canonical patient and demographic records", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "canonical-identifier-uniqueness", "sampled-demographics"] },
+    { "key": "identifiers", "classification": "PHI", "sourceEvidence": "legacy patient identifiers and external identifiers", "targetOutcome": "canonical and legacy identifier crosswalk", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "crosswalk-uniqueness", "sampled-identifier-links"] },
+    { "key": "encounters", "classification": "PHI", "sourceEvidence": "legacy form_encounter and clinical form records", "targetOutcome": "encounter timeline and supported clinical records", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "patient-timeline", "sampled-clinical-history"] },
+    { "key": "documents", "classification": "PHI", "sourceEvidence": "legacy documents, categories, and binary storage references", "targetOutcome": "document metadata, binary-storage references, and access controls", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "sampled-content-hash", "authorization-sampling"] },
+    { "key": "financial-history", "classification": "PHI", "sourceEvidence": "legacy billing, claims, payments, and ledger records", "targetOutcome": "supported billing, claim, payment, and balance history", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "aggregate-balance", "sampled-ledger-history"] },
+    { "key": "audit-history", "classification": "restricted", "sourceEvidence": "legacy audit and login history", "targetOutcome": "retained audit history subject to policy", "mappingStatus": "owner-approval-required", "reconciliation": ["record-count", "retention-policy", "sampled-audit-timeline"] },
+    { "key": "configuration", "classification": "restricted", "sourceEvidence": "legacy globals, lists, facilities, ACL, and module configuration", "targetOutcome": "approved target configuration and access model", "mappingStatus": "owner-approval-required", "reconciliation": ["approved-setting-inventory", "acl-sampling", "facility-sampling"] },
+    { "key": "active-integrations", "classification": "restricted", "sourceEvidence": "legacy integration configuration and operational dependencies", "targetOutcome": "explicit replacement, retirement, or partner transition plan", "mappingStatus": "owner-approval-required", "reconciliation": ["integration-inventory", "owner-signoff", "cutover-dependency-review"] }
+  ],
+  "requiredApprovalArtifacts": [
+    "source-inventory-and-classification",
+    "retention-and-legal-hold-requirements",
+    "source-to-target-mapping-approval",
+    "identity-and-duplicate-resolution-rules",
+    "document-storage-and-security-rules",
+    "extract-transform-load-runbook",
+    "reconciliation-and-quarantine-runbook",
+    "rollback-backup-and-restore-runbook",
+    "cutover-and-coexistence-runbook",
+    "representative-rehearsal-owner-signoff"
+  ],
+  "executionGuards": [
+    "No real source data may be accessed while dataAccessAuthorized is false.",
+    "A rehearsal may not run until every mapping family is accepted by its owner.",
+    "Secrets, credentials, and PHI must not appear in the contract or validation artifact.",
+    "A successful contract validation is not a migration, reconciliation, cutover, or production-readiness claim."
+  ]
+}
