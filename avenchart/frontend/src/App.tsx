@@ -20515,7 +20515,8 @@ function InventoryWorkspace({
           <div className="inventory-metric-grid" aria-label="Inventory summary">
             <InventoryMetric label="Active items" value={String(inventory.summary.activeItems)} detail={`${inventory.summary.activeLots} tracked lots`} />
             <InventoryMetric label="Needs attention" value={String(inventory.summary.belowReorderPoint)} detail="at or below reorder point" warning />
-            <InventoryMetric label="Expiry watch" value={String(inventory.summary.expiringWithin90Days)} detail="within 90 days" warning />
+            <InventoryMetric label="Expired lots" value={String(inventory.summary.expiredLots)} detail="as of the inventory date" warning={inventory.summary.expiredLots > 0} />
+            <InventoryMetric label="Expiry watch" value={String(inventory.summary.expiringWithin90Days)} detail="next 90 days, excluding expired" warning />
             <InventoryMetric label="On-hand value" value={formatCurrency(inventory.summary.inventoryValue)} detail="seeded local valuation" />
           </div>
 
@@ -20542,8 +20543,8 @@ function InventoryWorkspace({
                     </div>
                     <div className="inventory-lot-strip">
                       {item.lots.map((lot) => (
-                        <span key={lot.lotId} title={`${lot.facilityName} · ${lot.lotNumber}`}>
-                          {lot.facilityCode} {lot.quantityOnHand}{lot.expirationDate ? ` · exp ${lot.expirationDate}` : ''}
+                        <span className={`inventory-lot is-${lot.expiryStatus ?? 'not-tracked'}`} key={lot.lotId} title={`${lot.facilityName} · ${lot.lotNumber}`}>
+                          {lot.facilityCode} {lot.quantityOnHand}{lot.expirationDate ? ` · ${lot.expiryStatus === 'expired' ? 'expired' : 'exp'} ${lot.expirationDate}` : ' · no expiry tracked'}
                         </span>
                       ))}
                     </div>

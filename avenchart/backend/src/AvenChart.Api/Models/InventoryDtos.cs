@@ -13,6 +13,7 @@ public sealed record InventorySummary(
     int ActiveItems,
     int ActiveLots,
     int BelowReorderPoint,
+    int ExpiredLots,
     int ExpiringWithin90Days,
     decimal InventoryValue);
 
@@ -42,7 +43,8 @@ public sealed record InventoryLot(
     string? ExpirationDate,
     decimal QuantityOnHand,
     decimal UnitCost,
-    string Status);
+    string Status,
+    string? ExpiryStatus = null);
 
 public sealed record InventoryTransactionItem(
     Guid TransactionId,

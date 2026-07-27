@@ -49,7 +49,7 @@
 
 .inventory-metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin: 20px 0;
 }
@@ -183,9 +183,20 @@
   padding-top: 5px;
 }
 
-.inventory-lot-strip span {
+.inventory-lot-strip .inventory-lot {
   border-left: 2px solid #b7d5cf;
   padding-left: 7px;
+}
+
+.inventory-lot-strip .inventory-lot.is-expiring {
+  border-left-color: var(--inventory-amber);
+  color: #8b520c;
+}
+
+.inventory-lot-strip .inventory-lot.is-expired {
+  border-left-color: #b32820;
+  color: #9e211b;
+  font-weight: 800;
 }
 
 .inventory-action-panel {

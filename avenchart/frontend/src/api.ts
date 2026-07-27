@@ -3055,6 +3055,7 @@ export type InventoryLot = {
   quantityOnHand: number
   unitCost: number
   status: string
+  expiryStatus?: 'not-tracked' | 'current' | 'expiring' | 'expired' | null
 }
 
 export type InventoryFacility = {
@@ -3102,6 +3103,7 @@ export type InventoryResponse = {
     activeItems: number
     activeLots: number
     belowReorderPoint: number
+    expiredLots: number
     expiringWithin90Days: number
   inventoryValue: number
   }

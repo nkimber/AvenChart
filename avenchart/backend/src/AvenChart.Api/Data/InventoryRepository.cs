@@ -30,8 +30,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
                 ActiveItems: items.Count,
                 ActiveLots: lots.Count(lot => string.Equals(lot.Status, "active", StringComparison.OrdinalIgnoreCase)),
                 BelowReorderPoint: items.Count(item => item.BelowReorderPoint),
-                ExpiringWithin90Days: lots.Count(lot => lot.ExpirationDate is not null
-                    && DateOnly.Parse(lot.ExpirationDate, CultureInfo.InvariantCulture) <= header.BaseDate.AddDays(90)),
+                ExpiredLots: lots.Count(lot => lot.ExpiryStatus == "expired"),
+                ExpiringWithin90Days: lots.Count(lot => lot.ExpiryStatus == "expiring"),
                 InventoryValue: items.Sum(item => item.InventoryValue)),
             facilities,
             items,
@@ -759,11 +759,27 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
                 builder.Lots.Add(new InventoryLot(
                     reader.GetInt32(7), reader.GetString(8), reader.GetString(9), reader.GetString(10),
                     reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    reader.GetDecimal(12), reader.GetDecimal(13), reader.GetString(14)));
+                    reader.GetDecimal(12), reader.GetDecimal(13), reader.GetString(14),
+                    GetExpiryStatus(reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11), baseDate)));
             }
         }
 
         return builders.Values.Select(builder => builder.Build()).ToList();
+    }
+
+    private static string GetExpiryStatus(DateOnly? expirationDate, DateOnly asOfDate)
+    {
+        if (expirationDate is null)
+        {
+            return "not-tracked";
+        }
+
+        if (expirationDate <= asOfDate)
+        {
+            return "expired";
+        }
+
+        return expirationDate <= asOfDate.AddDays(90) ? "expiring" : "current";
     }
 
     private static async Task<IReadOnlyList<InventoryTransactionItem>> GetTransactionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
