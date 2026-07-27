@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientBilling, getPatientCareTeamOptions, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
+import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientBilling, getPatientCareTeamOptions, getPatientPortalAppointments, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -227,6 +227,30 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/billing/MOD-PAT-0004',
       expect.objectContaining({
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
+  })
+
+  it('loads upcoming and past appointments through the protected portal route', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authenticated: true,
+        upcomingAppointmentCount: 1,
+        upcomingAppointments: [{ id: 'APPT-PORTAL-1' }],
+        pastAppointmentCount: 1,
+        pastAppointments: [{ id: 'APPT-1' }],
+      }),
+    )
+
+    const result = await getPatientPortalAppointments('portal-session')
+
+    expect(result.pastAppointmentCount).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patient-portal/appointments',
+      expect.objectContaining({
+        headers: {
+          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+        },
       }),
     )
   })

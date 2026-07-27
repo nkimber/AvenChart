@@ -252,6 +252,29 @@ test.describe("material workflows", () => {
     ).toBeVisible();
   });
 
+  test("portal appointments retain past appointment status history", async ({
+    page,
+  }) => {
+    await signInPortal(page);
+    await page.goto("/portal/appointments");
+
+    const history = page
+      .getByRole("heading", { name: "Appointment history" })
+      .locator("xpath=ancestor::section");
+    await expect(history.getByText("2 past", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      history.getByText("Established Patient", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      history.getByText("New Patient", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      history.getByText("Arrived", { exact: true }).first(),
+    ).toBeVisible();
+  });
+
   test("portal report selections are identifiable and validated", async ({
     page,
   }) => {

@@ -604,6 +604,28 @@ export type PatientPortalAppointmentRequestOptionsResponse = {
   failureReason?: string | null
 }
 
+export type PatientPortalAppointmentsResponse = {
+  authenticated: boolean
+  asOfDate: string
+  upcomingAppointmentCount: number
+  upcomingAppointments: PatientPortalHomeAppointmentSummary[]
+  pastAppointmentCount: number
+  pastAppointments: PatientPortalHomeAppointmentSummary[]
+  failureReason?: string | null
+}
+
+export async function getPatientPortalAppointments(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentsResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments`, {
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  await requireSuccessfulResponse(response, 'Patient portal appointments', 'portal')
+  return response.json()
+}
+
 export async function getPatientPortalAppointmentRequestOptions(sessionId: string, signal?: AbortSignal): Promise<PatientPortalAppointmentRequestOptionsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/request-options`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
