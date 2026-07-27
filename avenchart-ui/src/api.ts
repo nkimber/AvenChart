@@ -2150,6 +2150,10 @@ export async function saveFormOptionValue(sessionId: string, listKey: string, ke
 export type ClinicalAlertRuleItem = { key: string; title: string; triggerType: 'patient' | 'encounter' | 'appointment'; targetType: 'banner' | 'reminder'; severity: 'info' | 'warning' | 'critical'; message: string; sequence: number; active: boolean }
 export async function getClinicalAlertRules(sessionId: string): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianGet(sessionId, '/api/administration/clinical-alert-rules') }
 export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> { return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input) }
+export type ClinicalAlertRuleRevision = { revisionId: number; title: string; triggerType: ClinicalAlertRuleItem['triggerType']; targetType: ClinicalAlertRuleItem['targetType']; severity: ClinicalAlertRuleItem['severity']; message: string; sequence: number; active: boolean; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type ClinicalAlertRuleHistory = { rule: ClinicalAlertRuleItem; revisions: ClinicalAlertRuleRevision[] }
+export async function getClinicalAlertRuleHistory(sessionId: string, key: string): Promise<ClinicalAlertRuleHistory> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rules/${key}/history`) }
+export async function rollbackClinicalAlertRule(sessionId: string, key: string, revisionId: number): Promise<ClinicalAlertRuleHistory> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rules/${key}/revisions/${revisionId}/rollback`, {}) }
 export type ModuleCatalogItem = { key: string; displayName: string; category: string; status: string; description: string }
 export async function getModuleCatalog(sessionId: string): Promise<{ modules: ModuleCatalogItem[] }> { return clinicianGet(sessionId, '/api/administration/modules') }
 export type ApiClientRegistryItem = { key: string; displayName: string; redirectUri: string; scopes: string; active: boolean }

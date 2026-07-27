@@ -1853,6 +1853,23 @@ finally {
 }
 
 try {
+    $alertRevisionHeaders = Get-AdministrationHeaders
+    $alertRuleHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER/history" -Method Get -Headers $alertRevisionHeaders -TimeoutSec 20
+    $alertBaselineRevision = $alertRuleHistoryBefore.revisions | Where-Object { $_.action -eq "baseline" } | Select-Object -First 1
+    if ($null -eq $alertBaselineRevision) { throw "The appointment-reminder baseline revision was not found." }
+    $alertRule = $alertRuleHistoryBefore.rule
+    $alertRevisionBody = @{ title = "$($alertRule.title) smoke revision"; triggerType = $alertRule.triggerType; targetType = $alertRule.targetType; severity = $alertRule.severity; message = "$($alertRule.message) Smoke revision."; sequence = $alertRule.sequence; active = $alertRule.active } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER" -Method Put -Headers $alertRevisionHeaders -ContentType "application/json" -Body $alertRevisionBody -TimeoutSec 20 | Out-Null
+    $alertRuleHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER/history" -Method Get -Headers $alertRevisionHeaders -TimeoutSec 20
+    $alertRuleHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER/revisions/$($alertBaselineRevision.revisionId)/rollback" -Method Post -Headers $alertRevisionHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $alertRuleRevisionPassed = $alertRuleHistoryChanged.revisions.Count -gt $alertRuleHistoryBefore.revisions.Count -and $alertRuleHistoryRestored.rule.title -eq $alertRule.title -and $alertRuleHistoryRestored.rule.message -eq $alertRule.message -and $alertRuleHistoryRestored.revisions[0].action -eq "rolled-back" -and $alertRuleHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "clinical alert rule revision and rollback history" -Result $(if ($alertRuleRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $alertBaselineRevision.revisionId; restoredTitle = $alertRuleHistoryRestored.rule.title; action = $alertRuleHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "clinical alert rule revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $sdohPatientId = "MOD-PAT-0010"
     $sdohCreateBody = @{
         assessmentDate = "2026-07-25"

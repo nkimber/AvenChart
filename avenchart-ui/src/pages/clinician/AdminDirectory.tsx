@@ -13,6 +13,7 @@ import {
   getConfigurationCatalog,
   getCodingCatalogs,
   getCodingCatalogHistory,
+  getClinicalAlertRuleHistory,
   getClinicalAlertRules,
   getFormLayout,
   getFormLayoutHistory,
@@ -37,6 +38,7 @@ import {
   rollbackCodingCatalog,
   rollbackFormOptionList,
   rollbackFormLayout,
+  rollbackClinicalAlertRule,
   saveFormLayout,
   saveFormLayoutField,
   saveFormLayoutGroup,
@@ -53,6 +55,7 @@ import {
   type PhiAccessAuditResponse,
   type PracticeSettingHistory,
   type CodingCatalogHistory,
+  type ClinicalAlertRuleHistory,
   type FormOptionListHistory,
   type FormLayoutHistory,
   type AdministrationPortalProfileReviewRequest,
@@ -177,6 +180,7 @@ export default function AdminDirectory() {
   const [savingFormOptionList, setSavingFormOptionList] = useState(false)
   const [formOptionDraft, setFormOptionDraft] = useState({ key: '', title: '', sequence: 10, value: '', isDefault: false, active: true })
   const [alertRules, setAlertRules] = useState<ClinicalAlertRuleItem[]>([])
+  const [alertRuleHistory, setAlertRuleHistory] = useState<ClinicalAlertRuleHistory | null>(null)
   const [modules, setModules] = useState<ModuleCatalogItem[]>([])
   const [apiClients, setApiClients] = useState<ApiClientRegistryItem[]>([])
   const [apiClientForm, setApiClientForm] = useState<ApiClientForm>(() => emptyApiClientForm())
@@ -217,6 +221,8 @@ export default function AdminDirectory() {
   async function rollbackPracticeSettingRevision(revisionId: number) { if (!practiceSettingHistory || !window.confirm(`Restore ${practiceSettingHistory.setting.label} to the selected historical value?`)) return; try { const result = await rollbackPracticeSetting(session.sessionId, practiceSettingHistory.setting.key, revisionId); setPracticeSettingHistory(result); setPracticeSettings((await getPracticeSettings(session.sessionId)).settings); showToast('Practice setting restored.', 'success') } catch { showToast('Could not restore the practice setting.', 'error') } }
   async function openCodingCatalogHistory(key: string) { try { setCodingCatalogHistory(await getCodingCatalogHistory(session.sessionId, key)) } catch { showToast('Could not load catalog history.', 'error') } }
   async function rollbackCodingCatalogRevision(revisionId: number) { if (!codingCatalogHistory || !window.confirm(`Restore ${codingCatalogHistory.catalog.key} to the selected historical definition?`)) return; try { const result = await rollbackCodingCatalog(session.sessionId, codingCatalogHistory.catalog.key, revisionId); setCodingCatalogHistory(result); setCodingCatalogs((await getCodingCatalogs(session.sessionId)).catalogs); showToast('Coding catalog restored.', 'success') } catch { showToast('Could not restore the coding catalog.', 'error') } }
+  async function openClinicalAlertRuleHistory(key: string) { try { setAlertRuleHistory(await getClinicalAlertRuleHistory(session.sessionId, key)) } catch { showToast('Could not load alert-rule history.', 'error') } }
+  async function rollbackClinicalAlertRuleRevision(revisionId: number) { if (!alertRuleHistory || !window.confirm(`Restore ${alertRuleHistory.rule.title} to the selected historical definition?`)) return; try { const result = await rollbackClinicalAlertRule(session.sessionId, alertRuleHistory.rule.key, revisionId); setAlertRuleHistory(result); setAlertRules((await getClinicalAlertRules(session.sessionId)).rules); showToast('Alert rule restored.', 'success') } catch { showToast('Could not restore the alert rule.', 'error') } }
   useEffect(() => { if (tab === 'layouts') { getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')); getFormOptionLists(session.sessionId).then((result) => setFormOptionLists(result.lists)).catch(() => showToast('Could not load form option lists.', 'error')) } }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'rules') getClinicalAlertRules(session.sessionId).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not load alert rules.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'modules') getModuleCatalog(session.sessionId).then((result) => setModules(result.modules)).catch(() => showToast('Could not load modules.', 'error')) }, [session.sessionId, tab])
@@ -793,7 +799,7 @@ export default function AdminDirectory() {
               </section>
             )}
 
-            {tab === 'rules' && <section className="cl-card"><h2 className="cl-card-title">Rules and alerts</h2><p className="clinician-page-subtitle">Local rule definitions control which clinical context produces an in-app banner or reminder. No external notification is sent from this catalog.</p><table className="cl-table"><thead><tr><th>Rule</th><th>Trigger</th><th>Target</th><th>Severity</th><th>Active</th></tr></thead><tbody>{alertRules.map((rule) => <tr key={rule.key}><td><strong>{rule.title}</strong><p className="cl-table-sub">{rule.message}</p></td><td>{rule.triggerType}</td><td>{rule.targetType}</td><td>{rule.severity}</td><td><label><input type="checkbox" checked={rule.active} onChange={(event) => void saveClinicalAlertRule(session.sessionId, rule.key, { ...rule, active: event.target.checked }).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not save alert rule.', 'error'))} /> {rule.active ? 'Active' : 'Inactive'}</label></td></tr>)}</tbody></table></section>}
+            {tab === 'rules' && <section className="cl-card"><h2 className="cl-card-title">Rules and alerts</h2><p className="clinician-page-subtitle">Local rule definitions control which clinical context produces an in-app banner or reminder. No external notification is sent from this catalog.</p><table className="cl-table"><thead><tr><th>Rule</th><th>Trigger</th><th>Target</th><th>Severity</th><th>Active</th><th /></tr></thead><tbody>{alertRules.map((rule) => <tr key={rule.key}><td><strong>{rule.title}</strong><p className="cl-table-sub">{rule.message}</p></td><td>{rule.triggerType}</td><td>{rule.targetType}</td><td>{rule.severity}</td><td><label><input type="checkbox" checked={rule.active} onChange={(event) => void saveClinicalAlertRule(session.sessionId, rule.key, { ...rule, active: event.target.checked }).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not save alert rule.', 'error'))} /> {rule.active ? 'Active' : 'Inactive'}</label></td><td><button className="cl-btn-secondary" type="button" onClick={() => void openClinicalAlertRuleHistory(rule.key)}>History</button></td></tr>)}</tbody></table>{alertRuleHistory ? <div className="cl-card" style={{ marginTop: 12 }}><h3 className="cl-card-title">{alertRuleHistory.rule.title} revisions</h3><table className="cl-table"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Definition</th><th /></tr></thead><tbody>{alertRuleHistory.revisions.map((revision) => <tr key={revision.revisionId}><td>{new Date(revision.occurredAt).toLocaleString()}</td><td>{revision.username}</td><td>{revision.action}</td><td>{revision.triggerType} · {revision.targetType} · {revision.severity} · {revision.active ? 'Active' : 'Inactive'}</td><td><button className="cl-btn-secondary" type="button" disabled={revision.title === alertRuleHistory.rule.title && revision.triggerType === alertRuleHistory.rule.triggerType && revision.targetType === alertRuleHistory.rule.targetType && revision.severity === alertRuleHistory.rule.severity && revision.message === alertRuleHistory.rule.message && revision.sequence === alertRuleHistory.rule.sequence && revision.active === alertRuleHistory.rule.active} onClick={() => void rollbackClinicalAlertRuleRevision(revision.revisionId)}>Restore</button></td></tr>)}</tbody></table></div> : null}</section>}
 
             {tab === 'modules' && <section className="cl-card"><h2 className="cl-card-title">Module inventory</h2><p className="clinician-page-subtitle">Local modules can be enabled only through their own lifecycle. Decision-required and partner-gated modules remain visible until their accountable owners authorize them.</p><table className="cl-table"><thead><tr><th>Module</th><th>Category</th><th>Status</th><th>Scope</th></tr></thead><tbody>{modules.map((module) => <tr key={module.key}><td><strong>{module.displayName}</strong><p className="cl-table-sub">{module.key}</p></td><td>{module.category}</td><td><span className="cl-badge cl-badge-muted">{module.status}</span></td><td>{module.description}</td></tr>)}</tbody></table></section>}
 
