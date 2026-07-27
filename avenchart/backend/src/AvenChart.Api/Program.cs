@@ -3277,6 +3277,16 @@ inventory.MapPost("/controlled-count-sessions/{sessionId:guid}/submit", async (G
     .WithName("SubmitInventoryControlledCountSession")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
+inventory.MapPut("/controlled-count-discrepancies/{discrepancyId:guid}/investigation", async (Guid discrepancyId, InventoryControlledDiscrepancyInvestigationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken);return Results.Ok(await repository.InvestigateControlledCountDiscrepancyAsync(discrepancyId,request,session.Username,cancellationToken)); } catch(ArgumentException exception){return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledDiscrepancy"]=[exception.Message] });} })
+    .WithName("InvestigateInventoryControlledCountDiscrepancy")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
+inventory.MapPost("/controlled-count-discrepancies/{discrepancyId:guid}/corrections", async (Guid discrepancyId, InventoryControlledDiscrepancyCorrectionRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken);string? witnessUsername=null;if(request.WitnessSessionId is { } witnessId){var witness=await authRepository.GetCurrentSessionAsync(witnessId,cancellationToken);if(!witness.Authenticated)throw new ArgumentException("The controlled-custody witness session is not active.");if(string.Equals(witness.Username,session.Username,StringComparison.OrdinalIgnoreCase))throw new ArgumentException("The controlled-custody witness must be a different authenticated user.");witnessUsername=witness.Username;}var correction=await repository.CorrectControlledCountDiscrepancyAsync(discrepancyId,request,session.Username,witnessUsername,cancellationToken);return Results.Created($"/api/inventory/controlled-custody-movements/{correction.Event.EventId}",correction); } catch(ArgumentException exception){return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledDiscrepancy"]=[exception.Message] });} })
+    .WithName("CorrectInventoryControlledCountDiscrepancy")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
 inventory.MapPost("/controlled-locations", async (InventoryControlledLocationMutationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/controlled-locations", await repository.CreateControlledLocationAsync(request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledLocation"] = [exception.Message] }); } })
     .WithName("CreateInventoryControlledLocation")
