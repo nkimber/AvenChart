@@ -30,6 +30,7 @@ import {
   getOperationalReports,
   getProcedureReportQueue,
   isInvalidSessionError,
+  isRequestCancellation,
   logout,
   SESSION_INVALID_EVENT,
 } from '../../api.ts'
@@ -149,7 +150,7 @@ export default function ClinicianShell() {
         setAuthState('authenticated')
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isRequestCancellation(error)) return
         if (isInvalidSessionError(error)) {
           clearClinicianSession()
           navigate('/login', { replace: true })

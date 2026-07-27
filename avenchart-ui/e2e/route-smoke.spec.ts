@@ -1,57 +1,10 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./support/fixtures.ts";
-
-const clinicianRoutes = [
-  "/clinician/dashboard",
-  "/clinician/schedule",
-  "/clinician/calendar",
-  "/clinician/flow",
-  "/clinician/scheduling",
-  "/clinician/patients",
-  "/clinician/labs",
-  "/clinician/messages",
-  "/clinician/office-notes",
-  "/clinician/address-book",
-  "/clinician/tracks",
-  "/clinician/track-entries",
-  "/clinician/track-history",
-  "/clinician/patient-education",
-  "/clinician/recalls",
-  "/clinician/batch-communication",
-  "/clinician/chart-tracker",
-  "/clinician/document-templates",
-  "/clinician/duplicate-review",
-  "/clinician/renewals",
-  "/clinician/reports",
-  "/clinician/groups",
-  "/clinician/billing",
-  "/clinician/inventory",
-  "/clinician/admin",
-  "/clinician/encounters/new",
-] as const;
-
-const patientChartRoutes = [
-  "summary",
-  "chart",
-  "timeline",
-  "encounters",
-  "documents",
-  "labs",
-  "appointments",
-  "messages",
-  "referrals",
-  "authorizations",
-  "sdoh",
-  "print",
-].map((section) => `/clinician/patients/MOD-PAT-0004/${section}`);
-
-const portalRoutes = [
-  "/portal/home",
-  "/portal/messages",
-  "/portal/appointments",
-  "/portal/records",
-  "/portal/account",
-] as const;
+import {
+  clinicianRoutes,
+  patientChartRoutes,
+  portalRoutes,
+} from "./support/routes.ts";
 
 async function expectAuthenticatedRoute(
   page: Page,

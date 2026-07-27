@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import {
   CalendarClock, ChevronRight, ClipboardList,
@@ -17,8 +17,8 @@ import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 type AsyncState<T> =
   | { status: 'loading' }
-  | { status: 'ready'; data: T }
-  | { status: 'error' }
+  | { status: 'ready'; data: T; updatedAt: string }
+  | { status: 'error'; message: string; data?: T; updatedAt?: string }
 
 type RecentPatient = { canonicalId: string; displayName: string; dateOfBirth: string; visitedAt: string }
 
@@ -55,22 +55,75 @@ export default function ClinicianDashboard() {
   const [labState, setLabState] = useState<AsyncState<ProcedureReportQueueResponse>>({ status: 'loading' })
   const [reportsState, setReportsState] = useState<AsyncState<OperationalReportsResponse>>({ status: 'loading' })
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>(() => loadRecentPatients())
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
+  function loadDashboard() {
+    setRefreshing(true)
     const todayStr = today()
-    searchAppointments(session.sessionId, { fromDate: todayStr, toDate: todayStr, limit: 20 })
-      .then((data) => setApptState({ status: 'ready', data: data.appointments }))
-      .catch(() => setApptState({ status: 'error' }))
+    const requests = [
+      searchAppointments(session.sessionId, {
+        fromDate: todayStr,
+        toDate: todayStr,
+        limit: 20,
+      })
+        .then((data) =>
+          setApptState({
+            status: 'ready',
+            data: data.appointments,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .catch(() =>
+          setApptState((current) => ({
+            status: 'error',
+            message: "Today's appointments could not be refreshed.",
+            data: 'data' in current ? current.data : undefined,
+            updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
+          })),
+        ),
+      getProcedureReportQueue(session.sessionId, {
+        status: 'pending',
+        limit: 5,
+      })
+        .then((data) =>
+          setLabState({
+            status: 'ready',
+            data,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .catch(() =>
+          setLabState((current) => ({
+            status: 'error',
+            message: 'The lab-review count could not be refreshed.',
+            data: 'data' in current ? current.data : undefined,
+            updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
+          })),
+        ),
+      getOperationalReports(session.sessionId)
+        .then((data) =>
+          setReportsState({
+            status: 'ready',
+            data,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .catch(() =>
+          setReportsState((current) => ({
+            status: 'error',
+            message: 'The message count could not be refreshed.',
+            data: 'data' in current ? current.data : undefined,
+            updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
+          })),
+        ),
+    ]
+    return Promise.allSettled(requests).finally(() => setRefreshing(false))
+  }
 
-    getProcedureReportQueue(session.sessionId, { status: 'pending', limit: 5 })
-      .then((data) => setLabState({ status: 'ready', data }))
-      .catch(() => setLabState({ status: 'error' }))
-
-    getOperationalReports(session.sessionId)
-      .then((data) => setReportsState({ status: 'ready', data }))
-      .catch(() => setReportsState({ status: 'error' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const loadOnSessionChange = useEffectEvent(loadDashboard)
+  useEffect(() => {
+    void loadOnSessionChange()
+  }, [session.sessionId])
 
   useEffect(() => {
     const onFocus = () => setRecentPatients(loadRecentPatients())
@@ -79,9 +132,27 @@ export default function ClinicianDashboard() {
   }, [])
 
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  const appts = apptState.status === 'ready' ? apptState.data : []
-  const unreviewedLabs = labState.status === 'ready' ? labState.data.unreviewedReports : null
-  const newMessages = reportsState.status === 'ready' ? reportsState.data.counts.newMessages : null
+  const appts = 'data' in apptState && apptState.data ? apptState.data : []
+  const unreviewedLabs =
+    'data' in labState && labState.data
+      ? labState.data.unreviewedReports
+      : null
+  const newMessages =
+    'data' in reportsState && reportsState.data
+      ? reportsState.data.counts.newMessages
+      : null
+  const lastUpdated = [
+    'updatedAt' in apptState ? apptState.updatedAt : undefined,
+    'updatedAt' in labState ? labState.updatedAt : undefined,
+    'updatedAt' in reportsState ? reportsState.updatedAt : undefined,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1)
+  const hasAppointmentSnapshot = 'data' in apptState && Boolean(apptState.data)
+  const refreshErrors = [apptState, labState, reportsState]
+    .filter((state) => state.status === 'error')
+    .map((state) => state.status === 'error' ? state.message : '')
 
   return (
     <div className="clinician-page">
@@ -92,6 +163,25 @@ export default function ClinicianDashboard() {
           <p className="clinician-page-subtitle">{todayLabel}</p>
         </div>
         <div className="clinician-header-actions">
+          <div className="dashboard-refresh-status" aria-live="polite">
+            <span>
+              {lastUpdated
+                ? `Updated ${new Date(lastUpdated).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`
+                : 'Not updated yet'}
+            </span>
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              disabled={refreshing}
+              onClick={() => void loadDashboard()}
+            >
+              <RefreshCw size={15} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
           <button className="cl-btn-secondary" type="button" onClick={() => navigate('/clinician/patients/new')}>
             <UserPlus size={15} /> Register patient
           </button>
@@ -104,24 +194,39 @@ export default function ClinicianDashboard() {
         </div>
       </div>
 
+      {refreshErrors.length > 0 && (
+        <div className="error-banner" role="status">
+          <strong>Some dashboard data may be stale.</strong>{' '}
+          {refreshErrors.join(' ')}
+        </div>
+      )}
+
       {/* Stat tiles */}
       <div className="dash-stat-row">
-        <Link to="/clinician/schedule" className="dash-stat-tile">
+        <Link to={`/clinician/schedule?date=${today()}`} className="dash-stat-tile">
           <div className="dash-stat-icon dash-stat-icon-blue"><CalendarClock size={18} /></div>
           <div className="dash-stat-body">
             <p className="dash-stat-value">
-              {apptState.status === 'loading' ? '—' : appts.length}
+              {apptState.status === 'loading'
+                ? '—'
+                : apptState.status === 'error' && !apptState.data
+                  ? 'Unavailable'
+                  : appts.length}
             </p>
             <p className="dash-stat-label">Today's appointments</p>
           </div>
           <ChevronRight size={14} className="dash-stat-arrow" />
         </Link>
 
-        <Link to="/clinician/labs" className={`dash-stat-tile${unreviewedLabs ? ' dash-stat-tile-alert' : ''}`}>
+        <Link to="/clinician/labs?status=pending" className={`dash-stat-tile${unreviewedLabs ? ' dash-stat-tile-alert' : ''}`}>
           <div className={`dash-stat-icon${unreviewedLabs ? ' dash-stat-icon-amber' : ' dash-stat-icon-muted'}`}><FlaskConical size={18} /></div>
           <div className="dash-stat-body">
             <p className="dash-stat-value">
-              {labState.status === 'loading' ? '—' : (unreviewedLabs ?? 0)}
+              {labState.status === 'loading'
+                ? '—'
+                : labState.status === 'error' && !labState.data
+                  ? 'Unavailable'
+                  : (unreviewedLabs ?? 0)}
             </p>
             <p className="dash-stat-label">Labs pending review</p>
           </div>
@@ -132,7 +237,11 @@ export default function ClinicianDashboard() {
           <div className={`dash-stat-icon${newMessages ? ' dash-stat-icon-indigo' : ' dash-stat-icon-muted'}`}><Mail size={18} /></div>
           <div className="dash-stat-body">
             <p className="dash-stat-value">
-              {reportsState.status === 'loading' ? '—' : (newMessages ?? 0)}
+              {reportsState.status === 'loading'
+                ? '—'
+                : reportsState.status === 'error' && !reportsState.data
+                  ? 'Unavailable'
+                  : (newMessages ?? 0)}
             </p>
             <p className="dash-stat-label">New messages</p>
           </div>
@@ -166,16 +275,25 @@ export default function ClinicianDashboard() {
             </div>
           )}
           {apptState.status === 'error' && (
-            <p className="cl-empty-text">Could not load today's appointments.</p>
+            <div className="cl-inline-state" role="status">
+              <p>{apptState.message}</p>
+              <button
+                type="button"
+                className="cl-btn-secondary"
+                onClick={() => void loadDashboard()}
+              >
+                Retry
+              </button>
+            </div>
           )}
-          {apptState.status === 'ready' && appts.length === 0 && (
+          {hasAppointmentSnapshot && appts.length === 0 && (
             <div className="cl-empty-state-sm">
               <CalendarClock size={24} className="cl-empty-icon-sm" />
               <p>No appointments today.</p>
               <Link to="/clinician/calendar" className="cl-link">Open calendar</Link>
             </div>
           )}
-          {apptState.status === 'ready' && appts.length > 0 && (
+          {hasAppointmentSnapshot && appts.length > 0 && (
             <>
               <ul className="cl-appt-list dash-appt-list">
                 {appts.slice(0, DASH_LIMIT).map((appt) => (

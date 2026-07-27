@@ -4,6 +4,7 @@ import { Download, FolderOpen } from 'lucide-react'
 import {
   downloadPatientDocument,
   getPatientDocuments,
+  isRequestCancellation,
   type PatientDocumentItem,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -32,7 +33,7 @@ export default function PatientDocuments() {
     getPatientDocuments(session.sessionId, patientId, controller.signal)
       .then((data) => setState({ status: 'ready', data: data.documents }))
       .catch((err) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (isRequestCancellation(err)) return
         setState({
           status: 'error',
           message: err instanceof Error ? err.message : 'Failed to load documents.',

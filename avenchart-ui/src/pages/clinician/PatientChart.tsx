@@ -22,7 +22,7 @@ type AsyncState<T> =
   | { status: 'error'; message: string }
 
 function statusDot(activity: number) {
-  return <span className={`cl-activity-dot ${activity === 1 ? 'cl-activity-active' : 'cl-activity-inactive'}`} aria-label={activity === 1 ? 'Active' : 'Inactive'} />
+  return <span role="img" className={`cl-activity-dot ${activity === 1 ? 'cl-activity-active' : 'cl-activity-inactive'}`} aria-label={activity === 1 ? 'Active' : 'Inactive'} />
 }
 
 function isoNow() { return new Date().toISOString().replace('T', ' ').slice(0, 19) }

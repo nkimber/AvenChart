@@ -5,6 +5,7 @@ import {
   createPatientMessage,
   getPatientMessages,
   getStaffMessageInbox,
+  isRequestCancellation,
   replyToPatientMessage,
   type PatientMessageItem,
   type StaffMessageInboxQuery,
@@ -116,7 +117,7 @@ export default function ClinicianMessages() {
         setLastUpdated(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isRequestCancellation(error)) return
         setInboxError(error instanceof Error ? error.message : 'Could not load the message inbox.')
       })
       .finally(() => setInboxLoading(false))

@@ -1,137 +1,20 @@
-// Minimal client for the existing avenchart backend API.
-// This app does not own or modify that backend — it only calls the same
-// endpoints that avenchart/frontend already uses for sign-in.
-
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
-
-export const SESSION_INVALID_EVENT = 'avenchart-ui:session-invalid'
-
-export type SessionScope = 'clinician' | 'portal'
-
-export type ApiProblemDetails = {
-  title?: string
-  detail?: string
-  status?: number
-  errors?: Record<string, string[]>
-  traceId?: string
-}
-
-export type ApiErrorKind = 'http' | 'network' | 'timeout' | 'cancelled'
-
-export class ApiRequestError extends Error {
-  readonly status?: number
-  readonly problem?: ApiProblemDetails
-  readonly kind: ApiErrorKind
-
-  constructor(
-    message: string,
-    status?: number,
-    problem?: ApiProblemDetails,
-    kind: ApiErrorKind = 'http',
-  ) {
-    super(message)
-    this.name = 'ApiRequestError'
-    this.status = status
-    this.problem = problem
-    this.kind = kind
-  }
-}
-
-const API_TIMEOUT_MILLISECONDS = 30_000
-
-/**
- * Governed transport for every request in this module. It adds a bounded
- * timeout, preserves caller cancellation, identifies the protected session
- * scope from its header, and normalizes HTTP/network failures.
- */
-async function fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const requestController = new AbortController()
-  const callerSignal = init.signal
-  const headers = new Headers(init.headers)
-  const scope: SessionScope | undefined = headers.has('X-Legacy EHR-Patient-Portal-Session')
-    ? 'portal'
-    : headers.has('X-Legacy EHR-Session')
-      ? 'clinician'
-      : undefined
-  const action = `${init.method ?? 'GET'} ${String(input).replace(apiBaseUrl, '')}`
-  let timedOut = false
-
-  const cancelFromCaller = () => requestController.abort(callerSignal?.reason)
-  if (callerSignal?.aborted) {
-    cancelFromCaller()
-  } else {
-    callerSignal?.addEventListener('abort', cancelFromCaller, { once: true })
-  }
-
-  const timeout = window.setTimeout(() => {
-    timedOut = true
-    requestController.abort()
-  }, API_TIMEOUT_MILLISECONDS)
-
-  try {
-    const response = await globalThis.fetch(input, {
-      ...init,
-      signal: requestController.signal,
-    })
-    await requireSuccessfulResponse(response, action, scope)
-    return response
-  } catch (caught) {
-    if (caught instanceof ApiRequestError) throw caught
-    if (callerSignal?.aborted) {
-      throw new ApiRequestError(`${action} was cancelled.`, undefined, undefined, 'cancelled')
-    }
-    if (timedOut) {
-      throw new ApiRequestError(
-        `${action} timed out. Try again.`,
-        undefined,
-        undefined,
-        'timeout',
-      )
-    }
-    throw new ApiRequestError(
-      `${action} could not reach the server. Check your connection and try again.`,
-      undefined,
-      undefined,
-      'network',
-    )
-  } finally {
-    window.clearTimeout(timeout)
-    callerSignal?.removeEventListener('abort', cancelFromCaller)
-  }
-}
-
-function announceInvalidSession(scope: SessionScope) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent(SESSION_INVALID_EVENT, { detail: { scope } }))
-}
-
-async function parseProblemDetails(response: Response): Promise<ApiProblemDetails | undefined> {
-  const contentType = response.headers.get('content-type') ?? ''
-  if (!contentType.includes('json')) return undefined
-
-  try {
-    return await response.json() as ApiProblemDetails
-  } catch {
-    return undefined
-  }
-}
-
-async function requireSuccessfulResponse(
-  response: Response,
-  action: string,
-  scope?: SessionScope,
-): Promise<Response> {
-  if (response.ok) return response
-  if (response.status === 401 && scope) announceInvalidSession(scope)
-
-  const problem = await parseProblemDetails(response)
-  const message = problem?.detail ?? problem?.title ?? `${action} failed with ${response.status}`
-  throw new ApiRequestError(message, response.status, problem)
-}
-
-export function isInvalidSessionError(error: unknown): boolean {
-  return error instanceof ApiRequestError && (error.status === 401 || error.status === 403)
-}
+// Compatibility barrel for the existing backend API. Domain modules migrate
+// incrementally while every request shares this governed transport.
+import {
+  ApiRequestError,
+  apiBaseUrl,
+  apiFetch as fetch,
+  requireSuccessfulResponse,
+} from './api/transport.ts'
+export {
+  ApiRequestError,
+  SESSION_INVALID_EVENT,
+  isInvalidSessionError,
+  isRequestCancellation,
+  type ApiErrorKind,
+  type ApiProblemDetails,
+  type SessionScope,
+} from './api/transport.ts'
 
 export type AuthLoginInput = {
   username: string
@@ -2054,6 +1937,75 @@ export async function downloadPatientDocument(
 }
 
 // ── Procedures / Lab Queue ────────────────────────────────────────────────────
+
+export type ProcedureResultItem = {
+  id: number
+  code?: string | null
+  text?: string | null
+  units?: string | null
+  result?: string | null
+  range?: string | null
+  abnormal?: string | null
+  resultDate: string
+  resultStatus?: string | null
+  currentVersion: number
+  versionLabel: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+}
+
+export type ProcedureReportItem = {
+  id: number
+  dateCollected: string
+  reportDate: string
+  specimenNumber?: string | null
+  status?: string | null
+  reviewStatus?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  notes?: string | null
+  results: ProcedureResultItem[]
+}
+
+export type ProcedureOrderItem = {
+  id: number
+  encounter?: number | null
+  providerName?: string | null
+  orderDate: string
+  orderPriority?: string | null
+  code?: string | null
+  name?: string | null
+  procedureType?: string | null
+  diagnosis?: string | null
+  instructions?: string | null
+  orderStatus?: string | null
+  reports: ProcedureReportItem[]
+}
+
+export type ProcedureResultsResponse = {
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  counts: {
+    orders: number
+    reports: number
+    results: number
+    finalResults: number
+  }
+  orders: ProcedureOrderItem[]
+}
+
+export function getProcedureResults(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<ProcedureResultsResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/${encodeURIComponent(patientId.trim())}`,
+    signal,
+  )
+}
 
 export type ProcedureReportQueueItem = {
   reportId: number

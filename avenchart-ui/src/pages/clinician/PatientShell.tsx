@@ -121,7 +121,12 @@ export default function PatientShell() {
       </div>
 
       {/* Chart content */}
-      <div className="patient-content">
+      <div
+        className="patient-content"
+        role="region"
+        aria-label="Patient chart content"
+        tabIndex={0}
+      >
         {loading ? (
           <div className="clinician-page">
             <div className="cl-card">

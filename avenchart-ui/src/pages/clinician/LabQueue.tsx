@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useOutletContext } from 'react-router-dom'
+import { useEffect, useEffectEvent, useState } from 'react'
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import { CheckCircle } from 'lucide-react'
 import {
   getProcedureOrderQueue,
@@ -16,29 +16,11 @@ type AsyncState<T> =
   | { status: 'ready'; data: T }
   | { status: 'error'; message: string }
 
-function abnormalClass(abnormal?: string | null): string {
-  if (!abnormal) return ''
-  const a = abnormal.toLowerCase()
-  if (a.includes('critical') || a === 'panic') return 'lab-flag-critical'
-  if (a.includes('high') || a === 'h' || a === 'hh') return 'lab-flag-high'
-  if (a.includes('low') || a === 'l' || a === 'll') return 'lab-flag-low'
-  return 'lab-flag-abnormal'
-}
-
-function abnormalLabel(abnormal?: string | null): string | null {
-  if (!abnormal) return null
-  const a = abnormal.toLowerCase()
-  if (a.includes('critical') || a === 'panic') return 'CRITICAL'
-  if (a.includes('high') || a === 'hh') return 'HIGH ↑'
-  if (a === 'h') return '↑'
-  if (a.includes('low') || a === 'll') return 'LOW ↓'
-  if (a === 'l') return '↓'
-  return abnormal.toUpperCase()
-}
-
 export default function LabQueue() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const reportStatus = searchParams.get('status') ?? ''
   const [tab, setTab] = useState<'reports' | 'orders'>('reports')
   const [reportState, setReportState] = useState<AsyncState<ProcedureReportQueueItem[]>>({ status: 'loading' })
   const [orderState, setOrderState] = useState<AsyncState<ProcedureOrderQueueItem[]>>({ status: 'loading' })
@@ -48,7 +30,11 @@ export default function LabQueue() {
   const [reviewed, setReviewed] = useState<Set<number>>(new Set())
 
   function loadReports() {
-    getProcedureReportQueue(session.sessionId, { limit: 100 })
+    setReportState({ status: 'loading' })
+    getProcedureReportQueue(session.sessionId, {
+      status: reportStatus || undefined,
+      limit: 100,
+    })
       .then((data) => {
         setReportState({ status: 'ready', data: data.reports })
         setUnreviewedCount(data.unreviewedReports)
@@ -56,16 +42,19 @@ export default function LabQueue() {
       .catch((err) => setReportState({ status: 'error', message: err instanceof Error ? err.message : 'Failed.' }))
   }
 
+  const loadReportsOnCriteriaChange = useEffectEvent(loadReports)
   useEffect(() => {
-    loadReports()
+    void loadReportsOnCriteriaChange()
+  }, [session.sessionId, reportStatus])
+
+  useEffect(() => {
     getProcedureOrderQueue(session.sessionId, { limit: 100 })
       .then((data) => {
         setOrderState({ status: 'ready', data: data.reports })
         setReadyCount(data.readyToSendOrders)
       })
       .catch((err) => setOrderState({ status: 'error', message: err instanceof Error ? err.message : 'Failed.' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [session.sessionId])
 
   async function handleReview(reportId: number) {
     setReviewing((s) => new Set([...s, reportId]))
@@ -116,6 +105,19 @@ export default function LabQueue() {
           Order queue{readyCount > 0 && <span className="cl-tab-badge">{readyCount}</span>}
         </button>
       </div>
+
+      {reportStatus && (
+        <div className="cl-active-filters" aria-label="Active lab filters">
+          <span className="cl-filter-chip">Status: {reportStatus}</span>
+          <button
+            type="button"
+            className="cl-link"
+            onClick={() => setSearchParams({}, { replace: true })}
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {tab === 'reports' && (
         <>
@@ -236,6 +238,3 @@ export default function LabQueue() {
     </div>
   )
 }
-
-// Exported so PatientLabs can reuse abnormal flag rendering
-export { abnormalClass, abnormalLabel }

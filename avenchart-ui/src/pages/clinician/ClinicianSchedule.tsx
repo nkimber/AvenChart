@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useOutletContext } from 'react-router-dom'
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
 import { getAppointmentStatus, getAppointmentStatusOptions } from '../../domain/appointmentStatus.ts'
@@ -30,7 +30,13 @@ function formatTime(t?: string | null) {
 export default function ClinicianSchedule() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const navigate = useNavigate()
-  const [selectedDate, setSelectedDate] = useState(() => isoDate(new Date()))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const requestedDate = searchParams.get('date')
+    return requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+      ? requestedDate
+      : isoDate(new Date())
+  })
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
@@ -48,7 +54,12 @@ export default function ClinicianSchedule() {
 
   function changeDay(delta: number) {
     const d = new Date(selectedDate + 'T00:00:00')
-    setSelectedDate(isoDate(addDays(d, delta)))
+    selectDate(isoDate(addDays(d, delta)))
+  }
+
+  function selectDate(date: string) {
+    setSelectedDate(date)
+    setSearchParams({ date }, { replace: true })
   }
 
   async function handleStatusChange(apptId: string, status: string) {
@@ -81,7 +92,7 @@ export default function ClinicianSchedule() {
             type="date"
             className="cl-date-input"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => selectDate(e.target.value)}
             aria-label="Select date"
           />
         </div>
@@ -96,7 +107,7 @@ export default function ClinicianSchedule() {
         <button
           className={`cl-day-nav-btn${isToday ? ' cl-day-nav-btn-active' : ''}`}
           type="button"
-          onClick={() => setSelectedDate(isoDate(new Date()))}
+          onClick={() => selectDate(isoDate(new Date()))}
         >
           Today
         </button>

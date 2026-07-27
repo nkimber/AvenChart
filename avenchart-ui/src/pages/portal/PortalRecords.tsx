@@ -31,6 +31,10 @@ import {
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
+import {
+  LabResultFlag,
+  labResultFlagClass,
+} from '../../components/LabResultFlag.tsx'
 
 type AsyncState<T> =
   | { status: 'idle' }
@@ -70,15 +74,6 @@ function toggleSelection(ids: Set<string>, id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   return next
-}
-
-function abnormalClass(flag?: string | null) {
-  if (!flag) return ''
-  const f = flag.toUpperCase()
-  if (f === 'H' || f === 'HH') return 'lab-result-high'
-  if (f === 'L' || f === 'LL') return 'lab-result-low'
-  if (f === 'A' || f === 'AA') return 'lab-result-abnormal'
-  return ''
 }
 
 function docIcon(name: string) {
@@ -144,7 +139,7 @@ function LabOrder({ order }: { order: PatientPortalLabOrderItem }) {
                       {report.results.map((result) => (
                         <tr
                           key={result.id}
-                          className={abnormalClass(result.abnormal) ? 'lab-result-row-flagged' : ''}
+                          className={labResultFlagClass(result.abnormal) ? 'lab-result-row-flagged' : ''}
                         >
                           <td className="lab-result-name">{result.resultName}</td>
                           <td className="lab-result-value">
@@ -155,11 +150,7 @@ function LabOrder({ order }: { order: PatientPortalLabOrderItem }) {
                           </td>
                           <td className="lab-result-range">{result.range ?? '—'}</td>
                           <td>
-                            {result.abnormal ? (
-                              <span className={`lab-result-flag ${abnormalClass(result.abnormal)}`}>
-                                {result.abnormal}
-                              </span>
-                            ) : null}
+                            <LabResultFlag value={result.abnormal} />
                           </td>
                         </tr>
                       ))}
@@ -217,6 +208,7 @@ export default function PortalRecords() {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(() => new Set())
   const [generatedReport, setGeneratedReport] = useState<PatientPortalGeneratedMedicalReportResponse | null>(null)
   const [generatingReport, setGeneratingReport] = useState(false)
+  const [reportSelectionError, setReportSelectionError] = useState<string | null>(null)
   const [refillOpenId, setRefillOpenId] = useState<string | null>(null)
   const [refillNote, setRefillNote] = useState('')
   const [refillingId, setRefillingId] = useState<string | null>(null)
@@ -308,6 +300,17 @@ export default function PortalRecords() {
   }
 
   async function generateReport() {
+    if (
+      selectedSections.size +
+        selectedIssues.size +
+        selectedForms.size +
+        selectedOrders.size ===
+      0
+    ) {
+      setReportSelectionError('Select at least one report item.')
+      return
+    }
+    setReportSelectionError(null)
     setGeneratingReport(true)
     try {
       const result = await generatePatientPortalMedicalReport(session.sessionId, reportInput())
@@ -320,6 +323,17 @@ export default function PortalRecords() {
   }
 
   function downloadSelectedReport(kind: 'pdf' | 'package') {
+    if (
+      selectedSections.size +
+        selectedIssues.size +
+        selectedForms.size +
+        selectedOrders.size ===
+      0
+    ) {
+      setReportSelectionError('Select at least one report item.')
+      return
+    }
+    setReportSelectionError(null)
     const action = kind === 'pdf' ? downloadPatientPortalGeneratedMedicalReportPdf(session.sessionId, reportInput()) : downloadPatientPortalGeneratedMedicalReportPackage(session.sessionId, reportInput())
     setReportDownloading(true)
     action.then((blob) => triggerBlobDownload(blob, kind === 'pdf' ? `medical-report-${session.portalUsername}.pdf` : `medical-report-${session.portalUsername}.zip`))
@@ -586,13 +600,78 @@ export default function PortalRecords() {
           {reportOptions.status === 'error' && <div className="error-banner">{reportOptions.message}</div>}
           {reportOptions.status === 'ready' && (
             <div className="report-builder">
-              <p className="report-contents-label">Choose what to include</p>
-              <div className="report-builder-grid">
-                <div><h3>Sections</h3>{reportOptions.data.sections.map((section) => <label key={section.id}><input type="checkbox" checked={selectedSections.has(section.id)} onChange={() => setSelectedSections((ids) => toggleSelection(ids, section.id))} /> {section.label}</label>)}</div>
-                <div><h3>Issues</h3>{reportOptions.data.issues.map((issue) => <label key={issue.id}><input type="checkbox" checked={selectedIssues.has(issue.id)} onChange={() => setSelectedIssues((ids) => toggleSelection(ids, issue.id))} /> {issue.typeLabel}: {issue.title}</label>)}{reportOptions.data.issues.length === 0 && <p className="muted">No issues available.</p>}</div>
-                <div><h3>Encounter forms</h3>{reportOptions.data.encounters.flatMap((encounter) => encounter.forms).map((form) => <label key={form.id}><input type="checkbox" checked={selectedForms.has(form.id)} onChange={() => setSelectedForms((ids) => toggleSelection(ids, form.id))} /> {form.display}</label>)}{reportOptions.data.encounters.every((encounter) => encounter.forms.length === 0) && <p className="muted">No forms available.</p>}</div>
-                <div><h3>Procedure orders</h3>{reportOptions.data.procedureOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedOrders.has(order.id)} onChange={() => setSelectedOrders((ids) => toggleSelection(ids, order.id))} /> {order.procedureName}</label>)}{reportOptions.data.procedureOrders.length === 0 && <p className="muted">No orders available.</p>}</div>
+              <div className="report-builder-heading">
+                <p className="report-contents-label">Choose what to include</p>
+                <div className="portal-refill-actions">
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      setSelectedSections(new Set(reportOptions.data.sections.map((item) => item.id)))
+                      setSelectedIssues(new Set(reportOptions.data.issues.map((item) => item.id)))
+                      setSelectedForms(new Set(reportOptions.data.encounters.flatMap((encounter) => encounter.forms.map((item) => item.id))))
+                      setSelectedOrders(new Set(reportOptions.data.procedureOrders.map((item) => item.id)))
+                      setReportSelectionError(null)
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      setSelectedSections(new Set())
+                      setSelectedIssues(new Set())
+                      setSelectedForms(new Set())
+                      setSelectedOrders(new Set())
+                      setReportSelectionError(null)
+                    }}
+                  >
+                    Select none
+                  </button>
+                </div>
               </div>
+              <div className="report-builder-grid">
+                <div>
+                  <h3>Sections</h3>
+                  {reportOptions.data.sections.map((section) => (
+                    <label key={section.id}>
+                      <input type="checkbox" checked={selectedSections.has(section.id)} onChange={() => setSelectedSections((ids) => toggleSelection(ids, section.id))} /> {section.label}
+                    </label>
+                  ))}
+                </div>
+                <div>
+                  <h3>Issues</h3>
+                  {reportOptions.data.issues.map((issue) => (
+                    <label key={issue.id}>
+                      <input type="checkbox" checked={selectedIssues.has(issue.id)} onChange={() => setSelectedIssues((ids) => toggleSelection(ids, issue.id))} /> {issue.typeLabel}: {issue.title}
+                    </label>
+                  ))}
+                  {reportOptions.data.issues.length === 0 && <p className="muted">No issues available.</p>}
+                </div>
+                <div>
+                  <h3>Encounter forms</h3>
+                  {reportOptions.data.encounters.flatMap((encounter) =>
+                    encounter.forms.map((form) => (
+                      <label key={form.id}>
+                        <input type="checkbox" checked={selectedForms.has(form.id)} onChange={() => setSelectedForms((ids) => toggleSelection(ids, form.id))} />{' '}
+                        {form.display} — {encounter.date} (encounter #{encounter.encounter})
+                      </label>
+                    )),
+                  )}
+                  {reportOptions.data.encounters.every((encounter) => encounter.forms.length === 0) && <p className="muted">No forms available.</p>}
+                </div>
+                <div>
+                  <h3>Procedure orders</h3>
+                  {reportOptions.data.procedureOrders.map((order) => (
+                    <label key={order.id}>
+                      <input type="checkbox" checked={selectedOrders.has(order.id)} onChange={() => setSelectedOrders((ids) => toggleSelection(ids, order.id))} /> {order.procedureName} — ordered {order.orderDate}
+                    </label>
+                  ))}
+                  {reportOptions.data.procedureOrders.length === 0 && <p className="muted">No orders available.</p>}
+                </div>
+              </div>
+              {reportSelectionError && <div className="error-banner" role="alert">{reportSelectionError}</div>}
               <button className="button-primary" style={{ width: 'auto' }} type="button" onClick={generateReport} disabled={generatingReport}>{generatingReport ? 'Generating...' : 'Generate selected report'}</button>
               {generatedReport && <div className="report-generated"><strong>{generatedReport.title}</strong><span>Generated {generatedReport.generatedOn} with {generatedReport.summaryLines.length} summary lines.</span><div className="portal-refill-actions">{generatedReport.pdfDownloadAvailable && <button className="button-secondary" type="button" disabled={reportDownloading} onClick={() => downloadSelectedReport('pdf')}>Download PDF</button>}{generatedReport.packageDownloadAvailable && <button className="button-secondary" type="button" disabled={reportDownloading} onClick={() => downloadSelectedReport('package')}>Download package</button>}</div></div>}
             </div>

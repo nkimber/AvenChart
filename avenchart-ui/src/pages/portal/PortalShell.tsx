@@ -6,6 +6,7 @@ import {
   getPatientPortalHome,
   getPatientPortalSession,
   isInvalidSessionError,
+  isRequestCancellation,
   SESSION_INVALID_EVENT,
   type PatientPortalHomeSummaryResponse,
 } from '../../api.ts'
@@ -81,7 +82,7 @@ export default function PortalShell() {
         setHomeLoading(false)
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isRequestCancellation(error)) return
         if (isInvalidSessionError(error)) {
           clearPortalSession()
           navigate('/portal/login', { replace: true })
@@ -189,7 +190,7 @@ export default function PortalShell() {
             </button>
           </div>
 
-          <div className="hero-stat-row" aria-label="Portal summary">
+          <div className="hero-stat-row" role="region" aria-label="Portal summary">
             {homeLoading ? (
               <>
                 <div className="hero-stat-chip"><div className="skeleton-chip" /></div>
@@ -248,6 +249,7 @@ export default function PortalShell() {
                 to={tab.path}
                 className={`portal-tab${isActive ? ' portal-tab-active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={tab.label}
               >
                 <span className="portal-tab-icon-wrap">
                   <Icon size={18} aria-hidden="true" />
