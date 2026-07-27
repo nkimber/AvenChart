@@ -758,6 +758,28 @@ export type PatientPortalMedicalReportResponse = {
 export type PatientPortalGeneratedMedicalReportResponse = {
   authenticated: boolean; title: string; generatedOn: string; includedSectionIds: string[]; includedIssueIds: string[]; includedEncounterFormIds: string[]; includedProcedureOrderIds: string[]; pdfDownloadAvailable: boolean; packageDownloadAvailable: boolean; summaryLines: string[]; failureReason?: string | null
 }
+export type PatientPortalGeneratedMedicalReportAuditEvent = {
+  id: number
+  eventType: string
+  eventLabel: string
+  eventAt: string
+  reportTitle: string
+  generatedOn: string
+  artifactName?: string | null
+  artifactContentType?: string | null
+  includedSectionIds: string[]
+  includedIssueIds: string[]
+  includedEncounterFormIds: string[]
+  includedProcedureOrderIds: string[]
+  summary: string
+  eventSource: string
+}
+export type PatientPortalGeneratedMedicalReportAuditResponse = {
+  authenticated: boolean
+  auditEventCount: number
+  auditEvents: PatientPortalGeneratedMedicalReportAuditEvent[]
+  failureReason?: string | null
+}
 
 export async function getPatientPortalMedicalReport(sessionId: string, signal?: AbortSignal): Promise<PatientPortalMedicalReportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report`, { headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId }, signal })
@@ -768,6 +790,25 @@ export async function getPatientPortalMedicalReport(sessionId: string, signal?: 
 export async function generatePatientPortalMedicalReport(sessionId: string, input: PatientPortalMedicalReportGenerationInput, signal?: AbortSignal): Promise<PatientPortalGeneratedMedicalReportResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/generate`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Legacy EHR-Patient-Portal-Session': sessionId }, body: JSON.stringify(input), signal })
   if (!response.ok) throw new Error(`Patient portal medical report generation failed with ${response.status}`)
+  return response.json()
+}
+
+export async function getPatientPortalGeneratedMedicalReportAudit(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalGeneratedMedicalReportAuditResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report/audit`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal medical report history',
+    'portal',
+  )
   return response.json()
 }
 

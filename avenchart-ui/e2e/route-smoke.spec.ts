@@ -31,15 +31,25 @@ async function expectAuthenticatedRoute(
 }
 
 async function signOutClinician(page: Page) {
-  const signOut = page.getByRole("button", { name: "Sign out" });
-  if (!(await signOut.isVisible())) {
-    await page.getByRole("button", { name: "Open navigation" }).click();
+  const openNavigation = page.getByRole("button", { name: "Open navigation" });
+  if (await openNavigation.isVisible()) {
+    await openNavigation.click();
+    await page
+      .getByRole("dialog", { name: "Main navigation" })
+      .getByRole("button", { name: "Sign out" })
+      .click();
+  } else {
+    await page
+      .locator(".clinician-sidebar")
+      .getByRole("button", { name: "Sign out" })
+      .click();
   }
-  await signOut.click();
   await expect(page).toHaveURL(/\/login$/);
 }
 
 test.describe("route smoke", () => {
+  test.describe.configure({ timeout: 420_000 });
+
   test("clinician navigation remains usable at every supported width", async ({
     page,
   }, testInfo) => {

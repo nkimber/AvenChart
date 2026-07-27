@@ -85,7 +85,13 @@ export default function ClinicianSchedule() {
       <div className="clinician-page-header">
         <div>
           <h1 className="clinician-page-title">Schedule</h1>
-          <p className="clinician-page-subtitle">{dateLabel}{isToday ? ' (Today)' : ''}</p>
+          <p className="clinician-page-subtitle">
+            {dateLabel}
+            {isToday ? ' (Today)' : ''}
+            {apptState.status === 'ready'
+              ? ` · ${apptState.data.length} appointments on this date`
+              : ''}
+          </p>
         </div>
         <div className="clinician-header-actions">
           <input

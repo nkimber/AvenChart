@@ -124,6 +124,10 @@ export default function ClinicianShell() {
   const [authRetry, setAuthRetry] = useState(0)
   const [authError, setAuthError] = useState<string | null>(null)
   const [notifCount, setNotifCount] = useState(0)
+  const [notifBreakdown, setNotifBreakdown] = useState({
+    labs: 0,
+    messages: 0,
+  })
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifError, setNotifError] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -190,6 +194,10 @@ export default function ClinicianShell() {
         .then(([labs, reports]) => {
           if (cancelled) return
           setNotifCount(labs.unreviewedReports + reports.counts.newMessages)
+          setNotifBreakdown({
+            labs: labs.unreviewedReports,
+            messages: reports.counts.newMessages,
+          })
           setNotifError(null)
         })
         .catch((error: unknown) => {
@@ -306,7 +314,7 @@ export default function ClinicianShell() {
       <p className="sidebar-notif-title">Attention required</p>
       {notifError && <p className="sidebar-notif-error" role="status">{notifError}</p>}
       <Link
-        to="/clinician/labs"
+        to="/clinician/labs?status=pending"
         className="sidebar-notif-item"
         onClick={() => {
           setNotifOpen(false)
@@ -314,10 +322,10 @@ export default function ClinicianShell() {
         }}
       >
         <FlaskConical size={14} aria-hidden="true" />
-        <span>Unreviewed lab reports</span>
+        <span>{notifBreakdown.labs} unreviewed lab reports</span>
       </Link>
       <Link
-        to="/clinician/messages"
+        to="/clinician/messages?status=new"
         className="sidebar-notif-item"
         onClick={() => {
           setNotifOpen(false)
@@ -325,7 +333,7 @@ export default function ClinicianShell() {
         }}
       >
         <Mail size={14} aria-hidden="true" />
-        <span>New patient messages</span>
+        <span>{notifBreakdown.messages} new patient messages</span>
       </Link>
     </div>
   )

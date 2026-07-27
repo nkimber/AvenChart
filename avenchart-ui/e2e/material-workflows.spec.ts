@@ -42,15 +42,32 @@ async function signInPortal(page: Page) {
   }
 }
 
+async function openNotifications(page: Page) {
+  const openNavigation = page.getByRole("button", {
+    name: "Open navigation",
+  });
+  if ((page.viewportSize()?.width ?? 1024) <= 680) {
+    await expect(openNavigation).toBeVisible({ timeout: 30_000 });
+    await openNavigation.click();
+  }
+  const notifications = page.getByRole("button", { name: "Notifications" });
+  await expect(notifications).toBeVisible({ timeout: 30_000 });
+  await notifications.click();
+}
+
 test.describe("material workflows", () => {
   test("dashboard counts deep-link to equivalent visible filters", async ({
     page,
   }) => {
     await signInClinician(page);
 
-    await page
-      .getByRole("link", { name: /Today's appointments/ })
-      .click();
+    const appointmentsLink = page.getByRole("link", {
+      name: /Today's appointments/,
+    });
+    const dashboardAppointments = (
+      await appointmentsLink.locator(".dash-stat-value").textContent()
+    )?.trim();
+    await appointmentsLink.click();
     const expectedDate = new Date().toISOString().slice(0, 10);
     await expect(page).toHaveURL(
       new RegExp(`/clinician/schedule\\?date=${expectedDate}$`),
@@ -59,21 +76,85 @@ test.describe("material workflows", () => {
       page.getByRole("heading", { name: "Schedule" }),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel("Select date")).toHaveValue(expectedDate);
+    if (dashboardAppointments && /^\d+$/.test(dashboardAppointments)) {
+      await expect(page.getByText(
+        new RegExp(`${dashboardAppointments} appointments on this date`),
+      )).toBeVisible();
+    }
 
     await page.goto("/clinician/dashboard");
-    await page.getByRole("link", { name: /Labs pending review/ }).click();
+    const labsLink = page.getByRole("link", { name: /Labs pending review/ });
+    const dashboardLabs = (
+      await labsLink.locator(".dash-stat-value").textContent()
+    )?.trim();
+    await labsLink.click();
     await expect(page).toHaveURL(/\/clinician\/labs\?status=pending$/);
     await expect(
       page.getByRole("heading", { name: "Lab queue" }),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Status: pending", { exact: true })).toBeVisible();
+    if (dashboardLabs && /^\d+$/.test(dashboardLabs)) {
+      await expect(
+        page.getByText(
+          dashboardLabs === "0"
+            ? "All reports reviewed"
+            : `${dashboardLabs} reports pending review`,
+          { exact: false },
+        ),
+      ).toBeVisible();
+    }
 
     await page.goto("/clinician/dashboard");
-    await page.getByRole("link", { name: /New messages/ }).click();
+    const messagesLink = page.getByRole("link", { name: /New messages/ });
+    const dashboardMessages = (
+      await messagesLink.locator(".dash-stat-value").textContent()
+    )?.trim();
+    await messagesLink.click();
     await expect(page).toHaveURL(/\/clinician\/messages\?status=new$/);
     await expect(
       page.getByRole("heading", { name: "Message inbox" }),
     ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel("Status")).toHaveValue("new");
+    if (dashboardMessages && /^\d+$/.test(dashboardMessages)) {
+      await expect(
+        page
+          .getByRole("button", { name: /Unread/ })
+          .getByText(dashboardMessages, { exact: true }),
+      ).toBeVisible();
+    }
+  });
+
+  test("alert count breakdown links to equivalent filters", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await openNotifications(page);
+
+    const labsAlert = page.getByRole("link", {
+      name: /\d+ unreviewed lab reports/,
+    });
+    const messagesAlert = page.getByRole("link", {
+      name: /\d+ new patient messages/,
+    });
+    await expect(labsAlert).toHaveAttribute(
+      "href",
+      "/clinician/labs?status=pending",
+    );
+    await expect(messagesAlert).toHaveAttribute(
+      "href",
+      "/clinician/messages?status=new",
+    );
+
+    await labsAlert.click();
+    await expect(page).toHaveURL(/\/clinician\/labs\?status=pending$/);
+    await expect(page.getByText("Status: pending", { exact: true })).toBeVisible();
+
+    await page.goto("/clinician/dashboard");
+    await openNotifications(page);
+    await page
+      .getByRole("link", { name: /\d+ new patient messages/ })
+      .click();
+    await expect(page).toHaveURL(/\/clinician\/messages\?status=new$/);
     await expect(page.getByLabel("Status")).toHaveValue("new");
   });
 
@@ -103,5 +184,11 @@ test.describe("material workflows", () => {
       timeout: 15_000,
     });
     await expect(page.locator(".report-generated")).toContainText("Generated");
+    await expect(
+      page.getByRole("heading", { name: "Report activity" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Generated report", { exact: true }).first(),
+    ).toBeVisible();
   });
 });
