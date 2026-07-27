@@ -406,6 +406,32 @@ catch {
 }
 
 try {
+    $auditExportHeaders = Get-AdministrationHeaders
+    $auditExportResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/audit/phi?limit=200&username=admin" -Method Get -Headers $auditExportHeaders -TimeoutSec 20
+    $auditExportClient = New-AuthenticatedHttpClient
+    try {
+        $auditExport = $auditExportClient.GetAsync("$ApiBaseUrl/api/administration/audit/phi/export?limit=200&username=admin").GetAwaiter().GetResult()
+        $auditExportContent = $auditExport.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $auditExportContentType = if ($null -ne $auditExport.Content.Headers.ContentType) { $auditExport.Content.Headers.ContentType.ToString() } else { "" }
+    }
+    finally {
+        $auditExportClient.Dispose()
+    }
+    $invalidAuditRangeStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/audit/phi?from=2026-12-31&to=2026-01-01" -Method Get -Headers $auditExportHeaders -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $invalidAuditRangeStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
+    $auditExportPassed = [int]$auditExport.StatusCode -eq 200 -and $auditExportContentType -like "text/csv*" -and $auditExportContent.StartsWith("Occurred At,Username,Method,Endpoint,Required Permission,Decision,Response Status") -and $auditExportResponse.events.Count -gt 0 -and @($auditExportResponse.events | Where-Object { $_.username -ne "admin" }).Count -eq 0 -and $invalidAuditRangeStatus -eq 400
+    Add-Check -Name "PHI access audit filtered CSV export" -Result $(if ($auditExportPassed) { "passed" } else { "failed" }) -Details @{ matchedEvents = $auditExportResponse.events.Count; contentType = $auditExportContentType; invalidRangeStatus = $invalidAuditRangeStatus }
+}
+catch {
+    Add-Check -Name "PHI access audit filtered CSV export" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $unauthenticatedPatientSearchStatus = 0
     try {
         $unauthenticatedPatientSearch = Invoke-WebRequest `

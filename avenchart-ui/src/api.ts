@@ -2187,8 +2187,14 @@ export type PhiAccessAuditResponse = {
   events: PhiAccessAuditEvent[]
 }
 
-export async function getPhiAccessAudit(sessionId: string, limit = 50, signal?: AbortSignal): Promise<PhiAccessAuditResponse> {
-  return clinicianGet(sessionId, `/api/administration/audit/phi?limit=${limit}`, signal)
+export type PhiAccessAuditFilters = { limit?: number; username?: string; from?: string; to?: string }
+export async function getPhiAccessAudit(sessionId: string, filters: PhiAccessAuditFilters = {}, signal?: AbortSignal): Promise<PhiAccessAuditResponse> {
+  const query = new URLSearchParams({ limit: String(filters.limit ?? 50) }); if (filters.username) query.set('username', filters.username); if (filters.from) query.set('from', filters.from); if (filters.to) query.set('to', filters.to)
+  return clinicianGet(sessionId, `/api/administration/audit/phi?${query}`, signal)
+}
+export async function downloadPhiAccessAuditCsv(sessionId: string, filters: PhiAccessAuditFilters = {}): Promise<Blob> {
+  const query = new URLSearchParams({ limit: String(filters.limit ?? 200) }); if (filters.username) query.set('username', filters.username); if (filters.from) query.set('from', filters.from); if (filters.to) query.set('to', filters.to)
+  const response = await fetch(`${apiBaseUrl}/api/administration/audit/phi/export?${query}`, { headers: { 'X-Legacy EHR-Session': sessionId } }); if (!response.ok) throw new Error(`PHI access audit export failed with ${response.status}`); return response.blob()
 }
 
 export type AdministrationFacilityMutationInput = {

@@ -3843,11 +3843,28 @@ administration.MapGet("/directory", async (
 administration.MapGet("/audit/phi", async (
         PhiAuditRepository repository,
         int? limit,
+        string? username,
+        DateOnly? from,
+        DateOnly? to,
         CancellationToken cancellationToken) =>
     {
-        return Results.Ok(await repository.GetRecentAsync(limit ?? 50, cancellationToken));
+        try { return Results.Ok(await repository.GetRecentAsync(limit ?? 50, username, from, to, cancellationToken)); }
+        catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["audit"] = [exception.Message] }); }
     })
     .WithName("GetPhiAccessAudit");
+
+administration.MapGet("/audit/phi/export", async (
+        PhiAuditRepository repository,
+        int? limit,
+        string? username,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken) =>
+    {
+        try { return Results.File(Encoding.UTF8.GetBytes(await repository.GetCsvAsync(limit ?? 200, username, from, to, cancellationToken)), "text/csv", "legacy-ehr-phi-access-audit.csv"); }
+        catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["audit"] = [exception.Message] }); }
+    })
+    .WithName("ExportPhiAccessAudit");
 
 administration.MapPut("/portal-activity/profile-reviews/{requestId:long}/accept", async (
         AdministrationRepository repository,

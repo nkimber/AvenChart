@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -37,19 +38,30 @@ public sealed class PhiAuditRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<PhiAccessAuditResponse> GetRecentAsync(int limit, CancellationToken cancellationToken)
+    public async Task<PhiAccessAuditResponse> GetRecentAsync(int limit, string? username, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
     {
         var boundedLimit = Math.Clamp(limit, 1, 200);
+        if (from is not null && to is not null && from > to) throw new ArgumentException("Audit start date cannot be after its end date.");
+        var normalizedUsername = string.IsNullOrWhiteSpace(username) ? null : username.Trim();
+        if (normalizedUsername?.Length > 128) throw new ArgumentException("Audit username filter is too long.");
+        var fromAt = from?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var toAtExclusive = to?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select audit_id, occurred_at, username, http_method, endpoint_name, required_permission,
               authorized, response_status
             from phi_access_audit_events
+            where (@username is null or username=@username)
+              and (@from_at is null or occurred_at>=@from_at)
+              and (@to_at_exclusive is null or occurred_at<@to_at_exclusive)
             order by occurred_at desc
             limit @limit;
             """;
         command.Parameters.AddWithValue("limit", boundedLimit);
+        command.Parameters.AddWithValue("username", NpgsqlDbType.Text, (object?)normalizedUsername ?? DBNull.Value);
+        command.Parameters.AddWithValue("from_at", NpgsqlDbType.TimestampTz, (object?)fromAt ?? DBNull.Value);
+        command.Parameters.AddWithValue("to_at_exclusive", NpgsqlDbType.TimestampTz, (object?)toAtExclusive ?? DBNull.Value);
 
         var events = new List<PhiAccessAuditEventItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -65,5 +77,27 @@ public sealed class PhiAuditRepository(NpgsqlDataSource dataSource)
             AuthorizedEvents: events.Count(entry => entry.Authorized),
             DeniedEvents: events.Count(entry => !entry.Authorized),
             Events: events);
+    }
+
+    public async Task<string> GetCsvAsync(int limit, string? username, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
+    {
+        var response = await GetRecentAsync(limit, username, from, to, cancellationToken);
+        var csv = new System.Text.StringBuilder("Occurred At,Username,Method,Endpoint,Required Permission,Decision,Response Status\n");
+        foreach (var entry in response.Events)
+        {
+            csv.AppendLine(string.Join(',', new[]
+            {
+                EscapeCsv(entry.OccurredAt.ToString("O")), EscapeCsv(entry.Username), EscapeCsv(entry.HttpMethod),
+                EscapeCsv(entry.EndpointName), EscapeCsv(entry.RequiredPermission), EscapeCsv(entry.Authorized ? "allowed" : "denied"),
+                EscapeCsv(entry.ResponseStatus.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            }));
+        }
+        return csv.ToString();
+    }
+
+    private static string EscapeCsv(string value)
+    {
+        var safe = value.Length > 0 && value[0] is '=' or '+' or '-' or '@' ? "'" + value : value;
+        return '"' + safe.Replace("\"", "\"\"") + '"';
     }
 }

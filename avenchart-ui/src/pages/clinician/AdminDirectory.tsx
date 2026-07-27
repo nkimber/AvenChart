@@ -25,6 +25,7 @@ import {
   getModuleCatalogHistory,
   getModuleCatalog,
   getPhiAccessAudit,
+  downloadPhiAccessAuditCsv,
   getPracticeSettings,
   getPracticeSettingHistory,
   grantAdministrationAccessMembership,
@@ -196,6 +197,7 @@ export default function AdminDirectory() {
   const [editingApiClientKey, setEditingApiClientKey] = useState<string | null>(null)
   const [savingApiClient, setSavingApiClient] = useState(false)
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
+  const [auditFilters, setAuditFilters] = useState({ username: '', from: '', to: '' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
   const [savingFacility, setSavingFacility] = useState(false)
@@ -221,11 +223,10 @@ export default function AdminDirectory() {
 
   useEffect(() => {
     if (tab !== 'audit') return
-    setAuditState({ status: 'loading' })
-    getPhiAccessAudit(session.sessionId)
-      .then((data) => setAuditState({ status: 'ready', data }))
-      .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
+    void loadPhiAccessAudit()
   }, [session.sessionId, tab])
+  async function loadPhiAccessAudit() { setAuditState({ status: 'loading' }); try { setAuditState({ status: 'ready', data: await getPhiAccessAudit(session.sessionId, { ...auditFilters, limit: 200 }) }) } catch (err) { setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }) } }
+  async function exportPhiAccessAudit() { try { const url = URL.createObjectURL(await downloadPhiAccessAuditCsv(session.sessionId, { ...auditFilters, limit: 200 })); const link = document.createElement('a'); link.href = url; link.download = 'legacy-ehr-phi-access-audit.csv'; link.click(); URL.revokeObjectURL(url) } catch { showToast('Could not export PHI access audit.', 'error') } }
   async function openPracticeSettingHistory(key: string) { try { setPracticeSettingHistory(await getPracticeSettingHistory(session.sessionId, key)) } catch { showToast('Could not load setting history.', 'error') } }
   async function rollbackPracticeSettingRevision(revisionId: number) { if (!practiceSettingHistory || !window.confirm(`Restore ${practiceSettingHistory.setting.label} to the selected historical value?`)) return; try { const result = await rollbackPracticeSetting(session.sessionId, practiceSettingHistory.setting.key, revisionId); setPracticeSettingHistory(result); setPracticeSettings((await getPracticeSettings(session.sessionId)).settings); showToast('Practice setting restored.', 'success') } catch { showToast('Could not restore the practice setting.', 'error') } }
   async function openCodingCatalogHistory(key: string) { try { setCodingCatalogHistory(await getCodingCatalogHistory(session.sessionId, key)) } catch { showToast('Could not load catalog history.', 'error') } }
@@ -739,10 +740,11 @@ export default function AdminDirectory() {
                 <div className="cl-admin-facility-header">
                   <div>
                     <h2 className="cl-card-title">Recent PHI access decisions</h2>
-                    <p className="clinician-page-subtitle">Read-only access-control evidence from the protected audit endpoint. This view does not replace production retention or export policy.</p>
+                    <p className="clinician-page-subtitle">Read-only access-control evidence with bounded date/user filtering and CSV export. This does not set production retention, legal-hold, or export-recipient policy.</p>
                   </div>
                   {auditState.status === 'ready' && <span className="cl-badge cl-badge-muted">{auditState.data.authorizedEvents} allowed · {auditState.data.deniedEvents} denied</span>}
                 </div>
+                <div className="cl-inline-form" style={{ padding: '0 20px 20px' }}><input className="ne-input" placeholder="Username" value={auditFilters.username} onChange={(event) => setAuditFilters((filters) => ({ ...filters, username: event.target.value }))} /><input className="ne-input" type="date" value={auditFilters.from} onChange={(event) => setAuditFilters((filters) => ({ ...filters, from: event.target.value }))} /><input className="ne-input" type="date" value={auditFilters.to} onChange={(event) => setAuditFilters((filters) => ({ ...filters, to: event.target.value }))} /><button className="cl-btn-secondary" type="button" onClick={() => void loadPhiAccessAudit()}>Apply filters</button><button className="cl-btn-secondary" type="button" onClick={() => void exportPhiAccessAudit()}>CSV export</button></div>
                 {auditState.status === 'loading' && <div className="skeleton-list">{[0, 1, 2].map((item) => <div key={item} className="skeleton-row" style={{ height: 52 }} />)}</div>}
                 {auditState.status === 'error' && <div className="error-banner">{auditState.message}</div>}
                 {auditState.status === 'ready' && auditState.data.events.length === 0 && <p className="cl-empty-text" style={{ padding: '0 20px 20px' }}>No recent PHI access decisions are available.</p>}
