@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import {
   Building2,
   CalendarClock,
@@ -72,7 +72,9 @@ const BLANK_INS: PatientInsuranceMutationInput = {
 };
 
 type InsuranceMode =
-  { kind: "none" } | { kind: "add" } | { kind: "edit"; insuranceId: string };
+  | { kind: "none" }
+  | { kind: "add" }
+  | { kind: "edit"; insuranceId: string };
 type MergePreviewState =
   | { status: "idle" }
   | { status: "loading"; sourcePatientId: string }
@@ -95,7 +97,11 @@ const mergeCountLabels: Array<{
 ];
 
 type RelationshipEditor =
-  "guardian" | "employer" | "provider" | "care-team" | null;
+  | "guardian"
+  | "employer"
+  | "provider"
+  | "care-team"
+  | null;
 
 type CareTeamMemberDraft = PatientCareTeamMemberUpdate & {
   memberType: "provider" | "contact";
@@ -1977,7 +1983,8 @@ export default function PatientSummary() {
                           onChange={(event) =>
                             updateCareTeamMember(index, {
                               memberType: event.target.value as
-                                "provider" | "contact",
+                                | "provider"
+                                | "contact",
                               userId: null,
                               contactId: null,
                               facilityId: null,
@@ -2723,6 +2730,27 @@ export default function PatientSummary() {
               </p>
             </div>
           )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header">
+            <div>
+              <h2 className="cl-card-title">Billing and account</h2>
+              <p className="cl-empty-text">
+                Open this patient’s balance, aging, statement readiness, and
+                ledger context.
+              </p>
+            </div>
+            <span className="cl-badge cl-badge-muted">
+              {patient.counts.billingItems} billing items
+            </span>
+          </div>
+          <Link
+            className="cl-btn-secondary"
+            to={`/clinician/billing?patientId=${encodeURIComponent(patientId)}`}
+          >
+            View patient account
+          </Link>
         </section>
 
         {/* Activity counts */}

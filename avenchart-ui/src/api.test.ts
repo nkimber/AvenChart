@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientCareTeamOptions, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
+import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientBilling, getPatientCareTeamOptions, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -206,6 +206,29 @@ describe('authenticated API transport', () => {
         }),
       )
     }
+  })
+
+  it('loads a patient account through the protected billing route', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        patientId: 'MOD-PAT-0004',
+        accountSummary: { balanceAmount: 125 },
+        agingSummary: { totalBalanceAmount: 125 },
+        ledgerSummary: { entryCount: 2 },
+        statementSummary: { statementStatus: 'Ready' },
+        ledgerEntries: [],
+        encounters: [],
+      }),
+    )
+
+    await getPatientBilling('staff-session', ' MOD-PAT-0004 ')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/billing/MOD-PAT-0004',
+      expect.objectContaining({
+        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
   })
 
   it('normalizes network failures without treating the session as invalid', async () => {

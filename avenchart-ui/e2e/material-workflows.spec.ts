@@ -225,6 +225,33 @@ test.describe("material workflows", () => {
     ).toBeVisible();
   });
 
+  test("patient summary deep-links to account, aging, statement, and ledger context", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/patients/MOD-PAT-0004/summary");
+    await page.getByRole("link", { name: "View patient account" }).click();
+
+    await expect(page).toHaveURL(
+      /\/clinician\/billing\?patientId=MOD-PAT-0004$/,
+    );
+    await expect(page.getByLabel("Patient ID")).toHaveValue("MOD-PAT-0004");
+    const account = page.getByRole("region", {
+      name: "Patient account summary",
+    });
+    await expect(account).toBeVisible({ timeout: 15_000 });
+    await expect(
+      account.getByText("Account balance", { exact: true }),
+    ).toBeVisible();
+    await expect(account.getByRole("heading", { name: "Aging" })).toBeVisible();
+    await expect(
+      account.getByRole("heading", { name: "Statement readiness" }),
+    ).toBeVisible();
+    await expect(
+      account.getByRole("heading", { name: "Account ledger" }),
+    ).toBeVisible();
+  });
+
   test("portal report selections are identifiable and validated", async ({
     page,
   }) => {

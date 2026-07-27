@@ -2985,6 +2985,98 @@ export async function createTherapyGroupSessionEncounters(sessionId: string, gro
   return clinicianPost(sessionId, `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/encounters`, {})
 }
 
+export type BillingAccountSummary = {
+  chargeAmount: number
+  paymentAmount: number
+  adjustmentAmount: number
+  balanceAmount: number
+}
+
+export type BillingAgingSummary = {
+  asOfDate: string
+  currentAmount: number
+  days31To60Amount: number
+  days61To90Amount: number
+  over90Amount: number
+  totalBalanceAmount: number
+}
+
+export type BillingLedgerSummary = {
+  entryCount: number
+  firstEntryDate?: string | null
+  lastEntryDate?: string | null
+  chargeAmount: number
+  paymentAmount: number
+  adjustmentAmount: number
+  endingBalanceAmount: number
+}
+
+export type BillingLedgerEntry = {
+  entryId: string
+  entryDate: string
+  encounter: number
+  entryType: string
+  description: string
+  code?: string | null
+  reference?: string | null
+  amount: number
+  runningBalanceAmount: number
+}
+
+export type BillingStatementSummary = {
+  statementStatus: string
+  statementPeriodStart: string
+  statementPeriodEnd: string
+  statementDate: string
+  dueDate: string
+  recipientName: string
+  mailingAddressLine1: string
+  mailingAddressLine2: string
+  email?: string | null
+  phone?: string | null
+  openEncounterCount: number
+  ledgerEntryCount: number
+  oldestOpenAgeDays: number
+  oldestOpenDate: string
+  chargeAmount: number
+  paymentAmount: number
+  adjustmentAmount: number
+  currentDueAmount: number
+  pastDueAmount: number
+  balanceDueAmount: number
+}
+
+export type PatientBillingResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
+  accountSummary: BillingAccountSummary
+  agingSummary: BillingAgingSummary
+  ledgerSummary: BillingLedgerSummary
+  statementSummary: BillingStatementSummary
+  ledgerEntries: BillingLedgerEntry[]
+  encounters: Array<{
+    id: number
+    encounter: number
+    date: string
+    reason?: string | null
+    balanceAmount: number
+  }>
+}
+
+export async function getPatientBilling(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientBillingResponse> {
+  return clinicianGet(sessionId, `/api/billing/${encodeURIComponent(patientId.trim())}`, signal)
+}
+
 export type StatementBatchCandidate = {
   patientId: string
   pubpid: string
