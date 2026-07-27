@@ -118,6 +118,7 @@ import {
   getInventory,
   getInventoryActivityCsv,
   getInventoryActivityReport,
+  getInventoryVendors,
   getOperationalReportsCsv,
   getLoginAudit,
   getCurrentSession,
@@ -168,6 +169,8 @@ import {
   createPatient,
   createInventoryTransaction,
   createInventoryTransfer,
+  createInventoryPurchaseReceipt,
+  createInventoryVendor,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
   findPatientDuplicates,
@@ -415,6 +418,8 @@ import {
   type InventoryActivityReportResponse,
   type InventoryTransactionCreateInput,
   type InventoryTransferCreateInput,
+  type InventoryPurchaseReceiptCreateInput,
+  type InventoryVendor,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
   type ClinicalConditionReportItem,
@@ -3547,6 +3552,24 @@ function App() {
     }
   }
 
+  async function handleInventoryPurchaseReceipt(input: InventoryPurchaseReceiptCreateInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before receiving inventory.')
+      return
+    }
+
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await createInventoryPurchaseReceipt(input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory purchase receipt failed')
+    }
+  }
+
   async function handleFlowStatusChange(appointmentId: string, status: string) {
     if (!openEmrSessionId) {
       setFlowStatus('error')
@@ -6293,6 +6316,7 @@ function App() {
             sessionId={openEmrSessionId}
             onCreateTransaction={handleInventoryTransaction}
             onCreateTransfer={handleInventoryTransfer}
+            onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
           />
         )}
         {activeModule === 'flow' && (
@@ -20225,6 +20249,7 @@ function InventoryWorkspace({
   sessionId,
   onCreateTransaction,
   onCreateTransfer,
+  onCreatePurchaseReceipt,
 }: {
   inventory: InventoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -20232,6 +20257,7 @@ function InventoryWorkspace({
   sessionId: string | null
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
+  onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
 }) {
   const [lotId, setLotId] = useState('')
   const [transactionType, setTransactionType] = useState('consumption')
@@ -20244,6 +20270,20 @@ function InventoryWorkspace({
   const [activityReport, setActivityReport] = useState<InventoryActivityReportResponse | null>(null)
   const [activityReportStatus, setActivityReportStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [activityReportError, setActivityReportError] = useState<string | null>(null)
+  const [vendors, setVendors] = useState<InventoryVendor[]>([])
+  const [vendorStatus, setVendorStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [vendorError, setVendorError] = useState<string | null>(null)
+  const [vendorName, setVendorName] = useState('')
+  const [vendorContact, setVendorContact] = useState('')
+  const [receiptVendorId, setReceiptVendorId] = useState('')
+  const [receiptFacilityId, setReceiptFacilityId] = useState('')
+  const [receiptItemId, setReceiptItemId] = useState('')
+  const [receiptLotNumber, setReceiptLotNumber] = useState('')
+  const [receiptExpirationDate, setReceiptExpirationDate] = useState('')
+  const [receiptQuantity, setReceiptQuantity] = useState('1')
+  const [receiptUnitCost, setReceiptUnitCost] = useState('0')
+  const [receiptReference, setReceiptReference] = useState('')
+  const [receiptNotes, setReceiptNotes] = useState('')
   const lots = inventory?.items.flatMap((item) => item.lots.map((lot) => ({ ...lot, item }))) ?? []
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
   const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
@@ -20293,6 +20333,42 @@ function InventoryWorkspace({
       window.clearTimeout(timeout)
     }
   }, [reportFacilityId, reportFromDate, reportToDate, sessionId, status])
+
+  useEffect(() => {
+    if (!sessionId) {
+      setVendors([])
+      setVendorStatus('idle')
+      return
+    }
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setVendorStatus('loading')
+      setVendorError(null)
+      try {
+        const response = await getInventoryVendors(sessionId, controller.signal)
+        setVendors(response.vendors)
+        setVendorStatus('ready')
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          setVendorStatus('error')
+          setVendorError(loadError instanceof Error ? loadError.message : 'Inventory vendors failed')
+        }
+      }
+    }, 160)
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!receiptVendorId && vendors.length > 0) setReceiptVendorId(vendors[0].vendorId)
+  }, [receiptVendorId, vendors])
+
+  useEffect(() => {
+    if (!receiptFacilityId && inventory?.facilities.length) setReceiptFacilityId(String(inventory.facilities[0].facilityId))
+    if (!receiptItemId && inventory?.items.length) setReceiptItemId(String(inventory.items[0].itemId))
+  }, [inventory, receiptFacilityId, receiptItemId])
 
   async function exportActivityReport() {
     if (!sessionId) {
@@ -20344,6 +20420,44 @@ function InventoryWorkspace({
       transactionType,
       quantity: parsedQuantity,
       reason: reason.trim() || null,
+    })
+  }
+
+  async function submitVendor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!sessionId || !vendorName.trim()) return
+    setVendorStatus('loading')
+    setVendorError(null)
+    try {
+      const vendor = await createInventoryVendor({ name: vendorName.trim(), contactName: vendorContact.trim() || null, phone: null, email: null }, sessionId)
+      setVendors((current) => [...current, vendor].sort((left, right) => left.name.localeCompare(right.name)))
+      setReceiptVendorId(vendor.vendorId)
+      setVendorName('')
+      setVendorContact('')
+      setVendorStatus('ready')
+    } catch (createError) {
+      setVendorStatus('error')
+      setVendorError(createError instanceof Error ? createError.message : 'Inventory vendor create failed')
+    }
+  }
+
+  function submitPurchaseReceipt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const facilityId = Number(receiptFacilityId)
+    const itemId = Number(receiptItemId)
+    const quantityValue = Number(receiptQuantity)
+    const unitCostValue = Number(receiptUnitCost)
+    if (!receiptVendorId || !Number.isInteger(facilityId) || !Number.isInteger(itemId) || quantityValue <= 0 || unitCostValue < 0 || !receiptLotNumber.trim() || !receiptNotes.trim()) return
+    void onCreatePurchaseReceipt({
+      vendorId: receiptVendorId,
+      facilityId,
+      itemId,
+      lotNumber: receiptLotNumber.trim(),
+      expirationDate: receiptExpirationDate || null,
+      quantity: quantityValue,
+      unitCost: unitCostValue,
+      referenceNumber: receiptReference.trim() || null,
+      notes: receiptNotes.trim(),
     })
   }
 
@@ -20425,7 +20539,6 @@ function InventoryWorkspace({
                   Activity
                   <select value={transactionType} onChange={(event) => setTransactionType(event.target.value)}>
                     <option value="consumption">Consumption</option>
-                    <option value="purchase">Purchase receipt</option>
                     <option value="adjustment">Count adjustment</option>
                     <option value="destruction">Destruction</option>
                     <option value="transfer">Transfer to facility</option>
@@ -20450,9 +20563,44 @@ function InventoryWorkspace({
                 </label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Record activity</button>
               </form>
-              <p className="inventory-boundary">Transfers create matched source and destination ledger entries. Local inventory records do not place a purchase order or dispatch stock externally.</p>
+              <p className="inventory-boundary">Transfers create matched source and destination ledger entries. Use the purchase receipt workspace below to record the vendor, lot, cost, and receiving evidence.</p>
             </aside>
           </div>
+
+          <section className="inventory-receipt-panel" aria-labelledby="purchase-receipt-heading">
+            <header className="inventory-panel-heading">
+              <div>
+                <span>Receiving desk</span>
+                <h2 id="purchase-receipt-heading">Receive a vendor purchase</h2>
+              </div>
+              <small>One receipt creates one traceable lot movement</small>
+            </header>
+            <div className="inventory-receipt-grid">
+              <form className="inventory-vendor-form" onSubmit={submitVendor}>
+                <div>
+                  <span className="inventory-form-kicker">Vendor directory</span>
+                  <p>Add the supplier before you receive stock. Existing vendors stay available for later receipts.</p>
+                </div>
+                <label>Vendor name<input value={vendorName} onChange={(event) => setVendorName(event.target.value)} maxLength={160} placeholder="Example Medical Supply" required /></label>
+                <label>Contact (optional)<input value={vendorContact} onChange={(event) => setVendorContact(event.target.value)} maxLength={160} placeholder="Name or receiving desk" /></label>
+                <button className="inventory-vendor-button" type="submit" disabled={vendorStatus === 'loading'}>Add vendor</button>
+                {vendorError && <div className="workspace-error">{vendorError}</div>}
+              </form>
+              <form className="inventory-receipt-form" onSubmit={submitPurchaseReceipt}>
+                <label>Vendor<select value={receiptVendorId} onChange={(event) => setReceiptVendorId(event.target.value)} required><option value="">Select vendor</option>{vendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.name}</option>)}</select></label>
+                <label>Facility<select value={receiptFacilityId} onChange={(event) => setReceiptFacilityId(event.target.value)} required>{inventory.facilities.map((facility) => <option key={facility.facilityId} value={facility.facilityId}>{facility.code} · {facility.name}</option>)}</select></label>
+                <label>Item<select value={receiptItemId} onChange={(event) => setReceiptItemId(event.target.value)} required>{inventory.items.map((item) => <option key={item.itemId} value={item.itemId}>{item.itemCode} · {item.name}</option>)}</select></label>
+                <label>Lot number<input value={receiptLotNumber} onChange={(event) => setReceiptLotNumber(event.target.value)} maxLength={80} required /></label>
+                <label>Expiry (optional)<input type="date" value={receiptExpirationDate} onChange={(event) => setReceiptExpirationDate(event.target.value)} /></label>
+                <label>Quantity<input type="number" min="0.01" step="0.01" value={receiptQuantity} onChange={(event) => setReceiptQuantity(event.target.value)} required /></label>
+                <label>Unit cost<input type="number" min="0" step="0.01" value={receiptUnitCost} onChange={(event) => setReceiptUnitCost(event.target.value)} required /></label>
+                <label>Vendor reference (optional)<input value={receiptReference} onChange={(event) => setReceiptReference(event.target.value)} maxLength={120} placeholder="Invoice or packing slip" /></label>
+                <label className="inventory-receipt-notes">Receipt notes<textarea value={receiptNotes} onChange={(event) => setReceiptNotes(event.target.value)} maxLength={500} placeholder="What was received and checked?" required /></label>
+                <button className="inventory-receipt-button" type="submit" disabled={status === 'loading' || vendorStatus === 'loading' || vendors.length === 0}>Record purchase receipt</button>
+              </form>
+            </div>
+            {vendors.length === 0 && vendorStatus === 'ready' && <p className="inventory-receipt-empty">Add a vendor to begin receiving stock.</p>}
+          </section>
 
           <section className="inventory-activity-panel">
             <div className="inventory-panel-heading">

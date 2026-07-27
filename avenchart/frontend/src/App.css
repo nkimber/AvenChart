@@ -89,7 +89,8 @@
 
 .inventory-ledger-panel,
 .inventory-action-panel,
-.inventory-activity-panel {
+.inventory-activity-panel,
+.inventory-receipt-panel {
   border: 1px solid var(--inventory-line);
   border-radius: 2px;
   background: #fff;
@@ -244,6 +245,116 @@
 
 .inventory-activity-panel {
   margin-top: 18px;
+}
+
+.inventory-receipt-panel {
+  margin-top: 18px;
+  overflow: hidden;
+}
+
+.inventory-receipt-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1.45fr);
+}
+
+.inventory-vendor-form {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 18px;
+  border-right: 1px solid var(--inventory-line);
+  background: repeating-linear-gradient(135deg, #eff8f5 0 10px, #f8fcfa 10px 20px);
+}
+
+.inventory-form-kicker {
+  color: var(--inventory-teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.inventory-vendor-form p {
+  margin: 5px 0 0;
+  color: #5e7375;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.inventory-vendor-form label,
+.inventory-receipt-form label {
+  display: grid;
+  gap: 5px;
+  color: #466064;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inventory-vendor-form input,
+.inventory-receipt-form input,
+.inventory-receipt-form select,
+.inventory-receipt-form textarea {
+  min-height: 37px;
+  border: 1px solid #b9cfca;
+  border-radius: 2px;
+  padding: 7px 9px;
+  background: #fcfffe;
+  color: var(--inventory-ink);
+  font: inherit;
+}
+
+.inventory-receipt-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.inventory-vendor-button,
+.inventory-receipt-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 2px;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-vendor-button {
+  background: #285f72;
+}
+
+.inventory-receipt-button {
+  grid-column: span 2;
+  background: var(--inventory-teal);
+}
+
+.inventory-vendor-button:focus-visible,
+.inventory-receipt-button:focus-visible,
+.inventory-vendor-form input:focus-visible,
+.inventory-receipt-form input:focus-visible,
+.inventory-receipt-form select:focus-visible,
+.inventory-receipt-form textarea:focus-visible {
+  outline: 3px solid #80c5ba;
+  outline-offset: 2px;
+}
+
+.inventory-receipt-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+
+.inventory-receipt-notes {
+  grid-column: span 2;
+}
+
+.inventory-receipt-empty {
+  margin: 0;
+  padding: 0 18px 18px;
+  color: var(--inventory-amber);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .inventory-activity-filters {

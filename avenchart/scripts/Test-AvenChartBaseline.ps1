@@ -9847,6 +9847,29 @@ catch {
 }
 
 try {
+    $inventoryHeaders = Get-AdministrationHeaders
+    $inventoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryFacility = @($inventoryBefore.facilities) | Select-Object -First 1
+    $inventoryItem = @($inventoryBefore.items) | Select-Object -First 1
+    if ($null -eq $inventoryFacility -or $null -eq $inventoryItem) { throw "The synthetic dataset did not provide inventory receiving fixtures." }
+    $inventoryReceiptSuffix = [Guid]::NewGuid().ToString('N').Substring(0, 10)
+    $inventoryVendor = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/vendors" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ name = "Smoke Receiving Vendor $inventoryReceiptSuffix"; contactName = "Receiving desk" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryVendors = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/vendors" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-RCV-$inventoryReceiptSuffix"; expirationDate = "2027-12-31"; quantity = 7; unitCost = 3.25; referenceNumber = "SMOKE-REF-$inventoryReceiptSuffix"; notes = "Smoke vendor receipt verification" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryActivity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/activity?facilityId=$($inventoryFacility.facilityId)" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryReceiptEntry = @($inventoryActivity.entries | Where-Object { $_.receiptId -eq $inventoryReceipt.receiptId }) | Select-Object -First 1
+    $inventoryReceiptPassed = ($inventoryVendors.vendors.vendorId -contains $inventoryVendor.vendorId) `
+        -and $inventoryReceipt.vendor.vendorId -eq $inventoryVendor.vendorId `
+        -and $inventoryReceipt.lot.lotNumber -eq "SMOKE-RCV-$inventoryReceiptSuffix" `
+        -and $inventoryReceipt.transaction.quantityDelta -eq 7 `
+        -and $inventoryReceiptEntry.receiptReference -eq "SMOKE-REF-$inventoryReceiptSuffix"
+    Add-Check -Name "inventory vendor purchase receipt lifecycle" -Result $(if ($inventoryReceiptPassed) { "passed" } else { "failed" }) -Details @{ vendorId = $inventoryVendor.vendorId; receiptId = $inventoryReceipt.receiptId; lotId = $inventoryReceipt.lot.lotId; ledgerReceiptReference = $inventoryReceiptEntry.receiptReference }
+}
+catch {
+    Add-Check -Name "inventory vendor purchase receipt lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $reportHeaders = Get-AdministrationHeaders
     $reportFamilies = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/families" -Method Get -Headers $reportHeaders -TimeoutSec 20
     $encounterReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/encounters/export?from=2026-01-01&to=2026-12-31" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20

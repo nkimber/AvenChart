@@ -3194,6 +3194,55 @@ inventory.MapPost("/transfers", async (
     .WithName("CreateInventoryTransfer")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "transfers", "write"));
 
+inventory.MapGet("/vendors", async (
+        InventoryRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetVendorsAsync(cancellationToken)))
+    .WithName("GetInventoryVendors")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "view"));
+
+inventory.MapPost("/vendors", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryVendorCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var vendor = await repository.CreateVendorAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/inventory/vendors/{vendor.VendorId}", vendor);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryVendor"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryVendor")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
+inventory.MapPost("/purchase-receipts", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryPurchaseReceiptCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var receipt = await repository.CreatePurchaseReceiptAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/inventory/purchase-receipts/{receipt.ReceiptId}", receipt);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPurchaseReceipt"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryPurchaseReceipt")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
 inventory.MapGet("/activity", async (
         InventoryRepository repository,
         DateOnly? from,

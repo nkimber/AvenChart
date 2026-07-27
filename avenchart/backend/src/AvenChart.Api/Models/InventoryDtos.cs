@@ -56,7 +56,9 @@ public sealed record InventoryTransactionItem(
     string PerformedBy,
     DateTimeOffset OccurredAt,
     Guid? TransferId,
-    string? CounterpartyFacilityCode);
+    string? CounterpartyFacilityCode,
+    Guid? ReceiptId = null,
+    string? ReceiptReference = null);
 
 public sealed record InventoryTransactionCreateRequest(
     int LotId,
@@ -86,3 +88,44 @@ public sealed record InventoryActivityReportResponse(
     int? FacilityId,
     int TotalEntries,
     IReadOnlyList<InventoryTransactionItem> Entries);
+
+public sealed record InventoryVendor(
+    Guid VendorId,
+    string Name,
+    string? ContactName,
+    string? Phone,
+    string? Email,
+    bool Active);
+
+public sealed record InventoryVendorListResponse(IReadOnlyList<InventoryVendor> Vendors);
+
+public sealed record InventoryVendorCreateRequest(
+    string Name,
+    string? ContactName,
+    string? Phone,
+    string? Email);
+
+public sealed record InventoryPurchaseReceiptCreateRequest(
+    Guid VendorId,
+    int FacilityId,
+    int ItemId,
+    string LotNumber,
+    string? ExpirationDate,
+    decimal Quantity,
+    decimal UnitCost,
+    string? ReferenceNumber,
+    string Notes);
+
+public sealed record InventoryPurchaseReceiptResponse(
+    Guid ReceiptId,
+    InventoryVendor Vendor,
+    string FacilityCode,
+    string FacilityName,
+    string? ReferenceNumber,
+    string ReceivedAt,
+    string ReceivedBy,
+    string Notes,
+    InventoryLot Lot,
+    InventoryTransactionItem Transaction,
+    decimal ItemQuantityOnHand,
+    bool BelowReorderPoint);

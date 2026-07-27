@@ -3090,6 +3090,8 @@ export type InventoryTransactionItem = {
   occurredAt: string
   transferId?: string | null
   counterpartyFacilityCode?: string | null
+  receiptId?: string | null
+  receiptReference?: string | null
 }
 
 export type InventoryResponse = {
@@ -3139,6 +3141,53 @@ export type InventoryActivityReportResponse = {
   facilityId?: number | null
   totalEntries: number
   entries: InventoryTransactionItem[]
+}
+
+export type InventoryVendor = {
+  vendorId: string
+  name: string
+  contactName?: string | null
+  phone?: string | null
+  email?: string | null
+  active: boolean
+}
+
+export type InventoryVendorListResponse = {
+  vendors: InventoryVendor[]
+}
+
+export type InventoryVendorCreateInput = {
+  name: string
+  contactName?: string | null
+  phone?: string | null
+  email?: string | null
+}
+
+export type InventoryPurchaseReceiptCreateInput = {
+  vendorId: string
+  facilityId: number
+  itemId: number
+  lotNumber: string
+  expirationDate?: string | null
+  quantity: number
+  unitCost: number
+  referenceNumber?: string | null
+  notes: string
+}
+
+export type InventoryPurchaseReceiptResponse = {
+  receiptId: string
+  vendor: InventoryVendor
+  facilityCode: string
+  facilityName: string
+  referenceNumber?: string | null
+  receivedAt: string
+  receivedBy: string
+  notes: string
+  lot: InventoryLot
+  transaction: InventoryTransactionItem
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
 }
 
 export type AuthLoginInput = {
@@ -8195,6 +8244,54 @@ export async function createInventoryTransfer(
     throw new Error(adminApiError('Inventory transfer', response.status))
   }
 
+  return response.json()
+}
+
+export async function getInventoryVendors(
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryVendorListResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/vendors`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory vendors', response.status))
+  }
+  return response.json()
+}
+
+export async function createInventoryVendor(
+  input: InventoryVendorCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryVendor> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/vendors`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory vendor', response.status))
+  }
+  return response.json()
+}
+
+export async function createInventoryPurchaseReceipt(
+  input: InventoryPurchaseReceiptCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseReceiptResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/purchase-receipts`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory purchase receipt', response.status))
+  }
   return response.json()
 }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Npgsql;
+using NpgsqlTypes;
 using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
@@ -9,7 +10,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 {
     private static readonly HashSet<string> TransactionTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "purchase", "adjustment", "consumption", "destruction"
+        "adjustment", "consumption", "destruction"
     };
 
     public async Task<InventoryResponse> GetInventoryAsync(CancellationToken cancellationToken)
@@ -50,7 +51,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         var normalizedType = request.TransactionType.Trim().ToLowerInvariant();
-        if ((normalizedType is "purchase" or "consumption" or "destruction") && request.Quantity < 0)
+        if ((normalizedType is "consumption" or "destruction") && request.Quantity < 0)
         {
             throw new ArgumentException("Only adjustments may use a negative quantity.");
         }
@@ -282,7 +283,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     {
         var report = await GetActivityReportAsync(fromDate, toDate, facilityId, cancellationToken);
         var csv = new StringBuilder();
-        AppendCsvRow(csv, "Occurred At", "Item Code", "Item Name", "Facility", "Transaction Type", "Quantity Delta", "Counterparty Facility", "Reason", "Performed By", "Transfer ID");
+        AppendCsvRow(csv, "Occurred At", "Item Code", "Item Name", "Facility", "Transaction Type", "Quantity Delta", "Counterparty Facility", "Reason", "Performed By", "Transfer ID", "Receipt ID", "Receipt Reference");
         foreach (var entry in report.Entries)
         {
             AppendCsvRow(csv,
@@ -295,9 +296,114 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
                 entry.CounterpartyFacilityCode ?? string.Empty,
                 entry.Reason ?? string.Empty,
                 entry.PerformedBy,
-                entry.TransferId?.ToString() ?? string.Empty);
+                entry.TransferId?.ToString() ?? string.Empty,
+                entry.ReceiptId?.ToString() ?? string.Empty,
+                entry.ReceiptReference ?? string.Empty);
         }
         return csv.ToString();
+    }
+
+    public async Task<InventoryVendorListResponse> GetVendorsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select vendor_id, name, contact_name, phone, email, active from inventory_vendors where active = true order by name, vendor_id;";
+        var vendors = new List<InventoryVendor>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            vendors.Add(ReadVendor(reader));
+        }
+        return new InventoryVendorListResponse(vendors);
+    }
+
+    public async Task<InventoryVendor> CreateVendorAsync(InventoryVendorCreateRequest request, string username, CancellationToken cancellationToken)
+    {
+        ValidateVendor(request);
+        var vendor = new InventoryVendor(Guid.NewGuid(), request.Name.Trim(), NormalizeOptional(request.ContactName), NormalizeOptional(request.Phone), NormalizeOptional(request.Email), true);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "insert into inventory_vendors (vendor_id, name, contact_name, phone, email, active, created_by) values (@id, @name, @contact, @phone, @email, true, @user);";
+        command.Parameters.AddWithValue("id", vendor.VendorId);
+        command.Parameters.AddWithValue("name", vendor.Name);
+        command.Parameters.AddWithValue("contact", (object?)vendor.ContactName ?? DBNull.Value);
+        command.Parameters.AddWithValue("phone", (object?)vendor.Phone ?? DBNull.Value);
+        command.Parameters.AddWithValue("email", (object?)vendor.Email ?? DBNull.Value);
+        command.Parameters.AddWithValue("user", username);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == "23505")
+        {
+            throw new ArgumentException("A vendor with that name already exists.");
+        }
+        return vendor;
+    }
+
+    public async Task<InventoryPurchaseReceiptResponse> CreatePurchaseReceiptAsync(
+        InventoryPurchaseReceiptCreateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        ValidatePurchaseReceipt(request, username);
+        var expirationDate = ParseOptionalDate(request.ExpirationDate, "Lot expiration must be an ISO date.");
+        var referenceNumber = NormalizeOptional(request.ReferenceNumber);
+        var now = DateTimeOffset.UtcNow;
+        var receiptId = Guid.NewGuid();
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var vendor = await GetActiveVendorAsync(connection, transaction, request.VendorId, cancellationToken)
+            ?? throw new ArgumentException("The selected vendor was not found or is inactive.");
+        var facility = await GetFacilityAsync(connection, transaction, request.FacilityId, cancellationToken)
+            ?? throw new ArgumentException("The selected facility was not found.");
+        var item = await GetActiveItemAsync(connection, transaction, request.ItemId, cancellationToken)
+            ?? throw new ArgumentException("The selected inventory item was not found or is inactive.");
+
+        await using (var receiptCommand = connection.CreateCommand())
+        {
+            receiptCommand.Transaction = transaction;
+            receiptCommand.CommandText = "insert into inventory_purchase_receipts (receipt_id, vendor_id, facility_id, reference_number, received_at, received_by, notes) values (@id, @vendor, @facility, @reference, @received, @receivedBy, @notes);";
+            receiptCommand.Parameters.AddWithValue("id", receiptId);
+            receiptCommand.Parameters.AddWithValue("vendor", vendor.VendorId);
+            receiptCommand.Parameters.AddWithValue("facility", facility.FacilityId);
+            receiptCommand.Parameters.AddWithValue("reference", (object?)referenceNumber ?? DBNull.Value);
+            receiptCommand.Parameters.AddWithValue("received", now);
+            receiptCommand.Parameters.AddWithValue("receivedBy", username);
+            receiptCommand.Parameters.AddWithValue("notes", request.Notes.Trim());
+            try
+            {
+                await receiptCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (PostgresException exception) when (exception.SqlState == "23505")
+            {
+                throw new ArgumentException("That vendor reference number has already been received.");
+            }
+        }
+
+        var lot = await GetOrCreatePurchasedLotAsync(connection, transaction, item, facility, request.LotNumber.Trim(), expirationDate, request.Quantity, request.UnitCost, cancellationToken);
+        var transactionId = Guid.NewGuid();
+        await using (var ledgerCommand = connection.CreateCommand())
+        {
+            ledgerCommand.Transaction = transaction;
+            ledgerCommand.CommandText = "insert into inventory_transactions (transaction_id, lot_id, receipt_id, transaction_type, quantity_delta, reason, performed_by, occurred_at) values (@id, @lot, @receipt, 'purchase', @quantity, @reason, @user, @occurred);";
+            ledgerCommand.Parameters.AddWithValue("id", transactionId);
+            ledgerCommand.Parameters.AddWithValue("lot", lot.LotId);
+            ledgerCommand.Parameters.AddWithValue("receipt", receiptId);
+            ledgerCommand.Parameters.AddWithValue("quantity", request.Quantity);
+            ledgerCommand.Parameters.AddWithValue("reason", request.Notes.Trim());
+            ledgerCommand.Parameters.AddWithValue("user", username);
+            ledgerCommand.Parameters.AddWithValue("occurred", now);
+            await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var itemQuantity = await GetItemQuantityAsync(connection, transaction, item.ItemId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var ledgerEntry = new InventoryTransactionItem(transactionId, lot.LotId, item.ItemCode, item.Name, facility.Code, "purchase", request.Quantity,
+            request.Notes.Trim(), username, now, null, null, receiptId, referenceNumber);
+        return new InventoryPurchaseReceiptResponse(receiptId, vendor, facility.Code, facility.Name, referenceNumber, now.ToString("O", CultureInfo.InvariantCulture), username,
+            request.Notes.Trim(), lot, ledgerEntry, itemQuantity, itemQuantity <= item.ReorderPoint);
     }
 
     private static async Task<IReadOnlyList<InventoryFacility>> GetFacilitiesAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -311,6 +417,107 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             facilities.Add(new InventoryFacility(reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
         }
         return facilities;
+    }
+
+    private static async Task<InventoryVendor?> GetActiveVendorAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid vendorId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select vendor_id, name, contact_name, phone, email, active from inventory_vendors where vendor_id = @id and active = true for update;";
+        command.Parameters.AddWithValue("id", vendorId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadVendor(reader) : null;
+    }
+
+    private static async Task<InventoryItemIdentity?> GetActiveItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select item_id, item_code, name, reorder_point from inventory_items where item_id = @id and active = true for update;";
+        command.Parameters.AddWithValue("id", itemId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new InventoryItemIdentity(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3))
+            : null;
+    }
+
+    private static async Task<decimal> GetItemQuantityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select coalesce(sum(quantity_on_hand), 0) from inventory_lots where item_id = @item_id and status = 'active';";
+        command.Parameters.AddWithValue("item_id", itemId);
+        return Convert.ToDecimal(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<InventoryLot> GetOrCreatePurchasedLotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        InventoryItemIdentity item,
+        InventoryFacility facility,
+        string lotNumber,
+        DateOnly? expirationDate,
+        decimal quantity,
+        decimal unitCost,
+        CancellationToken cancellationToken)
+    {
+        await using var existingCommand = connection.CreateCommand();
+        existingCommand.Transaction = transaction;
+        existingCommand.CommandText = "select lot_id, expiration_date, quantity_on_hand, status from inventory_lots where item_id = @item and facility_id = @facility and lot_number = @lot for update;";
+        existingCommand.Parameters.AddWithValue("item", item.ItemId);
+        existingCommand.Parameters.AddWithValue("facility", facility.FacilityId);
+        existingCommand.Parameters.AddWithValue("lot", lotNumber);
+        await using var reader = await existingCommand.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            var lotId = reader.GetInt32(0);
+            var existingExpiration = reader.IsDBNull(1) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(1);
+            var updatedQuantity = reader.GetDecimal(2) + quantity;
+            var status = reader.GetString(3);
+            await reader.DisposeAsync();
+            if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("The matching inventory lot is inactive and cannot receive a purchase.");
+            }
+            if (existingExpiration != expirationDate)
+            {
+                throw new ArgumentException("The matching inventory lot has different expiry metadata. Use the correct lot number.");
+            }
+
+            await using var updateCommand = connection.CreateCommand();
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText = "update inventory_lots set quantity_on_hand = @quantity, unit_cost = @unit_cost where lot_id = @id;";
+            updateCommand.Parameters.AddWithValue("quantity", updatedQuantity);
+            updateCommand.Parameters.AddWithValue("unit_cost", unitCost);
+            updateCommand.Parameters.AddWithValue("id", lotId);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+            return new InventoryLot(lotId, facility.Code, facility.Name, lotNumber, expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), updatedQuantity, unitCost, status);
+        }
+        await reader.DisposeAsync();
+
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText = "insert into inventory_lots (item_id, facility_id, lot_number, expiration_date, quantity_on_hand, unit_cost, status) values (@item, @facility, @lot, @expiration, @quantity, @unit_cost, 'active') returning lot_id;";
+        insertCommand.Parameters.AddWithValue("item", item.ItemId);
+        insertCommand.Parameters.AddWithValue("facility", facility.FacilityId);
+        insertCommand.Parameters.AddWithValue("lot", lotNumber);
+        insertCommand.Parameters.AddWithValue("expiration", (object?)expirationDate ?? DBNull.Value);
+        insertCommand.Parameters.AddWithValue("quantity", quantity);
+        insertCommand.Parameters.AddWithValue("unit_cost", unitCost);
+        var newLotId = Convert.ToInt32(await insertCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        return new InventoryLot(newLotId, facility.Code, facility.Name, lotNumber, expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), quantity, unitCost, "active");
     }
 
     private static async Task<InventoryFacility?> GetFacilityAsync(
@@ -515,11 +722,13 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select t.transaction_id, t.lot_id, i.item_code, i.name, f.code, t.transaction_type,
-              t.quantity_delta, t.reason, t.performed_by, t.occurred_at, t.transfer_id, counterpart_facility.code
+              t.quantity_delta, t.reason, t.performed_by, t.occurred_at, t.transfer_id, counterpart_facility.code,
+              t.receipt_id, receipt.reference_number
             from inventory_transactions t
             join inventory_lots l on l.lot_id = t.lot_id
             join inventory_items i on i.item_id = l.item_id
             join facilities f on f.id = l.facility_id
+            left join inventory_purchase_receipts receipt on receipt.receipt_id = t.receipt_id
             left join lateral (
               select paired_facility.code
               from inventory_transactions paired
@@ -544,7 +753,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
                 reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
                 reader.GetString(5), reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetString(7),
                 reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetGuid(10),
-                reader.IsDBNull(11) ? null : reader.GetString(11)));
+                reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetGuid(12),
+                reader.IsDBNull(13) ? null : reader.GetString(13)));
         }
 
         return entries;
@@ -554,9 +764,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     {
         DateTimeOffset? fromTimestamp = fromDate is null ? null : new DateTimeOffset(fromDate.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         DateTimeOffset? toTimestamp = toDate is null ? null : new DateTimeOffset(toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        command.Parameters.AddWithValue("from_date", (object?)fromTimestamp ?? DBNull.Value);
-        command.Parameters.AddWithValue("to_date", (object?)toTimestamp ?? DBNull.Value);
-        command.Parameters.AddWithValue("facility_id", (object?)facilityId ?? DBNull.Value);
+        command.Parameters.Add(new NpgsqlParameter("from_date", NpgsqlDbType.TimestampTz) { Value = (object?)fromTimestamp ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("to_date", NpgsqlDbType.TimestampTz) { Value = (object?)toTimestamp ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("facility_id", NpgsqlDbType.Integer) { Value = (object?)facilityId ?? DBNull.Value });
     }
 
     private static void AppendCsvRow(StringBuilder builder, params string[] values)
@@ -566,7 +776,40 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
     private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static DateOnly? ParseOptionalDate(string? value, string errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return DateOnly.TryParseExact(value.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed
+            : throw new ArgumentException(errorMessage);
+    }
+
+    private static void ValidateVendor(InventoryVendorCreateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 160
+            || request.ContactName?.Trim().Length > 160 || request.Phone?.Trim().Length > 80 || request.Email?.Trim().Length > 254)
+        {
+            throw new ArgumentException("Vendor name or contact details are invalid.");
+        }
+    }
+
+    private static void ValidatePurchaseReceipt(InventoryPurchaseReceiptCreateRequest request, string username)
+    {
+        if (request.VendorId == Guid.Empty || request.FacilityId <= 0 || request.ItemId <= 0 || string.IsNullOrWhiteSpace(request.LotNumber)
+            || request.LotNumber.Trim().Length > 80 || request.Quantity <= 0 || request.UnitCost < 0 || request.ReferenceNumber?.Trim().Length > 120
+            || string.IsNullOrWhiteSpace(request.Notes) || request.Notes.Trim().Length > 500 || string.IsNullOrWhiteSpace(username))
+        {
+            throw new ArgumentException("Vendor, facility, item, lot, positive quantity, unit cost, and receipt notes are required.");
+        }
+    }
+
+    private static InventoryVendor ReadVendor(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3),
+        reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetBoolean(5));
+
     private sealed record InventoryHeader(string DatasetId, string DatasetVersion, DateOnly BaseDate);
+
+    private sealed record InventoryItemIdentity(int ItemId, string ItemCode, string Name, decimal ReorderPoint);
 
     private sealed class InventoryItemBuilder(int itemId, string itemCode, string name, string category, string unit, decimal reorderPoint, decimal preferredQuantity)
     {

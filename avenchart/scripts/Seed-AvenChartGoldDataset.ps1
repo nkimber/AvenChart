@@ -39,15 +39,32 @@ try {
         throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds."
     }
 
-    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup
-    if ($LASTEXITCODE -ne 0) {
-        throw "Modernized schema migrations failed with exit code $LASTEXITCODE."
-    }
-
     $sql = Get-Content -LiteralPath $SqlPath -Raw
     $sql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
     if ($LASTEXITCODE -ne 0) {
         throw "Gold dataset import failed with exit code $LASTEXITCODE."
+    }
+
+    # The generated dataset rebuilds the base schema. Reapply all versioned migrations afterward so
+    # migration-owned tables and schema extensions are present in every deterministic reset.
+    $migrationLedgerSql = @'
+create table if not exists schema_migrations (
+  migration_id text primary key,
+  checksum_sha256 text not null,
+  description text not null,
+  applied_at timestamptz not null,
+  applied_by text not null
+);
+delete from schema_migrations;
+'@
+    $migrationLedgerSql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized migration ledger reset failed with exit code $LASTEXITCODE."
+    }
+
+    & .\scripts\Invoke-ModernizedMigrations.ps1 -SkipPostgresStartup
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized schema migrations failed with exit code $LASTEXITCODE."
     }
 
     $countsJson = docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -t -A -c "select json_build_object('patients',(select count(*) from patients),'insuranceRecords',(select count(*) from insurance_records),'patientHistories',(select count(*) from patient_histories),'portalAccounts',(select count(*) from patient_portal_accounts),'portalProfileChangeRequests',(select count(*) from patient_portal_profile_change_requests),'portalReportAuditEvents',(select count(*) from patient_portal_report_audit_events),'portalMessageAuditEvents',(select count(*) from patient_portal_message_audit_events),'appointments',(select count(*) from appointments),'encounters',(select count(*) from encounters),'encounterSignatures',(select count(*) from encounter_signatures),'vitals',(select count(*) from vitals),'clinicalNotes',(select count(*) from clinical_notes),'prescriptions',(select count(*) from prescriptions),'billing',(select count(*) from billing),'labProviders',(select count(*) from lab_providers),'labOrders',(select count(*) from lab_orders),'procedureOrderCatalogItems',(select count(*) from lab_order_catalog),'labReports',(select count(*) from lab_reports),'labResults',(select count(*) from lab_results),'messages',(select count(*) from messages),'portalMailboxMessages',(select count(*) from portal_mailbox_messages),'patientReminders',(select count(*) from patient_reminders),'patientDocuments',(select count(*) from patient_documents),'problems',(select count(*) from problems),'allergies',(select count(*) from allergies),'medications',(select count(*) from medications));"

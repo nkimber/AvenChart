@@ -265,6 +265,8 @@ lines.push('begin;')
 lines.push(`
 drop table if exists medications;
 drop table if exists inventory_transactions;
+drop table if exists inventory_purchase_receipts;
+drop table if exists inventory_vendors;
 drop table if exists inventory_lots;
 drop sequence if exists inventory_lot_id_seq;
 drop table if exists inventory_items;
@@ -276,6 +278,20 @@ drop table if exists patient_reminders;
 drop table if exists patient_portal_message_attachments;
 drop table if exists portal_mailbox_messages;
 drop table if exists messages;
+drop table if exists patient_xml_exchange_audits;
+drop table if exists patient_duplicate_review_dispositions;
+drop table if exists document_template_binary_versions;
+drop table if exists document_templates;
+drop table if exists chart_tracker_events;
+drop table if exists chart_tracker_locations;
+drop table if exists batch_communication_recipients;
+drop table if exists batch_communication_campaigns;
+drop table if exists recall_activity;
+drop table if exists recalls;
+drop table if exists patient_education_resources;
+drop table if exists track_anything_types;
+drop table if exists address_book_contacts;
+drop table if exists office_notes;
 drop table if exists procedure_result_versions;
 drop table if exists lab_results;
 drop table if exists lab_reports;
@@ -1036,10 +1052,36 @@ create table inventory_lots (
   unique (item_id, facility_id, lot_number)
 );
 
+create table inventory_vendors (
+  vendor_id uuid primary key,
+  name text not null,
+  contact_name text,
+  phone text,
+  email text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  created_by text not null
+);
+
+create unique index ux_inventory_vendors_name_lower on inventory_vendors (lower(name));
+
+create table inventory_purchase_receipts (
+  receipt_id uuid primary key,
+  vendor_id uuid not null references inventory_vendors(vendor_id),
+  facility_id integer not null references facilities(id),
+  reference_number text,
+  received_at timestamptz not null,
+  received_by text not null,
+  notes text not null,
+  created_at timestamptz not null default now(),
+  unique (vendor_id, reference_number)
+);
+
 create table inventory_transactions (
   transaction_id uuid primary key,
   lot_id integer not null references inventory_lots(lot_id),
   transfer_id uuid,
+  receipt_id uuid references inventory_purchase_receipts(receipt_id),
   transaction_type text not null,
   quantity_delta numeric(12,2) not null,
   reason text,
@@ -2873,6 +2915,8 @@ create index idx_phi_access_audit_endpoint_occurred on phi_access_audit_events (
 create index idx_inventory_lots_item_facility on inventory_lots (item_id, facility_id, status);
 create index idx_inventory_transactions_lot_occurred on inventory_transactions (lot_id, occurred_at desc);
 create index idx_inventory_transactions_transfer on inventory_transactions (transfer_id, occurred_at desc) where transfer_id is not null;
+create index idx_inventory_purchase_receipts_facility_received on inventory_purchase_receipts (facility_id, received_at desc);
+create index idx_inventory_transactions_receipt on inventory_transactions (receipt_id) where receipt_id is not null;
 create index idx_lab_orders_pid on lab_orders (pid);
 create index idx_lab_orders_lab_id on lab_orders (lab_id);
 create index idx_lab_order_catalog_parent_id on lab_order_catalog (parent_id);
