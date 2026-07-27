@@ -152,6 +152,25 @@ public sealed record InventoryLotDestructionResponse(
     string DestroyedBy,
     string RecordedAt);
 
+public sealed record InventoryExpiryDispositionRequest(
+    string Disposition,
+    string Notes,
+    string? Method,
+    string? Witness);
+
+public sealed record InventoryExpiryDispositionResponse(
+    Guid DispositionId,
+    string Disposition,
+    InventoryLot Lot,
+    decimal QuantityAffected,
+    string Notes,
+    string? Method,
+    string? Witness,
+    string DisposedBy,
+    string DisposedAt,
+    InventoryTransactionItem? Transaction,
+    Guid? DestructionId);
+
 public sealed record InventoryPatientSaleCreateRequest(
     int LotId,
     string PatientId,

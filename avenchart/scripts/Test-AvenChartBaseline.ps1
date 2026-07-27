@@ -10152,6 +10152,13 @@ try {
     $inventoryWithExpiry = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryReceiptEntry = @($inventoryActivity.entries | Where-Object { $_.receiptId -eq $inventoryReceipt.receiptId }) | Select-Object -First 1
     $expiredLot = @($inventoryWithExpiry.items | ForEach-Object { $_.lots } | Where-Object { $_.lotId -eq $expiredReceipt.lot.lotId }) | Select-Object -First 1
+    $expiryQuarantineReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-Q-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-Q-REF-$inventoryReceiptSuffix"; notes = "Smoke expiry quarantine fixture" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryQuarantine = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($expiryQuarantineReceipt.lot.lotId)/expiry-dispositions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ disposition = "quarantine"; notes = "Expired lot pending vendor decision" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryReturnReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-R-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-R-REF-$inventoryReceiptSuffix"; notes = "Smoke expiry return fixture" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryReturn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($expiryReturnReceipt.lot.lotId)/expiry-dispositions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ disposition = "return"; notes = "Expired lot returned to vendor" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryDestroyReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-D-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-D-REF-$inventoryReceiptSuffix"; notes = "Smoke expiry destroy fixture" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryDestroy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($expiryDestroyReceipt.lot.lotId)/expiry-dispositions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ disposition = "destroy"; notes = "Expired lot destroyed"; method = "Approved waste service"; witness = "Smoke witness" } | ConvertTo-Json) -TimeoutSec 20
+    $expiryDispositionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_expiry_dispositions where lot_id in ($($expiryQuarantineReceipt.lot.lotId),$($expiryReturnReceipt.lot.lotId),$($expiryDestroyReceipt.lot.lotId)) and disposed_by = 'admin';"
     $updatedLotNumber = "SMOKE-EDIT-$inventoryReceiptSuffix"
     $lotMetadataUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotNumber = $updatedLotNumber; expirationDate = "2028-12-31" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryWithMetadata = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
@@ -10214,6 +10221,15 @@ try {
     $inventoryExpiryPassed = $expiredLot.expiryStatus -eq "expired" `
         -and $inventoryWithExpiry.summary.expiredLots -eq ($inventoryBefore.summary.expiredLots + 1) `
         -and $inventoryWithExpiry.summary.expiringWithin90Days -eq $inventoryBefore.summary.expiringWithin90Days
+    $inventoryExpiryDispositionPassed = $expiryQuarantine.disposition -eq "quarantine" `
+        -and $expiryQuarantine.lot.status -eq "quarantined" `
+        -and $expiryReturn.disposition -eq "return" `
+        -and $expiryReturn.lot.status -eq "inactive" `
+        -and $expiryReturn.transaction.quantityDelta -eq -1 `
+        -and $expiryDestroy.disposition -eq "destroy" `
+        -and $expiryDestroy.lot.status -eq "inactive" `
+        -and $expiryDestroy.destructionId `
+        -and $expiryDispositionAuditCount.Trim() -eq "3"
     $inventoryLotMetadataPassed = $lotMetadataUpdate.auditId -and $lotMetadataUpdate.lot.lotNumber -eq $updatedLotNumber `
         -and $lotMetadataUpdate.lot.expirationDate -eq "2028-12-31" `
         -and $lotMetadataUpdate.lot.quantityOnHand -eq 7 `
@@ -10259,6 +10275,7 @@ try {
     Add-Check -Name "inventory purchase requisition approval lifecycle" -Result $(if ($inventoryRequisitionPassed) { "passed" } else { "failed" }) -Details @{ requisitionId = $inventoryRequisition.requisitionId; status = $inventoryRequisitionApproved.status; auditCount = $inventoryRequisitionAuditCount.Trim(); rejectedRequisitionId = $inventoryRejectedRequisition.requisitionId; rejectedStatus = $inventoryRejected.status; rejectionAuditCount = $inventoryRejectionAuditCount.Trim() }
     Add-Check -Name "inventory purchase requisition receipt reconciliation lifecycle" -Result $(if ($inventoryRequisitionReconciliationPassed) { "passed" } else { "failed" }) -Details @{ requisitionId = $inventoryRequisition.requisitionId; receiptOneId = $inventoryRequisitionReceiptOne.receiptId; receiptTwoId = $inventoryRequisitionReceiptTwo.receiptId; receiptStatus = $inventoryRequisitionAfterReceipts.receiptStatus; receivedQuantity = $inventoryRequisitionAfterReceipts.lines[0].receivedQuantity; outstandingQuantity = $inventoryRequisitionAfterReceipts.lines[0].outstandingQuantity; overReceiptRejected = $inventoryRequisitionOverReceiptRejected; auditCount = $inventoryRequisitionReceiptAuditCount.Trim() }
     Add-Check -Name "inventory lot expiry classification" -Result $(if ($inventoryExpiryPassed) { "passed" } else { "failed" }) -Details @{ lotId = $expiredReceipt.lot.lotId; expiryStatus = $expiredLot.expiryStatus; expiredLots = $inventoryWithExpiry.summary.expiredLots; expiringWithin90Days = $inventoryWithExpiry.summary.expiringWithin90Days }
+    Add-Check -Name "inventory expired-lot disposition lifecycle" -Result $(if ($inventoryExpiryDispositionPassed) { "passed" } else { "failed" }) -Details @{ quarantineId = $expiryQuarantine.dispositionId; returnId = $expiryReturn.dispositionId; destroyId = $expiryDestroy.dispositionId; auditCount = $expiryDispositionAuditCount.Trim() }
     Add-Check -Name "inventory lot metadata audit lifecycle" -Result $(if ($inventoryLotMetadataPassed) { "passed" } else { "failed" }) -Details @{ auditId = $lotMetadataUpdate.auditId; lotId = $inventoryReceipt.lot.lotId; lotNumber = $updatedLot.lotNumber; expirationDate = $updatedLot.expirationDate; quantityOnHand = $updatedLot.quantityOnHand; auditCount = $lotMetadataAuditCount.Trim(); historyEntry = $lotMetadataHistoryEntry }
     Add-Check -Name "inventory vendor return lifecycle" -Result $(if ($inventoryReturnPassed) { "passed" } else { "failed" }) -Details @{ transactionId = $inventoryReturn.transaction.transactionId; lotId = $inventoryReturn.lot.lotId; quantityDelta = $inventoryReturn.transaction.quantityDelta; quantityOnHand = $inventoryReturn.lot.quantityOnHand }
     Add-Check -Name "inventory patient sale lifecycle" -Result $(if ($inventoryPatientSalePassed) { "passed" } else { "failed" }) -Details @{ saleId = $inventoryPatientSale.saleId; lotId = $inventorySaleLot.lotId; patientId = $inventoryPatientSale.patientId; encounter = $inventoryPatientSale.encounter; fee = $inventoryPatientSale.fee; auditCount = $patientSaleAuditCount.Trim() }
@@ -10271,6 +10288,7 @@ catch {
     Add-Check -Name "inventory purchase requisition approval lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory purchase requisition receipt reconciliation lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory lot expiry classification" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "inventory expired-lot disposition lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory lot metadata audit lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory vendor return lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory patient sale lifecycle" -Result "failed" -Details $_.Exception.Message

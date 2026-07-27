@@ -3541,6 +3541,28 @@ inventory.MapPost("/lots/{lotId:int}/destructions", async (
     .WithName("DestroyInventoryLot")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "destruction", "write"));
 
+inventory.MapPost("/lots/{lotId:int}/expiry-dispositions", async (
+        int lotId,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryExpiryDispositionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var disposition = await repository.CreateExpiryDispositionAsync(lotId, request, session.Username, cancellationToken);
+            return disposition is null ? Results.NotFound() : Results.Created($"/api/inventory/lots/{lotId}/expiry-dispositions/{disposition.DispositionId}", disposition);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryExpiryDisposition"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryExpiryDisposition")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "destruction", "write"));
+
 inventory.MapPost("/count-reconciliations", async (
         InventoryRepository repository,
         AuthRepository authRepository,

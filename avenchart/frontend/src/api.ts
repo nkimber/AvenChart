@@ -3213,6 +3213,9 @@ export type InventoryLotDestructionResponse = {
   recordedAt: string
 }
 
+export type InventoryExpiryDispositionInput = { disposition: 'quarantine' | 'return' | 'destroy'; notes: string; method?: string | null; witness?: string | null }
+export type InventoryExpiryDispositionResponse = { dispositionId: string; disposition: string; lot: InventoryLot; quantityAffected: number; notes: string; method?: string | null; witness?: string | null; disposedBy: string; disposedAt: string; destructionId?: string | null }
+
 export type InventoryPatientSaleCreateInput = {
   lotId: number
   patientId: string
@@ -8457,6 +8460,12 @@ export async function destroyInventoryLot(
     throw new Error(adminApiError('Inventory lot destruction', response.status))
   }
 
+  return response.json()
+}
+
+export async function createInventoryExpiryDisposition(lotId: number, input: InventoryExpiryDispositionInput, sessionId?: string | null): Promise<InventoryExpiryDispositionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/expiry-dispositions`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError('Inventory expiry disposition', response.status))
   return response.json()
 }
 

@@ -172,6 +172,7 @@ import {
   allocateInventoryPatientSale,
   dispenseInventoryPrescription,
   destroyInventoryLot,
+  createInventoryExpiryDisposition,
   getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
   updateInventoryMedicationLink,
@@ -433,6 +434,7 @@ import {
   type InventoryLotMetadataUpdateInput,
   type InventoryLotMetadataAuditItem,
   type InventoryLotDestructionInput,
+  type InventoryExpiryDispositionInput,
   type InventoryPatientSaleCreateInput,
   type InventoryPatientSaleAllocationCreateInput,
   type InventoryMedicationCatalogItem,
@@ -3595,6 +3597,13 @@ function App() {
     }
   }
 
+  async function handleInventoryExpiryDisposition(lotId: number, input: InventoryExpiryDispositionInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an expiry disposition.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await createInventoryExpiryDisposition(lotId, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory expiry disposition failed') }
+  }
+
   async function handleInventoryPatientSale(input: InventoryPatientSaleCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6454,6 +6463,7 @@ function App() {
             onCreateTransaction={handleInventoryTransaction}
             onUpdateLotMetadata={handleInventoryLotMetadataUpdate}
             onDestroyLot={handleInventoryLotDestruction}
+            onCreateExpiryDisposition={handleInventoryExpiryDisposition}
             onCreatePatientSale={handleInventoryPatientSale}
             onAllocatePatientSale={handleInventoryPatientSaleAllocation}
             onUpdateMedicationLink={handleInventoryMedicationLink}
@@ -20397,6 +20407,7 @@ function InventoryWorkspace({
   onCreateTransaction,
   onUpdateLotMetadata,
   onDestroyLot,
+  onCreateExpiryDisposition,
   onCreatePatientSale,
   onAllocatePatientSale,
   onUpdateMedicationLink,
@@ -20415,6 +20426,7 @@ function InventoryWorkspace({
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onUpdateLotMetadata: (lotId: number, input: InventoryLotMetadataUpdateInput) => void | Promise<void>
   onDestroyLot: (lotId: number, input: InventoryLotDestructionInput) => void | Promise<void>
+  onCreateExpiryDisposition: (lotId: number, input: InventoryExpiryDispositionInput) => void | Promise<void>
   onCreatePatientSale: (input: InventoryPatientSaleCreateInput) => void | Promise<void>
   onAllocatePatientSale: (input: InventoryPatientSaleAllocationCreateInput) => void | Promise<void>
   onUpdateMedicationLink: (itemId: number, input: InventoryMedicationLinkUpdateInput) => void | Promise<void>
@@ -20476,6 +20488,8 @@ function InventoryWorkspace({
   const [receiptReference, setReceiptReference] = useState('')
   const [receiptNotes, setReceiptNotes] = useState('')
   const [receiptRequisitionId, setReceiptRequisitionId] = useState('')
+  const [expiryDisposition, setExpiryDisposition] = useState<'quarantine' | 'return' | 'destroy'>('quarantine')
+  const [expiryDispositionNotes, setExpiryDispositionNotes] = useState('')
   const [purchaseRequisitions, setPurchaseRequisitions] = useState<InventoryPurchaseRequisition[]>([])
   const [purchaseRequisitionError, setPurchaseRequisitionError] = useState<string | null>(null)
   const [requisitionFacilityId, setRequisitionFacilityId] = useState('')
@@ -20687,6 +20701,13 @@ function InventoryWorkspace({
       witness: destructionWitness.trim() || null,
       notes: destructionNotes.trim() || null,
     })
+  }
+
+  function submitExpiryDisposition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const parsedLotId = Number(lotId)
+    if (!sourceLot || sourceLot.expiryStatus !== 'expired' || !Number.isInteger(parsedLotId) || !expiryDispositionNotes.trim()) return
+    void onCreateExpiryDisposition(parsedLotId, { disposition: expiryDisposition, notes: expiryDispositionNotes.trim() })
   }
 
   function submitPatientSale(event: FormEvent<HTMLFormElement>) {
@@ -20910,6 +20931,13 @@ function InventoryWorkspace({
                 <label>Witness (optional)<input value={destructionWitness} onChange={(event) => setDestructionWitness(event.target.value)} maxLength={250} /></label>
                 <label>Notes (optional)<input value={destructionNotes} onChange={(event) => setDestructionNotes(event.target.value)} maxLength={250} /></label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Destroy selected lot</button>
+              </form>
+              <form className="inventory-transaction-form" onSubmit={submitExpiryDisposition}>
+                <div className="inventory-form-kicker">Expired-lot disposition</div>
+                <small>Quarantine preserves quantity; return removes the full quantity with a ledger debit; destroy preserves legacy destruction evidence.</small>
+                <label>Disposition<select value={expiryDisposition} onChange={(event) => setExpiryDisposition(event.target.value as 'quarantine' | 'return' | 'destroy')}><option value="quarantine">Quarantine</option><option value="return">Return</option><option value="destroy">Destroy</option></select></label>
+                <label>Required notes<input value={expiryDispositionNotes} onChange={(event) => setExpiryDispositionNotes(event.target.value)} maxLength={500} required /></label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading' || sourceLot?.expiryStatus !== 'expired'}>Record expiry disposition</button>
               </form>
               <form className="inventory-transaction-form" onSubmit={submitMedicationLink}>
                 <div className="inventory-form-kicker">Medication catalog link</div>
