@@ -66,7 +66,8 @@ function fileToBase64(file: File): Promise<string> {
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : ''
       const separator = result.indexOf(',')
-      separator >= 0 ? resolve(result.slice(separator + 1)) : reject(new Error('Could not read attachment content.'))
+      if (separator >= 0) resolve(result.slice(separator + 1))
+      else reject(new Error('Could not read attachment content.'))
     }
     reader.onerror = () => reject(new Error('Could not read attachment content.'))
     reader.readAsDataURL(file)

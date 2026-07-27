@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import { CalendarClock, CalendarPlus } from 'lucide-react'
 import {
@@ -9,6 +9,7 @@ import {
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
+import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
 
 type AsyncState<T> =
   | { status: 'idle' }
@@ -30,15 +31,6 @@ function formatApptDate(dateStr: string) {
 function formatTime(value?: string | null) {
   if (!value) return ''
   return value.length >= 5 ? value.slice(0, 5) : value
-}
-
-function statusClass(status?: string | null) {
-  if (!status) return ''
-  const s = status.toLowerCase()
-  if (s.includes('cancel')) return 'appt-status-cancelled'
-  if (s.includes('complet') || s.includes('check')) return 'appt-status-completed'
-  if (s.includes('pend') || s.includes('request')) return 'appt-status-pending'
-  return 'appt-status-scheduled'
 }
 
 function buildIcsContent(appt: PatientPortalHomeAppointmentSummary): string {
@@ -71,6 +63,7 @@ export default function PortalAppointments() {
   const { session, home, homeLoading, refreshHome } = useOutletContext<PortalOutletContext>()
   const location = useLocation()
   const modalPanelRef = useRef<HTMLDivElement>(null)
+  const requestButtonRef = useRef<HTMLButtonElement>(null)
   const [requestOpen, setRequestOpen] = useState(
     () => location.state?.openRequest === true,
   )
@@ -90,17 +83,51 @@ export default function PortalAppointments() {
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Focus trap + Escape key for modal (#1)
+  const loadOptions = useCallback(async () => {
+    setOptionsState({ status: 'loading' })
+    try {
+      const data = await getPatientPortalAppointmentRequestOptions(session.sessionId)
+      setOptionsState({ status: 'ready', data })
+      setForm((current) => ({
+        ...current,
+        categoryId: data.defaults.categoryId != null ? String(data.defaults.categoryId) : '',
+        providerId: data.defaults.providerId != null ? String(data.defaults.providerId) : '',
+        facilityId: data.defaults.facilityId != null ? String(data.defaults.facilityId) : '',
+        date: data.defaults.date,
+        startTime: formatTime(data.defaults.startTime),
+        durationMinutes: data.defaults.durationMinutes,
+      }))
+    } catch (caught) {
+      setOptionsState({
+        status: 'error',
+        message:
+          caught instanceof Error ? caught.message : 'Could not load appointment options.',
+      })
+    }
+  }, [session.sessionId])
+
+  function closeRequest() {
+    setRequestOpen(false)
+    setResult(null)
+    setError(null)
+  }
+
   useEffect(() => {
     if (!requestOpen) return
-    // Move focus into modal
+    const previouslyFocused = document.activeElement
+    const requestButton = requestButtonRef.current
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const firstFocusable = modalPanelRef.current?.querySelector<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     )
     firstFocusable?.focus()
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { toggleRequest(); return }
+      if (e.key === 'Escape') {
+        closeRequest()
+        return
+      }
       if (e.key !== 'Tab' || !modalPanelRef.current) return
       const focusable = Array.from(
         modalPanelRef.current.querySelectorAll<HTMLElement>(
@@ -111,42 +138,43 @@ export default function PortalAppointments() {
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
       if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault(); last.focus()
+        e.preventDefault()
+        last.focus()
       } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault(); first.focus()
+        e.preventDefault()
+        first.focus()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      if (previouslyFocused instanceof HTMLElement) {
+        previouslyFocused.focus()
+      } else {
+        requestButton?.focus()
+      }
+    }
   }, [requestOpen])
 
-  function toggleRequest() {
-    setRequestOpen((open) => !open)
-    setResult(null)
-    setError(null)
-    if (optionsState.status === 'idle') {
-      setOptionsState({ status: 'loading' })
-      getPatientPortalAppointmentRequestOptions(session.sessionId)
-        .then((data) => {
-          setOptionsState({ status: 'ready', data })
-          setForm({
-            categoryId: data.defaults.categoryId != null ? String(data.defaults.categoryId) : '',
-            providerId: data.defaults.providerId != null ? String(data.defaults.providerId) : '',
-            facilityId: data.defaults.facilityId != null ? String(data.defaults.facilityId) : '',
-            date: data.defaults.date,
-            startTime: formatTime(data.defaults.startTime),
-            durationMinutes: data.defaults.durationMinutes,
-            reason: '',
-          })
-        })
-        .catch((err) =>
-          setOptionsState({
-            status: 'error',
-            message: err instanceof Error ? err.message : 'Could not load appointment options.',
-          }),
-        )
+  useEffect(() => {
+    if (requestOpen && optionsState.status === 'idle') {
+      void loadOptions()
     }
+  }, [loadOptions, optionsState.status, requestOpen])
+
+  function toggleRequest() {
+    if (requestOpen) {
+      closeRequest()
+    } else {
+      setResult(null)
+      setError(null)
+      setRequestOpen(true)
+    }
+  }
+
+  function retryOptions() {
+    void loadOptions()
   }
 
   function handleSubmit(event: FormEvent) {
@@ -182,6 +210,12 @@ export default function PortalAppointments() {
   }
 
   const appointments = home?.upcomingAppointments ?? []
+  const selectedProvider = optionsState.status === 'ready'
+    ? optionsState.data.providers.find((provider) => String(provider.id) === form.providerId)
+    : undefined
+  const selectedFacility = optionsState.status === 'ready'
+    ? optionsState.data.facilities.find((facility) => String(facility.id) === form.facilityId)
+    : undefined
 
   return (
     <div className="portal-page">
@@ -200,7 +234,12 @@ export default function PortalAppointments() {
               </div>
             )}
             {optionsState.status === 'error' && (
-              <div className="error-banner">{optionsState.message}</div>
+              <div>
+                <div className="error-banner" role="alert">{optionsState.message}</div>
+                <button className="button-secondary" type="button" onClick={retryOptions}>
+                  Retry options
+                </button>
+              </div>
             )}
             {result ? (
               <div>
@@ -219,7 +258,9 @@ export default function PortalAppointments() {
                       className="select"
                       value={form.categoryId}
                       onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+                      required
                     >
+                      <option value="" disabled>Select a visit type</option>
                       {optionsState.data.categories.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
@@ -232,12 +273,29 @@ export default function PortalAppointments() {
                       className="select"
                       value={form.providerId}
                       onChange={(e) => setForm((f) => ({ ...f, providerId: e.target.value }))}
+                      required
                     >
+                      <option value="" disabled>Select a provider</option>
                       {optionsState.data.providers.map((p) => (
-                        <option key={p.id} value={p.id}>{p.displayName}</option>
+                        <option key={p.id} value={p.id}>{p.displayName} (provider #{p.id})</option>
                       ))}
                     </select>
                   </div>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="appt-facility">Facility</label>
+                  <select
+                    id="appt-facility"
+                    className="select"
+                    value={form.facilityId}
+                    onChange={(e) => setForm((f) => ({ ...f, facilityId: e.target.value }))}
+                    required
+                  >
+                    <option value="" disabled>Select a facility</option>
+                    {optionsState.data.facilities.map((facility) => (
+                      <option key={facility.id} value={facility.id}>{facility.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-row">
                   <div className="field">
@@ -273,6 +331,13 @@ export default function PortalAppointments() {
                     rows={3}
                   />
                 </div>
+                {selectedProvider && selectedFacility && form.date && form.startTime && (
+                  <div className="hint-banner" role="status">
+                    Requesting {optionsState.data.categories.find((category) => String(category.id) === form.categoryId)?.name ?? 'a visit'}
+                    {' '}with {selectedProvider.displayName} (provider #{selectedProvider.id}) at {selectedFacility.name}
+                    {' '}on {formatApptDate(form.date).full} at {formatTime(form.startTime)}.
+                  </div>
+                )}
                 {error && <div className="error-banner">{error}</div>}
                 <div className="button-row">
                   <button className="button-primary" type="submit" disabled={submitting}>
@@ -297,6 +362,7 @@ export default function PortalAppointments() {
         <div className="portal-section-header">
           <h2 className="portal-section-title">Upcoming appointments</h2>
           <button
+            ref={requestButtonRef}
             className="toggle-button"
             type="button"
             onClick={toggleRequest}
@@ -339,9 +405,7 @@ export default function PortalAppointments() {
                     )}
                   </div>
                   <div className="appt-actions">
-                    {appt.status && (
-                      <span className={`appt-status ${statusClass(appt.status)}`}>{appt.status}</span>
-                    )}
+                    <AppointmentStatusBadge value={appt.status} />
                     <button
                       className="appt-ics-button"
                       type="button"

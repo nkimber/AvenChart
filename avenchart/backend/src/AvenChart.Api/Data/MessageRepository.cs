@@ -7,6 +7,175 @@ namespace AvenChart.Api.Data;
 
 public sealed class MessageRepository(NpgsqlDataSource dataSource)
 {
+    public async Task<StaffMessageInboxResponse> GetInboxAsync(
+        string currentUsername,
+        StaffMessageInboxQuery query,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var offset = Math.Max(0, query.Offset);
+        var limit = Math.Clamp(query.Limit, 1, 100);
+        var conditions = new List<string> { "m.deleted = 0", "m.activity = 1" };
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            conditions.Add("lower(coalesce(m.status, '')) = lower(@status)");
+            command.Parameters.AddWithValue("status", query.Status.Trim());
+        }
+
+        switch (query.Assignment?.Trim().ToLowerInvariant())
+        {
+            case "mine":
+                conditions.Add("lower(coalesce(m.assigned_to, '')) = lower(@currentUsername)");
+                break;
+            case "unassigned":
+                conditions.Add("nullif(trim(coalesce(m.assigned_to, '')), '') is null");
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Owner))
+        {
+            conditions.Add("lower(coalesce(m.assigned_to, '')) = lower(@owner)");
+            command.Parameters.AddWithValue("owner", query.Owner.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Patient))
+        {
+            conditions.Add("""
+                (
+                    lower(p.canonical_id) like lower(@patient)
+                    or lower(p.pubpid) like lower(@patient)
+                    or lower(concat_ws(' ', p.first_name, p.last_name, p.preferred_name)) like lower(@patient)
+                )
+                """);
+            command.Parameters.AddWithValue("patient", $"%{query.Patient.Trim()}%");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Subject))
+        {
+            conditions.Add("lower(coalesce(m.title, '')) like lower(@subject)");
+            command.Parameters.AddWithValue("subject", $"%{query.Subject.Trim()}%");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Priority))
+        {
+            conditions.Add("""
+                case
+                    when lower(coalesce(m.title, '')) like '%urgent%'
+                      or lower(coalesce(m.title, '')) like '%critical%'
+                    then 'urgent'
+                    else 'normal'
+                end = lower(@priority)
+                """);
+            command.Parameters.AddWithValue("priority", query.Priority.Trim());
+        }
+
+        if (query.MinimumAgeDays is >= 0)
+        {
+            conditions.Add("current_date - coalesce(m.message_date, current_date) >= @minimumAgeDays");
+            command.Parameters.AddWithValue("minimumAgeDays", query.MinimumAgeDays.Value);
+        }
+
+        if (query.MaximumAgeDays is >= 0)
+        {
+            conditions.Add("current_date - coalesce(m.message_date, current_date) <= @maximumAgeDays");
+            command.Parameters.AddWithValue("maximumAgeDays", query.MaximumAgeDays.Value);
+        }
+
+        command.CommandText = $"""
+            select
+                count(*) over()::int as total_count,
+                m.id,
+                p.canonical_id,
+                p.pubpid,
+                case
+                    when nullif(trim(coalesce(p.preferred_name, '')), '') is null
+                    then concat(p.last_name, ', ', p.first_name)
+                    else concat(p.last_name, ', ', p.first_name, ' (', p.preferred_name, ')')
+                end as patient_display_name,
+                m.message_date,
+                coalesce(nullif(trim(m.title), ''), '(no subject)') as subject,
+                left(regexp_replace(coalesce(m.body, ''), E'\\s+', ' ', 'g'), 160) as preview,
+                coalesce(nullif(trim(m.status), ''), 'Unknown') as status,
+                nullif(trim(coalesce(m.assigned_to, '')), '') as assigned_to,
+                case
+                    when lower(coalesce(m.title, '')) like '%urgent%'
+                      or lower(coalesce(m.title, '')) like '%critical%'
+                    then 'urgent'
+                    else 'normal'
+                end as priority,
+                current_date - coalesce(m.message_date, current_date) as age_days,
+                lower(coalesce(m.status, '')) = 'new' as unread,
+                m.portal_relation,
+                coalesce(m.updated_at, m.message_date::timestamp) as updated_at
+            from messages m
+            join patients p on p.legacy_pid = m.pid
+            where {string.Join(" and ", conditions)}
+            order by unread desc, coalesce(m.updated_at, m.message_date::timestamp) desc, m.id desc
+            offset @offset
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("currentUsername", currentUsername);
+        command.Parameters.AddWithValue("offset", offset);
+        command.Parameters.AddWithValue("limit", limit);
+
+        var items = new List<StaffMessageInboxItem>();
+        var total = 0;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                total = reader.GetInt32(reader.GetOrdinal("total_count"));
+                items.Add(new StaffMessageInboxItem(
+                    Id: reader.GetString(reader.GetOrdinal("id")),
+                    PatientId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                    Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                    PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                    Date: ReadNullableDate(reader, "message_date"),
+                    Subject: reader.GetString(reader.GetOrdinal("subject")),
+                    Preview: reader.GetString(reader.GetOrdinal("preview")),
+                    Status: reader.GetString(reader.GetOrdinal("status")),
+                    AssignedTo: ReadNullableString(reader, "assigned_to"),
+                    Priority: reader.GetString(reader.GetOrdinal("priority")),
+                    AgeDays: reader.GetInt32(reader.GetOrdinal("age_days")),
+                    Unread: reader.GetBoolean(reader.GetOrdinal("unread")),
+                    PortalRelation: ReadNullableString(reader, "portal_relation"),
+                    UpdatedAt: ReadNullableTimestamp(reader, "updated_at")));
+            }
+        }
+
+        await using var countsCommand = connection.CreateCommand();
+        countsCommand.CommandText = """
+            select
+                count(*)::int as total,
+                count(*) filter (where lower(coalesce(status, '')) = 'new')::int as unread,
+                count(*) filter (where lower(coalesce(assigned_to, '')) = lower(@currentUsername))::int as assigned_to_me,
+                count(*) filter (where nullif(trim(coalesce(assigned_to, '')), '') is null)::int as unassigned
+            from messages
+            where deleted = 0 and activity = 1;
+            """;
+        countsCommand.Parameters.AddWithValue("currentUsername", currentUsername);
+        await using var countsReader = await countsCommand.ExecuteReaderAsync(cancellationToken);
+        await countsReader.ReadAsync(cancellationToken);
+        var counts = new StaffMessageInboxCounts(
+            Total: countsReader.GetInt32(countsReader.GetOrdinal("total")),
+            Unread: countsReader.GetInt32(countsReader.GetOrdinal("unread")),
+            AssignedToMe: countsReader.GetInt32(countsReader.GetOrdinal("assigned_to_me")),
+            Unassigned: countsReader.GetInt32(countsReader.GetOrdinal("unassigned")));
+
+        return new StaffMessageInboxResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Total: total,
+            Offset: offset,
+            Limit: limit,
+            Counts: counts,
+            Items: items);
+    }
+
     public async Task<PatientMessagesResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);

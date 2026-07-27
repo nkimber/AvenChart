@@ -45,6 +45,12 @@ function urgencyLabel(days: number | null): string {
   return `${days}d remaining`
 }
 
+function dateAfterDays(days: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export default function PrescriptionRenewals() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState>({ status: 'idle' })
@@ -99,7 +105,7 @@ export default function PrescriptionRenewals() {
     if (!renewDays || isNaN(Number(renewDays))) return
     const days = Number(renewDays)
     const startDate = new Date().toISOString().slice(0, 10)
-    const endDate = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+    const endDate = dateAfterDays(days)
     try {
       await createPrescription(session.sessionId, {
         patientId: entry.patient.canonicalId,

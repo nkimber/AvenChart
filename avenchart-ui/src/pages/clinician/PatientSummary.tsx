@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { CalendarClock, FileText, Phone, Plus, Printer, Shield, Trash2 } from 'lucide-react'
 import {
@@ -91,7 +91,8 @@ export default function PatientSummary() {
     finally { setRecordRequestLoading(false) }
   }
 
-  useEffect(() => { void loadRecordRequests() }, [session.sessionId, patientId])
+  const loadRecordRequestsOnPatientChange = useEffectEvent(loadRecordRequests)
+  useEffect(() => { void loadRecordRequestsOnPatientChange() }, [session.sessionId, patientId])
 
   function openAddInsurance() { setInsForm({ ...BLANK_INS }); setInsMode({ kind: 'add' }) }
 

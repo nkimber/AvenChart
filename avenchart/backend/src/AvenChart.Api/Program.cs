@@ -269,7 +269,21 @@ auth.MapGet("/login-audit", async (
         var response = await repository.GetLoginAuditAsync(limit ?? 10, cancellationToken);
         return Results.Ok(response);
     })
-    .WithName("GetLoginAudit");
+    .WithName("GetLoginAudit")
+    .AddEndpointFilter(AccessPermissionFilter("admin", "super", "view"));
+
+auth.MapGet("/activity-audit", async (
+        AuthRepository repository,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var response = await repository.GetAuthenticationActivityAuditAsync(
+            limit ?? 25,
+            cancellationToken);
+        return Results.Ok(response);
+    })
+    .WithName("GetAuthenticationActivityAudit")
+    .AddEndpointFilter(AccessPermissionFilter("admin", "super", "view"));
 
 var patientPortal = app.MapGroup("/api/patient-portal").WithTags("Patient Portal");
 
@@ -2317,6 +2331,38 @@ clinicalLists.MapDelete("/immunizations/{immunizationId:int}", async (
 
 var messages = app.MapGroup("/api/messages").WithTags("Messages");
 RequireAccessPermission(messages, "patients", "notes", "view");
+
+messages.MapGet("/inbox", async (
+        MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string? status,
+        string? assignment,
+        string? patient,
+        string? subject,
+        string? priority,
+        string? owner,
+        int? minimumAgeDays,
+        int? maximumAgeDays,
+        int? offset,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var query = new StaffMessageInboxQuery(
+            Status: status,
+            Assignment: assignment,
+            Patient: patient,
+            Subject: subject,
+            Priority: priority,
+            Owner: owner,
+            MinimumAgeDays: minimumAgeDays,
+            MaximumAgeDays: maximumAgeDays,
+            Offset: offset ?? 0,
+            Limit: limit ?? 25);
+        return Results.Ok(await repository.GetInboxAsync(session.Username, query, cancellationToken));
+    })
+    .WithName("GetStaffMessageInbox");
 
 messages.MapGet("/{patientId}", async (
         MessageRepository repository,

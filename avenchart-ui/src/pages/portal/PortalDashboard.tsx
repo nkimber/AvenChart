@@ -8,6 +8,7 @@ import {
 } from '../../api.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
+import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
 
 type AsyncState<T> =
   | { status: 'idle' }
@@ -189,11 +190,7 @@ export default function PortalDashboard() {
                       {appt.facilityName ? ` · ${appt.facilityName}` : ''}
                     </p>
                   </div>
-                  {appt.status && (
-                    <span className={`appt-status appt-status-${appt.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                      {appt.status}
-                    </span>
-                  )}
+                  <AppointmentStatusBadge value={appt.status} />
                 </li>
               )
             })}

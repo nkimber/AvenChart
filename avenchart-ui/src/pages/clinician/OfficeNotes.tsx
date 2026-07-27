@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { createOfficeNote, deleteOfficeNote, getOfficeNotes, setOfficeNoteActivity, updateOfficeNote, type OfficeNoteItem } from '../../api.ts'
@@ -18,7 +18,8 @@ export default function OfficeNotes() {
   async function refresh(next = activity) {
     try { const result = await getOfficeNotes(session.sessionId, next); setNotes(result.notes) } catch { showToast('Could not load office notes.', 'error') }
   }
-  useEffect(() => { void refresh() }, [activity])
+  const refreshOnFilterChange = useEffectEvent(refresh)
+  useEffect(() => { void refreshOnFilterChange(activity) }, [activity, session.sessionId])
   async function add() { try { await createOfficeNote(session.sessionId, body); setBody(''); await refresh(); showToast('Office note added.', 'success') } catch { showToast('Office note could not be added.', 'error') } }
   async function save(id: string) { try { await updateOfficeNote(session.sessionId, id, draft); setEditing(null); await refresh(); showToast('Office note updated.', 'success') } catch { showToast('Office note could not be updated.', 'error') } }
   async function toggle(note: OfficeNoteItem) { try { await setOfficeNoteActivity(session.sessionId, note.id, !note.active); await refresh(); showToast(note.active ? 'Office note inactivated.' : 'Office note activated.', 'success') } catch { showToast('Office note activity could not be changed.', 'error') } }

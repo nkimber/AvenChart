@@ -60,3 +60,22 @@ public sealed record AuthAuditResponse(
     int SuccessfulLogins,
     int FailedLogins,
     IReadOnlyList<AuthAuditEventItem> Events);
+
+public sealed record AuthSessionAuditItem(
+    string Username,
+    string Role,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastSeenAt,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset? EndedAt,
+    bool Active,
+    string SessionSource);
+
+public sealed record AuthActivityAuditResponse(
+    int TotalEvents,
+    int SuccessfulLogins,
+    int FailedLogins,
+    int ActiveSessions,
+    int EndedSessions,
+    IReadOnlyList<AuthAuditEventItem> Events,
+    IReadOnlyList<AuthSessionAuditItem> Sessions);

@@ -50,7 +50,6 @@ export default function SchedulingOperations() {
   }
 
   // This route starts an external data request when the clinician session changes.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [session.sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function promoteWaitlist(appointmentId: string) {

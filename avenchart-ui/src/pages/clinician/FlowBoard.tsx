@@ -2,17 +2,11 @@ import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getAppointmentFlowBoard, updateAppointmentStatus, type FlowBoardResponse } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
+import { getAppointmentStatus } from '../../domain/appointmentStatus.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 function today() {
   return new Date().toISOString().slice(0, 10)
-}
-
-function statusLabel(status: string) {
-  if (status === '@') return 'arrived'
-  if (status === '>') return 'in room'
-  if (status === '<') return 'completed'
-  return 'updated'
 }
 
 export default function FlowBoard() {
@@ -39,7 +33,7 @@ export default function FlowBoard() {
     setUpdating(appointmentId)
     try {
       await updateAppointmentStatus(session.sessionId, appointmentId, status)
-      showToast(`Appointment marked ${statusLabel(status)}.`, 'success')
+      showToast(`Appointment marked ${getAppointmentStatus(status).label.toLowerCase()}.`, 'success')
       load()
     } catch {
       showToast('Could not update appointment status.', 'error')

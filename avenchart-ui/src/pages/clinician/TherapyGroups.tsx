@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { addTherapyGroupMember, createTherapyGroup, createTherapyGroupSession, createTherapyGroupSessionEncounters, getTherapyGroupMembers, getTherapyGroups, getTherapyGroupSessions, updateTherapyGroupSessionStatus, type TherapyGroup, type TherapyGroupMember, type TherapyGroupSession } from '../../api.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
@@ -6,8 +6,9 @@ import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 export default function TherapyGroups() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [groups, setGroups] = useState<TherapyGroup[]>([]); const [name, setName] = useState(''); const [capacity, setCapacity] = useState(12); const [selectedGroup, setSelectedGroup] = useState<TherapyGroup | null>(null); const [members, setMembers] = useState<TherapyGroupMember[]>([]); const [sessions, setSessions] = useState<TherapyGroupSession[]>([]); const [patientId, setPatientId] = useState(''); const [sessionStart, setSessionStart] = useState(''); const [durationMinutes, setDurationMinutes] = useState(60); const [topic, setTopic] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState('')
-  const load = () => getTherapyGroups(session.sessionId).then((data) => setGroups(data.groups)).catch(() => {})
-  useEffect(() => { load() }, [])
+  const load = () => getTherapyGroups(session.sessionId).then((data) => { setGroups(data.groups); setError('') }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load therapy groups.'))
+  const loadOnSessionChange = useEffectEvent(load)
+  useEffect(() => { loadOnSessionChange() }, [session.sessionId])
   async function create() { if (!name.trim()) return; await createTherapyGroup(session.sessionId, { name, capacity }); setName(''); load() }
   async function select(group: TherapyGroup) { setSelectedGroup(group); setError(''); const [nextMembers, nextSessions] = await Promise.all([getTherapyGroupMembers(session.sessionId, group.id), getTherapyGroupSessions(session.sessionId, group.id)]); setMembers(nextMembers); setSessions(nextSessions) }
   async function addMember() { if (!selectedGroup || !patientId.trim()) return; try { await addTherapyGroupMember(session.sessionId, selectedGroup.id, patientId); setPatientId(''); setMembers(await getTherapyGroupMembers(session.sessionId, selectedGroup.id)); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to add member.') } }

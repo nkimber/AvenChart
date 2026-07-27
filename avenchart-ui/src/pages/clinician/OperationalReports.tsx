@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createSavedReportDefinition, downloadReportFamilyCsv, getOperationalReports, getReportFamilies, getSavedReportDefinitions, runSavedReportDefinition, type OperationalReportsResponse, type ReportFamily, type SavedReportDefinition } from '../../api.ts'
+import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 type AsyncState<T> =
@@ -37,13 +38,13 @@ export default function OperationalReports() {
     getOperationalReports(session.sessionId)
       .then((data) => setState({ status: 'ready', data }))
       .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  function loadDefinitions() { getSavedReportDefinitions(session.sessionId).then((data) => setDefinitions(data.definitions)).catch(() => {}) }
-  useEffect(() => { loadDefinitions() }, [])
-  useEffect(() => { getReportFamilies(session.sessionId).then(setFamilies).catch(() => {}) }, [session.sessionId])
-  async function saveDefinition() { try { await createSavedReportDefinition(session.sessionId, { name: definitionName, schedule, active: true, reportType }); loadDefinitions() } catch {} }
-  async function exportFamily() { try { const blob = await downloadReportFamilyCsv(session.sessionId, reportType, fromDate || undefined, toDate || undefined); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `legacy-ehr-${reportType}-report.csv`; link.click(); URL.revokeObjectURL(link.href) } catch {} }
+  }, [session.sessionId])
+  function loadDefinitions() { getSavedReportDefinitions(session.sessionId).then((data) => setDefinitions(data.definitions)).catch(() => showToast('Could not load saved report definitions.', 'error')) }
+  const loadDefinitionsOnSessionChange = useEffectEvent(loadDefinitions)
+  useEffect(() => { loadDefinitionsOnSessionChange() }, [session.sessionId])
+  useEffect(() => { getReportFamilies(session.sessionId).then(setFamilies).catch(() => showToast('Could not load report families.', 'error')) }, [session.sessionId])
+  async function saveDefinition() { try { await createSavedReportDefinition(session.sessionId, { name: definitionName, schedule, active: true, reportType }); loadDefinitions(); showToast('Report definition saved.', 'success') } catch { showToast('Could not save the report definition.', 'error') } }
+  async function exportFamily() { try { const blob = await downloadReportFamilyCsv(session.sessionId, reportType, fromDate || undefined, toDate || undefined); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `legacy-ehr-${reportType}-report.csv`; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); showToast('Report CSV downloaded.', 'success') } catch { showToast('Could not export the report CSV.', 'error') } }
 
   return (
     <div className="clinician-page">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { ClipboardList, Plus } from 'lucide-react'
 import {
   createPatientSdohAssessment,
@@ -66,7 +66,8 @@ export default function PatientSdoh() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { void load() }, [session.sessionId, patientId])
+  const loadOnPatientChange = useEffectEvent(load)
+  useEffect(() => { void loadOnPatientChange() }, [session.sessionId, patientId])
 
   function beginNew() { setForm(blankInput()); setEditing('new') }
   function beginEdit(assessment: PatientSdohAssessment) { setForm(toInput(assessment)); setEditing(assessment) }

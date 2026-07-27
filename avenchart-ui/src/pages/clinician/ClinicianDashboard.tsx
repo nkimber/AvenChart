@@ -12,6 +12,7 @@ import {
   type ProcedureReportQueueResponse,
   type OperationalReportsResponse,
 } from '../../api.ts'
+import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 type AsyncState<T> =
@@ -37,15 +38,6 @@ function loadRecentPatients(): RecentPatient[] {
 
 function today() { return new Date().toISOString().slice(0, 10) }
 function formatTime(t?: string | null) { return t ? t.slice(0, 5) : '' }
-
-function apptStatusClass(status?: string | null) {
-  if (!status) return ''
-  const s = status.toLowerCase()
-  if (s.includes('cancel')) return 'appt-status-cancelled'
-  if (s.includes('complet') || s.includes('check')) return 'appt-status-completed'
-  if (s.includes('pend') || s.includes('arriv') || s.includes('room')) return 'appt-status-pending'
-  return 'appt-status-scheduled'
-}
 
 function greeting() {
   const h = new Date().getHours()
@@ -136,7 +128,7 @@ export default function ClinicianDashboard() {
           <ChevronRight size={14} className="dash-stat-arrow" />
         </Link>
 
-        <Link to="/clinician/messages" className={`dash-stat-tile${newMessages ? ' dash-stat-tile-alert' : ''}`}>
+        <Link to="/clinician/messages?status=new" className={`dash-stat-tile${newMessages ? ' dash-stat-tile-alert' : ''}`}>
           <div className={`dash-stat-icon${newMessages ? ' dash-stat-icon-indigo' : ' dash-stat-icon-muted'}`}><Mail size={18} /></div>
           <div className="dash-stat-body">
             <p className="dash-stat-value">
@@ -202,11 +194,7 @@ export default function ClinicianDashboard() {
                         {appt.room ? ` · Room ${appt.room}` : ''}
                       </p>
                     </div>
-                    {appt.status && (
-                      <span className={`appt-status ${apptStatusClass(appt.status)}`}>
-                        {appt.status}
-                      </span>
-                    )}
+                    <AppointmentStatusBadge value={appt.status} />
                   </li>
                 ))}
               </ul>

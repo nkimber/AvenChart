@@ -19,6 +19,11 @@ import {
 } from '../../api.ts'
 import type { PatientOutletContext } from './PatientShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
+import {
+  getAppointmentStatus,
+  getAppointmentStatusOptions,
+  isCancelledAppointment,
+} from '../../domain/appointmentStatus.ts'
 
 type AsyncState<T> =
   | { status: 'loading' }
@@ -37,7 +42,6 @@ type AppointmentEditForm = {
   status: string
 }
 
-const STATUS_OPTIONS = ['Scheduled', 'Arrived', 'In Room', 'Checked Out', 'No Show', 'Cancelled']
 const DURATION_OPTIONS = [10, 15, 20, 30, 45, 60, 90]
 
 function formatTime(t?: string | null) {
@@ -58,16 +62,12 @@ function formFromAppointment(appointment: AppointmentListItem): AppointmentEditF
     facilityId: appointment.facilityId?.toString() ?? '',
     room: appointment.room ?? '',
     comments: appointment.comments ?? '',
-    status: appointment.status ?? '',
+    status: getAppointmentStatus(appointment.status).apiValue,
   }
 }
 
 function nullableId(value: string): number | null {
   return value ? Number(value) : null
-}
-
-function isCancelledStatus(status?: string | null) {
-  return status?.toLowerCase().includes('cancel') ?? false
 }
 
 export default function PatientAppointments() {
@@ -104,18 +104,17 @@ export default function PatientAppointments() {
   }
 
   // Switching charts must immediately replace the appointment list with a fresh request.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleStatusChange(apptId: string, status: string) {
-    if (status === 'Cancelled') {
+    if (isCancelledAppointment(status)) {
       await cancelAppointment(apptId)
       return
     }
     setUpdatingId(apptId)
     try {
       await updateAppointmentStatus(session.sessionId, apptId, status)
-      showToast(`Status updated to "${status}"`)
+      showToast(`Status updated to "${getAppointmentStatus(status).label}"`)
       load()
     } catch {
       showToast('Could not update status.', 'error')
@@ -321,7 +320,7 @@ export default function PatientAppointments() {
     if (!window.confirm('Cancel this appointment?')) return
     setUpdatingId(id)
     try {
-      await updateAppointmentStatus(session.sessionId, id, 'Cancelled')
+      await updateAppointmentStatus(session.sessionId, id, 'x')
       showToast('Appointment cancelled.', 'success')
       load()
     } catch {
@@ -334,7 +333,7 @@ export default function PatientAppointments() {
   async function restoreAppointment(id: string) {
     setUpdatingId(id)
     try {
-      await updateAppointmentStatus(session.sessionId, id, 'Scheduled')
+      await updateAppointmentStatus(session.sessionId, id, '-')
       showToast('Appointment restored to scheduled.', 'success')
       load()
     } catch {
@@ -508,8 +507,7 @@ export default function PatientAppointments() {
               <div className="field">
                 <label className="label" htmlFor="edit-appt-status">Status</label>
                 <select id="edit-appt-status" className="select" value={editForm.status} onChange={(event) => setEditForm((form) => form && ({ ...form, status: event.target.value }))}>
-                  {!editForm.status && <option value="">Keep current status</option>}
-                  {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {getAppointmentStatusOptions(editingAppointment.status).map((status) => <option key={status.apiValue} value={status.apiValue}>{status.label}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -628,15 +626,14 @@ export default function PatientAppointments() {
                   <td className="cl-td-muted">{appointment.providerName ?? '—'}</td>
                   <td className="cl-td-muted">{appointment.facilityName ?? '—'}</td>
                   <td>
-                    <select className="cl-status-select" value={appointment.status ?? ''} disabled={updatingId === appointment.id} onChange={(event) => handleStatusChange(appointment.id, event.target.value)} aria-label={`Appointment status on ${appointment.date}`}>
-                      {!appointment.status && <option value="">—</option>}
-                      {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                    <select className="cl-status-select" value={getAppointmentStatus(appointment.status).apiValue} disabled={updatingId === appointment.id} onChange={(event) => handleStatusChange(appointment.id, event.target.value)} aria-label={`Appointment status on ${appointment.date}`}>
+                      {getAppointmentStatusOptions(appointment.status).map((status) => <option key={status.apiValue} value={status.apiValue}>{status.label}</option>)}
                     </select>
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openEditor(appointment)} aria-label={`Edit appointment on ${appointment.date}`}><Pencil size={13} /> Edit</button>
                     {appointment.isRecurringSeries && <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => openRescheduler(appointment)} style={{ marginLeft: 6 }}>Reschedule</button>}
-                    {isCancelledStatus(appointment.status)
+                    {isCancelledAppointment(appointment.status)
                       ? <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => restoreAppointment(appointment.id)} style={{ marginLeft: 6 }}>Restore</button>
                       : <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => cancelAppointment(appointment.id)} style={{ marginLeft: 6 }}>Cancel</button>}
                     <button className="cl-btn-secondary" type="button" disabled={updatingId === appointment.id} onClick={() => deleteAppointmentPermanently(appointment.id)} style={{ marginLeft: 6 }}>Delete</button>

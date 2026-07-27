@@ -4,6 +4,135 @@
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5001'
 
+export const SESSION_INVALID_EVENT = 'avenchart-ui:session-invalid'
+
+export type SessionScope = 'clinician' | 'portal'
+
+export type ApiProblemDetails = {
+  title?: string
+  detail?: string
+  status?: number
+  errors?: Record<string, string[]>
+  traceId?: string
+}
+
+export type ApiErrorKind = 'http' | 'network' | 'timeout' | 'cancelled'
+
+export class ApiRequestError extends Error {
+  readonly status?: number
+  readonly problem?: ApiProblemDetails
+  readonly kind: ApiErrorKind
+
+  constructor(
+    message: string,
+    status?: number,
+    problem?: ApiProblemDetails,
+    kind: ApiErrorKind = 'http',
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.problem = problem
+    this.kind = kind
+  }
+}
+
+const API_TIMEOUT_MILLISECONDS = 30_000
+
+/**
+ * Governed transport for every request in this module. It adds a bounded
+ * timeout, preserves caller cancellation, identifies the protected session
+ * scope from its header, and normalizes HTTP/network failures.
+ */
+async function fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const requestController = new AbortController()
+  const callerSignal = init.signal
+  const headers = new Headers(init.headers)
+  const scope: SessionScope | undefined = headers.has('X-Legacy EHR-Patient-Portal-Session')
+    ? 'portal'
+    : headers.has('X-Legacy EHR-Session')
+      ? 'clinician'
+      : undefined
+  const action = `${init.method ?? 'GET'} ${String(input).replace(apiBaseUrl, '')}`
+  let timedOut = false
+
+  const cancelFromCaller = () => requestController.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) {
+    cancelFromCaller()
+  } else {
+    callerSignal?.addEventListener('abort', cancelFromCaller, { once: true })
+  }
+
+  const timeout = window.setTimeout(() => {
+    timedOut = true
+    requestController.abort()
+  }, API_TIMEOUT_MILLISECONDS)
+
+  try {
+    const response = await globalThis.fetch(input, {
+      ...init,
+      signal: requestController.signal,
+    })
+    await requireSuccessfulResponse(response, action, scope)
+    return response
+  } catch (caught) {
+    if (caught instanceof ApiRequestError) throw caught
+    if (callerSignal?.aborted) {
+      throw new ApiRequestError(`${action} was cancelled.`, undefined, undefined, 'cancelled')
+    }
+    if (timedOut) {
+      throw new ApiRequestError(
+        `${action} timed out. Try again.`,
+        undefined,
+        undefined,
+        'timeout',
+      )
+    }
+    throw new ApiRequestError(
+      `${action} could not reach the server. Check your connection and try again.`,
+      undefined,
+      undefined,
+      'network',
+    )
+  } finally {
+    window.clearTimeout(timeout)
+    callerSignal?.removeEventListener('abort', cancelFromCaller)
+  }
+}
+
+function announceInvalidSession(scope: SessionScope) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(SESSION_INVALID_EVENT, { detail: { scope } }))
+}
+
+async function parseProblemDetails(response: Response): Promise<ApiProblemDetails | undefined> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('json')) return undefined
+
+  try {
+    return await response.json() as ApiProblemDetails
+  } catch {
+    return undefined
+  }
+}
+
+async function requireSuccessfulResponse(
+  response: Response,
+  action: string,
+  scope?: SessionScope,
+): Promise<Response> {
+  if (response.ok) return response
+  if (response.status === 401 && scope) announceInvalidSession(scope)
+
+  const problem = await parseProblemDetails(response)
+  const message = problem?.detail ?? problem?.title ?? `${action} failed with ${response.status}`
+  throw new ApiRequestError(message, response.status, problem)
+}
+
+export function isInvalidSessionError(error: unknown): boolean {
+  return error instanceof ApiRequestError && (error.status === 401 || error.status === 403)
+}
+
 export type AuthLoginInput = {
   username: string
   password: string
@@ -80,9 +209,7 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
     body: JSON.stringify(input),
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Login request failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Login request')
   return response.json()
 }
 
@@ -91,9 +218,21 @@ export async function getCurrentSession(sessionId: string, signal?: AbortSignal)
     headers: { 'X-Legacy EHR-Session': sessionId },
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Session check failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Session check', 'clinician')
+  return response.json()
+}
+
+export async function logout(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AuthSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+    signal,
+  })
+  await requireSuccessfulResponse(response, 'Session logout', 'clinician')
   return response.json()
 }
 
@@ -107,9 +246,7 @@ export async function loginPatientPortal(
     body: JSON.stringify(input),
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Patient portal login request failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Patient portal login request')
   return response.json()
 }
 
@@ -121,9 +258,20 @@ export async function getPatientPortalSession(
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Patient portal session check failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Patient portal session check', 'portal')
+  return response.json()
+}
+
+export async function endPatientPortalSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalSessionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
+    method: 'DELETE',
+    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+    signal,
+  })
+  await requireSuccessfulResponse(response, 'Patient portal session logout', 'portal')
   return response.json()
 }
 
@@ -649,9 +797,7 @@ export async function getPatientPortalAppointmentRequestOptions(
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Patient portal appointment request options failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Patient portal appointment request options', 'portal')
   return response.json()
 }
 
@@ -692,9 +838,7 @@ export async function requestPatientPortalAppointment(
     body: JSON.stringify(input),
     signal,
   })
-  if (!response.ok) {
-    throw new Error(`Patient portal appointment request failed with ${response.status}`)
-  }
+  await requireSuccessfulResponse(response, 'Patient portal appointment request', 'portal')
   return response.json()
 }
 
@@ -761,7 +905,7 @@ async function clinicianGet<T>(sessionId: string, path: string, signal?: AbortSi
     headers: { 'X-Legacy EHR-Session': sessionId },
     signal,
   })
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`)
+  await requireSuccessfulResponse(response, `GET ${path}`, 'clinician')
   return response.json()
 }
 
@@ -772,7 +916,7 @@ async function clinicianPost<T>(sessionId: string, path: string, body: unknown, 
     body: JSON.stringify(body),
     signal,
   })
-  if (!response.ok) throw new Error(`POST ${path} failed with ${response.status}`)
+  await requireSuccessfulResponse(response, `POST ${path}`, 'clinician')
   return response.json()
 }
 
@@ -783,7 +927,7 @@ async function clinicianPut<T>(sessionId: string, path: string, body: unknown, s
     body: JSON.stringify(body),
     signal,
   })
-  if (!response.ok) throw new Error(`PUT ${path} failed with ${response.status}`)
+  await requireSuccessfulResponse(response, `PUT ${path}`, 'clinician')
   return response.json()
 }
 
@@ -1676,6 +1820,67 @@ export type PatientMessagesResponse = {
   messages: PatientMessageItem[]
 }
 
+export type StaffMessageInboxCounts = {
+  total: number
+  unread: number
+  assignedToMe: number
+  unassigned: number
+}
+
+export type StaffMessageInboxItem = {
+  id: string
+  patientId: string
+  pubpid: string
+  patientDisplayName: string
+  date?: string | null
+  subject: string
+  preview: string
+  status: string
+  assignedTo?: string | null
+  priority: 'normal' | 'urgent' | string
+  ageDays: number
+  unread: boolean
+  portalRelation?: string | null
+  updatedAt?: string | null
+}
+
+export type StaffMessageInboxResponse = {
+  datasetId: string
+  datasetVersion: string
+  total: number
+  offset: number
+  limit: number
+  counts: StaffMessageInboxCounts
+  items: StaffMessageInboxItem[]
+}
+
+export type StaffMessageInboxQuery = {
+  status?: string
+  assignment?: 'all' | 'mine' | 'unassigned'
+  patient?: string
+  subject?: string
+  priority?: 'all' | 'normal' | 'urgent'
+  owner?: string
+  minimumAgeDays?: number
+  maximumAgeDays?: number
+  offset?: number
+  limit?: number
+}
+
+export async function getStaffMessageInbox(
+  sessionId: string,
+  query: StaffMessageInboxQuery = {},
+  signal?: AbortSignal,
+): Promise<StaffMessageInboxResponse> {
+  const params = new URLSearchParams()
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === '' || value === 'all') return
+    params.set(key, String(value))
+  })
+  const suffix = params.size > 0 ? `?${params}` : ''
+  return clinicianGet(sessionId, `/api/messages/inbox${suffix}`, signal)
+}
+
 export async function getPatientMessages(
   sessionId: string,
   patientId: string,
@@ -1796,6 +2001,56 @@ export async function getPatientDocuments(
   signal?: AbortSignal,
 ): Promise<PatientDocumentsResponse> {
   return clinicianGet(sessionId, `/api/documents/${patientId}`, signal)
+}
+
+export type DownloadedFile = {
+  blob: Blob
+  fileName: string
+  contentType: string
+}
+
+function getDownloadFileName(response: Response, fallbackName: string): string {
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encodedName) {
+    try {
+      return decodeURIComponent(encodedName.replace(/^["']|["']$/g, ''))
+    } catch {
+      // Fall back when a server returns malformed percent encoding.
+    }
+  }
+
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim() || fallbackName
+}
+
+export async function downloadPatientDocument(
+  sessionId: string,
+  documentId: number,
+  fallbackName: string,
+  signal?: AbortSignal,
+): Promise<DownloadedFile> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(response, 'Document download', 'clinician')
+
+  const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
+  if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
+    throw new ApiRequestError(
+      'The document service returned a web page instead of the requested file.',
+      response.status,
+    )
+  }
+
+  return {
+    blob: await response.blob(),
+    fileName: getDownloadFileName(response, fallbackName),
+    contentType,
+  }
 }
 
 // ── Procedures / Lab Queue ────────────────────────────────────────────────────
@@ -2356,9 +2611,57 @@ export async function getLoginAudit(
   sessionId: string,
   limit?: number,
   signal?: AbortSignal,
-): Promise<{ entries: Array<{ username: string; at: string; sourceIp?: string | null; success: boolean }> }> {
+): Promise<AuthenticationAuditLoginSummary> {
   const q = limit ? `?limit=${limit}` : ''
   return clinicianGet(sessionId, `/api/auth/login-audit${q}`, signal)
+}
+
+export type AuthenticationAuditEvent = {
+  id: number
+  occurredAt: string
+  event: string
+  username: string
+  success: boolean
+  sourceIp?: string | null
+  comment: string
+  failureReason?: string | null
+  logSource: string
+}
+
+export type AuthenticationAuditLoginSummary = {
+  totalEvents: number
+  successfulLogins: number
+  failedLogins: number
+  events: AuthenticationAuditEvent[]
+}
+
+export type AuthenticationSessionAuditItem = {
+  username: string
+  role: string
+  createdAt: string
+  lastSeenAt: string
+  expiresAt: string
+  endedAt?: string | null
+  active: boolean
+  sessionSource: string
+}
+
+export type AuthenticationActivityAuditResponse = AuthenticationAuditLoginSummary & {
+  activeSessions: number
+  endedSessions: number
+  sessions: AuthenticationSessionAuditItem[]
+}
+
+export async function getAuthenticationActivityAudit(
+  sessionId: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<AuthenticationActivityAuditResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/auth/activity-audit?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  )
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
@@ -2369,7 +2672,7 @@ async function clinicianDelete(sessionId: string, path: string, signal?: AbortSi
     headers: clinicianHeaders(sessionId),
     signal,
   })
-  if (!response.ok) throw new Error(`DELETE ${path} failed with ${response.status}`)
+  await requireSuccessfulResponse(response, `DELETE ${path}`, 'clinician')
 }
 
 async function clinicianDeleteJson<T>(sessionId: string, path: string, signal?: AbortSignal): Promise<T> {
@@ -2378,7 +2681,7 @@ async function clinicianDeleteJson<T>(sessionId: string, path: string, signal?: 
     headers: clinicianHeaders(sessionId),
     signal,
   })
-  if (!response.ok) throw new Error(`DELETE ${path} failed with ${response.status}`)
+  await requireSuccessfulResponse(response, `DELETE ${path}`, 'clinician')
   return response.json()
 }
 

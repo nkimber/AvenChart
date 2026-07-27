@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useEffectEvent, useState, type FormEvent } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import {
@@ -9,6 +9,7 @@ import {
   deleteAdministrationFacility,
   deleteAdministrationUser,
   getAdministrationDirectory,
+  getAuthenticationActivityAudit,
   getApiClientRegistryHistory,
   getApiClients,
   getConfigurationCatalog,
@@ -53,6 +54,7 @@ import {
   saveClinicalAlertRule,
   saveApiClient,
   type AdministrationDirectoryResponse,
+  type AuthenticationActivityAuditResponse,
   type ApiClientRegistryItem,
   type ApiClientRegistryHistory,
   type AdministrationFacilityItem,
@@ -166,7 +168,7 @@ function apiClientToForm(client: ApiClientRegistryItem): ApiClientForm { return 
 export default function AdminDirectory() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [state, setState] = useState<AsyncState<AdministrationDirectoryResponse>>({ status: 'loading' })
-  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration' | 'layouts' | 'rules' | 'modules' | 'apiClients'>('users')
+  const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'authAudit' | 'audit' | 'configuration' | 'layouts' | 'rules' | 'modules' | 'apiClients'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
   const [practiceSettingHistory, setPracticeSettingHistory] = useState<PracticeSettingHistory | null>(null)
@@ -197,6 +199,9 @@ export default function AdminDirectory() {
   const [editingApiClientKey, setEditingApiClientKey] = useState<string | null>(null)
   const [savingApiClient, setSavingApiClient] = useState(false)
   const [auditState, setAuditState] = useState<AsyncState<PhiAccessAuditResponse>>({ status: 'loading' })
+  const [authAuditState, setAuthAuditState] = useState<
+    AsyncState<AuthenticationActivityAuditResponse>
+  >({ status: 'loading' })
   const [auditFilters, setAuditFilters] = useState({ username: '', from: '', to: '' })
   const [facilityForm, setFacilityForm] = useState<FacilityForm>(() => emptyFacilityForm())
   const [editingFacilityId, setEditingFacilityId] = useState<number | 'new' | null>(null)
@@ -213,17 +218,54 @@ export default function AdminDirectory() {
   const [removingMembership, setRemovingMembership] = useState<string | null>(null)
   const [removingPermission, setRemovingPermission] = useState<string | null>(null)
   const [reviewActionId, setReviewActionId] = useState<string | null>(null)
+  const loadPhiAccessAuditOnTabChange = useEffectEvent(async () => {
+    setAuditState({ status: 'loading' })
+    try {
+      setAuditState({
+        status: 'ready',
+        data: await getPhiAccessAudit(session.sessionId, { ...auditFilters, limit: 200 }),
+      })
+    } catch (err) {
+      setAuditState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Failed to load PHI access audit.',
+      })
+    }
+  })
+  const loadAuthenticationAuditOnTabChange = useEffectEvent(async () => {
+    await loadAuthenticationAudit()
+  })
+  async function loadAuthenticationAudit() {
+    setAuthAuditState({ status: 'loading' })
+    try {
+      setAuthAuditState({
+        status: 'ready',
+        data: await getAuthenticationActivityAudit(session.sessionId),
+      })
+    } catch (err) {
+      setAuthAuditState({
+        status: 'error',
+        message:
+          err instanceof Error
+            ? err.message
+            : 'Failed to load authentication activity.',
+      })
+    }
+  }
 
   useEffect(() => {
     getAdministrationDirectory(session.sessionId)
       .then((data) => setState({ status: 'ready', data }))
       .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed.' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [session.sessionId])
 
   useEffect(() => {
     if (tab !== 'audit') return
-    void loadPhiAccessAudit()
+    void loadPhiAccessAuditOnTabChange()
+  }, [session.sessionId, tab])
+  useEffect(() => {
+    if (tab !== 'authAudit') return
+    void loadAuthenticationAuditOnTabChange()
   }, [session.sessionId, tab])
   async function loadPhiAccessAudit() { setAuditState({ status: 'loading' }); try { setAuditState({ status: 'ready', data: await getPhiAccessAudit(session.sessionId, { ...auditFilters, limit: 200 }) }) } catch (err) { setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }) } }
   async function exportPhiAccessAudit() { try { const url = URL.createObjectURL(await downloadPhiAccessAuditCsv(session.sessionId, { ...auditFilters, limit: 200 })); const link = document.createElement('a'); link.href = url; link.download = 'legacy-ehr-phi-access-audit.csv'; link.click(); URL.revokeObjectURL(url) } catch { showToast('Could not export PHI access audit.', 'error') } }
@@ -532,6 +574,7 @@ export default function AdminDirectory() {
                 { id: 'facilities', label: `Facilities (${data.counts.facilities})` },
                 { id: 'access', label: `Access control (${data.counts.accessGroups})` },
                 { id: 'reviews', label: `Profile reviews (${data.counts.waitingProfileReviews})` },
+                { id: 'authAudit', label: 'Authentication audit' },
                 { id: 'audit', label: 'PHI access audit' },
                 { id: 'configuration', label: 'Configuration' },
                 { id: 'layouts', label: 'Forms & layouts' },
@@ -731,6 +774,149 @@ export default function AdminDirectory() {
                       return <article key={request.id} className="cl-review-card"><div className="cl-review-top"><div><p className="cl-form-section-label">{request.narrative}</p><h3>{request.patientName}</h3><p>{request.pubpid} · PID {request.legacyPid} · Requested {request.requestedAt}</p></div><span className="cl-badge cl-badge-muted">{request.status}</span></div><div className="cl-review-facts"><span><strong>Contact:</strong> {contact || 'Not supplied'}</span><span><strong>Address:</strong> {address || 'Not supplied'}</span><span><strong>Pending:</strong> {request.pendingAction}</span></div><div className="cl-inline-form-actions"><button className="cl-btn-primary" type="button" disabled={working} onClick={() => resolveProfileReview(request, 'accept')}><Check size={15} /> {working ? 'Working...' : 'Commit to chart'}</button><button className="cl-btn-secondary" type="button" disabled={working} onClick={() => resolveProfileReview(request, 'revert')}><RotateCcw size={15} /> Revert edits</button></div></article>
                     })}
                   </div>
+                )}
+              </section>
+            )}
+
+            {tab === 'authAudit' && (
+              <section className="cl-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="cl-admin-facility-header">
+                  <div>
+                    <h2 className="cl-card-title">Authentication activity</h2>
+                    <p className="clinician-page-subtitle">
+                      Authorized, read-only login outcomes and session lifecycle evidence.
+                      Session identifiers, credentials, and user-agent details are not exposed.
+                    </p>
+                  </div>
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => void loadAuthenticationAudit()}
+                  >
+                    Refresh
+                  </button>
+                </div>
+                {authAuditState.status === 'loading' && (
+                  <div className="skeleton-list">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="skeleton-row" style={{ height: 52 }} />
+                    ))}
+                  </div>
+                )}
+                {authAuditState.status === 'error' && (
+                  <div className="error-banner" role="alert">
+                    {authAuditState.message}
+                  </div>
+                )}
+                {authAuditState.status === 'ready' && (
+                  <>
+                    <div className="message-inbox-counts" style={{ padding: '0 20px 20px' }}>
+                      <div className="message-count-card">
+                        <span>Successful logins</span>
+                        <strong>{authAuditState.data.successfulLogins}</strong>
+                      </div>
+                      <div className="message-count-card">
+                        <span>Failed logins</span>
+                        <strong>{authAuditState.data.failedLogins}</strong>
+                      </div>
+                      <div className="message-count-card">
+                        <span>Active sessions</span>
+                        <strong>{authAuditState.data.activeSessions}</strong>
+                      </div>
+                      <div className="message-count-card">
+                        <span>Ended or expired</span>
+                        <strong>{authAuditState.data.endedSessions}</strong>
+                      </div>
+                    </div>
+                    <h3 className="cl-card-title" style={{ padding: '0 20px' }}>
+                      Recent login evidence
+                    </h3>
+                    {authAuditState.data.events.length === 0 ? (
+                      <p className="cl-empty-text" style={{ padding: '0 20px 20px' }}>
+                        No login evidence is available.
+                      </p>
+                    ) : (
+                      <table className="cl-table">
+                        <caption className="sr-only">Recent staff login outcomes</caption>
+                        <thead>
+                          <tr>
+                            <th>When</th>
+                            <th>User</th>
+                            <th>Outcome</th>
+                            <th>Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {authAuditState.data.events.map((entry) => (
+                            <tr key={entry.id}>
+                              <td className="cl-td-muted">
+                                {new Date(entry.occurredAt).toLocaleString()}
+                              </td>
+                              <td>{entry.username}</td>
+                              <td>
+                                <span
+                                  className={`cl-badge ${
+                                    entry.success ? 'cl-badge-green' : 'cl-badge-red'
+                                  }`}
+                                >
+                                  {entry.success ? 'Succeeded' : 'Failed'}
+                                </span>
+                              </td>
+                              <td className="cl-td-muted">{entry.logSource}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    <h3 className="cl-card-title" style={{ padding: '20px 20px 0' }}>
+                      Recent session lifecycle
+                    </h3>
+                    {authAuditState.data.sessions.length === 0 ? (
+                      <p className="cl-empty-text" style={{ padding: '0 20px 20px' }}>
+                        No session lifecycle evidence is available.
+                      </p>
+                    ) : (
+                      <table className="cl-table">
+                        <caption className="sr-only">Recent staff session lifecycle</caption>
+                        <thead>
+                          <tr>
+                            <th>Started</th>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th>Last activity</th>
+                            <th>State</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {authAuditState.data.sessions.map((entry, index) => (
+                            <tr key={`${entry.username}-${entry.createdAt}-${index}`}>
+                              <td className="cl-td-muted">
+                                {new Date(entry.createdAt).toLocaleString()}
+                              </td>
+                              <td>{entry.username}</td>
+                              <td className="cl-td-muted">{entry.role}</td>
+                              <td className="cl-td-muted">
+                                {new Date(entry.lastSeenAt).toLocaleString()}
+                              </td>
+                              <td>
+                                <span
+                                  className={`cl-badge ${
+                                    entry.active ? 'cl-badge-green' : 'cl-badge-muted'
+                                  }`}
+                                >
+                                  {entry.active
+                                    ? 'Active'
+                                    : entry.endedAt
+                                      ? `Signed out ${new Date(entry.endedAt).toLocaleString()}`
+                                      : 'Expired'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
                 )}
               </section>
             )}

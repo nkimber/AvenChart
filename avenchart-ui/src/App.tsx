@@ -1,61 +1,82 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
 import { ToastContainer } from './components/Toast.tsx'
+import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
 import EntryChooser from './pages/EntryChooser.tsx'
 import ClinicianLogin from './pages/ClinicianLogin.tsx'
 import PortalLogin from './pages/PortalLogin.tsx'
-import PortalShell from './pages/portal/PortalShell.tsx'
-import PortalDashboard from './pages/portal/PortalDashboard.tsx'
-import PortalMessages from './pages/portal/PortalMessages.tsx'
-import PortalAppointments from './pages/portal/PortalAppointments.tsx'
-import PortalRecords from './pages/portal/PortalRecords.tsx'
-import PortalAccount from './pages/portal/PortalAccount.tsx'
-import ClinicianShell from './pages/clinician/ClinicianShell.tsx'
-import ClinicianDashboard from './pages/clinician/ClinicianDashboard.tsx'
-import ClinicianSchedule from './pages/clinician/ClinicianSchedule.tsx'
-import ClinicianMessages from './pages/clinician/ClinicianMessages.tsx'
-import PatientSearch from './pages/clinician/PatientSearch.tsx'
-import PatientShell from './pages/clinician/PatientShell.tsx'
-import PatientSummary from './pages/clinician/PatientSummary.tsx'
-import PatientChart from './pages/clinician/PatientChart.tsx'
-import PatientTimeline from './pages/clinician/PatientTimeline.tsx'
-import PatientEncounters from './pages/clinician/PatientEncounters.tsx'
-import PatientDocuments from './pages/clinician/PatientDocuments.tsx'
-import PatientLabs from './pages/clinician/PatientLabs.tsx'
-import PatientAppointments from './pages/clinician/PatientAppointments.tsx'
-import PatientMessages from './pages/clinician/PatientMessages.tsx'
-import PatientReferrals from './pages/clinician/PatientReferrals.tsx'
-import PatientAuthorizations from './pages/clinician/PatientAuthorizations.tsx'
-import PatientSdoh from './pages/clinician/PatientSdoh.tsx'
-import PatientPrintOutputs from './pages/clinician/PatientPrintOutputs.tsx'
-import ClinicianCalendar from './pages/clinician/ClinicianCalendar.tsx'
-import FlowBoard from './pages/clinician/FlowBoard.tsx'
-import LabQueue from './pages/clinician/LabQueue.tsx'
-import OperationalReports from './pages/clinician/OperationalReports.tsx'
-import TherapyGroups from './pages/clinician/TherapyGroups.tsx'
-import BillingWorkspace from './pages/clinician/BillingWorkspace.tsx'
-import InventoryWorkspace from './pages/clinician/InventoryWorkspace.tsx'
-import AdminDirectory from './pages/clinician/AdminDirectory.tsx'
-import NewEncounter from './pages/clinician/NewEncounter.tsx'
-import NewPatient from './pages/clinician/NewPatient.tsx'
-import PrescriptionRenewals from './pages/clinician/PrescriptionRenewals.tsx'
-import SchedulingOperations from './pages/clinician/SchedulingOperations.tsx'
-import OfficeNotes from './pages/clinician/OfficeNotes.tsx'
-import AddressBook from './pages/clinician/AddressBook.tsx'
-import TrackAnything from './pages/clinician/TrackAnything.tsx'
-import EncounterTracks from './pages/clinician/EncounterTracks.tsx'
-import PatientTrackHistory from './pages/clinician/PatientTrackHistory.tsx'
-import PatientEducation from './pages/clinician/PatientEducation.tsx'
-import RecallBoard from './pages/clinician/RecallBoard.tsx'
-import BatchCommunication from './pages/clinician/BatchCommunication.tsx'
-import ChartTracker from './pages/clinician/ChartTracker.tsx'
-import DocumentTemplates from './pages/clinician/DocumentTemplates.tsx'
-import DuplicateReview from './pages/clinician/DuplicateReview.tsx'
+
+const PortalShell = lazy(() => import('./pages/portal/PortalShell.tsx'))
+const PortalDashboard = lazy(() => import('./pages/portal/PortalDashboard.tsx'))
+const PortalMessages = lazy(() => import('./pages/portal/PortalMessages.tsx'))
+const PortalAppointments = lazy(() => import('./pages/portal/PortalAppointments.tsx'))
+const PortalRecords = lazy(() => import('./pages/portal/PortalRecords.tsx'))
+const PortalAccount = lazy(() => import('./pages/portal/PortalAccount.tsx'))
+const ClinicianShell = lazy(() => import('./pages/clinician/ClinicianShell.tsx'))
+const ClinicianDashboard = lazy(() => import('./pages/clinician/ClinicianDashboard.tsx'))
+const ClinicianSchedule = lazy(() => import('./pages/clinician/ClinicianSchedule.tsx'))
+const ClinicianMessages = lazy(() => import('./pages/clinician/ClinicianMessages.tsx'))
+const PatientSearch = lazy(() => import('./pages/clinician/PatientSearch.tsx'))
+const PatientShell = lazy(() => import('./pages/clinician/PatientShell.tsx'))
+const PatientSummary = lazy(() => import('./pages/clinician/PatientSummary.tsx'))
+const PatientChart = lazy(() => import('./pages/clinician/PatientChart.tsx'))
+const PatientTimeline = lazy(() => import('./pages/clinician/PatientTimeline.tsx'))
+const PatientEncounters = lazy(() => import('./pages/clinician/PatientEncounters.tsx'))
+const PatientDocuments = lazy(() => import('./pages/clinician/PatientDocuments.tsx'))
+const PatientLabs = lazy(() => import('./pages/clinician/PatientLabs.tsx'))
+const PatientAppointments = lazy(() => import('./pages/clinician/PatientAppointments.tsx'))
+const PatientMessages = lazy(() => import('./pages/clinician/PatientMessages.tsx'))
+const PatientReferrals = lazy(() => import('./pages/clinician/PatientReferrals.tsx'))
+const PatientAuthorizations = lazy(() => import('./pages/clinician/PatientAuthorizations.tsx'))
+const PatientSdoh = lazy(() => import('./pages/clinician/PatientSdoh.tsx'))
+const PatientPrintOutputs = lazy(() => import('./pages/clinician/PatientPrintOutputs.tsx'))
+const ClinicianCalendar = lazy(() => import('./pages/clinician/ClinicianCalendar.tsx'))
+const FlowBoard = lazy(() => import('./pages/clinician/FlowBoard.tsx'))
+const LabQueue = lazy(() => import('./pages/clinician/LabQueue.tsx'))
+const OperationalReports = lazy(() => import('./pages/clinician/OperationalReports.tsx'))
+const TherapyGroups = lazy(() => import('./pages/clinician/TherapyGroups.tsx'))
+const BillingWorkspace = lazy(() => import('./pages/clinician/BillingWorkspace.tsx'))
+const InventoryWorkspace = lazy(() => import('./pages/clinician/InventoryWorkspace.tsx'))
+const AdminDirectory = lazy(() => import('./pages/clinician/AdminDirectory.tsx'))
+const NewEncounter = lazy(() => import('./pages/clinician/NewEncounter.tsx'))
+const NewPatient = lazy(() => import('./pages/clinician/NewPatient.tsx'))
+const PrescriptionRenewals = lazy(
+  () => import('./pages/clinician/PrescriptionRenewals.tsx'),
+)
+const SchedulingOperations = lazy(
+  () => import('./pages/clinician/SchedulingOperations.tsx'),
+)
+const OfficeNotes = lazy(() => import('./pages/clinician/OfficeNotes.tsx'))
+const AddressBook = lazy(() => import('./pages/clinician/AddressBook.tsx'))
+const TrackAnything = lazy(() => import('./pages/clinician/TrackAnything.tsx'))
+const EncounterTracks = lazy(() => import('./pages/clinician/EncounterTracks.tsx'))
+const PatientTrackHistory = lazy(
+  () => import('./pages/clinician/PatientTrackHistory.tsx'),
+)
+const PatientEducation = lazy(() => import('./pages/clinician/PatientEducation.tsx'))
+const RecallBoard = lazy(() => import('./pages/clinician/RecallBoard.tsx'))
+const BatchCommunication = lazy(
+  () => import('./pages/clinician/BatchCommunication.tsx'),
+)
+const ChartTracker = lazy(() => import('./pages/clinician/ChartTracker.tsx'))
+const DocumentTemplates = lazy(
+  () => import('./pages/clinician/DocumentTemplates.tsx'),
+)
+const DuplicateReview = lazy(() => import('./pages/clinician/DuplicateReview.tsx'))
 
 export default function App() {
   return (
-    <BrowserRouter>
+      <BrowserRouter>
       <ToastContainer />
-      <Routes>
+      <AppErrorBoundary>
+        <Suspense
+          fallback={
+            <main className="route-loading" aria-live="polite" aria-busy="true">
+              Loading workspace…
+            </main>
+          }
+        >
+          <Routes>
         <Route path="/" element={<EntryChooser />} />
         <Route path="/login" element={<ClinicianLogin />} />
         {/* Legacy redirect */}
@@ -129,7 +150,9 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          </Routes>
+        </Suspense>
+      </AppErrorBoundary>
     </BrowserRouter>
   )
 }

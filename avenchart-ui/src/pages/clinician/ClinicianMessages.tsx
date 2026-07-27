@@ -1,38 +1,98 @@
-import { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
-import { Mail, Send, User } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Mail, RefreshCw, Send } from 'lucide-react'
 import {
-  searchPatients,
-  getPatientMessages,
-  replyToPatientMessage,
   createPatientMessage,
-  type PatientListItem,
+  getPatientMessages,
+  getStaffMessageInbox,
+  replyToPatientMessage,
   type PatientMessageItem,
+  type StaffMessageInboxQuery,
+  type StaffMessageInboxResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
+type ThreadPatient = {
+  canonicalId: string
+  displayName: string
+  pubpid?: string
+}
+
 type PatientThread = {
-  patient: PatientListItem
+  patient: ThreadPatient
   messages: PatientMessageItem[]
 }
 
-type SearchState =
-  | { status: 'idle' }
-  | { status: 'searching' }
-  | { status: 'results'; patients: PatientListItem[] }
-  | { status: 'empty' }
-
 type ThreadState =
   | { status: 'idle' }
-  | { status: 'loading' }
+  | { status: 'loading'; patient: ThreadPatient }
   | { status: 'ready'; thread: PatientThread }
-  | { status: 'error'; message: string }
+  | { status: 'error'; patient: ThreadPatient; message: string }
+
+type FilterDraft = {
+  status: string
+  assignment: 'all' | 'mine' | 'unassigned'
+  patient: string
+  subject: string
+  priority: 'all' | 'normal' | 'urgent'
+  owner: string
+  minimumAgeDays: string
+}
+
+const PAGE_SIZE = 20
+
+function filtersFromParams(params: URLSearchParams): FilterDraft {
+  const assignment = params.get('assignment')
+  const priority = params.get('priority')
+  return {
+    status: params.get('status') ?? '',
+    assignment: assignment === 'mine' || assignment === 'unassigned' ? assignment : 'all',
+    patient: params.get('patient') ?? '',
+    subject: params.get('subject') ?? '',
+    priority: priority === 'normal' || priority === 'urgent' ? priority : 'all',
+    owner: params.get('owner') ?? '',
+    minimumAgeDays: params.get('minimumAgeDays') ?? '',
+  }
+}
+
+function queryFromParams(params: URLSearchParams): StaffMessageInboxQuery {
+  const filters = filtersFromParams(params)
+  return {
+    ...filters,
+    minimumAgeDays: filters.minimumAgeDays ? Number(filters.minimumAgeDays) : undefined,
+    offset: Math.max(0, Number(params.get('offset') ?? 0) || 0),
+    limit: PAGE_SIZE,
+  }
+}
+
+function messageStatusClass(status?: string | null) {
+  const normalized = status?.trim().toLowerCase()
+  if (normalized === 'new') return 'cl-badge-amber'
+  if (normalized === 'done' || normalized === 'closed') return 'cl-badge-green'
+  return 'cl-badge-muted'
+}
+
+function initials(name: string) {
+  return name
+    .replace(/\([^)]*\)/g, '')
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+}
 
 export default function ClinicianMessages() {
   const { session } = useOutletContext<ClinicianOutletContext>()
-  const [search, setSearch] = useState('')
-  const [searchState, setSearchState] = useState<SearchState>({ status: 'idle' })
+  const [searchParams, setSearchParams] = useSearchParams()
+  const queryKey = searchParams.toString()
+  const [draft, setDraft] = useState<FilterDraft>(() => filtersFromParams(searchParams))
+  const [inbox, setInbox] = useState<StaffMessageInboxResponse | null>(null)
+  const [inboxLoading, setInboxLoading] = useState(true)
+  const [inboxError, setInboxError] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
   const [threadState, setThreadState] = useState<ThreadState>({ status: 'idle' })
   const [replyBody, setReplyBody] = useState('')
   const [composeMode, setComposeMode] = useState(false)
@@ -43,32 +103,69 @@ export default function ClinicianMessages() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!search.trim()) { setSearchState({ status: 'idle' }); return }
-    const t = setTimeout(() => {
-      setSearchState({ status: 'searching' })
-      searchPatients(session.sessionId, { search: search.trim(), limit: 8 })
-        .then((data) => {
-          setSearchState(data.patients.length > 0
-            ? { status: 'results', patients: data.patients }
-            : { status: 'empty' })
-        })
-        .catch(() => setSearchState({ status: 'empty' }))
-    }, 300)
-    return () => clearTimeout(t)
-  }, [search, session.sessionId])
+    const controller = new AbortController()
+    setInboxLoading(true)
+    setInboxError(null)
+    getStaffMessageInbox(
+      session.sessionId,
+      queryFromParams(new URLSearchParams(queryKey)),
+      controller.signal,
+    )
+      .then((result) => {
+        setInbox(result)
+        setLastUpdated(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        setInboxError(error instanceof Error ? error.message : 'Could not load the message inbox.')
+      })
+      .finally(() => setInboxLoading(false))
+    return () => controller.abort()
+  }, [queryKey, reload, session.sessionId])
 
-  function openThread(patient: PatientListItem) {
-    setSearch('')
-    setSearchState({ status: 'idle' })
-    setThreadState({ status: 'loading' })
+  function applyFilters(event: FormEvent) {
+    event.preventDefault()
+    const params = new URLSearchParams()
+    Object.entries(draft).forEach(([key, value]) => {
+      if (!value || value === 'all') return
+      params.set(key, value)
+    })
+    setSearchParams(params)
+  }
+
+  function setQuickFilter(key: 'status' | 'assignment', value: string) {
+    const params = new URLSearchParams(searchParams)
+    if (!value || value === 'all') params.delete(key)
+    else params.set(key, value)
+    params.delete('offset')
+    setDraft(filtersFromParams(params))
+    setSearchParams(params)
+  }
+
+  function changePage(nextOffset: number) {
+    const params = new URLSearchParams(searchParams)
+    if (nextOffset <= 0) params.delete('offset')
+    else params.set('offset', String(nextOffset))
+    setSearchParams(params)
+  }
+
+  function openThread(patient: ThreadPatient) {
+    setThreadState({ status: 'loading', patient })
     setReplyBody('')
     setActiveMessageId(null)
     getPatientMessages(session.sessionId, patient.canonicalId)
       .then((data) => setThreadState({
         status: 'ready',
-        thread: { patient, messages: data.messages.filter((m) => !m.deleted) },
+        thread: {
+          patient: { ...patient, displayName: data.patientDisplayName },
+          messages: data.messages.filter((message) => !message.deleted),
+        },
       }))
-      .catch((err) => setThreadState({ status: 'error', message: err instanceof Error ? err.message : 'Could not load messages.' }))
+      .catch((error: unknown) => setThreadState({
+        status: 'error',
+        patient,
+        message: error instanceof Error ? error.message : 'Could not load messages.',
+      }))
   }
 
   async function handleReply(messageId: string) {
@@ -79,16 +176,23 @@ export default function ClinicianMessages() {
         body: replyBody.trim(),
         assignedTo: session.username,
       })
-      setThreadState((prev) =>
-        prev.status === 'ready'
-          ? { ...prev, thread: { ...prev.thread, messages: updated.messages.filter((m) => !m.deleted) } }
-          : prev,
+      setThreadState((previous) =>
+        previous.status === 'ready'
+          ? {
+              ...previous,
+              thread: {
+                ...previous.thread,
+                messages: updated.messages.filter((message) => !message.deleted),
+              },
+            }
+          : previous,
       )
       setReplyBody('')
       setActiveMessageId(null)
-      showToast('Reply sent.', 'success')
-    } catch {
-      showToast('Reply failed. Please try again.', 'error')
+      setReload((value) => value + 1)
+      showToast('Reply recorded.', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Reply failed.', 'error')
     } finally {
       setSending(false)
     }
@@ -109,181 +213,332 @@ export default function ClinicianMessages() {
       setComposeSubject('')
       setComposeBody('')
       setComposeTo('')
-    } catch {
-      showToast('Could not create message. Please try again.', 'error')
+      setReload((value) => value + 1)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not create message.', 'error')
     } finally {
       setSending(false)
     }
   }
 
-  function statusBadge(status?: string | null) {
-    if (!status) return null
-    const cls = status === 'new' ? 'cl-badge-amber' : status === 'done' ? 'cl-badge-green' : 'cl-badge-muted'
-    return <span className={`cl-badge ${cls}`}>{status}</span>
-  }
+  const currentOffset = inbox?.offset ?? (Number(searchParams.get('offset') ?? 0) || 0)
+  const hasNextPage = inbox ? currentOffset + inbox.items.length < inbox.total : false
 
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
         <div>
-          <h1 className="clinician-page-title">Patient messages</h1>
-          <p className="clinician-page-subtitle">View and reply to patient portal messages</p>
+          <h1 className="clinician-page-title">Message inbox</h1>
+          <p className="clinician-page-subtitle">
+            Filter and open patient messages without finding the patient first.
+            {lastUpdated ? ` Last updated ${lastUpdated}.` : ''}
+          </p>
         </div>
         <div className="clinician-header-actions">
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            disabled={inboxLoading}
+            onClick={() => setReload((value) => value + 1)}
+          >
+            <RefreshCw size={15} aria-hidden="true" />
+            Refresh
+          </button>
           <button className="cl-btn-primary" type="button" onClick={() => setComposeMode(true)}>
-            <Mail size={15} /> New message
+            <Mail size={15} aria-hidden="true" />
+            New message
           </button>
         </div>
       </div>
 
-      {/* Compose modal */}
+      {inbox && (
+        <div className="message-inbox-counts" aria-label="Inbox counts">
+          <button type="button" onClick={() => setQuickFilter('status', '')}>
+            <strong>{inbox.counts.total}</strong><span>All</span>
+          </button>
+          <button type="button" onClick={() => setQuickFilter('status', 'new')}>
+            <strong>{inbox.counts.unread}</strong><span>Unread</span>
+          </button>
+          <button type="button" onClick={() => setQuickFilter('assignment', 'mine')}>
+            <strong>{inbox.counts.assignedToMe}</strong><span>Assigned to me</span>
+          </button>
+          <button type="button" onClick={() => setQuickFilter('assignment', 'unassigned')}>
+            <strong>{inbox.counts.unassigned}</strong><span>Unassigned</span>
+          </button>
+        </div>
+      )}
+
+      <form className="cl-card message-inbox-filters" onSubmit={applyFilters}>
+        <label className="cl-admin-field">
+          <span>Status</span>
+          <select
+            className="ne-input"
+            value={draft.status}
+            onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
+          >
+            <option value="">All statuses</option>
+            <option value="new">Unread / new</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
+        <label className="cl-admin-field">
+          <span>Assignment</span>
+          <select
+            className="ne-input"
+            value={draft.assignment}
+            onChange={(event) => setDraft((current) => ({
+              ...current,
+              assignment: event.target.value as FilterDraft['assignment'],
+            }))}
+          >
+            <option value="all">All</option>
+            <option value="mine">Assigned to me</option>
+            <option value="unassigned">Unassigned</option>
+          </select>
+        </label>
+        <label className="cl-admin-field">
+          <span>Patient</span>
+          <input
+            className="ne-input"
+            value={draft.patient}
+            onChange={(event) => setDraft((current) => ({ ...current, patient: event.target.value }))}
+            placeholder="Name or ID"
+          />
+        </label>
+        <label className="cl-admin-field">
+          <span>Subject</span>
+          <input
+            className="ne-input"
+            value={draft.subject}
+            onChange={(event) => setDraft((current) => ({ ...current, subject: event.target.value }))}
+          />
+        </label>
+        <label className="cl-admin-field">
+          <span>Priority</span>
+          <select
+            className="ne-input"
+            value={draft.priority}
+            onChange={(event) => setDraft((current) => ({
+              ...current,
+              priority: event.target.value as FilterDraft['priority'],
+            }))}
+          >
+            <option value="all">All</option>
+            <option value="urgent">Urgent</option>
+            <option value="normal">Normal</option>
+          </select>
+        </label>
+        <label className="cl-admin-field">
+          <span>Owner</span>
+          <input
+            className="ne-input"
+            value={draft.owner}
+            onChange={(event) => setDraft((current) => ({ ...current, owner: event.target.value }))}
+          />
+        </label>
+        <label className="cl-admin-field">
+          <span>Minimum age (days)</span>
+          <input
+            className="ne-input"
+            type="number"
+            min={0}
+            value={draft.minimumAgeDays}
+            onChange={(event) => setDraft((current) => ({ ...current, minimumAgeDays: event.target.value }))}
+          />
+        </label>
+        <div className="cl-inline-form-actions">
+          <button className="cl-btn-primary" type="submit">Apply filters</button>
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            onClick={() => {
+              const empty = filtersFromParams(new URLSearchParams())
+              setDraft(empty)
+              setSearchParams(new URLSearchParams())
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      </form>
+
       {composeMode && (
-        <div className="ne-done cl-card" style={{ marginBottom: 20 }}>
-          <h2 className="cl-card-title" style={{ marginBottom: 16 }}>Compose new message</h2>
-          <div className="ne-field">
-            <label className="ne-label">Patient ID</label>
-            <input className="ne-input" type="text" placeholder="Patient canonical ID…" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} />
-          </div>
-          <div className="ne-field">
-            <label className="ne-label">Subject</label>
-            <input className="ne-input" type="text" placeholder="Subject…" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} />
-          </div>
-          <div className="ne-field">
-            <label className="ne-label">Message</label>
-            <textarea className="ne-soap-textarea" rows={4} value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="Message…" />
-          </div>
+        <section className="ne-done cl-card" aria-labelledby="compose-message-title">
+          <h2 id="compose-message-title" className="cl-card-title">Compose new message</h2>
+          <label className="ne-field">
+            <span className="ne-label">Patient ID</span>
+            <input className="ne-input" value={composeTo} onChange={(event) => setComposeTo(event.target.value)} />
+          </label>
+          <label className="ne-field">
+            <span className="ne-label">Subject</span>
+            <input className="ne-input" value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} />
+          </label>
+          <label className="ne-field">
+            <span className="ne-label">Message</span>
+            <textarea className="ne-soap-textarea" rows={4} value={composeBody} onChange={(event) => setComposeBody(event.target.value)} />
+          </label>
           <div className="ne-actions">
             <button className="cl-btn-secondary" type="button" onClick={() => setComposeMode(false)}>Cancel</button>
-            <button className="cl-btn-primary" type="button" disabled={sending || !composeTo || !composeSubject || !composeBody} onClick={handleCompose}>
-              <Send size={14} /> {sending ? 'Sending…' : 'Send'}
+            <button className="cl-btn-primary" type="button" disabled={sending || !composeTo || !composeSubject || !composeBody} onClick={() => void handleCompose()}>
+              <Send size={14} aria-hidden="true" />
+              {sending ? 'Sending…' : 'Send'}
             </button>
           </div>
+        </section>
+      )}
+
+      {inboxError && (
+        <div className="error-banner message-inbox-error" role="alert">
+          <span>{inboxError}</span>
+          <button className="cl-btn-secondary" type="button" onClick={() => setReload((value) => value + 1)}>
+            Retry
+          </button>
         </div>
       )}
 
       <div className="msg-layout">
-        {/* Patient search sidebar */}
-        <div className="msg-sidebar">
-          <div className="msg-search-box">
-            <input
-              className="ne-input"
-              type="text"
-              placeholder="Search patient…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {searchState.status === 'searching' && (
+        <section className="msg-sidebar" aria-label="Filtered message inbox" aria-busy={inboxLoading}>
+          {inboxLoading && !inbox && (
             <div className="skeleton-list">
-              {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" style={{ height: 48 }} />)}
+              {[0, 1, 2, 3].map((item) => <div key={item} className="skeleton-row" style={{ height: 72 }} />)}
             </div>
           )}
-          {searchState.status === 'empty' && <p className="cl-empty-text">No patients found.</p>}
-          {searchState.status === 'results' && (
-            <ul className="msg-patient-list">
-              {searchState.patients.map((p) => (
-                <li key={p.canonicalId}>
+          {inbox && inbox.items.length === 0 && !inboxLoading && (
+            <p className="cl-empty-text">No messages match these filters.</p>
+          )}
+          {inbox && inbox.items.length > 0 && (
+            <ul className="message-inbox-list">
+              {inbox.items.map((item) => (
+                <li key={item.id}>
                   <button
-                    className="msg-patient-btn"
+                    className={`message-inbox-item${item.unread ? ' message-inbox-item-unread' : ''}`}
                     type="button"
-                    onClick={() => openThread(p)}
+                    onClick={() => openThread({
+                      canonicalId: item.patientId,
+                      displayName: item.patientDisplayName,
+                      pubpid: item.pubpid,
+                    })}
                   >
-                    <div className="msg-patient-avatar"><User size={14} /></div>
-                    <div>
-                      <p className="msg-patient-name">{p.displayName}</p>
-                      <p className="msg-patient-meta">DOB {p.dateOfBirth} · {p.counts.messages} msg</p>
-                    </div>
+                    <span className="message-inbox-item-heading">
+                      <strong>{item.patientDisplayName}</strong>
+                      {item.priority === 'urgent' && <span className="cl-badge cl-badge-coral">Urgent</span>}
+                    </span>
+                    <span className="message-inbox-subject">{item.subject}</span>
+                    <span className="message-inbox-preview">{item.preview || 'No message preview.'}</span>
+                    <span className="message-inbox-meta">
+                      {item.ageDays}d old · {item.assignedTo ? `Owner: ${item.assignedTo}` : 'Unassigned'}
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          {searchState.status === 'idle' && (
-            <p className="cl-empty-text" style={{ padding: '12px 16px' }}>Search for a patient to view their messages.</p>
+          {inbox && (
+            <div className="message-inbox-pagination">
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                disabled={currentOffset === 0}
+                onClick={() => changePage(Math.max(0, currentOffset - PAGE_SIZE))}
+              >
+                <ChevronLeft size={14} aria-hidden="true" />
+                Previous
+              </button>
+              <span>{inbox.total === 0 ? '0' : `${currentOffset + 1}–${currentOffset + inbox.items.length}`} of {inbox.total}</span>
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                disabled={!hasNextPage}
+                onClick={() => changePage(currentOffset + PAGE_SIZE)}
+              >
+                Next
+                <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            </div>
           )}
-        </div>
+        </section>
 
-        {/* Thread panel */}
-        <div className="msg-thread-panel">
+        <section className="msg-thread-panel" aria-label="Message thread">
           {threadState.status === 'idle' && (
             <div className="msg-thread-empty">
-              <Mail size={40} />
-              <p>Select a patient to view messages</p>
+              <Mail size={40} aria-hidden="true" />
+              <p>Select an inbox message to open its patient thread.</p>
             </div>
           )}
           {threadState.status === 'loading' && (
             <div className="cl-card">
               <div className="skeleton-list">
-                {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" style={{ height: 80 }} />)}
+                {[0, 1, 2].map((item) => <div key={item} className="skeleton-row" style={{ height: 80 }} />)}
               </div>
             </div>
           )}
-          {threadState.status === 'error' && <div className="error-banner">{threadState.message}</div>}
-          {threadState.status === 'ready' && (() => {
-            const { thread } = threadState
-            return (
-              <>
-                <div className="msg-thread-header">
-                  <div className="msg-thread-patient">
-                    <div className="msg-patient-avatar msg-patient-avatar-lg">
-                      {thread.patient.firstName[0]}{thread.patient.lastName[0]}
-                    </div>
-                    <div>
-                      <p className="msg-thread-name">{thread.patient.displayName}</p>
-                      <p className="msg-patient-meta">DOB {thread.patient.dateOfBirth}</p>
-                    </div>
+          {threadState.status === 'error' && (
+            <div className="error-banner" role="alert">
+              {threadState.message}
+              <button className="cl-btn-secondary" type="button" onClick={() => openThread(threadState.patient)}>Retry</button>
+            </div>
+          )}
+          {threadState.status === 'ready' && (
+            <>
+              <div className="msg-thread-header">
+                <div className="msg-thread-patient">
+                  <div className="msg-patient-avatar msg-patient-avatar-lg">
+                    {initials(threadState.thread.patient.displayName)}
+                  </div>
+                  <div>
+                    <p className="msg-thread-name">{threadState.thread.patient.displayName}</p>
+                    <p className="msg-patient-meta">
+                      {threadState.thread.patient.pubpid ?? threadState.thread.patient.canonicalId}
+                      {' · '}
+                      <Link to={`/clinician/patients/${threadState.thread.patient.canonicalId}/summary`}>Open chart</Link>
+                    </p>
                   </div>
                 </div>
-
-                {thread.messages.length === 0 ? (
-                  <p className="cl-empty-text">No messages for this patient.</p>
-                ) : (
-                  <div className="msg-messages">
-                    {thread.messages.map((msg) => (
-                      <div key={msg.id} className="msg-item cl-card">
-                        <div className="msg-item-header">
-                          <div>
-                            <p className="msg-item-title">{msg.title ?? '(no subject)'}</p>
-                            <p className="msg-item-meta">{msg.date}{msg.assignedTo ? ` · Assigned: ${msg.assignedTo}` : ''}</p>
-                          </div>
-                          {statusBadge(msg.status)}
+              </div>
+              {threadState.thread.messages.length === 0 ? (
+                <p className="cl-empty-text">No active messages for this patient.</p>
+              ) : (
+                <div className="msg-messages">
+                  {threadState.thread.messages.map((message) => (
+                    <article key={message.id} className="msg-item cl-card">
+                      <div className="msg-item-header">
+                        <div>
+                          <h3 className="msg-item-title">{message.title ?? '(no subject)'}</h3>
+                          <p className="msg-item-meta">
+                            {message.date}{message.assignedTo ? ` · Assigned: ${message.assignedTo}` : ' · Unassigned'}
+                          </p>
                         </div>
-                        {msg.body && <p className="msg-item-body">{msg.body}</p>}
-
-                        {activeMessageId === msg.id ? (
-                          <div className="msg-reply-form">
-                            <textarea
-                              className="ne-soap-textarea"
-                              rows={3}
-                              placeholder="Reply…"
-                              value={replyBody}
-                              onChange={(e) => setReplyBody(e.target.value)}
-                            />
-                            <div className="ne-actions">
-                              <button className="cl-btn-secondary" type="button" onClick={() => { setActiveMessageId(null); setReplyBody('') }}>Cancel</button>
-                              <button className="cl-btn-primary" type="button" disabled={sending || !replyBody.trim()} onClick={() => handleReply(msg.id)}>
-                                <Send size={14} /> {sending ? 'Sending…' : 'Reply'}
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            className="cl-link msg-reply-btn"
-                            type="button"
-                            onClick={() => { setActiveMessageId(msg.id); setReplyBody('') }}
-                          >
-                            Reply
-                          </button>
-                        )}
+                        <span className={`cl-badge ${messageStatusClass(message.status)}`}>
+                          {message.status ?? 'Unknown'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )
-          })()}
-        </div>
+                      {message.body && <p className="msg-item-body">{message.body}</p>}
+                      {activeMessageId === message.id ? (
+                        <div className="msg-reply-form">
+                          <label className="ne-field">
+                            <span className="ne-label">Reply</span>
+                            <textarea className="ne-soap-textarea" rows={3} value={replyBody} onChange={(event) => setReplyBody(event.target.value)} />
+                          </label>
+                          <div className="ne-actions">
+                            <button className="cl-btn-secondary" type="button" onClick={() => { setActiveMessageId(null); setReplyBody('') }}>Cancel</button>
+                            <button className="cl-btn-primary" type="button" disabled={sending || !replyBody.trim()} onClick={() => void handleReply(message.id)}>
+                              <Send size={14} aria-hidden="true" />
+                              {sending ? 'Sending…' : 'Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button className="cl-link msg-reply-btn" type="button" onClick={() => { setActiveMessageId(message.id); setReplyBody('') }}>
+                          Reply
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
       </div>
     </div>
   )

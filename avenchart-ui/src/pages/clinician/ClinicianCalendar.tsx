@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Clock, X } from 'lucide-react'
 import { searchAppointments, type AppointmentListItem } from '../../api.ts'
+import { AppointmentStatusBadge } from '../../components/AppointmentStatusBadge.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 
 // Distinct provider colors — stable palette, assigned alphabetically per month
@@ -349,8 +350,6 @@ export default function ClinicianCalendar() {
                   {selectedAppts.map((appt) => {
                     const prov = appt.providerName ?? 'Unassigned'
                     const c = providerColorMap.get(prov) ?? PALETTE[0]
-                    const cancelled = appt.status?.toLowerCase().includes('cancel')
-                    const completed = appt.status?.toLowerCase().includes('complet') || appt.status?.toLowerCase().includes('check')
                     return (
                       <li key={appt.id} className="cal-pappt" style={{ borderLeftColor: c.dot }}>
                         <p className="cal-pappt-time">{fmt12(appt.startTime)}</p>
@@ -367,11 +366,7 @@ export default function ClinicianCalendar() {
                             <span className="cal-pdot" style={{ background: c.dot }} />
                             {prov}
                           </span>
-                          {appt.status && (
-                            <span className={`cl-badge ${cancelled ? 'cl-badge-coral' : completed ? 'cl-badge-green' : 'cl-badge-muted'}`}>
-                              {appt.status}
-                            </span>
-                          )}
+                          <AppointmentStatusBadge value={appt.status} />
                         </div>
                         {appt.room && <p className="cal-pappt-room">Room {appt.room}</p>}
                       </li>

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Download, FolderOpen } from 'lucide-react'
-import { getPatientDocuments, type PatientDocumentItem } from '../../api.ts'
+import {
+  downloadPatientDocument,
+  getPatientDocuments,
+  type PatientDocumentItem,
+} from '../../api.ts'
+import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 type AsyncState<T> =
@@ -19,13 +24,50 @@ function formatBytes(n?: number | null) {
 export default function PatientDocuments() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<PatientDocumentItem[]>>({ status: 'loading' })
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
 
   useEffect(() => {
-    getPatientDocuments(session.sessionId, patientId)
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+    getPatientDocuments(session.sessionId, patientId, controller.signal)
       .then((data) => setState({ status: 'ready', data: data.documents }))
-      .catch((err) => setState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load.' }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId])
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        setState({
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Failed to load documents.',
+        })
+      })
+    return () => controller.abort()
+  }, [patientId, session.sessionId])
+
+  async function downloadDocument(item: PatientDocumentItem) {
+    setDownloadingId(item.id)
+    try {
+      const file = await downloadPatientDocument(
+        session.sessionId,
+        item.id,
+        item.name,
+      )
+      const objectUrl = URL.createObjectURL(file.blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = file.fileName
+      link.style.display = 'none'
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+      showToast(`${file.fileName} downloaded.`, 'success')
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not download the document.',
+        'error',
+      )
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <div className="clinician-page">
@@ -66,14 +108,16 @@ export default function PatientDocuments() {
                   <td className="cl-td-muted">{formatBytes(doc.sizeBytes)}</td>
                   <td>
                     {doc.canDownload && (
-                      <a
-                        className="cl-link"
-                        href={`/api/documents/${patientId}/${doc.id}/download`}
-                        download={doc.name}
+                      <button
+                        className="cl-link cl-link-button"
+                        type="button"
+                        disabled={downloadingId === doc.id}
+                        onClick={() => void downloadDocument(doc)}
                         aria-label={`Download ${doc.name}`}
                       >
                         <Download size={14} />
-                      </a>
+                        {downloadingId === doc.id ? 'Downloading…' : 'Download'}
+                      </button>
                     )}
                   </td>
                 </tr>

@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarClock, FolderOpen, Home, Mail, UserCircle } from 'lucide-react'
 import {
+  endPatientPortalSession,
   getPatientPortalHome,
   getPatientPortalSession,
+  isInvalidSessionError,
+  SESSION_INVALID_EVENT,
   type PatientPortalHomeSummaryResponse,
 } from '../../api.ts'
 import { clearPortalSession, loadPortalSession, type PortalSession } from '../../auth/session.ts'
@@ -13,10 +16,10 @@ export type PortalOutletContext = {
   session: PortalSession
   home: PatientPortalHomeSummaryResponse | null
   homeLoading: boolean
-  /** Call to immediately decrement the unread badge (optimistic read) */
+  /** Call to immediately decrement the unread badge (optimistic read). */
   markReadOptimistic: (id: string) => void
-  refreshHome: () => void
-  signOut: () => void
+  refreshHome: () => Promise<void>
+  signOut: () => Promise<void>
 }
 
 function initials(name: string) {
@@ -24,15 +27,15 @@ function initials(name: string) {
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
+    .map((part) => part[0]?.toUpperCase())
     .join('')
 }
 
 function formatNextAppt(home: PatientPortalHomeSummaryResponse | null): string {
   const next = home?.upcomingAppointments?.[0]
   if (!next) return 'None scheduled'
-  const [y, m, d] = next.date.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
+  const [year, month, day] = next.date.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
@@ -42,7 +45,7 @@ const TABS = [
   { path: '/portal/appointments', label: 'Appointments', icon: CalendarClock },
   { path: '/portal/records', label: 'Records', icon: FolderOpen },
   { path: '/portal/account', label: 'Account', icon: UserCircle },
-]
+] as const
 
 export default function PortalShell() {
   const navigate = useNavigate()
@@ -51,7 +54,8 @@ export default function PortalShell() {
   const [home, setHome] = useState<PatientPortalHomeSummaryResponse | null>(null)
   const [homeLoading, setHomeLoading] = useState(true)
   const [homeError, setHomeError] = useState<string | null>(null)
-  // Optimistic unread IDs — message IDs the patient has opened this session
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [signingOut, setSigningOut] = useState(false)
   const [optimisticReadIds, setOptimisticReadIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
@@ -59,7 +63,10 @@ export default function PortalShell() {
       navigate('/portal/login', { replace: true })
       return
     }
+
     const controller = new AbortController()
+    setHomeLoading(true)
+    setHomeError(null)
     Promise.all([
       getPatientPortalSession(session.sessionId, controller.signal),
       getPatientPortalHome(session.sessionId, controller.signal),
@@ -73,47 +80,79 @@ export default function PortalShell() {
         setHome(homeResult)
         setHomeLoading(false)
       })
-      .catch((err) => {
-        if ((err as Error)?.name === 'AbortError') return
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isInvalidSessionError(error)) {
+          clearPortalSession()
+          navigate('/portal/login', { replace: true })
+          return
+        }
         setHomeError(
-          err instanceof Error
-            ? err.message
-            : 'Could not load your portal. Please try refreshing.',
+          error instanceof Error
+            ? error.message
+            : 'Could not load your portal. Check your connection and try again.',
         )
         setHomeLoading(false)
       })
     return () => controller.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadAttempt, navigate, session])
+
+  useEffect(() => {
+    function handleInvalidSession(event: Event) {
+      const detail = (event as CustomEvent<{ scope?: string }>).detail
+      if (detail?.scope !== 'portal') return
+      clearPortalSession()
+      navigate('/portal/login', { replace: true })
+    }
+
+    window.addEventListener(SESSION_INVALID_EVENT, handleInvalidSession)
+    return () => window.removeEventListener(SESSION_INVALID_EVENT, handleInvalidSession)
+  }, [navigate])
 
   if (!session) return null
 
-  function signOut() {
-    clearPortalSession()
-    navigate('/portal/login')
+  async function signOut() {
+    if (signingOut) return
+    setSigningOut(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 5_000)
+    try {
+      await endPatientPortalSession(session!.sessionId, controller.signal)
+    } catch {
+      // Local cleanup remains reliable while the API is unavailable.
+    } finally {
+      window.clearTimeout(timeout)
+      clearPortalSession()
+      navigate('/portal/login', { replace: true })
+    }
   }
 
-  function refreshHome() {
+  async function refreshHome() {
     if (!session) return
-    getPatientPortalHome(session.sessionId)
-      .then((result) => {
-        if (result.authenticated) {
-          setHome(result)
-          // Clear optimistic reads once server confirms new counts
-          setOptimisticReadIds(new Set())
-        }
-      })
-      .catch(() => {})
+    setHomeError(null)
+    try {
+      const result = await getPatientPortalHome(session.sessionId)
+      if (!result.authenticated) {
+        clearPortalSession()
+        navigate('/portal/login', { replace: true })
+        return
+      }
+      setHome(result)
+      setOptimisticReadIds(new Set())
+    } catch (error) {
+      if (isInvalidSessionError(error)) return
+      setHomeError(
+        error instanceof Error ? error.message : 'Could not refresh the portal summary.',
+      )
+    }
   }
 
   function markReadOptimistic(id: string) {
-    setOptimisticReadIds((prev) => new Set([...prev, id]))
+    setOptimisticReadIds((previous) => new Set([...previous, id]))
   }
 
-  // Effective unread count subtracts optimistically-read messages
   const serverUnread = home?.messages.newMessages ?? 0
   const effectiveUnread = Math.max(0, serverUnread - optimisticReadIds.size)
-
   const context: PortalOutletContext = {
     session,
     home,
@@ -140,8 +179,13 @@ export default function PortalShell() {
                 <p className="dashboard-hero-sub">Patient portal</p>
               </div>
             </div>
-            <button className="link-button-on-dark" onClick={signOut}>
-              Sign out
+            <button
+              className="link-button-on-dark"
+              type="button"
+              disabled={signingOut}
+              onClick={() => void signOut()}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
             </button>
           </div>
 
@@ -153,7 +197,7 @@ export default function PortalShell() {
                 <div className="hero-stat-chip"><div className="skeleton-chip" /></div>
               </>
             ) : homeError ? (
-              <p className="hero-error-text">{homeError}</p>
+              <p className="hero-error-text" role="status">{homeError}</p>
             ) : (
               <>
                 <Link to="/portal/appointments" className="hero-stat-chip hero-stat-link">
@@ -222,27 +266,34 @@ export default function PortalShell() {
 
       <div className="portal-content" id="main-content">
         {homeLoading ? (
-          <div className="portal-page">
+          <div className="portal-page" aria-live="polite">
+            <span className="sr-only">Loading portal</span>
             <div className="portal-section">
               <div className="skeleton-list">
-                {[0, 1, 2].map((i) => <div key={i} className="skeleton-row" style={{ height: 64 }} />)}
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="skeleton-row" style={{ height: 64 }} />
+                ))}
               </div>
             </div>
             <div className="portal-section">
               <div className="skeleton-list">
-                {[0, 1].map((i) => <div key={i} className="skeleton-row" style={{ height: 80 }} />)}
+                {[0, 1].map((item) => (
+                  <div key={item} className="skeleton-row" style={{ height: 80 }} />
+                ))}
               </div>
             </div>
           </div>
         ) : homeError ? (
           <div className="portal-page">
             <div className="portal-section">
-              <div className="error-banner" style={{ marginBottom: 0 }}>{homeError}</div>
+              <div className="error-banner" style={{ marginBottom: 0 }} role="alert">
+                {homeError}
+              </div>
               <button
                 className="button-secondary"
                 style={{ marginTop: 16, width: 'auto' }}
                 type="button"
-                onClick={() => window.location.reload()}
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
               >
                 Retry
               </button>

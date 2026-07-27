@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createInventoryTransaction, createInventoryTransfer, downloadInventoryActivityCsv, getInventory, getInventoryActivityReport, type InventoryActivityReport, type InventoryResponse } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -18,7 +18,8 @@ export default function InventoryWorkspace() {
   const lots = useMemo(() => data?.items.flatMap((item) => item.lots.map((lot) => ({ item, lot }))) ?? [], [data])
   const selected = lots.find((entry) => String(entry.lot.lotId) === lotId)
   const load = () => getInventory(session.sessionId).then(setData).catch(() => setError('Could not load inventory.'))
-  useEffect(() => { void load() }, [session.sessionId])
+  const loadOnSessionChange = useEffectEvent(load)
+  useEffect(() => { void loadOnSessionChange() }, [session.sessionId])
   async function submit(event: React.FormEvent) {
     event.preventDefault(); if (!selected || !Number(quantity)) return; setSaving(true)
     try {

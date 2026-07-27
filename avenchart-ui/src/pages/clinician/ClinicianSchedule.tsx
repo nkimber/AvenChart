@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { searchAppointments, updateAppointmentStatus, type AppointmentListItem } from '../../api.ts'
+import { getAppointmentStatus, getAppointmentStatusOptions } from '../../domain/appointmentStatus.ts'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 import { showToast } from '../../components/Toast.tsx'
 
@@ -25,8 +26,6 @@ function formatTime(t?: string | null) {
   return t.slice(0, 5)
 }
 
-
-const STATUS_OPTIONS = ['Scheduled', 'Arrived', 'In Room', 'Checked Out', 'No Show', 'Cancelled']
 
 export default function ClinicianSchedule() {
   const { session } = useOutletContext<ClinicianOutletContext>()
@@ -56,7 +55,7 @@ export default function ClinicianSchedule() {
     setUpdatingId(apptId)
     try {
       await updateAppointmentStatus(session.sessionId, apptId, status)
-      showToast(`Status updated to "${status}"`)
+      showToast(`Status updated to "${getAppointmentStatus(status).label}"`)
       load()
     } catch {
       showToast('Could not update status.', 'error')
@@ -155,14 +154,13 @@ export default function ClinicianSchedule() {
                   <td>
                     <select
                       className="cl-status-select"
-                      value={appt.status ?? ''}
+                      value={getAppointmentStatus(appt.status).apiValue}
                       disabled={updatingId === appt.id}
                       onChange={(e) => handleStatusChange(appt.id, e.target.value)}
                       aria-label={`Status for ${appt.patientDisplayName}`}
                     >
-                      {!appt.status && <option value="">—</option>}
-                      {STATUS_OPTIONS.map((s) => (
-                        <option key={s} value={s}>{s}</option>
+                      {getAppointmentStatusOptions(appt.status).map((status) => (
+                        <option key={status.apiValue} value={status.apiValue}>{status.label}</option>
                       ))}
                     </select>
                   </td>

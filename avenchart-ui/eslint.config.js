@@ -18,5 +18,14 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // These React Compiler-oriented diagnostics are not applicable until the
+      // project enables the compiler. Core Rules of Hooks checks remain active.
+      'react-hooks/immutability': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      // Route modules and the toast module intentionally export testable helpers
+      // alongside their components.
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])

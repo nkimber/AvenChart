@@ -221,6 +221,75 @@ public sealed class AuthRepository(NpgsqlDataSource dataSource)
         return new AuthAuditResponse(totalEvents, successfulLogins, failedLogins, events);
     }
 
+    public async Task<AuthActivityAuditResponse> GetAuthenticationActivityAuditAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var safeLimit = Math.Clamp(limit, 1, 50);
+        var loginAudit = await GetLoginAuditAsync(safeLimit, cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = """
+            select
+              count(*) filter (
+                where ended_at is null and expires_at > now()
+              )::int as active_sessions,
+              count(*) filter (
+                where ended_at is not null or expires_at <= now()
+              )::int as ended_sessions
+            from auth_sessions;
+            """;
+
+        var activeSessions = 0;
+        var endedSessions = 0;
+        await using (var countReader = await countCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await countReader.ReadAsync(cancellationToken))
+            {
+                activeSessions = countReader.GetInt32(countReader.GetOrdinal("active_sessions"));
+                endedSessions = countReader.GetInt32(countReader.GetOrdinal("ended_sessions"));
+            }
+        }
+
+        await using var sessionsCommand = connection.CreateCommand();
+        sessionsCommand.CommandText = """
+            select username, role, created_at, last_seen_at, expires_at, ended_at, session_source
+            from auth_sessions
+            order by created_at desc
+            limit @limit;
+            """;
+        sessionsCommand.Parameters.AddWithValue("limit", safeLimit);
+
+        var sessions = new List<AuthSessionAuditItem>();
+        await using var reader = await sessionsCommand.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var expiresAt = reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("expires_at"));
+            DateTimeOffset? endedAt = reader.IsDBNull(reader.GetOrdinal("ended_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("ended_at"));
+            sessions.Add(new AuthSessionAuditItem(
+                Username: reader.GetString(reader.GetOrdinal("username")),
+                Role: reader.GetString(reader.GetOrdinal("role")),
+                CreatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+                LastSeenAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_seen_at")),
+                ExpiresAt: expiresAt,
+                EndedAt: endedAt,
+                Active: endedAt is null && expiresAt > DateTimeOffset.UtcNow,
+                SessionSource: reader.GetString(reader.GetOrdinal("session_source"))));
+        }
+
+        return new AuthActivityAuditResponse(
+            loginAudit.TotalEvents,
+            loginAudit.SuccessfulLogins,
+            loginAudit.FailedLogins,
+            activeSessions,
+            endedSessions,
+            loginAudit.Events,
+            sessions);
+    }
+
     private static AuthLoginResponse Failed(string username)
     {
         return new AuthLoginResponse(

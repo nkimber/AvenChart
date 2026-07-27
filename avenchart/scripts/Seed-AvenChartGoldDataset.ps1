@@ -8,9 +8,16 @@ $SolutionRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $ArtifactsRoot = Join-Path $SolutionRoot "artifacts"
 $SqlPath = Join-Path $ArtifactsRoot "postgres\seed-gold.sql"
 $ResultPath = Join-Path $ArtifactsRoot "latest-modernized-seed-result.json"
+$SeedLock = [System.Threading.Mutex]::new($false, "Global\AvenChartGoldSeed")
+$SeedLockHeld = $false
 
-Push-Location $SolutionRoot
 try {
+    $SeedLockHeld = $SeedLock.WaitOne([TimeSpan]::FromMinutes(15))
+    if (-not $SeedLockHeld) {
+        throw "Timed out waiting for the modernized gold-seed/reset lock."
+    }
+
+    Push-Location $SolutionRoot
     New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 
     node .\scripts\generate-postgres-seed.mjs
@@ -37,6 +44,20 @@ try {
 
     if (-not $ready) {
         throw "PostgreSQL was not ready within $PostgresWaitSeconds seconds."
+    }
+
+    # Recreate the application schema as one deterministic boundary. Versioned migrations can add
+    # foreign keys from migration-owned tables into seed-owned tables, so dropping seed tables one
+    # at a time is not a reliable clean reset once those relationships exist.
+    $schemaResetSql = @'
+drop schema if exists public cascade;
+create schema public authorization legacy-ehr;
+grant all on schema public to legacy-ehr;
+grant all on schema public to public;
+'@
+    $schemaResetSql | docker compose exec -T postgres psql -U legacy-ehr -d legacy-ehr_modernized -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized application schema reset failed with exit code $LASTEXITCODE."
     }
 
     $sql = Get-Content -LiteralPath $SqlPath -Raw
@@ -85,5 +106,11 @@ delete from schema_migrations;
     Write-Host "Modernized gold dataset seed complete: $ResultPath"
 }
 finally {
-    Pop-Location
+    if ((Get-Location).Path -eq $SolutionRoot.Path) {
+        Pop-Location
+    }
+    if ($SeedLockHeld) {
+        $SeedLock.ReleaseMutex()
+    }
+    $SeedLock.Dispose()
 }
