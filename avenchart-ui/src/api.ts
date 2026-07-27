@@ -2137,6 +2137,10 @@ export type FormOptionValueItem = { key: string; title: string; sequence: number
 export type FormOptionListDetail = { list: FormOptionListItem; options: FormOptionValueItem[] }
 export async function getFormOptionLists(sessionId: string): Promise<{ lists: FormOptionListItem[] }> { return clinicianGet(sessionId, '/api/administration/form-option-lists') }
 export async function getFormOptionList(sessionId: string, key: string): Promise<FormOptionListDetail> { return clinicianGet(sessionId, `/api/administration/form-option-lists/${key}`) }
+export type FormOptionListRevision = { revisionId: number; title: string; active: boolean; optionCount: number; action: string; restoredFromRevisionId?: number | null; occurredAt: string; username: string }
+export type FormOptionListHistory = { detail: FormOptionListDetail; revisions: FormOptionListRevision[] }
+export async function getFormOptionListHistory(sessionId: string, key: string): Promise<FormOptionListHistory> { return clinicianGet(sessionId, `/api/administration/form-option-lists/${key}/history`) }
+export async function rollbackFormOptionList(sessionId: string, key: string, revisionId: number): Promise<FormOptionListHistory> { return clinicianPost(sessionId, `/api/administration/form-option-lists/${key}/revisions/${revisionId}/rollback`, {}) }
 export async function saveFormOptionList(sessionId: string, key: string, input: Omit<FormOptionListItem, 'key' | 'optionCount'>): Promise<FormOptionListDetail> { return clinicianPut(sessionId, `/api/administration/form-option-lists/${key}`, input) }
 export async function saveFormOptionValue(sessionId: string, listKey: string, key: string, input: Omit<FormOptionValueItem, 'key'>): Promise<FormOptionListDetail> { return clinicianPut(sessionId, `/api/administration/form-option-lists/${listKey}/options/${key}`, input) }
 export type ClinicalAlertRuleItem = { key: string; title: string; triggerType: 'patient' | 'encounter' | 'appointment'; targetType: 'banner' | 'reminder'; severity: 'info' | 'warning' | 'critical'; message: string; sequence: number; active: boolean }

@@ -207,6 +207,8 @@ public sealed record FormOptionListItem(string Key, string Title, bool Active, i
 public sealed record FormOptionValueItem(string Key, string Title, int Sequence, bool IsDefault, bool Active, string Value, string UpdatedAt, string UpdatedBy);
 public sealed record FormOptionListCatalogResponse(IReadOnlyList<FormOptionListItem> Lists);
 public sealed record FormOptionListDetailResponse(FormOptionListItem List, IReadOnlyList<FormOptionValueItem> Options);
+public sealed record FormOptionListRevision(long RevisionId, string Title, bool Active, int OptionCount, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record FormOptionListHistoryResponse(FormOptionListDetailResponse Detail, IReadOnlyList<FormOptionListRevision> Revisions);
 public sealed record FormOptionListMutationRequest(string Title, bool Active);
 public sealed record FormOptionValueMutationRequest(string Title, int Sequence, bool IsDefault, bool Active, string? Value);
 public sealed record ClinicalAlertRuleItem(string Key, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);

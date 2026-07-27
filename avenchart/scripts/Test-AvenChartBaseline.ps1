@@ -9946,6 +9946,22 @@ catch {
 }
 
 try {
+    $optionListHeaders = Get-AdministrationHeaders
+    $optionListHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListHeaders -TimeoutSec 20
+    $massachusetts = @($optionListHistoryBefore.detail.options | Where-Object { $_.key -eq "MA" }) | Select-Object -First 1
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/options/MA" -Method Put -Headers $optionListHeaders -ContentType "application/json" -Body (@{ title = "Massachusetts smoke revision"; sequence = $massachusetts.sequence; isDefault = $massachusetts.isDefault; active = $massachusetts.active; value = $massachusetts.value } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $optionListHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListHeaders -TimeoutSec 20
+    $optionListBaseline = @($optionListHistoryChanged.revisions | Sort-Object revisionId | Select-Object -First 1)
+    $optionListHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/revisions/$($optionListBaseline.revisionId)/rollback" -Method Post -Headers $optionListHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $restoredMassachusetts = @($optionListHistoryRestored.detail.options | Where-Object { $_.key -eq "MA" }) | Select-Object -First 1
+    $optionListRevisionPassed = @($optionListHistoryBefore.revisions).Count -gt 0 -and @($optionListHistoryChanged.revisions).Count -gt @($optionListHistoryBefore.revisions).Count -and $restoredMassachusetts.title -eq "Massachusetts" -and @($optionListHistoryRestored.detail.options).Count -eq @($optionListHistoryBefore.detail.options).Count -and $optionListHistoryRestored.revisions[0].action -eq "rolled-back" -and $optionListHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "form option-list composite revision and rollback history" -Result $(if ($optionListRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $optionListBaseline.revisionId; restoredTitle = $restoredMassachusetts.title; optionCount = @($optionListHistoryRestored.detail.options).Count; action = $optionListHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "form option-list composite revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $templateHeaders = Get-AdministrationHeaders
     $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20
