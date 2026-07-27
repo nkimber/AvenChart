@@ -3147,6 +3147,16 @@ export type InventoryLotMetadataUpdateResponse = {
   changedAt: string
 }
 
+export type InventoryLotMetadataAuditItem = {
+  auditId: string
+  priorLotNumber: string
+  newLotNumber: string
+  priorExpirationDate?: string | null
+  newExpirationDate?: string | null
+  changedBy: string
+  changedAt: string
+}
+
 export type InventoryActivityReportResponse = {
   datasetId: string
   datasetVersion: string
@@ -8279,6 +8289,22 @@ export async function updateInventoryLotMetadata(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Inventory lot update', response.status))
+  }
+
+  return response.json()
+}
+
+export async function getInventoryLotMetadataHistory(
+  lotId: number,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryLotMetadataAuditItem[]> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}/metadata-history`, {
+    headers: buildLegacyEhrSessionHeaders(sessionId),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory lot history', response.status))
   }
 
   return response.json()

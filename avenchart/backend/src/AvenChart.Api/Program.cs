@@ -3358,6 +3358,17 @@ inventory.MapPut("/lots/{lotId:int}", async (
     .WithName("UpdateInventoryLotMetadata")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
 
+inventory.MapGet("/lots/{lotId:int}/metadata-history", async (
+        int lotId,
+        InventoryRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetLotMetadataHistoryAsync(lotId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetInventoryLotMetadataHistory")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 inventory.MapPost("/count-reconciliations", async (
         InventoryRepository repository,
         AuthRepository authRepository,

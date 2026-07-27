@@ -168,6 +168,7 @@ import {
   assignProcedureReportReviewer,
   createPatient,
   createInventoryTransaction,
+  getInventoryLotMetadataHistory,
   updateInventoryLotMetadata,
   createInventoryTransfer,
   createInventoryPurchaseReceipt,
@@ -420,6 +421,7 @@ import {
   type InventoryActivityReportResponse,
   type InventoryTransactionCreateInput,
   type InventoryLotMetadataUpdateInput,
+  type InventoryLotMetadataAuditItem,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
   type InventoryCountReconciliationCreateInput,
@@ -20310,6 +20312,8 @@ function InventoryWorkspace({
   const [reason, setReason] = useState('')
   const [metadataLotNumber, setMetadataLotNumber] = useState('')
   const [metadataExpirationDate, setMetadataExpirationDate] = useState('')
+  const [metadataHistory, setMetadataHistory] = useState<InventoryLotMetadataAuditItem[]>([])
+  const [metadataHistoryError, setMetadataHistoryError] = useState<string | null>(null)
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [reportFromDate, setReportFromDate] = useState('')
   const [reportToDate, setReportToDate] = useState('')
@@ -20337,6 +20341,8 @@ function InventoryWorkspace({
 
   function selectLot(value: string) {
     setLotId(value)
+    setMetadataHistory([])
+    setMetadataHistoryError(null)
     const selected = lots.find((lot) => String(lot.lotId) === value)
     setMetadataLotNumber(selected?.lotNumber ?? '')
     setMetadataExpirationDate(selected?.expirationDate ?? '')
@@ -20497,6 +20503,17 @@ function InventoryWorkspace({
     })
   }
 
+  async function loadLotMetadataHistory() {
+    const parsedLotId = Number(lotId)
+    if (!sessionId || !Number.isInteger(parsedLotId) || parsedLotId <= 0) return
+    setMetadataHistoryError(null)
+    try {
+      setMetadataHistory(await getInventoryLotMetadataHistory(parsedLotId, sessionId))
+    } catch (historyError) {
+      setMetadataHistoryError(historyError instanceof Error ? historyError.message : 'Inventory lot history failed')
+    }
+  }
+
   async function submitVendor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!sessionId || !vendorName.trim()) return
@@ -20645,6 +20662,9 @@ function InventoryWorkspace({
                 <label>Lot number<input value={metadataLotNumber} onChange={(event) => setMetadataLotNumber(event.target.value)} maxLength={80} required /></label>
                 <label>Expiration date (optional)<input type="date" value={metadataExpirationDate} onChange={(event) => setMetadataExpirationDate(event.target.value)} /></label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Save lot details</button>
+                <button className="inventory-record-button" type="button" onClick={() => void loadLotMetadataHistory()} disabled={!sourceLot}>Review edit history</button>
+                {metadataHistoryError && <div className="workspace-error">{metadataHistoryError}</div>}
+                {metadataHistory.map((entry) => <small key={entry.auditId}>{entry.changedAt.slice(0, 16).replace('T', ' ')} · {entry.changedBy}: {entry.priorLotNumber} → {entry.newLotNumber}</small>)}
               </form>
               <p className="inventory-boundary">Transfers create matched source and destination ledger entries. Use the purchase receipt workspace below to record the vendor, lot, cost, and receiving evidence.</p>
             </aside>

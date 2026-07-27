@@ -93,6 +93,15 @@ public sealed record InventoryLotMetadataUpdateResponse(
     string ChangedBy,
     string ChangedAt);
 
+public sealed record InventoryLotMetadataAuditItem(
+    Guid AuditId,
+    string PriorLotNumber,
+    string NewLotNumber,
+    string? PriorExpirationDate,
+    string? NewExpirationDate,
+    string ChangedBy,
+    string ChangedAt);
+
 public sealed record InventoryActivityReportResponse(
     string DatasetId,
     string DatasetVersion,

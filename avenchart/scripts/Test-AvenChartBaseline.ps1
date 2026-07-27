@@ -10131,6 +10131,8 @@ try {
     $updatedLotNumber = "SMOKE-EDIT-$inventoryReceiptSuffix"
     $lotMetadataUpdate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotNumber = $updatedLotNumber; expirationDate = "2028-12-31" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryWithMetadata = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $lotMetadataHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)/metadata-history" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $lotMetadataHistoryEntry = @($lotMetadataHistory | Where-Object { $_.auditId -eq $lotMetadataUpdate.auditId }) | Select-Object -First 1
     $updatedLot = @($inventoryWithMetadata.items | ForEach-Object { $_.lots } | Where-Object { $_.lotId -eq $inventoryReceipt.lot.lotId }) | Select-Object -First 1
     $lotMetadataAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_metadata_audits where audit_id = '$($lotMetadataUpdate.auditId)' and lot_id = $($inventoryReceipt.lot.lotId) and prior_lot_number = 'SMOKE-RCV-$inventoryReceiptSuffix' and new_lot_number = '$updatedLotNumber' and changed_by = 'admin';"
     $inventoryReturn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/returns" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventoryReceipt.lot.lotId; quantity = 2; reason = "Smoke vendor return verification" } | ConvertTo-Json) -TimeoutSec 20
@@ -10150,14 +10152,16 @@ try {
         -and $updatedLot.lotNumber -eq $updatedLotNumber `
         -and $updatedLot.expirationDate -eq "2028-12-31" `
         -and $updatedLot.quantityOnHand -eq 7 `
-        -and $lotMetadataAuditCount.Trim() -eq "1"
+        -and $lotMetadataAuditCount.Trim() -eq "1" `
+        -and $lotMetadataHistoryEntry.newLotNumber -eq $updatedLotNumber `
+        -and $lotMetadataHistoryEntry.changedBy -eq "admin"
     $inventoryReturnPassed = $inventoryReturn.transaction.transactionType -eq "return" `
         -and $inventoryReturn.transaction.quantityDelta -eq -2 `
         -and $inventoryReturn.lot.quantityOnHand -eq 5 `
         -and $inventoryReturnEntry.reason -eq "Smoke vendor return verification"
     Add-Check -Name "inventory vendor purchase receipt lifecycle" -Result $(if ($inventoryReceiptPassed) { "passed" } else { "failed" }) -Details @{ vendorId = $inventoryVendor.vendorId; receiptId = $inventoryReceipt.receiptId; lotId = $inventoryReceipt.lot.lotId; ledgerReceiptReference = $inventoryReceiptEntry.receiptReference }
     Add-Check -Name "inventory lot expiry classification" -Result $(if ($inventoryExpiryPassed) { "passed" } else { "failed" }) -Details @{ lotId = $expiredReceipt.lot.lotId; expiryStatus = $expiredLot.expiryStatus; expiredLots = $inventoryWithExpiry.summary.expiredLots; expiringWithin90Days = $inventoryWithExpiry.summary.expiringWithin90Days }
-    Add-Check -Name "inventory lot metadata audit lifecycle" -Result $(if ($inventoryLotMetadataPassed) { "passed" } else { "failed" }) -Details @{ auditId = $lotMetadataUpdate.auditId; lotId = $inventoryReceipt.lot.lotId; lotNumber = $updatedLot.lotNumber; expirationDate = $updatedLot.expirationDate; quantityOnHand = $updatedLot.quantityOnHand; auditCount = $lotMetadataAuditCount.Trim() }
+    Add-Check -Name "inventory lot metadata audit lifecycle" -Result $(if ($inventoryLotMetadataPassed) { "passed" } else { "failed" }) -Details @{ auditId = $lotMetadataUpdate.auditId; lotId = $inventoryReceipt.lot.lotId; lotNumber = $updatedLot.lotNumber; expirationDate = $updatedLot.expirationDate; quantityOnHand = $updatedLot.quantityOnHand; auditCount = $lotMetadataAuditCount.Trim(); historyEntry = $lotMetadataHistoryEntry }
     Add-Check -Name "inventory vendor return lifecycle" -Result $(if ($inventoryReturnPassed) { "passed" } else { "failed" }) -Details @{ transactionId = $inventoryReturn.transaction.transactionId; lotId = $inventoryReturn.lot.lotId; quantityDelta = $inventoryReturn.transaction.quantityDelta; quantityOnHand = $inventoryReturn.lot.quantityOnHand }
 }
 catch {

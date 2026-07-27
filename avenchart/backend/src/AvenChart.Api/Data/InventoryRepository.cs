@@ -345,6 +345,31 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             changedAt.ToString("O", CultureInfo.InvariantCulture));
     }
 
+    public async Task<IReadOnlyList<InventoryLotMetadataAuditItem>?> GetLotMetadataHistoryAsync(int lotId, CancellationToken cancellationToken)
+    {
+        if (lotId <= 0) return null;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText = "select exists(select 1 from inventory_lots where lot_id = @lotId);";
+        existsCommand.Parameters.AddWithValue("lotId", lotId);
+        if (await existsCommand.ExecuteScalarAsync(cancellationToken) is not true) return null;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select audit_id, prior_lot_number, new_lot_number, prior_expiration_date, new_expiration_date, changed_by, changed_at from inventory_lot_metadata_audits where lot_id = @lotId order by changed_at desc, audit_id desc limit 50;";
+        command.Parameters.AddWithValue("lotId", lotId);
+        var entries = new List<InventoryLotMetadataAuditItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(new InventoryLotMetadataAuditItem(
+                reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                reader.IsDBNull(4) ? null : reader.GetFieldValue<DateOnly>(4).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O", CultureInfo.InvariantCulture)));
+        }
+        return entries;
+    }
+
     public async Task<InventoryActivityReportResponse> GetActivityReportAsync(
         DateOnly? fromDate,
         DateOnly? toDate,
