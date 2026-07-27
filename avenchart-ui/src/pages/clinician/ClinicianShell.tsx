@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
+  ClipboardPlus,
   BarChart2,
   Bell,
   CalendarClock,
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   { path: '/clinician/office-notes', label: 'Office notes', icon: Mail },
   { path: '/clinician/address-book', label: 'Address book', icon: Users },
   { path: '/clinician/tracks', label: 'Configure tracks', icon: Workflow },
+  { path: '/clinician/track-entries', label: 'Track entries', icon: ClipboardPlus },
   { path: '/clinician/patient-education', label: 'Patient education', icon: Activity },
   { path: '/clinician/recalls', label: 'Recalls', icon: Bell },
   { path: '/clinician/batch-communication', label: 'Batch communication', icon: Mail },

@@ -9882,6 +9882,29 @@ catch {
 }
 
 try {
+    $trackHeaders = Get-AdministrationHeaders
+    $trackSuffix = [Guid]::NewGuid().ToString('N').Substring(0, 10)
+    $track = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ parentId = $null; name = "Smoke track $trackSuffix"; description = "Synthetic encounter track"; position = 1; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $trackItemOne = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ parentId = $track.id; name = "Measurement A"; description = $null; position = 1; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $trackItemTwo = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/tracks/" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ parentId = $track.id; name = "Measurement B"; description = $null; position = 2; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $trackCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks" -Method Get -Headers $trackHeaders -TimeoutSec 20
+    $trackRecord = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ trackTypeId = $track.id } | ConvertTo-Json) -TimeoutSec 20
+    $trackReading = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)/readings" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ recordedAt = "2026-07-27T09:30:00Z"; values = @(@{ itemTypeId = $trackItemOne.id; value = "12" }, @{ itemTypeId = $trackItemTwo.id; value = "34" }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $trackDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)" -Method Get -Headers $trackHeaders -TimeoutSec 20
+    $trackReadingPassed = ($trackCatalog.availableTracks.id -contains $track.id) `
+        -and $trackRecord.trackTypeId -eq $track.id `
+        -and @($trackReading.values).Count -eq 2 `
+        -and $trackDetail.record.trackName -eq "Smoke track $trackSuffix" `
+        -and @($trackDetail.readings).Count -eq 1 `
+        -and ($trackDetail.readings[0].values.value -contains "12") `
+        -and ($trackDetail.readings[0].values.value -contains "34")
+    Add-Check -Name "encounter Track Anything capture and history" -Result $(if ($trackReadingPassed) { "passed" } else { "failed" }) -Details @{ trackId = $track.id; recordId = $trackRecord.recordId; readingId = $trackReading.readingId; itemCount = @($trackDetail.items).Count }
+}
+catch {
+    Add-Check -Name "encounter Track Anything capture and history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $templateHeaders = Get-AdministrationHeaders
     $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20

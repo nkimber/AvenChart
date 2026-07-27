@@ -42,6 +42,7 @@ import SchedulingOperations from './pages/clinician/SchedulingOperations.tsx'
 import OfficeNotes from './pages/clinician/OfficeNotes.tsx'
 import AddressBook from './pages/clinician/AddressBook.tsx'
 import TrackAnything from './pages/clinician/TrackAnything.tsx'
+import EncounterTracks from './pages/clinician/EncounterTracks.tsx'
 import PatientEducation from './pages/clinician/PatientEducation.tsx'
 import RecallBoard from './pages/clinician/RecallBoard.tsx'
 import BatchCommunication from './pages/clinician/BatchCommunication.tsx'
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="office-notes" element={<OfficeNotes />} />
           <Route path="address-book" element={<AddressBook />} />
           <Route path="tracks" element={<TrackAnything />} />
+          <Route path="track-entries" element={<EncounterTracks />} />
           <Route path="patient-education" element={<PatientEducation />} />
           <Route path="recalls" element={<RecallBoard />} />
           <Route path="batch-communication" element={<BatchCommunication />} />

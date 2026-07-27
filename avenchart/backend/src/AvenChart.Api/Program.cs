@@ -1525,6 +1525,30 @@ encounters.MapPut("/{encounter:int}/forms/{layoutKey}", async (EncounterLayoutFo
     .WithName("SaveEncounterLayoutForm")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
+encounters.MapGet("/{encounter:int}/tracks", async (TrackAnythingRepository repository, int encounter, CancellationToken cancellationToken) =>
+    (await repository.GetEncounterCatalogAsync(encounter, cancellationToken)) is { } tracks ? Results.Ok(tracks) : Results.NotFound())
+    .WithName("GetEncounterTracks");
+
+encounters.MapPost("/{encounter:int}/tracks", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, TrackAnythingEncounterRecordCreateRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.CreateEncounterRecordAsync(encounter, request, session.Username, cancellationToken)) is { } record ? Results.Created($"/api/encounters/{encounter}/tracks/{record.RecordId}", record) : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
+    .WithName("CreateEncounterTrack")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
+encounters.MapGet("/{encounter:int}/tracks/{recordId:guid}", async (TrackAnythingRepository repository, int encounter, Guid recordId, CancellationToken cancellationToken) =>
+    (await repository.GetEncounterRecordAsync(encounter, recordId, cancellationToken)) is { } record ? Results.Ok(record) : Results.NotFound())
+    .WithName("GetEncounterTrack");
+
+encounters.MapPost("/{encounter:int}/tracks/{recordId:guid}/readings", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, TrackAnythingReadingCreateRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.AddReadingAsync(encounter, recordId, request, session.Username, cancellationToken)) is { } reading ? Results.Created($"/api/encounters/{encounter}/tracks/{recordId}/readings/{reading.ReadingId}", reading) : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
+    .WithName("AddEncounterTrackReading")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
 encounters.MapGet("/{encounter:int}", async (
         EncounterRepository repository,
         int encounter,
