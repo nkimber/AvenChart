@@ -1367,10 +1367,17 @@ appointments.MapPost("/", async (
             }
         }
 
-        var appointment = await repository.CreateAsync(request, cancellationToken);
-        return appointment is null
-            ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")
-            : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+        try
+        {
+            var appointment = await repository.CreateAsync(request, cancellationToken);
+            return appointment is null
+                ? Results.BadRequest("Appointment could not be created from the supplied patient, date, time, and duration.")
+                : Results.Created($"/api/appointments/{appointment.Id}", appointment);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("CreateAppointment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));
@@ -1394,10 +1401,17 @@ appointments.MapPut("/{appointmentId}", async (
         AppointmentUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var appointment = await repository.UpdateAsync(appointmentId, request, cancellationToken);
-        return appointment is null
-            ? Results.BadRequest("Appointment could not be updated from the supplied date, time, and duration.")
-            : Results.Ok(appointment);
+        try
+        {
+            var appointment = await repository.UpdateAsync(appointmentId, request, cancellationToken);
+            return appointment is null
+                ? Results.BadRequest("Appointment could not be updated from the supplied date, time, and duration.")
+                : Results.Ok(appointment);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("UpdateAppointment")
     .AddEndpointFilter(AccessPermissionFilter("patients", "appt", "write"));

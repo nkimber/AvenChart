@@ -9714,6 +9714,44 @@ try {
     $updatedVisible = $updatedFacility.detail.facilities | Where-Object { $_.id -eq $administrationFacilityMutationId -and $_.name -eq "$facilityName Inactive" -and -not $_.active } | Select-Object -First 1
     $facilityMutationPassed = $null -ne $createdVisible -and $null -ne $updatedVisible
 
+    $inactiveFacilityAppointmentBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        title = "Blocked Inactive Facility Appointment"
+        date = "2027-10-14"
+        startTime = "10:30"
+        durationMinutes = 30
+        facilityId = $administrationFacilityMutationId
+        billingLocationId = $administrationFacilityMutationId
+        categoryId = 9
+        room = "Inactive facility"
+    } | ConvertTo-Json
+    $inactiveFacilityAppointmentStatus = 0
+    try {
+        $inactiveFacilityAppointment = Invoke-WebRequest -Uri "$ApiBaseUrl/api/appointments" -Method Post -Headers $administrationHeaders -ContentType "application/json" -Body $inactiveFacilityAppointmentBody -TimeoutSec 20 -ErrorAction Stop
+        $inactiveFacilityAppointmentStatus = [int]$inactiveFacilityAppointment.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $inactiveFacilityAppointmentStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $inactiveFacilityAvailabilityBody = @{
+        patientId = "MOD-PAT-0003"
+        providerId = 101
+        date = "2027-10-14"
+        startTime = "10:30"
+        durationMinutes = 30
+        facilityId = $administrationFacilityMutationId
+        room = "Inactive facility"
+    } | ConvertTo-Json
+    $inactiveFacilityAvailability = Invoke-RestMethod -Uri "$ApiBaseUrl/api/appointments/availability/validate" -Method Post -Headers $administrationHeaders -ContentType "application/json" -Body $inactiveFacilityAvailabilityBody -TimeoutSec 20
+    $inactiveFacilitySchedulingPassed = $inactiveFacilityAppointmentStatus -eq 400 -and -not $inactiveFacilityAvailability.facilityAvailable -and -not $inactiveFacilityAvailability.available
+
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/facilities/$administrationFacilityMutationId" -Method Delete -Headers $administrationHeaders -TimeoutSec 20 | Out-Null
     $administrationFacilityMutationId = $null
 
@@ -9722,9 +9760,14 @@ try {
         createdVisible = $createdVisible
         updatedVisible = $updatedVisible
     }
+    Add-Check -Name "appointment inactive facility enforcement" -Result $(if ($inactiveFacilitySchedulingPassed) { "passed" } else { "failed" }) -Details @{
+        createStatus = $inactiveFacilityAppointmentStatus
+        availability = $inactiveFacilityAvailability
+    }
 }
 catch {
     Add-Check -Name "administration facility mutation lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "appointment inactive facility enforcement" -Result "failed" -Details $_.Exception.Message
 }
 finally {
     if ($null -ne $administrationFacilityMutationId) {

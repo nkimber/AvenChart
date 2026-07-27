@@ -399,6 +399,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await ValidateActiveSchedulingReferencesAsync(
+            connection,
+            request.ProviderId,
+            request.FacilityId,
+            request.BillingLocationId,
+            cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             with patient_match as (
@@ -927,8 +933,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                     pubpid,
                     first_name,
                     last_name,
-                    coalesce((select id from staff where id = @providerId), provider_id) as provider_id,
-                    coalesce((select id from facilities where id = @facilityId), facility_id) as facility_id
+                    coalesce(@providerId, provider_id) as provider_id,
+                    coalesce(@facilityId, facility_id) as facility_id
                 from patient_match
             )
             select
@@ -939,8 +945,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 selected.last_name,
                 selected.provider_id,
                 trim(concat(coalesce(staff.first_name, ''), ' ', coalesce(staff.last_name, ''))) as provider_name,
+                staff.active as provider_active,
                 selected.facility_id,
-                facilities.name as facility_name
+                facilities.name as facility_name,
+                (facilities.id is not null and facilities.inactive = false) as facility_active
             from selected
             left join staff on staff.id = selected.provider_id
             left join facilities on facilities.id = selected.facility_id;
@@ -954,8 +962,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         string? patientDisplayName = null;
         int? providerId = null;
         string? providerName = null;
+        var providerActive = false;
         int? facilityId = null;
         string? facilityName = null;
+        var facilityActive = false;
 
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
@@ -968,8 +978,10 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 patientDisplayName = NormalizePatientName(firstName, lastName, patientCanonicalId);
                 providerId = ReadNullableInt(reader, "provider_id");
                 providerName = NormalizeText(ReadNullableString(reader, "provider_name"));
+                providerActive = !reader.IsDBNull(reader.GetOrdinal("provider_active")) && reader.GetBoolean(reader.GetOrdinal("provider_active"));
                 facilityId = ReadNullableInt(reader, "facility_id");
                 facilityName = NormalizeText(ReadNullableString(reader, "facility_name"));
+                facilityActive = !reader.IsDBNull(reader.GetOrdinal("facility_active")) && reader.GetBoolean(reader.GetOrdinal("facility_active"));
             }
         }
 
@@ -1007,10 +1019,18 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         {
             messages.Add("No provider could be resolved from the request or patient default.");
         }
+        else if (!providerActive)
+        {
+            messages.Add("Resolved provider is inactive or was not found.");
+        }
 
         if (facilityId is null)
         {
             messages.Add("No facility could be resolved from the request or patient default.");
+        }
+        else if (!facilityActive)
+        {
+            messages.Add("Resolved facility is inactive or was not found.");
         }
 
         var conflicts = await GetAvailabilityConflictsAsync(
@@ -1029,8 +1049,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             messages.Add($"Requested time has {conflicts.Count} active scheduling conflict(s).");
         }
 
-        var providerAvailable = providerId is not null && withinBusinessHours;
-        var facilityAvailable = facilityId is not null && withinBusinessHours;
+        var providerAvailable = providerId is not null && providerActive && withinBusinessHours;
+        var facilityAvailable = facilityId is not null && facilityActive && withinBusinessHours;
         var available = providerAvailable && facilityAvailable && conflicts.Count == 0;
         if (available)
         {
@@ -1094,6 +1114,12 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
 
         var rootAppointmentId = ParseOccurrenceReference(appointmentId).RootAppointmentId;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await ValidateActiveSchedulingReferencesAsync(
+            connection,
+            request.ProviderId,
+            request.FacilityId,
+            request.BillingLocationId,
+            cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             update appointments
@@ -2389,6 +2415,58 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         return new ProviderOverlapSummary(overlapIds.Count, overlapIds);
+    }
+
+    private static async Task ValidateActiveSchedulingReferencesAsync(
+        NpgsqlConnection connection,
+        int? providerId,
+        int? facilityId,
+        int? billingLocationId,
+        CancellationToken cancellationToken)
+    {
+        await ValidateActiveSchedulingReferenceAsync(
+            connection,
+            providerId,
+            "provider",
+            "staff",
+            "active = true",
+            cancellationToken);
+        await ValidateActiveSchedulingReferenceAsync(
+            connection,
+            facilityId,
+            "facility",
+            "facilities",
+            "inactive = false",
+            cancellationToken);
+        await ValidateActiveSchedulingReferenceAsync(
+            connection,
+            billingLocationId,
+            "billing location",
+            "facilities",
+            "inactive = false",
+            cancellationToken);
+    }
+
+    private static async Task ValidateActiveSchedulingReferenceAsync(
+        NpgsqlConnection connection,
+        int? referenceId,
+        string referenceName,
+        string tableName,
+        string activePredicate,
+        CancellationToken cancellationToken)
+    {
+        if (referenceId is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"select exists(select 1 from {tableName} where id = @referenceId and {activePredicate});";
+        command.Parameters.AddWithValue("referenceId", referenceId.Value);
+        if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            throw new ArgumentException($"Selected {referenceName} is inactive or was not found.");
+        }
     }
 
     private static async Task<IReadOnlyList<AppointmentAvailabilityConflict>> GetAvailabilityConflictsAsync(
