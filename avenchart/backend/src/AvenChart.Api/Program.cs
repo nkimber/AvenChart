@@ -26,6 +26,7 @@ builder.Services.AddResponseCompression();
 builder.Services.AddHealthChecks()
     .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
 builder.Services.AddSingleton<IIntegrationTransport, LocalDeterministicIntegrationTransport>();
+builder.Services.AddSingleton<RuntimeDiagnostics>();
 
 builder.Services.AddOptions<RuntimeSafetyOptions>()
     .BindConfiguration(RuntimeSafetyOptions.SectionName)
@@ -167,6 +168,7 @@ app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
     var stopwatch = Stopwatch.StartNew();
+    var diagnostics = context.RequestServices.GetRequiredService<RuntimeDiagnostics>();
     try
     {
         await next(context);
@@ -174,6 +176,7 @@ app.Use(async (context, next) =>
     finally
     {
         stopwatch.Stop();
+        diagnostics.RecordCompletedResponse(context.Response.StatusCode);
         var endpointName = context.GetEndpoint()?.DisplayName ?? "unmatched";
         app.Logger.LogInformation(
             "HTTP {Method} endpoint {Endpoint} returned {StatusCode} in {ElapsedMilliseconds} ms with correlation {CorrelationId}",
@@ -3739,6 +3742,10 @@ administration.MapGet("/configuration-catalog", () => Results.Ok(new Configurati
     new("clinical.templates", "Clinical forms and templates", "Clinical-governed", "Clinical owner", "Versioned content and activation date", "No mutable source selected"),
     new("integrations.secrets", "Security and integration settings", "Deployment-only", "Security and operations owners", "Environment validation; never return secrets", "Excluded from application API")
 ]))).WithName("GetConfigurationCatalog");
+
+administration.MapGet("/runtime-diagnostics", (RuntimeDiagnostics diagnostics) =>
+    Results.Ok(diagnostics.GetSnapshot()))
+    .WithName("GetRuntimeDiagnostics");
 
 administration.MapGet("/practice-settings", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");

@@ -293,6 +293,25 @@ try {
         -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
         -TimeoutSec 20
 
+    $runtimeDiagnostics = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/administration/runtime-diagnostics" `
+        -Method Get `
+        -Headers @{ "X-Legacy EHR-Session" = $login.sessionId } `
+        -TimeoutSec 20
+    $runtimeDiagnosticsProperties = @($runtimeDiagnostics.PSObject.Properties.Name)
+    $runtimeDiagnosticsAreSafe = @(
+        "application",
+        "startedAtUtc",
+        "observedAtUtc",
+        "completedResponses",
+        "informationalResponses",
+        "successfulResponses",
+        "redirectResponses",
+        "clientErrorResponses",
+        "serverErrorResponses",
+        "rateLimitedResponses"
+    ) | ForEach-Object { $runtimeDiagnosticsProperties -contains $_ } | Where-Object { -not $_ }
+
     $frontDeskAdministrationStatus = 0
     try {
         $frontDeskAdministration = Invoke-WebRequest `
@@ -345,6 +364,10 @@ try {
         -and $unauthenticatedAdministrationStatus -eq 401 `
         -and $administrationDirectory.counts.users -ge 20 `
         -and $administrationDirectory.counts.facilities -ge 3 `
+        -and $runtimeDiagnostics.application -eq "avenchart-api" `
+        -and $runtimeDiagnostics.completedResponses -gt 0 `
+        -and $runtimeDiagnosticsAreSafe.Count -eq 0 `
+        -and $runtimeDiagnosticsProperties.Count -eq 10 `
         -and $logout.authenticated -eq $false `
         -and $null -ne $logout.endedAt `
         -and $sessionAfterLogout.authenticated -eq $false `
@@ -368,6 +391,8 @@ try {
         unauthenticatedAdministrationStatus = $unauthenticatedAdministrationStatus
         administrationUsers = $administrationDirectory.counts.users
         administrationFacilities = $administrationDirectory.counts.facilities
+        runtimeDiagnosticResponses = $runtimeDiagnostics.completedResponses
+        runtimeDiagnosticSafeProperties = $runtimeDiagnosticsAreSafe.Count -eq 0 -and $runtimeDiagnosticsProperties.Count -eq 10
         sessionEnded = $null -ne $logout.endedAt
         sessionAfterLogout = $sessionAfterLogout.authenticated
         rejectedReason = $rejectedLogin.failureReason
