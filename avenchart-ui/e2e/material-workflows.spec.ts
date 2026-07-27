@@ -25,9 +25,7 @@ async function signInPortal(page: Page) {
   await page.goto("/portal/login");
   await page
     .getByLabel("Email or username")
-    .fill(
-      process.env.MODERN_UI_PORTAL_USERNAME ?? "mod-pat-0004@example.test",
-    );
+    .fill(process.env.MODERN_UI_PORTAL_USERNAME ?? "mod-pat-0004@example.test");
   await page
     .getByLabel("Password")
     .fill(process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!");
@@ -72,14 +70,16 @@ test.describe("material workflows", () => {
     await expect(page).toHaveURL(
       new RegExp(`/clinician/schedule\\?date=${expectedDate}$`),
     );
-    await expect(
-      page.getByRole("heading", { name: "Schedule" }),
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Schedule" })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByLabel("Select date")).toHaveValue(expectedDate);
     if (dashboardAppointments && /^\d+$/.test(dashboardAppointments)) {
-      await expect(page.getByText(
-        new RegExp(`${dashboardAppointments} appointments on this date`),
-      )).toBeVisible();
+      await expect(
+        page.getByText(
+          new RegExp(`${dashboardAppointments} appointments on this date`),
+        ),
+      ).toBeVisible();
     }
 
     await page.goto("/clinician/dashboard");
@@ -89,10 +89,12 @@ test.describe("material workflows", () => {
     )?.trim();
     await labsLink.click();
     await expect(page).toHaveURL(/\/clinician\/labs\?status=pending$/);
+    await expect(page.getByRole("heading", { name: "Lab queue" })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
-      page.getByRole("heading", { name: "Lab queue" }),
-    ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("Status: pending", { exact: true })).toBeVisible();
+      page.getByText("Status: pending", { exact: true }),
+    ).toBeVisible();
     if (dashboardLabs && /^\d+$/.test(dashboardLabs)) {
       await expect(
         page.getByText(
@@ -147,15 +149,80 @@ test.describe("material workflows", () => {
 
     await labsAlert.click();
     await expect(page).toHaveURL(/\/clinician\/labs\?status=pending$/);
-    await expect(page.getByText("Status: pending", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Status: pending", { exact: true }),
+    ).toBeVisible();
 
     await page.goto("/clinician/dashboard");
     await openNotifications(page);
-    await page
-      .getByRole("link", { name: /\d+ new patient messages/ })
-      .click();
+    await page.getByRole("link", { name: /\d+ new patient messages/ }).click();
     await expect(page).toHaveURL(/\/clinician\/messages\?status=new$/);
     await expect(page.getByLabel("Status")).toHaveValue("new");
+  });
+
+  test("patient relationships and care team use the protected mutation workflows", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-chromium",
+      "The mutation proof runs once to avoid cross-project writes to the shared synthetic patient.",
+    );
+    await signInClinician(page);
+    await page.goto("/clinician/patients/MOD-PAT-0004/summary");
+
+    const guardian = page.locator("section").filter({
+      has: page.getByRole("heading", {
+        name: "Guardian or representative",
+      }),
+    });
+    await guardian.getByRole("button", { name: "Edit" }).click();
+    await expect(
+      guardian.getByLabel("Guardian or representative"),
+    ).toBeVisible();
+    await guardian.getByRole("button", { name: "Save representative" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Guardian and representative details saved." }),
+    ).toBeVisible();
+
+    const employer = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "Employer" }),
+    });
+    await employer.getByRole("button", { name: "Edit" }).click();
+    await expect(employer.getByLabel("Employer name")).toBeVisible();
+    await employer.getByRole("button", { name: "Save employer" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Employer details saved." }),
+    ).toBeVisible();
+
+    const provider = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "Primary provider" }),
+    });
+    const editProvider = provider.getByRole("button", { name: "Edit" });
+    await expect(editProvider).toBeEnabled({ timeout: 15_000 });
+    await editProvider.click();
+    await expect(provider.getByLabel("Provider")).toBeVisible();
+    await provider.getByRole("button", { name: "Save provider" }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Primary provider assignment saved." }),
+    ).toBeVisible();
+
+    const careTeam = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "Care team" }),
+    });
+    const editCareTeam = careTeam.getByRole("button", {
+      name: "Edit care team",
+    });
+    await expect(editCareTeam).toBeEnabled({ timeout: 15_000 });
+    await editCareTeam.click();
+    await expect(careTeam.getByLabel("Team name")).toBeVisible();
+    await careTeam.getByRole("button", { name: "Save care team" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Care team saved." }),
+    ).toBeVisible();
   });
 
   test("portal report selections are identifiable and validated", async ({
@@ -172,14 +239,18 @@ test.describe("material workflows", () => {
     await expect(encounterForm).toBeVisible();
 
     await page.getByRole("button", { name: "Select none" }).click();
-    await page.getByRole("button", { name: "Generate selected report" }).click();
+    await page
+      .getByRole("button", { name: "Generate selected report" })
+      .click();
     await expect(page.getByRole("alert")).toContainText(
       "Select at least one report item.",
     );
 
     await page.getByRole("button", { name: "Select all" }).click();
     await expect(encounterForm).toBeChecked();
-    await page.getByRole("button", { name: "Generate selected report" }).click();
+    await page
+      .getByRole("button", { name: "Generate selected report" })
+      .click();
     await expect(page.locator(".report-generated")).toBeVisible({
       timeout: 15_000,
     });

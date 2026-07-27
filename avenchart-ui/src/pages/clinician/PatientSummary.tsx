@@ -1,31 +1,48 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
+  Building2,
   CalendarClock,
   FileText,
   Phone,
   Plus,
   Printer,
   Shield,
+  Stethoscope,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import {
+  createPatientMergeAuditPlan,
+  createPatientInsurance,
+  createPatientRecordRequest,
+  deletePatientInsurance,
+  executePatientMerge,
+  getPatientCareTeamOptions,
+  getPatientMergePreview,
+  getPatientProviderAssignmentOptions,
+  getPatientRecordRequests,
+  rollbackPatientMerge,
+  updatePatientCareTeam,
   updatePatientContact,
   updatePatientDemographics,
-  createPatientInsurance,
+  updatePatientEmployer,
+  updatePatientGuardianContact,
   updatePatientInsurance,
-  deletePatientInsurance,
-  getPatientMergePreview,
-  createPatientMergeAuditPlan,
-  executePatientMerge,
-  rollbackPatientMerge,
-  getPatientRecordRequests,
-  createPatientRecordRequest,
   completePatientRecordRequest,
+  updatePatientProviderAssignment,
   updatePatientPortalAccountAccess,
   updatePatientPortalAccountReset,
+  type PatientCareTeamMember,
+  type PatientCareTeamMemberUpdate,
+  type PatientCareTeamOptionsResponse,
+  type PatientCareTeamUpdate,
+  type PatientChartSummary,
+  type PatientEmployerUpdate,
+  type PatientGuardianContactUpdate,
   type PatientInsuranceMutationInput,
   type PatientMergePreview,
+  type PatientProviderAssignmentOptionsResponse,
   type PatientRecordRequest,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
@@ -55,9 +72,7 @@ const BLANK_INS: PatientInsuranceMutationInput = {
 };
 
 type InsuranceMode =
-  | { kind: "none" }
-  | { kind: "add" }
-  | { kind: "edit"; insuranceId: string };
+  { kind: "none" } | { kind: "add" } | { kind: "edit"; insuranceId: string };
 type MergePreviewState =
   | { status: "idle" }
   | { status: "loading"; sourcePatientId: string }
@@ -79,6 +94,103 @@ const mergeCountLabels: Array<{
   { key: "medications", label: "Medications" },
 ];
 
+type RelationshipEditor =
+  "guardian" | "employer" | "provider" | "care-team" | null;
+
+type CareTeamMemberDraft = PatientCareTeamMemberUpdate & {
+  memberType: "provider" | "contact";
+};
+
+type CareTeamDraft = Omit<PatientCareTeamUpdate, "members"> & {
+  members: CareTeamMemberDraft[];
+};
+
+const careTeamRoleOptions = [
+  { value: "primary_care_provider", label: "Primary care provider" },
+  { value: "physician", label: "Physician" },
+  { value: "nurse", label: "Nurse" },
+  { value: "case_manager", label: "Case manager" },
+  { value: "social_worker", label: "Social worker" },
+  { value: "pharmacist", label: "Pharmacist" },
+  { value: "specialist", label: "Specialist" },
+  { value: "caregiver", label: "Caregiver" },
+  { value: "other", label: "Other" },
+] as const;
+
+const careTeamStatusOptions = [
+  { value: "proposed", label: "Proposed" },
+  { value: "active", label: "Active" },
+  { value: "suspended", label: "Suspended" },
+  { value: "inactive", label: "Inactive" },
+  { value: "entered-in-error", label: "Entered in error" },
+] as const;
+
+function buildGuardianDraft(
+  patient: PatientChartSummary,
+): PatientGuardianContactUpdate {
+  return {
+    motherName: patient.motherName ?? "",
+    guardianName: patient.guardianName ?? "",
+    guardianRelationship: patient.guardianRelationship ?? "",
+    guardianPhone: patient.guardianPhone ?? "",
+    guardianEmail: patient.guardianEmail ?? "",
+    guardianSex: patient.guardianSex ?? "",
+    guardianAddress: patient.guardianAddress ?? "",
+    guardianCity: patient.guardianCity ?? "",
+    guardianState: patient.guardianState ?? "",
+    guardianPostalCode: patient.guardianPostalCode ?? "",
+    guardianCountry: patient.guardianCountry ?? "",
+    guardianWorkPhone: patient.guardianWorkPhone ?? "",
+  };
+}
+
+function buildEmployerDraft(
+  patient: PatientChartSummary,
+): PatientEmployerUpdate {
+  return {
+    employerName: patient.employerName ?? "",
+    employerStreet: patient.employerStreet ?? "",
+    employerCity: patient.employerCity ?? "",
+    employerState: patient.employerState ?? "",
+    employerPostalCode: patient.employerPostalCode ?? "",
+    employerCountry: patient.employerCountry ?? "",
+  };
+}
+
+function buildCareTeamMemberDraft(
+  member?: PatientCareTeamMember,
+): CareTeamMemberDraft {
+  return {
+    memberType: member?.contactId ? "contact" : "provider",
+    userId: member?.userId ?? null,
+    contactId: member?.contactId ?? null,
+    role: member?.role ?? "primary_care_provider",
+    facilityId: member?.facilityId ?? null,
+    providerSince: member?.providerSince ?? "",
+    status: member?.status ?? "active",
+    note: member?.note ?? "",
+  };
+}
+
+function buildCareTeamDraft(patient: PatientChartSummary): CareTeamDraft {
+  return {
+    teamName: patient.careTeam?.teamName ?? "Care Team",
+    teamStatus: patient.careTeam?.teamStatus ?? "active",
+    members: patient.careTeam?.members.map(buildCareTeamMemberDraft) ?? [],
+  };
+}
+
+function formatAddress(
+  street?: string | null,
+  city?: string | null,
+  state?: string | null,
+  postalCode?: string | null,
+  country?: string | null,
+) {
+  const locality = [city, state, postalCode].filter(Boolean).join(" ");
+  return [street, locality, country].filter(Boolean).join(", ");
+}
+
 export default function PatientSummary() {
   const { session, patient, patientId, reload } =
     useOutletContext<PatientOutletContext>();
@@ -86,6 +198,35 @@ export default function PatientSummary() {
 
   const [editDemoOpen, setEditDemoOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [relationshipEditor, setRelationshipEditor] =
+    useState<RelationshipEditor>(null);
+  const [relationshipSaving, setRelationshipSaving] = useState<Exclude<
+    RelationshipEditor,
+    null
+  > | null>(null);
+  const [relationshipError, setRelationshipError] = useState<string | null>(
+    null,
+  );
+  const [guardianForm, setGuardianForm] = useState(() =>
+    buildGuardianDraft(patient),
+  );
+  const [employerForm, setEmployerForm] = useState(() =>
+    buildEmployerDraft(patient),
+  );
+  const [providerId, setProviderId] = useState<number | null>(
+    patient.providerId ?? null,
+  );
+  const [careTeamForm, setCareTeamForm] = useState<CareTeamDraft>(() =>
+    buildCareTeamDraft(patient),
+  );
+  const [providerOptions, setProviderOptions] =
+    useState<PatientProviderAssignmentOptionsResponse | null>(null);
+  const [careTeamOptions, setCareTeamOptions] =
+    useState<PatientCareTeamOptionsResponse | null>(null);
+  const [relationshipOptionsState, setRelationshipOptionsState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [relationshipOptionsRetry, setRelationshipOptionsRetry] = useState(0);
   const [contactForm, setContactForm] = useState({
     phoneHome: patient.phone ?? "",
     phoneCell: patient.phoneCell ?? "",
@@ -146,6 +287,30 @@ export default function PatientSummary() {
   const [recordRequestAction, setRecordRequestAction] = useState<
     "create" | string | null
   >(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRelationshipOptionsState("loading");
+    Promise.all([
+      getPatientProviderAssignmentOptions(session.sessionId, controller.signal),
+      getPatientCareTeamOptions(
+        session.sessionId,
+        patientId,
+        controller.signal,
+      ),
+    ])
+      .then(([providers, careTeam]) => {
+        setProviderOptions(providers);
+        setCareTeamOptions(careTeam);
+        setRelationshipOptionsState("ready");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
+        setRelationshipOptionsState("error");
+      });
+    return () => controller.abort();
+  }, [patientId, relationshipOptionsRetry, session.sessionId]);
 
   async function loadRecordRequests() {
     setRecordRequestLoading(true);
@@ -239,6 +404,175 @@ export default function PatientSummary() {
       showToast("Could not remove insurance.", "error");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function openRelationshipEditor(editor: Exclude<RelationshipEditor, null>) {
+    setRelationshipError(null);
+    if (editor === "guardian") {
+      setGuardianForm(buildGuardianDraft(patient));
+    } else if (editor === "employer") {
+      setEmployerForm(buildEmployerDraft(patient));
+    } else if (editor === "provider") {
+      setProviderId(patient.providerId ?? null);
+    } else {
+      setCareTeamForm(buildCareTeamDraft(patient));
+    }
+    setRelationshipEditor(editor);
+  }
+
+  function closeRelationshipEditor() {
+    setRelationshipEditor(null);
+    setRelationshipError(null);
+  }
+
+  function relationshipFailure(error: unknown, fallback: string) {
+    const message = error instanceof Error ? error.message : fallback;
+    setRelationshipError(message);
+    showToast(fallback, "error");
+  }
+
+  async function saveGuardian(event: React.FormEvent) {
+    event.preventDefault();
+    setRelationshipSaving("guardian");
+    setRelationshipError(null);
+    try {
+      await updatePatientGuardianContact(
+        session.sessionId,
+        patientId,
+        guardianForm,
+      );
+      showToast("Guardian and representative details saved.", "success");
+      setRelationshipEditor(null);
+      reload();
+    } catch (error) {
+      relationshipFailure(
+        error,
+        "Could not save guardian and representative details.",
+      );
+    } finally {
+      setRelationshipSaving(null);
+    }
+  }
+
+  async function saveEmployer(event: React.FormEvent) {
+    event.preventDefault();
+    setRelationshipSaving("employer");
+    setRelationshipError(null);
+    try {
+      await updatePatientEmployer(session.sessionId, patientId, employerForm);
+      showToast("Employer details saved.", "success");
+      setRelationshipEditor(null);
+      reload();
+    } catch (error) {
+      relationshipFailure(error, "Could not save employer details.");
+    } finally {
+      setRelationshipSaving(null);
+    }
+  }
+
+  async function saveProvider(event: React.FormEvent) {
+    event.preventDefault();
+    setRelationshipSaving("provider");
+    setRelationshipError(null);
+    try {
+      await updatePatientProviderAssignment(session.sessionId, patientId, {
+        providerId,
+      });
+      showToast("Primary provider assignment saved.", "success");
+      setRelationshipEditor(null);
+      reload();
+    } catch (error) {
+      relationshipFailure(
+        error,
+        "Could not save the primary provider assignment.",
+      );
+    } finally {
+      setRelationshipSaving(null);
+    }
+  }
+
+  function updateCareTeamMember(
+    index: number,
+    patch: Partial<CareTeamMemberDraft>,
+  ) {
+    setCareTeamForm((current) => ({
+      ...current,
+      members: current.members.map((member, memberIndex) =>
+        memberIndex === index ? { ...member, ...patch } : member,
+      ),
+    }));
+  }
+
+  function selectCareTeamProvider(index: number, value: string) {
+    const userId = value ? Number(value) : null;
+    const provider = providerOptions?.providers.find(
+      (option) => option.id === userId,
+    );
+    updateCareTeamMember(index, {
+      memberType: "provider",
+      userId,
+      contactId: null,
+      facilityId: provider?.facilityId ?? null,
+    });
+  }
+
+  function selectCareTeamContact(index: number, value: string) {
+    updateCareTeamMember(index, {
+      memberType: "contact",
+      userId: null,
+      contactId: value ? Number(value) : null,
+      facilityId: null,
+    });
+  }
+
+  async function saveCareTeam(event: React.FormEvent) {
+    event.preventDefault();
+    const incompleteMember = careTeamForm.members.find(
+      (member) =>
+        (member.memberType === "provider" && !member.userId) ||
+        (member.memberType === "contact" && !member.contactId),
+    );
+    if (incompleteMember) {
+      setRelationshipError(
+        "Choose a provider or patient contact for every care-team row, or remove the incomplete row.",
+      );
+      return;
+    }
+
+    setRelationshipSaving("care-team");
+    setRelationshipError(null);
+    try {
+      await updatePatientCareTeam(session.sessionId, patientId, {
+        teamName: careTeamForm.teamName,
+        teamStatus: careTeamForm.teamStatus,
+        members: careTeamForm.members.map(
+          ({
+            userId,
+            contactId,
+            role,
+            facilityId,
+            providerSince,
+            status,
+            note,
+          }) => ({
+            userId,
+            contactId,
+            role,
+            facilityId,
+            providerSince,
+            status,
+            note,
+          }),
+        ),
+      });
+      showToast("Care team saved.", "success");
+      setRelationshipEditor(null);
+      reload();
+    } catch (error) {
+      relationshipFailure(error, "Could not save the care team.");
+    } finally {
+      setRelationshipSaving(null);
     }
   }
 
@@ -983,6 +1317,909 @@ export default function PatientSummary() {
               {fact("Patient since", patient.registrationDate)}
               {patient.deceasedDate && fact("Deceased", patient.deceasedDate)}
             </ul>
+          )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header">
+            <h2 className="cl-card-title">
+              <UserPlus size={15} /> Guardian or representative
+            </h2>
+            {relationshipEditor !== "guardian" && (
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => openRelationshipEditor("guardian")}
+              >
+                Edit
+              </button>
+            )}
+          </div>
+          {relationshipEditor === "guardian" ? (
+            <form
+              className="cl-relationship-form"
+              onSubmit={(event) => void saveGuardian(event)}
+            >
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="guardian-mother-name">
+                    Mother name
+                  </label>
+                  <input
+                    id="guardian-mother-name"
+                    className="input"
+                    value={guardianForm.motherName}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        motherName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="guardian-name">
+                    Guardian or representative
+                  </label>
+                  <input
+                    id="guardian-name"
+                    className="input"
+                    value={guardianForm.guardianName}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="guardian-relationship">
+                    Relationship
+                  </label>
+                  <select
+                    id="guardian-relationship"
+                    className="select"
+                    value={guardianForm.guardianRelationship}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianRelationship: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="parent">Parent</option>
+                    <option value="mother">Mother</option>
+                    <option value="father">Father</option>
+                    <option value="spouse">Spouse</option>
+                    <option value="child">Child</option>
+                    <option value="sibling">Sibling</option>
+                    <option value="care_giver">Caregiver</option>
+                    <option value="associate">Associate</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="guardian-sex">
+                    Sex
+                  </label>
+                  <select
+                    id="guardian-sex"
+                    className="select"
+                    value={guardianForm.guardianSex}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianSex: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                    <option value="UNK">Unknown</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="guardian-address">
+                  Street address
+                </label>
+                <input
+                  id="guardian-address"
+                  className="input"
+                  value={guardianForm.guardianAddress}
+                  onChange={(event) =>
+                    setGuardianForm((current) => ({
+                      ...current,
+                      guardianAddress: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="guardian-city">
+                    City
+                  </label>
+                  <input
+                    id="guardian-city"
+                    className="input"
+                    value={guardianForm.guardianCity}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianCity: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="guardian-state">
+                    State
+                  </label>
+                  <input
+                    id="guardian-state"
+                    className="input"
+                    value={guardianForm.guardianState}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianState: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="guardian-postal-code">
+                    Postal code
+                  </label>
+                  <input
+                    id="guardian-postal-code"
+                    className="input"
+                    value={guardianForm.guardianPostalCode}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianPostalCode: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="guardian-country">
+                    Country
+                  </label>
+                  <input
+                    id="guardian-country"
+                    className="input"
+                    value={guardianForm.guardianCountry}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianCountry: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="guardian-phone">
+                    Phone
+                  </label>
+                  <input
+                    id="guardian-phone"
+                    className="input"
+                    type="tel"
+                    value={guardianForm.guardianPhone}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianPhone: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="guardian-work-phone">
+                    Work phone
+                  </label>
+                  <input
+                    id="guardian-work-phone"
+                    className="input"
+                    type="tel"
+                    value={guardianForm.guardianWorkPhone}
+                    onChange={(event) =>
+                      setGuardianForm((current) => ({
+                        ...current,
+                        guardianWorkPhone: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="guardian-email">
+                  Email
+                </label>
+                <input
+                  id="guardian-email"
+                  className="input"
+                  type="email"
+                  value={guardianForm.guardianEmail}
+                  onChange={(event) =>
+                    setGuardianForm((current) => ({
+                      ...current,
+                      guardianEmail: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              {relationshipError && (
+                <p className="cl-form-error" role="alert">
+                  {relationshipError}
+                </p>
+              )}
+              <div className="cl-inline-form-actions">
+                <button
+                  className="cl-btn-primary"
+                  type="submit"
+                  disabled={relationshipSaving === "guardian"}
+                >
+                  {relationshipSaving === "guardian"
+                    ? "Saving…"
+                    : "Save representative"}
+                </button>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  onClick={closeRelationshipEditor}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <ul className="fact-list">
+                {fact("Mother name", patient.motherName)}
+                {fact("Guardian", patient.guardianName)}
+                {fact("Relationship", patient.guardianRelationship)}
+                {fact("Sex", patient.guardianSex)}
+                {fact(
+                  "Address",
+                  formatAddress(
+                    patient.guardianAddress,
+                    patient.guardianCity,
+                    patient.guardianState,
+                    patient.guardianPostalCode,
+                    patient.guardianCountry,
+                  ),
+                )}
+                {fact("Phone", patient.guardianPhone)}
+                {fact("Work phone", patient.guardianWorkPhone)}
+                {fact("Email", patient.guardianEmail)}
+              </ul>
+              {!patient.motherName && !patient.guardianName && (
+                <p className="cl-empty-text">
+                  No guardian or representative is recorded.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header">
+            <h2 className="cl-card-title">
+              <Building2 size={15} /> Employer
+            </h2>
+            {relationshipEditor !== "employer" && (
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => openRelationshipEditor("employer")}
+              >
+                Edit
+              </button>
+            )}
+          </div>
+          {relationshipEditor === "employer" ? (
+            <form
+              className="cl-relationship-form"
+              onSubmit={(event) => void saveEmployer(event)}
+            >
+              <div className="field">
+                <label className="label" htmlFor="employer-name">
+                  Employer name
+                </label>
+                <input
+                  id="employer-name"
+                  className="input"
+                  value={employerForm.employerName}
+                  onChange={(event) =>
+                    setEmployerForm((current) => ({
+                      ...current,
+                      employerName: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="employer-street">
+                  Street address
+                </label>
+                <input
+                  id="employer-street"
+                  className="input"
+                  value={employerForm.employerStreet}
+                  onChange={(event) =>
+                    setEmployerForm((current) => ({
+                      ...current,
+                      employerStreet: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="employer-city">
+                    City
+                  </label>
+                  <input
+                    id="employer-city"
+                    className="input"
+                    value={employerForm.employerCity}
+                    onChange={(event) =>
+                      setEmployerForm((current) => ({
+                        ...current,
+                        employerCity: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="employer-state">
+                    State
+                  </label>
+                  <input
+                    id="employer-state"
+                    className="input"
+                    value={employerForm.employerState}
+                    onChange={(event) =>
+                      setEmployerForm((current) => ({
+                        ...current,
+                        employerState: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="employer-postal-code">
+                    Postal code
+                  </label>
+                  <input
+                    id="employer-postal-code"
+                    className="input"
+                    value={employerForm.employerPostalCode}
+                    onChange={(event) =>
+                      setEmployerForm((current) => ({
+                        ...current,
+                        employerPostalCode: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="employer-country">
+                    Country
+                  </label>
+                  <input
+                    id="employer-country"
+                    className="input"
+                    value={employerForm.employerCountry}
+                    onChange={(event) =>
+                      setEmployerForm((current) => ({
+                        ...current,
+                        employerCountry: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              {relationshipError && (
+                <p className="cl-form-error" role="alert">
+                  {relationshipError}
+                </p>
+              )}
+              <div className="cl-inline-form-actions">
+                <button
+                  className="cl-btn-primary"
+                  type="submit"
+                  disabled={relationshipSaving === "employer"}
+                >
+                  {relationshipSaving === "employer"
+                    ? "Saving…"
+                    : "Save employer"}
+                </button>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  onClick={closeRelationshipEditor}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : patient.employerName ? (
+            <ul className="fact-list">
+              {fact("Employer", patient.employerName)}
+              {fact(
+                "Address",
+                formatAddress(
+                  patient.employerStreet,
+                  patient.employerCity,
+                  patient.employerState,
+                  patient.employerPostalCode,
+                  patient.employerCountry,
+                ),
+              )}
+            </ul>
+          ) : (
+            <p className="cl-empty-text">No employer is recorded.</p>
+          )}
+        </section>
+
+        <section className="cl-card">
+          <div className="cl-card-header">
+            <h2 className="cl-card-title">
+              <Stethoscope size={15} /> Primary provider
+            </h2>
+            {relationshipEditor !== "provider" && (
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => openRelationshipEditor("provider")}
+                disabled={relationshipOptionsState !== "ready"}
+              >
+                Edit
+              </button>
+            )}
+          </div>
+          {relationshipOptionsState === "error" && (
+            <div className="cl-inline-error" role="alert">
+              <span>Provider options are unavailable.</span>
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => {
+                  setRelationshipOptionsState("loading");
+                  setRelationshipOptionsRetry((current) => current + 1);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {relationshipEditor === "provider" ? (
+            <form onSubmit={(event) => void saveProvider(event)}>
+              <div className="field">
+                <label className="label" htmlFor="patient-primary-provider">
+                  Provider
+                </label>
+                <select
+                  id="patient-primary-provider"
+                  className="select"
+                  value={providerId ?? ""}
+                  onChange={(event) =>
+                    setProviderId(
+                      event.target.value ? Number(event.target.value) : null,
+                    )
+                  }
+                >
+                  <option value="">Unassigned</option>
+                  {providerOptions?.providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.displayName}
+                      {provider.facilityName
+                        ? ` — ${provider.facilityName}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {relationshipError && (
+                <p className="cl-form-error" role="alert">
+                  {relationshipError}
+                </p>
+              )}
+              <div className="cl-inline-form-actions">
+                <button
+                  className="cl-btn-primary"
+                  type="submit"
+                  disabled={
+                    relationshipSaving === "provider" ||
+                    relationshipOptionsState !== "ready"
+                  }
+                >
+                  {relationshipSaving === "provider"
+                    ? "Saving…"
+                    : "Save provider"}
+                </button>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  onClick={closeRelationshipEditor}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <ul className="fact-list">
+              {fact(
+                "Primary provider",
+                patient.primaryProviderName ?? "Unassigned",
+              )}
+              {fact("Facility", patient.facilityName)}
+            </ul>
+          )}
+        </section>
+
+        <section className="cl-card cl-card-wide">
+          <div className="cl-card-header">
+            <div>
+              <h2 className="cl-card-title">
+                <UserPlus size={15} /> Care team
+              </h2>
+              <p className="cl-empty-text">
+                Maintain provider and patient-contact members, roles, effective
+                dates, and lifecycle status.
+              </p>
+            </div>
+            {relationshipEditor !== "care-team" && (
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => openRelationshipEditor("care-team")}
+                disabled={relationshipOptionsState !== "ready"}
+              >
+                Edit care team
+              </button>
+            )}
+          </div>
+          {relationshipEditor === "care-team" ? (
+            <form
+              className="cl-care-team-form"
+              onSubmit={(event) => void saveCareTeam(event)}
+            >
+              <div className="form-row">
+                <div className="field">
+                  <label className="label" htmlFor="care-team-name">
+                    Team name
+                  </label>
+                  <input
+                    id="care-team-name"
+                    className="input"
+                    value={careTeamForm.teamName}
+                    onChange={(event) =>
+                      setCareTeamForm((current) => ({
+                        ...current,
+                        teamName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="care-team-status">
+                    Team status
+                  </label>
+                  <select
+                    id="care-team-status"
+                    className="select"
+                    value={careTeamForm.teamStatus}
+                    onChange={(event) =>
+                      setCareTeamForm((current) => ({
+                        ...current,
+                        teamStatus: event.target.value,
+                      }))
+                    }
+                  >
+                    {careTeamStatusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="cl-care-team-editor-list">
+                {careTeamForm.members.map((member, index) => (
+                  <fieldset
+                    className="cl-care-team-member-editor"
+                    key={`care-team-member-${index}`}
+                  >
+                    <legend>Member {index + 1}</legend>
+                    <button
+                      className="cl-link cl-care-team-remove"
+                      type="button"
+                      onClick={() =>
+                        setCareTeamForm((current) => ({
+                          ...current,
+                          members: current.members.filter(
+                            (_, memberIndex) => memberIndex !== index,
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                    <div className="cl-care-team-member-grid">
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-type-${index}`}
+                        >
+                          Member type
+                        </label>
+                        <select
+                          id={`care-team-member-type-${index}`}
+                          className="select"
+                          value={member.memberType}
+                          onChange={(event) =>
+                            updateCareTeamMember(index, {
+                              memberType: event.target.value as
+                                "provider" | "contact",
+                              userId: null,
+                              contactId: null,
+                              facilityId: null,
+                            })
+                          }
+                        >
+                          <option value="provider">Provider</option>
+                          <option value="contact">Patient contact</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-person-${index}`}
+                        >
+                          {member.memberType === "provider"
+                            ? "Provider"
+                            : "Patient contact"}
+                        </label>
+                        {member.memberType === "provider" ? (
+                          <select
+                            id={`care-team-member-person-${index}`}
+                            className="select"
+                            value={member.userId ?? ""}
+                            onChange={(event) =>
+                              selectCareTeamProvider(index, event.target.value)
+                            }
+                            required
+                          >
+                            <option value="">Choose provider</option>
+                            {careTeamOptions?.providers.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.displayName}
+                                {provider.facilityName
+                                  ? ` — ${provider.facilityName}`
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            id={`care-team-member-person-${index}`}
+                            className="select"
+                            value={member.contactId ?? ""}
+                            onChange={(event) =>
+                              selectCareTeamContact(index, event.target.value)
+                            }
+                            required
+                          >
+                            <option value="">Choose patient contact</option>
+                            {careTeamOptions?.contacts.map((contact) => (
+                              <option key={contact.id} value={contact.id}>
+                                {contact.displayName}
+                                {contact.relationship
+                                  ? ` — ${contact.relationship}`
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-role-${index}`}
+                        >
+                          Role
+                        </label>
+                        <select
+                          id={`care-team-member-role-${index}`}
+                          className="select"
+                          value={member.role}
+                          onChange={(event) =>
+                            updateCareTeamMember(index, {
+                              role: event.target.value,
+                            })
+                          }
+                        >
+                          {careTeamRoleOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-since-${index}`}
+                        >
+                          Effective date
+                        </label>
+                        <input
+                          id={`care-team-member-since-${index}`}
+                          className="input"
+                          type="date"
+                          value={member.providerSince}
+                          onChange={(event) =>
+                            updateCareTeamMember(index, {
+                              providerSince: event.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-status-${index}`}
+                        >
+                          Status
+                        </label>
+                        <select
+                          id={`care-team-member-status-${index}`}
+                          className="select"
+                          value={member.status}
+                          onChange={(event) =>
+                            updateCareTeamMember(index, {
+                              status: event.target.value,
+                            })
+                          }
+                        >
+                          {careTeamStatusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`care-team-member-note-${index}`}
+                        >
+                          Note
+                        </label>
+                        <input
+                          id={`care-team-member-note-${index}`}
+                          className="input"
+                          value={member.note}
+                          onChange={(event) =>
+                            updateCareTeamMember(index, {
+                              note: event.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+              <button
+                className="cl-btn-secondary"
+                type="button"
+                onClick={() =>
+                  setCareTeamForm((current) => ({
+                    ...current,
+                    members: [...current.members, buildCareTeamMemberDraft()],
+                  }))
+                }
+              >
+                <UserPlus size={14} /> Add member
+              </button>
+              {relationshipError && (
+                <p className="cl-form-error" role="alert">
+                  {relationshipError}
+                </p>
+              )}
+              <div className="cl-inline-form-actions">
+                <button
+                  className="cl-btn-primary"
+                  type="submit"
+                  disabled={
+                    relationshipSaving === "care-team" ||
+                    relationshipOptionsState !== "ready"
+                  }
+                >
+                  {relationshipSaving === "care-team"
+                    ? "Saving…"
+                    : "Save care team"}
+                </button>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  onClick={closeRelationshipEditor}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <ul className="fact-list">
+                {fact("Team", patient.careTeam?.teamName ?? "Care Team")}
+                {fact(
+                  "Team status",
+                  patient.careTeam?.teamStatusDisplay ?? "Active",
+                )}
+              </ul>
+              {patient.careTeam?.members.length ? (
+                <div className="cl-care-team-summary">
+                  {patient.careTeam.members.map((member, index) => (
+                    <article
+                      className="cl-care-team-member-summary"
+                      key={member.id || `care-team-member-${index}`}
+                    >
+                      <div>
+                        <h3>{member.memberName ?? `Member ${index + 1}`}</h3>
+                        <p>
+                          {member.roleDisplay} · {member.statusDisplay}
+                        </p>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Type</dt>
+                          <dd>
+                            {member.memberType === "contact"
+                              ? "Patient contact"
+                              : "Provider"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Facility</dt>
+                          <dd>{member.facilityName ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt>Effective</dt>
+                          <dd>{member.providerSince ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt>Note</dt>
+                          <dd>{member.note ?? "—"}</dd>
+                        </div>
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="cl-empty-text">
+                  No care-team members are assigned.
+                </p>
+              )}
+            </>
           )}
         </section>
 

@@ -1,14 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  ApiRequestError,
-  downloadPatientDocument,
-  endPatientPortalSession,
-  getCurrentSession,
-  getPatientPortalHome,
-  getStaffMessageInbox,
-  logout,
-  SESSION_INVALID_EVENT,
-} from './api.ts'
+import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientCareTeamOptions, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -21,6 +12,7 @@ describe('authenticated API transport', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
+    fetchMock.mockReset()
     vi.stubGlobal('fetch', fetchMock)
   })
 
@@ -58,19 +50,17 @@ describe('authenticated API transport', () => {
   })
 
   it('downloads a document from the protected document endpoint', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('clinical document', {
-      status: 200,
-      headers: {
-        'content-type': 'application/pdf',
-        'content-disposition': "attachment; filename*=UTF-8''visit%20summary.pdf",
-      },
-    }))
-
-    const result = await downloadPatientDocument(
-      'staff-session',
-      42,
-      'fallback.pdf',
+    fetchMock.mockResolvedValueOnce(
+      new Response('clinical document', {
+        status: 200,
+        headers: {
+          'content-type': 'application/pdf',
+          'content-disposition': "attachment; filename*=UTF-8''visit%20summary.pdf",
+        },
+      }),
     )
+
+    const result = await downloadPatientDocument('staff-session', 42, 'fallback.pdf')
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/documents/42/download',
@@ -84,25 +74,30 @@ describe('authenticated API transport', () => {
   })
 
   it('rejects an HTML response masquerading as a document', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('<html>login</html>', {
-      status: 200,
-      headers: { 'content-type': 'text/html' },
-    }))
+    fetchMock.mockResolvedValueOnce(
+      new Response('<html>login</html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    )
 
-    await expect(
-      downloadPatientDocument('staff-session', 42, 'fallback.pdf'),
-    ).rejects.toThrow('returned a web page')
+    await expect(downloadPatientDocument('staff-session', 42, 'fallback.pdf')).rejects.toThrow('returned a web page')
   })
 
   it('announces a rejected clinician session and preserves Problem Details', async () => {
     const invalidSession = vi.fn()
     window.addEventListener(SESSION_INVALID_EVENT, invalidSession)
-    fetchMock.mockResolvedValueOnce(jsonResponse({
-      title: 'Unauthorized',
-      detail: 'This session has expired.',
-      status: 401,
-      traceId: 'trace-1',
-    }, 401))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          title: 'Unauthorized',
+          detail: 'This session has expired.',
+          status: 401,
+          traceId: 'trace-1',
+        },
+        401,
+      ),
+    )
 
     const error = await getCurrentSession('expired-session').catch((caught) => caught)
 
@@ -117,15 +112,17 @@ describe('authenticated API transport', () => {
   })
 
   it('builds the staff inbox query without sending inactive filters', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({
-      datasetId: 'legacy-ehr-shared-synthetic-v1',
-      datasetVersion: 'v1',
-      total: 0,
-      offset: 20,
-      limit: 20,
-      counts: { total: 0, unread: 0, assignedToMe: 0, unassigned: 0 },
-      items: [],
-    }))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        datasetId: 'legacy-ehr-shared-synthetic-v1',
+        datasetVersion: 'v1',
+        total: 0,
+        offset: 20,
+        limit: 20,
+        counts: { total: 0, unread: 0, assignedToMe: 0, unassigned: 0 },
+        items: [],
+      }),
+    )
 
     await getStaffMessageInbox('staff-session', {
       status: 'new',
@@ -142,6 +139,73 @@ describe('authenticated API transport', () => {
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
     )
+  })
+
+  it('uses the protected patient relationship and care-team contracts', async () => {
+    const responseBody = { canonicalId: 'MOD-PAT-0004' }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ providers: [] }))
+      .mockResolvedValueOnce(jsonResponse({ providers: [], contacts: [] }))
+      .mockResolvedValueOnce(jsonResponse(responseBody))
+      .mockResolvedValueOnce(jsonResponse(responseBody))
+      .mockResolvedValueOnce(jsonResponse(responseBody))
+      .mockResolvedValueOnce(jsonResponse(responseBody))
+
+    await getPatientProviderAssignmentOptions('staff-session')
+    await getPatientCareTeamOptions('staff-session', 'MOD-PAT-0004')
+    await updatePatientGuardianContact('staff-session', 'MOD-PAT-0004', {
+      motherName: 'Maria Kim',
+      guardianName: 'Jordan Morris',
+      guardianRelationship: 'guardian',
+      guardianPhone: '555-0100',
+      guardianEmail: 'guardian@example.test',
+      guardianSex: 'UNK',
+      guardianAddress: '100 Main Street',
+      guardianCity: 'Boston',
+      guardianState: 'MA',
+      guardianPostalCode: '02108',
+      guardianCountry: 'USA',
+      guardianWorkPhone: '555-0101',
+    })
+    await updatePatientEmployer('staff-session', 'MOD-PAT-0004', {
+      employerName: 'Northwind Health',
+      employerStreet: '200 State Street',
+      employerCity: 'Boston',
+      employerState: 'MA',
+      employerPostalCode: '02109',
+      employerCountry: 'USA',
+    })
+    await updatePatientProviderAssignment('staff-session', 'MOD-PAT-0004', {
+      providerId: 7,
+    })
+    await updatePatientCareTeam('staff-session', 'MOD-PAT-0004', {
+      teamName: 'Primary care team',
+      teamStatus: 'active',
+      members: [
+        {
+          userId: 7,
+          contactId: null,
+          role: 'primary_care_provider',
+          facilityId: 3,
+          providerSince: '2025-01-01',
+          status: 'active',
+          note: 'Lead',
+        },
+      ],
+    })
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/patients/provider-options', 'http://localhost:5001/api/patients/MOD-PAT-0004/care-team-options', 'http://localhost:5001/api/patients/MOD-PAT-0004/guardian-contact', 'http://localhost:5001/api/patients/MOD-PAT-0004/employer', 'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment', 'http://localhost:5001/api/patients/MOD-PAT-0004/care-team'])
+    for (const call of fetchMock.mock.calls.slice(2)) {
+      expect(call[1]).toEqual(
+        expect.objectContaining({
+          method: 'PUT',
+          headers: {
+            'X-Legacy EHR-Session': 'staff-session',
+            'content-type': 'application/json',
+          },
+        }),
+      )
+    }
   })
 
   it('normalizes network failures without treating the session as invalid', async () => {
@@ -161,9 +225,7 @@ describe('authenticated API transport', () => {
   it('invalidates the portal once when any protected portal call returns 401', async () => {
     const invalidSession = vi.fn()
     window.addEventListener(SESSION_INVALID_EVENT, invalidSession)
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ title: 'Unauthorized', detail: 'Portal session expired.' }, 401),
-    )
+    fetchMock.mockResolvedValueOnce(jsonResponse({ title: 'Unauthorized', detail: 'Portal session expired.' }, 401))
 
     await expect(getPatientPortalHome('portal-session')).rejects.toMatchObject({
       kind: 'http',
