@@ -391,6 +391,12 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         return movement;
     }
 
+    public async Task<InventoryControlledCountSession> CloseControlledCountDiscrepancyAsync(Guid discrepancyId, InventoryControlledDiscrepancyCloseRequest request, string username, CancellationToken cancellationToken)
+    {
+        var notes=NormalizeOptional(request.Notes);if(discrepancyId==Guid.Empty||string.IsNullOrWhiteSpace(notes)||notes.Length>1000)throw new ArgumentException("A corrected controlled discrepancy and closure notes are required.");
+        await using var connection=await dataSource.OpenConnectionAsync(cancellationToken);await using var command=connection.CreateCommand();command.CommandText="update inventory_controlled_count_discrepancies set status='closed',closed_by=@user,closed_at=now(),investigation_notes=coalesce(investigation_notes,'') || E'\\nClosure: ' || @notes where discrepancy_id=@id and status='corrected' and correction_event_id is not null returning session_id;";command.Parameters.AddWithValue("notes",notes);command.Parameters.AddWithValue("user",username);command.Parameters.AddWithValue("id",discrepancyId);var session=await command.ExecuteScalarAsync(cancellationToken);if(session is null)throw new ArgumentException("The controlled discrepancy was not found or has not been corrected.");return await GetControlledCountSessionAsync((Guid)session,cancellationToken);
+    }
+
     private sealed record ControlledItemState(int ItemId, string ItemCode, string Name, string Unit, string ScheduleCode, decimal ReorderPoint);
     private sealed record ControlledLocationState(Guid LocationId, int FacilityId, string Code, string Name, bool DualAttestationRequired);
     private sealed record ControlledLotState(int LotId, ControlledItemState Item, int FacilityId, string FacilityCode, string FacilityName, string LotNumber, DateOnly? ExpirationDate, decimal QuantityOnHand, decimal UnitCost, string Status, Guid? ControlledLocationId, string? LocationCode, string? LocationName)

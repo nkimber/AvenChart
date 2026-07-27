@@ -144,6 +144,7 @@ public sealed record InventoryControlledCountLine(Guid LineId, int LotId, string
 public sealed record InventoryControlledCountSession(Guid SessionId, Guid LocationId, string LocationCode, string LocationName, string CountType, string Status, bool MovementLockActive, string Reason, string StartedBy, string StartedAt, string? SubmittedBy, string? SubmittedAt, string? CounterUsername, IReadOnlyList<InventoryControlledCountLine> Lines);
 public sealed record InventoryControlledDiscrepancyInvestigationRequest(string Notes);
 public sealed record InventoryControlledDiscrepancyCorrectionRequest(string Notes, string IdempotencyKey, Guid? WitnessSessionId);
+public sealed record InventoryControlledDiscrepancyCloseRequest(string Notes);
 
 public sealed record InventoryPrescriptionDispenseRequest(
     string PrescriptionId,

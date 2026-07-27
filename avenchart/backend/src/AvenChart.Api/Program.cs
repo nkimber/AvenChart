@@ -3287,6 +3287,11 @@ inventory.MapPost("/controlled-count-discrepancies/{discrepancyId:guid}/correcti
     .WithName("CorrectInventoryControlledCountDiscrepancy")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
+inventory.MapPost("/controlled-count-discrepancies/{discrepancyId:guid}/close", async (Guid discrepancyId, InventoryControlledDiscrepancyCloseRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken);return Results.Ok(await repository.CloseControlledCountDiscrepancyAsync(discrepancyId,request,session.Username,cancellationToken)); } catch(ArgumentException exception){return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledDiscrepancy"]=[exception.Message] });} })
+    .WithName("CloseInventoryControlledCountDiscrepancy")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
 inventory.MapPost("/controlled-locations", async (InventoryControlledLocationMutationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/controlled-locations", await repository.CreateControlledLocationAsync(request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledLocation"] = [exception.Message] }); } })
     .WithName("CreateInventoryControlledLocation")
