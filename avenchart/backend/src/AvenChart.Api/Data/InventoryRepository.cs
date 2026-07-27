@@ -154,6 +154,58 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             itemQuantity <= reorderPoint);
     }
 
+    public async Task<InventoryPatientSaleResponse?> CreatePatientSaleAsync(
+        InventoryPatientSaleCreateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (request.LotId <= 0 || string.IsNullOrWhiteSpace(request.PatientId) || request.Encounter <= 0
+            || request.Quantity <= 0 || request.Fee < 0 || request.Notes?.Trim().Length > 250 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("Lot, patient, encounter, positive quantity, nonnegative fee, and valid sale details are required.");
+        var saleDate = ParseOptionalDate(request.SaleDate, "Sale date must be an ISO date.") ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (saleDate < new DateOnly(2000, 1, 1) || saleDate > DateOnly.FromDateTime(DateTime.UtcNow))
+            throw new ArgumentException("Sale date cannot be in the future or before 2000-01-01.");
+        var now = DateTimeOffset.UtcNow;
+        var saleId = Guid.NewGuid();
+        var transactionId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var encounter = connection.CreateCommand())
+        {
+            encounter.Transaction = transaction;
+            encounter.CommandText = "select exists(select 1 from encounters where encounter = @encounter and patient_id = @patientId);";
+            encounter.Parameters.AddWithValue("encounter", request.Encounter);
+            encounter.Parameters.AddWithValue("patientId", request.PatientId.Trim());
+            if (await encounter.ExecuteScalarAsync(cancellationToken) is not true)
+                throw new ArgumentException("The encounter must belong to the selected patient.");
+        }
+        await using var lotCommand = connection.CreateCommand();
+        lotCommand.Transaction = transaction;
+        lotCommand.CommandText = """
+            select l.item_id, f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status, i.reorder_point
+            from inventory_lots l join inventory_items i on i.item_id = l.item_id join facilities f on f.id = l.facility_id
+            where l.lot_id = @lotId for update;
+            """;
+        lotCommand.Parameters.AddWithValue("lotId", request.LotId);
+        await using var reader = await lotCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var itemId = reader.GetInt32(0); var facilityCode = reader.GetString(1); var facilityName = reader.GetString(2); var lotNumber = reader.GetString(3);
+        var expiration = reader.IsDBNull(4) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(4); var onHand = reader.GetDecimal(5); var cost = reader.GetDecimal(6); var status = reader.GetString(7); var reorderPoint = reader.GetDecimal(8);
+        await reader.DisposeAsync();
+        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active inventory lots can be sold.");
+        if (expiration is not null && expiration <= saleDate) throw new ArgumentException("Expired inventory lots cannot be sold.");
+        if (onHand < request.Quantity) throw new ArgumentException("The requested sale would make the lot quantity negative.");
+        var updatedQuantity = onHand - request.Quantity; var notes = NormalizeOptional(request.Notes);
+        await using (var update = connection.CreateCommand()) { update.Transaction = transaction; update.CommandText = "update inventory_lots set quantity_on_hand = @quantity where lot_id = @lotId;"; update.Parameters.AddWithValue("quantity", updatedQuantity); update.Parameters.AddWithValue("lotId", request.LotId); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var ledger = connection.CreateCommand()) { ledger.Transaction = transaction; ledger.CommandText = "insert into inventory_transactions (transaction_id, lot_id, transaction_type, quantity_delta, reason, performed_by, occurred_at) values (@id, @lotId, 'sale', @quantity, @reason, @user, @at);"; ledger.Parameters.AddWithValue("id", transactionId); ledger.Parameters.AddWithValue("lotId", request.LotId); ledger.Parameters.AddWithValue("quantity", -request.Quantity); ledger.Parameters.AddWithValue("reason", (object?)notes ?? DBNull.Value); ledger.Parameters.AddWithValue("user", username); ledger.Parameters.AddWithValue("at", now); await ledger.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var sale = connection.CreateCommand()) { sale.Transaction = transaction; sale.CommandText = "insert into inventory_patient_sales (sale_id, lot_id, patient_id, encounter, sale_date, quantity, fee, notes, transaction_id, sold_by, sold_at) values (@saleId, @lotId, @patientId, @encounter, @saleDate, @quantity, @fee, @notes, @transactionId, @user, @at);"; sale.Parameters.AddWithValue("saleId", saleId); sale.Parameters.AddWithValue("lotId", request.LotId); sale.Parameters.AddWithValue("patientId", request.PatientId.Trim()); sale.Parameters.AddWithValue("encounter", request.Encounter); sale.Parameters.AddWithValue("saleDate", saleDate); sale.Parameters.AddWithValue("quantity", request.Quantity); sale.Parameters.AddWithValue("fee", request.Fee); sale.Parameters.AddWithValue("notes", (object?)notes ?? DBNull.Value); sale.Parameters.AddWithValue("transactionId", transactionId); sale.Parameters.AddWithValue("user", username); sale.Parameters.AddWithValue("at", now); await sale.ExecuteNonQueryAsync(cancellationToken); }
+        await using var total = connection.CreateCommand(); total.Transaction = transaction; total.CommandText = "select coalesce(sum(quantity_on_hand), 0) from inventory_lots where item_id = @itemId and status = 'active';"; total.Parameters.AddWithValue("itemId", itemId); var itemQuantity = Convert.ToDecimal(await total.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        await transaction.CommitAsync(cancellationToken);
+        var lot = new InventoryLot(request.LotId, facilityCode, facilityName, lotNumber, expiration?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), updatedQuantity, cost, status);
+        var mutation = new InventoryMutationResponse(new InventoryTransactionItem(transactionId, request.LotId, string.Empty, string.Empty, facilityCode, "sale", -request.Quantity, notes, username, now, null, null), lot, itemQuantity, itemQuantity <= reorderPoint);
+        return new InventoryPatientSaleResponse(saleId, request.PatientId.Trim(), request.Encounter, saleDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), request.Quantity, request.Fee, notes, username, now.ToString("O", CultureInfo.InvariantCulture), mutation);
+    }
+
     public async Task<InventoryMutationResponse?> CreateTransferAsync(
         InventoryTransferCreateRequest request,
         string username,

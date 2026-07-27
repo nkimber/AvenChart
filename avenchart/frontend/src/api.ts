@@ -3175,6 +3175,29 @@ export type InventoryLotDestructionResponse = {
   recordedAt: string
 }
 
+export type InventoryPatientSaleCreateInput = {
+  lotId: number
+  patientId: string
+  encounter: number
+  saleDate?: string | null
+  quantity: number
+  fee: number
+  notes?: string | null
+}
+
+export type InventoryPatientSaleResponse = {
+  saleId: string
+  patientId: string
+  encounter: number
+  saleDate: string
+  quantity: number
+  fee: number
+  notes?: string | null
+  soldBy: string
+  soldAt: string
+  inventoryMutation: InventoryMutationResponse
+}
+
 export type InventoryActivityReportResponse = {
   datasetId: string
   datasetVersion: string
@@ -8344,6 +8367,23 @@ export async function destroyInventoryLot(
     throw new Error(adminApiError('Inventory lot destruction', response.status))
   }
 
+  return response.json()
+}
+
+export async function createInventoryPatientSale(
+  input: InventoryPatientSaleCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryPatientSaleResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory patient sale', response.status))
+  }
   return response.json()
 }
 

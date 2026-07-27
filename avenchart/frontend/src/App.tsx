@@ -168,6 +168,7 @@ import {
   assignProcedureReportReviewer,
   createPatient,
   createInventoryTransaction,
+  createInventoryPatientSale,
   destroyInventoryLot,
   getInventoryLotMetadataHistory,
   updateInventoryLotMetadata,
@@ -424,6 +425,7 @@ import {
   type InventoryLotMetadataUpdateInput,
   type InventoryLotMetadataAuditItem,
   type InventoryLotDestructionInput,
+  type InventoryPatientSaleCreateInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
   type InventoryCountReconciliationCreateInput,
@@ -3578,6 +3580,23 @@ function App() {
     }
   }
 
+  async function handleInventoryPatientSale(input: InventoryPatientSaleCreateInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before recording an inventory sale.')
+      return
+    }
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await createInventoryPatientSale(input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory sale failed')
+    }
+  }
+
   async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6378,6 +6397,7 @@ function App() {
             onCreateTransaction={handleInventoryTransaction}
             onUpdateLotMetadata={handleInventoryLotMetadataUpdate}
             onDestroyLot={handleInventoryLotDestruction}
+            onCreatePatientSale={handleInventoryPatientSale}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
             onCreateCountReconciliation={handleInventoryCountReconciliation}
@@ -20314,6 +20334,7 @@ function InventoryWorkspace({
   onCreateTransaction,
   onUpdateLotMetadata,
   onDestroyLot,
+  onCreatePatientSale,
   onCreateTransfer,
   onCreatePurchaseReceipt,
   onCreateCountReconciliation,
@@ -20325,6 +20346,7 @@ function InventoryWorkspace({
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onUpdateLotMetadata: (lotId: number, input: InventoryLotMetadataUpdateInput) => void | Promise<void>
   onDestroyLot: (lotId: number, input: InventoryLotDestructionInput) => void | Promise<void>
+  onCreatePatientSale: (input: InventoryPatientSaleCreateInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
   onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
@@ -20341,6 +20363,12 @@ function InventoryWorkspace({
   const [destructionMethod, setDestructionMethod] = useState('')
   const [destructionWitness, setDestructionWitness] = useState('')
   const [destructionNotes, setDestructionNotes] = useState('')
+  const [salePatientId, setSalePatientId] = useState('')
+  const [saleEncounter, setSaleEncounter] = useState('')
+  const [saleDate, setSaleDate] = useState('')
+  const [saleQuantity, setSaleQuantity] = useState('1')
+  const [saleFee, setSaleFee] = useState('0')
+  const [saleNotes, setSaleNotes] = useState('')
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [reportFromDate, setReportFromDate] = useState('')
   const [reportToDate, setReportToDate] = useState('')
@@ -20542,6 +20570,16 @@ function InventoryWorkspace({
     })
   }
 
+  function submitPatientSale(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const parsedLotId = Number(lotId)
+    const encounter = Number(saleEncounter)
+    const quantityValue = Number(saleQuantity)
+    const feeValue = Number(saleFee)
+    if (!sourceLot || !salePatientId.trim() || !Number.isInteger(parsedLotId) || !Number.isInteger(encounter) || encounter <= 0 || quantityValue <= 0 || feeValue < 0) return
+    void onCreatePatientSale({ lotId: parsedLotId, patientId: salePatientId.trim(), encounter, saleDate: saleDate || null, quantity: quantityValue, fee: feeValue, notes: saleNotes.trim() || null })
+  }
+
   async function loadLotMetadataHistory() {
     const parsedLotId = Number(lotId)
     if (!sessionId || !Number.isInteger(parsedLotId) || parsedLotId <= 0) return
@@ -20713,6 +20751,17 @@ function InventoryWorkspace({
                 <label>Witness (optional)<input value={destructionWitness} onChange={(event) => setDestructionWitness(event.target.value)} maxLength={250} /></label>
                 <label>Notes (optional)<input value={destructionNotes} onChange={(event) => setDestructionNotes(event.target.value)} maxLength={250} /></label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Destroy selected lot</button>
+              </form>
+              <form className="inventory-transaction-form" onSubmit={submitPatientSale}>
+                <div className="inventory-form-kicker">Patient lot sale</div>
+                <small>Records a patient and encounter-linked inventory sale; it does not create a billing charge.</small>
+                <label>Patient ID<input value={salePatientId} onChange={(event) => setSalePatientId(event.target.value)} placeholder="Canonical patient ID" required /></label>
+                <label>Encounter<input type="number" min="1" value={saleEncounter} onChange={(event) => setSaleEncounter(event.target.value)} required /></label>
+                <label>Sale date<input type="date" value={saleDate} onChange={(event) => setSaleDate(event.target.value)} /></label>
+                <label>Quantity<input type="number" min="0.01" step="0.01" value={saleQuantity} onChange={(event) => setSaleQuantity(event.target.value)} required /></label>
+                <label>Fee<input type="number" min="0" step="0.01" value={saleFee} onChange={(event) => setSaleFee(event.target.value)} required /></label>
+                <label>Notes (optional)<input value={saleNotes} onChange={(event) => setSaleNotes(event.target.value)} maxLength={250} /></label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Record patient sale</button>
               </form>
               <p className="inventory-boundary">Stock destruction changes quantity; destroying a lot record instead removes the lot from active inventory and preserves its destruction evidence. Transfers create matched source and destination ledger entries.</p>
             </aside>

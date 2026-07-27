@@ -118,6 +118,27 @@ public sealed record InventoryLotDestructionResponse(
     string DestroyedBy,
     string RecordedAt);
 
+public sealed record InventoryPatientSaleCreateRequest(
+    int LotId,
+    string PatientId,
+    int Encounter,
+    string? SaleDate,
+    decimal Quantity,
+    decimal Fee,
+    string? Notes);
+
+public sealed record InventoryPatientSaleResponse(
+    Guid SaleId,
+    string PatientId,
+    int Encounter,
+    string SaleDate,
+    decimal Quantity,
+    decimal Fee,
+    string? Notes,
+    string SoldBy,
+    string SoldAt,
+    InventoryMutationResponse InventoryMutation);
+
 public sealed record InventoryActivityReportResponse(
     string DatasetId,
     string DatasetVersion,
