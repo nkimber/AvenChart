@@ -3190,6 +3190,27 @@ export type InventoryPurchaseReceiptResponse = {
   belowReorderPoint: boolean
 }
 
+export type InventoryCountReconciliationCreateInput = {
+  lotId: number
+  countedQuantity: number
+  notes: string
+}
+
+export type InventoryCountReconciliationResponse = {
+  reconciliationId: string
+  lotId: number
+  expectedQuantity: number
+  countedQuantity: number
+  quantityDelta: number
+  notes: string
+  countedBy: string
+  countedAt: string
+  lot: InventoryLot
+  transaction: InventoryTransactionItem
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
+}
+
 export type AuthLoginInput = {
   username: string
   password: string
@@ -8291,6 +8312,23 @@ export async function createInventoryPurchaseReceipt(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Inventory purchase receipt', response.status))
+  }
+  return response.json()
+}
+
+export async function createInventoryCountReconciliation(
+  input: InventoryCountReconciliationCreateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryCountReconciliationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/count-reconciliations`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory count reconciliation', response.status))
   }
   return response.json()
 }

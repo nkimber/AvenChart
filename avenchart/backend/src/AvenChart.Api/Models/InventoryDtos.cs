@@ -58,7 +58,8 @@ public sealed record InventoryTransactionItem(
     Guid? TransferId,
     string? CounterpartyFacilityCode,
     Guid? ReceiptId = null,
-    string? ReceiptReference = null);
+    string? ReceiptReference = null,
+    Guid? ReconciliationId = null);
 
 public sealed record InventoryTransactionCreateRequest(
     int LotId,
@@ -125,6 +126,25 @@ public sealed record InventoryPurchaseReceiptResponse(
     string ReceivedAt,
     string ReceivedBy,
     string Notes,
+    InventoryLot Lot,
+    InventoryTransactionItem Transaction,
+    decimal ItemQuantityOnHand,
+    bool BelowReorderPoint);
+
+public sealed record InventoryCountReconciliationCreateRequest(
+    int LotId,
+    decimal CountedQuantity,
+    string Notes);
+
+public sealed record InventoryCountReconciliationResponse(
+    Guid ReconciliationId,
+    int LotId,
+    decimal ExpectedQuantity,
+    decimal CountedQuantity,
+    decimal QuantityDelta,
+    string Notes,
+    string CountedBy,
+    string CountedAt,
     InventoryLot Lot,
     InventoryTransactionItem Transaction,
     decimal ItemQuantityOnHand,

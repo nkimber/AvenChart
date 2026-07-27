@@ -170,6 +170,7 @@ import {
   createInventoryTransaction,
   createInventoryTransfer,
   createInventoryPurchaseReceipt,
+  createInventoryCountReconciliation,
   createInventoryVendor,
   adjudicateBillingClaimStatus,
   clearBillingClaimStatus,
@@ -419,6 +420,7 @@ import {
   type InventoryTransactionCreateInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
+  type InventoryCountReconciliationCreateInput,
   type InventoryVendor,
   type ProviderActivityReportItem,
   type FacilityActivityReportItem,
@@ -3570,6 +3572,23 @@ function App() {
     }
   }
 
+  async function handleInventoryCountReconciliation(input: InventoryCountReconciliationCreateInput) {
+    if (!openEmrSessionId) {
+      setInventoryStatus('error')
+      setInventoryError('Sign in before reconciling inventory.')
+      return
+    }
+    setInventoryStatus('loading')
+    setInventoryError(null)
+    try {
+      await createInventoryCountReconciliation(input, openEmrSessionId)
+      setInventoryRefreshKey((current) => current + 1)
+    } catch (mutationError) {
+      setInventoryStatus('error')
+      setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory count reconciliation failed')
+    }
+  }
+
   async function handleFlowStatusChange(appointmentId: string, status: string) {
     if (!openEmrSessionId) {
       setFlowStatus('error')
@@ -6317,6 +6336,7 @@ function App() {
             onCreateTransaction={handleInventoryTransaction}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
+            onCreateCountReconciliation={handleInventoryCountReconciliation}
           />
         )}
         {activeModule === 'flow' && (
@@ -20250,6 +20270,7 @@ function InventoryWorkspace({
   onCreateTransaction,
   onCreateTransfer,
   onCreatePurchaseReceipt,
+  onCreateCountReconciliation,
 }: {
   inventory: InventoryResponse | null
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -20258,6 +20279,7 @@ function InventoryWorkspace({
   onCreateTransaction: (input: InventoryTransactionCreateInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
+  onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
 }) {
   const [lotId, setLotId] = useState('')
   const [transactionType, setTransactionType] = useState('consumption')
@@ -20397,7 +20419,7 @@ function InventoryWorkspace({
     event.preventDefault()
     const parsedLotId = Number(lotId)
     const parsedQuantity = Number(quantity)
-    if (!Number.isInteger(parsedLotId) || parsedLotId <= 0 || !Number.isFinite(parsedQuantity) || parsedQuantity === 0) {
+    if (!Number.isInteger(parsedLotId) || parsedLotId <= 0 || !Number.isFinite(parsedQuantity) || (transactionType !== 'reconcile' && parsedQuantity === 0)) {
       return
     }
 
@@ -20411,6 +20433,16 @@ function InventoryWorkspace({
         destinationFacilityId: parsedDestinationFacilityId,
         quantity: parsedQuantity,
         reason: reason.trim() || null,
+      })
+      return
+    }
+
+    if (transactionType === 'reconcile') {
+      if (parsedQuantity < 0 || !reason.trim()) return
+      void onCreateCountReconciliation({
+        lotId: parsedLotId,
+        countedQuantity: parsedQuantity,
+        notes: reason.trim(),
       })
       return
     }
@@ -20540,6 +20572,7 @@ function InventoryWorkspace({
                   <select value={transactionType} onChange={(event) => setTransactionType(event.target.value)}>
                     <option value="consumption">Consumption</option>
                     <option value="adjustment">Count adjustment</option>
+                    <option value="reconcile">Physical count reconciliation</option>
                     <option value="destruction">Destruction</option>
                     <option value="transfer">Transfer to facility</option>
                   </select>
@@ -20554,12 +20587,12 @@ function InventoryWorkspace({
                   </label>
                 )}
                 <label>
-                  Quantity
-                  <input type="number" min={transactionType === 'adjustment' ? undefined : '0.01'} step="0.01" value={quantity} onChange={(event) => setQuantity(event.target.value)} required />
+                  {transactionType === 'reconcile' ? 'Counted on hand' : 'Quantity'}
+                  <input type="number" min={transactionType === 'adjustment' ? undefined : '0'} step="0.01" value={quantity} onChange={(event) => setQuantity(event.target.value)} required />
                 </label>
                 <label>
-                  Reason
-                  <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder={transactionType === 'transfer' ? 'Why is stock moving?' : 'What changed?'} />
+                  {transactionType === 'reconcile' ? 'Count notes' : 'Reason'}
+                  <input value={reason} onChange={(event) => setReason(event.target.value)} required={transactionType === 'reconcile'} placeholder={transactionType === 'reconcile' ? `Expected ${sourceLot?.quantityOnHand ?? 0}; explain any variance` : transactionType === 'transfer' ? 'Why is stock moving?' : 'What changed?'} />
                 </label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Record activity</button>
               </form>

@@ -9870,6 +9870,26 @@ catch {
 }
 
 try {
+    $inventoryHeaders = Get-AdministrationHeaders
+    $inventoryForCount = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryLot = @($inventoryForCount.items | ForEach-Object { $_.lots | Select-Object -First 1 }) | Select-Object -First 1
+    if ($null -eq $inventoryLot) { throw "The synthetic dataset did not provide a lot for count reconciliation." }
+    $countedQuantity = [decimal]$inventoryLot.quantityOnHand + 2
+    $countReconciliation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/count-reconciliations" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventoryLot.lotId; countedQuantity = $countedQuantity; notes = "Smoke physical count verification" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryCountActivity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/activity" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $countLedgerEntry = @($inventoryCountActivity.entries | Where-Object { $_.reconciliationId -eq $countReconciliation.reconciliationId }) | Select-Object -First 1
+    $countReconciliationPassed = $countReconciliation.expectedQuantity -eq $inventoryLot.quantityOnHand `
+        -and $countReconciliation.countedQuantity -eq $countedQuantity `
+        -and $countReconciliation.quantityDelta -eq 2 `
+        -and $countLedgerEntry.quantityDelta -eq 2 `
+        -and $countLedgerEntry.transactionType -eq "adjustment"
+    Add-Check -Name "inventory physical count reconciliation lifecycle" -Result $(if ($countReconciliationPassed) { "passed" } else { "failed" }) -Details @{ reconciliationId = $countReconciliation.reconciliationId; lotId = $inventoryLot.lotId; expectedQuantity = $countReconciliation.expectedQuantity; countedQuantity = $countReconciliation.countedQuantity; quantityDelta = $countLedgerEntry.quantityDelta }
+}
+catch {
+    Add-Check -Name "inventory physical count reconciliation lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $reportHeaders = Get-AdministrationHeaders
     $reportFamilies = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/families" -Method Get -Headers $reportHeaders -TimeoutSec 20
     $encounterReport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/families/encounters/export?from=2026-01-01&to=2026-12-31" -Method Get -Headers $reportHeaders -UseBasicParsing -TimeoutSec 20

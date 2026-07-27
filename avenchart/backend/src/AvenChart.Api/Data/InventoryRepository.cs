@@ -406,6 +406,86 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             request.Notes.Trim(), lot, ledgerEntry, itemQuantity, itemQuantity <= item.ReorderPoint);
     }
 
+    public async Task<InventoryCountReconciliationResponse?> CreateCountReconciliationAsync(
+        InventoryCountReconciliationCreateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (request.LotId <= 0 || request.CountedQuantity < 0 || string.IsNullOrWhiteSpace(request.Notes) || request.Notes.Trim().Length > 500 || string.IsNullOrWhiteSpace(username))
+        {
+            throw new ArgumentException("A lot, non-negative counted quantity, required count notes, and authenticated user are required.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var reconciliationId = Guid.NewGuid();
+        var transactionId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var lotCommand = connection.CreateCommand();
+        lotCommand.Transaction = transaction;
+        lotCommand.CommandText = "select l.lot_id, l.item_id, f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status, i.item_code, i.name, i.reorder_point from inventory_lots l join inventory_items i on i.item_id=l.item_id join facilities f on f.id=l.facility_id where l.lot_id=@lot for update;";
+        lotCommand.Parameters.AddWithValue("lot", request.LotId);
+        await using var reader = await lotCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var itemId = reader.GetInt32(1);
+        var facilityCode = reader.GetString(2);
+        var facilityName = reader.GetString(3);
+        var lotNumber = reader.GetString(4);
+        var expirationDate = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateOnly>(5).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var expectedQuantity = reader.GetDecimal(6);
+        var unitCost = reader.GetDecimal(7);
+        var status = reader.GetString(8);
+        var itemCode = reader.GetString(9);
+        var itemName = reader.GetString(10);
+        var reorderPoint = reader.GetDecimal(11);
+        await reader.DisposeAsync();
+        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active inventory lots can be reconciled.");
+
+        var quantityDelta = request.CountedQuantity - expectedQuantity;
+        var lot = new InventoryLot(request.LotId, facilityCode, facilityName, lotNumber, expirationDate, request.CountedQuantity, unitCost, status);
+        await using (var reconciliationCommand = connection.CreateCommand())
+        {
+            reconciliationCommand.Transaction = transaction;
+            reconciliationCommand.CommandText = "insert into inventory_count_reconciliations (reconciliation_id, lot_id, expected_quantity, counted_quantity, notes, counted_by, counted_at) values (@id, @lot, @expected, @counted, @notes, @user, @at);";
+            reconciliationCommand.Parameters.AddWithValue("id", reconciliationId);
+            reconciliationCommand.Parameters.AddWithValue("lot", request.LotId);
+            reconciliationCommand.Parameters.AddWithValue("expected", expectedQuantity);
+            reconciliationCommand.Parameters.AddWithValue("counted", request.CountedQuantity);
+            reconciliationCommand.Parameters.AddWithValue("notes", request.Notes.Trim());
+            reconciliationCommand.Parameters.AddWithValue("user", username);
+            reconciliationCommand.Parameters.AddWithValue("at", now);
+            await reconciliationCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var updateLotCommand = connection.CreateCommand())
+        {
+            updateLotCommand.Transaction = transaction;
+            updateLotCommand.CommandText = "update inventory_lots set quantity_on_hand=@quantity where lot_id=@lot;";
+            updateLotCommand.Parameters.AddWithValue("quantity", request.CountedQuantity);
+            updateLotCommand.Parameters.AddWithValue("lot", request.LotId);
+            await updateLotCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var ledgerCommand = connection.CreateCommand())
+        {
+            ledgerCommand.Transaction = transaction;
+            ledgerCommand.CommandText = "insert into inventory_transactions (transaction_id, lot_id, reconciliation_id, transaction_type, quantity_delta, reason, performed_by, occurred_at) values (@id, @lot, @reconciliation, 'adjustment', @delta, @notes, @user, @at);";
+            ledgerCommand.Parameters.AddWithValue("id", transactionId);
+            ledgerCommand.Parameters.AddWithValue("lot", request.LotId);
+            ledgerCommand.Parameters.AddWithValue("reconciliation", reconciliationId);
+            ledgerCommand.Parameters.AddWithValue("delta", quantityDelta);
+            ledgerCommand.Parameters.AddWithValue("notes", request.Notes.Trim());
+            ledgerCommand.Parameters.AddWithValue("user", username);
+            ledgerCommand.Parameters.AddWithValue("at", now);
+            await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var itemQuantity = await GetItemQuantityAsync(connection, transaction, itemId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var ledgerEntry = new InventoryTransactionItem(transactionId, request.LotId, itemCode, itemName, facilityCode, "adjustment", quantityDelta,
+            request.Notes.Trim(), username, now, null, null, null, null, reconciliationId);
+        return new InventoryCountReconciliationResponse(reconciliationId, request.LotId, expectedQuantity, request.CountedQuantity, quantityDelta, request.Notes.Trim(), username,
+            now.ToString("O", CultureInfo.InvariantCulture), lot, ledgerEntry, itemQuantity, itemQuantity <= reorderPoint);
+    }
+
     private static async Task<IReadOnlyList<InventoryFacility>> GetFacilitiesAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -723,7 +803,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         command.CommandText = """
             select t.transaction_id, t.lot_id, i.item_code, i.name, f.code, t.transaction_type,
               t.quantity_delta, t.reason, t.performed_by, t.occurred_at, t.transfer_id, counterpart_facility.code,
-              t.receipt_id, receipt.reference_number
+              t.receipt_id, receipt.reference_number, t.reconciliation_id
             from inventory_transactions t
             join inventory_lots l on l.lot_id = t.lot_id
             join inventory_items i on i.item_id = l.item_id
@@ -754,7 +834,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
                 reader.GetString(5), reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetString(7),
                 reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetGuid(10),
                 reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetGuid(12),
-                reader.IsDBNull(13) ? null : reader.GetString(13)));
+                reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetGuid(14)));
         }
 
         return entries;

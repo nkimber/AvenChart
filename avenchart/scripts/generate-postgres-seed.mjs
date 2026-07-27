@@ -265,6 +265,7 @@ lines.push('begin;')
 lines.push(`
 drop table if exists medications;
 drop table if exists inventory_transactions;
+drop table if exists inventory_count_reconciliations;
 drop table if exists inventory_purchase_receipts;
 drop table if exists inventory_vendors;
 drop table if exists inventory_lots;

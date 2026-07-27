@@ -3243,6 +3243,29 @@ inventory.MapPost("/purchase-receipts", async (
     .WithName("CreateInventoryPurchaseReceipt")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
 
+inventory.MapPost("/count-reconciliations", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryCountReconciliationCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var reconciliation = await repository.CreateCountReconciliationAsync(request, session.Username, cancellationToken);
+            return reconciliation is null
+                ? Results.NotFound()
+                : Results.Created($"/api/inventory/count-reconciliations/{reconciliation.ReconciliationId}", reconciliation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryCount"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryCountReconciliation")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
 inventory.MapGet("/activity", async (
         InventoryRepository repository,
         DateOnly? from,
