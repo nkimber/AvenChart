@@ -3357,6 +3357,14 @@ inventory.MapPost("/patient-sales", async (
     .WithName("CreateInventoryPatientSale")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "sales", "write"));
 
+inventory.MapPost("/patient-sales/allocate", async (InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, InventoryPatientSaleAllocationCreateRequest request, CancellationToken cancellationToken) =>
+    {
+        try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/patient-sales/allocate", await repository.CreatePatientSaleAllocationAsync(request, session.Username, cancellationToken)); }
+        catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPatientSaleAllocation"] = [exception.Message] }); }
+    })
+    .WithName("AllocateInventoryPatientSale")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "sales", "write"));
+
 inventory.MapPut("/lots/{lotId:int}", async (
         int lotId,
         InventoryRepository repository,

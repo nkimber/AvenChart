@@ -10125,6 +10125,8 @@ try {
     $inventoryReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-RCV-$inventoryReceiptSuffix"; expirationDate = "2027-12-31"; quantity = 7; unitCost = 3.25; referenceNumber = "SMOKE-REF-$inventoryReceiptSuffix"; notes = "Smoke vendor receipt verification" } | ConvertTo-Json) -TimeoutSec 20
     $expiredReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-EXP-$inventoryReceiptSuffix"; expirationDate = $inventoryBefore.asOfDate; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-EXP-REF-$inventoryReceiptSuffix"; notes = "Smoke expired-lot visibility verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventorySaleReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-SALE-$inventoryReceiptSuffix"; expirationDate = "2028-12-31"; quantity = 2; unitCost = 3.25; referenceNumber = "SMOKE-SALE-REF-$inventoryReceiptSuffix"; notes = "Smoke patient-sale fixture" } | ConvertTo-Json) -TimeoutSec 20
+    $allocationEarlyReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-FEFO-EARLY-$inventoryReceiptSuffix"; expirationDate = "2027-01-31"; quantity = 1; unitCost = 3.25; referenceNumber = "SMOKE-FEFO-EARLY-REF-$inventoryReceiptSuffix"; notes = "Smoke FEFO early fixture" } | ConvertTo-Json) -TimeoutSec 20
+    $allocationLaterReceipt = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/purchase-receipts" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ vendorId = $inventoryVendor.vendorId; facilityId = $inventoryFacility.facilityId; itemId = $inventoryItem.itemId; lotNumber = "SMOKE-FEFO-LATER-$inventoryReceiptSuffix"; expirationDate = "2027-02-28"; quantity = 2; unitCost = 3.25; referenceNumber = "SMOKE-FEFO-LATER-REF-$inventoryReceiptSuffix"; notes = "Smoke FEFO later fixture" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryActivity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/activity?facilityId=$($inventoryFacility.facilityId)" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryWithExpiry = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryReceiptEntry = @($inventoryActivity.entries | Where-Object { $_.receiptId -eq $inventoryReceipt.receiptId }) | Select-Object -First 1
@@ -10142,6 +10144,10 @@ try {
     $inventorySaleLot = $inventorySaleReceipt.lot
     $inventoryPatientSale = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/patient-sales" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventorySaleLot.lotId; patientId = "MOD-PAT-0001"; encounter = 1000011; saleDate = "2026-07-27"; quantity = 1; fee = 12.5; notes = "Smoke patient sale verification" } | ConvertTo-Json) -TimeoutSec 20
     $patientSaleAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_id = '$($inventoryPatientSale.saleId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011 and quantity = 1 and fee = 12.5 and sold_by = 'admin';"
+    $inventoryPatientSaleAllocation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/patient-sales/allocate" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ itemId = $inventoryItem.itemId; patientId = "MOD-PAT-0001"; encounter = 1000011; saleDate = "2026-07-27"; quantity = 3; fee = 10; notes = "Smoke FEFO allocation verification" } | ConvertTo-Json) -TimeoutSec 20
+    $allocationEarly = @($inventoryPatientSaleAllocation.allocations | Where-Object { $_.lotId -eq $allocationEarlyReceipt.lot.lotId }) | Select-Object -First 1
+    $allocationLater = @($inventoryPatientSaleAllocation.allocations | Where-Object { $_.lotId -eq $allocationLaterReceipt.lot.lotId }) | Select-Object -First 1
+    $allocationAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_batch_id = '$($inventoryPatientSaleAllocation.saleBatchId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011;"
     $inventoryLotDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/lots/$($inventoryReceipt.lot.lotId)/destructions" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ destructionDate = "2026-07-27"; method = "Returned to approved waste service"; witness = "Smoke witness"; notes = "Smoke lot destruction verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryAfterLotDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $lotDestructionAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_lot_destructions where destruction_id = '$($inventoryLotDestruction.destructionId)' and lot_id = $($inventoryReceipt.lot.lotId) and destruction_method = 'Returned to approved waste service' and destruction_witness = 'Smoke witness' and destroyed_by = 'admin';"
@@ -10181,6 +10187,12 @@ try {
         -and $inventoryPatientSale.inventoryMutation.transaction.transactionType -eq "sale" `
         -and $inventoryPatientSale.inventoryMutation.transaction.quantityDelta -eq -1 `
         -and $patientSaleAuditCount.Trim() -eq "1"
+    $inventoryPatientSaleAllocationPassed = @($inventoryPatientSaleAllocation.allocations).Count -eq 2 `
+        -and $allocationEarly.quantity -eq 1 `
+        -and $allocationEarly.fee -eq 3.33 `
+        -and $allocationLater.quantity -eq 2 `
+        -and $allocationLater.fee -eq 6.67 `
+        -and $allocationAuditCount.Trim() -eq "2"
     $inventoryLotDestructionPassed = $inventoryLotDestruction.lot.status -eq "inactive" `
         -and $inventoryLotDestruction.lot.quantityOnHand -eq 5 `
         -and $inventoryLotDestruction.destructionDate -eq "2026-07-27" `
@@ -10193,6 +10205,7 @@ try {
     Add-Check -Name "inventory lot metadata audit lifecycle" -Result $(if ($inventoryLotMetadataPassed) { "passed" } else { "failed" }) -Details @{ auditId = $lotMetadataUpdate.auditId; lotId = $inventoryReceipt.lot.lotId; lotNumber = $updatedLot.lotNumber; expirationDate = $updatedLot.expirationDate; quantityOnHand = $updatedLot.quantityOnHand; auditCount = $lotMetadataAuditCount.Trim(); historyEntry = $lotMetadataHistoryEntry }
     Add-Check -Name "inventory vendor return lifecycle" -Result $(if ($inventoryReturnPassed) { "passed" } else { "failed" }) -Details @{ transactionId = $inventoryReturn.transaction.transactionId; lotId = $inventoryReturn.lot.lotId; quantityDelta = $inventoryReturn.transaction.quantityDelta; quantityOnHand = $inventoryReturn.lot.quantityOnHand }
     Add-Check -Name "inventory patient sale lifecycle" -Result $(if ($inventoryPatientSalePassed) { "passed" } else { "failed" }) -Details @{ saleId = $inventoryPatientSale.saleId; lotId = $inventorySaleLot.lotId; patientId = $inventoryPatientSale.patientId; encounter = $inventoryPatientSale.encounter; fee = $inventoryPatientSale.fee; auditCount = $patientSaleAuditCount.Trim() }
+    Add-Check -Name "inventory FEFO patient sale allocation lifecycle" -Result $(if ($inventoryPatientSaleAllocationPassed) { "passed" } else { "failed" }) -Details @{ saleBatchId = $inventoryPatientSaleAllocation.saleBatchId; allocationCount = @($inventoryPatientSaleAllocation.allocations).Count; early = $allocationEarly; later = $allocationLater; auditCount = $allocationAuditCount.Trim() }
     Add-Check -Name "inventory legacy lot destruction lifecycle" -Result $(if ($inventoryLotDestructionPassed) { "passed" } else { "failed" }) -Details @{ destructionId = $inventoryLotDestruction.destructionId; lotId = $inventoryReceipt.lot.lotId; status = $inventoryLotDestruction.lot.status; quantityOnHand = $inventoryLotDestruction.lot.quantityOnHand; auditCount = $lotDestructionAuditCount.Trim() }
 }
 catch {
@@ -10201,6 +10214,7 @@ catch {
     Add-Check -Name "inventory lot metadata audit lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory vendor return lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory patient sale lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "inventory FEFO patient sale allocation lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory legacy lot destruction lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 

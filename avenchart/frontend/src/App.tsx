@@ -169,6 +169,7 @@ import {
   createPatient,
   createInventoryTransaction,
   createInventoryPatientSale,
+  allocateInventoryPatientSale,
   destroyInventoryLot,
   getInventoryLotMetadataHistory,
   updateInventoryLotMetadata,
@@ -426,6 +427,7 @@ import {
   type InventoryLotMetadataAuditItem,
   type InventoryLotDestructionInput,
   type InventoryPatientSaleCreateInput,
+  type InventoryPatientSaleAllocationCreateInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
   type InventoryCountReconciliationCreateInput,
@@ -3597,6 +3599,13 @@ function App() {
     }
   }
 
+  async function handleInventoryPatientSaleAllocation(input: InventoryPatientSaleAllocationCreateInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before recording an inventory sale.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await allocateInventoryPatientSale(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory sale allocation failed') }
+  }
+
   async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6398,6 +6407,7 @@ function App() {
             onUpdateLotMetadata={handleInventoryLotMetadataUpdate}
             onDestroyLot={handleInventoryLotDestruction}
             onCreatePatientSale={handleInventoryPatientSale}
+            onAllocatePatientSale={handleInventoryPatientSaleAllocation}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
             onCreateCountReconciliation={handleInventoryCountReconciliation}
@@ -20335,6 +20345,7 @@ function InventoryWorkspace({
   onUpdateLotMetadata,
   onDestroyLot,
   onCreatePatientSale,
+  onAllocatePatientSale,
   onCreateTransfer,
   onCreatePurchaseReceipt,
   onCreateCountReconciliation,
@@ -20347,6 +20358,7 @@ function InventoryWorkspace({
   onUpdateLotMetadata: (lotId: number, input: InventoryLotMetadataUpdateInput) => void | Promise<void>
   onDestroyLot: (lotId: number, input: InventoryLotDestructionInput) => void | Promise<void>
   onCreatePatientSale: (input: InventoryPatientSaleCreateInput) => void | Promise<void>
+  onAllocatePatientSale: (input: InventoryPatientSaleAllocationCreateInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
   onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
@@ -20369,6 +20381,7 @@ function InventoryWorkspace({
   const [saleQuantity, setSaleQuantity] = useState('1')
   const [saleFee, setSaleFee] = useState('0')
   const [saleNotes, setSaleNotes] = useState('')
+  const [allocateSale, setAllocateSale] = useState(false)
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [reportFromDate, setReportFromDate] = useState('')
   const [reportToDate, setReportToDate] = useState('')
@@ -20577,7 +20590,9 @@ function InventoryWorkspace({
     const quantityValue = Number(saleQuantity)
     const feeValue = Number(saleFee)
     if (!sourceLot || !salePatientId.trim() || !Number.isInteger(parsedLotId) || !Number.isInteger(encounter) || encounter <= 0 || quantityValue <= 0 || feeValue < 0) return
-    void onCreatePatientSale({ lotId: parsedLotId, patientId: salePatientId.trim(), encounter, saleDate: saleDate || null, quantity: quantityValue, fee: feeValue, notes: saleNotes.trim() || null })
+    const input = { patientId: salePatientId.trim(), encounter, saleDate: saleDate || null, quantity: quantityValue, fee: feeValue, notes: saleNotes.trim() || null }
+    if (allocateSale) void onAllocatePatientSale({ itemId: sourceLot.item.itemId, ...input })
+    else void onCreatePatientSale({ lotId: parsedLotId, ...input })
   }
 
   async function loadLotMetadataHistory() {
@@ -20755,6 +20770,7 @@ function InventoryWorkspace({
               <form className="inventory-transaction-form" onSubmit={submitPatientSale}>
                 <div className="inventory-form-kicker">Patient lot sale</div>
                 <small>Records a patient and encounter-linked inventory sale; it does not create a billing charge.</small>
+                <label><input type="checkbox" checked={allocateSale} onChange={(event) => setAllocateSale(event.target.checked)} /> Allocate across eligible lots (earliest expiry first)</label>
                 <label>Patient ID<input value={salePatientId} onChange={(event) => setSalePatientId(event.target.value)} placeholder="Canonical patient ID" required /></label>
                 <label>Encounter<input type="number" min="1" value={saleEncounter} onChange={(event) => setSaleEncounter(event.target.value)} required /></label>
                 <label>Sale date<input type="date" value={saleDate} onChange={(event) => setSaleDate(event.target.value)} /></label>

@@ -139,6 +139,33 @@ public sealed record InventoryPatientSaleResponse(
     string SoldAt,
     InventoryMutationResponse InventoryMutation);
 
+public sealed record InventoryPatientSaleAllocationCreateRequest(
+    int ItemId,
+    string PatientId,
+    int Encounter,
+    string? SaleDate,
+    decimal Quantity,
+    decimal Fee,
+    string? Notes);
+
+public sealed record InventoryPatientSaleAllocationLine(
+    Guid SaleId,
+    int LotId,
+    string LotNumber,
+    decimal Quantity,
+    decimal Fee,
+    Guid TransactionId);
+
+public sealed record InventoryPatientSaleAllocationResponse(
+    Guid SaleBatchId,
+    int ItemId,
+    string PatientId,
+    int Encounter,
+    string SaleDate,
+    decimal Quantity,
+    decimal Fee,
+    IReadOnlyList<InventoryPatientSaleAllocationLine> Allocations);
+
 public sealed record InventoryActivityReportResponse(
     string DatasetId,
     string DatasetVersion,

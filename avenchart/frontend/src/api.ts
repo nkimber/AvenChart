@@ -3198,6 +3198,18 @@ export type InventoryPatientSaleResponse = {
   inventoryMutation: InventoryMutationResponse
 }
 
+export type InventoryPatientSaleAllocationCreateInput = Omit<InventoryPatientSaleCreateInput, 'lotId'> & { itemId: number }
+export type InventoryPatientSaleAllocationResponse = {
+  saleBatchId: string
+  itemId: number
+  patientId: string
+  encounter: number
+  saleDate: string
+  quantity: number
+  fee: number
+  allocations: Array<{ saleId: string; lotId: number; lotNumber: string; quantity: number; fee: number; transactionId: string }>
+}
+
 export type InventoryActivityReportResponse = {
   datasetId: string
   datasetVersion: string
@@ -8384,6 +8396,12 @@ export async function createInventoryPatientSale(
   if (!response.ok) {
     throw new Error(adminApiError('Inventory patient sale', response.status))
   }
+  return response.json()
+}
+
+export async function allocateInventoryPatientSale(input: InventoryPatientSaleAllocationCreateInput, sessionId?: string | null): Promise<InventoryPatientSaleAllocationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales/allocate`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError('Inventory sale allocation', response.status))
   return response.json()
 }
 
