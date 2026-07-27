@@ -4435,6 +4435,27 @@ reports.MapGet("/operational", async (
     })
     .WithName("GetOperationalReports");
 
+reports.MapPost("/controlled-inventory/as-of", async (
+        ControlledInventoryReportRequest request,
+        ReportRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var report = await repository.RunControlledInventoryReportAsync(request, session.Username, cancellationToken);
+            return Results.Created("/api/reports/controlled-inventory/as-of", report);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledReport"] = [exception.Message] });
+        }
+    })
+    .WithName("RunControlledInventoryAsOfReport")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 reports.MapGet("/operational/export", async (
         ReportRepository repository,
         CancellationToken cancellationToken) =>

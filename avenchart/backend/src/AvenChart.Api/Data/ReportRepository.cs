@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
 using NpgsqlTypes;
@@ -11,6 +12,105 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
 {
     private static readonly IReadOnlyList<ReportFamilyItem> Families = [new("operational", "Operational snapshot", "Practice counts and activity summary.", false), new("patients", "Patient list", "Registered patient demographics.", false), new("appointments", "Appointments", "Scheduled appointment activity.", true), new("encounters", "Encounters", "Clinical encounter activity.", true), new("referrals", "Referrals", "Local referral lifecycle activity.", true), new("chart-tracker", "Chart tracker", "Recorded chart-location handoffs.", true), new("inventory", "Inventory transactions", "Immutable inventory transaction activity.", true)];
     public IReadOnlyList<ReportFamilyItem> GetFamilies() => Families;
+
+    public async Task<ControlledInventoryReportResponse> RunControlledInventoryReportAsync(ControlledInventoryReportRequest request, string username, CancellationToken cancellationToken)
+    {
+        var asOf = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (asOf < new DateOnly(2000, 1, 1) || asOf > today)
+        {
+            throw new ArgumentException("Controlled report as-of date must be between 2000 and today.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var lines = new List<ControlledInventoryReportLine>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                with deltas as (
+                  select lot_id, sum(quantity_delta) quantity
+                  from inventory_controlled_custody_events
+                  where occurred_at::date <= @asOf
+                  group by lot_id
+                  union all
+                  select counterparty_lot_id, sum(quantity)
+                  from inventory_controlled_custody_events
+                  where action = 'transfer'
+                    and occurred_at::date <= @asOf
+                    and counterparty_lot_id is not null
+                  group by counterparty_lot_id
+                ), balances as (
+                  select lot_id, sum(quantity) quantity
+                  from deltas
+                  group by lot_id
+                )
+                select l.lot_id, i.item_code, i.controlled_schedule, f.code,
+                       cl.location_code, l.lot_number, b.quantity
+                from balances b
+                join inventory_lots l on l.lot_id = b.lot_id
+                join inventory_items i on i.item_id = l.item_id
+                join facilities f on f.id = l.facility_id
+                join inventory_controlled_locations cl on cl.location_id = l.controlled_location_id
+                where i.controlled_schedule is not null
+                  and b.quantity <> 0
+                  and (@locationId is null or cl.location_id = @locationId)
+                order by i.item_code, cl.location_code, l.lot_number;
+                """;
+            command.Parameters.AddWithValue("asOf", asOf);
+            command.Parameters.AddWithValue("locationId", (object?)request.LocationId ?? DBNull.Value);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lines.Add(new(
+                    reader.GetInt32(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.GetDecimal(6)));
+            }
+        }
+
+        var payload = string.Join("\n", lines.Select(line =>
+            $"{line.LotId}|{line.ItemCode}|{line.ScheduleCode}|{line.FacilityCode}|{line.LocationCode}|{line.LotNumber}|{line.QuantityOnHand.ToString(CultureInfo.InvariantCulture)}"));
+        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var runId = Guid.NewGuid();
+        var requestedAt = DateTimeOffset.UtcNow;
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.CommandText = """
+                insert into inventory_controlled_report_runs (
+                  run_id, report_key, as_of_date, location_id, requested_by,
+                  requested_at, row_count, result_checksum)
+                values (
+                  @runId, 'as_of_inventory', @asOf, @locationId, @requestedBy,
+                  @requestedAt, @rowCount, @resultChecksum);
+                """;
+            insert.Parameters.AddWithValue("runId", runId);
+            insert.Parameters.AddWithValue("asOf", asOf);
+            insert.Parameters.AddWithValue("locationId", (object?)request.LocationId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("requestedBy", username);
+            insert.Parameters.AddWithValue("requestedAt", requestedAt);
+            insert.Parameters.AddWithValue("rowCount", lines.Count);
+            insert.Parameters.AddWithValue("resultChecksum", checksum);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return new(
+            new(
+                runId,
+                "as_of_inventory",
+                asOf.ToString("yyyy-MM-dd"),
+                request.LocationId,
+                username,
+                requestedAt.ToString("O"),
+                lines.Count,
+                checksum),
+            lines);
+    }
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
     {
         await EnsureSavedReportSchemaAsync(cancellationToken);

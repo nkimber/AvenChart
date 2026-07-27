@@ -10389,6 +10389,7 @@ try {
     $controlledInvestigation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/investigation" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke count variance investigated" } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke approved compensating count correction"; idempotencyKey = "count-correction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
+    $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountAfterCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $countCorrectionRetryRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
@@ -10414,6 +10415,11 @@ try {
         -and $controlledCountCorrection.event.action -eq "correction" `
         -and $controlledCountCorrection.lot.quantityOnHand -eq 6 `
         -and $controlledCountClosed.lines[0].discrepancyStatus -eq "closed" `
+        -and $controlledAsOfReport.run.reportKey -eq "as_of_inventory" `
+        -and $controlledAsOfReport.run.rowCount -eq 1 `
+        -and $controlledAsOfReport.lines[0].lotId -eq $receipt.lot.lotId `
+        -and $controlledAsOfReport.lines[0].quantityOnHand -eq 6 `
+        -and $controlledAsOfReport.run.resultChecksum.Length -eq 64 `
         -and $countLockRejected `
         -and $countResubmitRejected `
         -and $countCorrectionRetryRejected

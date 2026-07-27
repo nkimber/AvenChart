@@ -75,3 +75,28 @@ public sealed record SavedReportRunResponse(
     string ReportType,
     string OutputFormat,
     int RowCount);
+
+public sealed record ControlledInventoryReportRequest(DateOnly? AsOfDate, Guid? LocationId);
+
+public sealed record ControlledInventoryReportLine(
+    int LotId,
+    string ItemCode,
+    string ScheduleCode,
+    string FacilityCode,
+    string LocationCode,
+    string LotNumber,
+    decimal QuantityOnHand);
+
+public sealed record ControlledInventoryReportRun(
+    Guid RunId,
+    string ReportKey,
+    string AsOfDate,
+    Guid? LocationId,
+    string RequestedBy,
+    string RequestedAt,
+    int RowCount,
+    string ResultChecksum);
+
+public sealed record ControlledInventoryReportResponse(
+    ControlledInventoryReportRun Run,
+    IReadOnlyList<ControlledInventoryReportLine> Lines);
