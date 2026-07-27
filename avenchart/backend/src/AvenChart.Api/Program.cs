@@ -3336,6 +3336,28 @@ inventory.MapPost("/returns", async (
     .WithName("CreateInventoryReturn")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
 
+inventory.MapPut("/lots/{lotId:int}", async (
+        int lotId,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryLotMetadataUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.UpdateLotMetadataAsync(lotId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryLot"] = [exception.Message] });
+        }
+    })
+    .WithName("UpdateInventoryLotMetadata")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
 inventory.MapPost("/count-reconciliations", async (
         InventoryRepository repository,
         AuthRepository authRepository,

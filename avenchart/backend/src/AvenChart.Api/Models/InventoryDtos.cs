@@ -83,6 +83,16 @@ public sealed record InventoryMutationResponse(
     InventoryLot? CounterpartyLot = null,
     Guid? TransferId = null);
 
+public sealed record InventoryLotMetadataUpdateRequest(
+    string LotNumber,
+    string? ExpirationDate);
+
+public sealed record InventoryLotMetadataUpdateResponse(
+    Guid AuditId,
+    InventoryLot Lot,
+    string ChangedBy,
+    string ChangedAt);
+
 public sealed record InventoryActivityReportResponse(
     string DatasetId,
     string DatasetVersion,

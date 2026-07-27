@@ -3135,6 +3135,18 @@ export type InventoryMutationResponse = {
   transferId?: string | null
 }
 
+export type InventoryLotMetadataUpdateInput = {
+  lotNumber: string
+  expirationDate?: string | null
+}
+
+export type InventoryLotMetadataUpdateResponse = {
+  auditId: string
+  lot: InventoryLot
+  changedBy: string
+  changedAt: string
+}
+
 export type InventoryActivityReportResponse = {
   datasetId: string
   datasetVersion: string
@@ -8248,6 +8260,25 @@ export async function createInventoryTransaction(
   })
   if (!response.ok) {
     throw new Error(adminApiError('Inventory transaction', response.status))
+  }
+
+  return response.json()
+}
+
+export async function updateInventoryLotMetadata(
+  lotId: number,
+  input: InventoryLotMetadataUpdateInput,
+  sessionId?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryLotMetadataUpdateResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/lots/${lotId}`, {
+    method: 'PUT',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(adminApiError('Inventory lot update', response.status))
   }
 
   return response.json()

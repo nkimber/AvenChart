@@ -255,6 +255,96 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             transferId);
     }
 
+    public async Task<InventoryLotMetadataUpdateResponse?> UpdateLotMetadataAsync(
+        int lotId,
+        InventoryLotMetadataUpdateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var lotNumber = request.LotNumber?.Trim();
+        if (lotId <= 0 || string.IsNullOrWhiteSpace(lotNumber) || lotNumber.Length > 80 || string.IsNullOrWhiteSpace(username))
+        {
+            throw new ArgumentException("A lot identifier of 80 characters or fewer and an authenticated user are required.");
+        }
+
+        var expirationDate = ParseOptionalDate(request.ExpirationDate, "Lot expiration must be an ISO date.");
+        var changedAt = DateTimeOffset.UtcNow;
+        var auditId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var lotCommand = connection.CreateCommand();
+        lotCommand.Transaction = transaction;
+        lotCommand.CommandText = """
+            select l.item_id, l.facility_id, f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status
+            from inventory_lots l
+            join facilities f on f.id = l.facility_id
+            where l.lot_id = @lotId
+            for update;
+            """;
+        lotCommand.Parameters.AddWithValue("lotId", lotId);
+        await using var reader = await lotCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var itemId = reader.GetInt32(0);
+        var facilityId = reader.GetInt32(1);
+        var facilityCode = reader.GetString(2);
+        var facilityName = reader.GetString(3);
+        var priorLotNumber = reader.GetString(4);
+        var priorExpirationDate = reader.IsDBNull(5) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(5);
+        var quantityOnHand = reader.GetDecimal(6);
+        var unitCost = reader.GetDecimal(7);
+        var status = reader.GetString(8);
+        await reader.DisposeAsync();
+
+        await using (var duplicateCommand = connection.CreateCommand())
+        {
+            duplicateCommand.Transaction = transaction;
+            duplicateCommand.CommandText = "select exists(select 1 from inventory_lots where item_id = @itemId and facility_id = @facilityId and lot_number = @lotNumber and lot_id <> @lotId);";
+            duplicateCommand.Parameters.AddWithValue("itemId", itemId);
+            duplicateCommand.Parameters.AddWithValue("facilityId", facilityId);
+            duplicateCommand.Parameters.AddWithValue("lotNumber", lotNumber);
+            duplicateCommand.Parameters.AddWithValue("lotId", lotId);
+            if (await duplicateCommand.ExecuteScalarAsync(cancellationToken) is true)
+            {
+                throw new ArgumentException("A lot with that identifier already exists for this item and facility.");
+            }
+        }
+
+        if (priorLotNumber != lotNumber || priorExpirationDate != expirationDate)
+        {
+            await using var updateCommand = connection.CreateCommand();
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText = "update inventory_lots set lot_number = @lotNumber, expiration_date = @expirationDate where lot_id = @lotId;";
+            updateCommand.Parameters.AddWithValue("lotNumber", lotNumber);
+            updateCommand.Parameters.AddWithValue("expirationDate", (object?)expirationDate ?? DBNull.Value);
+            updateCommand.Parameters.AddWithValue("lotId", lotId);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var auditCommand = connection.CreateCommand();
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText = "insert into inventory_lot_metadata_audits (audit_id, lot_id, prior_lot_number, new_lot_number, prior_expiration_date, new_expiration_date, changed_by, changed_at) values (@auditId, @lotId, @priorLotNumber, @newLotNumber, @priorExpirationDate, @newExpirationDate, @changedBy, @changedAt);";
+            auditCommand.Parameters.AddWithValue("auditId", auditId);
+            auditCommand.Parameters.AddWithValue("lotId", lotId);
+            auditCommand.Parameters.AddWithValue("priorLotNumber", priorLotNumber);
+            auditCommand.Parameters.AddWithValue("newLotNumber", lotNumber);
+            auditCommand.Parameters.AddWithValue("priorExpirationDate", (object?)priorExpirationDate ?? DBNull.Value);
+            auditCommand.Parameters.AddWithValue("newExpirationDate", (object?)expirationDate ?? DBNull.Value);
+            auditCommand.Parameters.AddWithValue("changedBy", username);
+            auditCommand.Parameters.AddWithValue("changedAt", changedAt);
+            await auditCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new InventoryLotMetadataUpdateResponse(
+            auditId,
+            new InventoryLot(lotId, facilityCode, facilityName, lotNumber, expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), quantityOnHand, unitCost, status),
+            username,
+            changedAt.ToString("O", CultureInfo.InvariantCulture));
+    }
+
     public async Task<InventoryActivityReportResponse> GetActivityReportAsync(
         DateOnly? fromDate,
         DateOnly? toDate,
