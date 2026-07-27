@@ -10055,6 +10055,44 @@ catch {
 }
 
 try {
+    $changeRequestHeaders = Get-AdministrationHeaders
+    $changeRequestHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/history" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
+    $changeRequestBaseline = @($changeRequestHistoryBefore.revisions | Where-Object { $_.value -eq $changeRequestHistoryBefore.setting.value }) | Select-Object -First 1
+    $changeRequestValue = "Governed change $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $changeRequestDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = $changeRequestValue; reason = "Synthetic governance workflow validation" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestId = $changeRequestDraft.request.requestId
+    $changeRequestSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/submit" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Ready for local approval" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/approve" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Approved in local governance test" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/activate" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Activate approved change" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
+    $changeRequestRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/revisions/$($changeRequestBaseline.revisionId)/rollback" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $changeRequestInvalidDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = "Unsubmitted change"; reason = "Verify invalid transition" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestInvalidStatus = 0
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$($changeRequestInvalidDraft.request.requestId)/reject" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Cannot reject a draft" } | ConvertTo-Json) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) { $changeRequestInvalidStatus = [int]$_.Exception.Response.StatusCode } else { throw }
+    }
+    $changeRequestActions = @($changeRequestDetail.events.action)
+    $changeRequestPassed = $changeRequestDraft.request.status -eq "draft" `
+        -and $changeRequestSubmitted.request.status -eq "submitted" `
+        -and $changeRequestApproved.request.status -eq "approved" `
+        -and $changeRequestActivated.request.status -eq "activated" `
+        -and $changeRequestDetail.request.proposedValue -eq $changeRequestValue `
+        -and $changeRequestActions -contains "created" `
+        -and $changeRequestActions -contains "submitted" `
+        -and $changeRequestActions -contains "approved" `
+        -and $changeRequestActions -contains "activated" `
+        -and $changeRequestRestored.setting.value -eq $changeRequestHistoryBefore.setting.value `
+        -and $changeRequestInvalidStatus -eq 400
+    Add-Check -Name "practice setting change-request lifecycle" -Result $(if ($changeRequestPassed) { "passed" } else { "failed" }) -Details @{ requestId = $changeRequestId; actions = $changeRequestActions; invalidDraftStatus = $changeRequestInvalidStatus }
+}
+catch {
+    Add-Check -Name "practice setting change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $codingHeaders = Get-AdministrationHeaders
     $catalogHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/CPT4/history" -Method Get -Headers $codingHeaders -TimeoutSec 20
     $catalog = $catalogHistoryBefore.catalog

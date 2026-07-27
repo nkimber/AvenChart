@@ -187,6 +187,12 @@ public sealed record PracticeSettingsResponse(
 public sealed record PracticeSettingUpdateRequest(string Value);
 public sealed record PracticeSettingRevision(long RevisionId, string Value, string? PriorValue, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
 public sealed record PracticeSettingHistoryResponse(PracticeSettingItem Setting, IReadOnlyList<PracticeSettingRevision> Revisions);
+public sealed record PracticeSettingChangeRequestCreateRequest(string Value, string Reason);
+public sealed record PracticeSettingChangeRequestDecisionRequest(string? Note);
+public sealed record PracticeSettingChangeRequestItem(Guid RequestId, string SettingKey, string ProposedValue, string Reason, string Status, string CreatedAt, string CreatedBy, string UpdatedAt, string UpdatedBy);
+public sealed record PracticeSettingChangeRequestEvent(long EventId, string Action, string? Note, string OccurredAt, string Username);
+public sealed record PracticeSettingChangeRequestsResponse(IReadOnlyList<PracticeSettingChangeRequestItem> Requests);
+public sealed record PracticeSettingChangeRequestDetailResponse(PracticeSettingChangeRequestItem Request, IReadOnlyList<PracticeSettingChangeRequestEvent> Events);
 
 public sealed record CodingCatalogItem(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string UpdatedAt, string UpdatedBy);
 public sealed record CodingCatalogResponse(IReadOnlyList<CodingCatalogItem> Catalogs);
