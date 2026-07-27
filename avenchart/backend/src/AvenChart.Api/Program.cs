@@ -3223,6 +3223,26 @@ inventory.MapGet("/medication-catalog", async (InventoryRepository repository, C
     .WithName("GetInventoryMedicationCatalog")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+inventory.MapGet("/controlled-substances", async (InventoryRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetControlledSubstanceCatalogAsync(cancellationToken)))
+    .WithName("GetInventoryControlledSubstanceCatalog")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
+inventory.MapPost("/controlled-locations", async (InventoryControlledLocationMutationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/controlled-locations", await repository.CreateControlledLocationAsync(request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledLocation"] = [exception.Message] }); } })
+    .WithName("CreateInventoryControlledLocation")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
+inventory.MapPut("/items/{itemId:int}/controlled-classification", async (int itemId, InventoryControlledSubstanceClassificationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.UpdateControlledSubstanceClassificationAsync(itemId, request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledClassification"] = [exception.Message] }); } })
+    .WithName("UpdateInventoryControlledSubstanceClassification")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
+inventory.MapGet("/items/{itemId:int}/controlled-classification/history", async (int itemId, InventoryRepository repository, CancellationToken cancellationToken) =>
+{ try { return Results.Ok(await repository.GetControlledSubstanceClassificationHistoryAsync(itemId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } })
+    .WithName("GetInventoryControlledSubstanceClassificationHistory")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 inventory.MapPut("/items/{itemId:int}/medication-link", async (
         int itemId,
         InventoryMedicationLinkUpdateRequest request,

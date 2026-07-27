@@ -10336,6 +10336,26 @@ catch {
 }
 
 try {
+    $controlledHeaders = Get-AdministrationHeaders
+    $controlledInventory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $controlledHeaders -TimeoutSec 20
+    $controlledItem = @($controlledInventory.items | Where-Object { $_.itemId -gt 0 }) | Select-Object -First 1
+    $controlledSuffix = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $controlledLocation = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-locations" -Method Post -Headers $controlledHeaders -ContentType "application/json" -Body (@{ facilityId = $controlledInventory.facilities[0].facilityId; locationCode = "CS-$controlledSuffix"; displayName = "Smoke controlled cabinet"; dualAttestationRequired = $true; active = $true } | ConvertTo-Json) -TimeoutSec 20
+    $controlledHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($controlledItem.itemId)/controlled-classification" -Method Put -Headers $controlledHeaders -ContentType "application/json" -Body (@{ scheduleCode = "III" } | ConvertTo-Json) -TimeoutSec 20
+    $controlledCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-substances" -Method Get -Headers $controlledHeaders -TimeoutSec 20
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($controlledItem.itemId)/controlled-classification" -Method Put -Headers $controlledHeaders -ContentType "application/json" -Body (@{ scheduleCode = $null } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $controlledPassed = $controlledLocation.dualAttestationRequired -eq $true `
+        -and @($controlledCatalog.locations | Where-Object { $_.locationId -eq $controlledLocation.locationId }).Count -eq 1 `
+        -and @($controlledCatalog.items | Where-Object { $_.itemId -eq $controlledItem.itemId -and $_.scheduleCode -eq "III" }).Count -eq 1 `
+        -and @($controlledHistory.events).Count -ge 1 `
+        -and $controlledHistory.events[0].resultingSchedule -eq "III"
+    Add-Check -Name "inventory controlled-substance catalog and location foundation" -Result $(if ($controlledPassed) { "passed" } else { "failed" }) -Details @{ itemId = $controlledItem.itemId; locationId = $controlledLocation.locationId; schedule = $controlledHistory.item.scheduleCode }
+}
+catch {
+    Add-Check -Name "inventory controlled-substance catalog and location foundation" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $inventoryHeaders = Get-AdministrationHeaders
     $inventoryForCount = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryLot = @($inventoryForCount.items | ForEach-Object { $_.lots | Select-Object -First 1 }) | Select-Object -First 1

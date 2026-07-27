@@ -123,6 +123,62 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         return link;
     }
 
+    public async Task<InventoryControlledSubstanceCatalogResponse> GetControlledSubstanceCatalogAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var locations = new List<InventoryControlledLocation>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "select l.location_id,l.facility_id,f.code,f.name,l.location_code,l.display_name,l.dual_attestation_required,l.active,l.updated_at,l.updated_by from inventory_controlled_locations l join facilities f on f.id=l.facility_id order by f.code,l.location_code;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) locations.Add(ReadControlledLocation(reader));
+        }
+        var items = new List<InventoryControlledSubstanceItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "select item_id,item_code,name,category,unit,controlled_schedule from inventory_items where active=true and controlled_schedule is not null order by controlled_schedule,name,item_id;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) items.Add(new(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+        }
+        return new InventoryControlledSubstanceCatalogResponse(locations, items);
+    }
+
+    public async Task<InventoryControlledLocation> CreateControlledLocationAsync(InventoryControlledLocationMutationRequest request, string username, CancellationToken cancellationToken)
+    {
+        if (request.FacilityId <= 0 || string.IsNullOrWhiteSpace(request.LocationCode) || request.LocationCode.Trim().Length > 60 || string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length > 160 || string.IsNullOrWhiteSpace(username)) throw new ArgumentException("An active facility, location code, display name, and authenticated user are required.");
+        var locationId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var facility = connection.CreateCommand()) { facility.Transaction=transaction; facility.CommandText="select exists(select 1 from facilities where id=@id and inactive=false);"; facility.Parameters.AddWithValue("id",request.FacilityId); if (await facility.ExecuteScalarAsync(cancellationToken) is not true) throw new ArgumentException("The controlled location requires an active facility."); }
+        try
+        {
+            await using var insert = connection.CreateCommand(); insert.Transaction=transaction; insert.CommandText="insert into inventory_controlled_locations(location_id,facility_id,location_code,display_name,dual_attestation_required,active,created_at,created_by,updated_at,updated_by) values(@id,@facility,@code,@name,@dual,@active,now(),@user,now(),@user); insert into inventory_controlled_location_events(location_id,action,prior_active,resulting_active,occurred_at,username) values(@id,'created',null,@active,now(),@user);"; insert.Parameters.AddWithValue("id",locationId); insert.Parameters.AddWithValue("facility",request.FacilityId); insert.Parameters.AddWithValue("code",request.LocationCode.Trim().ToUpperInvariant()); insert.Parameters.AddWithValue("name",request.DisplayName.Trim()); insert.Parameters.AddWithValue("dual",request.DualAttestationRequired); insert.Parameters.AddWithValue("active",request.Active); insert.Parameters.AddWithValue("user",username); await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == "23505") { throw new ArgumentException("The facility already has a controlled location with that code."); }
+        InventoryControlledLocation location;
+        await using (var query = connection.CreateCommand()) { query.Transaction=transaction; query.CommandText="select l.location_id,l.facility_id,f.code,f.name,l.location_code,l.display_name,l.dual_attestation_required,l.active,l.updated_at,l.updated_by from inventory_controlled_locations l join facilities f on f.id=l.facility_id where l.location_id=@id;"; query.Parameters.AddWithValue("id",locationId); await using var reader=await query.ExecuteReaderAsync(cancellationToken); await reader.ReadAsync(cancellationToken); location=ReadControlledLocation(reader); }
+        await transaction.CommitAsync(cancellationToken); return location;
+    }
+
+    public async Task<InventoryControlledSubstanceClassificationHistoryResponse> UpdateControlledSubstanceClassificationAsync(int itemId, InventoryControlledSubstanceClassificationRequest request, string username, CancellationToken cancellationToken)
+    {
+        if (itemId <= 0 || string.IsNullOrWhiteSpace(username)) throw new ArgumentException("An inventory item and authenticated user are required.");
+        var schedule = NormalizeControlledSchedule(request.ScheduleCode);
+        await using var connection=await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction=await connection.BeginTransactionAsync(cancellationToken);
+        string? prior;
+        await using (var item=connection.CreateCommand()) { item.Transaction=transaction; item.CommandText="select controlled_schedule from inventory_items where item_id=@id and active=true for update;"; item.Parameters.AddWithValue("id",itemId); var value=await item.ExecuteScalarAsync(cancellationToken); if (value is null && !await ItemExistsAsync(connection,transaction,itemId,cancellationToken)) throw new ArgumentException("The active inventory item was not found."); prior=value as string; }
+        if (!string.Equals(prior,schedule,StringComparison.Ordinal)) { await using var update=connection.CreateCommand(); update.Transaction=transaction; update.CommandText="update inventory_items set controlled_schedule=@schedule where item_id=@id; insert into inventory_controlled_item_classification_events(item_id,prior_schedule,resulting_schedule,occurred_at,username) values(@id,@prior,@schedule,now(),@user);"; update.Parameters.AddWithValue("id",itemId); update.Parameters.AddWithValue("schedule",(object?)schedule??DBNull.Value); update.Parameters.AddWithValue("prior",(object?)prior??DBNull.Value); update.Parameters.AddWithValue("user",username); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await transaction.CommitAsync(cancellationToken); return await GetControlledSubstanceClassificationHistoryAsync(itemId,cancellationToken);
+    }
+
+    public async Task<InventoryControlledSubstanceClassificationHistoryResponse> GetControlledSubstanceClassificationHistoryAsync(int itemId, CancellationToken cancellationToken)
+    {
+        await using var connection=await dataSource.OpenConnectionAsync(cancellationToken); InventoryControlledSubstanceItem item; await using(var command=connection.CreateCommand()){command.CommandText="select item_id,item_code,name,category,unit,controlled_schedule from inventory_items where item_id=@id;";command.Parameters.AddWithValue("id",itemId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);if(!await reader.ReadAsync(cancellationToken))throw new ArgumentException("The inventory item was not found.");item=new(reader.GetInt32(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.GetString(4),reader.IsDBNull(5)?string.Empty:reader.GetString(5));} var events=new List<InventoryControlledSubstanceClassificationEvent>();await using(var command=connection.CreateCommand()){command.CommandText="select event_id,prior_schedule,resulting_schedule,occurred_at,username from inventory_controlled_item_classification_events where item_id=@id order by occurred_at desc,event_id desc;";command.Parameters.AddWithValue("id",itemId);await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))events.Add(new(reader.GetInt64(0),reader.IsDBNull(1)?null:reader.GetString(1),reader.IsDBNull(2)?null:reader.GetString(2),reader.GetFieldValue<DateTimeOffset>(3).ToString("O"),reader.GetString(4)));}return new(item,events);
+    }
+
+    private static InventoryControlledLocation ReadControlledLocation(NpgsqlDataReader reader) => new(reader.GetGuid(0),reader.GetInt32(1),reader.GetString(2),reader.GetString(3),reader.GetString(4),reader.GetString(5),reader.GetBoolean(6),reader.GetBoolean(7),reader.GetFieldValue<DateTimeOffset>(8).ToString("O"),reader.GetString(9));
+    private static string? NormalizeControlledSchedule(string? value) { var normalized=value?.Trim().ToUpperInvariant(); if (string.IsNullOrEmpty(normalized)) return null; if (normalized is not ("II" or "III" or "IV" or "V")) throw new ArgumentException("Controlled schedule must be II, III, IV, V, or blank to remove the classification."); return normalized; }
+    private static async Task<bool> ItemExistsAsync(NpgsqlConnection connection,NpgsqlTransaction transaction,int itemId,CancellationToken cancellationToken){await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_items where item_id=@id and active=true);";command.Parameters.AddWithValue("id",itemId);return await command.ExecuteScalarAsync(cancellationToken) is true;}
+
     public async Task<InventoryPrescriptionDispenseResponse> DispensePrescriptionAsync(InventoryPrescriptionDispenseRequest request, string username, CancellationToken cancellationToken)
     {
         var prescriptionId = request.PrescriptionId?.Trim();

@@ -54,6 +54,33 @@ public sealed record InventoryMedicationCatalogItem(
 
 public sealed record InventoryMedicationLinkUpdateRequest(string RxNormCode);
 
+public sealed record InventoryControlledLocation(
+    Guid LocationId,
+    int FacilityId,
+    string FacilityCode,
+    string FacilityName,
+    string LocationCode,
+    string DisplayName,
+    bool DualAttestationRequired,
+    bool Active,
+    string UpdatedAt,
+    string UpdatedBy);
+
+public sealed record InventoryControlledLocationMutationRequest(
+    int FacilityId,
+    string LocationCode,
+    string DisplayName,
+    bool DualAttestationRequired,
+    bool Active);
+
+public sealed record InventoryControlledLocationEvent(long EventId, string Action, bool? PriorActive, bool ResultingActive, string OccurredAt, string Username);
+public sealed record InventoryControlledLocationHistoryResponse(InventoryControlledLocation Location, IReadOnlyList<InventoryControlledLocationEvent> Events);
+public sealed record InventoryControlledSubstanceItem(int ItemId, string ItemCode, string Name, string Category, string Unit, string ScheduleCode);
+public sealed record InventoryControlledSubstanceCatalogResponse(IReadOnlyList<InventoryControlledLocation> Locations, IReadOnlyList<InventoryControlledSubstanceItem> Items);
+public sealed record InventoryControlledSubstanceClassificationRequest(string? ScheduleCode);
+public sealed record InventoryControlledSubstanceClassificationEvent(long EventId, string? PriorSchedule, string? ResultingSchedule, string OccurredAt, string Username);
+public sealed record InventoryControlledSubstanceClassificationHistoryResponse(InventoryControlledSubstanceItem Item, IReadOnlyList<InventoryControlledSubstanceClassificationEvent> Events);
+
 public sealed record InventoryPrescriptionDispenseRequest(
     string PrescriptionId,
     decimal Quantity,
