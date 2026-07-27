@@ -38,6 +38,143 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             transactions);
     }
 
+    public async Task<IReadOnlyList<InventoryMedicationCatalogItem>> GetMedicationCatalogAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select rx_norm_code, drug_name, display_name, form, strength, route from medication_vocabulary order by display_name, rx_norm_code;";
+        var items = new List<InventoryMedicationCatalogItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            items.Add(new InventoryMedicationCatalogItem(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+        return items;
+    }
+
+    public async Task<InventoryMedicationLink?> UpdateMedicationLinkAsync(int itemId, InventoryMedicationLinkUpdateRequest request, string username, CancellationToken cancellationToken)
+    {
+        var rxNormCode = request.RxNormCode?.Trim();
+        if (itemId <= 0 || string.IsNullOrWhiteSpace(rxNormCode) || rxNormCode.Length > 50 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("An inventory item, known RXCUI code, and authenticated user are required.");
+
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? priorCode;
+        await using (var item = connection.CreateCommand())
+        {
+            item.Transaction = transaction;
+            item.CommandText = "select l.rx_norm_code from inventory_items i left join inventory_item_medication_links l on l.item_id=i.item_id where i.item_id=@itemId and i.active=true for update of i;";
+            item.Parameters.AddWithValue("itemId", itemId);
+            await using var reader = await item.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) return null;
+            priorCode = reader.IsDBNull(0) ? null : reader.GetString(0);
+        }
+        await using (var vocabulary = connection.CreateCommand())
+        {
+            vocabulary.Transaction = transaction;
+            vocabulary.CommandText = "select exists(select 1 from medication_vocabulary where rx_norm_code=@code);";
+            vocabulary.Parameters.AddWithValue("code", rxNormCode);
+            if (await vocabulary.ExecuteScalarAsync(cancellationToken) is not true)
+                throw new ArgumentException("The RXCUI code is not present in the medication vocabulary.");
+        }
+        await using (var duplicate = connection.CreateCommand())
+        {
+            duplicate.Transaction = transaction;
+            duplicate.CommandText = "select exists(select 1 from inventory_item_medication_links where rx_norm_code=@code and item_id<>@itemId);";
+            duplicate.Parameters.AddWithValue("code", rxNormCode);
+            duplicate.Parameters.AddWithValue("itemId", itemId);
+            if (await duplicate.ExecuteScalarAsync(cancellationToken) is true)
+                throw new ArgumentException("That RXCUI code is already linked to another inventory item.");
+        }
+        await using (var upsert = connection.CreateCommand())
+        {
+            upsert.Transaction = transaction;
+            upsert.CommandText = "insert into inventory_item_medication_links (item_id,rx_norm_code,linked_by,linked_at) values (@itemId,@code,@user,@at) on conflict (item_id) do update set rx_norm_code=excluded.rx_norm_code, linked_by=excluded.linked_by, linked_at=excluded.linked_at;";
+            upsert.Parameters.AddWithValue("itemId", itemId);
+            upsert.Parameters.AddWithValue("code", rxNormCode);
+            upsert.Parameters.AddWithValue("user", username);
+            upsert.Parameters.AddWithValue("at", now);
+            await upsert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var audit = connection.CreateCommand())
+        {
+            audit.Transaction = transaction;
+            audit.CommandText = "insert into inventory_item_medication_link_audits (audit_id,item_id,prior_rx_norm_code,new_rx_norm_code,action,changed_by,changed_at) values (@id,@itemId,@prior,@code,@action,@user,@at);";
+            audit.Parameters.AddWithValue("id", Guid.NewGuid());
+            audit.Parameters.AddWithValue("itemId", itemId);
+            audit.Parameters.AddWithValue("prior", (object?)priorCode ?? DBNull.Value);
+            audit.Parameters.AddWithValue("code", rxNormCode);
+            audit.Parameters.AddWithValue("action", priorCode is null ? "linked" : priorCode == rxNormCode ? "updated" : "updated");
+            audit.Parameters.AddWithValue("user", username);
+            audit.Parameters.AddWithValue("at", now);
+            await audit.ExecuteNonQueryAsync(cancellationToken);
+        }
+        InventoryMedicationLink link;
+        await using (var result = connection.CreateCommand())
+        {
+            result.Transaction = transaction;
+            result.CommandText = "select l.item_id,l.rx_norm_code,v.drug_name,v.display_name,l.linked_by,l.linked_at from inventory_item_medication_links l join medication_vocabulary v on v.rx_norm_code=l.rx_norm_code where l.item_id=@itemId;";
+            result.Parameters.AddWithValue("itemId", itemId);
+            await using var resultReader = await result.ExecuteReaderAsync(cancellationToken);
+            await resultReader.ReadAsync(cancellationToken);
+            link = new InventoryMedicationLink(resultReader.GetInt32(0), resultReader.GetString(1), resultReader.GetString(2), resultReader.GetString(3), resultReader.GetString(4), resultReader.GetFieldValue<DateTimeOffset>(5).ToString("O", CultureInfo.InvariantCulture));
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return link;
+    }
+
+    public async Task<InventoryPrescriptionDispenseResponse> DispensePrescriptionAsync(InventoryPrescriptionDispenseRequest request, string username, CancellationToken cancellationToken)
+    {
+        var prescriptionId = request.PrescriptionId?.Trim();
+        if (string.IsNullOrWhiteSpace(prescriptionId) || request.Quantity <= 0 || request.Fee < 0 || request.Notes?.Trim().Length > 250 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("Prescription, positive quantity, nonnegative fee, and valid dispense details are required.");
+        var saleDate = ParseOptionalDate(request.SaleDate, "Sale date must be an ISO date.") ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (saleDate < new DateOnly(2000, 1, 1) || saleDate > DateOnly.FromDateTime(DateTime.UtcNow)) throw new ArgumentException("Sale date cannot be in the future or before 2000-01-01.");
+        var now = DateTimeOffset.UtcNow; var notes = NormalizeOptional(request.Notes); var saleId = Guid.NewGuid(); var transactionId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string patientId; int encounter; string rxNormCode;
+        await using (var prescription = connection.CreateCommand())
+        {
+            prescription.Transaction = transaction;
+            prescription.CommandText = "select patient_id,encounter,rx_norm_code from prescriptions where id=@id and active=1 for update;";
+            prescription.Parameters.AddWithValue("id", prescriptionId);
+            await using var reader = await prescription.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The prescription was not found or is inactive.");
+            patientId = reader.GetString(0); encounter = reader.IsDBNull(1) ? 0 : reader.GetInt32(1); rxNormCode = reader.IsDBNull(2) ? string.Empty : reader.GetString(2).Trim();
+        }
+        if (encounter <= 0 || string.IsNullOrWhiteSpace(rxNormCode)) throw new ArgumentException("The active prescription requires an encounter and RXCUI code before it can be dispensed.");
+        int itemId;
+        await using (var link = connection.CreateCommand())
+        {
+            link.Transaction = transaction;
+            link.CommandText = "select i.item_id from inventory_item_medication_links l join inventory_items i on i.item_id=l.item_id where l.rx_norm_code=@code and i.active=true;";
+            link.Parameters.AddWithValue("code", rxNormCode);
+            var linkedItem = await link.ExecuteScalarAsync(cancellationToken);
+            if (linkedItem is null) throw new ArgumentException("No active inventory item is linked to this prescription's RXCUI code.");
+            itemId = Convert.ToInt32(linkedItem, CultureInfo.InvariantCulture);
+        }
+        int lotId; string facilityCode; string facilityName; string lotNumber; DateOnly? expiration; decimal onHand; decimal unitCost; decimal reorderPoint;
+        await using (var lot = connection.CreateCommand())
+        {
+            lot.Transaction = transaction;
+            lot.CommandText = "select l.lot_id,f.code,f.name,l.lot_number,l.expiration_date,l.quantity_on_hand,l.unit_cost,i.reorder_point from inventory_lots l join facilities f on f.id=l.facility_id join inventory_items i on i.item_id=l.item_id where l.item_id=@itemId and l.status='active' and l.quantity_on_hand>=@quantity and (l.expiration_date is null or l.expiration_date>@saleDate) order by l.expiration_date nulls last,l.lot_number,l.lot_id limit 1 for update;";
+            lot.Parameters.AddWithValue("itemId", itemId); lot.Parameters.AddWithValue("quantity", request.Quantity); lot.Parameters.AddWithValue("saleDate", saleDate);
+            await using var reader = await lot.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("No single eligible lot can fulfill this prescription. Prescription dispensing cannot combine lots.");
+            lotId=reader.GetInt32(0); facilityCode=reader.GetString(1); facilityName=reader.GetString(2); lotNumber=reader.GetString(3); expiration=reader.IsDBNull(4)?null:reader.GetFieldValue<DateOnly>(4); onHand=reader.GetDecimal(5); unitCost=reader.GetDecimal(6); reorderPoint=reader.GetDecimal(7);
+        }
+        var updatedQuantity=onHand-request.Quantity;
+        await using (var update=connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_lots set quantity_on_hand=@quantity where lot_id=@lotId;"; update.Parameters.AddWithValue("quantity",updatedQuantity); update.Parameters.AddWithValue("lotId",lotId); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var ledger=connection.CreateCommand()) { ledger.Transaction=transaction; ledger.CommandText="insert into inventory_transactions (transaction_id,lot_id,transaction_type,quantity_delta,reason,performed_by,occurred_at) values (@id,@lotId,'sale',@quantity,@reason,@user,@at);"; ledger.Parameters.AddWithValue("id",transactionId);ledger.Parameters.AddWithValue("lotId",lotId);ledger.Parameters.AddWithValue("quantity",-request.Quantity);ledger.Parameters.AddWithValue("reason",(object?)notes??DBNull.Value);ledger.Parameters.AddWithValue("user",username);ledger.Parameters.AddWithValue("at",now);await ledger.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var sale=connection.CreateCommand()) { sale.Transaction=transaction; sale.CommandText="insert into inventory_patient_sales (sale_id,lot_id,patient_id,encounter,sale_date,quantity,fee,notes,transaction_id,sold_by,sold_at,prescription_id) values (@saleId,@lotId,@patientId,@encounter,@saleDate,@quantity,@fee,@notes,@transactionId,@user,@at,@prescriptionId);"; sale.Parameters.AddWithValue("saleId",saleId);sale.Parameters.AddWithValue("lotId",lotId);sale.Parameters.AddWithValue("patientId",patientId);sale.Parameters.AddWithValue("encounter",encounter);sale.Parameters.AddWithValue("saleDate",saleDate);sale.Parameters.AddWithValue("quantity",request.Quantity);sale.Parameters.AddWithValue("fee",request.Fee);sale.Parameters.AddWithValue("notes",(object?)notes??DBNull.Value);sale.Parameters.AddWithValue("transactionId",transactionId);sale.Parameters.AddWithValue("user",username);sale.Parameters.AddWithValue("at",now);sale.Parameters.AddWithValue("prescriptionId",prescriptionId);await sale.ExecuteNonQueryAsync(cancellationToken); }
+        await using var total=connection.CreateCommand(); total.Transaction=transaction; total.CommandText="select coalesce(sum(quantity_on_hand),0) from inventory_lots where item_id=@itemId and status='active';"; total.Parameters.AddWithValue("itemId",itemId); var itemQuantity=Convert.ToDecimal(await total.ExecuteScalarAsync(cancellationToken),CultureInfo.InvariantCulture);
+        await transaction.CommitAsync(cancellationToken);
+        var inventoryLot=new InventoryLot(lotId,facilityCode,facilityName,lotNumber,expiration?.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),updatedQuantity,unitCost,"active");
+        var mutation=new InventoryMutationResponse(new InventoryTransactionItem(transactionId,lotId,string.Empty,string.Empty,facilityCode,"sale",-request.Quantity,notes,username,now,null,null),inventoryLot,itemQuantity,itemQuantity<=reorderPoint);
+        var saleResponse=new InventoryPatientSaleResponse(saleId,patientId,encounter,saleDate.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),request.Quantity,request.Fee,notes,username,now.ToString("O",CultureInfo.InvariantCulture),mutation);
+        return new InventoryPrescriptionDispenseResponse(prescriptionId,itemId,patientId,encounter,rxNormCode,saleResponse);
+    }
+
     public async Task<InventoryMutationResponse?> CreateTransactionAsync(
         InventoryTransactionCreateRequest request,
         string username,
@@ -1016,8 +1153,11 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select i.item_id, i.item_code, i.name, i.category, i.unit, i.reorder_point, i.preferred_quantity,
+              ml.rx_norm_code, mv.drug_name, mv.display_name, ml.linked_by, ml.linked_at,
               l.lot_id, f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status
             from inventory_items i
+            left join inventory_item_medication_links ml on ml.item_id = i.item_id
+            left join medication_vocabulary mv on mv.rx_norm_code = ml.rx_norm_code
             left join inventory_lots l on l.item_id = i.item_id and l.status = 'active'
             left join facilities f on f.id = l.facility_id
             where i.active = true
@@ -1030,17 +1170,20 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             var itemId = reader.GetInt32(0);
             if (!builders.TryGetValue(itemId, out var builder))
             {
-                builder = new InventoryItemBuilder(itemId, reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetDecimal(6));
+                var medicationLink = reader.IsDBNull(7) ? null : new InventoryMedicationLink(
+                    itemId, reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetString(10),
+                    reader.GetFieldValue<DateTimeOffset>(11).ToString("O", CultureInfo.InvariantCulture));
+                builder = new InventoryItemBuilder(itemId, reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetDecimal(6), medicationLink);
                 builders.Add(itemId, builder);
             }
 
-            if (!reader.IsDBNull(7))
+            if (!reader.IsDBNull(12))
             {
                 builder.Lots.Add(new InventoryLot(
-                    reader.GetInt32(7), reader.GetString(8), reader.GetString(9), reader.GetString(10),
-                    reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    reader.GetDecimal(12), reader.GetDecimal(13), reader.GetString(14),
-                    GetExpiryStatus(reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11), baseDate)));
+                    reader.GetInt32(12), reader.GetString(13), reader.GetString(14), reader.GetString(15),
+                    reader.IsDBNull(16) ? null : reader.GetFieldValue<DateOnly>(16).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    reader.GetDecimal(17), reader.GetDecimal(18), reader.GetString(19),
+                    GetExpiryStatus(reader.IsDBNull(16) ? null : reader.GetFieldValue<DateOnly>(16), baseDate)));
             }
         }
 
@@ -1187,7 +1330,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
     private sealed record InventoryItemIdentity(int ItemId, string ItemCode, string Name, decimal ReorderPoint);
 
-    private sealed class InventoryItemBuilder(int itemId, string itemCode, string name, string category, string unit, decimal reorderPoint, decimal preferredQuantity)
+    private sealed class InventoryItemBuilder(int itemId, string itemCode, string name, string category, string unit, decimal reorderPoint, decimal preferredQuantity, InventoryMedicationLink? medicationLink)
     {
         public List<InventoryLot> Lots { get; } = [];
 
@@ -1195,7 +1338,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         {
             var quantity = Lots.Where(lot => string.Equals(lot.Status, "active", StringComparison.OrdinalIgnoreCase)).Sum(lot => lot.QuantityOnHand);
             return new InventoryItem(itemId, itemCode, name, category, unit, reorderPoint, preferredQuantity, quantity,
-                Lots.Sum(lot => lot.QuantityOnHand * lot.UnitCost), quantity <= reorderPoint, Lots);
+                Lots.Sum(lot => lot.QuantityOnHand * lot.UnitCost), quantity <= reorderPoint, medicationLink, Lots);
         }
     }
 }

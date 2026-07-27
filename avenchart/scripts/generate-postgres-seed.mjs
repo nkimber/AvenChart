@@ -143,6 +143,7 @@ const inventoryItems = [
   [10002, 'SUP-SYR-3ML', 'Luer-lock syringe, 3 mL', 'Clinical supplies', 'each', 120, 500, true],
   [10003, 'VAC-FLU-QIV', 'Quadrivalent influenza vaccine', 'Immunization', 'dose', 20, 80, true],
   [10004, 'SUP-SHARP-5QT', 'Sharps container, 5 quart', 'Safety', 'each', 8, 24, true],
+  [10005, 'MED-MET-500', 'Metformin 500 mg tablet', 'Medication', 'tablet', 30, 90, true],
 ]
 
 const inventoryLots = [
@@ -152,6 +153,7 @@ const inventoryLots = [
   [20004, 10003, 11, 'FLU-2026-24A', '2026-09-30', 14, 19.5, 'active'],
   [20005, 10003, 10, 'FLU-2026-24B', '2026-10-31', 36, 19.5, 'active'],
   [20006, 10004, 12, 'SHP-2026-03-A', null, 6, 7.25, 'active'],
+  [20007, 10005, 11, 'MET-2026-01-A', '2028-01-31', 90, 0.12, 'active'],
 ]
 
 const inventoryTransactions = [
@@ -160,6 +162,14 @@ const inventoryTransactions = [
   ['00000000-0000-0000-0000-000000010003', 20004, 'consumption', -6, 'Seasonal immunization clinic', 'gold-provider-01', '2026-06-14T11:00:00Z'],
   ['00000000-0000-0000-0000-000000010004', 20006, 'adjustment', -2, 'Verified physical count', 'admin', '2026-06-16T16:20:00Z'],
 ]
+
+const medicationRxNormCodes = {
+  Metformin: '860975',
+  Omeprazole: '1049502',
+  Lisinopril: '312615',
+  Atorvastatin: '617314',
+  Oxycodone: '1049621',
+}
 const groupPermissionRules = {
   admin: allNonPlaceholderPermissions,
   breakglass: allNonPlaceholderPermissions,
@@ -270,6 +280,8 @@ drop table if exists inventory_transactions;
 drop table if exists inventory_count_reconciliations;
 drop table if exists inventory_purchase_receipts;
 drop table if exists inventory_lot_destructions;
+drop table if exists inventory_item_medication_link_audits;
+drop table if exists inventory_item_medication_links;
 drop table if exists inventory_lot_metadata_audits;
 drop table if exists inventory_vendors;
 drop table if exists inventory_lots;
@@ -348,21 +360,33 @@ drop table if exists patient_merge_audit_plans;
 drop table if exists patient_record_requests;
 drop table if exists patient_sdoh_assessments;
 drop table if exists referrals;
+drop table if exists therapy_group_session_encounters;
+drop table if exists therapy_group_session_participants;
+drop table if exists therapy_group_sessions;
+drop table if exists therapy_group_members;
+drop table if exists therapy_groups;
 drop table if exists patients;
 drop table if exists access_user_memberships;
 drop table if exists auth_sessions;
 drop table if exists auth_audit_events;
+drop table if exists practice_setting_revisions;
 drop table if exists practice_setting_audit_events;
 drop table if exists practice_settings;
+drop table if exists coding_catalog_revisions;
 drop table if exists coding_catalog_audit_events;
 drop table if exists coding_catalogs;
+drop table if exists form_layout_revisions;
 drop table if exists form_layout_fields;
 drop table if exists form_layout_groups;
 drop table if exists form_layouts;
+drop table if exists form_option_list_revisions;
 drop table if exists form_option_values;
 drop table if exists form_option_lists;
+drop table if exists clinical_alert_rule_revisions;
 drop table if exists clinical_alert_rules;
+drop table if exists module_catalog_revisions;
 drop table if exists module_catalog;
+drop table if exists api_client_registry_revisions;
 drop table if exists api_client_registry;
 drop table if exists auth_accounts;
 drop table if exists staff;
@@ -2321,7 +2345,7 @@ copyRows('prescriptions', [
   prescription.modifiedDate ?? prescription.startDate,
   prescription.endDate,
   prescription.drug,
-  prescription.rxNormCode ?? '',
+  prescription.rxNormCode ?? medicationRxNormCodes[prescription.drug] ?? '',
   prescription.dosage,
   prescription.quantity ?? '30',
   prescription.doseAmount ?? '',

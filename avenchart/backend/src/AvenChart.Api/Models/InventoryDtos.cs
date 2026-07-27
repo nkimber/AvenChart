@@ -33,7 +33,41 @@ public sealed record InventoryItem(
     decimal QuantityOnHand,
     decimal InventoryValue,
     bool BelowReorderPoint,
+    InventoryMedicationLink? MedicationLink,
     IReadOnlyList<InventoryLot> Lots);
+
+public sealed record InventoryMedicationLink(
+    int ItemId,
+    string RxNormCode,
+    string DrugName,
+    string DisplayName,
+    string LinkedBy,
+    string LinkedAt);
+
+public sealed record InventoryMedicationCatalogItem(
+    string RxNormCode,
+    string DrugName,
+    string DisplayName,
+    string Form,
+    string Strength,
+    string Route);
+
+public sealed record InventoryMedicationLinkUpdateRequest(string RxNormCode);
+
+public sealed record InventoryPrescriptionDispenseRequest(
+    string PrescriptionId,
+    decimal Quantity,
+    decimal Fee,
+    string? SaleDate,
+    string? Notes);
+
+public sealed record InventoryPrescriptionDispenseResponse(
+    string PrescriptionId,
+    int ItemId,
+    string PatientId,
+    int Encounter,
+    string RxNormCode,
+    InventoryPatientSaleResponse Sale);
 
 public sealed record InventoryLot(
     int LotId,

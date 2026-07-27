@@ -3075,7 +3075,45 @@ export type InventoryItem = {
   quantityOnHand: number
   inventoryValue: number
   belowReorderPoint: boolean
+  medicationLink?: InventoryMedicationLink | null
   lots: InventoryLot[]
+}
+
+export type InventoryMedicationLink = {
+  itemId: number
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  linkedBy: string
+  linkedAt: string
+}
+
+export type InventoryMedicationCatalogItem = {
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  form: string
+  strength: string
+  route: string
+}
+
+export type InventoryMedicationLinkUpdateInput = { rxNormCode: string }
+
+export type InventoryPrescriptionDispenseInput = {
+  prescriptionId: string
+  quantity: number
+  fee: number
+  saleDate?: string | null
+  notes?: string | null
+}
+
+export type InventoryPrescriptionDispenseResponse = {
+  prescriptionId: string
+  itemId: number
+  patientId: string
+  encounter: number
+  rxNormCode: string
+  sale: InventoryPatientSaleResponse
 }
 
 export type InventoryTransactionItem = {
@@ -8402,6 +8440,24 @@ export async function createInventoryPatientSale(
 export async function allocateInventoryPatientSale(input: InventoryPatientSaleAllocationCreateInput, sessionId?: string | null): Promise<InventoryPatientSaleAllocationResponse> {
   const response = await fetch(`${apiBaseUrl}/api/inventory/patient-sales/allocate`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
   if (!response.ok) throw new Error(adminApiError('Inventory sale allocation', response.status))
+  return response.json()
+}
+
+export async function getInventoryMedicationCatalog(sessionId?: string | null, signal?: AbortSignal): Promise<InventoryMedicationCatalogItem[]> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/medication-catalog`, { headers: buildLegacyEhrSessionHeaders(sessionId), signal })
+  if (!response.ok) throw new Error(adminApiError('Inventory medication catalog', response.status))
+  return response.json()
+}
+
+export async function updateInventoryMedicationLink(itemId: number, input: InventoryMedicationLinkUpdateInput, sessionId?: string | null): Promise<InventoryMedicationLink> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/items/${itemId}/medication-link`, { method: 'PUT', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError('Inventory medication link', response.status))
+  return response.json()
+}
+
+export async function dispenseInventoryPrescription(input: InventoryPrescriptionDispenseInput, sessionId?: string | null): Promise<InventoryPrescriptionDispenseResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/inventory/prescription-dispensations`, { method: 'POST', headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'), body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(adminApiError('Prescription dispensing', response.status))
   return response.json()
 }
 

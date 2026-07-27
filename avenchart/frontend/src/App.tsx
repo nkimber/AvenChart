@@ -170,8 +170,11 @@ import {
   createInventoryTransaction,
   createInventoryPatientSale,
   allocateInventoryPatientSale,
+  dispenseInventoryPrescription,
   destroyInventoryLot,
+  getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
+  updateInventoryMedicationLink,
   updateInventoryLotMetadata,
   createInventoryTransfer,
   createInventoryPurchaseReceipt,
@@ -428,6 +431,9 @@ import {
   type InventoryLotDestructionInput,
   type InventoryPatientSaleCreateInput,
   type InventoryPatientSaleAllocationCreateInput,
+  type InventoryMedicationCatalogItem,
+  type InventoryMedicationLinkUpdateInput,
+  type InventoryPrescriptionDispenseInput,
   type InventoryTransferCreateInput,
   type InventoryPurchaseReceiptCreateInput,
   type InventoryCountReconciliationCreateInput,
@@ -3606,6 +3612,20 @@ function App() {
     catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory sale allocation failed') }
   }
 
+  async function handleInventoryMedicationLink(itemId: number, input: InventoryMedicationLinkUpdateInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before linking an inventory medication.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await updateInventoryMedicationLink(itemId, input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Inventory medication link failed') }
+  }
+
+  async function handleInventoryPrescriptionDispense(input: InventoryPrescriptionDispenseInput) {
+    if (!openEmrSessionId) { setInventoryStatus('error'); setInventoryError('Sign in before dispensing a prescription.'); return }
+    setInventoryStatus('loading'); setInventoryError(null)
+    try { await dispenseInventoryPrescription(input, openEmrSessionId); setInventoryRefreshKey((current) => current + 1) }
+    catch (mutationError) { setInventoryStatus('error'); setInventoryError(mutationError instanceof Error ? mutationError.message : 'Prescription dispensing failed') }
+  }
+
   async function handleInventoryTransfer(input: InventoryTransferCreateInput) {
     if (!openEmrSessionId) {
       setInventoryStatus('error')
@@ -6408,6 +6428,8 @@ function App() {
             onDestroyLot={handleInventoryLotDestruction}
             onCreatePatientSale={handleInventoryPatientSale}
             onAllocatePatientSale={handleInventoryPatientSaleAllocation}
+            onUpdateMedicationLink={handleInventoryMedicationLink}
+            onDispensePrescription={handleInventoryPrescriptionDispense}
             onCreateTransfer={handleInventoryTransfer}
             onCreatePurchaseReceipt={handleInventoryPurchaseReceipt}
             onCreateCountReconciliation={handleInventoryCountReconciliation}
@@ -20346,6 +20368,8 @@ function InventoryWorkspace({
   onDestroyLot,
   onCreatePatientSale,
   onAllocatePatientSale,
+  onUpdateMedicationLink,
+  onDispensePrescription,
   onCreateTransfer,
   onCreatePurchaseReceipt,
   onCreateCountReconciliation,
@@ -20359,6 +20383,8 @@ function InventoryWorkspace({
   onDestroyLot: (lotId: number, input: InventoryLotDestructionInput) => void | Promise<void>
   onCreatePatientSale: (input: InventoryPatientSaleCreateInput) => void | Promise<void>
   onAllocatePatientSale: (input: InventoryPatientSaleAllocationCreateInput) => void | Promise<void>
+  onUpdateMedicationLink: (itemId: number, input: InventoryMedicationLinkUpdateInput) => void | Promise<void>
+  onDispensePrescription: (input: InventoryPrescriptionDispenseInput) => void | Promise<void>
   onCreateTransfer: (input: InventoryTransferCreateInput) => void | Promise<void>
   onCreatePurchaseReceipt: (input: InventoryPurchaseReceiptCreateInput) => void | Promise<void>
   onCreateCountReconciliation: (input: InventoryCountReconciliationCreateInput) => void | Promise<void>
@@ -20382,6 +20408,15 @@ function InventoryWorkspace({
   const [saleFee, setSaleFee] = useState('0')
   const [saleNotes, setSaleNotes] = useState('')
   const [allocateSale, setAllocateSale] = useState(false)
+  const [medicationCatalog, setMedicationCatalog] = useState<InventoryMedicationCatalogItem[]>([])
+  const [medicationCatalogError, setMedicationCatalogError] = useState<string | null>(null)
+  const [medicationItemId, setMedicationItemId] = useState('')
+  const [medicationRxNormCode, setMedicationRxNormCode] = useState('')
+  const [prescriptionId, setPrescriptionId] = useState('')
+  const [prescriptionQuantity, setPrescriptionQuantity] = useState('1')
+  const [prescriptionFee, setPrescriptionFee] = useState('0')
+  const [prescriptionSaleDate, setPrescriptionSaleDate] = useState('')
+  const [prescriptionNotes, setPrescriptionNotes] = useState('')
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [reportFromDate, setReportFromDate] = useState('')
   const [reportToDate, setReportToDate] = useState('')
@@ -20490,6 +20525,18 @@ function InventoryWorkspace({
   }, [sessionId])
 
   useEffect(() => {
+    if (!sessionId) {
+      setMedicationCatalog([])
+      return
+    }
+    const controller = new AbortController()
+    void getInventoryMedicationCatalog(sessionId, controller.signal)
+      .then((items) => { setMedicationCatalog(items); setMedicationCatalogError(null) })
+      .catch((loadError) => { if (!controller.signal.aborted) setMedicationCatalogError(loadError instanceof Error ? loadError.message : 'Medication catalog unavailable') })
+    return () => controller.abort()
+  }, [sessionId])
+
+  useEffect(() => {
     if (!receiptVendorId && vendors.length > 0) setReceiptVendorId(vendors[0].vendorId)
   }, [receiptVendorId, vendors])
 
@@ -20497,6 +20544,10 @@ function InventoryWorkspace({
     if (!receiptFacilityId && inventory?.facilities.length) setReceiptFacilityId(String(inventory.facilities[0].facilityId))
     if (!receiptItemId && inventory?.items.length) setReceiptItemId(String(inventory.items[0].itemId))
   }, [inventory, receiptFacilityId, receiptItemId])
+
+  useEffect(() => {
+    if (!medicationItemId && inventory?.items.length) setMedicationItemId(String(inventory.items[0].itemId))
+  }, [inventory, medicationItemId])
 
   async function exportActivityReport() {
     if (!sessionId) {
@@ -20595,6 +20646,21 @@ function InventoryWorkspace({
     else void onCreatePatientSale({ lotId: parsedLotId, ...input })
   }
 
+  function submitMedicationLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const itemId = Number(medicationItemId)
+    if (!Number.isInteger(itemId) || itemId <= 0 || !medicationRxNormCode.trim()) return
+    void onUpdateMedicationLink(itemId, { rxNormCode: medicationRxNormCode.trim() })
+  }
+
+  function submitPrescriptionDispense(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const quantityValue = Number(prescriptionQuantity)
+    const feeValue = Number(prescriptionFee)
+    if (!prescriptionId.trim() || quantityValue <= 0 || feeValue < 0) return
+    void onDispensePrescription({ prescriptionId: prescriptionId.trim(), quantity: quantityValue, fee: feeValue, saleDate: prescriptionSaleDate || null, notes: prescriptionNotes.trim() || null })
+  }
+
   async function loadLotMetadataHistory() {
     const parsedLotId = Number(lotId)
     if (!sessionId || !Number.isInteger(parsedLotId) || parsedLotId <= 0) return
@@ -20686,6 +20752,7 @@ function InventoryWorkspace({
                     <div className="inventory-item-main">
                       <span className="inventory-item-code">{item.itemCode}</span>
                       <strong>{item.name}</strong>
+                      {item.medicationLink && <small>RXCUI {item.medicationLink.rxNormCode} - {item.medicationLink.displayName}</small>}
                       <small>{item.category} · {item.lots.length} lot{item.lots.length === 1 ? '' : 's'}</small>
                     </div>
                     <div className="inventory-quantity">
@@ -20766,6 +20833,38 @@ function InventoryWorkspace({
                 <label>Witness (optional)<input value={destructionWitness} onChange={(event) => setDestructionWitness(event.target.value)} maxLength={250} /></label>
                 <label>Notes (optional)<input value={destructionNotes} onChange={(event) => setDestructionNotes(event.target.value)} maxLength={250} /></label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading' || !sourceLot}>Destroy selected lot</button>
+              </form>
+              <form className="inventory-transaction-form" onSubmit={submitMedicationLink}>
+                <div className="inventory-form-kicker">Medication catalog link</div>
+                <small>Use an RXCUI mapping to make a stocked product eligible for prescription dispensing.</small>
+                <label>Inventory item
+                  <select value={medicationItemId} onChange={(event) => {
+                    const nextItemId = event.target.value
+                    setMedicationItemId(nextItemId)
+                    setMedicationRxNormCode(inventory.items.find((item) => String(item.itemId) === nextItemId)?.medicationLink?.rxNormCode ?? '')
+                  }} required>
+                    <option value="">Select an item</option>
+                    {inventory.items.map((item) => <option key={item.itemId} value={item.itemId}>{item.itemCode} - {item.name}</option>)}
+                  </select>
+                </label>
+                <label>Medication
+                  <select value={medicationRxNormCode} onChange={(event) => setMedicationRxNormCode(event.target.value)} required>
+                    <option value="">Select RXCUI medication</option>
+                    {medicationCatalog.map((medication) => <option key={medication.rxNormCode} value={medication.rxNormCode}>{medication.rxNormCode} - {medication.displayName}</option>)}
+                  </select>
+                </label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading' || medicationCatalog.length === 0}>Save medication link</button>
+                {medicationCatalogError && <div className="workspace-error">{medicationCatalogError}</div>}
+              </form>
+              <form className="inventory-transaction-form" onSubmit={submitPrescriptionDispense}>
+                <div className="inventory-form-kicker">Prescription dispense</div>
+                <small>Patient and encounter come from the active prescription. Legacy behavior uses one eligible lot and never combines lots.</small>
+                <label>Prescription ID<input value={prescriptionId} onChange={(event) => setPrescriptionId(event.target.value)} placeholder="RX-MOD-PAT-0001-1" required /></label>
+                <label>Sale date<input type="date" value={prescriptionSaleDate} onChange={(event) => setPrescriptionSaleDate(event.target.value)} /></label>
+                <label>Quantity<input type="number" min="0.01" step="0.01" value={prescriptionQuantity} onChange={(event) => setPrescriptionQuantity(event.target.value)} required /></label>
+                <label>Fee<input type="number" min="0" step="0.01" value={prescriptionFee} onChange={(event) => setPrescriptionFee(event.target.value)} required /></label>
+                <label>Notes (optional)<input value={prescriptionNotes} onChange={(event) => setPrescriptionNotes(event.target.value)} maxLength={250} /></label>
+                <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Dispense prescription</button>
               </form>
               <form className="inventory-transaction-form" onSubmit={submitPatientSale}>
                 <div className="inventory-form-kicker">Patient lot sale</div>

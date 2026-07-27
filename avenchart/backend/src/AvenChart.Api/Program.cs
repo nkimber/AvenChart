@@ -3218,6 +3218,54 @@ inventory.MapGet("/", async (
     })
     .WithName("GetInventory");
 
+inventory.MapGet("/medication-catalog", async (InventoryRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetMedicationCatalogAsync(cancellationToken)))
+    .WithName("GetInventoryMedicationCatalog")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
+inventory.MapPut("/items/{itemId:int}/medication-link", async (
+        int itemId,
+        InventoryMedicationLinkUpdateRequest request,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var link = await repository.UpdateMedicationLinkAsync(itemId, request, session.Username, cancellationToken);
+            return link is null ? Results.NotFound() : Results.Ok(link);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryMedicationLink"] = [exception.Message] });
+        }
+    })
+    .WithName("UpdateInventoryMedicationLink")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
+inventory.MapPost("/prescription-dispensations", async (
+        InventoryPrescriptionDispenseRequest request,
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var dispense = await repository.DispensePrescriptionAsync(request, session.Username, cancellationToken);
+            return Results.Created($"/api/inventory/prescription-dispensations/{dispense.Sale.SaleId}", dispense);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryPrescriptionDispense"] = [exception.Message] });
+        }
+    })
+    .WithName("DispenseInventoryPrescription")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "sales", "write"));
+
 inventory.MapPost("/transactions", async (
         InventoryRepository repository,
         AuthRepository authRepository,
