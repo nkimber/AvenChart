@@ -182,7 +182,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     public async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, string? witnessUsername, CancellationToken cancellationToken)
     {
         var action = request.Action?.Trim().ToLowerInvariant();
-        if (action is not ("receipt" or "transfer" or "dispense" or "administration" or "return" or "waste" or "correction")
+        if (action is not ("receipt" or "transfer" or "dispense" or "administration" or "return" or "waste" or "destruction" or "correction")
             || request.Quantity <= 0 || string.IsNullOrWhiteSpace(username))
             throw new ArgumentException("A supported controlled-custody action, positive quantity, and authenticated user are required.");
 
@@ -268,7 +268,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             }
             else
             {
-                if (action is "dispense" or "administration" or "waste" || (action == "correction" && string.Equals(request.CorrectionDirection?.Trim(), "decrease", StringComparison.OrdinalIgnoreCase)))
+                if (action is "dispense" or "administration" or "waste" or "destruction" || (action == "correction" && string.Equals(request.CorrectionDirection?.Trim(), "decrease", StringComparison.OrdinalIgnoreCase)))
                     sourceLocation = await RequireMatchingControlledLocationAsync(connection, transaction, primaryLot, request.SourceLocationId ?? primaryLot.ControlledLocationId!.Value, "source", cancellationToken);
                 else
                     destinationLocation = await RequireMatchingControlledLocationAsync(connection, transaction, primaryLot, request.DestinationLocationId ?? primaryLot.ControlledLocationId!.Value, "destination", cancellationToken);

@@ -10397,6 +10397,7 @@ try {
     $controlledCountAfterCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $countCorrectionRetryRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $controlledDestruction = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "destruction"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Smoke controlled destruction"; idempotencyKey = "destruction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($custodyItem.itemId)/controlled-classification" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ scheduleCode = $null } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $custodyActions = @($custodyHistory.events | ForEach-Object { $_.action })
     $custodyPassed = $receipt.event.action -eq "receipt" `
@@ -10438,6 +10439,9 @@ try {
         -and $controlledVarianceReport.run.reportKey -eq "count_variance" `
         -and $controlledVarianceReport.run.resultChecksum.Length -eq 64 `
         -and @($controlledVarianceReport.lines | Where-Object { $_.discrepancyId -eq $controlledCountSubmitted.lines[0].discrepancyId -and $_.varianceQuantity -eq -1 -and $_.discrepancyStatus -eq "closed" -and $null -ne $_.correctionEventId }).Count -eq 1 `
+        -and $controlledDestruction.event.action -eq "destruction" `
+        -and $controlledDestruction.lot.quantityOnHand -eq 5 `
+        -and $controlledDestruction.event.witnessUsername -eq "gold-provider-01" `
         -and $countLockRejected `
         -and $countResubmitRejected `
         -and $countCorrectionRetryRejected
