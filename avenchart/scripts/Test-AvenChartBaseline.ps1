@@ -9890,18 +9890,21 @@ try {
     $trackCatalog = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks" -Method Get -Headers $trackHeaders -TimeoutSec 20
     $trackRecord = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ trackTypeId = $track.id } | ConvertTo-Json) -TimeoutSec 20
     $trackReading = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)/readings" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ recordedAt = "2026-07-27T09:30:00Z"; values = @(@{ itemTypeId = $trackItemOne.id; value = "12" }, @{ itemTypeId = $trackItemTwo.id; value = "34" }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $updatedTrackReading = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)/readings/$($trackReading.readingId)" -Method Put -Headers $trackHeaders -ContentType "application/json" -Body (@{ recordedAt = "2026-07-27T10:30:00Z"; values = @(@{ itemTypeId = $trackItemOne.id; value = "13" }, @{ itemTypeId = $trackItemTwo.id; value = "35" }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $trackDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)" -Method Get -Headers $trackHeaders -TimeoutSec 20
     $trackReadingPassed = ($trackCatalog.availableTracks.id -contains $track.id) `
         -and $trackRecord.trackTypeId -eq $track.id `
         -and @($trackReading.values).Count -eq 2 `
         -and $trackDetail.record.trackName -eq "Smoke track $trackSuffix" `
         -and @($trackDetail.readings).Count -eq 1 `
-        -and ($trackDetail.readings[0].values.value -contains "12") `
-        -and ($trackDetail.readings[0].values.value -contains "34")
-    Add-Check -Name "encounter Track Anything capture and history" -Result $(if ($trackReadingPassed) { "passed" } else { "failed" }) -Details @{ trackId = $track.id; recordId = $trackRecord.recordId; readingId = $trackReading.readingId; itemCount = @($trackDetail.items).Count }
+        -and ($trackDetail.readings[0].values.value -contains "13") `
+        -and ($trackDetail.readings[0].values.value -contains "35") `
+        -and $trackDetail.readings[0].updatedBy -eq "admin" `
+        -and $null -ne $updatedTrackReading.updatedAt
+    Add-Check -Name "encounter Track Anything capture and correction history" -Result $(if ($trackReadingPassed) { "passed" } else { "failed" }) -Details @{ trackId = $track.id; recordId = $trackRecord.recordId; readingId = $trackReading.readingId; itemCount = @($trackDetail.items).Count; updatedAt = $updatedTrackReading.updatedAt }
 }
 catch {
-    Add-Check -Name "encounter Track Anything capture and history" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "encounter Track Anything capture and correction history" -Result "failed" -Details $_.Exception.Message
 }
 
 try {

@@ -94,18 +94,18 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
         if (record is null) return null;
         var items = await GetDirectItemsAsync(connection, record.TrackTypeId, cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select r.reading_id,r.recorded_at,r.recorded_by,v.item_type_id,v.item_name,v.value from encounter_track_readings r join encounter_track_reading_values v on v.reading_id=r.reading_id where r.record_id=@record order by r.recorded_at desc,r.reading_id desc,v.item_name;";
+        command.CommandText = "select r.reading_id,r.recorded_at,r.recorded_by,r.updated_at,r.updated_by,v.item_type_id,v.item_name,v.value from encounter_track_readings r join encounter_track_reading_values v on v.reading_id=r.reading_id where r.record_id=@record order by r.recorded_at desc,r.reading_id desc,v.item_name;";
         command.Parameters.AddWithValue("record", recordId);
-        var readings = new Dictionary<Guid, (DateTimeOffset RecordedAt, string RecordedBy, List<TrackAnythingReadingValue> Values)>();
+        var readings = new Dictionary<Guid, (DateTimeOffset RecordedAt, string RecordedBy, DateTimeOffset? UpdatedAt, string? UpdatedBy, List<TrackAnythingReadingValue> Values)>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var readingId = reader.GetGuid(0);
-            if (!readings.TryGetValue(readingId, out var reading)) reading = (reader.GetFieldValue<DateTimeOffset>(1), reader.GetString(2), []);
-            reading.Values.Add(new(reader.GetInt32(3), reader.GetString(4), reader.GetString(5)));
+            if (!readings.TryGetValue(readingId, out var reading)) reading = (reader.GetFieldValue<DateTimeOffset>(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3), reader.IsDBNull(4) ? null : reader.GetString(4), []);
+            reading.Values.Add(new(reader.GetInt32(5), reader.GetString(6), reader.GetString(7)));
             readings[readingId] = reading;
         }
-        return new TrackAnythingEncounterRecordDetail(record, items, readings.Select(pair => new TrackAnythingReading(pair.Key, pair.Value.RecordedAt.ToString("O"), pair.Value.RecordedBy, pair.Value.Values)).ToList());
+        return new TrackAnythingEncounterRecordDetail(record, items, readings.Select(pair => new TrackAnythingReading(pair.Key, pair.Value.RecordedAt.ToString("O"), pair.Value.RecordedBy, pair.Value.UpdatedAt?.ToString("O"), pair.Value.UpdatedBy, pair.Value.Values)).ToList());
     }
 
     public async Task<TrackAnythingReading?> AddReadingAsync(int encounter, Guid recordId, TrackAnythingReadingCreateRequest request, string username, CancellationToken cancellationToken)
@@ -144,7 +144,56 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
             await insertValue.ExecuteNonQueryAsync(cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
-        return new TrackAnythingReading(readingId, recordedAt.ToString("O"), username, activeItems.Select(item => new TrackAnythingReadingValue(item.Id, item.Name, values[item.Id])).ToList());
+        return new TrackAnythingReading(readingId, recordedAt.ToString("O"), username, null, null, activeItems.Select(item => new TrackAnythingReadingValue(item.Id, item.Name, values[item.Id])).ToList());
+    }
+
+    public async Task<TrackAnythingReading?> UpdateReadingAsync(int encounter, Guid recordId, Guid readingId, TrackAnythingReadingUpdateRequest request, string username, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        if (await GetRecordAsync(connection, encounter, recordId, cancellationToken, transaction) is null) return null;
+        if (!await ReadingBelongsToRecordAsync(connection, recordId, readingId, cancellationToken, transaction)) return null;
+        var existingItems = new Dictionary<int, string>();
+        await using (var existingCommand = connection.CreateCommand())
+        {
+            existingCommand.Transaction = transaction;
+            existingCommand.CommandText = "select item_type_id,item_name from encounter_track_reading_values where reading_id=@reading;";
+            existingCommand.Parameters.AddWithValue("reading", readingId);
+            await using var reader = await existingCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) existingItems[reader.GetInt32(0)] = reader.GetString(1);
+        }
+        if (existingItems.Count == 0) return null;
+        var submitted = request.Values ?? [];
+        if (submitted.Count != existingItems.Count || submitted.Select(value => value.ItemTypeId).Distinct().Count() != submitted.Count || submitted.Any(value => !existingItems.ContainsKey(value.ItemTypeId))) throw new ArgumentException("An edited reading must include every originally captured item exactly once.");
+        var values = submitted.ToDictionary(value => value.ItemTypeId, value => (value.Value ?? string.Empty).Trim());
+        if (values.Values.Any(value => value.Length > 1000)) throw new ArgumentException("Track values must be 1,000 characters or fewer.");
+        if (values.Values.All(string.IsNullOrWhiteSpace)) throw new ArgumentException("Enter a value for at least one item before saving the reading.");
+        string recordedBy;
+        DateTimeOffset updatedAt;
+        await using (var updateReading = connection.CreateCommand())
+        {
+            updateReading.Transaction = transaction;
+            updateReading.CommandText = "update encounter_track_readings set recorded_at=@at,updated_at=now(),updated_by=@user where reading_id=@reading returning recorded_by,updated_at;";
+            updateReading.Parameters.AddWithValue("at", request.RecordedAt);
+            updateReading.Parameters.AddWithValue("user", username);
+            updateReading.Parameters.AddWithValue("reading", readingId);
+            await using var reader = await updateReading.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            recordedBy = reader.GetString(0);
+            updatedAt = reader.GetFieldValue<DateTimeOffset>(1);
+        }
+        foreach (var pair in values)
+        {
+            await using var updateValue = connection.CreateCommand();
+            updateValue.Transaction = transaction;
+            updateValue.CommandText = "update encounter_track_reading_values set value=@value where reading_id=@reading and item_type_id=@item;";
+            updateValue.Parameters.AddWithValue("value", pair.Value);
+            updateValue.Parameters.AddWithValue("reading", readingId);
+            updateValue.Parameters.AddWithValue("item", pair.Key);
+            await updateValue.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return new TrackAnythingReading(readingId, request.RecordedAt.ToString("O"), recordedBy, updatedAt.ToString("O"), username, existingItems.Select(pair => new TrackAnythingReadingValue(pair.Key, pair.Value, values[pair.Key])).ToList());
     }
 
     private static async Task<List<TrackAnythingDefinition>> GetDefinitionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -186,6 +235,16 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
         command.Transaction = transaction;
         command.CommandText = "select exists(select 1 from encounters where encounter=@encounter);";
         command.Parameters.AddWithValue("encounter", encounter);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> ReadingBelongsToRecordAsync(NpgsqlConnection connection, Guid recordId, Guid readingId, CancellationToken cancellationToken, NpgsqlTransaction transaction)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select exists(select 1 from encounter_track_readings where reading_id=@reading and record_id=@record);";
+        command.Parameters.AddWithValue("reading", readingId);
+        command.Parameters.AddWithValue("record", recordId);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 

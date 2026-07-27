@@ -1720,13 +1720,14 @@ export async function deleteTrackAnything(sessionId: string, id: number): Promis
 export type EncounterTrackDefinition = { id: number; name: string; description?: string | null; items: TrackAnythingItem[] }
 export type EncounterTrackRecord = { recordId: string; encounter: number; trackTypeId: number; trackName: string; createdAt: string; createdBy: string }
 export type EncounterTrackReadingValue = { itemTypeId: number; itemName: string; value: string }
-export type EncounterTrackReading = { readingId: string; recordedAt: string; recordedBy: string; values: EncounterTrackReadingValue[] }
+export type EncounterTrackReading = { readingId: string; recordedAt: string; recordedBy: string; updatedAt?: string | null; updatedBy?: string | null; values: EncounterTrackReadingValue[] }
 export type EncounterTrackCatalog = { encounter: number; availableTracks: EncounterTrackDefinition[]; records: EncounterTrackRecord[] }
 export type EncounterTrackRecordDetail = { record: EncounterTrackRecord; items: TrackAnythingItem[]; readings: EncounterTrackReading[] }
 export async function getEncounterTracks(sessionId: string, encounter: number): Promise<EncounterTrackCatalog> { return clinicianGet(sessionId, `/api/encounters/${encounter}/tracks`) }
 export async function createEncounterTrack(sessionId: string, encounter: number, trackTypeId: number): Promise<EncounterTrackRecord> { return clinicianPost(sessionId, `/api/encounters/${encounter}/tracks`, { trackTypeId }) }
 export async function getEncounterTrack(sessionId: string, encounter: number, recordId: string): Promise<EncounterTrackRecordDetail> { return clinicianGet(sessionId, `/api/encounters/${encounter}/tracks/${recordId}`) }
 export async function addEncounterTrackReading(sessionId: string, encounter: number, recordId: string, input: { recordedAt?: string; values: { itemTypeId: number; value: string }[] }): Promise<EncounterTrackReading> { return clinicianPost(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings`, input) }
+export async function updateEncounterTrackReading(sessionId: string, encounter: number, recordId: string, readingId: string, input: { recordedAt: string; values: { itemTypeId: number; value: string }[] }): Promise<EncounterTrackReading> { return clinicianPut(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings/${readingId}`, input) }
 export type PatientEducationResource = { key: string; title: string; searchTemplate: string; active: boolean }
 export async function getPatientEducationResources(sessionId: string): Promise<{ resources: PatientEducationResource[] }> { return clinicianGet(sessionId, '/api/patient-education/resources') }
 export async function searchPatientEducation(sessionId: string, resourceKey: string, searchText: string): Promise<{ url: string }> { return clinicianPost(sessionId, '/api/patient-education/search', { resourceKey, searchText }) }

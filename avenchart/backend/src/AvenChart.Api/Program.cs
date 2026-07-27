@@ -1549,6 +1549,14 @@ encounters.MapPost("/{encounter:int}/tracks/{recordId:guid}/readings", async (Tr
     .WithName("AddEncounterTrackReading")
     .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
+encounters.MapPut("/{encounter:int}/tracks/{recordId:guid}/readings/{readingId:guid}", async (TrackAnythingRepository repository, AuthRepository authRepository, HttpContext httpContext, int encounter, Guid recordId, Guid readingId, TrackAnythingReadingUpdateRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return (await repository.UpdateReadingAsync(encounter, recordId, readingId, request, session.Username, cancellationToken)) is { } reading ? Results.Ok(reading) : Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+})
+    .WithName("UpdateEncounterTrackReading")
+    .AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+
 encounters.MapGet("/{encounter:int}", async (
         EncounterRepository repository,
         int encounter,

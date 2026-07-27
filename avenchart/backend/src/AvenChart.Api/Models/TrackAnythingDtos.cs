@@ -7,7 +7,8 @@ public sealed record TrackAnythingEncounterRecord(Guid RecordId, int Encounter, 
 public sealed record TrackAnythingEncounterCatalog(int Encounter, IReadOnlyList<TrackAnythingDefinition> AvailableTracks, IReadOnlyList<TrackAnythingEncounterRecord> Records);
 public sealed record TrackAnythingEncounterRecordCreateRequest(int TrackTypeId);
 public sealed record TrackAnythingReadingValue(int ItemTypeId, string ItemName, string Value);
-public sealed record TrackAnythingReading(Guid ReadingId, string RecordedAt, string RecordedBy, IReadOnlyList<TrackAnythingReadingValue> Values);
+public sealed record TrackAnythingReading(Guid ReadingId, string RecordedAt, string RecordedBy, string? UpdatedAt, string? UpdatedBy, IReadOnlyList<TrackAnythingReadingValue> Values);
 public sealed record TrackAnythingEncounterRecordDetail(TrackAnythingEncounterRecord Record, IReadOnlyList<TrackAnythingItem> Items, IReadOnlyList<TrackAnythingReading> Readings);
 public sealed record TrackAnythingReadingValueRequest(int ItemTypeId, string? Value);
 public sealed record TrackAnythingReadingCreateRequest(DateTimeOffset? RecordedAt, IReadOnlyList<TrackAnythingReadingValueRequest> Values);
+public sealed record TrackAnythingReadingUpdateRequest(DateTimeOffset RecordedAt, IReadOnlyList<TrackAnythingReadingValueRequest> Values);

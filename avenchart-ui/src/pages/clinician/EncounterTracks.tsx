@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { ClipboardPlus, History, Plus, Save, Search } from 'lucide-react'
+import { ClipboardPlus, History, Pencil, Plus, Save, Search } from 'lucide-react'
 import {
   addEncounterTrackReading,
   createEncounterTrack,
   getEncounterTrack,
   getEncounterTracks,
+  updateEncounterTrackReading,
   type EncounterTrackCatalog,
   type EncounterTrackRecordDetail,
 } from '../../api.ts'
@@ -22,6 +23,7 @@ export default function EncounterTracks() {
   const [detail, setDetail] = useState<EncounterTrackRecordDetail>()
   const [recordedAt, setRecordedAt] = useState(localNow)
   const [values, setValues] = useState<Record<number, string>>({})
+  const [editingReadingId, setEditingReadingId] = useState<string>()
   const [loading, setLoading] = useState(false)
 
   const encounter = Number(encounterText)
@@ -35,7 +37,7 @@ export default function EncounterTracks() {
       setCatalog(nextCatalog)
       const nextRecordId = recordId ?? detail?.record.recordId ?? nextCatalog.records[0]?.recordId
       if (nextRecordId) await selectRecord(nextRecordId)
-      else { setDetail(undefined); setValues({}) }
+      else { setDetail(undefined); setValues({}); setEditingReadingId(undefined) }
     } catch {
       setCatalog(undefined); setDetail(undefined); setValues({}); showToast('Encounter tracks could not be loaded.', 'error')
     } finally { setLoading(false) }
@@ -48,6 +50,7 @@ export default function EncounterTracks() {
       setDetail(nextDetail)
       setValues(Object.fromEntries(nextDetail.items.map((item) => [item.id, ''])))
       setRecordedAt(localNow())
+      setEditingReadingId(undefined)
     } catch { showToast('Track record history could not be loaded.', 'error') }
   }
 
@@ -64,13 +67,23 @@ export default function EncounterTracks() {
   async function saveReading() {
     if (!detail) return
     try {
-      await addEncounterTrackReading(session.sessionId, encounter, detail.record.recordId, {
+      const input = {
         recordedAt: new Date(recordedAt).toISOString(),
         values: detail.items.map((item) => ({ itemTypeId: item.id, value: values[item.id] ?? '' })),
-      })
+      }
+      if (editingReadingId) await updateEncounterTrackReading(session.sessionId, encounter, detail.record.recordId, editingReadingId, input)
+      else await addEncounterTrackReading(session.sessionId, encounter, detail.record.recordId, input)
       await selectRecord(detail.record.recordId)
-      showToast('Timestamped track reading saved.', 'success')
-    } catch { showToast('Enter at least one value and include every active item.', 'error') }
+      showToast(editingReadingId ? 'Track reading updated.' : 'Timestamped track reading saved.', 'success')
+    } catch { showToast('Enter at least one value and include every captured item.', 'error') }
+  }
+
+  function editReading(readingId: string) {
+    const reading = detail?.readings.find((candidate) => candidate.readingId === readingId)
+    if (!reading) return
+    setEditingReadingId(reading.readingId)
+    setRecordedAt(reading.recordedAt.slice(0, 16))
+    setValues(Object.fromEntries(reading.values.map((value) => [value.itemTypeId, value.value])))
   }
 
   return <div className="clinician-page">
@@ -102,19 +115,19 @@ export default function EncounterTracks() {
       </section>
       {detail ? <>
         <section className="cl-card">
-          <h2 className="cl-card-title">{detail.record.trackName} reading</h2>
+          <h2 className="cl-card-title">{detail.record.trackName} {editingReadingId ? 'reading correction' : 'reading'}</h2>
           <p className="cl-table-sub">Attached by {detail.record.createdBy} on {new Date(detail.record.createdAt).toLocaleString()}.</p>
           {detail.items.length === 0 ? <p className="cl-empty-text">This track has no active items. Configure child items before recording values.</p> : <>
             <div className="cl-admin-form-grid">
               <label className="cl-admin-field"><span>Date and time</span><input className="ne-input" type="datetime-local" value={recordedAt} onChange={(event) => setRecordedAt(event.target.value)} /></label>
               {detail.items.map((item) => <label className="cl-admin-field" key={item.id}><span>{item.name}</span><input className="ne-input" value={values[item.id] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [item.id]: event.target.value }))} /></label>)}
             </div>
-            <button className="cl-btn-primary" onClick={() => void saveReading()}><Save size={15} /> Save reading</button>
+            <button className="cl-btn-primary" onClick={() => void saveReading()}><Save size={15} /> {editingReadingId ? 'Update reading' : 'Save reading'}</button>
           </>}
         </section>
         <section className="cl-card">
           <h2 className="cl-card-title"><History size={16} /> Reading history</h2>
-          {detail.readings.length === 0 ? <p className="cl-empty-text">No readings recorded yet.</p> : <table className="cl-table"><thead><tr><th>When</th><th>Recorded by</th><th>Values</th></tr></thead><tbody>{detail.readings.map((reading) => <tr key={reading.readingId}><td>{new Date(reading.recordedAt).toLocaleString()}</td><td>{reading.recordedBy}</td><td>{reading.values.map((value) => <p className="cl-table-sub" key={value.itemTypeId}>{value.itemName}: {value.value || '—'}</p>)}</td></tr>)}</tbody></table>}
+          {detail.readings.length === 0 ? <p className="cl-empty-text">No readings recorded yet.</p> : <table className="cl-table"><thead><tr><th>When</th><th>Recorded by</th><th>Values</th><th /></tr></thead><tbody>{detail.readings.map((reading) => <tr key={reading.readingId}><td>{new Date(reading.recordedAt).toLocaleString()}{reading.updatedAt ? <p className="cl-table-sub">Updated by {reading.updatedBy} · {new Date(reading.updatedAt).toLocaleString()}</p> : null}</td><td>{reading.recordedBy}</td><td>{reading.values.map((value) => <p className="cl-table-sub" key={value.itemTypeId}>{value.itemName}: {value.value || '—'}</p>)}</td><td><button className="cl-icon-button" onClick={() => editReading(reading.readingId)} aria-label="Edit reading"><Pencil size={15} /></button></td></tr>)}</tbody></table>}
         </section>
       </> : null}
     </> : null}
