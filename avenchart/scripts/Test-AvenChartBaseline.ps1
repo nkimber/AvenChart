@@ -10380,6 +10380,12 @@ try {
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Missing witness"; idempotencyKey = "missing-witness-$custodySuffix" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $missingWitnessRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
     $generalShortcutRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/transactions" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ lotId = $receipt.lot.lotId; transactionType = "consumption"; quantity = 1; reason = "Generic shortcut" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $generalShortcutRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $controlledCount = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ locationId = $custodySource.locationId; countType = "cycle"; movementLockActive = $true; reason = "Smoke controlled count"; idempotencyKey = "count-$custodySuffix" } | ConvertTo-Json) -TimeoutSec 20
+    $countLockRejected = $false
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-custody-movements" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ action = "waste"; lotId = $receipt.lot.lotId; quantity = 1; sourceLocationId = $custodySource.locationId; reason = "Locked count movement"; idempotencyKey = "locked-count-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countLockRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
+    $controlledCountSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ counterSessionId = $custodyWitnessSessionId; reason = "Smoke independently observed variance"; idempotencyKey = "count-submit-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
+    $countResubmitRejected = $false
+    try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)/submit" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ counterSessionId = $custodyWitnessSessionId; reason = "Retry submitted count"; idempotencyKey = "count-retry-$custodySuffix"; observations = @(@{ lotId = $receipt.lot.lotId; observedQuantity = 6 }) } | ConvertTo-Json -Depth 5) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countResubmitRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
     Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($custodyItem.itemId)/controlled-classification" -Method Put -Headers $custodyHeaders -ContentType "application/json" -Body (@{ scheduleCode = $null } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
     $custodyActions = @($custodyHistory.events | ForEach-Object { $_.action })
     $custodyPassed = $receipt.event.action -eq "receipt" `
@@ -10391,8 +10397,16 @@ try {
         -and $null -ne $receipt.event.witnessedAt `
         -and $missingIdempotencyRejected `
         -and $missingWitnessRejected `
-        -and $generalShortcutRejected
-    Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result $(if ($custodyPassed) { "passed" } else { "failed" }) -Details @{ lotId = $receipt.lot.lotId; destinationLotId = $transfer.counterpartyLot.lotId; sourceQuantity = $correction.lot.quantityOnHand; destinationQuantity = $transfer.counterpartyLot.quantityOnHand; actions = $custodyActions; witness = $receipt.event.witnessUsername }
+        -and $generalShortcutRejected `
+        -and $controlledCountSubmitted.status -eq "discrepancy_open" `
+        -and $controlledCountSubmitted.movementLockActive -eq $false `
+        -and $controlledCountSubmitted.lines[0].expectedQuantity -eq 7 `
+        -and $controlledCountSubmitted.lines[0].observedQuantity -eq 6 `
+        -and $controlledCountSubmitted.lines[0].varianceQuantity -eq -1 `
+        -and $null -ne $controlledCountSubmitted.lines[0].discrepancyId `
+        -and $countLockRejected `
+        -and $countResubmitRejected
+    Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result $(if ($custodyPassed) { "passed" } else { "failed" }) -Details @{ lotId = $receipt.lot.lotId; destinationLotId = $transfer.counterpartyLot.lotId; sourceQuantity = $correction.lot.quantityOnHand; destinationQuantity = $transfer.counterpartyLot.quantityOnHand; actions = $custodyActions; witness = $receipt.event.witnessUsername; countSessionId = $controlledCount.sessionId; countStatus = $controlledCountSubmitted.status }
 }
 catch {
     Add-Check -Name "inventory controlled-substance perpetual custody movements" -Result "failed" -Details $_.Exception.Message

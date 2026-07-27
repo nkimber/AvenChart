@@ -137,6 +137,12 @@ public sealed record InventoryControlledCustodyLotHistoryResponse(
     string ScheduleCode,
     IReadOnlyList<InventoryControlledCustodyEvent> Events);
 
+public sealed record InventoryControlledCountSessionCreateRequest(Guid LocationId, string CountType, bool MovementLockActive, string Reason, string IdempotencyKey);
+public sealed record InventoryControlledCountObservation(int LotId, decimal ObservedQuantity);
+public sealed record InventoryControlledCountSubmitRequest(Guid CounterSessionId, string Reason, string IdempotencyKey, IReadOnlyList<InventoryControlledCountObservation> Observations);
+public sealed record InventoryControlledCountLine(Guid LineId, int LotId, string LotNumber, string ItemCode, decimal ExpectedQuantity, decimal? ObservedQuantity, decimal? VarianceQuantity, Guid? DiscrepancyId, string? DiscrepancyStatus);
+public sealed record InventoryControlledCountSession(Guid SessionId, Guid LocationId, string LocationCode, string LocationName, string CountType, string Status, bool MovementLockActive, string Reason, string StartedBy, string StartedAt, string? SubmittedBy, string? SubmittedAt, string? CounterUsername, IReadOnlyList<InventoryControlledCountLine> Lines);
+
 public sealed record InventoryPrescriptionDispenseRequest(
     string PrescriptionId,
     decimal Quantity,

@@ -3262,6 +3262,21 @@ inventory.MapGet("/controlled-custody-lots/{lotId:int}/history", async (int lotI
     .WithName("GetInventoryControlledCustodyLotHistory")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+inventory.MapPost("/controlled-count-sessions", async (InventoryControlledCountSessionCreateRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken);var count=await repository.CreateControlledCountSessionAsync(request,session.Username,cancellationToken);return Results.Created($"/api/inventory/controlled-count-sessions/{count.SessionId}",count); } catch(ArgumentException exception){return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledCount"]=[exception.Message] });} })
+    .WithName("CreateInventoryControlledCountSession")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
+inventory.MapGet("/controlled-count-sessions/{sessionId:guid}", async (Guid sessionId, InventoryRepository repository, CancellationToken cancellationToken) =>
+{ try { return Results.Ok(await repository.GetControlledCountSessionAsync(sessionId,cancellationToken)); } catch(ArgumentException exception){return Results.NotFound(new { error=exception.Message });} })
+    .WithName("GetInventoryControlledCountSession")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+inventory.MapPost("/controlled-count-sessions/{sessionId:guid}/submit", async (Guid sessionId, InventoryControlledCountSubmitRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken);var counter=await authRepository.GetCurrentSessionAsync(request.CounterSessionId,cancellationToken);if(!counter.Authenticated)throw new ArgumentException("The controlled count counter session is not active.");if(string.Equals(session.Username,counter.Username,StringComparison.OrdinalIgnoreCase))throw new ArgumentException("The controlled count counter must be a different authenticated user.");return Results.Ok(await repository.SubmitControlledCountSessionAsync(sessionId,request,session.Username,counter.Username,cancellationToken)); } catch(ArgumentException exception){return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledCount"]=[exception.Message] });} })
+    .WithName("SubmitInventoryControlledCountSession")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
 inventory.MapPost("/controlled-locations", async (InventoryControlledLocationMutationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/controlled-locations", await repository.CreateControlledLocationAsync(request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledLocation"] = [exception.Message] }); } })
     .WithName("CreateInventoryControlledLocation")
