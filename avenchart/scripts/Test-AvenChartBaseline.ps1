@@ -9916,6 +9916,21 @@ catch {
 }
 
 try {
+    $settingHeaders = Get-AdministrationHeaders
+    $settingHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/history" -Method Get -Headers $settingHeaders -TimeoutSec 20
+    $settingSmokeValue = "Revision smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name" -Method Put -Headers $settingHeaders -ContentType "application/json" -Body (@{ value = $settingSmokeValue } | ConvertTo-Json) -TimeoutSec 20 | Out-Null
+    $settingHistoryChanged = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/history" -Method Get -Headers $settingHeaders -TimeoutSec 20
+    $baselineRevision = @($settingHistoryChanged.revisions | Where-Object { $_.value -eq $settingHistoryBefore.setting.value }) | Select-Object -First 1
+    $settingHistoryRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/revisions/$($baselineRevision.revisionId)/rollback" -Method Post -Headers $settingHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $settingRevisionPassed = @($settingHistoryBefore.revisions).Count -gt 0 -and @($settingHistoryChanged.revisions).Count -gt @($settingHistoryBefore.revisions).Count -and $settingHistoryRestored.setting.value -eq $settingHistoryBefore.setting.value -and $settingHistoryRestored.revisions[0].action -eq "rolled-back" -and $settingHistoryRestored.revisions[0].username -eq "admin"
+    Add-Check -Name "practice setting revision and rollback history" -Result $(if ($settingRevisionPassed) { "passed" } else { "failed" }) -Details @{ revisionId = $baselineRevision.revisionId; restoredValue = $settingHistoryRestored.setting.value; action = $settingHistoryRestored.revisions[0].action }
+}
+catch {
+    Add-Check -Name "practice setting revision and rollback history" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $templateHeaders = Get-AdministrationHeaders
     $templateName = "Smoke template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
     $template = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $templateHeaders -ContentType "application/json" -Body (@{ name = $templateName; content = "Dear ***NAME*** (***DOB***), ID ***PATIENT_ID***"; active = $true } | ConvertTo-Json) -TimeoutSec 20

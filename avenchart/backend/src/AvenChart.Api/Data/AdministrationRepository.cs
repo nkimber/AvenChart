@@ -229,9 +229,51 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var existing = connection.CreateCommand(); existing.Transaction = transaction; existing.CommandText = "select setting_value from practice_settings where setting_key = @key for update;"; existing.Parameters.AddWithValue("key", key);
         var prior = await existing.ExecuteScalarAsync(cancellationToken) as string ?? throw new ArgumentException("The requested practice setting was not found.");
-        if (prior != normalized) { await using var update = connection.CreateCommand(); update.Transaction = transaction; update.CommandText = "update practice_settings set setting_value=@value, updated_at=now(), updated_by=@username where setting_key=@key; insert into practice_setting_audit_events(event_id,setting_key,prior_value,new_value,occurred_at,username) values(@eventId,@key,@prior,@value,now(),@username);"; update.Parameters.AddWithValue("key", key); update.Parameters.AddWithValue("value", normalized); update.Parameters.AddWithValue("prior", prior); update.Parameters.AddWithValue("username", username); update.Parameters.AddWithValue("eventId", Guid.NewGuid()); await update.ExecuteNonQueryAsync(cancellationToken); }
+        if (prior != normalized) await WritePracticeSettingRevisionAsync(connection, transaction, key, prior, normalized, username, "updated", null, cancellationToken);
         await transaction.CommitAsync(cancellationToken); return await GetPracticeSettingsAsync(cancellationToken);
     }
+
+    public async Task<PracticeSettingHistoryResponse> GetPracticeSettingHistoryAsync(string key, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var setting = await GetPracticeSettingAsync(connection, key, cancellationToken) ?? throw new ArgumentException("The requested practice setting was not found.");
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select revision_id,value,prior_value,action,restored_from_revision_id,occurred_at,username from practice_setting_revisions where setting_key=@key order by occurred_at desc,revision_id desc;";
+        command.Parameters.AddWithValue("key", key);
+        var revisions = new List<PracticeSettingRevision>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) revisions.Add(new(reader.GetInt64(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.GetFieldValue<DateTimeOffset>(5).ToString("O"), reader.GetString(6)));
+        return new PracticeSettingHistoryResponse(setting, revisions);
+    }
+
+    public async Task<PracticeSettingHistoryResponse> RollbackPracticeSettingAsync(string key, long revisionId, string username, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var targetValue = await GetPracticeSettingRevisionValueAsync(connection, transaction, key, revisionId, cancellationToken) ?? throw new ArgumentException("The requested revision was not found for this setting.");
+        ValidatePracticeSettingValue(key, targetValue);
+        var prior = await GetPracticeSettingValueForUpdateAsync(connection, transaction, key, cancellationToken) ?? throw new ArgumentException("The requested practice setting was not found.");
+        if (prior != targetValue) await WritePracticeSettingRevisionAsync(connection, transaction, key, prior, targetValue, username, "rolled-back", revisionId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetPracticeSettingHistoryAsync(key, cancellationToken);
+    }
+
+    private static async Task<PracticeSettingItem?> GetPracticeSettingAsync(NpgsqlConnection connection, string key, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.CommandText = "select setting_key,setting_value,value_type,updated_at,updated_by from practice_settings where setting_key=@key;"; command.Parameters.AddWithValue("key", key);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadPracticeSetting(reader) : null;
+    }
+
+    private static async Task<string?> GetPracticeSettingValueForUpdateAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, CancellationToken cancellationToken)
+    { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "select setting_value from practice_settings where setting_key=@key for update;"; command.Parameters.AddWithValue("key", key); return await command.ExecuteScalarAsync(cancellationToken) as string; }
+    private static async Task<string?> GetPracticeSettingRevisionValueAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, long revisionId, CancellationToken cancellationToken)
+    { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "select value from practice_setting_revisions where setting_key=@key and revision_id=@revision;"; command.Parameters.AddWithValue("key", key); command.Parameters.AddWithValue("revision", revisionId); return await command.ExecuteScalarAsync(cancellationToken) as string; }
+    private static async Task WritePracticeSettingRevisionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, string prior, string value, string username, string action, long? restoredFromRevisionId, CancellationToken cancellationToken)
+    { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "update practice_settings set setting_value=@value,updated_at=now(),updated_by=@username where setting_key=@key; insert into practice_setting_audit_events(event_id,setting_key,prior_value,new_value,occurred_at,username) values(@eventId,@key,@prior,@value,now(),@username); insert into practice_setting_revisions(setting_key,value,prior_value,action,restored_from_revision_id,occurred_at,username) values(@key,@value,@prior,@action,@restored,now(),@username);"; command.Parameters.AddWithValue("key", key); command.Parameters.AddWithValue("value", value); command.Parameters.AddWithValue("prior", prior); command.Parameters.AddWithValue("username", username); command.Parameters.AddWithValue("eventId", Guid.NewGuid()); command.Parameters.AddWithValue("action", action); command.Parameters.AddWithValue("restored", (object?)restoredFromRevisionId ?? DBNull.Value); await command.ExecuteNonQueryAsync(cancellationToken); }
+    private static PracticeSettingItem ReadPracticeSetting(NpgsqlDataReader reader) => new(reader.GetString(0), reader.GetString(0) switch { "practice.name" => "Practice name", "practice.default-facility-id" => "Default facility", _ => "Time zone" }, reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3).ToString("O"), reader.GetString(4));
+    private static void ValidatePracticeSettingValue(string key, string value)
+    { if (key is not ("practice.name" or "practice.default-facility-id" or "practice.time-zone")) throw new ArgumentException("The requested practice setting is not mutable."); var normalized = value.Trim(); if (string.IsNullOrWhiteSpace(normalized)) throw new ArgumentException("A setting value is required."); if (key == "practice.default-facility-id" && (!int.TryParse(normalized, out var facilityId) || facilityId <= 0)) throw new ArgumentException("Default facility must be a valid facility identifier."); if (key == "practice.time-zone" && !TimeZoneInfo.GetSystemTimeZones().Any(zone => zone.Id == normalized)) throw new ArgumentException("Time zone must be a supported IANA or Windows time-zone identifier."); }
 
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {

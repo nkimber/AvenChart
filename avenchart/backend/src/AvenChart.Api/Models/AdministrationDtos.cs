@@ -185,6 +185,8 @@ public sealed record PracticeSettingsResponse(
     IReadOnlyList<PracticeSettingItem> Settings);
 
 public sealed record PracticeSettingUpdateRequest(string Value);
+public sealed record PracticeSettingRevision(long RevisionId, string Value, string? PriorValue, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
+public sealed record PracticeSettingHistoryResponse(PracticeSettingItem Setting, IReadOnlyList<PracticeSettingRevision> Revisions);
 
 public sealed record CodingCatalogItem(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string UpdatedAt, string UpdatedBy);
 public sealed record CodingCatalogResponse(IReadOnlyList<CodingCatalogItem> Catalogs);

@@ -20,6 +20,7 @@ import {
   getModuleCatalog,
   getPhiAccessAudit,
   getPracticeSettings,
+  getPracticeSettingHistory,
   grantAdministrationAccessMembership,
   grantAdministrationAccessPermission,
   revokeAdministrationAccessMembership,
@@ -29,6 +30,7 @@ import {
   updateAdministrationUser,
   updateCodingCatalog,
   updatePracticeSetting,
+  rollbackPracticeSetting,
   saveFormLayout,
   saveFormLayoutField,
   saveFormLayoutGroup,
@@ -43,6 +45,7 @@ import {
   type AdministrationAccessGroupPermissionItem,
   type AdministrationAccessUserMembershipItem,
   type PhiAccessAuditResponse,
+  type PracticeSettingHistory,
   type AdministrationPortalProfileReviewRequest,
   type AdministrationUserItem,
   type AdministrationUserMutationInput,
@@ -146,6 +149,7 @@ export default function AdminDirectory() {
   const [tab, setTab] = useState<'users' | 'facilities' | 'access' | 'reviews' | 'audit' | 'configuration' | 'layouts' | 'rules' | 'modules' | 'apiClients'>('users')
   const [configuration, setConfiguration] = useState<ConfigurationCatalogItem[]>([])
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettingItem[]>([])
+  const [practiceSettingHistory, setPracticeSettingHistory] = useState<PracticeSettingHistory | null>(null)
   const [codingCatalogs, setCodingCatalogs] = useState<CodingCatalogItem[]>([])
   const [codingCatalogForm, setCodingCatalogForm] = useState<CodingCatalogForm>(() => emptyCodingCatalogForm())
   const [savingCodingCatalog, setSavingCodingCatalog] = useState(false)
@@ -197,6 +201,8 @@ export default function AdminDirectory() {
       .then((data) => setAuditState({ status: 'ready', data }))
       .catch((err) => setAuditState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load PHI access audit.' }))
   }, [session.sessionId, tab])
+  async function openPracticeSettingHistory(key: string) { try { setPracticeSettingHistory(await getPracticeSettingHistory(session.sessionId, key)) } catch { showToast('Could not load setting history.', 'error') } }
+  async function rollbackPracticeSettingRevision(revisionId: number) { if (!practiceSettingHistory || !window.confirm(`Restore ${practiceSettingHistory.setting.label} to the selected historical value?`)) return; try { const result = await rollbackPracticeSetting(session.sessionId, practiceSettingHistory.setting.key, revisionId); setPracticeSettingHistory(result); setPracticeSettings((await getPracticeSettings(session.sessionId)).settings); showToast('Practice setting restored.', 'success') } catch { showToast('Could not restore the practice setting.', 'error') } }
   useEffect(() => { if (tab === 'layouts') { getFormLayouts(session.sessionId).then((result) => setLayouts(result.layouts)).catch(() => showToast('Could not load form layouts.', 'error')); getFormOptionLists(session.sessionId).then((result) => setFormOptionLists(result.lists)).catch(() => showToast('Could not load form option lists.', 'error')) } }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'rules') getClinicalAlertRules(session.sessionId).then((result) => setAlertRules(result.rules)).catch(() => showToast('Could not load alert rules.', 'error')) }, [session.sessionId, tab])
   useEffect(() => { if (tab === 'modules') getModuleCatalog(session.sessionId).then((result) => setModules(result.modules)).catch(() => showToast('Could not load modules.', 'error')) }, [session.sessionId, tab])
@@ -710,7 +716,8 @@ export default function AdminDirectory() {
               <section className="cl-card">
                 <h2 className="cl-card-title">Practice settings</h2>
                 <p className="clinician-page-subtitle">Non-secret legacy-style globals save only when changed and retain an authenticated audit event.</p>
-                {practiceSettings.map((item) => <div className="form-row" key={item.key}><div className="field" style={{ flex: 1 }}><label className="label">{item.label}</label><input className="input" defaultValue={item.value} onBlur={async (event) => { if (event.target.value === item.value) return; try { const result = await updatePracticeSetting(session.sessionId, item.key, event.target.value); setPracticeSettings(result.settings); showToast(`${item.label} saved.`, 'success') } catch { event.target.value = item.value; showToast(`Could not save ${item.label}.`, 'error') } }} /></div><p className="cl-empty-text">{item.updatedBy}</p></div>)}
+                {practiceSettings.map((item) => <div className="form-row" key={item.key}><div className="field" style={{ flex: 1 }}><label className="label">{item.label}</label><input className="input" defaultValue={item.value} onBlur={async (event) => { if (event.target.value === item.value) return; try { const result = await updatePracticeSetting(session.sessionId, item.key, event.target.value); setPracticeSettings(result.settings); showToast(`${item.label} saved.`, 'success') } catch { event.target.value = item.value; showToast(`Could not save ${item.label}.`, 'error') } }} /></div><p className="cl-empty-text">{item.updatedBy}</p><button className="cl-btn-secondary" type="button" onClick={() => void openPracticeSettingHistory(item.key)}>History</button></div>)}
+                {practiceSettingHistory ? <div className="cl-card" style={{ marginTop: 12 }}><h3 className="cl-card-title">{practiceSettingHistory.setting.label} revisions</h3><table className="cl-table"><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Value</th><th /></tr></thead><tbody>{practiceSettingHistory.revisions.map((revision) => <tr key={revision.revisionId}><td>{new Date(revision.occurredAt).toLocaleString()}</td><td>{revision.username}</td><td>{revision.action}</td><td>{revision.value}</td><td><button className="cl-btn-secondary" type="button" disabled={revision.value === practiceSettingHistory.setting.value} onClick={() => void rollbackPracticeSettingRevision(revision.revisionId)}>Restore</button></td></tr>)}</tbody></table></div> : null}
 
                 <h2 className="cl-card-title">Coding catalogs</h2>
                 <p className="clinician-page-subtitle">Legacy code types are ordered, active or inactive, and carry claim, fee, and modifier capabilities. Inactivation preserves the catalog key and its historical references.</p>
