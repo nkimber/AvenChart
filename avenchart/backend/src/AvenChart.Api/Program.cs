@@ -3228,6 +3228,30 @@ inventory.MapGet("/controlled-substances", async (InventoryRepository repository
     .WithName("GetInventoryControlledSubstanceCatalog")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+inventory.MapPost("/controlled-custody-movements", async (InventoryControlledCustodyMovementRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var movement = await repository.CreateControlledCustodyMovementAsync(request, session.Username, cancellationToken);
+        return Results.Created($"/api/inventory/controlled-custody-movements/{movement.Event.EventId}", movement);
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledCustodyMovement"] = [exception.Message] });
+    }
+})
+    .WithName("CreateInventoryControlledCustodyMovement")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
+inventory.MapGet("/controlled-custody-lots/{lotId:int}/history", async (int lotId, InventoryRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetControlledCustodyLotHistoryAsync(lotId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+})
+    .WithName("GetInventoryControlledCustodyLotHistory")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 inventory.MapPost("/controlled-locations", async (InventoryControlledLocationMutationRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/inventory/controlled-locations", await repository.CreateControlledLocationAsync(request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["controlledLocation"] = [exception.Message] }); } })
     .WithName("CreateInventoryControlledLocation")

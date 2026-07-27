@@ -179,6 +179,262 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     private static string? NormalizeControlledSchedule(string? value) { var normalized=value?.Trim().ToUpperInvariant(); if (string.IsNullOrEmpty(normalized)) return null; if (normalized is not ("II" or "III" or "IV" or "V")) throw new ArgumentException("Controlled schedule must be II, III, IV, V, or blank to remove the classification."); return normalized; }
     private static async Task<bool> ItemExistsAsync(NpgsqlConnection connection,NpgsqlTransaction transaction,int itemId,CancellationToken cancellationToken){await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_items where item_id=@id and active=true);";command.Parameters.AddWithValue("id",itemId);return await command.ExecuteScalarAsync(cancellationToken) is true;}
 
+    public async Task<InventoryControlledCustodyMovementResponse> CreateControlledCustodyMovementAsync(InventoryControlledCustodyMovementRequest request, string username, CancellationToken cancellationToken)
+    {
+        var action = request.Action?.Trim().ToLowerInvariant();
+        if (action is not ("receipt" or "transfer" or "dispense" or "administration" or "return" or "waste" or "correction")
+            || request.Quantity <= 0 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("A supported controlled-custody action, positive quantity, and authenticated user are required.");
+
+        var reason = NormalizeOptional(request.Reason);
+        var idempotencyKey = NormalizeOptional(request.IdempotencyKey);
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 120)
+            throw new ArgumentException("A reason and an idempotency key of 120 characters or fewer are required for controlled custody movements.");
+        if (action == "receipt" && (request.ItemId is null || request.ItemId <= 0 || string.IsNullOrWhiteSpace(request.LotNumber) || request.LotNumber.Trim().Length > 80 || request.UnitCost is null || request.UnitCost < 0 || request.DestinationLocationId is null))
+            throw new ArgumentException("A receipt requires item, lot number, nonnegative unit cost, and destination controlled location.");
+        if (action != "receipt" && (request.LotId is null || request.LotId <= 0))
+            throw new ArgumentException("This controlled custody action requires a source or destination lot.");
+        if (action == "transfer" && (request.SourceLocationId is null || request.DestinationLocationId is null))
+            throw new ArgumentException("A controlled transfer requires source and destination locations.");
+        if (action is "dispense" or "administration" or "return")
+        {
+            if (string.IsNullOrWhiteSpace(request.PatientId) || request.Encounter is null || request.Encounter <= 0)
+                throw new ArgumentException("Controlled dispense, administration, and return require a patient and encounter.");
+        }
+        if (action == "return" && request.RelatedEventId is null)
+            throw new ArgumentException("A controlled return must reference its prior dispense or administration event.");
+        if (action == "correction" && (request.RelatedEventId is null || request.CorrectionDirection?.Trim().ToLowerInvariant() is not ("increase" or "decrease")))
+            throw new ArgumentException("A controlled correction requires a prior custody event and an increase or decrease direction.");
+
+        var occurredAt = DateTimeOffset.UtcNow;
+        var eventId = Guid.NewGuid();
+        var expiration = ParseOptionalDate(request.ExpirationDate, "Lot expiration must be an ISO date.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var duplicate = connection.CreateCommand())
+        {
+            duplicate.Transaction = transaction;
+            duplicate.CommandText = "select exists(select 1 from inventory_controlled_custody_events where idempotency_key=@key);";
+            duplicate.Parameters.AddWithValue("key", idempotencyKey);
+            if (await duplicate.ExecuteScalarAsync(cancellationToken) is true)
+                throw new ArgumentException("That controlled custody idempotency key has already been used.");
+        }
+
+        ControlledLotState primaryLot;
+        ControlledLotState? counterpartyLot = null;
+        ControlledLocationState? sourceLocation = null;
+        ControlledLocationState? destinationLocation = null;
+        decimal? sourceBefore = null;
+        decimal? sourceAfter = null;
+        decimal? destinationBefore = null;
+        decimal? destinationAfter = null;
+        decimal quantityDelta;
+
+        if (action == "receipt")
+        {
+            destinationLocation = await GetControlledLocationAsync(connection, transaction, request.DestinationLocationId!.Value, cancellationToken)
+                ?? throw new ArgumentException("The destination controlled location was not found or is inactive.");
+            var item = await GetControlledItemAsync(connection, transaction, request.ItemId!.Value, cancellationToken)
+                ?? throw new ArgumentException("The controlled inventory item was not found or is inactive.");
+            if (destinationLocation.FacilityId <= 0) throw new ArgumentException("The destination controlled location is invalid.");
+            var created = await GetOrCreateControlledLotAsync(connection, transaction, item, destinationLocation, request.LotNumber!.Trim(), expiration, request.UnitCost!.Value, request.Quantity, cancellationToken);
+            primaryLot = created.Lot;
+            destinationBefore = created.PriorQuantity;
+            destinationAfter = primaryLot.QuantityOnHand;
+            quantityDelta = request.Quantity;
+        }
+        else
+        {
+            primaryLot = await GetControlledLotAsync(connection, transaction, request.LotId!.Value, cancellationToken)
+                ?? throw new ArgumentException("The controlled lot was not found.");
+            if (primaryLot.QuantityOnHand < request.Quantity && action is not "return" && !(action == "correction" && string.Equals(request.CorrectionDirection?.Trim(), "increase", StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("The controlled custody movement would make the lot quantity negative.");
+
+            if (action == "transfer")
+            {
+                sourceLocation = await RequireMatchingControlledLocationAsync(connection, transaction, primaryLot, request.SourceLocationId!.Value, "source", cancellationToken);
+                destinationLocation = await GetControlledLocationAsync(connection, transaction, request.DestinationLocationId!.Value, cancellationToken)
+                    ?? throw new ArgumentException("The destination controlled location was not found or is inactive.");
+                if (sourceLocation.LocationId == destinationLocation.LocationId) throw new ArgumentException("The controlled transfer destination must differ from the source location.");
+                var created = await GetOrCreateControlledLotAsync(connection, transaction, primaryLot.Item, destinationLocation, primaryLot.LotNumber, primaryLot.ExpirationDate, primaryLot.UnitCost, request.Quantity, cancellationToken);
+                counterpartyLot = created.Lot;
+                sourceBefore = primaryLot.QuantityOnHand;
+                sourceAfter = primaryLot.QuantityOnHand - request.Quantity;
+                destinationBefore = created.PriorQuantity;
+                destinationAfter = counterpartyLot.QuantityOnHand;
+                await UpdateLotQuantityAsync(connection, transaction, primaryLot.LotId, sourceAfter.Value, cancellationToken);
+                primaryLot = primaryLot with { QuantityOnHand = sourceAfter.Value };
+                quantityDelta = -request.Quantity;
+            }
+            else
+            {
+                if (action is "dispense" or "administration" or "waste" || (action == "correction" && string.Equals(request.CorrectionDirection?.Trim(), "decrease", StringComparison.OrdinalIgnoreCase)))
+                    sourceLocation = await RequireMatchingControlledLocationAsync(connection, transaction, primaryLot, request.SourceLocationId ?? primaryLot.ControlledLocationId!.Value, "source", cancellationToken);
+                else
+                    destinationLocation = await RequireMatchingControlledLocationAsync(connection, transaction, primaryLot, request.DestinationLocationId ?? primaryLot.ControlledLocationId!.Value, "destination", cancellationToken);
+
+                if (action is "dispense" or "administration" or "return")
+                    await EnsureControlledEncounterAsync(connection, transaction, request.PatientId!.Trim(), request.Encounter!.Value, cancellationToken);
+                if (action == "return")
+                    await ValidateControlledReturnAsync(connection, transaction, request.RelatedEventId!.Value, primaryLot.LotId, request.PatientId!.Trim(), request.Encounter!.Value, cancellationToken);
+                if (action == "correction")
+                    await ValidateRelatedControlledEventAsync(connection, transaction, request.RelatedEventId!.Value, primaryLot.LotId, cancellationToken);
+
+                quantityDelta = action switch
+                {
+                    "return" => request.Quantity,
+                    "correction" when string.Equals(request.CorrectionDirection?.Trim(), "increase", StringComparison.OrdinalIgnoreCase) => request.Quantity,
+                    _ => -request.Quantity
+                };
+                var priorQuantity = primaryLot.QuantityOnHand;
+                var updatedQuantity = priorQuantity + quantityDelta;
+                if (updatedQuantity < 0) throw new ArgumentException("The controlled custody movement would make the lot quantity negative.");
+                await UpdateLotQuantityAsync(connection, transaction, primaryLot.LotId, updatedQuantity, cancellationToken);
+                primaryLot = primaryLot with { QuantityOnHand = updatedQuantity };
+                if (quantityDelta < 0) { sourceBefore = priorQuantity; sourceAfter = updatedQuantity; }
+                else { destinationBefore = priorQuantity; destinationAfter = updatedQuantity; }
+            }
+        }
+
+        await InsertControlledCustodyEventAsync(connection, transaction, eventId, action, primaryLot, counterpartyLot, sourceLocation, destinationLocation,
+            request.PatientId?.Trim(), request.Encounter, request.Quantity, quantityDelta, reason, request.RelatedEventId, idempotencyKey,
+            sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt, cancellationToken);
+
+        await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), primaryLot.LotId, action == "transfer" ? eventId : null, $"controlled_{action}", quantityDelta, reason, username, occurredAt, cancellationToken);
+        if (counterpartyLot is not null)
+            await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), counterpartyLot.LotId, eventId, "controlled_transfer", request.Quantity, reason, username, occurredAt, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        var custodyEvent = new InventoryControlledCustodyEvent(eventId, action, primaryLot.LotId, counterpartyLot?.LotId, primaryLot.Item.ItemId, primaryLot.Item.ItemCode,
+            primaryLot.Item.ScheduleCode, request.Quantity, quantityDelta, sourceLocation?.LocationId, destinationLocation?.LocationId, request.PatientId?.Trim(), request.Encounter,
+            reason, request.RelatedEventId, sourceBefore, sourceAfter, destinationBefore, destinationAfter, username, occurredAt.ToString("O", CultureInfo.InvariantCulture));
+        return new InventoryControlledCustodyMovementResponse(custodyEvent, primaryLot.ToInventoryLot(), counterpartyLot?.ToInventoryLot());
+    }
+
+    public async Task<InventoryControlledCustodyLotHistoryResponse> GetControlledCustodyLotHistoryAsync(int lotId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        ControlledLotState lot;
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            lot = await GetControlledLotAsync(connection, transaction, lotId, cancellationToken) ?? throw new ArgumentException("The controlled lot was not found.");
+            await transaction.CommitAsync(cancellationToken);
+        }
+        var events = new List<InventoryControlledCustodyEvent>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select e.event_id,e.action,e.lot_id,e.counterparty_lot_id,i.item_id,i.item_code,i.controlled_schedule,e.quantity,e.quantity_delta,e.source_location_id,e.destination_location_id,e.patient_id,e.encounter,e.reason,e.related_event_id,e.source_quantity_before,e.source_quantity_after,e.destination_quantity_before,e.destination_quantity_after,e.performed_by,e.occurred_at from inventory_controlled_custody_events e join inventory_lots l on l.lot_id=e.lot_id join inventory_items i on i.item_id=l.item_id where e.lot_id=@lotId or e.counterparty_lot_id=@lotId order by e.occurred_at desc,e.event_id desc;";
+        command.Parameters.AddWithValue("lotId", lotId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new InventoryControlledCustodyEvent(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2), reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.GetInt32(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetGuid(9), reader.IsDBNull(10) ? null : reader.GetGuid(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetInt32(12), reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetGuid(14), reader.IsDBNull(15) ? null : reader.GetDecimal(15), reader.IsDBNull(16) ? null : reader.GetDecimal(16), reader.IsDBNull(17) ? null : reader.GetDecimal(17), reader.IsDBNull(18) ? null : reader.GetDecimal(18), reader.GetString(19), reader.GetFieldValue<DateTimeOffset>(20).ToString("O", CultureInfo.InvariantCulture)));
+        }
+        return new InventoryControlledCustodyLotHistoryResponse(lot.ToInventoryLot(), lot.ControlledLocationId, lot.LocationCode, lot.LocationName, lot.Item.ScheduleCode, events);
+    }
+
+    private sealed record ControlledItemState(int ItemId, string ItemCode, string Name, string Unit, string ScheduleCode, decimal ReorderPoint);
+    private sealed record ControlledLocationState(Guid LocationId, int FacilityId, string Code, string Name);
+    private sealed record ControlledLotState(int LotId, ControlledItemState Item, int FacilityId, string FacilityCode, string FacilityName, string LotNumber, DateOnly? ExpirationDate, decimal QuantityOnHand, decimal UnitCost, string Status, Guid? ControlledLocationId, string? LocationCode, string? LocationName)
+    {
+        public InventoryLot ToInventoryLot() => new(LotId, FacilityCode, FacilityName, LotNumber, ExpirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), QuantityOnHand, UnitCost, Status);
+    }
+    private sealed record ControlledLotMutation(ControlledLotState Lot, decimal PriorQuantity);
+
+    private static async Task<ControlledItemState?> GetControlledItemAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int itemId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select item_id,item_code,name,unit,controlled_schedule,reorder_point from inventory_items where item_id=@id and active=true and controlled_schedule is not null for update;";
+        command.Parameters.AddWithValue("id", itemId); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? new(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5)) : null;
+    }
+
+    private static async Task<ControlledLocationState?> GetControlledLocationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid locationId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select l.location_id,l.facility_id,l.location_code,l.display_name from inventory_controlled_locations l join facilities f on f.id=l.facility_id where l.location_id=@id and l.active=true and f.inactive=false for update of l;";
+        command.Parameters.AddWithValue("id", locationId); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? new(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3)) : null;
+    }
+
+    private static async Task<ControlledLotState?> GetControlledLotAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int lotId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select l.lot_id,i.item_id,i.item_code,i.name,i.unit,i.controlled_schedule,i.reorder_point,l.facility_id,f.code,f.name,l.lot_number,l.expiration_date,l.quantity_on_hand,l.unit_cost,l.status,l.controlled_location_id,cl.location_code,cl.display_name from inventory_lots l join inventory_items i on i.item_id=l.item_id join facilities f on f.id=l.facility_id left join inventory_controlled_locations cl on cl.location_id=l.controlled_location_id where l.lot_id=@lotId and i.active=true and i.controlled_schedule is not null and l.status='active' for update of l;";
+        command.Parameters.AddWithValue("lotId", lotId); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        if (reader.IsDBNull(15)) throw new ArgumentException("The controlled lot must be assigned to an active controlled location before it can move.");
+        return new(reader.GetInt32(0), new(reader.GetInt32(1),reader.GetString(2),reader.GetString(3),reader.GetString(4),reader.GetString(5),reader.GetDecimal(6)), reader.GetInt32(7),reader.GetString(8),reader.GetString(9),reader.GetString(10),reader.IsDBNull(11)?null:reader.GetFieldValue<DateOnly>(11),reader.GetDecimal(12),reader.GetDecimal(13),reader.GetString(14),reader.GetGuid(15),reader.IsDBNull(16)?null:reader.GetString(16),reader.IsDBNull(17)?null:reader.GetString(17));
+    }
+
+    private static async Task<ControlledLotMutation> GetOrCreateControlledLotAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, ControlledItemState item, ControlledLocationState location, string lotNumber, DateOnly? expirationDate, decimal unitCost, decimal quantity, CancellationToken cancellationToken)
+    {
+        await using var existing = connection.CreateCommand(); existing.Transaction = transaction;
+        existing.CommandText = "select lot_id,expiration_date,quantity_on_hand,unit_cost,status from inventory_lots where item_id=@item and facility_id=@facility and lot_number=@lot and controlled_location_id=@location for update;";
+        existing.Parameters.AddWithValue("item", item.ItemId); existing.Parameters.AddWithValue("facility", location.FacilityId); existing.Parameters.AddWithValue("lot", lotNumber); existing.Parameters.AddWithValue("location", location.LocationId);
+        await using var reader = await existing.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            var lotId=reader.GetInt32(0); DateOnly? existingExpiration=reader.IsDBNull(1)?null:reader.GetFieldValue<DateOnly>(1); var prior=reader.GetDecimal(2); var existingCost=reader.GetDecimal(3); var status=reader.GetString(4); await reader.DisposeAsync();
+            if (!string.Equals(status,"active",StringComparison.OrdinalIgnoreCase) || existingExpiration != expirationDate || existingCost != unitCost) throw new ArgumentException("The matching controlled lot is inactive or has different expiry/unit-cost metadata.");
+            var updated=prior+quantity; await UpdateLotQuantityAsync(connection,transaction,lotId,updated,cancellationToken);
+            var existingFacility = await GetFacilityAsync(connection, transaction, location.FacilityId, cancellationToken) ?? throw new ArgumentException("The controlled location facility was not found.");
+            return new(new ControlledLotState(lotId,item,location.FacilityId,existingFacility.Code,existingFacility.Name,lotNumber,expirationDate,updated,unitCost,status,location.LocationId,location.Code,location.Name),prior);
+        }
+        await reader.DisposeAsync();
+        await using var facility = connection.CreateCommand(); facility.Transaction=transaction; facility.CommandText="select code,name from facilities where id=@id;";facility.Parameters.AddWithValue("id",location.FacilityId);await using var facilityReader=await facility.ExecuteReaderAsync(cancellationToken);if(!await facilityReader.ReadAsync(cancellationToken))throw new ArgumentException("The controlled location facility was not found.");var facilityCode=facilityReader.GetString(0);var facilityName=facilityReader.GetString(1);await facilityReader.DisposeAsync();
+        await using var insert = connection.CreateCommand(); insert.Transaction=transaction; insert.CommandText="insert into inventory_lots(item_id,facility_id,lot_number,expiration_date,quantity_on_hand,unit_cost,status,controlled_location_id) values(@item,@facility,@lot,@expiration,@quantity,@cost,'active',@location) returning lot_id;";insert.Parameters.AddWithValue("item",item.ItemId);insert.Parameters.AddWithValue("facility",location.FacilityId);insert.Parameters.AddWithValue("lot",lotNumber);insert.Parameters.AddWithValue("expiration",(object?)expirationDate??DBNull.Value);insert.Parameters.AddWithValue("quantity",quantity);insert.Parameters.AddWithValue("cost",unitCost);insert.Parameters.AddWithValue("location",location.LocationId);var newLotId=Convert.ToInt32(await insert.ExecuteScalarAsync(cancellationToken),CultureInfo.InvariantCulture);
+        return new(new ControlledLotState(newLotId,item,location.FacilityId,facilityCode,facilityName,lotNumber,expirationDate,quantity,unitCost,"active",location.LocationId,location.Code,location.Name),0);
+    }
+
+    private static async Task<ControlledLocationState> RequireMatchingControlledLocationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, ControlledLotState lot, Guid locationId, string role, CancellationToken cancellationToken)
+    {
+        var location=await GetControlledLocationAsync(connection,transaction,locationId,cancellationToken) ?? throw new ArgumentException($"The {role} controlled location was not found or is inactive.");
+        if (lot.ControlledLocationId != location.LocationId || lot.FacilityId != location.FacilityId) throw new ArgumentException($"The {role} controlled location does not hold the selected lot.");
+        return location;
+    }
+
+    private static async Task UpdateLotQuantityAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int lotId, decimal quantity, CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="update inventory_lots set quantity_on_hand=@quantity where lot_id=@lot;";command.Parameters.AddWithValue("quantity",quantity);command.Parameters.AddWithValue("lot",lotId);await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureGeneralInventoryItemAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int itemId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select controlled_schedule from inventory_items where item_id=@item;"; command.Parameters.AddWithValue("item", itemId);
+        var schedule = await command.ExecuteScalarAsync(cancellationToken);
+        if (schedule is string) throw new ArgumentException("Controlled inventory must use the controlled-custody movement workflow.");
+    }
+
+    private static async Task EnsureGeneralInventoryLotAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int lotId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "select i.controlled_schedule from inventory_lots l join inventory_items i on i.item_id=l.item_id where l.lot_id=@lot;"; command.Parameters.AddWithValue("lot", lotId);
+        var schedule = await command.ExecuteScalarAsync(cancellationToken);
+        if (schedule is string) throw new ArgumentException("Controlled inventory must use the controlled-custody movement workflow.");
+    }
+
+    private static async Task EnsureControlledEncounterAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string patientId, int encounter, CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from encounters where encounter=@encounter and patient_id=@patient);";command.Parameters.AddWithValue("encounter",encounter);command.Parameters.AddWithValue("patient",patientId);if(await command.ExecuteScalarAsync(cancellationToken) is not true)throw new ArgumentException("The encounter must belong to the selected patient.");
+    }
+
+    private static async Task ValidateControlledReturnAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid relatedEventId, int lotId, string patientId, int encounter, CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_controlled_custody_events where event_id=@event and lot_id=@lot and action in ('dispense','administration') and patient_id=@patient and encounter=@encounter);";command.Parameters.AddWithValue("event",relatedEventId);command.Parameters.AddWithValue("lot",lotId);command.Parameters.AddWithValue("patient",patientId);command.Parameters.AddWithValue("encounter",encounter);if(await command.ExecuteScalarAsync(cancellationToken) is not true)throw new ArgumentException("The return must reference a dispense or administration event for the same lot, patient, and encounter.");
+    }
+
+    private static async Task ValidateRelatedControlledEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid relatedEventId, int lotId, CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="select exists(select 1 from inventory_controlled_custody_events where event_id=@event and (lot_id=@lot or counterparty_lot_id=@lot));";command.Parameters.AddWithValue("event",relatedEventId);command.Parameters.AddWithValue("lot",lotId);if(await command.ExecuteScalarAsync(cancellationToken) is not true)throw new ArgumentException("The correction must reference a custody event for the selected lot.");
+    }
+
+    private static async Task InsertControlledCustodyEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid eventId, string action, ControlledLotState lot, ControlledLotState? counterpartyLot, ControlledLocationState? sourceLocation, ControlledLocationState? destinationLocation, string? patientId, int? encounter, decimal quantity, decimal quantityDelta, string reason, Guid? relatedEventId, string idempotencyKey, decimal? sourceBefore, decimal? sourceAfter, decimal? destinationBefore, decimal? destinationAfter, string username, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        await using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="insert into inventory_controlled_custody_events(event_id,action,lot_id,counterparty_lot_id,source_location_id,destination_location_id,patient_id,encounter,quantity,quantity_delta,reason,related_event_id,idempotency_key,source_quantity_before,source_quantity_after,destination_quantity_before,destination_quantity_after,performed_by,occurred_at,entered_at) values(@id,@action,@lot,@counterparty,@source,@destination,@patient,@encounter,@quantity,@delta,@reason,@related,@key,@sourceBefore,@sourceAfter,@destinationBefore,@destinationAfter,@user,@occurred,now());";
+        command.Parameters.AddWithValue("id",eventId);command.Parameters.AddWithValue("action",action);command.Parameters.AddWithValue("lot",lot.LotId);command.Parameters.AddWithValue("counterparty",(object?)counterpartyLot?.LotId??DBNull.Value);command.Parameters.AddWithValue("source",(object?)sourceLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("destination",(object?)destinationLocation?.LocationId??DBNull.Value);command.Parameters.AddWithValue("patient",(object?)patientId??DBNull.Value);command.Parameters.AddWithValue("encounter",(object?)encounter??DBNull.Value);command.Parameters.AddWithValue("quantity",quantity);command.Parameters.AddWithValue("delta",quantityDelta);command.Parameters.AddWithValue("reason",reason);command.Parameters.AddWithValue("related",(object?)relatedEventId??DBNull.Value);command.Parameters.AddWithValue("key",idempotencyKey);command.Parameters.AddWithValue("sourceBefore",(object?)sourceBefore??DBNull.Value);command.Parameters.AddWithValue("sourceAfter",(object?)sourceAfter??DBNull.Value);command.Parameters.AddWithValue("destinationBefore",(object?)destinationBefore??DBNull.Value);command.Parameters.AddWithValue("destinationAfter",(object?)destinationAfter??DBNull.Value);command.Parameters.AddWithValue("user",username);command.Parameters.AddWithValue("occurred",occurredAt);await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<InventoryPrescriptionDispenseResponse> DispensePrescriptionAsync(InventoryPrescriptionDispenseRequest request, string username, CancellationToken cancellationToken)
     {
         var prescriptionId = request.PrescriptionId?.Trim();
@@ -209,6 +465,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             if (linkedItem is null) throw new ArgumentException("No active inventory item is linked to this prescription's RXCUI code.");
             itemId = Convert.ToInt32(linkedItem, CultureInfo.InvariantCulture);
         }
+        await EnsureGeneralInventoryItemAsync(connection, transaction, itemId, cancellationToken);
         int lotId; string facilityCode; string facilityName; string lotNumber; DateOnly? expiration; decimal onHand; decimal unitCost; decimal reorderPoint;
         await using (var lot = connection.CreateCommand())
         {
@@ -298,6 +555,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var itemId = lotReader.GetInt32(1);
         var reorderPoint = lotReader.GetDecimal(9);
         await lotReader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, request.LotId, cancellationToken);
 
         await using (var updateLot = connection.CreateCommand())
         {
@@ -385,6 +643,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var itemId = reader.GetInt32(0); var facilityCode = reader.GetString(1); var facilityName = reader.GetString(2); var lotNumber = reader.GetString(3);
         var expiration = reader.IsDBNull(4) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(4); var onHand = reader.GetDecimal(5); var cost = reader.GetDecimal(6); var status = reader.GetString(7); var reorderPoint = reader.GetDecimal(8);
         await reader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, request.LotId, cancellationToken);
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active inventory lots can be sold.");
         if (expiration is not null && expiration <= saleDate) throw new ArgumentException("Expired inventory lots cannot be sold.");
         if (onHand < request.Quantity) throw new ArgumentException("The requested sale would make the lot quantity negative.");
@@ -406,6 +665,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (saleDate < new DateOnly(2000, 1, 1) || saleDate > DateOnly.FromDateTime(DateTime.UtcNow)) throw new ArgumentException("Sale date cannot be in the future or before 2000-01-01.");
         var now = DateTimeOffset.UtcNow; var batchId = Guid.NewGuid(); var patientId = request.PatientId.Trim(); var notes = NormalizeOptional(request.Notes);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await EnsureGeneralInventoryItemAsync(connection, transaction, request.ItemId, cancellationToken);
         await using (var patient = connection.CreateCommand()) { patient.Transaction = transaction; patient.CommandText = "select exists(select 1 from encounters where encounter=@encounter and patient_id=@patientId);"; patient.Parameters.AddWithValue("encounter", request.Encounter); patient.Parameters.AddWithValue("patientId", patientId); if (await patient.ExecuteScalarAsync(cancellationToken) is not true) throw new ArgumentException("The encounter must belong to the selected patient."); }
         var lots = new List<(int Id, string Number, decimal OnHand)>();
         await using (var command = connection.CreateCommand()) { command.Transaction = transaction; command.CommandText = "select lot_id, lot_number, quantity_on_hand from inventory_lots where item_id=@itemId and status='active' and quantity_on_hand > 0 and (expiration_date is null or expiration_date > @saleDate) order by expiration_date nulls last, lot_number, lot_id for update;"; command.Parameters.AddWithValue("itemId", request.ItemId); command.Parameters.AddWithValue("saleDate", saleDate); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) lots.Add((reader.GetInt32(0), reader.GetString(1), reader.GetDecimal(2))); }
@@ -465,6 +725,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var lotStatus = sourceReader.GetString(9);
         var reorderPoint = sourceReader.GetDecimal(10);
         await sourceReader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, sourceLotId, cancellationToken);
 
         if (!string.Equals(lotStatus, "active", StringComparison.OrdinalIgnoreCase))
         {
@@ -569,6 +830,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var unitCost = reader.GetDecimal(7);
         var status = reader.GetString(8);
         await reader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, lotId, cancellationToken);
 
         await using (var duplicateCommand = connection.CreateCommand())
         {
@@ -661,6 +923,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var unitCost = reader.GetDecimal(5);
         var status = reader.GetString(6);
         await reader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, lotId, cancellationToken);
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("The inventory lot has already been destroyed or is inactive.");
@@ -715,6 +978,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             if (!await reader.ReadAsync(cancellationToken)) return null;
             itemId=reader.GetInt32(0); itemCode=reader.GetString(1); itemName=reader.GetString(2); facilityCode=reader.GetString(3); facilityName=reader.GetString(4); lotNumber=reader.GetString(5); expirationDate=reader.IsDBNull(6)?null:reader.GetFieldValue<DateOnly>(6); quantity=reader.GetDecimal(7); unitCost=reader.GetDecimal(8); status=reader.GetString(9); reorderPoint=reader.GetDecimal(10);
         }
+        await EnsureGeneralInventoryLotAsync(connection, transaction, lotId, cancellationToken);
         if (expirationDate is null || expirationDate > DateOnly.FromDateTime(DateTime.UtcNow)) throw new ArgumentException("Only expired inventory lots can receive an expiry disposition.");
         if (disposition == "quarantine" && !string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active expired lots can be quarantined.");
         if (disposition != "quarantine" && status is not ("active" or "quarantined")) throw new ArgumentException("Only active or quarantined expired lots can be returned or destroyed.");
@@ -959,6 +1223,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             ?? throw new ArgumentException("The selected facility was not found.");
         var item = await GetActiveItemAsync(connection, transaction, request.ItemId, cancellationToken)
             ?? throw new ArgumentException("The selected inventory item was not found or is inactive.");
+        await EnsureGeneralInventoryItemAsync(connection, transaction, item.ItemId, cancellationToken);
         var requisitionReconciliation = request.RequisitionId is { } requisitionId
             ? await GetReceiptReconciliationContextAsync(connection, transaction, requisitionId, vendor.VendorId, facility.FacilityId, item.ItemId, request.Quantity, cancellationToken)
             : null;
@@ -1056,6 +1321,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var itemName = reader.GetString(10);
         var reorderPoint = reader.GetDecimal(11);
         await reader.DisposeAsync();
+        await EnsureGeneralInventoryLotAsync(connection, transaction, request.LotId, cancellationToken);
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active inventory lots can be reconciled.");
 
         var quantityDelta = request.CountedQuantity - expectedQuantity;
@@ -1383,7 +1649,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         NpgsqlTransaction transaction,
         Guid transactionId,
         int lotId,
-        Guid transferId,
+        Guid? transferId,
         string transactionType,
         decimal quantityDelta,
         string? reason,
@@ -1402,7 +1668,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             """;
         command.Parameters.AddWithValue("transaction_id", transactionId);
         command.Parameters.AddWithValue("lot_id", lotId);
-        command.Parameters.AddWithValue("transfer_id", transferId);
+        command.Parameters.AddWithValue("transfer_id", (object?)transferId ?? DBNull.Value);
         command.Parameters.AddWithValue("transaction_type", transactionType);
         command.Parameters.AddWithValue("quantity_delta", quantityDelta);
         command.Parameters.AddWithValue("reason", (object?)NormalizeOptional(reason) ?? DBNull.Value);

@@ -81,6 +81,59 @@ public sealed record InventoryControlledSubstanceClassificationRequest(string? S
 public sealed record InventoryControlledSubstanceClassificationEvent(long EventId, string? PriorSchedule, string? ResultingSchedule, string OccurredAt, string Username);
 public sealed record InventoryControlledSubstanceClassificationHistoryResponse(InventoryControlledSubstanceItem Item, IReadOnlyList<InventoryControlledSubstanceClassificationEvent> Events);
 
+public sealed record InventoryControlledCustodyMovementRequest(
+    string Action,
+    int? LotId,
+    int? ItemId,
+    string? LotNumber,
+    string? ExpirationDate,
+    decimal? UnitCost,
+    decimal Quantity,
+    Guid? SourceLocationId,
+    Guid? DestinationLocationId,
+    string? PatientId,
+    int? Encounter,
+    string? Reason,
+    Guid? RelatedEventId,
+    string? CorrectionDirection,
+    string? IdempotencyKey);
+
+public sealed record InventoryControlledCustodyEvent(
+    Guid EventId,
+    string Action,
+    int LotId,
+    int? CounterpartyLotId,
+    int ItemId,
+    string ItemCode,
+    string ScheduleCode,
+    decimal Quantity,
+    decimal QuantityDelta,
+    Guid? SourceLocationId,
+    Guid? DestinationLocationId,
+    string? PatientId,
+    int? Encounter,
+    string Reason,
+    Guid? RelatedEventId,
+    decimal? SourceQuantityBefore,
+    decimal? SourceQuantityAfter,
+    decimal? DestinationQuantityBefore,
+    decimal? DestinationQuantityAfter,
+    string PerformedBy,
+    string OccurredAt);
+
+public sealed record InventoryControlledCustodyMovementResponse(
+    InventoryControlledCustodyEvent Event,
+    InventoryLot Lot,
+    InventoryLot? CounterpartyLot);
+
+public sealed record InventoryControlledCustodyLotHistoryResponse(
+    InventoryLot Lot,
+    Guid? ControlledLocationId,
+    string? ControlledLocationCode,
+    string? ControlledLocationName,
+    string ScheduleCode,
+    IReadOnlyList<InventoryControlledCustodyEvent> Events);
+
 public sealed record InventoryPrescriptionDispenseRequest(
     string PrescriptionId,
     decimal Quantity,
