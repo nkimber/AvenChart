@@ -43,6 +43,7 @@ const NAV_ITEMS = [
   { path: '/clinician/address-book', label: 'Address book', icon: Users },
   { path: '/clinician/tracks', label: 'Configure tracks', icon: Workflow },
   { path: '/clinician/track-entries', label: 'Track entries', icon: ClipboardPlus },
+  { path: '/clinician/track-history', label: 'Track history', icon: BarChart2 },
   { path: '/clinician/patient-education', label: 'Patient education', icon: Activity },
   { path: '/clinician/recalls', label: 'Recalls', icon: Bell },
   { path: '/clinician/batch-communication', label: 'Batch communication', icon: Mail },

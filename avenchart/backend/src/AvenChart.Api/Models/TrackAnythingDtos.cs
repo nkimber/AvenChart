@@ -12,3 +12,7 @@ public sealed record TrackAnythingEncounterRecordDetail(TrackAnythingEncounterRe
 public sealed record TrackAnythingReadingValueRequest(int ItemTypeId, string? Value);
 public sealed record TrackAnythingReadingCreateRequest(DateTimeOffset? RecordedAt, IReadOnlyList<TrackAnythingReadingValueRequest> Values);
 public sealed record TrackAnythingReadingUpdateRequest(DateTimeOffset RecordedAt, IReadOnlyList<TrackAnythingReadingValueRequest> Values);
+public sealed record TrackAnythingPatientHistoryReading(Guid ReadingId, string RecordedAt, string RecordedBy, string? UpdatedAt, string? UpdatedBy, IReadOnlyList<TrackAnythingReadingValue> Values);
+public sealed record TrackAnythingPatientHistoryEncounter(Guid RecordId, int Encounter, string EncounterDate, string TrackName, IReadOnlyList<TrackAnythingPatientHistoryReading> Readings);
+public sealed record TrackAnythingPatientTrackHistory(int TrackTypeId, string TrackName, IReadOnlyList<TrackAnythingPatientHistoryEncounter> Encounters);
+public sealed record TrackAnythingPatientHistoryResponse(string PatientId, IReadOnlyList<TrackAnythingPatientTrackHistory> Tracks);

@@ -9892,6 +9892,9 @@ try {
     $trackReading = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)/readings" -Method Post -Headers $trackHeaders -ContentType "application/json" -Body (@{ recordedAt = "2026-07-27T09:30:00Z"; values = @(@{ itemTypeId = $trackItemOne.id; value = "12" }, @{ itemTypeId = $trackItemTwo.id; value = "34" }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $updatedTrackReading = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)/readings/$($trackReading.readingId)" -Method Put -Headers $trackHeaders -ContentType "application/json" -Body (@{ recordedAt = "2026-07-27T10:30:00Z"; values = @(@{ itemTypeId = $trackItemOne.id; value = "13" }, @{ itemTypeId = $trackItemTwo.id; value = "35" }) } | ConvertTo-Json -Depth 5) -TimeoutSec 20
     $trackDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/encounters/1000013/tracks/$($trackRecord.recordId)" -Method Get -Headers $trackHeaders -TimeoutSec 20
+    $trackPatientHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/track-history" -Method Get -Headers $trackHeaders -TimeoutSec 20
+    $historyTrack = @($trackPatientHistory.tracks | Where-Object { $_.trackTypeId -eq $track.id }) | Select-Object -First 1
+    $historyEncounter = @($historyTrack.encounters | Where-Object { $_.recordId -eq $trackRecord.recordId }) | Select-Object -First 1
     $trackReadingPassed = ($trackCatalog.availableTracks.id -contains $track.id) `
         -and $trackRecord.trackTypeId -eq $track.id `
         -and @($trackReading.values).Count -eq 2 `
@@ -9900,11 +9903,16 @@ try {
         -and ($trackDetail.readings[0].values.value -contains "13") `
         -and ($trackDetail.readings[0].values.value -contains "35") `
         -and $trackDetail.readings[0].updatedBy -eq "admin" `
-        -and $null -ne $updatedTrackReading.updatedAt
-    Add-Check -Name "encounter Track Anything capture and correction history" -Result $(if ($trackReadingPassed) { "passed" } else { "failed" }) -Details @{ trackId = $track.id; recordId = $trackRecord.recordId; readingId = $trackReading.readingId; itemCount = @($trackDetail.items).Count; updatedAt = $updatedTrackReading.updatedAt }
+        -and $null -ne $updatedTrackReading.updatedAt `
+        -and $trackPatientHistory.patientId -eq "MOD-PAT-0001" `
+        -and $historyEncounter.encounter -eq 1000013 `
+        -and @($historyEncounter.readings).Count -eq 1 `
+        -and $historyEncounter.readings[0].updatedBy -eq "admin" `
+        -and ($historyEncounter.readings[0].values.value -contains "13")
+    Add-Check -Name "Track Anything capture, correction, and patient trend history" -Result $(if ($trackReadingPassed) { "passed" } else { "failed" }) -Details @{ trackId = $track.id; recordId = $trackRecord.recordId; readingId = $trackReading.readingId; patientId = $trackPatientHistory.patientId; itemCount = @($trackDetail.items).Count; updatedAt = $updatedTrackReading.updatedAt }
 }
 catch {
-    Add-Check -Name "encounter Track Anything capture and correction history" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "Track Anything capture, correction, and patient trend history" -Result "failed" -Details $_.Exception.Message
 }
 
 try {

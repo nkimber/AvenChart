@@ -784,6 +784,10 @@ patients.MapGet("/", async (
     })
     .WithName("SearchPatients");
 
+patients.MapGet("/{patientId}/track-history", async (string patientId, TrackAnythingRepository repository, CancellationToken cancellationToken) =>
+    (await repository.GetPatientHistoryAsync(patientId, cancellationToken)) is { } history ? Results.Ok(history) : Results.NotFound())
+    .WithName("GetPatientTrackAnythingHistory");
+
 patients.MapGet("/{patientId}/referrals", async (string patientId, ReferralRepository repository, CancellationToken cancellationToken) =>
 {
     try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }

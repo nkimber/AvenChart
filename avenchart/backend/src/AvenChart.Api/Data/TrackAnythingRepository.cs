@@ -196,6 +196,50 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
         return new TrackAnythingReading(readingId, request.RecordedAt.ToString("O"), recordedBy, updatedAt.ToString("O"), username, existingItems.Select(pair => new TrackAnythingReadingValue(pair.Key, pair.Value, values[pair.Key])).ToList());
     }
 
+    public async Task<TrackAnythingPatientHistoryResponse?> GetPatientHistoryAsync(string patientId, CancellationToken cancellationToken)
+    {
+        var normalizedPatientId = string.IsNullOrWhiteSpace(patientId) ? string.Empty : patientId.Trim();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using (var patientCommand = connection.CreateCommand())
+        {
+            patientCommand.CommandText = "select canonical_id from patients where canonical_id=@patient;";
+            patientCommand.Parameters.AddWithValue("patient", normalizedPatientId);
+            if (await patientCommand.ExecuteScalarAsync(cancellationToken) is not string canonicalId) return null;
+            normalizedPatientId = canonicalId;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select r.track_type_id,r.track_name,r.record_id,r.encounter,e.encounter_date,
+                   reading.reading_id,reading.recorded_at,reading.recorded_by,reading.updated_at,reading.updated_by,
+                   value.item_type_id,value.item_name,value.value
+            from encounter_track_records r
+            join encounters e on e.encounter=r.encounter
+            join encounter_track_readings reading on reading.record_id=r.record_id
+            join encounter_track_reading_values value on value.reading_id=reading.reading_id
+            where e.patient_id=@patient
+            order by r.track_type_id,e.encounter_date desc,r.encounter desc,reading.recorded_at desc,reading.reading_id desc,value.item_name;
+            """;
+        command.Parameters.AddWithValue("patient", normalizedPatientId);
+
+        var tracks = new Dictionary<int, PatientTrackAccumulator>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var trackTypeId = reader.GetInt32(0);
+            var track = tracks.TryGetValue(trackTypeId, out var existingTrack)
+                ? existingTrack
+                : tracks[trackTypeId] = new PatientTrackAccumulator(reader.GetString(1));
+            var recordId = reader.GetGuid(2);
+            var encounter = track.GetOrAddEncounter(recordId, reader.GetInt32(3), reader.GetFieldValue<DateOnly>(4).ToString("yyyy-MM-dd"), reader.GetString(1));
+            var readingId = reader.GetGuid(5);
+            var reading = encounter.GetOrAddReading(readingId, reader.GetFieldValue<DateTimeOffset>(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8), reader.IsDBNull(9) ? null : reader.GetString(9));
+            reading.Values.Add(new TrackAnythingReadingValue(reader.GetInt32(10), reader.GetString(11), reader.GetString(12)));
+        }
+
+        return new TrackAnythingPatientHistoryResponse(normalizedPatientId, tracks.Select(track => track.Value.ToDto(track.Key)).ToList());
+    }
+
     private static async Task<List<TrackAnythingDefinition>> GetDefinitionsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -259,4 +303,30 @@ public sealed class TrackAnythingRepository(NpgsqlDataSource dataSource)
     private static TrackAnythingItem ReadItem(NpgsqlDataReader reader) => new(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4), reader.GetBoolean(5));
     private static TrackAnythingEncounterRecord ReadRecord(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4).ToString("O"), reader.GetString(5));
     private static string Required(string? value) => string.IsNullOrWhiteSpace(value) || value.Trim().Length > 120 ? throw new ArgumentException("Name is required and must be 120 characters or fewer.") : value.Trim();
+
+    private sealed class PatientTrackAccumulator(string trackName)
+    {
+        private readonly Dictionary<Guid, PatientEncounterAccumulator> encounters = [];
+
+        public PatientEncounterAccumulator GetOrAddEncounter(Guid recordId, int encounter, string encounterDate, string historicalTrackName) =>
+            encounters.TryGetValue(recordId, out var item) ? item : encounters[recordId] = new PatientEncounterAccumulator(recordId, encounter, encounterDate, historicalTrackName);
+
+        public TrackAnythingPatientTrackHistory ToDto(int trackTypeId) => new(trackTypeId, trackName, encounters.Values.Select(encounter => encounter.ToDto()).ToList());
+    }
+
+    private sealed class PatientEncounterAccumulator(Guid recordId, int encounter, string encounterDate, string trackName)
+    {
+        private readonly Dictionary<Guid, PatientReadingAccumulator> readings = [];
+
+        public PatientReadingAccumulator GetOrAddReading(Guid readingId, DateTimeOffset recordedAt, string recordedBy, DateTimeOffset? updatedAt, string? updatedBy) =>
+            readings.TryGetValue(readingId, out var item) ? item : readings[readingId] = new PatientReadingAccumulator(recordedAt, recordedBy, updatedAt, updatedBy);
+
+        public TrackAnythingPatientHistoryEncounter ToDto() => new(recordId, encounter, encounterDate, trackName, readings.Select(reading => reading.Value.ToDto(reading.Key)).ToList());
+    }
+
+    private sealed class PatientReadingAccumulator(DateTimeOffset recordedAt, string recordedBy, DateTimeOffset? updatedAt, string? updatedBy)
+    {
+        public List<TrackAnythingReadingValue> Values { get; } = [];
+        public TrackAnythingPatientHistoryReading ToDto(Guid readingId) => new(readingId, recordedAt.ToString("O"), recordedBy, updatedAt?.ToString("O"), updatedBy, Values);
+    }
 }

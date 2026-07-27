@@ -1728,6 +1728,11 @@ export async function createEncounterTrack(sessionId: string, encounter: number,
 export async function getEncounterTrack(sessionId: string, encounter: number, recordId: string): Promise<EncounterTrackRecordDetail> { return clinicianGet(sessionId, `/api/encounters/${encounter}/tracks/${recordId}`) }
 export async function addEncounterTrackReading(sessionId: string, encounter: number, recordId: string, input: { recordedAt?: string; values: { itemTypeId: number; value: string }[] }): Promise<EncounterTrackReading> { return clinicianPost(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings`, input) }
 export async function updateEncounterTrackReading(sessionId: string, encounter: number, recordId: string, readingId: string, input: { recordedAt: string; values: { itemTypeId: number; value: string }[] }): Promise<EncounterTrackReading> { return clinicianPut(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings/${readingId}`, input) }
+export type PatientTrackHistoryReading = EncounterTrackReading
+export type PatientTrackHistoryEncounter = { recordId: string; encounter: number; encounterDate: string; trackName: string; readings: PatientTrackHistoryReading[] }
+export type PatientTrackHistoryTrack = { trackTypeId: number; trackName: string; encounters: PatientTrackHistoryEncounter[] }
+export type PatientTrackHistory = { patientId: string; tracks: PatientTrackHistoryTrack[] }
+export async function getPatientTrackHistory(sessionId: string, patientId: string): Promise<PatientTrackHistory> { return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/track-history`) }
 export type PatientEducationResource = { key: string; title: string; searchTemplate: string; active: boolean }
 export async function getPatientEducationResources(sessionId: string): Promise<{ resources: PatientEducationResource[] }> { return clinicianGet(sessionId, '/api/patient-education/resources') }
 export async function searchPatientEducation(sessionId: string, resourceKey: string, searchText: string): Promise<{ url: string }> { return clinicianPost(sessionId, '/api/patient-education/search', { resourceKey, searchText }) }
