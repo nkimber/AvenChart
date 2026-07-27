@@ -14,7 +14,14 @@ using AvenChart.Api.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.Items["correlationId"]?.ToString()
+            ?? context.HttpContext.TraceIdentifier;
+    };
+});
 builder.Services.AddResponseCompression();
 builder.Services.AddHealthChecks()
     .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
@@ -145,6 +152,17 @@ if (configuredRuntimeSafety.RequireHttps)
 
 app.UseResponseCompression();
 app.UseCors("local-app-clients");
+app.Use(async (context, next) =>
+{
+    var requestedCorrelationId = context.Request.Headers["X-Correlation-ID"].ToString();
+    var correlationId = requestedCorrelationId.Length is > 0 and <= 80
+        && requestedCorrelationId.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
+            ? requestedCorrelationId
+            : Guid.NewGuid().ToString("N");
+    context.Items["correlationId"] = correlationId;
+    context.Response.Headers["X-Correlation-ID"] = correlationId;
+    await next();
+});
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
@@ -158,11 +176,12 @@ app.Use(async (context, next) =>
         stopwatch.Stop();
         var endpointName = context.GetEndpoint()?.DisplayName ?? "unmatched";
         app.Logger.LogInformation(
-            "HTTP {Method} endpoint {Endpoint} returned {StatusCode} in {ElapsedMilliseconds} ms",
+            "HTTP {Method} endpoint {Endpoint} returned {StatusCode} in {ElapsedMilliseconds} ms with correlation {CorrelationId}",
             context.Request.Method,
             endpointName,
             context.Response.StatusCode,
-            stopwatch.ElapsedMilliseconds);
+            stopwatch.ElapsedMilliseconds,
+            context.Items["correlationId"]?.ToString() ?? context.TraceIdentifier);
     }
 });
 

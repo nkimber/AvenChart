@@ -167,6 +167,29 @@ catch {
 }
 
 try {
+    $correlationId = "smoke-correlation-$([Guid]::NewGuid().ToString('N').Substring(0, 10))"
+    $correlatedHealth = Invoke-WebRequest -Uri "$ApiBaseUrl/health" -Method Get -Headers @{ "X-Correlation-ID" = $correlationId } -UseBasicParsing -TimeoutSec 15
+    $correlatedHeaders = Get-AdministrationHeaders
+    $correlatedHeaders["X-Correlation-ID"] = $correlationId
+    $correlationProblem = $null
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/activity?from=2026-12-31&to=2026-01-01" -Method Get -Headers $correlatedHeaders -UseBasicParsing -TimeoutSec 20 | Out-Null
+        throw "The invalid inventory activity date range unexpectedly succeeded."
+    }
+    catch {
+        $problemBody = Read-HttpErrorBody -ErrorRecord $_
+        if ($problemBody) { $correlationProblem = $problemBody | ConvertFrom-Json }
+    }
+    $correlationPassed = (($correlatedHealth.Headers["X-Correlation-ID"] -join ",") -eq $correlationId) `
+        -and $correlationProblem.status -eq 400 `
+        -and $correlationProblem.correlationId -eq $correlationId
+    Add-Check -Name "API correlation and Problem Details contract" -Result $(if ($correlationPassed) { "passed" } else { "failed" }) -Details @{ correlationId = $correlationId; responseHeader = ($correlatedHealth.Headers["X-Correlation-ID"] -join ","); problem = $correlationProblem }
+}
+catch {
+    Add-Check -Name "API correlation and Problem Details contract" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $liveness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/live" -Method Get -TimeoutSec 15
     $readiness = Invoke-RestMethod -Uri "$ApiBaseUrl/health/ready" -Method Get -TimeoutSec 15
     $readinessDependency = $readiness.dependencies.postgres
