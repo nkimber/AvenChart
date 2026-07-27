@@ -20500,6 +20500,10 @@ function InventoryWorkspace({
   const sourceLot = lots.find((lot) => String(lot.lotId) === lotId) ?? null
   const destinationFacilities = (inventory?.facilities ?? []).filter((facility) => facility.code !== sourceLot?.facilityCode)
   const receivableRequisitions = purchaseRequisitions.filter((requisition) => requisition.status === 'approved' && requisition.receiptStatus !== 'complete')
+  const replenishmentRecommendations = (inventory?.items ?? []).filter((item) => item.belowReorderPoint).map((item) => ({
+    ...item,
+    recommendedQuantity: Math.max(0, item.preferredQuantity - item.quantityOnHand),
+  }))
 
   function selectLot(value: string) {
     setLotId(value)
@@ -20834,6 +20838,11 @@ function InventoryWorkspace({
             <InventoryMetric label="Expiry watch" value={String(inventory.summary.expiringWithin90Days)} detail="next 90 days, excluding expired" warning />
             <InventoryMetric label="On-hand value" value={formatCurrency(inventory.summary.inventoryValue)} detail="seeded local valuation" />
           </div>
+
+          <section className="inventory-activity-panel" aria-labelledby="inventory-replenishment-heading">
+            <div className="inventory-panel-heading"><div><span>Planning</span><h2 id="inventory-replenishment-heading">Replenishment recommendations</h2></div><small>Current active-lot carrying value; not an accounting valuation method</small></div>
+            {replenishmentRecommendations.length > 0 ? <div className="inventory-activity-list">{replenishmentRecommendations.map((item) => <article className="inventory-activity-row" key={item.itemId}><div><strong>{item.itemCode} - {item.name}</strong><small>On hand {item.quantityOnHand} {item.unit}; reorder point {item.reorderPoint}; preferred target {item.preferredQuantity}</small></div><div><strong>Recommend {item.recommendedQuantity} {item.unit}</strong><small>Active-lot value {formatCurrency(item.inventoryValue)}</small></div></article>)}</div> : <div className="timeline-placeholder">No items are at or below their reorder point.</div>}
+          </section>
 
           <div className="inventory-ledger-layout">
             <div className="inventory-ledger-panel">
