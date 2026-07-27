@@ -258,6 +258,25 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             lines);
     }
 
+    public async Task<ControlledCountVarianceReportResponse> RunControlledCountVarianceReportAsync(ControlledCountVarianceReportRequest request, string username, CancellationToken cancellationToken)
+    {
+        var today=DateOnly.FromDateTime(DateTime.UtcNow); var toDate=request.ToDate??today; var fromDate=request.FromDate??toDate;
+        if(fromDate<new DateOnly(2000,1,1)||toDate>today||fromDate>toDate||toDate.DayNumber-fromDate.DayNumber>366) throw new ArgumentException("Controlled count variance dates must be ordered dates between 2000 and today with a maximum 366-day range.");
+        if(request.LocationId==Guid.Empty) throw new ArgumentException("Controlled count variance location must be a valid secure location.");
+        await using var connection=await dataSource.OpenConnectionAsync(cancellationToken); var lines=new List<ControlledCountVarianceReportLine>();
+        await using(var command=connection.CreateCommand()) { command.CommandText="""
+            select s.session_id,d.discrepancy_id,l.location_code,s.count_type,s.status,c.lot_id,i.item_code,lot.lot_number,c.expected_quantity,c.observed_quantity,c.variance_quantity,d.status,d.correction_event_id,s.started_at,s.submitted_at
+            from inventory_controlled_count_discrepancies d join inventory_controlled_count_sessions s on s.session_id=d.session_id join inventory_controlled_count_lines c on c.line_id=d.line_id join inventory_controlled_locations l on l.location_id=s.location_id join inventory_lots lot on lot.lot_id=c.lot_id join inventory_items i on i.item_id=lot.item_id
+            where s.submitted_at::date>=@fromDate and s.submitted_at::date<=@toDate and (@locationId is null or s.location_id=@locationId)
+            order by s.submitted_at,d.discrepancy_id;
+            """;
+            command.Parameters.AddWithValue("fromDate",NpgsqlDbType.Date,fromDate); command.Parameters.AddWithValue("toDate",NpgsqlDbType.Date,toDate); command.Parameters.AddWithValue("locationId",NpgsqlDbType.Uuid,(object?)request.LocationId??DBNull.Value);
+            await using var reader=await command.ExecuteReaderAsync(cancellationToken); while(await reader.ReadAsync(cancellationToken)) lines.Add(new(reader.GetGuid(0),reader.GetGuid(1),reader.GetString(2),reader.GetString(3),reader.GetString(4),reader.GetInt32(5),reader.GetString(6),reader.GetString(7),reader.GetDecimal(8),reader.GetDecimal(9),reader.GetDecimal(10),reader.GetString(11),reader.IsDBNull(12)?null:reader.GetGuid(12),reader.GetFieldValue<DateTimeOffset>(13).ToString("O"),reader.IsDBNull(14)?null:reader.GetFieldValue<DateTimeOffset>(14).ToString("O"))); }
+        var filters=JsonSerializer.Serialize(new { fromDate=fromDate.ToString("yyyy-MM-dd"),toDate=toDate.ToString("yyyy-MM-dd"),request.LocationId }); var payload=string.Join("\n",new[]{filters}.Concat(lines.Select(x=>$"{x.SessionId}|{x.DiscrepancyId}|{x.LotId}|{x.VarianceQuantity}|{x.DiscrepancyStatus}|{x.CorrectionEventId}"))); var checksum=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant(); var runId=Guid.NewGuid(); var requestedAt=DateTimeOffset.UtcNow;
+        await using(var insert=connection.CreateCommand()){insert.CommandText="insert into inventory_controlled_report_runs(run_id,report_key,as_of_date,date_from,location_id,input_filters,requested_by,requested_at,row_count,result_checksum) values(@id,'count_variance',@to,@from,@location,@filters,@user,@at,@count,@checksum);";insert.Parameters.AddWithValue("id",runId);insert.Parameters.AddWithValue("to",toDate);insert.Parameters.AddWithValue("from",fromDate);insert.Parameters.AddWithValue("location",(object?)request.LocationId??DBNull.Value);insert.Parameters.AddWithValue("filters",NpgsqlDbType.Jsonb,filters);insert.Parameters.AddWithValue("user",username);insert.Parameters.AddWithValue("at",requestedAt);insert.Parameters.AddWithValue("count",lines.Count);insert.Parameters.AddWithValue("checksum",checksum);await insert.ExecuteNonQueryAsync(cancellationToken);}
+        return new(new(runId,"count_variance",fromDate.ToString("yyyy-MM-dd"),toDate.ToString("yyyy-MM-dd"),request.LocationId,username,requestedAt.ToString("O"),lines.Count,checksum),lines);
+    }
+
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
     {
         await EnsureSavedReportSchemaAsync(cancellationToken);

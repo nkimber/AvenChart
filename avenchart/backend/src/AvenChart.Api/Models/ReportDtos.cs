@@ -145,3 +145,8 @@ public sealed record ControlledInventoryActivityReportRun(
 public sealed record ControlledInventoryActivityReportResponse(
     ControlledInventoryActivityReportRun Run,
     IReadOnlyList<ControlledInventoryActivityReportLine> Lines);
+
+public sealed record ControlledCountVarianceReportRequest(DateOnly? FromDate, DateOnly? ToDate, Guid? LocationId);
+public sealed record ControlledCountVarianceReportLine(Guid SessionId, Guid DiscrepancyId, string LocationCode, string CountType, string SessionStatus, int LotId, string ItemCode, string LotNumber, decimal ExpectedQuantity, decimal ObservedQuantity, decimal VarianceQuantity, string DiscrepancyStatus, Guid? CorrectionEventId, string StartedAt, string? SubmittedAt);
+public sealed record ControlledCountVarianceReportRun(Guid RunId, string ReportKey, string FromDate, string ToDate, Guid? LocationId, string RequestedBy, string RequestedAt, int RowCount, string ResultChecksum);
+public sealed record ControlledCountVarianceReportResponse(ControlledCountVarianceReportRun Run, IReadOnlyList<ControlledCountVarianceReportLine> Lines);

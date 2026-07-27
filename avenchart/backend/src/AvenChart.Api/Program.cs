@@ -4523,6 +4523,12 @@ reports.MapPost("/controlled-inventory/activity", async (
     .WithName("RunControlledInventoryActivityReport")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+reports.MapPost("/controlled-inventory/count-variance", async (ControlledCountVarianceReportRequest request, ReportRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken); return Results.Created("/api/reports/controlled-inventory/count-variance",await repository.RunControlledCountVarianceReportAsync(request,session.Username,cancellationToken)); }
+    catch(ArgumentException exception){ return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledReport"]=[exception.Message] }); }
+}).WithName("RunControlledCountVarianceReport").AddEndpointFilter(AccessPermissionFilter("inventory","adjustments","view"));
+
 reports.MapGet("/operational/export", async (
         ReportRepository repository,
         CancellationToken cancellationToken) =>
