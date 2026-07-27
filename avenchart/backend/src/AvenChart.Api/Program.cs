@@ -3233,7 +3233,17 @@ inventory.MapPost("/controlled-custody-movements", async (InventoryControlledCus
     try
     {
         var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var movement = await repository.CreateControlledCustodyMovementAsync(request, session.Username, cancellationToken);
+        string? witnessUsername = null;
+        if (request.WitnessSessionId is { } witnessSessionId)
+        {
+            var witness = await authRepository.GetCurrentSessionAsync(witnessSessionId, cancellationToken);
+            if (!witness.Authenticated)
+                throw new ArgumentException("The controlled-custody witness session is not active.");
+            if (string.Equals(witness.Username, session.Username, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("The controlled-custody witness must be a different authenticated user.");
+            witnessUsername = witness.Username;
+        }
+        var movement = await repository.CreateControlledCustodyMovementAsync(request, session.Username, witnessUsername, cancellationToken);
         return Results.Created($"/api/inventory/controlled-custody-movements/{movement.Event.EventId}", movement);
     }
     catch (ArgumentException exception)

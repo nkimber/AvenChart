@@ -96,7 +96,8 @@ public sealed record InventoryControlledCustodyMovementRequest(
     string? Reason,
     Guid? RelatedEventId,
     string? CorrectionDirection,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    Guid? WitnessSessionId);
 
 public sealed record InventoryControlledCustodyEvent(
     Guid EventId,
@@ -119,7 +120,9 @@ public sealed record InventoryControlledCustodyEvent(
     decimal? DestinationQuantityBefore,
     decimal? DestinationQuantityAfter,
     string PerformedBy,
-    string OccurredAt);
+    string OccurredAt,
+    string? WitnessUsername,
+    string? WitnessedAt);
 
 public sealed record InventoryControlledCustodyMovementResponse(
     InventoryControlledCustodyEvent Event,
