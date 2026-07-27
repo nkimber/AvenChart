@@ -20572,6 +20572,7 @@ function InventoryWorkspace({
                   Activity
                   <select value={transactionType} onChange={(event) => setTransactionType(event.target.value)}>
                     <option value="consumption">Consumption</option>
+                    <option value="return">Vendor return</option>
                     <option value="adjustment">Count adjustment</option>
                     <option value="reconcile">Physical count reconciliation</option>
                     <option value="destruction">Destruction</option>
@@ -20593,7 +20594,7 @@ function InventoryWorkspace({
                 </label>
                 <label>
                   {transactionType === 'reconcile' ? 'Count notes' : 'Reason'}
-                  <input value={reason} onChange={(event) => setReason(event.target.value)} required={transactionType === 'reconcile'} placeholder={transactionType === 'reconcile' ? `Expected ${sourceLot?.quantityOnHand ?? 0}; explain any variance` : transactionType === 'transfer' ? 'Why is stock moving?' : 'What changed?'} />
+                  <input value={reason} onChange={(event) => setReason(event.target.value)} required={transactionType === 'reconcile' || transactionType === 'return'} placeholder={transactionType === 'reconcile' ? `Expected ${sourceLot?.quantityOnHand ?? 0}; explain any variance` : transactionType === 'transfer' ? 'Why is stock moving?' : transactionType === 'return' ? 'Why is stock being returned?' : 'What changed?'} />
                 </label>
                 <button className="inventory-record-button" type="submit" disabled={status === 'loading'}>Record activity</button>
               </form>

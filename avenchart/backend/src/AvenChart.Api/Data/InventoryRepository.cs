@@ -10,7 +10,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 {
     private static readonly HashSet<string> TransactionTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "adjustment", "consumption", "destruction"
+        "adjustment", "consumption", "destruction", "return"
     };
 
     public async Task<InventoryResponse> GetInventoryAsync(CancellationToken cancellationToken)
@@ -51,12 +51,17 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         var normalizedType = request.TransactionType.Trim().ToLowerInvariant();
-        if ((normalizedType is "consumption" or "destruction") && request.Quantity < 0)
+        if ((normalizedType is "consumption" or "destruction" or "return") && request.Quantity < 0)
         {
             throw new ArgumentException("Only adjustments may use a negative quantity.");
         }
 
-        var quantityDelta = normalizedType is "consumption" or "destruction"
+        if (normalizedType == "return" && string.IsNullOrWhiteSpace(NormalizeOptional(request.Reason)))
+        {
+            throw new ArgumentException("A reason is required for an inventory return.");
+        }
+
+        var quantityDelta = normalizedType is "consumption" or "destruction" or "return"
             ? -request.Quantity
             : request.Quantity;
         var now = DateTimeOffset.UtcNow;

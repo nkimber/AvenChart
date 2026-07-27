@@ -8239,7 +8239,8 @@ export async function createInventoryTransaction(
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<InventoryMutationResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/inventory/transactions`, {
+  const endpoint = input.transactionType === 'return' ? 'returns' : 'transactions'
+  const response = await fetch(`${apiBaseUrl}/api/inventory/${endpoint}`, {
     method: 'POST',
     headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
     body: JSON.stringify(input),

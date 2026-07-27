@@ -3315,6 +3315,27 @@ inventory.MapPost("/purchase-receipts", async (
     .WithName("CreateInventoryPurchaseReceipt")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
 
+inventory.MapPost("/returns", async (
+        InventoryRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        InventoryTransactionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.CreateTransactionAsync(request with { TransactionType = "return" }, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Created($"/api/inventory/returns/{mutation.Transaction.TransactionId}", mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryReturn"] = [exception.Message] });
+        }
+    })
+    .WithName("CreateInventoryReturn")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "purchases", "write"));
+
 inventory.MapPost("/count-reconciliations", async (
         InventoryRepository repository,
         AuthRepository authRepository,

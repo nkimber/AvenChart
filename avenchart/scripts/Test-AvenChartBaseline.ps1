@@ -10128,6 +10128,9 @@ try {
     $inventoryWithExpiry = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryReceiptEntry = @($inventoryActivity.entries | Where-Object { $_.receiptId -eq $inventoryReceipt.receiptId }) | Select-Object -First 1
     $expiredLot = @($inventoryWithExpiry.items | ForEach-Object { $_.lots } | Where-Object { $_.lotId -eq $expiredReceipt.lot.lotId }) | Select-Object -First 1
+    $inventoryReturn = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/returns" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ lotId = $inventoryReceipt.lot.lotId; quantity = 2; reason = "Smoke vendor return verification" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryReturnActivity = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/activity?facilityId=$($inventoryFacility.facilityId)" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryReturnEntry = @($inventoryReturnActivity.entries | Where-Object { $_.transactionId -eq $inventoryReturn.transaction.transactionId }) | Select-Object -First 1
     $inventoryReceiptPassed = ($inventoryVendors.vendors.vendorId -contains $inventoryVendor.vendorId) `
         -and $inventoryReceipt.vendor.vendorId -eq $inventoryVendor.vendorId `
         -and $inventoryReceipt.lot.lotNumber -eq "SMOKE-RCV-$inventoryReceiptSuffix" `
@@ -10136,12 +10139,18 @@ try {
     $inventoryExpiryPassed = $expiredLot.expiryStatus -eq "expired" `
         -and $inventoryWithExpiry.summary.expiredLots -eq ($inventoryBefore.summary.expiredLots + 1) `
         -and $inventoryWithExpiry.summary.expiringWithin90Days -eq $inventoryBefore.summary.expiringWithin90Days
+    $inventoryReturnPassed = $inventoryReturn.transaction.transactionType -eq "return" `
+        -and $inventoryReturn.transaction.quantityDelta -eq -2 `
+        -and $inventoryReturn.lot.quantityOnHand -eq 5 `
+        -and $inventoryReturnEntry.reason -eq "Smoke vendor return verification"
     Add-Check -Name "inventory vendor purchase receipt lifecycle" -Result $(if ($inventoryReceiptPassed) { "passed" } else { "failed" }) -Details @{ vendorId = $inventoryVendor.vendorId; receiptId = $inventoryReceipt.receiptId; lotId = $inventoryReceipt.lot.lotId; ledgerReceiptReference = $inventoryReceiptEntry.receiptReference }
     Add-Check -Name "inventory lot expiry classification" -Result $(if ($inventoryExpiryPassed) { "passed" } else { "failed" }) -Details @{ lotId = $expiredReceipt.lot.lotId; expiryStatus = $expiredLot.expiryStatus; expiredLots = $inventoryWithExpiry.summary.expiredLots; expiringWithin90Days = $inventoryWithExpiry.summary.expiringWithin90Days }
+    Add-Check -Name "inventory vendor return lifecycle" -Result $(if ($inventoryReturnPassed) { "passed" } else { "failed" }) -Details @{ transactionId = $inventoryReturn.transaction.transactionId; lotId = $inventoryReturn.lot.lotId; quantityDelta = $inventoryReturn.transaction.quantityDelta; quantityOnHand = $inventoryReturn.lot.quantityOnHand }
 }
 catch {
     Add-Check -Name "inventory vendor purchase receipt lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory lot expiry classification" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "inventory vendor return lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
 try {
