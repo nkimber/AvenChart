@@ -9,6 +9,19 @@ namespace AvenChart.Api.Data;
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
+    public const int MaxBinaryDocumentBytes = 25 * 1024 * 1024;
+
+    private static readonly IReadOnlyList<PatientDocumentCategoryOption> CategoryOptions =
+    [
+        new(2, "Lab Report"),
+        new(3, "Medical Record"),
+        new(4, "Patient Information"),
+        new(5, "Patient ID card"),
+        new(6, "Advance Directive"),
+        new(13, "CCDA"),
+        new(29, "Reviewed"),
+        new(31, "Invoices")
+    ];
 
     public async Task<PatientDocumentsResponse?> GetForPatientAsync(
         string patientId,
@@ -38,6 +51,17 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             LastName: patient.LastName,
             Count: documents.Count,
             Documents: documents);
+    }
+
+    public async Task<PatientDocumentCategoryOptionsResponse> GetCategoryOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        return new PatientDocumentCategoryOptionsResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            MaxFileSizeBytes: MaxBinaryDocumentBytes,
+            Categories: CategoryOptions);
     }
 
     public async Task<PatientDocumentOcrQueueResponse> GetOcrQueueAsync(
@@ -443,6 +467,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         {
             return null;
         }
+        if (request.Encounter.HasValue
+            && !await EncounterBelongsToPatientAsync(
+                connection,
+                patient.PatientId,
+                request.Encounter.Value,
+                cancellationToken))
+        {
+            return null;
+        }
 
         var id = 0;
         var categoryId = request.CategoryId <= 0 ? 3 : request.CategoryId;
@@ -517,6 +550,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(request.Name)
             || string.IsNullOrWhiteSpace(request.FileName)
             || string.IsNullOrWhiteSpace(request.Mimetype)
+            || !IsValidMediaType(request.Mimetype)
             || string.IsNullOrWhiteSpace(request.ContentBase64)
             || !DateOnly.TryParse(request.DocDate, out var documentDate))
         {
@@ -533,7 +567,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (contentBytes.Length == 0)
+        if (contentBytes.Length == 0 || contentBytes.Length > MaxBinaryDocumentBytes)
         {
             return null;
         }
@@ -541,6 +575,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
         if (patient is null)
+        {
+            return null;
+        }
+        if (request.Encounter.HasValue
+            && !await EncounterBelongsToPatientAsync(
+                connection,
+                patient.PatientId,
+                request.Encounter.Value,
+                cancellationToken))
         {
             return null;
         }
@@ -632,6 +675,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
         if (patient is null)
+        {
+            return null;
+        }
+        if (request.Encounter.HasValue
+            && !await EncounterBelongsToPatientAsync(
+                connection,
+                patient.PatientId,
+                request.Encounter.Value,
+                cancellationToken))
         {
             return null;
         }
@@ -731,6 +783,15 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientAsync(connection, request.PatientId, cancellationToken);
         if (patient is null)
+        {
+            return null;
+        }
+        if (request.Encounter.HasValue
+            && !await EncounterBelongsToPatientAsync(
+                connection,
+                patient.PatientId,
+                request.Encounter.Value,
+                cancellationToken))
         {
             return null;
         }
@@ -1082,6 +1143,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         if (documentId <= 0
             || string.IsNullOrWhiteSpace(request.FileName)
             || string.IsNullOrWhiteSpace(request.Mimetype)
+            || !IsValidMediaType(request.Mimetype)
             || string.IsNullOrWhiteSpace(request.ContentBase64))
         {
             return null;
@@ -1097,7 +1159,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        if (contentBytes.Length == 0)
+        if (contentBytes.Length == 0 || contentBytes.Length > MaxBinaryDocumentBytes)
         {
             return null;
         }
@@ -1339,6 +1401,31 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             DisplayName: string.IsNullOrWhiteSpace(preferredName)
                 ? $"{lastName}, {firstName}"
                 : $"{lastName}, {firstName} ({preferredName})");
+    }
+
+    private static async Task<bool> EncounterBelongsToPatientAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        int encounter,
+        CancellationToken cancellationToken)
+    {
+        if (encounter <= 0)
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select exists(
+                select 1
+                from encounters
+                where patient_id = @patientId
+                  and encounter = @encounter
+            );
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("encounter", encounter);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     private static async Task<IReadOnlyList<PatientDocumentItem>> GetDocumentsAsync(
@@ -2002,18 +2089,27 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
     private static string CategoryNameFor(int categoryId)
     {
-        return categoryId switch
+        return CategoryOptions.FirstOrDefault(category => category.Id == categoryId)?.Name
+            ?? "Medical Record";
+    }
+
+    private static bool IsValidMediaType(string value)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length is < 3 or > 127)
         {
-            2 => "Lab Report",
-            3 => "Medical Record",
-            4 => "Patient Information",
-            5 => "Patient ID card",
-            6 => "Advance Directive",
-            13 => "CCDA",
-            29 => "Reviewed",
-            31 => "Invoices",
-            _ => "Medical Record"
-        };
+            return false;
+        }
+
+        var parts = normalized.Split('/');
+        return parts.Length == 2
+            && parts.All(part => part.Length > 0 && part.All(IsMediaTypeTokenCharacter));
+    }
+
+    private static bool IsMediaTypeTokenCharacter(char value)
+    {
+        return char.IsAsciiLetterOrDigit(value)
+            || value is '!' or '#' or '$' or '&' or '^' or '_' or '.' or '+' or '-';
     }
 
     private static object NullableText(string? value)

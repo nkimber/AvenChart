@@ -129,6 +129,20 @@ test.describe("accessibility gate", () => {
         ...(await findSeriousAccessibilityViolations(page, path)),
       );
     }
+    await navigateWithinApplication(
+      page,
+      "/clinician/patients/MOD-PAT-0001/documents",
+    );
+    await page.getByRole("button", { name: "Add document" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Choose how to file it" }),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#intake",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

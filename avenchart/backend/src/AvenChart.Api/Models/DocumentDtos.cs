@@ -12,6 +12,16 @@ public sealed record PatientDocumentsResponse(
     int Count,
     IReadOnlyList<PatientDocumentItem> Documents);
 
+public sealed record PatientDocumentCategoryOptionsResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int MaxFileSizeBytes,
+    IReadOnlyList<PatientDocumentCategoryOption> Categories);
+
+public sealed record PatientDocumentCategoryOption(
+    int Id,
+    string Name);
+
 public sealed record PatientDocumentItem(
     int Id,
     string DocumentKey,

@@ -13,11 +13,15 @@ import {
   createInventoryPurchaseRequisition,
   createInventoryTransaction,
   createInventoryTransfer,
+  createPatientBinaryDocument,
+  createPatientDocument,
+  createPatientExternalLinkDocument,
   createPatientMessage,
   createPrescription,
   deleteAllergy,
   deleteImmunization,
   deleteMedication,
+  deletePatientDocument,
   deleteProblem,
   decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
@@ -35,6 +39,7 @@ import {
   getPatientBilling,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
+  getPatientDocumentCategoryOptions,
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
@@ -224,6 +229,97 @@ describe('authenticated API transport', () => {
     expect(result.fileName).toBe('visit summary.pdf')
     expect(result.contentType).toBe('application/pdf')
     expect(await result.blob.text()).toBe('clinical document')
+  })
+
+  it('uses protected document intake contracts for categories, text, file, link, and cleanup', async () => {
+    const detail = {
+      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetVersion: '2026.07',
+      patientId: 'MOD-PAT-0001',
+      legacyPid: 1,
+      pubpid: 'MOD-PAT-0001',
+      patientDisplayName: 'Stone, Avery',
+      count: 1,
+      documents: [],
+    }
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: detail.datasetId,
+          datasetVersion: detail.datasetVersion,
+          maxFileSizeBytes: 26_214_400,
+          categories: [{ id: 3, name: 'Medical Record' }],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }, 201))
+      .mockResolvedValueOnce(jsonResponse({ id: 92, detail }, 201))
+      .mockResolvedValueOnce(jsonResponse({ id: 93, detail }, 201))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    const categories = await getPatientDocumentCategoryOptions('staff-session')
+    await createPatientDocument('staff-session', {
+      patientId: 'MOD-PAT-0001',
+      categoryId: 3,
+      name: 'Care note',
+      docDate: '2026-07-28',
+      encounter: 1000013,
+      content: 'Documented care instructions.',
+      notes: 'Created in chart.',
+    })
+    await createPatientBinaryDocument('staff-session', {
+      patientId: 'MOD-PAT-0001',
+      categoryId: 3,
+      name: 'Referral PDF',
+      docDate: '2026-07-28',
+      encounter: null,
+      fileName: 'referral.pdf',
+      mimetype: 'application/pdf',
+      contentBase64: 'JVBERi0xLjQK',
+      notes: null,
+    })
+    await createPatientExternalLinkDocument('staff-session', {
+      patientId: 'MOD-PAT-0001',
+      categoryId: 3,
+      name: 'External image',
+      docDate: '2026-07-28',
+      encounter: null,
+      url: 'https://example.test/image',
+      notes: 'External source.',
+    })
+    await deletePatientDocument('staff-session', 93)
+
+    expect(categories.maxFileSizeBytes).toBe(26_214_400)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/documents/category-options',
+      'http://localhost:5001/api/documents',
+      'http://localhost:5001/api/documents/binary',
+      'http://localhost:5001/api/documents/external-link',
+      'http://localhost:5001/api/documents/93',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      undefined,
+      'POST',
+      'POST',
+      'POST',
+      'DELETE',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        patientId: 'MOD-PAT-0001',
+        categoryId: 3,
+        name: 'Referral PDF',
+        docDate: '2026-07-28',
+        encounter: null,
+        fileName: 'referral.pdf',
+        mimetype: 'application/pdf',
+        contentBase64: 'JVBERi0xLjQK',
+        notes: null,
+      }),
+    })
   })
 
   it('uses the backend from parameter for longitudinal encounter searches', async () => {

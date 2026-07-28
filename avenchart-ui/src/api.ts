@@ -4384,18 +4384,87 @@ export async function setDuplicateReviewDisposition(
 
 export type PatientDocumentItem = {
   id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  categoryId: number
   categoryName: string
   name: string
   docDate: string
+  uploadedAt: string
+  currentVersion: number
+  versionLabel: string
   mimetype?: string | null
   sizeBytes?: number | null
+  encounter?: number | null
+  storageMethod?: string | null
+  fileName?: string | null
+  url?: string | null
+  notes?: string | null
+  reviewStatus: string
+  contentPreview?: string | null
+  previewKind: string
   canDownload: boolean
 }
 
 export type PatientDocumentsResponse = {
+  datasetId: string
+  datasetVersion: string
   patientId: string
+  legacyPid: number
+  pubpid: string
   patientDisplayName: string
+  count: number
   documents: PatientDocumentItem[]
+}
+
+export type PatientDocumentCategoryOption = {
+  id: number
+  name: string
+}
+
+export type PatientDocumentCategoryOptionsResponse = {
+  datasetId: string
+  datasetVersion: string
+  maxFileSizeBytes: number
+  categories: PatientDocumentCategoryOption[]
+}
+
+export type PatientDocumentCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  content: string
+  notes?: string | null
+}
+
+export type PatientDocumentBinaryCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  fileName: string
+  mimetype: string
+  contentBase64: string
+  notes?: string | null
+}
+
+export type PatientDocumentExternalLinkCreateInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  url: string
+  notes?: string | null
+}
+
+export type PatientDocumentMutationResponse = {
+  id: number
+  detail: PatientDocumentsResponse
 }
 
 export async function getPatientDocuments(
@@ -4403,7 +4472,54 @@ export async function getPatientDocuments(
   patientId: string,
   signal?: AbortSignal,
 ): Promise<PatientDocumentsResponse> {
-  return clinicianGet(sessionId, `/api/documents/${patientId}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(patientId)}`,
+    signal,
+  )
+}
+
+export async function getPatientDocumentCategoryOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientDocumentCategoryOptionsResponse> {
+  return clinicianGet(sessionId, '/api/documents/category-options', signal)
+}
+
+export async function createPatientDocument(
+  sessionId: string,
+  input: PatientDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPost(sessionId, '/api/documents', input, signal)
+}
+
+export async function createPatientBinaryDocument(
+  sessionId: string,
+  input: PatientDocumentBinaryCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPost(sessionId, '/api/documents/binary', input, signal)
+}
+
+export async function createPatientExternalLinkDocument(
+  sessionId: string,
+  input: PatientDocumentExternalLinkCreateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPost(sessionId, '/api/documents/external-link', input, signal)
+}
+
+export async function deletePatientDocument(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}`,
+    signal,
+  )
 }
 
 export type DownloadedFile = {

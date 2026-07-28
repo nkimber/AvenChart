@@ -8378,6 +8378,365 @@ h4 {
 }
 
 /* ─── Reduced motion ────────────────────────────────────────────────────── */
+/* --- Patient document intake and register ----------------------------- */
+.patient-documents-workspace {
+  display: grid;
+  gap: 16px;
+}
+.document-workspace-brief {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 22px;
+  border: 1px solid #dce1f5;
+  border-left: 5px solid var(--teal);
+  border-radius: var(--radius-lg);
+  background: #f4f6ff;
+}
+.document-workspace-eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.document-workspace-brief h2,
+.patient-document-intake-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.25;
+}
+.document-workspace-brief p,
+.patient-document-intake-heading p {
+  max-width: 680px;
+  margin: 5px 0 0;
+  color: #4f5968;
+  font-size: 13px;
+}
+.document-workspace-brief-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.document-workspace-count {
+  display: grid;
+  color: #4f5968;
+  font-size: 11px;
+  line-height: 1.15;
+  text-align: right;
+}
+.document-workspace-count strong {
+  color: var(--text);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.patient-document-intake {
+  border-top: 3px solid var(--teal);
+}
+.patient-document-intake-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.patient-document-intake-heading p {
+  max-width: 420px;
+  text-align: right;
+}
+.patient-document-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.patient-document-mode-switch button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.patient-document-mode-switch button[aria-pressed='true'] {
+  border-color: #cfd5f0;
+  background: var(--surface);
+  color: var(--teal);
+  box-shadow: var(--shadow-card);
+}
+.patient-document-mode-switch button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.patient-document-mode-switch button > span {
+  display: grid;
+  min-width: 0;
+}
+.patient-document-mode-switch strong {
+  color: inherit;
+  font-size: 13px;
+}
+.patient-document-mode-switch small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.patient-document-intake-form {
+  display: grid;
+  gap: 2px;
+  margin-top: 18px;
+}
+.patient-document-intake-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 0.8fr));
+  gap: 12px;
+}
+.patient-document-content-input {
+  min-height: 140px;
+}
+.patient-document-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1.5px dashed #aeb6dc;
+  border-radius: var(--radius-md);
+  background: #fafbff;
+  color: var(--teal);
+  cursor: pointer;
+}
+.patient-document-file-picker:hover {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+.patient-document-file-picker > span {
+  display: grid;
+}
+.patient-document-file-picker strong {
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.patient-document-file-picker small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.patient-document-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.patient-document-file-input:focus-visible + .patient-document-file-picker {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.patient-document-intake-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px;
+}
+.patient-document-intake-actions .cl-btn-secondary:disabled,
+.patient-document-register-actions .cl-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.patient-document-register {
+  padding: 0;
+  overflow: hidden;
+}
+.patient-document-register .cl-card-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.patient-document-register-list {
+  display: grid;
+}
+.patient-document-register-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.patient-document-register-item:last-child {
+  border-bottom: 0;
+}
+.patient-document-register-item.is-recent {
+  box-shadow: inset 4px 0 0 var(--success);
+  background: #fbfffd;
+}
+.patient-document-register-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+.patient-document-register-main {
+  min-width: 0;
+}
+.patient-document-register-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.patient-document-register-title h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+}
+.patient-document-register-title p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.patient-document-register-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.patient-document-register-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 10px 0 0;
+}
+.patient-document-register-facts div {
+  min-width: 110px;
+}
+.patient-document-register-facts dt {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.patient-document-register-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.patient-document-register-preview,
+.patient-document-register-note {
+  margin: 9px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.patient-document-register-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.patient-document-register-note {
+  color: var(--text);
+}
+.patient-document-register-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.patient-document-register-actions .cl-btn-secondary {
+  justify-content: center;
+  min-width: 116px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (max-width: 1050px) {
+  .patient-document-intake-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .document-workspace-brief,
+  .patient-document-intake-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .document-workspace-brief-actions {
+    justify-content: space-between;
+  }
+  .document-workspace-count,
+  .patient-document-intake-heading p {
+    text-align: left;
+  }
+  .patient-document-mode-switch,
+  .patient-document-intake-grid {
+    grid-template-columns: 1fr;
+  }
+  .patient-document-register-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .patient-document-register-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+  .patient-document-register-actions .cl-btn-secondary {
+    flex: 1;
+  }
+}
+@media (max-width: 460px) {
+  .document-workspace-brief-actions,
+  .patient-document-register-title,
+  .patient-document-intake-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .document-workspace-count {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .document-workspace-count strong {
+    font-size: 20px;
+  }
+  .patient-document-register-tags {
+    justify-content: flex-start;
+  }
+  .patient-document-register-actions {
+    flex-direction: column;
+  }
+}
+@media (forced-colors: active) {
+  .document-workspace-brief,
+  .patient-document-mode-switch button[aria-pressed='true'],
+  .patient-document-file-picker,
+  .patient-document-register-item.is-recent {
+    border-color: CanvasText;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -975,6 +976,222 @@ test.describe("isolated mutation workflows", () => {
         { headers },
       );
       expect(residue.status()).toBe(404);
+    }
+  });
+
+  test("staff can file text, bounded binary, and http document-link records from the patient chart", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `TMP-DOC-INTAKE-${Date.now()}`;
+    const noteName = `${marker}-NOTE`;
+    const fileName = `${marker}-FILE`;
+    const linkName = `${marker}-LINK`;
+    const headers = { "X-Legacy EHR-Session": sessionId };
+
+    async function getMarkerDocuments() {
+      const response = await page.request.get(
+        `${apiBaseUrl}/api/documents/MOD-PAT-0001?includeArchived=true`,
+        { headers },
+      );
+      expect(response.ok()).toBeTruthy();
+      const body = (await response.json()) as {
+        documents: Array<{
+          id: number;
+          name: string;
+          categoryName: string;
+          encounter?: number | null;
+          mimetype?: string | null;
+          storageMethod?: string | null;
+          url?: string | null;
+        }>;
+      };
+      return body.documents.filter((document) =>
+        document.name.includes(marker),
+      );
+    }
+
+    try {
+      const otherEncountersResponse = await page.request.get(
+        `${apiBaseUrl}/api/encounters/?patientId=MOD-PAT-0002&from=1900-01-01&limit=1`,
+        { headers },
+      );
+      expect(otherEncountersResponse.ok()).toBeTruthy();
+      const otherEncounters = (await otherEncountersResponse.json()) as {
+        encounters: Array<{ encounter: number }>;
+      };
+      expect(otherEncounters.encounters[0]).toBeTruthy();
+      const crossPatientLink = await page.request.post(
+        `${apiBaseUrl}/api/documents`,
+        {
+          headers,
+          data: {
+            patientId: "MOD-PAT-0001",
+            categoryId: 3,
+            name: `${marker}-CROSS-PATIENT`,
+            docDate: "2026-07-28",
+            encounter: otherEncounters.encounters[0].encounter,
+            content: "This attachment must not persist.",
+            notes: marker,
+          },
+        },
+      );
+      expect(crossPatientLink.status()).toBe(400);
+      const invalidMediaType = await page.request.post(
+        `${apiBaseUrl}/api/documents/binary`,
+        {
+          headers,
+          data: {
+            patientId: "MOD-PAT-0001",
+            categoryId: 3,
+            name: `${marker}-INVALID-TYPE`,
+            docDate: "2026-07-28",
+            encounter: null,
+            fileName: "invalid.bin",
+            mimetype: "not a media type",
+            contentBase64: Buffer.from("invalid").toString("base64"),
+            notes: marker,
+          },
+        },
+      );
+      expect(invalidMediaType.status()).toBe(400);
+
+      await page.goto(
+        "/clinician/patients/MOD-PAT-0001/documents",
+      );
+      await page.getByRole("button", { name: "Add document" }).click();
+      await page.getByLabel("Document name *").fill(noteName);
+      await page
+        .getByLabel("Filing category *")
+        .selectOption({ label: "Medical Record" });
+      await page
+        .getByLabel("Related encounter")
+        .selectOption("1000013");
+      await page
+        .getByLabel("Note content *")
+        .fill(`Browser-created clinical note ${marker}.`);
+      await page.getByLabel("Filing notes").fill(`Proof ${marker}`);
+      await page
+        .getByRole("button", { name: "File clinical note" })
+        .click();
+
+      const noteCard = page.locator("article").filter({ hasText: noteName });
+      await expect(noteCard).toBeVisible({ timeout: 20_000 });
+      await expect(noteCard).toContainText("Medical Record");
+      await expect(noteCard).toContainText("#1000013");
+      await expect(noteCard).toContainText("Just filed");
+
+      await page.getByRole("button", { name: "Add document" }).click();
+      await page
+        .getByRole("button", { name: /Upload file Up to/ })
+        .click();
+      await page.getByLabel("Document file *").setInputFiles({
+        name: "too-large.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.alloc(26_214_401),
+      });
+      await expect(page.getByRole("alert")).toContainText(
+        "accepts files up to 25.0 MB",
+      );
+      await page.getByLabel("Document file *").setInputFiles({
+        name: `${marker}.pdf`,
+        mimeType: "application/pdf",
+        buffer: Buffer.from("%PDF-1.4\n% Modern UI document proof\n"),
+      });
+      await page.getByLabel("Document name *").fill(fileName);
+      await page.getByLabel("Filing notes").fill(`Binary proof ${marker}`);
+      await page
+        .getByRole("button", { name: "Upload document" })
+        .click();
+
+      const fileCard = page.locator("article").filter({ hasText: fileName });
+      await expect(fileCard).toBeVisible({ timeout: 20_000 });
+      await expect(fileCard).toContainText("application/pdf");
+      await expect(fileCard).toContainText("Just filed");
+
+      await page.getByRole("button", { name: "Add document" }).click();
+      await page
+        .getByRole("button", { name: /External link HTTP/ })
+        .click();
+      await page.getByLabel("Document name *").fill(linkName);
+      await page
+        .getByLabel("Filing category *")
+        .selectOption({ label: "Advance Directive" });
+      await page
+        .getByLabel("External document URL *")
+        .fill("ftp://example.test/not-permitted");
+      await page
+        .getByRole("button", { name: "File external link" })
+        .click();
+      await expect(page.getByRole("alert")).toContainText(
+        "must use http or https",
+      );
+      await page
+        .getByLabel("External document URL *")
+        .fill(`https://example.test/${marker}`);
+      await page.getByLabel("Filing notes").fill(`Link proof ${marker}`);
+      await page
+        .getByRole("button", { name: "File external link" })
+        .click();
+
+      const linkCard = page.locator("article").filter({ hasText: linkName });
+      await expect(linkCard).toBeVisible({ timeout: 20_000 });
+      await expect(linkCard).toContainText("Advance Directive");
+      await expect(linkCard).toContainText("External link");
+      await expect(
+        linkCard.getByRole("link", { name: "Open link" }),
+      ).toHaveAttribute("href", `https://example.test/${marker}`);
+
+      const documents = await getMarkerDocuments();
+      expect(documents).toHaveLength(3);
+      expect(documents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: noteName,
+            encounter: 1000013,
+            mimetype: "text/plain",
+          }),
+          expect.objectContaining({
+            name: fileName,
+            mimetype: "application/pdf",
+            storageMethod: "database",
+          }),
+          expect.objectContaining({
+            name: linkName,
+            categoryName: "Advance Directive",
+            storageMethod: "web_url",
+            url: `https://example.test/${marker}`,
+          }),
+        ]),
+      );
+
+      const binaryDocument = documents.find(
+        (document) => document.name === fileName,
+      );
+      expect(binaryDocument).toBeTruthy();
+      const contentResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${binaryDocument!.id}/content`,
+        { headers },
+      );
+      expect(contentResponse.ok()).toBeTruthy();
+      await expect(contentResponse.json()).resolves.toMatchObject({
+        name: fileName,
+        mimetype: "application/pdf",
+        isBinary: true,
+      });
+    } finally {
+      const fixtures = await getMarkerDocuments();
+      for (const fixture of fixtures) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/documents/${fixture.id}`,
+          { headers },
+        );
+        expect([204, 404]).toContain(deleted.status());
+      }
+      await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
     }
   });
 

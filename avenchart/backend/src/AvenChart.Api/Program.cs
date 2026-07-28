@@ -2837,6 +2837,15 @@ documents.MapGet("/{documentId:int}/download", async (
     })
     .WithName("DownloadPatientDocument");
 
+documents.MapGet("/category-options", async (
+        DocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        var options = await repository.GetCategoryOptionsAsync(cancellationToken);
+        return Results.Ok(options);
+    })
+    .WithName("GetPatientDocumentCategoryOptions");
+
 documents.MapGet("/{patientId}", async (
         DocumentRepository repository,
         string patientId,
