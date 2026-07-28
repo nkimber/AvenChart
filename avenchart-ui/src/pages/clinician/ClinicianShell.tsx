@@ -11,6 +11,7 @@ import {
   ClipboardPlus,
   FileText,
   FlaskConical,
+  Gauge,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -71,6 +72,7 @@ const NAV_ITEMS = [
   { path: '/clinician/billing', label: 'Billing', icon: ReceiptText },
   { path: '/clinician/inventory', label: 'Inventory', icon: Package },
   { path: '/clinician/admin', label: 'Admin', icon: Settings },
+  { path: '/clinician/experience', label: 'Experience baseline', icon: Gauge },
 ] as const
 
 type NavigationListProps = {

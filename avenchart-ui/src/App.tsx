@@ -2,10 +2,10 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
 import { ToastContainer } from './components/Toast.tsx'
 import { AppErrorBoundary } from './components/AppErrorBoundary.tsx'
-import EntryChooser from './pages/EntryChooser.tsx'
-import ClinicianLogin from './pages/ClinicianLogin.tsx'
-import PortalLogin from './pages/PortalLogin.tsx'
 
+const EntryChooser = lazy(() => import('./pages/EntryChooser.tsx'))
+const ClinicianLogin = lazy(() => import('./pages/ClinicianLogin.tsx'))
+const PortalLogin = lazy(() => import('./pages/PortalLogin.tsx'))
 const PortalShell = lazy(() => import('./pages/portal/PortalShell.tsx'))
 const PortalDashboard = lazy(() => import('./pages/portal/PortalDashboard.tsx'))
 const PortalMessages = lazy(() => import('./pages/portal/PortalMessages.tsx'))
@@ -38,6 +38,9 @@ const TherapyGroups = lazy(() => import('./pages/clinician/TherapyGroups.tsx'))
 const BillingWorkspace = lazy(() => import('./pages/clinician/BillingWorkspace.tsx'))
 const InventoryWorkspace = lazy(() => import('./pages/clinician/InventoryWorkspace.tsx'))
 const AdminDirectory = lazy(() => import('./pages/clinician/AdminDirectory.tsx'))
+const ExperienceBaseline = lazy(
+  () => import('./pages/clinician/ExperienceBaseline.tsx'),
+)
 const NewEncounter = lazy(() => import('./pages/clinician/NewEncounter.tsx'))
 const NewPatient = lazy(() => import('./pages/clinician/NewPatient.tsx'))
 const PrescriptionRenewals = lazy(
@@ -117,6 +120,7 @@ export default function App() {
           <Route path="billing" element={<BillingWorkspace />} />
           <Route path="inventory" element={<InventoryWorkspace />} />
           <Route path="admin" element={<AdminDirectory />} />
+          <Route path="experience" element={<ExperienceBaseline />} />
 
           {/* Standalone new encounter (no patient context) */}
           <Route path="encounters/new" element={<NewEncounter />} />

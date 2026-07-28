@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using AvenChart.Api.Configuration;
 using AvenChart.Api.Data;
+using AvenChart.Api.Experience;
 using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 using AvenChart.Api.Security;
@@ -5372,6 +5373,10 @@ billing.MapDelete("/payments/{activityId}", async (
 
 var administration = app.MapGroup("/api/administration").WithTags("Administration");
 RequireAccessPermission(administration, "admin", "acl", "write");
+
+administration.MapGet("/experience-baseline", () =>
+    Results.Ok(ExperienceBaselineCatalog.Build()))
+    .WithName("GetExperienceBaseline");
 
 administration.MapGet("/configuration-catalog", () => Results.Ok(new ConfigurationCatalogResponse([
     new("practice.identity", "Practice identity and contact", "Local implemented", "Practice administrator", "Required non-blank practice name", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),

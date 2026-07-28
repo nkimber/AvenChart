@@ -493,6 +493,70 @@ catch {
 }
 
 try {
+    $experienceBaselineUri = "$ApiBaseUrl/api/administration/experience-baseline"
+    $unauthenticatedExperienceStatus = 0
+    try {
+        Invoke-WebRequest -Uri $experienceBaselineUri -Method Get -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedExperienceStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskExperienceStatus = 0
+    try {
+        Invoke-WebRequest -Uri $experienceBaselineUri -Method Get -Headers (Get-FrontDeskHeaders) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskExperienceStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $experienceBaseline = Invoke-RestMethod -Uri $experienceBaselineUri -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $disabledAnalytics = @($experienceBaseline.analyticsEvents | Where-Object { $_.collectionEnabled -eq $false })
+    $blockingGaps = @($experienceBaseline.gaps | Where-Object { $_.blocksProduction -eq $true })
+    $experienceBaselinePassed = $unauthenticatedExperienceStatus -eq 401 `
+        -and $frontDeskExperienceStatus -eq 403 `
+        -and $experienceBaseline.revision -eq "local-experience-baseline-v1" `
+        -and $experienceBaseline.lifecycleState -eq "proposed" `
+        -and $experienceBaseline.counts.roles -eq 4 `
+        -and $experienceBaseline.counts.environments -eq 5 `
+        -and $experienceBaseline.counts.tasks -eq 13 `
+        -and $experienceBaseline.counts.criteria -eq 12 `
+        -and $experienceBaseline.counts.analyticsEvents -eq 6 `
+        -and $experienceBaseline.counts.analyticsEventsCollected -eq 0 `
+        -and $experienceBaseline.counts.gaps -eq 6 `
+        -and $disabledAnalytics.Count -eq 6 `
+        -and $blockingGaps.Count -eq 6 `
+        -and @($experienceBaseline.forbiddenAnalyticsProperties) -contains "patientId" `
+        -and @($experienceBaseline.forbiddenAnalyticsProperties) -contains "sessionId"
+    Add-Check -Name "versioned experience acceptance baseline" -Result $(if ($experienceBaselinePassed) { "passed" } else { "failed" }) -Details @{
+        revision = $experienceBaseline.revision
+        lifecycleState = $experienceBaseline.lifecycleState
+        roles = $experienceBaseline.counts.roles
+        environments = $experienceBaseline.counts.environments
+        tasks = $experienceBaseline.counts.tasks
+        criteria = $experienceBaseline.counts.criteria
+        analyticsEvents = $experienceBaseline.counts.analyticsEvents
+        analyticsEventsCollected = $experienceBaseline.counts.analyticsEventsCollected
+        productionBlockingGaps = $blockingGaps.Count
+        unauthenticatedStatus = $unauthenticatedExperienceStatus
+        frontDeskStatus = $frontDeskExperienceStatus
+    }
+}
+catch {
+    Add-Check -Name "versioned experience acceptance baseline" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $auditExportHeaders = Get-AdministrationHeaders
     $auditExportResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/audit/phi?limit=200&username=admin" -Method Get -Headers $auditExportHeaders -TimeoutSec 20
     $auditExportClient = New-AuthenticatedHttpClient

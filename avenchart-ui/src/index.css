@@ -11067,6 +11067,523 @@ h4 {
   }
 }
 
+/* UX-01: inspectable, policy-neutral experience acceptance baseline. */
+.experience-baseline-page {
+  display: grid;
+  gap: 18px;
+}
+
+.experience-baseline-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.experience-baseline-header h1,
+.experience-baseline-header p {
+  margin-top: 0;
+}
+
+.experience-baseline-header h1 {
+  margin-bottom: 5px;
+}
+
+.experience-baseline-header > div > p:last-child {
+  color: var(--text-muted);
+  margin-bottom: 0;
+  max-width: 760px;
+}
+
+.experience-revision,
+.experience-collection-off,
+.experience-state,
+.experience-risk {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.experience-revision {
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.experience-boundary {
+  align-items: flex-start;
+  background: var(--warning-surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.experience-boundary svg {
+  color: #785600;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.experience-boundary h2,
+.experience-boundary p {
+  margin: 0;
+}
+
+.experience-boundary h2 {
+  font-size: 14px;
+}
+
+.experience-boundary p {
+  color: #574711;
+  font-size: 12px;
+  line-height: 1.55;
+  margin-top: 3px;
+}
+
+.experience-loading {
+  display: grid;
+  gap: 10px;
+}
+
+.experience-error {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.experience-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.experience-metrics article {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.experience-metrics svg {
+  color: var(--teal);
+}
+
+.experience-metrics span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.experience-metrics strong {
+  font-size: 20px;
+}
+
+.experience-section-heading {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.experience-section-heading h2,
+.experience-section-heading p {
+  margin-top: 0;
+}
+
+.experience-section-heading h2 {
+  font-size: 17px;
+  margin-bottom: 0;
+}
+
+.experience-section-heading > span:not(.experience-collection-off) {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.experience-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.experience-filter-grid label {
+  color: var(--text-muted);
+  display: grid;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.experience-criteria-list,
+.experience-environment-list,
+.experience-analytics-list,
+.experience-gap-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.experience-criteria-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.experience-criteria-list > li,
+.experience-environment-list > li,
+.experience-analytics-list > li,
+.experience-gap-list > li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  padding: 12px;
+}
+
+.experience-criterion-heading,
+.experience-environment-list > li > div:first-child,
+.experience-gap-list li > div {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.experience-criterion-heading > div > span,
+.experience-gap-list li > div > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.experience-criterion-heading h3 {
+  font-size: 13px;
+  margin: 2px 0 0;
+}
+
+.experience-state-met-local {
+  background: var(--success-surface);
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+  color: #05654b;
+}
+
+.experience-state-measured-local,
+.experience-risk-high {
+  background: var(--info-surface);
+  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
+  color: #075985;
+}
+
+.experience-state-proposed,
+.experience-state-owner-gated {
+  background: var(--warning-surface);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  color: #785600;
+}
+
+.experience-criteria-list dl,
+.experience-task-detail dl {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+}
+
+.experience-criteria-list dl > div,
+.experience-task-detail dl > div {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 2px;
+  padding-top: 7px;
+}
+
+.experience-criteria-list dt,
+.experience-task-detail dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.experience-criteria-list dd,
+.experience-task-detail dd {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.experience-task-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.experience-task-list {
+  display: grid;
+  gap: 6px;
+}
+
+.experience-task-button {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.experience-task-button:hover,
+.experience-task-button.is-selected {
+  background: var(--teal-soft);
+  border-color: var(--teal);
+}
+
+.experience-task-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--teal) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.experience-task-button span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.experience-task-button small {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.experience-task-detail {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.experience-task-detail h3 {
+  font-size: 18px;
+  margin: 6px 0 3px;
+}
+
+.experience-task-detail code,
+.experience-analytics-list code {
+  overflow-wrap: anywhere;
+}
+
+.experience-task-detail > p {
+  font-size: 12px;
+}
+
+.experience-risk-safety-critical {
+  background: var(--danger-surface);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: #8b1421;
+}
+
+.experience-environment-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.experience-environment-list strong {
+  font-size: 12px;
+}
+
+.experience-environment-list > li > div:first-child > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.experience-environment-list p,
+.experience-analytics-list p,
+.experience-gap-list p {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+.experience-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.experience-chip-row > span {
+  background: var(--teal-soft);
+  border-radius: 999px;
+  color: var(--teal-deep);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 6px;
+}
+
+.experience-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 14px;
+}
+
+.experience-collection-off {
+  background: var(--danger-surface);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: #8b1421;
+}
+
+.experience-analytics-card > p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.experience-analytics-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.experience-analytics-list code {
+  color: var(--teal-deep);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.experience-analytics-list span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.experience-forbidden-properties {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.experience-forbidden-properties summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.experience-gap-list li > div > strong {
+  color: #785600;
+  font-size: 10px;
+}
+
+.experience-gap-list small {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.experience-standard {
+  align-items: flex-start;
+  background: var(--teal-soft);
+  border: 1px solid color-mix(in srgb, var(--teal) 30%, var(--border));
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.experience-standard svg {
+  color: var(--teal);
+  flex: 0 0 auto;
+}
+
+.experience-standard div {
+  display: grid;
+  gap: 2px;
+}
+
+.experience-standard strong {
+  font-size: 12px;
+}
+
+.experience-standard span {
+  color: #50586a;
+  font-size: 11px;
+}
+
+@media (max-width: 1000px) {
+  .experience-metrics,
+  .experience-environment-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .experience-lower-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .experience-baseline-header,
+  .experience-boundary,
+  .experience-error,
+  .experience-section-heading,
+  .experience-criterion-heading,
+  .experience-environment-list > li > div:first-child,
+  .experience-gap-list li > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .experience-metrics,
+  .experience-filter-grid,
+  .experience-criteria-list,
+  .experience-task-workspace,
+  .experience-environment-list,
+  .experience-analytics-list {
+    grid-template-columns: 1fr;
+  }
+
+  .experience-filter-grid {
+    max-width: none;
+  }
+
+  .experience-error button {
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .experience-boundary,
+  .experience-metrics article,
+  .experience-criteria-list > li,
+  .experience-task-button,
+  .experience-task-detail,
+  .experience-environment-list > li,
+  .experience-analytics-list > li,
+  .experience-gap-list > li,
+  .experience-standard {
+    border: 1px solid CanvasText;
+  }
+
+  .experience-task-button.is-selected {
+    outline: 2px solid Highlight;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

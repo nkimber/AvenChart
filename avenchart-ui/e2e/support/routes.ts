@@ -26,6 +26,7 @@ export const clinicianRoutes = [
   "/clinician/billing",
   "/clinician/inventory",
   "/clinician/admin",
+  "/clinician/experience",
   "/clinician/encounters/new",
 ] as const;
 
