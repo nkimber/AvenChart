@@ -673,6 +673,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var quantityDelta = normalizedType is "consumption" or "destruction" or "return"
             ? -request.Quantity
             : request.Quantity;
+        if (normalizedType == "adjustment" && quantityDelta > 0 && request.ReversalApplicationId is null)
+        {
+            throw new ArgumentException("A positive inventory adjustment requires the issue application it reverses.");
+        }
         var now = DateTimeOffset.UtcNow;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -749,6 +753,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (quantityDelta < 0)
         {
             await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, -quantityDelta, normalizedType, username, now, cancellationToken, request.CostLayerId);
+        }
+        else if (quantityDelta > 0)
+        {
+            await RestoreReceiptCostLayerAsync(connection, transaction, transactionId, request.LotId, quantityDelta, request.ReversalApplicationId!.Value, username, now, cancellationToken);
         }
 
         decimal itemQuantity;
@@ -2208,6 +2216,27 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using (var update = connection.CreateCommand()) { update.Transaction = transaction; update.CommandText = "update inventory_cost_layers set remaining_quantity=@remaining,status=@status where layer_id=@id;"; update.Parameters.AddWithValue("remaining", resulting); update.Parameters.AddWithValue("status", resulting == 0 ? "exhausted" : "open"); update.Parameters.AddWithValue("id", layer.Id); await update.ExecuteNonQueryAsync(cancellationToken); }
         await using var insert = connection.CreateCommand(); insert.Transaction = transaction; insert.CommandText = "insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,applied_at,applied_by) values(@id,@layer,@source,@type,@quantity,@unitCost,@extended,@rounding,@at,@user);";
         insert.Parameters.AddWithValue("id", Guid.NewGuid()); insert.Parameters.AddWithValue("layer", layer.Id); insert.Parameters.AddWithValue("source", sourceTransactionId); insert.Parameters.AddWithValue("type", applicationType); insert.Parameters.AddWithValue("quantity", -applied); insert.Parameters.AddWithValue("unitCost", applicationUnitCost); insert.Parameters.AddWithValue("extended", -RoundAccordingToPolicy(applied * applicationUnitCost, 4, layer.RoundingRule)); insert.Parameters.AddWithValue("rounding", roundingTrace); insert.Parameters.AddWithValue("at", now); insert.Parameters.AddWithValue("user", username); await insert.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RestoreReceiptCostLayerAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, decimal quantity, Guid reversalApplicationId, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        Guid layerId; decimal priorQuantity; decimal priorUnitCost; decimal priorExtendedCost; decimal remaining; decimal received; string roundingTrace;
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "select a.layer_id,a.quantity,a.unit_cost,a.extended_cost,l.remaining_quantity,l.received_quantity,a.rounding_trace from inventory_cost_layer_applications a join inventory_cost_layers l on l.layer_id=a.layer_id where a.application_id=@application and l.lot_id=@lot for update of l;";
+            select.Parameters.AddWithValue("application", reversalApplicationId); select.Parameters.AddWithValue("lot", lotId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The selected issue application does not belong to this inventory lot.");
+            layerId=reader.GetGuid(0); priorQuantity=reader.GetDecimal(1); priorUnitCost=reader.GetDecimal(2); priorExtendedCost=reader.GetDecimal(3); remaining=reader.GetDecimal(4); received=reader.GetDecimal(5); roundingTrace=reader.GetString(6);
+        }
+        if (priorQuantity >= 0 || -priorQuantity != quantity) throw new ArgumentException("A positive adjustment must restore the complete negative quantity from its selected issue application.");
+        await using (var existing = connection.CreateCommand()) { existing.Transaction=transaction; existing.CommandText="select exists(select 1 from inventory_cost_layer_applications where reversal_application_id=@application);"; existing.Parameters.AddWithValue("application",reversalApplicationId); if(await existing.ExecuteScalarAsync(cancellationToken) is true) throw new ArgumentException("The selected issue application has already been restored."); }
+        var restored = remaining + quantity;
+        if (restored > received) throw new ArgumentException("Restoring this application would exceed the receipt layer's original quantity.");
+        await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_cost_layers set remaining_quantity=@remaining,status='open' where layer_id=@layer;"; update.Parameters.AddWithValue("remaining",restored); update.Parameters.AddWithValue("layer",layerId); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await using var insert = connection.CreateCommand(); insert.Transaction=transaction; insert.CommandText="insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,reversal_application_id,applied_at,applied_by) values(@id,@layer,@source,'correction',@quantity,@unitCost,@extended,@rounding,@reversal,@at,@user);";
+        insert.Parameters.AddWithValue("id",Guid.NewGuid()); insert.Parameters.AddWithValue("layer",layerId); insert.Parameters.AddWithValue("source",sourceTransactionId); insert.Parameters.AddWithValue("quantity",quantity); insert.Parameters.AddWithValue("unitCost",priorUnitCost); insert.Parameters.AddWithValue("extended",-priorExtendedCost); insert.Parameters.AddWithValue("rounding",$"linked reversal of {reversalApplicationId:D}; {roundingTrace}"); insert.Parameters.AddWithValue("reversal",reversalApplicationId); insert.Parameters.AddWithValue("at",now); insert.Parameters.AddWithValue("user",username); await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static decimal RoundAccordingToPolicy(decimal value, int decimals, string roundingRule) => decimal.Round(value, decimals, roundingRule switch { "half_up" => MidpointRounding.AwayFromZero, "truncate" => MidpointRounding.ToZero, _ => MidpointRounding.ToEven });

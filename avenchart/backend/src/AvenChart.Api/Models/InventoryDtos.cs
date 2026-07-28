@@ -199,7 +199,8 @@ public sealed record InventoryTransactionCreateRequest(
     string TransactionType,
     decimal Quantity,
     string? Reason,
-    Guid? CostLayerId = null);
+    Guid? CostLayerId = null,
+    Guid? ReversalApplicationId = null);
 
 public sealed record InventoryTransferCreateRequest(
     int SourceLotId,
