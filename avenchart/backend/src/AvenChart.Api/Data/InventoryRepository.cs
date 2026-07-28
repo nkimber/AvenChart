@@ -2134,7 +2134,16 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await using var reader = await select.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) layers.Add((reader.GetGuid(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetString(3)));
         }
-        if (layers.Count == 0 || layers.Any(layer => layer.Method == "practice_specific")) return;
+        if (layers.Count == 0)
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "no_open_layer", "No policy-backed receipt cost layer is available for this quantity movement.", username, now, cancellationToken);
+            return;
+        }
+        if (layers.Any(layer => layer.Method == "practice_specific"))
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "unsupported_method", "The active practice-specific method has no local movement-cost implementation.", username, now, cancellationToken);
+            return;
+        }
         var remaining = quantity;
         foreach (var layer in layers)
         {
@@ -2155,6 +2164,15 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             }
             remaining -= applied;
         }
+        if (remaining > 0) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete quantity movement.", username, now, cancellationToken);
+    }
+
+    private static async Task RecordCostingExceptionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, string status, string reason, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "insert into inventory_costing_exceptions(exception_id,source_transaction_id,lot_id,status,reason,created_at,created_by) values(@id,@source,@lot,@status,@reason,@at,@user);";
+        command.Parameters.AddWithValue("id", Guid.NewGuid()); command.Parameters.AddWithValue("source", sourceTransactionId); command.Parameters.AddWithValue("lot", lotId); command.Parameters.AddWithValue("status", status); command.Parameters.AddWithValue("reason", reason); command.Parameters.AddWithValue("at", now); command.Parameters.AddWithValue("user", username);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static InventoryVendor ReadVendor(NpgsqlDataReader reader) => new(
