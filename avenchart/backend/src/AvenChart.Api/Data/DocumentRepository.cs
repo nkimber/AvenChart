@@ -20,6 +20,14 @@ public sealed class DocumentReviewConflictException(
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed class DocumentArchiveConflictException(
+    bool currentArchived,
+    string message)
+    : Exception(message)
+{
+    public bool CurrentArchived { get; } = currentArchived;
+}
+
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
@@ -55,6 +63,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         var documents = await GetDocumentsAsync(connection, patient.PatientId, includeArchived, cancellationToken);
+        var (activeCount, archivedCount) = await GetDocumentCountsAsync(
+            connection,
+            patient.PatientId,
+            cancellationToken);
 
         return new PatientDocumentsResponse(
             DatasetId: metadata.DatasetId,
@@ -66,6 +78,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             FirstName: patient.FirstName,
             LastName: patient.LastName,
             Count: documents.Count,
+            ActiveCount: activeCount,
+            ArchivedCount: archivedCount,
+            IncludesArchived: includeArchived,
             Documents: documents);
     }
 
@@ -1015,6 +1030,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 reviewedBy,
                 reviewedAt,
                 deleted,
+                null,
+                null,
                 revisionHash,
                 currentVersion),
             VersionHistory: versionHistory);
@@ -2177,55 +2194,307 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
-    public async Task<PatientDocumentMutationResponse?> SoftDeleteAsync(int documentId, CancellationToken cancellationToken)
+    public async Task<PatientDocumentArchiveHistoryResponse?> GetArchiveHistoryAsync(
+        int documentId,
+        CancellationToken cancellationToken)
     {
         if (documentId <= 0)
         {
             return null;
         }
 
-        string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        const int resultLimit = 100;
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+
+        string documentKey;
+        string patientId;
+        int legacyPid;
+        string name;
+        bool currentArchived;
+        string? currentStateActor;
+        string? currentStateAt;
+        int eventCount;
+
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                update patient_documents
-                set deleted = 1
-                where id = @id
-                returning patient_id;
+                select
+                  d.document_key,
+                  d.patient_id,
+                  d.pid,
+                  d.name,
+                  d.deleted <> 0 as current_archived,
+                  latest.actor as current_state_actor,
+                  latest.occurred_at as current_state_at,
+                  (select count(*)
+                     from patient_document_archive_events e
+                    where e.document_id = d.id) as event_count
+                from patient_documents d
+                left join lateral (
+                  select e.actor, e.occurred_at
+                  from patient_document_archive_events e
+                  where e.document_id = d.id
+                  order by e.occurred_at desc, e.event_id desc
+                  limit 1
+                ) latest on true
+                where d.id = @documentId
+                limit 1;
                 """;
-            command.Parameters.AddWithValue("id", documentId);
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            command.Parameters.AddWithValue("documentId", documentId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            name = reader.GetString(reader.GetOrdinal("name"));
+            currentArchived = reader.GetBoolean(reader.GetOrdinal("current_archived"));
+            currentStateActor = ReadNullableString(reader, "current_state_actor");
+            currentStateAt = ReadNullableDateTimeString(reader, "current_state_at");
+            eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
         }
 
-        if (patientId is null)
+        var events = new List<PatientDocumentArchiveEvent>();
+        await using (var command = connection.CreateCommand())
         {
-            return null;
+            command.CommandText = """
+                select
+                  event_id,
+                  from_archived,
+                  to_archived,
+                  reason,
+                  actor,
+                  occurred_at,
+                  document_version,
+                  review_status,
+                  content_hash
+                from patient_document_archive_events
+                where document_id = @documentId
+                order by occurred_at desc, event_id desc
+                limit @resultLimit;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("resultLimit", resultLimit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var toArchived = reader.GetBoolean(reader.GetOrdinal("to_archived"));
+                events.Add(new PatientDocumentArchiveEvent(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    Action: toArchived ? "Archived" : "Restored",
+                    FromArchived: reader.GetBoolean(reader.GetOrdinal("from_archived")),
+                    ToArchived: toArchived,
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                    DocumentVersion: reader.GetInt32(reader.GetOrdinal("document_version")),
+                    ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                    ContentHash: ReadNullableString(reader, "content_hash")));
+            }
         }
 
-        var detail = await GetForPatientAsync(patientId, cancellationToken);
-        return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
+        return new PatientDocumentArchiveHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            DocumentId: documentId,
+            DocumentKey: documentKey,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Name: name,
+            CurrentArchived: currentArchived,
+            CurrentStateActor: currentStateActor,
+            CurrentStateAt: currentStateAt,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: resultLimit,
+            Events: events);
     }
 
-    public async Task<PatientDocumentMutationResponse?> RestoreAsync(int documentId, CancellationToken cancellationToken)
+    public Task<PatientDocumentMutationResponse?> SoftDeleteAsync(
+        int documentId,
+        PatientDocumentArchiveRequest? request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        ChangeArchiveStateAsync(
+            documentId,
+            targetArchived: true,
+            request ?? new PatientDocumentArchiveRequest(),
+            actor,
+            cancellationToken);
+
+    public Task<PatientDocumentMutationResponse?> RestoreAsync(
+        int documentId,
+        PatientDocumentArchiveRequest? request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        ChangeArchiveStateAsync(
+            documentId,
+            targetArchived: false,
+            request ?? new PatientDocumentArchiveRequest(),
+            actor,
+            cancellationToken);
+
+    private async Task<PatientDocumentMutationResponse?> ChangeArchiveStateAsync(
+        int documentId,
+        bool targetArchived,
+        PatientDocumentArchiveRequest request,
+        string actor,
+        CancellationToken cancellationToken)
     {
         if (documentId <= 0)
         {
             return null;
         }
 
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            throw new ArgumentException("An authenticated document lifecycle actor is required.");
+        }
+
+        var reason = NormalizeText(request.Reason);
+        if (reason?.Length > 250)
+        {
+            throw new ArgumentException("Archive or restore reason must be 250 characters or fewer.");
+        }
+        if (request.ExpectedArchived is not null && reason is null)
+        {
+            throw new ArgumentException(
+                targetArchived
+                    ? "An archive reason is required."
+                    : "A restore reason is required.");
+        }
+        reason ??= targetArchived
+            ? "Document archived."
+            : "Document restored.";
+
         string? patientId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
-                update patient_documents
-                set deleted = 0
-                where id = @id
-                returning patient_id;
-                """;
-            command.Parameters.AddWithValue("id", documentId);
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            string documentKey;
+            int legacyPid;
+            bool currentArchived;
+            int documentVersion;
+            string reviewStatus;
+            string? contentHash;
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    select
+                      document_key,
+                      patient_id,
+                      pid,
+                      deleted <> 0 as current_archived,
+                      (select count(*) from patient_document_versions v where v.document_id = patient_documents.id) + 1 as document_version,
+                      coalesce(review_status, 'pending') as review_status,
+                      hash
+                    from patient_documents
+                    where id = @id
+                    for update;
+                    """;
+                command.Parameters.AddWithValue("id", documentId);
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return null;
+                }
+
+                documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+                currentArchived = reader.GetBoolean(reader.GetOrdinal("current_archived"));
+                documentVersion = reader.GetInt32(reader.GetOrdinal("document_version"));
+                reviewStatus = reader.GetString(reader.GetOrdinal("review_status"));
+                contentHash = ReadNullableString(reader, "hash");
+            }
+
+            if (request.ExpectedArchived is { } expectedArchived &&
+                currentArchived != expectedArchived)
+            {
+                throw new DocumentArchiveConflictException(
+                    currentArchived,
+                    $"The document lifecycle changed from {(expectedArchived ? "archived" : "active")} to {(currentArchived ? "archived" : "active")}. Reload archive history before acting.");
+            }
+
+            if (currentArchived == targetArchived)
+            {
+                throw new DocumentArchiveConflictException(
+                    currentArchived,
+                    $"The document is already {(currentArchived ? "archived" : "active")}.");
+            }
+
+            var occurredAt = DateTimeOffset.UtcNow;
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    update patient_documents
+                    set deleted = @deleted
+                    where id = @id;
+
+                    insert into patient_document_archive_events (
+                      event_id,
+                      document_id,
+                      document_key,
+                      patient_id,
+                      legacy_pid,
+                      from_archived,
+                      to_archived,
+                      reason,
+                      actor,
+                      occurred_at,
+                      document_version,
+                      review_status,
+                      content_hash
+                    )
+                    values (
+                      @eventId,
+                      @id,
+                      @documentKey,
+                      @patientId,
+                      @legacyPid,
+                      @fromArchived,
+                      @toArchived,
+                      @reason,
+                      @actor,
+                      @occurredAt,
+                      @documentVersion,
+                      @reviewStatus,
+                      @contentHash
+                    );
+                    """;
+                command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+                command.Parameters.AddWithValue("id", documentId);
+                command.Parameters.AddWithValue("deleted", targetArchived ? 1 : 0);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patientId);
+                command.Parameters.AddWithValue("legacyPid", legacyPid);
+                command.Parameters.AddWithValue("fromArchived", currentArchived);
+                command.Parameters.AddWithValue("toArchived", targetArchived);
+                command.Parameters.AddWithValue("reason", reason);
+                command.Parameters.AddWithValue("actor", actor.Trim());
+                command.Parameters.AddWithValue("occurredAt", occurredAt);
+                command.Parameters.AddWithValue("documentVersion", documentVersion);
+                command.Parameters.AddWithValue("reviewStatus", reviewStatus);
+                command.Parameters.Add("contentHash", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                    contentHash is null ? DBNull.Value : contentHash;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
         }
 
         if (patientId is null)
@@ -2233,7 +2502,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        var detail = await GetForPatientAsync(
+            patientId,
+            cancellationToken,
+            includeArchived: targetArchived);
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
@@ -2368,6 +2640,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
               mimetype, file_name, size_bytes, pages, encounter, storage_method, url, hash, documentation_of, notes,
               content_bytes,
               deleted,
+              latest_archive.actor as archive_state_actor,
+              latest_archive.occurred_at as archive_state_at,
+              (select count(*) from patient_document_archive_events ae where ae.document_id = patient_documents.id) as archive_event_count,
               (select count(*) from patient_document_versions v where v.document_id = patient_documents.id) as prior_version_count,
               coalesce(review_status, 'pending') as review_status, reviewed_by, reviewed_at,
               case
@@ -2375,6 +2650,13 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 else left(regexp_replace(coalesce(content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
               end as content_preview
             from patient_documents
+            left join lateral (
+              select ae.actor, ae.occurred_at
+              from patient_document_archive_events ae
+              where ae.document_id = patient_documents.id
+              order by ae.occurred_at desc, ae.event_id desc
+              limit 1
+            ) latest_archive on true
             where patient_id = @patientId and (@includeArchived or deleted = 0)
             order by deleted, doc_date desc, id desc;
             """;
@@ -2403,6 +2685,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var reviewedBy = ReadNullableString(reader, "reviewed_by");
             var reviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
             var deleted = reader.GetInt32(reader.GetOrdinal("deleted"));
+            var archiveStateActor = ReadNullableString(reader, "archive_state_actor");
+            var archiveStateAt = ReadNullableDateTimeString(reader, "archive_state_at");
+            var archiveEventCount = reader.GetInt32(reader.GetOrdinal("archive_event_count"));
             var name = reader.GetString(reader.GetOrdinal("name"));
             var scanReadiness = BuildScanReadiness(
                 name,
@@ -2441,6 +2726,9 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 DocumentationOf: ReadNullableString(reader, "documentation_of"),
                 Notes: ReadNullableString(reader, "notes"),
                 Deleted: deleted,
+                ArchiveStateActor: archiveStateActor,
+                ArchiveStateAt: archiveStateAt,
+                ArchiveEventCount: archiveEventCount,
                 ReviewStatus: reviewStatus,
                 ReviewedBy: reviewedBy,
                 ReviewedAt: reviewedAt,
@@ -2461,14 +2749,42 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                     uploadedAt,
                     uploadedAt,
                     reviewStatus,
-                reviewedBy,
-                reviewedAt,
-                deleted,
-                revisionHash,
-                currentVersion)));
+                    reviewedBy,
+                    reviewedAt,
+                    deleted,
+                    archiveStateActor,
+                    archiveStateAt,
+                    revisionHash,
+                    currentVersion)));
         }
 
         return items;
+    }
+
+    private static async Task<(int ActiveCount, int ArchivedCount)> GetDocumentCountsAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              count(*) filter (where deleted = 0)::integer as active_count,
+              count(*) filter (where deleted <> 0)::integer as archived_count
+            from patient_documents
+            where patient_id = @patientId;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return (0, 0);
+        }
+
+        return (
+            reader.GetInt32(reader.GetOrdinal("active_count")),
+            reader.GetInt32(reader.GetOrdinal("archived_count")));
     }
 
     private static IReadOnlyList<PatientDocumentLifecycleEvent> BuildDocumentLifecycleEvents(
@@ -2478,6 +2794,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? reviewedBy,
         string? reviewedAt,
         int deleted,
+        string? archiveStateActor,
+        string? archiveStateAt,
         string? revisionHash,
         int currentVersion = 1)
     {
@@ -2508,14 +2826,16 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             ? new PatientDocumentLifecycleEvent(
                 Code: "active",
                 Label: "Active",
-                OccurredAt: null,
-                Actor: null,
-                Detail: "Visible in active patient documents")
+                OccurredAt: archiveStateAt,
+                Actor: archiveStateActor,
+                Detail: archiveStateAt is null
+                    ? "Visible in active patient documents"
+                    : "Restored to active patient documents")
             : new PatientDocumentLifecycleEvent(
                 Code: "archived",
                 Label: "Archived",
-                OccurredAt: null,
-                Actor: null,
+                OccurredAt: archiveStateAt,
+                Actor: archiveStateActor,
                 Detail: "Hidden from active patient documents");
 
         return
@@ -2616,6 +2936,28 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
                 create index if not exists ix_patient_document_review_events_patient_time
                   on patient_document_review_events (patient_id, occurred_at desc, event_id desc);
+
+                create table if not exists patient_document_archive_events (
+                  event_id uuid primary key,
+                  document_id integer not null references patient_documents(id) on delete cascade,
+                  document_key text not null,
+                  patient_id text not null,
+                  legacy_pid integer not null,
+                  from_archived boolean not null,
+                  to_archived boolean not null,
+                  reason varchar(250) not null,
+                  actor text not null,
+                  occurred_at timestamptz not null default now(),
+                  document_version integer not null,
+                  review_status varchar(20) not null,
+                  content_hash text
+                );
+
+                create index if not exists ix_patient_document_archive_events_document_time
+                  on patient_document_archive_events (document_id, occurred_at desc, event_id desc);
+
+                create index if not exists ix_patient_document_archive_events_patient_time
+                  on patient_document_archive_events (patient_id, occurred_at desc, event_id desc);
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }

@@ -1002,6 +1002,8 @@ test.describe("isolated mutation workflows", () => {
     const approvalReason = `Approve verified content ${marker}`;
     const reopenReason = `Reopen for source review ${marker}`;
     const denialReason = `Deny incomplete source ${marker}`;
+    const archiveReason = `Archive superseded chart copy ${marker}`;
+    const restoreReason = `Restore after chart reconciliation ${marker}`;
     const originalPdfBytes = Buffer.from(
       "%PDF-1.4\n% Modern UI document proof\n",
     );
@@ -1035,6 +1037,10 @@ test.describe("isolated mutation workflows", () => {
           storageMethod?: string | null;
           url?: string | null;
           notes?: string | null;
+          deleted: number;
+          archiveStateActor?: string | null;
+          archiveStateAt?: string | null;
+          archiveEventCount: number;
           previewKind: string;
           previewStatus: string;
           canPreviewInline: boolean;
@@ -1511,6 +1517,152 @@ test.describe("isolated mutation workflows", () => {
         ],
       });
 
+      await refiledNoteCard
+        .getByRole("button", { name: "Archive document" })
+        .click();
+      await expect(
+        refiledNoteCard.getByRole("heading", {
+          name: "Archive lifecycle",
+        }),
+      ).toBeVisible();
+      await expect(refiledNoteCard.getByText("Active", { exact: true })).toBeVisible();
+      await refiledNoteCard
+        .getByLabel("Archive reason *")
+        .fill(archiveReason);
+      await refiledNoteCard
+        .getByRole("button", { name: "Archive document", exact: true })
+        .click();
+      await expect(refiledNoteCard).toHaveCount(0, { timeout: 20_000 });
+
+      const defaultRegisterResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/MOD-PAT-0001`,
+        { headers },
+      );
+      expect(defaultRegisterResponse.ok()).toBeTruthy();
+      const defaultRegister = (await defaultRegisterResponse.json()) as {
+        activeCount: number;
+        archivedCount: number;
+        includesArchived: boolean;
+        documents: Array<{ id: number }>;
+      };
+      expect(defaultRegister.includesArchived).toBe(false);
+      expect(
+        defaultRegister.documents.some(
+          (document) => document.id === noteBeforeUpdate!.id,
+        ),
+      ).toBe(false);
+      expect(defaultRegister.archivedCount).toBeGreaterThanOrEqual(1);
+
+      const staleArchive = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/soft-delete`,
+        {
+          headers,
+          data: {
+            reason: `Stale archive replay ${marker}`,
+            expectedArchived: false,
+          },
+        },
+      );
+      expect(staleArchive.status()).toBe(409);
+      await expect(staleArchive.json()).resolves.toMatchObject({
+        currentArchived: true,
+      });
+
+      await page.getByLabel("Show archived").check();
+      const archivedNoteCard = page
+        .locator("article")
+        .filter({ hasText: refiledNoteName });
+      await expect(archivedNoteCard).toBeVisible({ timeout: 20_000 });
+      await expect(
+        archivedNoteCard.getByText("Archived", { exact: true }).first(),
+      ).toBeVisible();
+      await expect(
+        archivedNoteCard.getByRole("button", { name: "Edit filing" }),
+      ).toHaveCount(0);
+      await archivedNoteCard
+        .getByRole("button", { name: "Restore document" })
+        .click();
+      await archivedNoteCard
+        .getByLabel("Restore reason *")
+        .fill(restoreReason);
+      await archivedNoteCard
+        .getByRole("button", {
+          name: "Restore to active register",
+        })
+        .click();
+
+      const restoredNoteCard = page
+        .locator("article")
+        .filter({ hasText: refiledNoteName });
+      await expect(restoredNoteCard).toBeVisible({ timeout: 20_000 });
+      await expect(
+        restoredNoteCard.getByRole("button", { name: "Edit filing" }),
+      ).toBeVisible();
+      await restoredNoteCard
+        .getByRole("button", { name: "Archive history" })
+        .click();
+      await expect(restoredNoteCard.getByText("2 transitions")).toBeVisible();
+      const archiveEvents = restoredNoteCard.locator(
+        ".patient-document-archive-history > li",
+      );
+      await expect(archiveEvents).toHaveCount(2);
+      await expect(archiveEvents.nth(0)).toContainText("Restored");
+      await expect(archiveEvents.nth(0)).toContainText(restoreReason);
+      await expect(archiveEvents.nth(1)).toContainText("Archived");
+      await expect(archiveEvents.nth(1)).toContainText(archiveReason);
+      await expect(restoredNoteCard).toContainText("Version 2");
+      await expect(restoredNoteCard).toContainText("denied");
+
+      const staleRestore = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/restore`,
+        {
+          headers,
+          data: {
+            reason: `Stale restore replay ${marker}`,
+            expectedArchived: true,
+          },
+        },
+      );
+      expect(staleRestore.status()).toBe(409);
+      await expect(staleRestore.json()).resolves.toMatchObject({
+        currentArchived: false,
+      });
+
+      const archiveHistoryResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/archive-history`,
+        { headers },
+      );
+      expect(archiveHistoryResponse.ok()).toBeTruthy();
+      await expect(archiveHistoryResponse.json()).resolves.toMatchObject({
+        currentArchived: false,
+        currentStateActor: "admin",
+        eventCount: 2,
+        returnedCount: 2,
+        resultLimit: 100,
+        events: [
+          {
+            action: "Restored",
+            fromArchived: true,
+            toArchived: false,
+            reason: restoreReason,
+            actor: "admin",
+            documentVersion: 2,
+            reviewStatus: "denied",
+            contentHash: expect.any(String),
+          },
+          {
+            action: "Archived",
+            fromArchived: false,
+            toArchived: true,
+            reason: archiveReason,
+            actor: "admin",
+            documentVersion: 2,
+            reviewStatus: "denied",
+            contentHash: expect.any(String),
+          },
+        ],
+      });
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /Upload file Up to/ })
@@ -1783,6 +1935,7 @@ test.describe("isolated mutation workflows", () => {
             (select count(*) from patient_document_metadata_events where reason like '%${marker}%')
             + (select count(*) from patient_document_content_events where reason like '%${marker}%')
             + (select count(*) from patient_document_review_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_archive_events where reason like '%${marker}%')
             + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");

@@ -10,6 +10,9 @@ public sealed record PatientDocumentsResponse(
     string FirstName,
     string LastName,
     int Count,
+    int ActiveCount,
+    int ArchivedCount,
+    bool IncludesArchived,
     IReadOnlyList<PatientDocumentItem> Documents);
 
 public sealed record PatientDocumentCategoryOptionsResponse(
@@ -50,6 +53,9 @@ public sealed record PatientDocumentItem(
     string? DocumentationOf,
     string? Notes,
     int Deleted,
+    string? ArchiveStateActor,
+    string? ArchiveStateAt,
+    int ArchiveEventCount,
     string ReviewStatus,
     string? ReviewedBy,
     string? ReviewedAt,
@@ -150,6 +156,34 @@ public sealed record PatientDocumentReviewHistoryResponse(
     int ReturnedCount,
     int ResultLimit,
     IReadOnlyList<PatientDocumentReviewEvent> Events);
+
+public sealed record PatientDocumentArchiveEvent(
+    Guid EventId,
+    string Action,
+    bool FromArchived,
+    bool ToArchived,
+    string Reason,
+    string Actor,
+    string OccurredAt,
+    int DocumentVersion,
+    string ReviewStatus,
+    string? ContentHash);
+
+public sealed record PatientDocumentArchiveHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    bool CurrentArchived,
+    string? CurrentStateActor,
+    string? CurrentStateAt,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientDocumentArchiveEvent> Events);
 
 public sealed record PatientDocumentOcrQueueResponse(
     string DatasetId,
@@ -422,6 +456,10 @@ public sealed record PatientDocumentSignRequest(
     string? ReviewedBy = null,
     string? Reason = null,
     string? ExpectedReviewStatus = null);
+
+public sealed record PatientDocumentArchiveRequest(
+    string? Reason = null,
+    bool? ExpectedArchived = null);
 
 public sealed record PatientDocumentMutationResponse(
     int Id,

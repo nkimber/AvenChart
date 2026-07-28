@@ -195,6 +195,20 @@ test.describe("accessibility gate", () => {
       )),
     );
     await page
+      .getByRole("button", { name: "Archive document" })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Archive lifecycle" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Archive reason *")).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#archive",
+      )),
+    );
+    await page
       .getByRole("button", { name: "Preview", exact: true })
       .first()
       .click();

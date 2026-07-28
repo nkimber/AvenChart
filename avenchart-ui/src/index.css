@@ -370,6 +370,10 @@ a {
   padding: 0;
 }
 
+.error-banner .link-button {
+  color: inherit;
+}
+
 /* Dashboard-style landing pages (e.g. patient portal home) */
 
 .shell-top {
@@ -2382,22 +2386,18 @@ a {
 
 @keyframes toast-in {
   from {
-    opacity: 0;
     transform: translateY(10px) scale(0.97);
   }
   to {
-    opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
 
 @keyframes toast-out {
   from {
-    opacity: 1;
     transform: translateY(0);
   }
   to {
-    opacity: 0;
     transform: translateY(6px);
   }
 }
@@ -8434,6 +8434,9 @@ h4 {
   font-size: 24px;
   font-variant-numeric: tabular-nums;
 }
+.document-workspace-count.is-archived-count strong {
+  color: #6a5260;
+}
 .patient-document-intake {
   border-top: 3px solid var(--teal);
 }
@@ -8569,6 +8572,45 @@ h4 {
   padding: 16px 18px;
   border-bottom: 1px solid var(--border);
 }
+.patient-document-register-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.patient-document-archive-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.patient-document-archive-filter input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--teal);
+}
+.patient-document-archive-filter small {
+  display: inline-grid;
+  min-width: 20px;
+  min-height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: #efe9ed;
+  color: #644958;
+  font-size: 10px;
+}
+.patient-document-archive-filter:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
 .patient-document-register-list {
   display: grid;
 }
@@ -8587,6 +8629,19 @@ h4 {
 .patient-document-register-item.is-recent {
   box-shadow: inset 4px 0 0 var(--success);
   background: #fbfffd;
+}
+.patient-document-register-item.is-archived {
+  box-shadow: inset 4px 0 0 #8c687c;
+  background: #fbf9fa;
+}
+.patient-document-register-item.is-archived .patient-document-register-icon {
+  background: #efe9ed;
+  color: #644958;
+}
+.patient-document-archived-badge {
+  border: 1px solid #d4c0cb;
+  background: #efe9ed;
+  color: #644958;
 }
 .patient-document-register-icon {
   display: grid;
@@ -8677,6 +8732,7 @@ h4 {
 .patient-document-metadata-history,
 .patient-document-content-replace,
 .patient-document-review,
+.patient-document-archive,
 .patient-document-inline-preview,
 .patient-document-version-history {
   grid-column: 2 / -1;
@@ -8708,6 +8764,99 @@ h4 {
   gap: 14px;
   border-top: 3px solid var(--success);
   background: #f8fcfa;
+}
+.patient-document-archive {
+  display: grid;
+  gap: 14px;
+  border-top: 3px solid #8c687c;
+  background: #fbf9fa;
+}
+.patient-document-archive-form {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #ddcfd7;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-archive-current {
+  margin: -4px 0 0;
+  color: #4f5968;
+  font-size: 11px;
+}
+.patient-document-history-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #4f5968;
+  font-size: 10px;
+}
+.patient-document-history-summary span:first-child {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+.patient-document-archive-history {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-document-archive-history > li {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #ddcfd7;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-archive-event-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.patient-document-archive-event-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.patient-document-archive-event-heading span {
+  color: #5e4a55;
+  font-size: 10px;
+}
+.patient-document-archive-history p {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.patient-document-archive-history dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.patient-document-archive-history dl div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.patient-document-archive-history dt {
+  color: #4f5968;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.patient-document-archive-history dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
 }
 .patient-document-review-form {
   display: grid;
@@ -9271,13 +9420,15 @@ h4 {
   .patient-document-metadata-history,
   .patient-document-content-replace,
   .patient-document-review,
+  .patient-document-archive,
   .patient-document-inline-preview,
   .patient-document-version-history {
     grid-column: 1 / -1;
   }
   .patient-document-panel-heading,
   .patient-document-preview-heading,
-  .patient-document-history-event-heading {
+  .patient-document-history-event-heading,
+  .patient-document-archive-event-heading {
     align-items: stretch;
     flex-direction: column;
   }
@@ -9305,6 +9456,8 @@ h4 {
 }
 @media (max-width: 460px) {
   .document-workspace-brief-actions,
+  .patient-document-register-controls,
+  .patient-document-history-summary,
   .patient-document-register-title,
   .patient-document-intake-actions {
     align-items: stretch;
@@ -9328,6 +9481,7 @@ h4 {
   .patient-document-replacement-modes,
   .patient-document-review-actions,
   .patient-document-review-history dl,
+  .patient-document-archive-history dl,
   .patient-document-preview-facts,
   .patient-document-version-facts,
   .patient-document-history-changes > div,
@@ -9343,10 +9497,12 @@ h4 {
   .patient-document-mode-switch button[aria-pressed='true'],
   .patient-document-file-picker,
   .patient-document-register-item.is-recent,
+  .patient-document-register-item.is-archived,
   .patient-document-metadata-edit,
   .patient-document-metadata-history,
   .patient-document-content-replace,
   .patient-document-review,
+  .patient-document-archive,
   .patient-document-inline-preview,
   .patient-document-version-history,
   .patient-document-preview-facts div,
@@ -9355,6 +9511,8 @@ h4 {
   .patient-document-pdf-preview,
   .patient-document-review-form,
   .patient-document-review-history > li,
+  .patient-document-archive-form,
+  .patient-document-archive-history > li,
   .patient-document-file-drop {
     border-color: CanvasText;
   }

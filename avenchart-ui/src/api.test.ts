@@ -3,6 +3,7 @@ import {
   allocateInventoryPatientSale,
   ApiRequestError,
   approvePrescriptionRefillRequest,
+  archivePatientDocument,
   assignLabReportReviewer,
   bulkSignLabReports,
   createInventoryPatientSale,
@@ -40,10 +41,12 @@ import {
   getPatientBilling,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
+  getPatientDocumentArchiveHistory,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
   getPatientDocumentReviewHistory,
   getPatientDocumentVersionHistory,
+  getPatientDocuments,
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
@@ -60,6 +63,7 @@ import {
   reopenLabReportReview,
   replacePatientDocumentBinaryContent,
   replacePatientDocumentContent,
+  restorePatientDocument,
   reviewPatientDocument,
   refillPrescription,
   replyToPatientMessage,
@@ -521,6 +525,90 @@ describe('authenticated API transport', () => {
         reviewStatus: 'denied',
         reason: 'The source is incomplete.',
         expectedReviewStatus: 'pending',
+      }),
+    })
+  })
+
+  it('discovers archived patient documents and sends reasoned stale-safe lifecycle transitions', async () => {
+    const detail = {
+      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetVersion: 'v1',
+      patientId: 'PAT-0001',
+      legacyPid: 1,
+      pubpid: 'MOD-PAT-0001',
+      patientDisplayName: 'Stone, Avery',
+      count: 2,
+      activeCount: 1,
+      archivedCount: 1,
+      includesArchived: true,
+      documents: [],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(detail))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: detail.datasetId,
+          datasetVersion: detail.datasetVersion,
+          documentId: 91,
+          documentKey: 'DOC-91',
+          patientId: detail.patientId,
+          legacyPid: detail.legacyPid,
+          name: 'Care note',
+          currentArchived: false,
+          currentStateActor: null,
+          currentStateAt: null,
+          eventCount: 0,
+          returnedCount: 0,
+          resultLimit: 100,
+          events: [],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
+
+    const register = await getPatientDocuments(
+      'staff-session',
+      'PAT-0001',
+      undefined,
+      true,
+    )
+    const history = await getPatientDocumentArchiveHistory(
+      'staff-session',
+      91,
+    )
+    await archivePatientDocument('staff-session', 91, {
+      reason: 'Move superseded copy out of the active register.',
+      expectedArchived: false,
+    })
+    await restorePatientDocument('staff-session', 91, {
+      reason: 'Returned after chart reconciliation.',
+      expectedArchived: true,
+    })
+
+    expect(register.includesArchived).toBe(true)
+    expect(history.resultLimit).toBe(100)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/documents/PAT-0001?includeArchived=true',
+      'http://localhost:5001/api/documents/91/archive-history',
+      'http://localhost:5001/api/documents/91/soft-delete',
+      'http://localhost:5001/api/documents/91/restore',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        reason: 'Move superseded copy out of the active register.',
+        expectedArchived: false,
+      }),
+    })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        reason: 'Returned after chart reconciliation.',
+        expectedArchived: true,
       }),
     })
   })

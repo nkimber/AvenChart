@@ -2080,8 +2080,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
+        PatientDocumentArchiveRequest? request,
         CancellationToken cancellationToken) =>
     {
         var encounterDetail = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
@@ -2095,19 +2098,39 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", asy
             return Results.NotFound();
         }
 
-        var mutation = await documentRepository.SoftDeleteAsync(documentId, cancellationToken);
-        if (mutation is null)
+        try
         {
-            return Results.BadRequest("Encounter document could not be archived.");
-        }
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await documentRepository.SoftDeleteAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            if (mutation is null)
+            {
+                return Results.BadRequest("Encounter document could not be archived.");
+            }
 
-        var refreshed = await encounterRepository.GetByEncounterAsync(
-            encounter,
-            cancellationToken,
-            includeArchivedDocuments: true);
-        return refreshed is null
-            ? Results.NotFound()
-            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+            var refreshed = await encounterRepository.GetByEncounterAsync(
+                encounter,
+                cancellationToken,
+                includeArchivedDocuments: true);
+            return refreshed is null
+                ? Results.NotFound()
+                : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentArchiveConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentArchived = conflict.CurrentArchived
+            });
+        }
     })
     .WithName("SoftDeleteEncounterDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
@@ -2115,8 +2138,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/soft-delete", asy
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
+        PatientDocumentArchiveRequest? request,
         CancellationToken cancellationToken) =>
     {
         var encounterDetail = await encounterRepository.GetByEncounterAsync(
@@ -2133,19 +2159,39 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
             return Results.NotFound();
         }
 
-        var mutation = await documentRepository.RestoreAsync(documentId, cancellationToken);
-        if (mutation is null)
+        try
         {
-            return Results.BadRequest("Encounter document could not be restored.");
-        }
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await documentRepository.RestoreAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            if (mutation is null)
+            {
+                return Results.BadRequest("Encounter document could not be restored.");
+            }
 
-        var refreshed = await encounterRepository.GetByEncounterAsync(
-            encounter,
-            cancellationToken,
-            includeArchivedDocuments: true);
-        return refreshed is null
-            ? Results.NotFound()
-            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+            var refreshed = await encounterRepository.GetByEncounterAsync(
+                encounter,
+                cancellationToken,
+                includeArchivedDocuments: true);
+            return refreshed is null
+                ? Results.NotFound()
+                : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentArchiveConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentArchived = conflict.CurrentArchived
+            });
+        }
     })
     .WithName("RestoreEncounterDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
@@ -2922,6 +2968,16 @@ documents.MapGet("/{documentId:int}/review-history", async (
     })
     .WithName("GetPatientDocumentReviewHistory");
 
+documents.MapGet("/{documentId:int}/archive-history", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetArchiveHistoryAsync(documentId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDocumentArchiveHistory");
+
 documents.MapGet("/{documentId:int}/versions/{version:int}/content", async (
         DocumentRepository repository,
         int documentId,
@@ -3125,22 +3181,68 @@ documents.MapPut("/{documentId:int}/content/binary", async (
 
 documents.MapPut("/{documentId:int}/soft-delete", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
+        PatientDocumentArchiveRequest? request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.SoftDeleteAsync(documentId, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.SoftDeleteAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentArchiveConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentArchived = conflict.CurrentArchived
+            });
+        }
     })
     .WithName("SoftDeletePatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/restore", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
+        PatientDocumentArchiveRequest? request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.RestoreAsync(documentId, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.RestoreAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentArchiveConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentArchived = conflict.CurrentArchived
+            });
+        }
     })
     .WithName("RestorePatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));

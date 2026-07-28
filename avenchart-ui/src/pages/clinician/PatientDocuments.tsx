@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
+  Archive,
   Ban,
   CheckCircle2,
   Download,
@@ -21,12 +22,14 @@ import {
   X,
 } from 'lucide-react'
 import {
+  archivePatientDocument,
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
   downloadPatientDocument,
   downloadPatientDocumentVersion,
   getPatientDocumentCategoryOptions,
+  getPatientDocumentArchiveHistory,
   getPatientDocumentMetadataHistory,
   getPatientDocumentReviewHistory,
   getPatientDocumentVersionHistory,
@@ -35,10 +38,12 @@ import {
   searchEncounters,
   replacePatientDocumentBinaryContent,
   replacePatientDocumentContent,
+  restorePatientDocument,
   reviewPatientDocument,
   updatePatientDocumentMetadata,
   type EncounterListItem,
   type PatientDocumentCategoryOptionsResponse,
+  type PatientDocumentArchiveHistoryResponse,
   type PatientDocumentItem,
   type PatientDocumentMetadataHistoryItem,
   type PatientDocumentMetadataHistoryResponse,
@@ -106,6 +111,15 @@ type DocumentReviewState =
       documentId: number
       status: 'ready'
       data: PatientDocumentReviewHistoryResponse
+    }
+  | { documentId: number; status: 'error'; message: string }
+
+type DocumentArchiveState =
+  | { documentId: number; status: 'loading' }
+  | {
+      documentId: number
+      status: 'ready'
+      data: PatientDocumentArchiveHistoryResponse
     }
   | { documentId: number; status: 'error'; message: string }
 
@@ -317,6 +331,7 @@ export default function PatientDocuments() {
   const [mutationError, setMutationError] = useState('')
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [recentDocumentId, setRecentDocumentId] = useState<number | null>(null)
+  const [includeArchived, setIncludeArchived] = useState(false)
   const [editingDocumentId, setEditingDocumentId] = useState<number | null>(null)
   const [metadataDraft, setMetadataDraft] = useState<MetadataDraft | null>(null)
   const [metadataStatus, setMetadataStatus] = useState<
@@ -339,6 +354,16 @@ export default function PatientDocuments() {
     'idle' | 'saving' | 'error'
   >('idle')
   const [reviewMutationError, setReviewMutationError] = useState('')
+  const [archiveState, setArchiveState] =
+    useState<DocumentArchiveState | null>(null)
+  const [archivingDocumentId, setArchivingDocumentId] = useState<number | null>(
+    null,
+  )
+  const [archiveReason, setArchiveReason] = useState('')
+  const [archiveMutationStatus, setArchiveMutationStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [archiveMutationError, setArchiveMutationError] = useState('')
   const [previewState, setPreviewState] =
     useState<DocumentPreviewState | null>(null)
   const previewAbortRef = useRef<AbortController | null>(null)
@@ -374,10 +399,20 @@ export default function PatientDocuments() {
       setReviewReason('')
       setReviewMutationStatus('idle')
       setReviewMutationError('')
+      setArchiveState(null)
+      setArchivingDocumentId(null)
+      setArchiveReason('')
+      setArchiveMutationStatus('idle')
+      setArchiveMutationError('')
       setState({ status: 'loading' })
       try {
         const [documents, options, encounters] = await Promise.all([
-          getPatientDocuments(session.sessionId, patientId, signal),
+          getPatientDocuments(
+            session.sessionId,
+            patientId,
+            signal,
+            includeArchived,
+          ),
           getPatientDocumentCategoryOptions(session.sessionId, signal),
           searchEncounters(
             session.sessionId,
@@ -417,7 +452,7 @@ export default function PatientDocuments() {
         })
       }
     },
-    [patientId, session.sessionId],
+    [includeArchived, patientId, session.sessionId],
   )
 
   useEffect(() => {
@@ -437,6 +472,7 @@ export default function PatientDocuments() {
   )
 
   useEffect(() => {
+    setIncludeArchived(false)
     setEditingDocumentId(null)
     setMetadataDraft(null)
     setMetadataStatus('idle')
@@ -449,6 +485,11 @@ export default function PatientDocuments() {
     setReviewReason('')
     setReviewMutationStatus('idle')
     setReviewMutationError('')
+    setArchiveState(null)
+    setArchivingDocumentId(null)
+    setArchiveReason('')
+    setArchiveMutationStatus('idle')
+    setArchiveMutationError('')
     setPreviewState(null)
     setReplacingDocumentId(null)
     setReplacementDraft(null)
@@ -617,6 +658,7 @@ export default function PatientDocuments() {
     closeContentReplacement()
     closeDocumentPreview()
     closeReviewWorkflow()
+    closeArchiveWorkflow()
     setVersionState(null)
     setEditingDocumentId(item.id)
     setMetadataDraft(metadataDraftFor(item))
@@ -679,6 +721,7 @@ export default function PatientDocuments() {
     }
     closeDocumentPreview()
     closeReviewWorkflow()
+    closeArchiveWorkflow()
     setVersionState(null)
     void fetchMetadataHistory(documentId)
   }
@@ -765,6 +808,7 @@ export default function PatientDocuments() {
     }
     closeDocumentPreview()
     closeReviewWorkflow()
+    closeArchiveWorkflow()
     setHistoryState(null)
     void fetchVersionHistory(documentId)
   }
@@ -790,6 +834,7 @@ export default function PatientDocuments() {
     setHistoryState(null)
     closeDocumentPreview()
     closeReviewWorkflow()
+    closeArchiveWorkflow()
     setReplacingDocumentId(item.id)
     setReplacementMode(item.mimetype === 'text/plain' ? 'text' : 'file')
     setReplacementDraft({
@@ -1051,6 +1096,7 @@ export default function PatientDocuments() {
     setVersionState(null)
     closeContentReplacement()
     closeDocumentPreview()
+    closeArchiveWorkflow()
     setReviewingDocumentId(null)
     setReviewReason('')
     setReviewMutationStatus('idle')
@@ -1069,6 +1115,7 @@ export default function PatientDocuments() {
     setVersionState(null)
     closeContentReplacement()
     closeDocumentPreview()
+    closeArchiveWorkflow()
     setReviewingDocumentId(item.id)
     setReviewAction(
       item.reviewStatus.toLowerCase() === 'pending' ? 'approved' : 'pending',
@@ -1153,6 +1200,135 @@ export default function PatientDocuments() {
     }
   }
 
+  async function fetchArchiveHistory(documentId: number) {
+    setArchiveState({ documentId, status: 'loading' })
+    try {
+      const history = await getPatientDocumentArchiveHistory(
+        session.sessionId,
+        documentId,
+      )
+      setArchiveState({ documentId, status: 'ready', data: history })
+      return history
+    } catch (error) {
+      setArchiveState({
+        documentId,
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Document archive history could not be loaded.',
+      })
+      return null
+    }
+  }
+
+  function closeArchiveWorkflow() {
+    setArchiveState(null)
+    setArchivingDocumentId(null)
+    setArchiveReason('')
+    setArchiveMutationStatus('idle')
+    setArchiveMutationError('')
+  }
+
+  function toggleArchiveHistory(documentId: number) {
+    if (
+      archiveState?.documentId === documentId &&
+      archivingDocumentId !== documentId
+    ) {
+      closeArchiveWorkflow()
+      return
+    }
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setHistoryState(null)
+    setVersionState(null)
+    closeContentReplacement()
+    closeDocumentPreview()
+    closeReviewWorkflow()
+    setArchivingDocumentId(null)
+    setArchiveReason('')
+    setArchiveMutationStatus('idle')
+    setArchiveMutationError('')
+    void fetchArchiveHistory(documentId)
+  }
+
+  function beginArchiveChange(item: PatientDocumentItem) {
+    if (archivingDocumentId === item.id) {
+      closeArchiveWorkflow()
+      return
+    }
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setHistoryState(null)
+    setVersionState(null)
+    closeContentReplacement()
+    closeDocumentPreview()
+    closeReviewWorkflow()
+    setArchivingDocumentId(item.id)
+    setArchiveReason('')
+    setArchiveMutationStatus('idle')
+    setArchiveMutationError('')
+    void fetchArchiveHistory(item.id)
+  }
+
+  async function handleArchiveChange(
+    event: React.FormEvent<HTMLFormElement>,
+    item: PatientDocumentItem,
+  ) {
+    event.preventDefault()
+    if (
+      archiveState?.documentId !== item.id ||
+      archiveState.status !== 'ready'
+    ) {
+      setArchiveMutationStatus('error')
+      setArchiveMutationError(
+        'Load the authoritative archive state before recording this action.',
+      )
+      return
+    }
+    if (!archiveReason.trim()) {
+      setArchiveMutationStatus('error')
+      setArchiveMutationError(
+        archiveState.data.currentArchived
+          ? 'Explain why this document is being restored.'
+          : 'Explain why this document is being archived.',
+      )
+      return
+    }
+
+    const expectedArchived = archiveState.data.currentArchived
+    setArchiveMutationStatus('saving')
+    setArchiveMutationError('')
+    try {
+      const input = {
+        reason: archiveReason.trim(),
+        expectedArchived,
+      }
+      if (expectedArchived) {
+        await restorePatientDocument(session.sessionId, item.id, input)
+      } else {
+        await archivePatientDocument(session.sessionId, item.id, input)
+      }
+      setRecentDocumentId(null)
+      closeArchiveWorkflow()
+      showToast(
+        expectedArchived
+          ? 'Document restored to the active register.'
+          : 'Document archived and removed from the active register.',
+        'success',
+      )
+      await loadWorkspace()
+    } catch (error) {
+      setArchiveMutationStatus('error')
+      setArchiveMutationError(
+        error instanceof Error
+          ? error.message
+          : 'The document archive state could not be changed.',
+      )
+      await fetchArchiveHistory(item.id)
+    }
+  }
+
   function closeDocumentPreview() {
     previewAbortRef.current?.abort()
     previewAbortRef.current = null
@@ -1183,6 +1359,7 @@ export default function PatientDocuments() {
     setHistoryState(null)
     setVersionState(null)
     closeReviewWorkflow()
+    closeArchiveWorkflow()
     closeContentReplacement()
 
     const controller = new AbortController()
@@ -1323,8 +1500,12 @@ export default function PatientDocuments() {
         </div>
         <div className="document-workspace-brief-actions">
           <span className="document-workspace-count">
-            <strong>{documents.count}</strong>
-            active {documents.count === 1 ? 'document' : 'documents'}
+            <strong>{documents.activeCount}</strong>
+            active {documents.activeCount === 1 ? 'document' : 'documents'}
+          </span>
+          <span className="document-workspace-count is-archived-count">
+            <strong>{documents.archivedCount}</strong>
+            archived {documents.archivedCount === 1 ? 'document' : 'documents'}
           </span>
           <button
             className="cl-btn-primary"
@@ -1601,33 +1782,50 @@ export default function PatientDocuments() {
               Dataset {documents.datasetId} · version {documents.datasetVersion}
             </p>
           </div>
-          <button
-            className="cl-btn-secondary"
-            type="button"
-            onClick={() => void loadWorkspace()}
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
+          <div className="patient-document-register-controls">
+            <label className="patient-document-archive-filter">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(event) => setIncludeArchived(event.target.checked)}
+              />
+              <span>Show archived</span>
+              <small>{documents.archivedCount}</small>
+            </label>
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              onClick={() => void loadWorkspace()}
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {documents.documents.length === 0 ? (
           <div className="cl-search-empty-state">
             <FolderOpen size={40} aria-hidden="true" />
-            <p>No active documents are filed for this patient.</p>
-            <button
-              className="cl-link"
-              type="button"
-              onClick={() => setShowIntake(true)}
-            >
-              Add the first document
-            </button>
+            <p>
+              {includeArchived
+                ? 'No active or archived documents are filed for this patient.'
+                : 'No active documents are filed for this patient.'}
+            </p>
+            {!includeArchived && (
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() => setShowIntake(true)}
+              >
+                Add the first document
+              </button>
+            )}
           </div>
         ) : (
           <div className="patient-document-register-list">
             {documents.documents.map((item) => (
               <article
-                className={`patient-document-register-item${recentDocumentId === item.id ? ' is-recent' : ''}`}
+                className={`patient-document-register-item${recentDocumentId === item.id ? ' is-recent' : ''}${item.deleted !== 0 ? ' is-archived' : ''}`}
                 key={item.id}
               >
                 <div className="patient-document-register-icon" aria-hidden="true">
@@ -1652,6 +1850,11 @@ export default function PatientDocuments() {
                       <span className="cl-badge cl-badge-muted">
                         {item.versionLabel}
                       </span>
+                      {item.deleted !== 0 && (
+                        <span className="cl-badge patient-document-archived-badge">
+                          Archived
+                        </span>
+                      )}
                       {recentDocumentId === item.id && (
                         <span className="cl-badge cl-badge-green">Just filed</span>
                       )}
@@ -1695,8 +1898,17 @@ export default function PatientDocuments() {
                         : ''}
                     </p>
                   )}
+                  {item.archiveStateActor && item.archiveStateAt && (
+                    <p className="patient-document-register-note">
+                      {item.deleted !== 0 ? 'Archived' : 'Last restored'} by{' '}
+                      {item.archiveStateActor} /{' '}
+                      {formatVersionTime(item.archiveStateAt)}
+                    </p>
+                  )}
                 </div>
                 <div className="patient-document-register-actions">
+                  {item.deleted === 0 && (
+                    <>
                   <button
                     className="cl-btn-secondary"
                     type="button"
@@ -1823,6 +2035,39 @@ export default function PatientDocuments() {
                       {downloadingId === item.id ? 'Downloading…' : 'Download'}
                     </button>
                   )}
+                    </>
+                  )}
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => beginArchiveChange(item)}
+                    aria-expanded={archivingDocumentId === item.id}
+                    aria-controls={`document-archive-${item.id}`}
+                  >
+                    {item.deleted !== 0 ? (
+                      <RotateCcw size={14} />
+                    ) : (
+                      <Archive size={14} />
+                    )}
+                    {archivingDocumentId === item.id
+                      ? 'Close lifecycle'
+                      : item.deleted !== 0
+                        ? 'Restore document'
+                        : 'Archive document'}
+                  </button>
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => toggleArchiveHistory(item.id)}
+                    aria-expanded={
+                      archiveState?.documentId === item.id &&
+                      archivingDocumentId !== item.id
+                    }
+                    aria-controls={`document-archive-${item.id}`}
+                  >
+                    <History size={14} />
+                    Archive history
+                  </button>
                 </div>
                 {editingDocumentId === item.id && metadataDraft && (
                   <form
@@ -2432,6 +2677,230 @@ export default function PatientDocuments() {
                             Showing the newest{' '}
                             {reviewState.data.returnedCount} of{' '}
                             {reviewState.data.eventCount} review events.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </section>
+                )}
+                {archiveState?.documentId === item.id && (
+                  <section
+                    className="patient-document-archive"
+                    id={`document-archive-${item.id}`}
+                    aria-label={`Archive lifecycle for ${item.name}`}
+                  >
+                    {archiveState.status === 'loading' && (
+                      <div
+                        className="patient-document-panel-loading"
+                        role="status"
+                      >
+                        <span className="spinner" aria-hidden="true" />
+                        Loading authoritative archive stateâ€¦
+                      </div>
+                    )}
+                    {archiveState.status === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        <span>{archiveState.message}</span>
+                        <button
+                          className="cl-link"
+                          type="button"
+                          onClick={() => void fetchArchiveHistory(item.id)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                    {archiveState.status === 'ready' && (
+                      <>
+                        <div className="patient-document-history-heading">
+                          <div>
+                            <span className="document-workspace-eyebrow">
+                              Reversible chart visibility
+                            </span>
+                            <h4>Archive lifecycle</h4>
+                          </div>
+                          <span
+                            className={
+                              archiveState.data.currentArchived
+                                ? 'cl-badge patient-document-archived-badge'
+                                : 'cl-badge cl-badge-green'
+                            }
+                          >
+                            {archiveState.data.currentArchived
+                              ? 'Archived'
+                              : 'Active'}
+                          </span>
+                        </div>
+                        {archiveState.data.currentStateActor &&
+                          archiveState.data.currentStateAt && (
+                            <p className="patient-document-archive-current">
+                              Current state recorded by{' '}
+                              <strong>
+                                {archiveState.data.currentStateActor}
+                              </strong>{' '}
+                              /{' '}
+                              <time
+                                dateTime={archiveState.data.currentStateAt}
+                              >
+                                {formatVersionTime(
+                                  archiveState.data.currentStateAt,
+                                )}
+                              </time>
+                            </p>
+                          )}
+                        {archivingDocumentId === item.id && (
+                          <form
+                            className="patient-document-archive-form"
+                            onSubmit={(event) =>
+                              void handleArchiveChange(event, item)
+                            }
+                          >
+                            <p className="patient-document-content-boundary">
+                              {archiveState.data.currentArchived
+                                ? 'Restore returns this record to the active register. Its filing, content, review, and prior archive history remain unchanged.'
+                                : 'Archive removes this record from the default active register without deleting its filing, protected bytes, review evidence, or prior versions.'}
+                            </p>
+                            <div className="field">
+                              <label
+                                className="label"
+                                htmlFor={`document-archive-reason-${item.id}`}
+                              >
+                                {archiveState.data.currentArchived
+                                  ? 'Restore reason *'
+                                  : 'Archive reason *'}
+                              </label>
+                              <textarea
+                                id={`document-archive-reason-${item.id}`}
+                                className="textarea"
+                                value={archiveReason}
+                                onChange={(event) => {
+                                  setArchiveReason(event.target.value)
+                                  if (archiveMutationStatus === 'error') {
+                                    setArchiveMutationStatus('idle')
+                                    setArchiveMutationError('')
+                                  }
+                                }}
+                                maxLength={250}
+                                required
+                              />
+                            </div>
+                            <p className="patient-document-history-boundary">
+                              This action uses the loaded{' '}
+                              {archiveState.data.currentArchived
+                                ? 'archived'
+                                : 'active'}{' '}
+                              state. A concurrent change is rejected so it can
+                              be reviewed before retrying.
+                            </p>
+                            {archiveMutationStatus === 'error' && (
+                              <div className="cl-inline-error" role="alert">
+                                {archiveMutationError}
+                              </div>
+                            )}
+                            <div className="patient-document-intake-actions">
+                              <button
+                                className="cl-btn-primary"
+                                type="submit"
+                                disabled={
+                                  archiveMutationStatus === 'saving' ||
+                                  !archiveReason.trim()
+                                }
+                              >
+                                {archiveState.data.currentArchived ? (
+                                  <RotateCcw size={15} />
+                                ) : (
+                                  <Archive size={15} />
+                                )}
+                                {archiveMutationStatus === 'saving'
+                                  ? archiveState.data.currentArchived
+                                    ? 'Restoringâ€¦'
+                                    : 'Archivingâ€¦'
+                                  : archiveState.data.currentArchived
+                                    ? 'Restore to active register'
+                                    : 'Archive document'}
+                              </button>
+                              <button
+                                className="cl-btn-secondary"
+                                type="button"
+                                disabled={archiveMutationStatus === 'saving'}
+                                onClick={closeArchiveWorkflow}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                        <div className="patient-document-history-summary">
+                          <span>
+                            {archiveState.data.eventCount}{' '}
+                            {archiveState.data.eventCount === 1
+                              ? 'transition'
+                              : 'transitions'}
+                          </span>
+                          <span>
+                            Dataset {archiveState.data.datasetId} / version{' '}
+                            {archiveState.data.datasetVersion}
+                          </span>
+                        </div>
+                        {archiveState.data.events.length === 0 ? (
+                          <p className="patient-document-panel-empty">
+                            No archive or restore transitions have been
+                            retained.
+                          </p>
+                        ) : (
+                          <ol className="patient-document-archive-history">
+                            {archiveState.data.events.map((archiveEvent) => (
+                              <li key={archiveEvent.eventId}>
+                                <div className="patient-document-archive-event-heading">
+                                  <strong>{archiveEvent.action}</strong>
+                                  <span>
+                                    {archiveEvent.fromArchived
+                                      ? 'Archived'
+                                      : 'Active'}{' '}
+                                    â†’{' '}
+                                    {archiveEvent.toArchived
+                                      ? 'Archived'
+                                      : 'Active'}
+                                  </span>
+                                </div>
+                                <p>{archiveEvent.reason}</p>
+                                <dl>
+                                  <div>
+                                    <dt>Actor and time</dt>
+                                    <dd>
+                                      {archiveEvent.actor} /{' '}
+                                      <time dateTime={archiveEvent.occurredAt}>
+                                        {formatVersionTime(
+                                          archiveEvent.occurredAt,
+                                        )}
+                                      </time>
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Retained chart state</dt>
+                                    <dd>
+                                      Version {archiveEvent.documentVersion} /{' '}
+                                      {archiveEvent.reviewStatus} /{' '}
+                                      <span
+                                        title={
+                                          archiveEvent.contentHash || undefined
+                                        }
+                                      >
+                                        {shortHash(archiveEvent.contentHash)}
+                                      </span>
+                                    </dd>
+                                  </div>
+                                </dl>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                        {archiveState.data.eventCount >
+                          archiveState.data.returnedCount && (
+                          <p className="patient-document-history-boundary">
+                            Showing the newest{' '}
+                            {archiveState.data.returnedCount} of{' '}
+                            {archiveState.data.eventCount} archive events.
                           </p>
                         )}
                       </>

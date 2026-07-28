@@ -4407,6 +4407,10 @@ export type PatientDocumentItem = {
   fileName?: string | null
   url?: string | null
   notes?: string | null
+  deleted: number
+  archiveStateActor?: string | null
+  archiveStateAt?: string | null
+  archiveEventCount: number
   reviewStatus: string
   reviewedBy?: string | null
   reviewedAt?: string | null
@@ -4455,6 +4459,9 @@ export type PatientDocumentsResponse = {
   pubpid: string
   patientDisplayName: string
   count: number
+  activeCount: number
+  archivedCount: number
+  includesArchived: boolean
   documents: PatientDocumentItem[]
 }
 
@@ -4558,6 +4565,41 @@ export type PatientDocumentReviewHistoryResponse = {
   events: PatientDocumentReviewEvent[]
 }
 
+export type PatientDocumentArchiveInput = {
+  reason: string
+  expectedArchived: boolean
+}
+
+export type PatientDocumentArchiveEvent = {
+  eventId: string
+  action: string
+  fromArchived: boolean
+  toArchived: boolean
+  reason: string
+  actor: string
+  occurredAt: string
+  documentVersion: number
+  reviewStatus: string
+  contentHash?: string | null
+}
+
+export type PatientDocumentArchiveHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  name: string
+  currentArchived: boolean
+  currentStateActor?: string | null
+  currentStateAt?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientDocumentArchiveEvent[]
+}
+
 export type PatientDocumentBinaryContentReplaceInput = {
   fileName: string
   mimetype: string
@@ -4609,10 +4651,13 @@ export async function getPatientDocuments(
   sessionId: string,
   patientId: string,
   signal?: AbortSignal,
+  includeArchived = false,
 ): Promise<PatientDocumentsResponse> {
   return clinicianGet(
     sessionId,
-    `/api/documents/${encodeURIComponent(patientId)}`,
+    `/api/documents/${encodeURIComponent(patientId)}${
+      includeArchived ? '?includeArchived=true' : ''
+    }`,
     signal,
   )
 }
@@ -4707,6 +4752,46 @@ export async function reviewPatientDocument(
   return clinicianPut(
     sessionId,
     `/api/documents/${encodeURIComponent(String(documentId))}/sign`,
+    input,
+    signal,
+  )
+}
+
+export async function getPatientDocumentArchiveHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentArchiveHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/archive-history`,
+    signal,
+  )
+}
+
+export async function archivePatientDocument(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentArchiveInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/soft-delete`,
+    input,
+    signal,
+  )
+}
+
+export async function restorePatientDocument(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentArchiveInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/restore`,
     input,
     signal,
   )
