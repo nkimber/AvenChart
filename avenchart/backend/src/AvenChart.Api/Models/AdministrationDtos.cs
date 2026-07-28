@@ -225,6 +225,37 @@ public sealed record CodingCatalogCreateRequest(string Key, string DisplayName, 
 public sealed record CodingCatalogUpdateRequest(string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength);
 public sealed record CodingCatalogRevision(long RevisionId, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
 public sealed record CodingCatalogHistoryResponse(CodingCatalogItem Catalog, IReadOnlyList<CodingCatalogRevision> Revisions);
+public sealed record CodingCatalogChangeRequestCreateRequest(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string Reason);
+public sealed record CodingCatalogChangeRequestDecisionRequest(string? Note, int? ExpectedVersion = null);
+public sealed record CodingCatalogChangeRequestItem(
+    Guid RequestId,
+    string CatalogKey,
+    string ChangeKind,
+    string ProposedDisplayName,
+    int ProposedSequence,
+    bool ProposedActive,
+    bool ProposedClaimEnabled,
+    bool ProposedFeeEnabled,
+    int ProposedModifierLength,
+    string? BaselineDisplayName,
+    int? BaselineSequence,
+    bool? BaselineActive,
+    bool? BaselineClaimEnabled,
+    bool? BaselineFeeEnabled,
+    int? BaselineModifierLength,
+    string? BaselineUpdatedAt,
+    string Reason,
+    string Status,
+    int Version,
+    string CreatedAt,
+    string CreatedBy,
+    string UpdatedAt,
+    string UpdatedBy);
+public sealed record CodingCatalogChangeRequestEvent(long EventId, string Action, string? Note, string OccurredAt, string Username);
+public sealed record CodingCatalogChangeRequestCounts(int Draft, int Submitted, int Approved, int Rejected, int Activated, int Cancelled);
+public sealed record CodingCatalogChangeRequestsResponse(IReadOnlyList<CodingCatalogChangeRequestItem> Requests, int Total, int Returned, int Offset, int Limit, string Status, CodingCatalogChangeRequestCounts Counts);
+public sealed record CodingCatalogChangeRequestDetailResponse(CodingCatalogChangeRequestItem Request, CodingCatalogItem? ActiveCatalog, IReadOnlyList<CodingCatalogChangeRequestEvent> Events);
+public sealed class CodingCatalogChangeRequestConflictException(string message) : Exception(message);
 
 public sealed record FormLayoutItem(string Key, string Title, string Mapping, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record FormLayoutGroupItem(string Key, string Title, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);

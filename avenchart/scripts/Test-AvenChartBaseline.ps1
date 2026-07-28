@@ -10208,6 +10208,35 @@ catch {
 }
 
 try {
+    $codingChangeHeaders = Get-AdministrationHeaders
+    $codingChangeHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/SNOMED/history" -Method Get -Headers $codingChangeHeaders -TimeoutSec 20
+    $codingChangeCatalog = $codingChangeHistory.catalog
+    $codingChangeBaseline = @($codingChangeHistory.revisions | Where-Object { $_.displayName -eq $codingChangeCatalog.displayName -and $_.sequence -eq $codingChangeCatalog.sequence }) | Select-Object -First 1
+    $codingChangeMarker = "SNOMED CT smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $codingChangeDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalog-change-requests" -Method Post -Headers $codingChangeHeaders -ContentType "application/json" -Body (@{ key = "SNOMED"; displayName = $codingChangeMarker; sequence = $codingChangeCatalog.sequence; active = $codingChangeCatalog.active; claimEnabled = $codingChangeCatalog.claimEnabled; feeEnabled = $codingChangeCatalog.feeEnabled; modifierLength = $codingChangeCatalog.modifierLength; reason = "Lifecycle smoke validation" } | ConvertTo-Json) -TimeoutSec 20
+    $codingChangeSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalog-change-requests/$($codingChangeDraft.request.requestId)/submit" -Method Post -Headers $codingChangeHeaders -ContentType "application/json" -Body (@{ note = "Submit"; expectedVersion = $codingChangeDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $codingChangeApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalog-change-requests/$($codingChangeDraft.request.requestId)/approve" -Method Post -Headers $codingChangeHeaders -ContentType "application/json" -Body (@{ note = "Approve"; expectedVersion = $codingChangeSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $codingChangeActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalog-change-requests/$($codingChangeDraft.request.requestId)/activate" -Method Post -Headers $codingChangeHeaders -ContentType "application/json" -Body (@{ note = "Activate"; expectedVersion = $codingChangeApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $codingChangeRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/coding-catalogs/SNOMED/revisions/$($codingChangeBaseline.revisionId)/rollback" -Method Post -Headers $codingChangeHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $codingChangeActions = @($codingChangeActivated.events.action)
+    $codingChangePassed = $codingChangeDraft.request.status -eq "draft" `
+        -and $codingChangeSubmitted.request.status -eq "submitted" `
+        -and $codingChangeApproved.request.status -eq "approved" `
+        -and $codingChangeActivated.request.status -eq "activated" `
+        -and $codingChangeActivated.activeCatalog.displayName -eq $codingChangeMarker `
+        -and $codingChangeActions -contains "created" `
+        -and $codingChangeActions -contains "submitted" `
+        -and $codingChangeActions -contains "approved" `
+        -and $codingChangeActions -contains "activated" `
+        -and $codingChangeRestored.catalog.displayName -eq $codingChangeCatalog.displayName `
+        -and $codingChangeRestored.revisions[0].action -eq "rolled-back"
+    Add-Check -Name "coding catalog change-request lifecycle" -Result $(if ($codingChangePassed) { "passed" } else { "failed" }) -Details @{ requestId = $codingChangeDraft.request.requestId; actions = $codingChangeActions; restoredCatalog = $codingChangeRestored.catalog.displayName }
+}
+catch {
+    Add-Check -Name "coding catalog change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $optionListHeaders = Get-AdministrationHeaders
     $optionListHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListHeaders -TimeoutSec 20
     $massachusetts = @($optionListHistoryBefore.detail.options | Where-Object { $_.key -eq "MA" }) | Select-Object -First 1
