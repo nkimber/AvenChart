@@ -40,6 +40,7 @@ import {
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
   getPatientDocumentCategoryOptions,
+  getPatientDocumentMetadataHistory,
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
@@ -67,6 +68,7 @@ import {
   updatePatientGuardianContact,
   updatePatientMessageAssignment,
   updatePatientMessageStatus,
+  updatePatientDocumentMetadata,
   updatePatientProviderAssignment,
   updatePrescription,
   updateInventoryMedicationLink,
@@ -231,7 +233,7 @@ describe('authenticated API transport', () => {
     expect(await result.blob.text()).toBe('clinical document')
   })
 
-  it('uses protected document intake contracts for categories, text, file, link, and cleanup', async () => {
+  it('uses protected document intake and metadata-history contracts', async () => {
     const detail = {
       datasetId: 'legacy-ehr-shared-synthetic-v1',
       datasetVersion: '2026.07',
@@ -254,6 +256,27 @@ describe('authenticated API transport', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 91, detail }, 201))
       .mockResolvedValueOnce(jsonResponse({ id: 92, detail }, 201))
       .mockResolvedValueOnce(jsonResponse({ id: 93, detail }, 201))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: detail.datasetId,
+          datasetVersion: detail.datasetVersion,
+          documentId: 91,
+          documentKey: 'DOC-91',
+          patientId: detail.patientId,
+          legacyPid: detail.legacyPid,
+          currentCategoryId: 3,
+          currentCategoryName: 'Medical Record',
+          currentName: 'Care note',
+          currentDocDate: '2026-07-28',
+          currentEncounter: 1000013,
+          currentNotes: 'Created in chart.',
+          eventCount: 0,
+          returnedCount: 0,
+          resultLimit: 100,
+          events: [],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
 
     const categories = await getPatientDocumentCategoryOptions('staff-session')
@@ -286,14 +309,26 @@ describe('authenticated API transport', () => {
       url: 'https://example.test/image',
       notes: 'External source.',
     })
+    const history = await getPatientDocumentMetadataHistory('staff-session', 91)
+    await updatePatientDocumentMetadata('staff-session', 91, {
+      categoryId: 2,
+      name: 'Updated care note',
+      docDate: '2026-07-29',
+      encounter: 1000011,
+      notes: 'Refiled in chart.',
+      reason: 'Correct filing metadata.',
+    })
     await deletePatientDocument('staff-session', 93)
 
     expect(categories.maxFileSizeBytes).toBe(26_214_400)
+    expect(history.resultLimit).toBe(100)
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/documents/category-options',
       'http://localhost:5001/api/documents',
       'http://localhost:5001/api/documents/binary',
       'http://localhost:5001/api/documents/external-link',
+      'http://localhost:5001/api/documents/91/metadata-history',
+      'http://localhost:5001/api/documents/91/metadata',
       'http://localhost:5001/api/documents/93',
     ])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
@@ -301,6 +336,8 @@ describe('authenticated API transport', () => {
       'POST',
       'POST',
       'POST',
+      undefined,
+      'PUT',
       'DELETE',
     ])
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
@@ -318,6 +355,20 @@ describe('authenticated API transport', () => {
         mimetype: 'application/pdf',
         contentBase64: 'JVBERi0xLjQK',
         notes: null,
+      }),
+    })
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        categoryId: 2,
+        name: 'Updated care note',
+        docDate: '2026-07-29',
+        encounter: 1000011,
+        notes: 'Refiled in chart.',
+        reason: 'Correct filing metadata.',
       }),
     })
   })

@@ -4467,6 +4467,54 @@ export type PatientDocumentMutationResponse = {
   detail: PatientDocumentsResponse
 }
 
+export type PatientDocumentMetadataUpdateInput = {
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  notes?: string | null
+  reason: string
+}
+
+export type PatientDocumentMetadataHistoryItem = {
+  eventId: string
+  changedFields: string[]
+  fromCategoryId: number
+  fromCategoryName: string
+  toCategoryId: number
+  toCategoryName: string
+  fromName: string
+  toName: string
+  fromDocDate: string
+  toDocDate: string
+  fromEncounter?: number | null
+  toEncounter?: number | null
+  fromNotes?: string | null
+  toNotes?: string | null
+  reason: string
+  actor: string
+  occurredAt: string
+}
+
+export type PatientDocumentMetadataHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  currentCategoryId: number
+  currentCategoryName: string
+  currentName: string
+  currentDocDate: string
+  currentEncounter?: number | null
+  currentNotes?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientDocumentMetadataHistoryItem[]
+}
+
 export async function getPatientDocuments(
   sessionId: string,
   patientId: string,
@@ -4508,6 +4556,32 @@ export async function createPatientExternalLinkDocument(
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   return clinicianPost(sessionId, '/api/documents/external-link', input, signal)
+}
+
+export async function getPatientDocumentMetadataHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMetadataHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/metadata-history`,
+    signal,
+  )
+}
+
+export async function updatePatientDocumentMetadata(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentMetadataUpdateInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/metadata`,
+    input,
+    signal,
+  )
 }
 
 export async function deletePatientDocument(

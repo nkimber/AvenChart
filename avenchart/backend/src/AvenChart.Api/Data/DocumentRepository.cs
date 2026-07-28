@@ -10,6 +10,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
     public const int MaxBinaryDocumentBytes = 25 * 1024 * 1024;
+    private static readonly SemaphoreSlim DocumentMetadataSchemaGate = new(1, 1);
 
     private static readonly IReadOnlyList<PatientDocumentCategoryOption> CategoryOptions =
     [
@@ -1004,27 +1005,229 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             VersionHistory: versionHistory);
     }
 
+    public async Task<PatientDocumentMetadataHistoryResponse?> GetMetadataHistoryAsync(
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
+        {
+            return null;
+        }
+
+        const int resultLimit = 100;
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await EnsureDocumentMetadataEventsAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        DocumentMetadataSnapshot? current;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    d.id,
+                    d.document_key,
+                    d.patient_id,
+                    d.pid,
+                    d.category_id,
+                    d.category_name,
+                    d.name,
+                    d.doc_date,
+                    d.encounter,
+                    d.notes
+                from patient_documents d
+                where d.id = @documentId;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            current = await reader.ReadAsync(cancellationToken)
+                ? ReadDocumentMetadataSnapshot(reader)
+                : null;
+        }
+
+        if (current is null)
+        {
+            return null;
+        }
+
+        var eventCount = 0;
+        var events = new List<PatientDocumentMetadataHistoryItem>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    count(*) over()::int as event_count,
+                    event_id,
+                    changed_fields,
+                    from_category_id,
+                    from_category_name,
+                    to_category_id,
+                    to_category_name,
+                    from_name,
+                    to_name,
+                    from_doc_date,
+                    to_doc_date,
+                    from_encounter,
+                    to_encounter,
+                    from_notes,
+                    to_notes,
+                    reason,
+                    actor,
+                    occurred_at
+                from patient_document_metadata_events
+                where document_id = @documentId
+                order by occurred_at desc, event_id desc
+                limit @resultLimit;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("resultLimit", resultLimit);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
+                events.Add(new PatientDocumentMetadataHistoryItem(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    ChangedFields: reader.GetFieldValue<string[]>(reader.GetOrdinal("changed_fields")),
+                    FromCategoryId: reader.GetInt32(reader.GetOrdinal("from_category_id")),
+                    FromCategoryName: reader.GetString(reader.GetOrdinal("from_category_name")),
+                    ToCategoryId: reader.GetInt32(reader.GetOrdinal("to_category_id")),
+                    ToCategoryName: reader.GetString(reader.GetOrdinal("to_category_name")),
+                    FromName: reader.GetString(reader.GetOrdinal("from_name")),
+                    ToName: reader.GetString(reader.GetOrdinal("to_name")),
+                    FromDocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("from_doc_date")).ToString("yyyy-MM-dd"),
+                    ToDocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("to_doc_date")).ToString("yyyy-MM-dd"),
+                    FromEncounter: ReadNullableInt32(reader, "from_encounter"),
+                    ToEncounter: ReadNullableInt32(reader, "to_encounter"),
+                    FromNotes: ReadNullableString(reader, "from_notes"),
+                    ToNotes: ReadNullableString(reader, "to_notes"),
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetFieldValue<DateTime>(reader.GetOrdinal("occurred_at"))
+                        .ToUniversalTime()
+                        .ToString("O")));
+            }
+        }
+
+        return new PatientDocumentMetadataHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            DocumentId: current.Id,
+            DocumentKey: current.DocumentKey,
+            PatientId: current.PatientId,
+            LegacyPid: current.LegacyPid,
+            CurrentCategoryId: current.CategoryId,
+            CurrentCategoryName: current.CategoryName,
+            CurrentName: current.Name,
+            CurrentDocDate: current.DocDate.ToString("yyyy-MM-dd"),
+            CurrentEncounter: current.Encounter,
+            CurrentNotes: current.Notes,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: resultLimit,
+            Events: events);
+    }
+
     public async Task<PatientDocumentMutationResponse?> UpdateMetadataAsync(
         int documentId,
         PatientDocumentMetadataUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
+        var reason = NormalizeText(request.Reason);
         if (documentId <= 0
-            || request.CategoryId <= 0
+            || !CategoryOptions.Any(category => category.Id == request.CategoryId)
             || string.IsNullOrWhiteSpace(request.Name)
-            || !DateOnly.TryParse(request.DocDate, out var documentDate))
+            || !DateOnly.TryParse(request.DocDate, out var documentDate)
+            || reason?.Length > 250)
         {
             return null;
         }
 
         var categoryName = CategoryNameFor(request.CategoryId);
         var name = request.Name.Trim();
-        var notes = NullableText(request.Notes);
-        string? patientId = null;
+        var notes = NormalizeText(request.Notes);
+        var actor = string.IsNullOrWhiteSpace(username) ? "unknown" : username.Trim();
+        await EnsureDocumentMetadataEventsAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        DocumentMetadataSnapshot? current;
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select
+                    d.id,
+                    d.document_key,
+                    d.patient_id,
+                    d.pid,
+                    d.category_id,
+                    d.category_name,
+                    d.name,
+                    d.doc_date,
+                    d.encounter,
+                    d.notes
+                from patient_documents d
+                where d.id = @documentId
+                  and d.deleted = 0
+                for update;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            current = await reader.ReadAsync(cancellationToken)
+                ? ReadDocumentMetadataSnapshot(reader)
+                : null;
+        }
+
+        if (current is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        if (request.Encounter.HasValue
+            && !await EncounterBelongsToPatientAsync(
+                connection,
+                current.PatientId,
+                request.Encounter.Value,
+                cancellationToken,
+                transaction))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var changedFields = new List<string>();
+        if (current.CategoryId != request.CategoryId)
+        {
+            changedFields.Add("category");
+        }
+        if (!string.Equals(current.Name, name, StringComparison.Ordinal))
+        {
+            changedFields.Add("name");
+        }
+        if (current.DocDate != documentDate)
+        {
+            changedFields.Add("documentDate");
+        }
+        if (current.Encounter != request.Encounter)
+        {
+            changedFields.Add("encounter");
+        }
+        if (!string.Equals(current.Notes, notes, StringComparison.Ordinal))
+        {
+            changedFields.Add("notes");
+        }
+
+        if (changedFields.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            var unchanged = await GetForPatientAsync(current.PatientId, cancellationToken);
+            return unchanged is null ? null : new PatientDocumentMutationResponse(documentId, unchanged);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
             command.CommandText = """
                 update patient_documents
                 set category_id = @categoryId,
@@ -1038,8 +1241,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                     encounter = @encounter,
                     documentation_of = @documentationOf,
                     notes = @notes
-                where id = @id and deleted = 0
-                returning patient_id;
+                where id = @id;
                 """;
             command.Parameters.AddWithValue("id", documentId);
             command.Parameters.AddWithValue("categoryId", request.CategoryId);
@@ -1047,21 +1249,97 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             command.Parameters.AddWithValue("name", name);
             command.Parameters.AddWithValue("fileName", BuildDownloadFileName(name, "text/plain"));
             command.Parameters.AddWithValue("docDate", documentDate);
-            var encounterParameter = command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer);
-            encounterParameter.Value = request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
-            var documentationParameter = command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text);
-            documentationParameter.Value = notes;
-            var notesParameter = command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text);
-            notesParameter.Value = notes;
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            command.Parameters.Add("encounter", NpgsqlTypes.NpgsqlDbType.Integer).Value =
+                request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+            command.Parameters.Add("documentationOf", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                notes is null ? DBNull.Value : notes;
+            command.Parameters.Add("notes", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                notes is null ? DBNull.Value : notes;
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        if (patientId is null)
+        await using (var command = connection.CreateCommand())
         {
-            return null;
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_document_metadata_events (
+                    event_id,
+                    document_id,
+                    document_key,
+                    patient_id,
+                    legacy_pid,
+                    changed_fields,
+                    from_category_id,
+                    from_category_name,
+                    to_category_id,
+                    to_category_name,
+                    from_name,
+                    to_name,
+                    from_doc_date,
+                    to_doc_date,
+                    from_encounter,
+                    to_encounter,
+                    from_notes,
+                    to_notes,
+                    reason,
+                    actor,
+                    occurred_at
+                )
+                values (
+                    @eventId,
+                    @documentId,
+                    @documentKey,
+                    @patientId,
+                    @legacyPid,
+                    @changedFields,
+                    @fromCategoryId,
+                    @fromCategoryName,
+                    @toCategoryId,
+                    @toCategoryName,
+                    @fromName,
+                    @toName,
+                    @fromDocDate,
+                    @toDocDate,
+                    @fromEncounter,
+                    @toEncounter,
+                    @fromNotes,
+                    @toNotes,
+                    @reason,
+                    @actor,
+                    now()
+                );
+                """;
+            command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("documentKey", current.DocumentKey);
+            command.Parameters.AddWithValue("patientId", current.PatientId);
+            command.Parameters.AddWithValue("legacyPid", current.LegacyPid);
+            command.Parameters.AddWithValue("changedFields", changedFields.ToArray());
+            command.Parameters.AddWithValue("fromCategoryId", current.CategoryId);
+            command.Parameters.AddWithValue("fromCategoryName", current.CategoryName);
+            command.Parameters.AddWithValue("toCategoryId", request.CategoryId);
+            command.Parameters.AddWithValue("toCategoryName", categoryName);
+            command.Parameters.AddWithValue("fromName", current.Name);
+            command.Parameters.AddWithValue("toName", name);
+            command.Parameters.AddWithValue("fromDocDate", current.DocDate);
+            command.Parameters.AddWithValue("toDocDate", documentDate);
+            command.Parameters.Add("fromEncounter", NpgsqlTypes.NpgsqlDbType.Integer).Value =
+                current.Encounter.HasValue ? current.Encounter.Value : DBNull.Value;
+            command.Parameters.Add("toEncounter", NpgsqlTypes.NpgsqlDbType.Integer).Value =
+                request.Encounter.HasValue ? request.Encounter.Value : DBNull.Value;
+            command.Parameters.Add("fromNotes", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                current.Notes is null ? DBNull.Value : current.Notes;
+            command.Parameters.Add("toNotes", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                notes is null ? DBNull.Value : notes;
+            command.Parameters.AddWithValue(
+                "reason",
+                reason ?? "Document filing metadata updated.");
+            command.Parameters.AddWithValue("actor", actor);
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var detail = await GetForPatientAsync(current.PatientId, cancellationToken);
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
@@ -1407,7 +1685,8 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         NpgsqlConnection connection,
         string patientId,
         int encounter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
     {
         if (encounter <= 0)
         {
@@ -1415,6 +1694,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             select exists(
                 select 1
@@ -1426,6 +1706,21 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("patientId", patientId);
         command.Parameters.AddWithValue("encounter", encounter);
         return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static DocumentMetadataSnapshot ReadDocumentMetadataSnapshot(DbDataReader reader)
+    {
+        return new DocumentMetadataSnapshot(
+            Id: reader.GetInt32(reader.GetOrdinal("id")),
+            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+            CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
+            CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+            Name: reader.GetString(reader.GetOrdinal("name")),
+            DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")),
+            Encounter: ReadNullableInt32(reader, "encounter"),
+            Notes: ReadNullableString(reader, "notes"));
     }
 
     private static async Task<IReadOnlyList<PatientDocumentItem>> GetDocumentsAsync(
@@ -1638,6 +1933,53 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
               on patient_document_versions (document_id, version_no desc);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task EnsureDocumentMetadataEventsAsync(
+        CancellationToken cancellationToken)
+    {
+        await DocumentMetadataSchemaGate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                create table if not exists patient_document_metadata_events (
+                    event_id uuid primary key,
+                    document_id integer not null references patient_documents(id) on delete cascade,
+                    document_key text not null,
+                    patient_id text not null,
+                    legacy_pid integer not null,
+                    changed_fields text[] not null,
+                    from_category_id integer not null,
+                    from_category_name text not null,
+                    to_category_id integer not null,
+                    to_category_name text not null,
+                    from_name text not null,
+                    to_name text not null,
+                    from_doc_date date not null,
+                    to_doc_date date not null,
+                    from_encounter integer,
+                    to_encounter integer,
+                    from_notes text,
+                    to_notes text,
+                    reason varchar(250) not null,
+                    actor text not null,
+                    occurred_at timestamptz not null default now()
+                );
+
+                create index if not exists ix_patient_document_metadata_events_document_time
+                    on patient_document_metadata_events (document_id, occurred_at desc, event_id desc);
+
+                create index if not exists ix_patient_document_metadata_events_patient_time
+                    on patient_document_metadata_events (patient_id, occurred_at desc, event_id desc);
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            DocumentMetadataSchemaGate.Release();
+        }
     }
 
     private static async Task<bool> SnapshotCurrentDocumentVersionAsync(
@@ -2212,6 +2554,18 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string FirstName,
         string LastName,
         string DisplayName);
+
+    private sealed record DocumentMetadataSnapshot(
+        int Id,
+        string DocumentKey,
+        string PatientId,
+        int LegacyPid,
+        int CategoryId,
+        string CategoryName,
+        string Name,
+        DateOnly DocDate,
+        int? Encounter,
+        string? Notes);
 
     private sealed record DocumentPreviewInfo(
         string PreviewKind,

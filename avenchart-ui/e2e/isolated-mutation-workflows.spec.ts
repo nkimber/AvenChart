@@ -979,7 +979,7 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can file text, bounded binary, and http document-link records from the patient chart", async ({
+  test("staff can file and refile text, bounded binary, and http document-link records from the patient chart", async ({
     page,
   }) => {
     await signInClinician(page);
@@ -988,8 +988,10 @@ test.describe("isolated mutation workflows", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const marker = `TMP-DOC-INTAKE-${Date.now()}`;
     const noteName = `${marker}-NOTE`;
+    const refiledNoteName = `${noteName}-REFILED`;
     const fileName = `${marker}-FILE`;
     const linkName = `${marker}-LINK`;
+    const metadataReason = `Correct filing metadata ${marker}`;
     const headers = { "X-Legacy EHR-Session": sessionId };
 
     async function getMarkerDocuments() {
@@ -1002,11 +1004,14 @@ test.describe("isolated mutation workflows", () => {
         documents: Array<{
           id: number;
           name: string;
+          categoryId: number;
           categoryName: string;
+          docDate: string;
           encounter?: number | null;
           mimetype?: string | null;
           storageMethod?: string | null;
           url?: string | null;
+          notes?: string | null;
         }>;
       };
       return body.documents.filter((document) =>
@@ -1084,6 +1089,110 @@ test.describe("isolated mutation workflows", () => {
       await expect(noteCard).toContainText("#1000013");
       await expect(noteCard).toContainText("Just filed");
 
+      const noteBeforeUpdate = (await getMarkerDocuments()).find(
+        (document) => document.name === noteName,
+      );
+      expect(noteBeforeUpdate).toBeTruthy();
+      const crossPatientMetadata = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/metadata`,
+        {
+          headers,
+          data: {
+            categoryId: 3,
+            name: noteName,
+            docDate: "2026-07-28",
+            encounter: otherEncounters.encounters[0].encounter,
+            notes: `Proof ${marker}`,
+            reason: metadataReason,
+          },
+        },
+      );
+      expect(crossPatientMetadata.status()).toBe(400);
+
+      await noteCard.getByRole("button", { name: "Edit filing" }).click();
+      await noteCard.getByLabel("Document name *").fill(refiledNoteName);
+      await noteCard
+        .getByLabel("Filing category *")
+        .selectOption({ label: "Lab Report" });
+      await noteCard.getByLabel("Document date *").fill("2026-07-27");
+      await noteCard.getByLabel("Related encounter").selectOption("1000011");
+      await noteCard
+        .getByLabel("Filing notes")
+        .fill(`Refiled proof ${marker}`);
+      await noteCard.getByLabel("Change reason *").fill(metadataReason);
+      await noteCard
+        .getByRole("button", { name: "Save filing change" })
+        .click();
+
+      const refiledNoteCard = page
+        .locator("article")
+        .filter({ hasText: refiledNoteName });
+      await expect(refiledNoteCard).toBeVisible({ timeout: 20_000 });
+      await expect(refiledNoteCard).toContainText("Lab Report");
+      await expect(refiledNoteCard).toContainText("#1000011");
+      await expect(refiledNoteCard).toContainText(metadataReason);
+      await expect(refiledNoteCard).toContainText("By admin");
+      await expect(refiledNoteCard).toContainText(noteName);
+      await expect(refiledNoteCard).toContainText("Medical Record");
+
+      const historyResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/metadata-history`,
+        { headers },
+      );
+      expect(historyResponse.ok()).toBeTruthy();
+      const history = (await historyResponse.json()) as {
+        currentName: string;
+        currentCategoryName: string;
+        currentEncounter?: number | null;
+        eventCount: number;
+        events: Array<{
+          changedFields: string[];
+          reason: string;
+          actor: string;
+        }>;
+      };
+      expect(history).toMatchObject({
+        currentName: refiledNoteName,
+        currentCategoryName: "Lab Report",
+        currentEncounter: 1000011,
+        eventCount: 1,
+      });
+      expect(history.events[0]).toMatchObject({
+        changedFields: [
+          "category",
+          "name",
+          "documentDate",
+          "encounter",
+          "notes",
+        ],
+        reason: metadataReason,
+        actor: "admin",
+      });
+
+      const noOpMetadata = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/metadata`,
+        {
+          headers,
+          data: {
+            categoryId: 2,
+            name: refiledNoteName,
+            docDate: "2026-07-27",
+            encounter: 1000011,
+            notes: `Refiled proof ${marker}`,
+            reason: `No-op ${marker}`,
+          },
+        },
+      );
+      expect(noOpMetadata.ok()).toBeTruthy();
+      const historyAfterNoOp = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/metadata-history`,
+        { headers },
+      );
+      expect(historyAfterNoOp.ok()).toBeTruthy();
+      await expect(historyAfterNoOp.json()).resolves.toMatchObject({
+        eventCount: 1,
+      });
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /Upload file Up to/ })
@@ -1150,9 +1259,12 @@ test.describe("isolated mutation workflows", () => {
       expect(documents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            name: noteName,
-            encounter: 1000013,
+            name: refiledNoteName,
+            categoryId: 2,
+            docDate: "2026-07-27",
+            encounter: 1000011,
             mimetype: "text/plain",
+            notes: `Refiled proof ${marker}`,
           }),
           expect.objectContaining({
             name: fileName,
@@ -1192,6 +1304,11 @@ test.describe("isolated mutation workflows", () => {
         expect([204, 404]).toContain(deleted.status());
       }
       await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
+      expect(
+        runProviderAssignmentSql(
+          `select count(*) from patient_document_metadata_events where reason like '%${marker}%';`,
+        ),
+      ).toBe("0");
     }
   });
 

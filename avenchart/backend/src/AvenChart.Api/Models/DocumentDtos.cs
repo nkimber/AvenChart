@@ -244,10 +244,49 @@ public sealed record PatientDocumentMetadataUpdateRequest(
     string Name,
     string DocDate,
     int? Encounter,
-    string? Notes);
+    string? Notes,
+    string? Reason = null);
+
+public sealed record PatientDocumentMetadataHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    int CurrentCategoryId,
+    string CurrentCategoryName,
+    string CurrentName,
+    string CurrentDocDate,
+    int? CurrentEncounter,
+    string? CurrentNotes,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientDocumentMetadataHistoryItem> Events);
+
+public sealed record PatientDocumentMetadataHistoryItem(
+    Guid EventId,
+    IReadOnlyList<string> ChangedFields,
+    int FromCategoryId,
+    string FromCategoryName,
+    int ToCategoryId,
+    string ToCategoryName,
+    string FromName,
+    string ToName,
+    string FromDocDate,
+    string ToDocDate,
+    int? FromEncounter,
+    int? ToEncounter,
+    string? FromNotes,
+    string? ToNotes,
+    string Reason,
+    string Actor,
+    string OccurredAt);
 
 public sealed record EncounterDocumentMoveRequest(
-    int TargetEncounter);
+    int TargetEncounter,
+    string? Reason = null);
 
 public sealed record EncounterDocumentMoveResponse(
     int Id,

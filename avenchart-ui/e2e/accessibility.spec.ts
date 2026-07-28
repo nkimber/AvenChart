@@ -143,6 +143,19 @@ test.describe("accessibility gate", () => {
         "/clinician/patients/MOD-PAT-0001/documents#intake",
       )),
     );
+    await page.getByRole("button", { name: "Close intake" }).click();
+    await page.getByRole("button", { name: "Edit filing" }).first().click();
+    await page.getByRole("button", { name: "Filing history" }).first().click();
+    await expect(page.getByLabel("Change reason *")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Filing history" }),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#metadata",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

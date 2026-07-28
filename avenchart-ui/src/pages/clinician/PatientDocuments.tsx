@@ -6,9 +6,12 @@ import {
   FileText,
   FileUp,
   FolderOpen,
+  History,
   Link2,
+  Pencil,
   Plus,
   RefreshCw,
+  Save,
   StickyNote,
   X,
 } from 'lucide-react'
@@ -18,12 +21,16 @@ import {
   createPatientExternalLinkDocument,
   downloadPatientDocument,
   getPatientDocumentCategoryOptions,
+  getPatientDocumentMetadataHistory,
   getPatientDocuments,
   isRequestCancellation,
   searchEncounters,
+  updatePatientDocumentMetadata,
   type EncounterListItem,
   type PatientDocumentCategoryOptionsResponse,
   type PatientDocumentItem,
+  type PatientDocumentMetadataHistoryItem,
+  type PatientDocumentMetadataHistoryResponse,
   type PatientDocumentsResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
@@ -52,6 +59,24 @@ type IntakeDraft = {
   url: string
 }
 
+type MetadataDraft = {
+  name: string
+  categoryId: string
+  docDate: string
+  encounter: string
+  notes: string
+  reason: string
+}
+
+type DocumentHistoryState =
+  | { documentId: number; status: 'loading' }
+  | {
+      documentId: number
+      status: 'ready'
+      data: PatientDocumentMetadataHistoryResponse
+    }
+  | { documentId: number; status: 'error'; message: string }
+
 const TODAY = new Date().toISOString().slice(0, 10)
 
 function blankDraft(): IntakeDraft {
@@ -64,6 +89,25 @@ function blankDraft(): IntakeDraft {
     content: '',
     url: '',
   }
+}
+
+function metadataDraftFor(item: PatientDocumentItem): MetadataDraft {
+  return {
+    name: item.name,
+    categoryId: String(item.categoryId),
+    docDate: item.docDate,
+    encounter: item.encounter ? String(item.encounter) : '',
+    notes: item.notes ?? '',
+    reason: '',
+  }
+}
+
+function displayEncounter(value?: number | null) {
+  return value ? `Encounter #${value}` : 'No encounter link'
+}
+
+function displayMetadataValue(value?: string | null) {
+  return value?.trim() || 'None'
 }
 
 function formatBytes(value?: number | null) {
@@ -101,6 +145,60 @@ function documentKind(item: PatientDocumentItem) {
   return item.mimetype || 'Stored file'
 }
 
+function MetadataChangeSummary({
+  event,
+}: {
+  event: PatientDocumentMetadataHistoryItem
+}) {
+  const changes: Array<{ field: string; from: string; to: string }> = []
+  if (event.changedFields.includes('category')) {
+    changes.push({
+      field: 'Category',
+      from: event.fromCategoryName,
+      to: event.toCategoryName,
+    })
+  }
+  if (event.changedFields.includes('name')) {
+    changes.push({ field: 'Name', from: event.fromName, to: event.toName })
+  }
+  if (event.changedFields.includes('documentDate')) {
+    changes.push({
+      field: 'Document date',
+      from: event.fromDocDate,
+      to: event.toDocDate,
+    })
+  }
+  if (event.changedFields.includes('encounter')) {
+    changes.push({
+      field: 'Encounter',
+      from: displayEncounter(event.fromEncounter),
+      to: displayEncounter(event.toEncounter),
+    })
+  }
+  if (event.changedFields.includes('notes')) {
+    changes.push({
+      field: 'Filing notes',
+      from: displayMetadataValue(event.fromNotes),
+      to: displayMetadataValue(event.toNotes),
+    })
+  }
+
+  return (
+    <dl className="patient-document-history-changes">
+      {changes.map((change) => (
+        <div key={change.field}>
+          <dt>{change.field}</dt>
+          <dd>
+            <span>{change.from}</span>
+            <span aria-hidden="true">→</span>
+            <strong>{change.to}</strong>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 export default function PatientDocuments() {
   const { session, patientId } = useOutletContext<PatientOutletContext>()
   const [state, setState] = useState<AsyncState<WorkspaceData>>({
@@ -117,6 +215,14 @@ export default function PatientDocuments() {
   const [mutationError, setMutationError] = useState('')
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [recentDocumentId, setRecentDocumentId] = useState<number | null>(null)
+  const [editingDocumentId, setEditingDocumentId] = useState<number | null>(null)
+  const [metadataDraft, setMetadataDraft] = useState<MetadataDraft | null>(null)
+  const [metadataStatus, setMetadataStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [metadataError, setMetadataError] = useState('')
+  const [historyState, setHistoryState] =
+    useState<DocumentHistoryState | null>(null)
 
   const loadWorkspace = useCallback(
     async (signal?: AbortSignal) => {
@@ -171,6 +277,14 @@ export default function PatientDocuments() {
     void loadWorkspace(controller.signal)
     return () => controller.abort()
   }, [loadWorkspace])
+
+  useEffect(() => {
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setMetadataStatus('idle')
+    setMetadataError('')
+    setHistoryState(null)
+  }, [patientId])
 
   function setDraftField<K extends keyof IntakeDraft>(
     field: K,
@@ -304,6 +418,129 @@ export default function PatientDocuments() {
         error instanceof Error
           ? error.message
           : 'The document could not be filed.',
+      )
+    }
+  }
+
+  function beginMetadataEdit(item: PatientDocumentItem) {
+    if (editingDocumentId === item.id) {
+      setEditingDocumentId(null)
+      setMetadataDraft(null)
+      setMetadataStatus('idle')
+      setMetadataError('')
+      return
+    }
+    setEditingDocumentId(item.id)
+    setMetadataDraft(metadataDraftFor(item))
+    setMetadataStatus('idle')
+    setMetadataError('')
+  }
+
+  function setMetadataField<K extends keyof MetadataDraft>(
+    field: K,
+    value: MetadataDraft[K],
+  ) {
+    setMetadataDraft((current) =>
+      current ? { ...current, [field]: value } : current,
+    )
+    if (metadataStatus === 'error') {
+      setMetadataStatus('idle')
+      setMetadataError('')
+    }
+  }
+
+  function metadataHasChanges(
+    item: PatientDocumentItem,
+    value: MetadataDraft | null,
+  ) {
+    if (!value) return false
+    const nextEncounter = value.encounter ? Number(value.encounter) : null
+    return (
+      Number(value.categoryId) !== item.categoryId ||
+      value.name.trim() !== item.name ||
+      value.docDate !== item.docDate ||
+      nextEncounter !== (item.encounter ?? null) ||
+      (value.notes.trim() || null) !== (item.notes?.trim() || null)
+    )
+  }
+
+  async function fetchMetadataHistory(documentId: number) {
+    setHistoryState({ documentId, status: 'loading' })
+    try {
+      const history = await getPatientDocumentMetadataHistory(
+        session.sessionId,
+        documentId,
+      )
+      setHistoryState({ documentId, status: 'ready', data: history })
+    } catch (error) {
+      setHistoryState({
+        documentId,
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Filing history could not be loaded.',
+      })
+    }
+  }
+
+  function toggleMetadataHistory(documentId: number) {
+    if (historyState?.documentId === documentId) {
+      setHistoryState(null)
+      return
+    }
+    void fetchMetadataHistory(documentId)
+  }
+
+  async function handleMetadataUpdate(
+    event: React.FormEvent<HTMLFormElement>,
+    item: PatientDocumentItem,
+  ) {
+    event.preventDefault()
+    if (!metadataDraft || !metadataHasChanges(item, metadataDraft)) return
+    if (!metadataDraft.reason.trim()) {
+      setMetadataStatus('error')
+      setMetadataError('Explain why the filing metadata is changing.')
+      return
+    }
+
+    setMetadataStatus('saving')
+    setMetadataError('')
+    try {
+      const result = await updatePatientDocumentMetadata(
+        session.sessionId,
+        item.id,
+        {
+          categoryId: Number(metadataDraft.categoryId),
+          name: metadataDraft.name.trim(),
+          docDate: metadataDraft.docDate,
+          encounter: metadataDraft.encounter
+            ? Number(metadataDraft.encounter)
+            : null,
+          notes: metadataDraft.notes.trim() || null,
+          reason: metadataDraft.reason.trim(),
+        },
+      )
+      setState((current) =>
+        current.status === 'ready'
+          ? {
+              status: 'ready',
+              data: { ...current.data, documents: result.detail },
+            }
+          : current,
+      )
+      setRecentDocumentId(result.id)
+      setEditingDocumentId(null)
+      setMetadataDraft(null)
+      setMetadataStatus('idle')
+      showToast('Document filing metadata updated.', 'success')
+      await fetchMetadataHistory(item.id)
+    } catch (error) {
+      setMetadataStatus('error')
+      setMetadataError(
+        error instanceof Error
+          ? error.message
+          : 'Document filing metadata could not be updated.',
       )
     }
   }
@@ -750,6 +987,30 @@ export default function PatientDocuments() {
                   )}
                 </div>
                 <div className="patient-document-register-actions">
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => beginMetadataEdit(item)}
+                    aria-expanded={editingDocumentId === item.id}
+                    aria-controls={`document-metadata-edit-${item.id}`}
+                  >
+                    {editingDocumentId === item.id ? (
+                      <X size={14} />
+                    ) : (
+                      <Pencil size={14} />
+                    )}
+                    {editingDocumentId === item.id ? 'Close edit' : 'Edit filing'}
+                  </button>
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => toggleMetadataHistory(item.id)}
+                    aria-expanded={historyState?.documentId === item.id}
+                    aria-controls={`document-metadata-history-${item.id}`}
+                  >
+                    <History size={14} />
+                    Filing history
+                  </button>
                   {item.storageMethod === 'web_url' && item.url && (
                     <a
                       className="cl-btn-secondary"
@@ -774,6 +1035,257 @@ export default function PatientDocuments() {
                     </button>
                   )}
                 </div>
+                {editingDocumentId === item.id && metadataDraft && (
+                  <form
+                    className="patient-document-metadata-edit"
+                    id={`document-metadata-edit-${item.id}`}
+                    onSubmit={(event) => void handleMetadataUpdate(event, item)}
+                  >
+                    <div className="patient-document-panel-heading">
+                      <div>
+                        <span className="document-workspace-eyebrow">
+                          Correct filing
+                        </span>
+                        <h4>Edit metadata and chart location</h4>
+                      </div>
+                      <p>
+                        Content is unchanged. Material changes retain before,
+                        after, reason, actor, and time evidence.
+                      </p>
+                    </div>
+                    <div className="patient-document-metadata-grid">
+                      <div className="field patient-document-name-field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-name-${item.id}`}
+                        >
+                          Document name *
+                        </label>
+                        <input
+                          id={`document-edit-name-${item.id}`}
+                          className="input"
+                          value={metadataDraft.name}
+                          onChange={(event) =>
+                            setMetadataField('name', event.target.value)
+                          }
+                          maxLength={255}
+                          required
+                        />
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-category-${item.id}`}
+                        >
+                          Filing category *
+                        </label>
+                        <select
+                          id={`document-edit-category-${item.id}`}
+                          className="select"
+                          value={metadataDraft.categoryId}
+                          onChange={(event) =>
+                            setMetadataField('categoryId', event.target.value)
+                          }
+                          required
+                        >
+                          {options.categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-date-${item.id}`}
+                        >
+                          Document date *
+                        </label>
+                        <input
+                          id={`document-edit-date-${item.id}`}
+                          className="input"
+                          type="date"
+                          value={metadataDraft.docDate}
+                          onChange={(event) =>
+                            setMetadataField('docDate', event.target.value)
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-encounter-${item.id}`}
+                        >
+                          Related encounter
+                        </label>
+                        <select
+                          id={`document-edit-encounter-${item.id}`}
+                          className="select"
+                          value={metadataDraft.encounter}
+                          onChange={(event) =>
+                            setMetadataField('encounter', event.target.value)
+                          }
+                        >
+                          <option value="">No encounter link</option>
+                          {encounters.map((encounter) => (
+                            <option
+                              key={encounter.encounter}
+                              value={encounter.encounter}
+                            >
+                              {encounter.date} ·{' '}
+                              {encounter.reason || 'Encounter'} · #
+                              {encounter.encounter}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="patient-document-metadata-secondary-grid">
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-notes-${item.id}`}
+                        >
+                          Filing notes
+                        </label>
+                        <textarea
+                          id={`document-edit-notes-${item.id}`}
+                          className="textarea"
+                          value={metadataDraft.notes}
+                          onChange={(event) =>
+                            setMetadataField('notes', event.target.value)
+                          }
+                          maxLength={2_000}
+                        />
+                      </div>
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-edit-reason-${item.id}`}
+                        >
+                          Change reason *
+                        </label>
+                        <textarea
+                          id={`document-edit-reason-${item.id}`}
+                          className="textarea"
+                          value={metadataDraft.reason}
+                          onChange={(event) =>
+                            setMetadataField('reason', event.target.value)
+                          }
+                          maxLength={250}
+                          required
+                        />
+                      </div>
+                    </div>
+                    {metadataStatus === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        {metadataError}
+                      </div>
+                    )}
+                    <div className="patient-document-intake-actions">
+                      <button
+                        className="cl-btn-primary"
+                        type="submit"
+                        disabled={
+                          metadataStatus === 'saving' ||
+                          !metadataDraft.reason.trim() ||
+                          !metadataHasChanges(item, metadataDraft)
+                        }
+                      >
+                        <Save size={15} />
+                        {metadataStatus === 'saving'
+                          ? 'Saving…'
+                          : 'Save filing change'}
+                      </button>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        disabled={metadataStatus === 'saving'}
+                        onClick={() => beginMetadataEdit(item)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {historyState?.documentId === item.id && (
+                  <section
+                    className="patient-document-metadata-history"
+                    id={`document-metadata-history-${item.id}`}
+                    aria-label={`Filing history for ${item.name}`}
+                  >
+                    {historyState.status === 'loading' && (
+                      <div className="patient-document-panel-loading" role="status">
+                        <span className="spinner" aria-hidden="true" />
+                        Loading filing history…
+                      </div>
+                    )}
+                    {historyState.status === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        <span>{historyState.message}</span>
+                        <button
+                          className="cl-link"
+                          type="button"
+                          onClick={() => void fetchMetadataHistory(item.id)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                    {historyState.status === 'ready' && (
+                      <>
+                        <div className="patient-document-history-heading">
+                          <div>
+                            <span className="document-workspace-eyebrow">
+                              Immutable local evidence
+                            </span>
+                            <h4>Filing history</h4>
+                          </div>
+                          <span className="cl-badge cl-badge-muted">
+                            {historyState.data.eventCount}{' '}
+                            {historyState.data.eventCount === 1
+                              ? 'change'
+                              : 'changes'}
+                          </span>
+                        </div>
+                        {historyState.data.events.length === 0 ? (
+                          <p className="patient-document-panel-empty">
+                            No filing metadata changes have been retained.
+                          </p>
+                        ) : (
+                          <ol className="patient-document-history-list">
+                            {historyState.data.events.map((historyEvent) => (
+                              <li key={historyEvent.eventId}>
+                                <div className="patient-document-history-event-heading">
+                                  <strong>{historyEvent.reason}</strong>
+                                  <span>
+                                    By {historyEvent.actor} ·{' '}
+                                    <time dateTime={historyEvent.occurredAt}>
+                                      {new Date(
+                                        historyEvent.occurredAt,
+                                      ).toLocaleString()}
+                                    </time>
+                                  </span>
+                                </div>
+                                <MetadataChangeSummary event={historyEvent} />
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                        {historyState.data.eventCount >
+                          historyState.data.returnedCount && (
+                          <p className="patient-document-history-boundary">
+                            Showing the newest{' '}
+                            {historyState.data.returnedCount} of{' '}
+                            {historyState.data.eventCount} changes.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </section>
+                )}
               </article>
             ))}
           </div>

@@ -1879,6 +1879,8 @@ encounters.MapPost("/{encounter:int}/documents/external-link", async (
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
         PatientDocumentMetadataUpdateRequest request,
@@ -1900,10 +1902,11 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async 
             return Results.BadRequest("Encounter document metadata must remain attached to the selected encounter.");
         }
 
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await documentRepository.UpdateMetadataAsync(documentId, request with
         {
             Encounter = encounter
-        }, cancellationToken);
+        }, session.Username, cancellationToken);
         if (mutation is null)
         {
             return Results.BadRequest("Encounter document metadata could not be updated from the supplied filing details.");
@@ -1920,6 +1923,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/metadata", async 
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
         EncounterDocumentMoveRequest request,
@@ -1948,12 +1953,14 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
             return Results.BadRequest("Encounter document can only be moved to another encounter for the same patient.");
         }
 
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
         var mutation = await documentRepository.UpdateMetadataAsync(documentId, new PatientDocumentMetadataUpdateRequest(
             CategoryId: document.CategoryId,
             Name: document.Name,
             DocDate: document.DocDate,
             Encounter: targetDetail.Encounter,
-            Notes: document.Notes), cancellationToken);
+            Notes: document.Notes,
+            Reason: request.Reason), session.Username, cancellationToken);
         if (mutation is null)
         {
             return Results.BadRequest("Encounter document could not be moved to the supplied target encounter.");
@@ -2909,13 +2916,30 @@ documents.MapPost("/external-link", async (
     .WithName("CreateExternalLinkPatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "addonly"));
 
+documents.MapGet("/{documentId:int}/metadata-history", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetMetadataHistoryAsync(documentId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDocumentMetadataHistory");
+
 documents.MapPut("/{documentId:int}/metadata", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
         PatientDocumentMetadataUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.UpdateMetadataAsync(documentId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var mutation = await repository.UpdateMetadataAsync(
+            documentId,
+            request,
+            session.Username,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Patient document metadata could not be updated from the supplied filing details.")
             : Results.Ok(mutation);

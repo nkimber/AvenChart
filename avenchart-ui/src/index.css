@@ -8673,8 +8673,136 @@ h4 {
   text-decoration: none;
   white-space: nowrap;
 }
+.patient-document-metadata-edit,
+.patient-document-metadata-history {
+  grid-column: 2 / -1;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 16px;
+  border: 1px solid #d9def0;
+  border-radius: var(--radius-md);
+  background: #f8f9fd;
+}
+.patient-document-metadata-edit {
+  display: grid;
+  gap: 12px;
+  border-top: 3px solid var(--teal);
+}
+.patient-document-panel-heading,
+.patient-document-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.patient-document-panel-heading h4,
+.patient-document-history-heading h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+.patient-document-panel-heading p {
+  max-width: 470px;
+  margin: 0;
+  color: #4f5968;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+.patient-document-metadata-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(140px, 0.8fr));
+  gap: 10px;
+}
+.patient-document-metadata-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.patient-document-metadata-secondary-grid .textarea {
+  min-height: 78px;
+}
+.patient-document-metadata-history {
+  border-left: 3px solid var(--teal);
+  background: #fcfcff;
+}
+.patient-document-panel-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  color: #4f5968;
+  font-size: 12px;
+}
+.patient-document-panel-empty,
+.patient-document-history-boundary {
+  margin: 12px 0 0;
+  color: #4f5968;
+  font-size: 11px;
+}
+.patient-document-history-list {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-document-history-list > li {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-history-event-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.patient-document-history-event-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.patient-document-history-event-heading > span {
+  color: #4f5968;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.patient-document-history-changes {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+.patient-document-history-changes > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) minmax(0, 1.65fr);
+  gap: 10px;
+}
+.patient-document-history-changes dt {
+  color: #4f5968;
+  font-size: 10px;
+  font-weight: 800;
+}
+.patient-document-history-changes dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+  color: #4f5968;
+  font-size: 11px;
+}
+.patient-document-history-changes dd span,
+.patient-document-history-changes dd strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.patient-document-history-changes dd strong {
+  color: var(--text);
+}
 @media (max-width: 1050px) {
-  .patient-document-intake-grid {
+  .patient-document-intake-grid,
+  .patient-document-metadata-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -8698,9 +8826,26 @@ h4 {
   .patient-document-register-item {
     grid-template-columns: auto minmax(0, 1fr);
   }
+  .patient-document-metadata-edit,
+  .patient-document-metadata-history {
+    grid-column: 1 / -1;
+  }
+  .patient-document-panel-heading,
+  .patient-document-history-event-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .patient-document-panel-heading p {
+    max-width: none;
+    text-align: left;
+  }
+  .patient-document-metadata-secondary-grid {
+    grid-template-columns: 1fr;
+  }
   .patient-document-register-actions {
     grid-column: 1 / -1;
     flex-direction: row;
+    flex-wrap: wrap;
   }
   .patient-document-register-actions .cl-btn-secondary {
     flex: 1;
@@ -8727,12 +8872,22 @@ h4 {
   .patient-document-register-actions {
     flex-direction: column;
   }
+  .patient-document-metadata-grid,
+  .patient-document-history-changes > div,
+  .patient-document-history-changes dd {
+    grid-template-columns: 1fr;
+  }
+  .patient-document-history-changes dd > span[aria-hidden='true'] {
+    display: none;
+  }
 }
 @media (forced-colors: active) {
   .document-workspace-brief,
   .patient-document-mode-switch button[aria-pressed='true'],
   .patient-document-file-picker,
-  .patient-document-register-item.is-recent {
+  .patient-document-register-item.is-recent,
+  .patient-document-metadata-edit,
+  .patient-document-metadata-history {
     border-color: CanvasText;
   }
 }
