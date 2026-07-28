@@ -15,6 +15,7 @@ import InventoryActivityPanel from './InventoryActivityPanel.tsx'
 import InventoryDispensingPanel from './InventoryDispensingPanel.tsx'
 import InventoryMedicationLinksPanel from './InventoryMedicationLinksPanel.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
+import InventoryReplenishmentPanel from './InventoryReplenishmentPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 import InventoryStockActionsPanel from './InventoryStockActionsPanel.tsx'
 
@@ -225,6 +226,13 @@ export default function InventoryWorkspace() {
             items={data.items}
             refreshToken={workflowRefreshToken}
             sessionId={session.sessionId}
+          />
+
+          <InventoryReplenishmentPanel
+            asOfDate={data.asOfDate}
+            datasetId={data.datasetId}
+            datasetVersion={data.datasetVersion}
+            items={data.items}
           />
 
           <InventoryActivityPanel

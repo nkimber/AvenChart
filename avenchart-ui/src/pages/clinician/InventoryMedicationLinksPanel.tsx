@@ -438,7 +438,7 @@ export default function InventoryMedicationLinksPanel({
                     <span
                       className={
                         item.medicationLink
-                          ? 'cl-badge cl-badge-success'
+                          ? 'cl-badge cl-badge-green'
                           : 'cl-badge cl-badge-muted'
                       }
                     >

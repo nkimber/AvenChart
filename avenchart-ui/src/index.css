@@ -7342,6 +7342,59 @@ a {
 .inventory-medication-table {
   min-width: 880px;
 }
+.inventory-replenishment {
+  display: grid;
+  gap: 16px;
+}
+.inventory-replenishment-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.inventory-replenishment-facts div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.inventory-replenishment-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.inventory-replenishment-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+.inventory-replenishment-filter {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.inventory-replenishment-filter > .cl-badge {
+  margin-bottom: 7px;
+}
+.inventory-replenishment-table {
+  min-width: 1080px;
+}
+.inventory-replenishment-decision {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.inventory-replenishment-decision strong {
+  color: var(--text);
+}
 .inventory-dispensing {
   display: grid;
   gap: 16px;
@@ -7443,11 +7496,14 @@ a {
   .inventory-activity-view-filters,
   .inventory-medication-link-form,
   .inventory-medication-facts,
-  .inventory-medication-list-heading {
+  .inventory-medication-list-heading,
+  .inventory-replenishment-facts,
+  .inventory-replenishment-filter {
     grid-template-columns: 1fr;
   }
   .inventory-activity-view-filters > .cl-badge,
-  .inventory-medication-list-heading > .cl-badge {
+  .inventory-medication-list-heading > .cl-badge,
+  .inventory-replenishment-filter > .cl-badge {
     justify-self: start;
     margin-bottom: 0;
   }

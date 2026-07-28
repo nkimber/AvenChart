@@ -519,6 +519,36 @@ test.describe("material workflows", () => {
     ).toBeVisible();
   });
 
+  test("inventory replenishment exposes read-only candidate evidence and policy gates", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const replenishment = page
+      .getByRole("heading", { name: "Replenishment planning" })
+      .locator("xpath=ancestor::section");
+    await expect(
+      replenishment.getByText(/^\d+ candidates?$/),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      replenishment.getByText("Candidate rule", { exact: true }),
+    ).toBeVisible();
+    await expect(replenishment).toContainText(
+      "Aggregate on hand ≤ reorder point",
+    );
+    await expect(
+      replenishment.getByLabel("Search replenishment candidates"),
+    ).toBeVisible();
+    await expect(replenishment.getByRole("table")).toBeVisible();
+    await expect(
+      replenishment.getByText("Requisition creation is policy-gated"),
+    ).toBeVisible();
+    await expect(
+      replenishment.getByRole("button", { name: /create requisition/i }),
+    ).toHaveCount(0);
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {
