@@ -75,12 +75,14 @@ builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
 builder.Services.AddScoped<AuthRepository>();
+builder.Services.AddScoped<IStaffIdentityAdapter, LocalDevelopmentStaffIdentityAdapter>();
 builder.Services.AddScoped<PatientPortalRepository>();
 builder.Services.AddScoped<IntegrationRepository>();
 builder.Services.AddScoped<PhiAuditRepository>();
 builder.Services.AddScoped<PatientMergeAuditRepository>();
 builder.Services.AddScoped<PatientMergeExecutionRepository>();
 builder.Services.AddScoped<PatientRecordRequestRepository>();
+builder.Services.AddScoped<PatientDisclosureRepository>();
 builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<InventoryCostPolicyRepository>();
@@ -230,22 +232,10 @@ auth.MapGet("/session", async (
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
     {
-        var header = httpContext.Request.Headers["X-Legacy EHR-Session"].ToString();
-        return Guid.TryParse(header, out var sessionId)
-            ? Results.Ok(await repository.GetCurrentSessionAsync(sessionId, cancellationToken))
-            : Results.Ok(new AuthSessionResponse(
-                Authenticated: false,
-                SessionId: null,
-                Username: string.Empty,
-                DisplayName: string.Empty,
-                Role: string.Empty,
-                StaffId: null,
-                CreatedAt: null,
-                LastSeenAt: null,
-                ExpiresAt: null,
-                EndedAt: null,
-                FailureReason: "Session header was not supplied.",
-                SessionSource: "avenchart"));
+        return Results.Ok(await GetSessionFromHeaderAsync(
+            repository,
+            httpContext,
+            cancellationToken));
     })
     .WithName("GetCurrentSession");
 
@@ -1023,6 +1013,275 @@ patients.MapPost("/{patientId}/record-requests/{requestId:guid}/complete", async
     catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CompletePatientRecordRequest").AddEndpointFilter(AccessPermissionFilter("patients", "med", "write"));
+
+patients.MapGet("/{patientId}/disclosure-policy", () =>
+    Results.Ok(PatientDisclosurePolicyCatalog.Build()))
+    .WithName("GetPatientDisclosurePolicy")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+patients.MapGet("/{patientId}/disclosure-authorities", async (
+    string patientId,
+    PatientDisclosureRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await repository.GetAuthoritiesAsync(
+            patientId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+}).WithName("GetPatientDisclosureAuthorities")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+patients.MapPost("/{patientId}/disclosure-authorities", async (
+    string patientId,
+    PatientDisclosureAuthorityCreateRequest request,
+    PatientDisclosureRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var authority = await repository.CreateAuthorityAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
+        return Results.Created(
+            $"/api/patients/{patientId}/disclosure-authorities/{authority.AuthorityId}",
+            authority);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("CreatePatientDisclosureAuthority")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+patients.MapPost("/{patientId}/disclosure-authorities/{authorityId:guid}/{action}", async (
+    string patientId,
+    Guid authorityId,
+    string action,
+    PatientDisclosureAuthorityTransitionRequest request,
+    PatientDisclosureRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.TransitionAuthorityAsync(
+            patientId,
+            authorityId,
+            action,
+            request,
+            session.Username,
+            cancellationToken));
+    }
+    catch (PatientDisclosureConcurrencyException ex)
+    {
+        return Results.Conflict(new
+        {
+            error = ex.Message,
+            expectedVersion = ex.ExpectedVersion,
+            currentVersion = ex.CurrentVersion,
+        });
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("TransitionPatientDisclosureAuthority")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+patients.MapGet("/{patientId}/disclosure-authorities/{authorityId:guid}/history", async (
+    string patientId,
+    Guid authorityId,
+    PatientDisclosureRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await repository.GetAuthorityHistoryAsync(
+            patientId,
+            authorityId,
+            cancellationToken));
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+}).WithName("GetPatientDisclosureAuthorityHistory")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+patients.MapGet("/{patientId}/disclosure-requests", async (
+    string patientId,
+    PatientDisclosureRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await repository.GetRequestsAsync(
+            patientId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+}).WithName("GetPatientDisclosureRequests")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+patients.MapPost("/{patientId}/disclosure-requests", async (
+    string patientId,
+    PatientDisclosureRequestCreateRequest request,
+    PatientDisclosureRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var disclosure = await repository.CreateRequestAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
+        return Results.Created(
+            $"/api/patients/{patientId}/disclosure-requests/{disclosure.RequestId}",
+            disclosure);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("CreatePatientDisclosureRequest")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+patients.MapPost("/{patientId}/disclosure-requests/{requestId:guid}/decision", async (
+    string patientId,
+    Guid requestId,
+    PatientDisclosureDecisionRequest request,
+    PatientDisclosureRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.DecideRequestAsync(
+            patientId,
+            requestId,
+            request,
+            session.Username,
+            cancellationToken));
+    }
+    catch (PatientDisclosureConcurrencyException ex)
+    {
+        return Results.Conflict(new
+        {
+            error = ex.Message,
+            expectedVersion = ex.ExpectedVersion,
+            currentVersion = ex.CurrentVersion,
+        });
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("DecidePatientDisclosureRequest")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+patients.MapGet("/{patientId}/disclosure-requests/{requestId:guid}/history", async (
+    string patientId,
+    Guid requestId,
+    PatientDisclosureRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await repository.GetRequestHistoryAsync(
+            patientId,
+            requestId,
+            cancellationToken));
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+}).WithName("GetPatientDisclosureRequestHistory")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
+
+patients.MapDelete("/{patientId}/disclosure-authorities/{authorityId:guid}/test-fixture", async (
+    string patientId,
+    Guid authorityId,
+    PatientDisclosureRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await repository.DeleteFixtureAsync(
+            patientId,
+            authorityId,
+            cancellationToken)
+            ? Results.NoContent()
+            : Results.NotFound();
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+}).WithName("DeletePatientDisclosureTestFixture")
+  .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
 
 patients.MapGet("/{patientId}/sdoh-assessments", async (string patientId, PatientSdohRepository repository, CancellationToken cancellationToken) =>
 {
@@ -5432,6 +5691,10 @@ administration.MapGet("/experience-baseline", () =>
     Results.Ok(ExperienceBaselineCatalog.Build()))
     .WithName("GetExperienceBaseline");
 
+administration.MapGet("/identity-provider/readiness", () =>
+    Results.Ok(IdentityProviderCatalog.Build()))
+    .WithName("GetIdentityProviderReadiness");
+
 administration.MapGet("/configuration-catalog", () => Results.Ok(new ConfigurationCatalogResponse([
     new("practice.identity", "Practice identity and contact", "Local implemented", "Practice administrator", "Required non-blank practice name", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),
     new("practice.default-facility", "Default facility", "Local implemented", "Practice administrator", "Must reference a positive facility identifier", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),
@@ -6422,23 +6685,7 @@ static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     HttpContext httpContext,
     CancellationToken cancellationToken)
 {
-    var header = httpContext.Request.Headers["X-Legacy EHR-Session"].ToString();
-    if (!Guid.TryParse(header, out var sessionId))
-    {
-        return new AuthSessionResponse(
-            Authenticated: false,
-            SessionId: null,
-            Username: string.Empty,
-            DisplayName: string.Empty,
-            Role: string.Empty,
-            StaffId: null,
-            CreatedAt: null,
-            LastSeenAt: null,
-            ExpiresAt: null,
-            EndedAt: null,
-            FailureReason: "A valid Legacy EHR session is required.",
-            SessionSource: "avenchart");
-    }
-
-    return await repository.GetCurrentSessionAsync(sessionId, cancellationToken);
+    _ = repository;
+    var adapter = httpContext.RequestServices.GetRequiredService<IStaffIdentityAdapter>();
+    return await adapter.ResolveAsync(httpContext, cancellationToken);
 }

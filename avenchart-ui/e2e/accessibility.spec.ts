@@ -407,6 +407,25 @@ test.describe("accessibility gate", () => {
     await expect(
       authorizationRegistry.getByLabel("Authorization policy detail"),
     ).toBeVisible();
+    const identityReadiness = page.getByRole("region", {
+      name: "Identity-provider readiness",
+    });
+    await expect(
+      identityReadiness.getByRole("heading", {
+        name: "Identity-provider readiness",
+      }),
+    ).toBeVisible();
+    await expect(
+      identityReadiness.getByText("local-identity-adapter-v1", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      identityReadiness.getByText("local adapter active", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      identityReadiness.getByText("disabled owner gated", { exact: true }),
+    ).toBeVisible();
     violations.push(
       ...(await findSeriousAccessibilityViolations(
         page,

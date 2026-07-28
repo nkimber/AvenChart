@@ -51,6 +51,7 @@ import {
   type PatientRecordRequest,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
+import PatientDisclosurePanel from "./PatientDisclosurePanel.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 
 function fact(label: string, value?: string | null) {
@@ -2783,6 +2784,11 @@ export default function PatientSummary() {
             </div>
           )}
         </section>
+
+        <PatientDisclosurePanel
+          sessionId={session.sessionId}
+          patientId={patientId}
+        />
 
         <section className="cl-card">
           <div className="cl-card-header">

@@ -557,6 +557,387 @@ catch {
 }
 
 try {
+    $identityReadinessUri = "$ApiBaseUrl/api/administration/identity-provider/readiness"
+    $unauthenticatedIdentityStatus = 0
+    try {
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedIdentityStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $malformedIdentityStatus = 0
+    try {
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-Legacy EHR-Session" = "not-a-session-id" } -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $malformedIdentityStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskIdentityStatus = 0
+    try {
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers (Get-FrontDeskHeaders) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskIdentityStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $revokedLogin = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/login" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ username = "admin"; password = "pass" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+    Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/auth/logout" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{ sessionId = $revokedLogin.sessionId } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20 | Out-Null
+
+    $revokedIdentityStatus = 0
+    try {
+        Invoke-WebRequest -Uri $identityReadinessUri -Method Get -Headers @{ "X-Legacy EHR-Session" = $revokedLogin.sessionId } -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $revokedIdentityStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $identityReadiness = Invoke-RestMethod -Uri $identityReadinessUri -Method Get -Headers (Get-AdministrationHeaders) -TimeoutSec 20
+    $identityBlockingGaps = @($identityReadiness.gaps | Where-Object { $_.blocksProduction -eq $true })
+    $staffIdentityType = @($identityReadiness.identityTypes | Where-Object { $_.identityType -eq "staff" }) | Select-Object -First 1
+    $emergencyIdentityType = @($identityReadiness.identityTypes | Where-Object { $_.identityType -eq "emergency" }) | Select-Object -First 1
+    $identityReadinessPassed = $unauthenticatedIdentityStatus -eq 401 `
+        -and $malformedIdentityStatus -eq 401 `
+        -and $frontDeskIdentityStatus -eq 403 `
+        -and $revokedIdentityStatus -eq 401 `
+        -and $identityReadiness.revision -eq "local-identity-adapter-v1" `
+        -and $identityReadiness.lifecycleState -eq "local-foundation-owner-gated" `
+        -and $identityReadiness.activeAdapterId -eq "local-database-staff-session" `
+        -and $identityReadiness.counts.identityTypes -eq 4 `
+        -and $identityReadiness.counts.routedThroughAdapter -eq 1 `
+        -and $identityReadiness.counts.productionApproved -eq 0 `
+        -and $identityReadiness.counts.cryptographicallyValidated -eq 0 `
+        -and $identityReadiness.counts.facilityScoped -eq 0 `
+        -and $identityReadiness.counts.emergencyEnabled -eq 0 `
+        -and $identityReadiness.counts.blockingGaps -eq 7 `
+        -and $identityBlockingGaps.Count -eq 7 `
+        -and $staffIdentityType.routedThroughAdapter -eq $true `
+        -and $emergencyIdentityType.state -eq "disabled-owner-gated"
+    Add-Check -Name "SEC-02 local identity adapter seam" -Result $(if ($identityReadinessPassed) { "passed" } else { "failed" }) -Details @{
+        revision = $identityReadiness.revision
+        identityTypes = $identityReadiness.counts.identityTypes
+        routedThroughAdapter = $identityReadiness.counts.routedThroughAdapter
+        productionApproved = $identityReadiness.counts.productionApproved
+        emergencyEnabled = $identityReadiness.counts.emergencyEnabled
+        blockingGaps = $identityBlockingGaps.Count
+        unauthenticatedStatus = $unauthenticatedIdentityStatus
+        malformedStatus = $malformedIdentityStatus
+        revokedStatus = $revokedIdentityStatus
+        frontDeskStatus = $frontDeskIdentityStatus
+    }
+}
+catch {
+    Add-Check -Name "SEC-02 local identity adapter seam" -Result "failed" -Details $_.Exception.Message
+}
+
+$disclosureFixtureAuthorityId = $null
+try {
+    $disclosureHeaders = Get-AdministrationHeaders
+    $disclosurePatientId = "MOD-PAT-0001"
+    $disclosureMarker = "TMP-DISCLOSURE-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 10))"
+    $disclosurePolicyUri = "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-policy"
+    $unauthenticatedDisclosureStatus = 0
+    try {
+        Invoke-WebRequest -Uri $disclosurePolicyUri -Method Get -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedDisclosureStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $disclosurePolicy = Invoke-RestMethod -Uri $disclosurePolicyUri -Method Get -Headers $disclosureHeaders -TimeoutSec 20
+    $now = [DateTimeOffset]::UtcNow
+    $authorityCreateBody = @{
+        authorityType = "proxy"
+        proxyName = "Synthetic Proxy"
+        proxyRelationship = "guardian"
+        purpose = "care coordination"
+        recipient = "Synthetic Recipient $disclosureMarker"
+        scopeKeys = @("clinical-summary", "documents")
+        effectiveFrom = $now.AddMinutes(-5).ToString("O")
+        expiresAt = $now.AddDays(30).ToString("O")
+        verificationMethod = "documented-authority"
+        verificationReference = $disclosureMarker
+        reason = "Synthetic SEC-03 baseline lifecycle proof"
+    }
+    $authority = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body ($authorityCreateBody | ConvertTo-Json -Depth 8) `
+        -TimeoutSec 20
+    $disclosureFixtureAuthorityId = $authority.authorityId
+
+    $activatedAuthority = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities/$($authority.authorityId)/activate" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body (@{ expectedVersion = $authority.version; reason = "Verification evidence reviewed" } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $recipientMismatchStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
+            -Method Post `
+            -Headers $disclosureHeaders `
+            -ContentType "application/json" `
+            -Body (@{
+                authorityId = $authority.authorityId
+                purpose = $authorityCreateBody.purpose
+                recipient = "Wrong recipient"
+                scopeKeys = @("clinical-summary")
+                reason = "Recipient mismatch proof"
+            } | ConvertTo-Json -Depth 8) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $recipientMismatchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $scopeMismatchStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
+            -Method Post `
+            -Headers $disclosureHeaders `
+            -ContentType "application/json" `
+            -Body (@{
+                authorityId = $authority.authorityId
+                purpose = $authorityCreateBody.purpose
+                recipient = $authorityCreateBody.recipient
+                scopeKeys = @("medications")
+                reason = "Scope mismatch proof"
+            } | ConvertTo-Json -Depth 8) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $scopeMismatchStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $firstDisclosureRequest = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            authorityId = $authority.authorityId
+            purpose = $authorityCreateBody.purpose
+            recipient = $authorityCreateBody.recipient
+            scopeKeys = @("clinical-summary")
+            reason = "Request bounded clinical summary"
+        } | ConvertTo-Json -Depth 8) `
+        -TimeoutSec 20
+    $approvedDisclosureRequest = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($firstDisclosureRequest.requestId)/decision" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            action = "approve"
+            expectedVersion = $firstDisclosureRequest.version
+            reason = "Purpose recipient scope and authority match"
+        } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $staleDisclosureDecisionStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($firstDisclosureRequest.requestId)/decision" `
+            -Method Post `
+            -Headers $disclosureHeaders `
+            -ContentType "application/json" `
+            -Body (@{
+                action = "deny"
+                expectedVersion = $firstDisclosureRequest.version
+                reason = "Stale decision proof"
+            } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $staleDisclosureDecisionStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $secondDisclosureRequest = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            authorityId = $authority.authorityId
+            purpose = $authorityCreateBody.purpose
+            recipient = $authorityCreateBody.recipient
+            scopeKeys = @("documents")
+            reason = "Pending revocation proof"
+        } | ConvertTo-Json -Depth 8) `
+        -TimeoutSec 20
+    $revokedAuthority = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities/$($authority.authorityId)/revoke" `
+        -Method Post `
+        -Headers $disclosureHeaders `
+        -ContentType "application/json" `
+        -Body (@{
+            expectedVersion = $activatedAuthority.version
+            reason = "Authority withdrawn for synthetic proof"
+        } | ConvertTo-Json -Depth 5) `
+        -TimeoutSec 20
+
+    $approvalAfterRevocationStatus = 0
+    try {
+        Invoke-WebRequest `
+            -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($secondDisclosureRequest.requestId)/decision" `
+            -Method Post `
+            -Headers $disclosureHeaders `
+            -ContentType "application/json" `
+            -Body (@{
+                action = "approve"
+                expectedVersion = $secondDisclosureRequest.version
+                reason = "Revoked authority must block approval"
+            } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20 `
+            -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $approvalAfterRevocationStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $authorityHistory = @(Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities/$($authority.authorityId)/history" `
+        -Method Get `
+        -Headers $disclosureHeaders `
+        -TimeoutSec 20)
+    $requestHistory = @(Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($firstDisclosureRequest.requestId)/history" `
+        -Method Get `
+        -Headers $disclosureHeaders `
+        -TimeoutSec 20)
+    $authorityList = @(Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities" `
+        -Method Get `
+        -Headers $disclosureHeaders `
+        -TimeoutSec 20)
+    $requestList = @(Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests" `
+        -Method Get `
+        -Headers $disclosureHeaders `
+        -TimeoutSec 20)
+
+    $disclosurePassed = $unauthenticatedDisclosureStatus -eq 401 `
+        -and $disclosurePolicy.revision -eq "local-disclosure-authority-v1" `
+        -and $disclosurePolicy.lifecycleState -eq "local-foundation-owner-gated" `
+        -and $disclosurePolicy.emergencyAccess.enabled -eq $false `
+        -and $disclosurePolicy.emergencyAccess.state -eq "disabled-owner-gated" `
+        -and @($disclosurePolicy.scopes).Count -eq 6 `
+        -and $authority.status -eq "pending" `
+        -and $activatedAuthority.effectiveStatus -eq "active" `
+        -and $activatedAuthority.version -eq 1 `
+        -and $recipientMismatchStatus -eq 400 `
+        -and $scopeMismatchStatus -eq 400 `
+        -and $approvedDisclosureRequest.status -eq "approved" `
+        -and $approvedDisclosureRequest.version -eq 1 `
+        -and $staleDisclosureDecisionStatus -eq 409 `
+        -and $revokedAuthority.effectiveStatus -eq "revoked" `
+        -and $revokedAuthority.version -eq 2 `
+        -and $approvalAfterRevocationStatus -eq 400 `
+        -and $authorityHistory.Count -eq 3 `
+        -and (@($authorityHistory.action) -join ",") -eq "revoked,activated,created" `
+        -and $requestHistory.Count -eq 2 `
+        -and (@($requestHistory.action) -join ",") -eq "approved,requested" `
+        -and @($authorityList | Where-Object { $_.authorityId -eq $authority.authorityId }).Count -eq 1 `
+        -and @($requestList | Where-Object { $_.authorityId -eq $authority.authorityId }).Count -eq 2
+    Add-Check -Name "SEC-03 disclosure authority and decision lifecycle" -Result $(if ($disclosurePassed) { "passed" } else { "failed" }) -Details @{
+        revision = $disclosurePolicy.revision
+        emergencyAccess = $disclosurePolicy.emergencyAccess.state
+        authorityVersion = $revokedAuthority.version
+        authorityEvents = $authorityHistory.Count
+        approvedRequestVersion = $approvedDisclosureRequest.version
+        requestEvents = $requestHistory.Count
+        recipientMismatchStatus = $recipientMismatchStatus
+        scopeMismatchStatus = $scopeMismatchStatus
+        staleDecisionStatus = $staleDisclosureDecisionStatus
+        approvalAfterRevocationStatus = $approvalAfterRevocationStatus
+        unauthenticatedStatus = $unauthenticatedDisclosureStatus
+    }
+}
+catch {
+    Add-Check -Name "SEC-03 disclosure authority and decision lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($disclosureFixtureAuthorityId) {
+        try {
+            Invoke-WebRequest `
+                -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/disclosure-authorities/$disclosureFixtureAuthorityId/test-fixture" `
+                -Method Delete `
+                -Headers (Get-AdministrationHeaders) `
+                -TimeoutSec 20 `
+                -ErrorAction Stop | Out-Null
+        }
+        catch {
+        }
+    }
+}
+
+try {
     $auditExportHeaders = Get-AdministrationHeaders
     $auditExportResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/audit/phi?limit=200&username=admin" -Method Get -Headers $auditExportHeaders -TimeoutSec 20
     $auditExportClient = New-AuthenticatedHttpClient

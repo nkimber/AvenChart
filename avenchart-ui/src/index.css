@@ -11584,6 +11584,582 @@ h4 {
   }
 }
 
+.identity-readiness {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+
+.identity-readiness-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.identity-readiness-heading h3 {
+  font-size: 20px;
+  margin: 3px 0 5px;
+}
+
+.identity-readiness-heading p:last-child {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 760px;
+}
+
+.identity-readiness-heading > code {
+  background: var(--teal-soft);
+  border: 1px solid color-mix(in srgb, var(--teal) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--teal-deep);
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.identity-readiness-boundary,
+.identity-readiness-message {
+  background: var(--warning-surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
+  border-radius: var(--radius-md);
+  color: #5d4a00;
+  font-size: 12px;
+  line-height: 1.55;
+  margin-top: 14px;
+  padding: 12px 14px;
+}
+
+.identity-readiness-message p {
+  margin: 0 0 10px;
+}
+
+.identity-readiness-counts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.identity-readiness-counts article {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.identity-readiness-counts strong {
+  color: var(--teal-deep);
+  font-size: 20px;
+}
+
+.identity-readiness-counts span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.identity-readiness-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.identity-readiness-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  padding: 14px;
+}
+
+.identity-readiness-panel h4 {
+  font-size: 15px;
+  margin: 3px 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.identity-readiness-panel dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.identity-readiness-panel dl > div {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 2px;
+  padding-top: 7px;
+}
+
+.identity-readiness-panel dt {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.identity-readiness-panel dd {
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.identity-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.identity-chip-row span {
+  background: var(--teal-soft);
+  border-radius: 999px;
+  color: var(--teal-deep);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 4px 7px;
+}
+
+.identity-control-flags,
+.identity-verification-list,
+.identity-gap-list {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.identity-control-flags li,
+.identity-verification-list li,
+.identity-gap-list li {
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+
+.identity-control-flags li,
+.identity-verification-list li > div,
+.identity-gap-list li > div {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.identity-control-flags span,
+.identity-verification-list strong,
+.identity-gap-list strong {
+  font-size: 11px;
+}
+
+.identity-control-flags strong,
+.identity-verification-list span,
+.identity-gap-list span,
+.identity-gap-list small {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.identity-verification-list p,
+.identity-gap-list p {
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+
+.identity-readiness-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.identity-readiness-table-wrap caption {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 0 7px;
+  text-align: left;
+}
+
+.identity-readiness-table-wrap p {
+  font-size: 10px;
+  margin: 0 0 3px;
+  overflow-wrap: anywhere;
+}
+
+.identity-readiness-table-wrap small {
+  color: var(--text-muted);
+  display: block;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+@media (max-width: 1050px) {
+  .identity-readiness-counts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .identity-readiness-heading {
+    flex-direction: column;
+  }
+
+  .identity-readiness-counts,
+  .identity-readiness-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .identity-readiness-heading > code {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (forced-colors: active) {
+  .identity-readiness-boundary,
+  .identity-readiness-counts article,
+  .identity-readiness-panel {
+    border: 1px solid CanvasText;
+  }
+}
+
+.patient-disclosure {
+  display: grid;
+  gap: 14px;
+}
+
+.patient-disclosure-heading {
+  align-items: flex-start;
+}
+
+.patient-disclosure-heading > div {
+  min-width: 0;
+}
+
+.patient-disclosure-heading > code {
+  background: var(--teal-soft);
+  border: 1px solid color-mix(in srgb, var(--teal) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--teal-deep);
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.patient-disclosure-message,
+.patient-disclosure-boundary,
+.patient-disclosure-emergency,
+.patient-disclosure-empty {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 11px 13px;
+}
+
+.patient-disclosure-message {
+  background: var(--bg);
+}
+
+.patient-disclosure-message p {
+  margin: 0 0 9px;
+}
+
+.patient-disclosure-boundary {
+  background: var(--warning-surface);
+  border-color: color-mix(in srgb, var(--warning) 38%, var(--border));
+  color: #5d4a00;
+}
+
+.patient-disclosure-emergency {
+  background: var(--danger-surface);
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  color: #781521;
+}
+
+.patient-disclosure-emergency > div,
+.patient-disclosure-section-heading,
+.patient-disclosure-item-heading,
+.patient-disclosure-history li > div {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.patient-disclosure-emergency span {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.patient-disclosure-emergency p {
+  margin: 5px 0 0;
+}
+
+.patient-disclosure-section-heading {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.patient-disclosure-section-heading h3 {
+  font-size: 16px;
+  margin: 0 0 3px;
+}
+
+.patient-disclosure-section-heading p {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.patient-disclosure-form,
+.patient-disclosure-action,
+.patient-disclosure-history {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.patient-disclosure-form-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.patient-disclosure-form textarea,
+.patient-disclosure-action textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.patient-disclosure-scopes {
+  border: 0;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+}
+
+.patient-disclosure-scopes legend {
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+
+.patient-disclosure-scopes label {
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.patient-disclosure-scopes input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.patient-disclosure-scopes label > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.patient-disclosure-scopes strong {
+  font-size: 10px;
+}
+
+.patient-disclosure-scopes small {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.patient-disclosure-scopes label:has(input:disabled) {
+  opacity: 0.6;
+}
+
+.patient-disclosure-empty {
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.patient-disclosure-list {
+  display: grid;
+  gap: 9px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.patient-disclosure-list > li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  padding: 12px;
+}
+
+.patient-disclosure-item-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.patient-disclosure-item-heading strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.patient-disclosure-item-heading div > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.patient-disclosure-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 11px 0;
+}
+
+.patient-disclosure-facts > div {
+  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.patient-disclosure-facts dt {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.patient-disclosure-facts dd {
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.patient-disclosure-action {
+  border-color: color-mix(in srgb, var(--teal) 35%, var(--border));
+}
+
+.patient-disclosure-history ol {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.patient-disclosure-history li {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.patient-disclosure-history strong {
+  font-size: 11px;
+}
+
+.patient-disclosure-history span,
+.patient-disclosure-history small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.patient-disclosure-history p {
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 5px 0;
+}
+
+.patient-disclosure-policy {
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  padding-top: 12px;
+}
+
+.patient-disclosure-policy summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.patient-disclosure-policy ul {
+  display: grid;
+  gap: 5px;
+  line-height: 1.45;
+  margin: 9px 0 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 980px) {
+  .patient-disclosure-form-grid,
+  .patient-disclosure-scopes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .patient-disclosure-heading,
+  .patient-disclosure-section-heading,
+  .patient-disclosure-item-heading,
+  .patient-disclosure-emergency > div,
+  .patient-disclosure-history li > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .patient-disclosure-heading > code {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .patient-disclosure-form-grid,
+  .patient-disclosure-scopes,
+  .patient-disclosure-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (forced-colors: active) {
+  .patient-disclosure-message,
+  .patient-disclosure-boundary,
+  .patient-disclosure-emergency,
+  .patient-disclosure-form,
+  .patient-disclosure-action,
+  .patient-disclosure-history,
+  .patient-disclosure-scopes label,
+  .patient-disclosure-list > li,
+  .patient-disclosure-empty {
+    border: 1px solid CanvasText;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

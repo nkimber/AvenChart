@@ -84,6 +84,7 @@ import {
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 import AuthorizationPolicyRegistry from "./AuthorizationPolicyRegistry.tsx";
+import IdentityProviderReadiness from "./IdentityProviderReadiness.tsx";
 import CodingCatalogGovernance from "./CodingCatalogGovernance.tsx";
 import FormsLayoutGovernance from "./FormsLayoutGovernance.tsx";
 import AlertRuleGovernance from "./AlertRuleGovernance.tsx";
@@ -4070,6 +4071,7 @@ export default function AdminDirectory() {
                   <AuthorizationPolicyRegistry
                     sessionId={session.sessionId}
                   />
+                  <IdentityProviderReadiness sessionId={session.sessionId} />
                 </section>
               )}
             </>
