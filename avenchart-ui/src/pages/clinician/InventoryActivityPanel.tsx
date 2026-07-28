@@ -382,7 +382,12 @@ export default function InventoryActivityPanel({
               </p>
             </div>
           ) : (
-            <div className="cl-table-scroll">
+            <div
+              className="cl-table-scroll"
+              role="region"
+              aria-label="Inventory activity results"
+              tabIndex={0}
+            >
               <table className="cl-table inventory-activity-table">
                 <thead>
                   <tr>

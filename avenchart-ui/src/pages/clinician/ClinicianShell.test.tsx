@@ -52,7 +52,12 @@ describe('ClinicianShell', () => {
       sessionSource: 'test',
     })
     vi.mocked(getProcedureReportQueue).mockResolvedValue({
+      datasetId: 'test',
+      datasetVersion: 'v1',
+      statusFilter: 'unreviewed',
+      limit: 100,
       totalReports: 0,
+      reviewedReports: 0,
       unreviewedReports: 0,
       reports: [],
     })

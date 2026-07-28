@@ -351,7 +351,12 @@ export default function BillingWorkspace() {
                 Ending {money(patientAccount.ledgerSummary.endingBalanceAmount)}
               </span>
             </div>
-            <div className="cl-table-scroll">
+            <div
+              className="cl-table-scroll"
+              role="region"
+              aria-label="Patient billing ledger"
+              tabIndex={0}
+            >
               <table className="cl-table">
                 <thead>
                   <tr>

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   allocateInventoryPatientSale,
   ApiRequestError,
+  assignLabReportReviewer,
+  bulkSignLabReports,
   createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
@@ -26,11 +28,15 @@ import {
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientProviderAssignmentOptions,
+  getProcedureOrderQueue,
+  getProcedureReportQueue,
   getStaffMessageInbox,
   logout,
+  reopenLabReportReview,
   replyToPatientMessage,
   searchEncounters,
   SESSION_INVALID_EVENT,
+  signLabReport,
   submitInventoryPurchaseRequisition,
   updatePatientCareTeam,
   updatePatientEmployer,
@@ -340,6 +346,119 @@ describe('authenticated API transport', () => {
         }),
       ],
     ])
+  })
+
+  it('sends the complete protected procedure queue filter contract', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: 'test',
+          datasetVersion: 'v1',
+          statusFilter: 'all',
+          limit: 100,
+          totalReports: 1,
+          reviewedReports: 0,
+          unreviewedReports: 1,
+          reports: [{ reportId: 6001 }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: 'test',
+          datasetVersion: 'v1',
+          statusFilter: 'ready-to-send',
+          limit: 100,
+          totalOrders: 1,
+          readyToSendOrders: 1,
+          transmittedPendingOrders: 0,
+          reportedOrders: 0,
+          scheduledOrders: 1,
+          completedOrders: 0,
+          orders: [{ orderId: 5001, queueState: 'ready-to-send' }],
+        }),
+      )
+
+    const filters = {
+      status: 'all',
+      patientId: 'MOD-PAT-0004',
+      providerId: 101,
+      labId: 501,
+      fromDate: '2026-07-01',
+      toDate: '2026-07-27',
+      limit: 100,
+    }
+    const reports = await getProcedureReportQueue(
+      'staff-session',
+      filters,
+    )
+    const orders = await getProcedureOrderQueue('staff-session', {
+      ...filters,
+      status: 'ready-to-send',
+    })
+
+    expect(reports.reports[0]).toMatchObject({ reportId: 6001 })
+    expect(orders.orders[0]).toMatchObject({
+      orderId: 5001,
+      queueState: 'ready-to-send',
+    })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/procedures/report-review-queue?status=all&patientId=MOD-PAT-0004&providerId=101&labId=501&fromDate=2026-07-01&toDate=2026-07-27&limit=100',
+      'http://localhost:5001/api/procedures/order-queue?status=ready-to-send&patientId=MOD-PAT-0004&providerId=101&labId=501&fromDate=2026-07-01&toDate=2026-07-27&limit=100',
+    ])
+  })
+
+  it('uses the protected assign, sign, reopen, and bulk-sign report contracts', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
+      counts: { orders: 1, reports: 1, results: 0, finalResults: 0 },
+      orders: [],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 6001, detail }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          requestedCount: 2,
+          signedCount: 2,
+          signedReportIds: [6001, 6002],
+          reviewedBy: 'admin',
+          reviewedAt: '2026-07-27 23:45',
+        }),
+      )
+
+    await assignLabReportReviewer('staff-session', 6001, {
+      assignedTo: 'admin',
+      assignedAt: '2026-07-27T23:44:00Z',
+    })
+    await signLabReport('staff-session', 6001, {
+      reviewedBy: 'admin',
+      reviewedAt: '2026-07-27T23:45:00Z',
+    })
+    await reopenLabReportReview('staff-session', 6001)
+    const bulk = await bulkSignLabReports('staff-session', {
+      reportIds: [6001, 6002],
+      reviewedBy: 'admin',
+      reviewedAt: '2026-07-27T23:45:00Z',
+    })
+
+    expect(bulk).toMatchObject({ requestedCount: 2, signedCount: 2 })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/procedures/reports/6001/review-assignment',
+      'http://localhost:5001/api/procedures/reports/6001/sign',
+      'http://localhost:5001/api/procedures/reports/6001/reopen-review',
+      'http://localhost:5001/api/procedures/reports/bulk-sign',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      'PUT',
+      'PUT',
+      'PUT',
+      'PUT',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      body: undefined,
+    })
   })
 
   it('uses the protected patient relationship and care-team contracts', async () => {

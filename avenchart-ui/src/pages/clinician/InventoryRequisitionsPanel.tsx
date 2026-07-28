@@ -475,7 +475,12 @@ export default function InventoryRequisitionsPanel({
               No purchase requisitions match the active filters.
             </p>
           ) : (
-            <div className="cl-table-scroll">
+            <div
+              className="cl-table-scroll"
+              role="region"
+              aria-label="Purchase requisitions"
+              tabIndex={0}
+            >
               <table className="cl-table inventory-requisition-table">
                 <thead>
                   <tr>
@@ -583,7 +588,12 @@ export default function InventoryRequisitionsPanel({
             </button>
           </div>
 
-          <div className="cl-table-scroll">
+          <div
+            className="cl-table-scroll"
+            role="region"
+            aria-label="Purchase requisition lines"
+            tabIndex={0}
+          >
             <table className="cl-table">
               <thead>
                 <tr>

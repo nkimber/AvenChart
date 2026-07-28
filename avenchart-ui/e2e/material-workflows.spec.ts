@@ -160,87 +160,6 @@ test.describe("material workflows", () => {
     await expect(page.getByLabel("Status")).toHaveValue("new");
   });
 
-  test("staff can claim and reply to a patient message from the inbox", async ({
-    page,
-  }, testInfo) => {
-    test.skip(
-      testInfo.project.name !== "desktop-chromium",
-      "The isolated message mutation proof runs once while the other projects stay read-only.",
-    );
-    await signInClinician(page);
-    const sessionId = await page.evaluate(() => {
-      const raw = sessionStorage.getItem(
-        "avenchart-ui.clinicianSession",
-      );
-      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
-    });
-    expect(sessionId).toBeTruthy();
-
-    const apiBaseUrl =
-      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
-    const subject = `Inbox claim proof ${Date.now()}`;
-    const reply = `Browser-verified reply ${Date.now()}`;
-    let messageId: string | null = null;
-
-    try {
-      const created = await page.request.post(`${apiBaseUrl}/api/messages`, {
-        headers: { "X-Legacy EHR-Session": sessionId! },
-        data: {
-          patientId: "MOD-PAT-0004",
-          title: subject,
-          body: "Please confirm the message workflow.",
-          assignedTo: "gold-provider-01",
-        },
-      });
-      expect(created.ok()).toBeTruthy();
-      const mutation = (await created.json()) as { id?: string };
-      messageId = mutation.id ?? null;
-      expect(messageId).toBeTruthy();
-
-      const params = new URLSearchParams({
-        patient: "MOD-PAT-0004",
-        subject,
-      });
-      await page.goto(`/clinician/messages?${params}`);
-      const inboxItem = page
-        .getByRole("button")
-        .filter({ hasText: subject });
-      await expect(inboxItem).toBeVisible({ timeout: 30_000 });
-      await inboxItem.click();
-
-      const message = page.locator("article.msg-item").filter({
-        has: page.getByRole("heading", { name: subject }),
-      });
-      await expect(message).toBeVisible({ timeout: 30_000 });
-      await message
-        .getByRole("button", { name: "Reassign to me" })
-        .click();
-      await expect(message.getByText("Assigned to you")).toBeVisible();
-
-      await message
-        .getByRole("button", { name: "Reply", exact: true })
-        .click();
-      await message.getByLabel("Reply").fill(reply);
-      await message
-        .getByRole("button", { name: "Reply", exact: true })
-        .click();
-      await expect(message).toContainText(reply);
-      await expect(
-        page
-          .getByRole("status")
-          .filter({ hasText: "Reply recorded." }),
-      ).toBeVisible();
-    } finally {
-      if (messageId && sessionId) {
-        const deleted = await page.request.delete(
-          `${apiBaseUrl}/api/messages/${messageId}`,
-          { headers: { "X-Legacy EHR-Session": sessionId } },
-        );
-        expect(deleted.ok()).toBeTruthy();
-      }
-    }
-  });
-
   test("encounter alerts expose severity and acknowledgement evidence", async ({
     page,
   }, testInfo) => {
@@ -283,6 +202,41 @@ test.describe("material workflows", () => {
     await expect(alertPanel.getByText("Warning alert")).toBeVisible();
     await expect(alertPanel.getByText("Reopened")).toBeVisible();
     await expect(alertPanel.getByText(/Reopened by admin at/)).toBeVisible();
+  });
+
+  test("lab report and order queues expose authoritative filters and row contracts", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/labs?reportStatus=all");
+
+    const reportTotals = page.getByRole("region", {
+      name: "Report review totals",
+    });
+    await expect(reportTotals).toBeVisible({ timeout: 30_000 });
+    await expect(reportTotals).toContainText("server status all");
+    await expect(page.getByLabel("Review status")).toHaveValue("all");
+    await expect(
+      page.getByRole("region", { name: "Filtered report review queue" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: /Order queue/ }).click();
+    const orderTotals = page.getByRole("region", {
+      name: "Procedure order totals",
+    });
+    await expect(orderTotals).toBeVisible({ timeout: 30_000 });
+    await expect(orderTotals).toContainText("server status ready-to-send");
+    await expect(page.getByLabel("Queue status")).toHaveValue("ready-to-send");
+
+    await page.getByLabel("Patient ID").fill("MOD-PAT-0960");
+    await page.getByRole("button", { name: "Apply filters" }).click();
+    await expect(page).toHaveURL(/patientId=MOD-PAT-0960/);
+    await expect(
+      page.getByRole("button", { name: "Collins, Theo" }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByRole("region", { name: "Filtered procedure order queue" }),
+    ).toContainText("order 5001260", { timeout: 30_000 });
   });
 
   test("patient relationships and care team use the protected mutation workflows", async ({

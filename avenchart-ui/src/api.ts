@@ -4161,10 +4161,13 @@ export type ProcedureReportQueueItem = {
   reportId: number
   orderId: number
   patientId: string
+  legacyPid: number
   pubpid: string
   patientDisplayName: string
   orderDate: string
+  providerId?: number | null
   providerName?: string | null
+  labId?: number | null
   labName?: string | null
   procedureCode?: string | null
   procedureName?: string | null
@@ -4172,26 +4175,55 @@ export type ProcedureReportQueueItem = {
   reportStatus?: string | null
   reviewStatus?: string | null
   reviewedBy?: string | null
+  reviewedAt?: string | null
+  specimenNumber?: string | null
   notes?: string | null
 }
 
 export type ProcedureReportQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  statusFilter: string
+  patientFilter?: string | null
+  providerFilter?: number | null
+  labFilter?: number | null
+  fromDate?: string | null
+  toDate?: string | null
+  limit: number
   totalReports: number
+  reviewedReports: number
   unreviewedReports: number
   reports: ProcedureReportQueueItem[]
 }
 
+export type ProcedureQueueFilters = {
+  status?: string
+  patientId?: string
+  providerId?: number
+  labId?: number
+  fromDate?: string
+  toDate?: string
+  limit?: number
+}
+
+function procedureQueueParams(filters: ProcedureQueueFilters = {}) {
+  const params = new URLSearchParams()
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === '') return
+    params.set(key, String(value))
+  })
+  return params
+}
+
 export async function getProcedureReportQueue(
   sessionId: string,
-  params?: { status?: string; limit?: number },
+  filters: ProcedureQueueFilters = {},
   signal?: AbortSignal,
 ): Promise<ProcedureReportQueueResponse> {
-  const q = new URLSearchParams()
-  if (params?.status) q.set('status', params.status)
-  if (params?.limit) q.set('limit', String(params.limit))
+  const params = procedureQueueParams(filters)
   return clinicianGet(
     sessionId,
-    `/api/procedures/report-review-queue?${q}`,
+    `/api/procedures/report-review-queue?${params}`,
     signal,
   )
 }
@@ -4203,27 +4235,54 @@ export type ProcedureOrderQueueItem = {
   patientDisplayName: string
   orderDate: string
   providerName?: string | null
+  providerId?: number | null
   labName?: string | null
+  labId?: number | null
   procedureCode?: string | null
   procedureName?: string | null
+  procedureType?: string | null
+  encounterId?: number | null
+  orderPriority?: string | null
   orderStatus?: string | null
+  dateTransmitted?: string | null
+  reportCount: number
+  resultCount: number
+  specimenCount: number
+  canTransmit: boolean
+  queueState: string
+  instructions?: string | null
 }
 
 export type ProcedureOrderQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  statusFilter: string
+  patientFilter?: string | null
+  providerFilter?: number | null
+  labFilter?: number | null
+  fromDate?: string | null
+  toDate?: string | null
+  limit: number
   totalOrders: number
   readyToSendOrders: number
-  reports: ProcedureOrderQueueItem[]
+  transmittedPendingOrders: number
+  reportedOrders: number
+  scheduledOrders: number
+  completedOrders: number
+  orders: ProcedureOrderQueueItem[]
 }
 
 export async function getProcedureOrderQueue(
   sessionId: string,
-  params?: { status?: string; limit?: number },
+  filters: ProcedureQueueFilters = {},
   signal?: AbortSignal,
 ): Promise<ProcedureOrderQueueResponse> {
-  const q = new URLSearchParams()
-  if (params?.status) q.set('status', params.status)
-  if (params?.limit) q.set('limit', String(params.limit))
-  return clinicianGet(sessionId, `/api/procedures/order-queue?${q}`, signal)
+  const params = procedureQueueParams(filters)
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/order-queue?${params}`,
+    signal,
+  )
 }
 
 // ── Operational Reports ───────────────────────────────────────────────────────
@@ -5936,15 +5995,68 @@ export async function deactivatePrescription(
 
 // ── Lab report sign ───────────────────────────────────────────────────────────
 
+export type ProcedureMutationResponse = {
+  id: number
+  detail: ProcedureResultsResponse
+}
+
 export async function signLabReport(
   sessionId: string,
   reportId: number,
   body: { reviewedBy: string; reviewedAt: string },
   signal?: AbortSignal,
-): Promise<unknown> {
-  return clinicianPut(
+): Promise<ProcedureMutationResponse> {
+  return clinicianPut<ProcedureMutationResponse>(
     sessionId,
     `/api/procedures/reports/${reportId}/sign`,
+    body,
+    signal,
+  )
+}
+
+export async function assignLabReportReviewer(
+  sessionId: string,
+  reportId: number,
+  body: { assignedTo: string; assignedAt: string },
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  return clinicianPut<ProcedureMutationResponse>(
+    sessionId,
+    `/api/procedures/reports/${reportId}/review-assignment`,
+    body,
+    signal,
+  )
+}
+
+export async function reopenLabReportReview(
+  sessionId: string,
+  reportId: number,
+  signal?: AbortSignal,
+): Promise<ProcedureMutationResponse> {
+  return clinicianPut<ProcedureMutationResponse>(
+    sessionId,
+    `/api/procedures/reports/${reportId}/reopen-review`,
+    undefined,
+    signal,
+  )
+}
+
+export type ProcedureReportBulkSignResponse = {
+  requestedCount: number
+  signedCount: number
+  signedReportIds: number[]
+  reviewedBy: string
+  reviewedAt: string
+}
+
+export async function bulkSignLabReports(
+  sessionId: string,
+  body: { reportIds: number[]; reviewedBy: string; reviewedAt: string },
+  signal?: AbortSignal,
+): Promise<ProcedureReportBulkSignResponse> {
+  return clinicianPut<ProcedureReportBulkSignResponse>(
+    sessionId,
+    '/api/procedures/reports/bulk-sign',
     body,
     signal,
   )

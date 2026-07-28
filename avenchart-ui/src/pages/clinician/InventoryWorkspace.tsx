@@ -304,7 +304,12 @@ export default function InventoryWorkspace() {
                 </p>
               </div>
             ) : (
-              <div className="cl-table-scroll">
+              <div
+                className="cl-table-scroll"
+                role="region"
+                aria-label="Inventory lot register"
+                tabIndex={0}
+              >
                 <table className="cl-table inventory-lot-table">
                   <thead>
                     <tr>
@@ -500,7 +505,12 @@ export default function InventoryWorkspace() {
                         No metadata changes recorded.
                       </p>
                     ) : (
-                      <div className="cl-table-scroll">
+                      <div
+                        className="cl-table-scroll"
+                        role="region"
+                        aria-label="Lot metadata history"
+                        tabIndex={0}
+                      >
                         <table className="cl-table">
                           <thead>
                             <tr>
@@ -560,7 +570,12 @@ export default function InventoryWorkspace() {
                         No ledger entries are recorded for this lot.
                       </p>
                     ) : (
-                      <div className="cl-table-scroll">
+                      <div
+                        className="cl-table-scroll"
+                        role="region"
+                        aria-label="Lot transaction history"
+                        tabIndex={0}
+                      >
                         <table className="cl-table">
                           <thead>
                             <tr>

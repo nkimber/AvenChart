@@ -414,7 +414,12 @@ export default function InventoryMedicationLinksPanel({
           </p>
         </div>
       ) : (
-        <div className="cl-table-scroll">
+        <div
+          className="cl-table-scroll"
+          role="region"
+          aria-label="Inventory medication mappings"
+          tabIndex={0}
+        >
           <table className="cl-table inventory-medication-table">
             <thead>
               <tr>

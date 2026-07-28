@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:workflows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiWorkflows.ps1",
+    "test:mutation-proofs": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiMutationProofs.ps1",
     "test:accessibility": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiAccessibility.ps1",
     "test:quality": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiQuality.ps1",
     "test:route-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Test-ModernUiRouteSmoke.ps1",

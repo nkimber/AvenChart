@@ -133,7 +133,12 @@ export default function InventoryReplenishmentPanel({
           </p>
         </div>
       ) : (
-        <div className="cl-table-scroll">
+        <div
+          className="cl-table-scroll"
+          role="region"
+          aria-label="Replenishment candidates"
+          tabIndex={0}
+        >
           <table className="cl-table inventory-replenishment-table">
             <thead>
               <tr>
