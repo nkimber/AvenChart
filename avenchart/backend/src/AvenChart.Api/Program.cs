@@ -11,6 +11,7 @@ using AvenChart.Api.Data;
 using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
 using AvenChart.Api.Security;
+using AvenChart.Api.Workflows;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -814,6 +815,14 @@ fhir.MapGet("/Observation/sdoh", async (FhirRepository repository, string? subje
 var patients = app.MapGroup("/api/patients").WithTags("Patients");
 RequireAccessPermission(patients, "patients", "demo", "view");
 
+var clinicalWorkflows = app.MapGroup("/api/clinical-workflows").WithTags("Clinical Workflows");
+RequireAccessPermission(clinicalWorkflows, "patients", "med", "view");
+clinicalWorkflows.MapGet("/assignees", async (
+        AuthorizationRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetAssigneesAsync(cancellationToken)))
+    .WithName("GetClinicalWorkflowAssignees");
+
 patients.MapGet("/", async (
         PatientRepository repository,
         string? search,
@@ -850,16 +859,138 @@ patients.MapGet("/{patientId}/authorizations", async (string patientId, Authoriz
     try { return Results.Ok(await repository.GetAsync(patientId, cancellationToken)); }
     catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
 }).WithName("GetPatientAuthorizations");
-patients.MapPost("/{patientId}/authorizations", async (string patientId, AuthorizationCreateRequest request, AuthorizationRepository repository, CancellationToken cancellationToken) =>
+patients.MapPost("/{patientId}/authorizations", async (
+    string patientId,
+    AuthorizationCreateRequest request,
+    AuthorizationRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
 {
-    try { return Results.Created($"/api/patients/{patientId}/authorizations", await repository.CreateAsync(patientId, request, cancellationToken)); }
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Created(
+            $"/api/patients/{patientId}/authorizations",
+            await repository.CreateAsync(
+                patientId,
+                request,
+                session.Username,
+                cancellationToken));
+    }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CreatePatientAuthorization").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
-patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", async (string patientId, Guid authorizationId, AuthorizationStatusRequest request, AuthorizationRepository repository, CancellationToken cancellationToken) =>
+patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/status", async (
+    string patientId,
+    Guid authorizationId,
+    AuthorizationStatusRequest request,
+    AuthorizationRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
 {
-    try { return Results.Ok(await repository.UpdateStatusAsync(patientId, authorizationId, request, cancellationToken)); }
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.UpdateStatusAsync(
+            patientId,
+            authorizationId,
+            request,
+            session.Username,
+            cancellationToken));
+    }
+    catch (ClinicalWorkflowVersionConflictException ex)
+    {
+        return Results.Conflict(new
+        {
+            error = ex.Message,
+            expectedVersion = ex.ExpectedVersion,
+            currentVersion = ex.CurrentVersion,
+            current = await repository.GetByIdAsync(
+                patientId,
+                authorizationId,
+                cancellationToken),
+        });
+    }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("UpdatePatientAuthorizationStatus").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+patients.MapPut("/{patientId}/authorizations/{authorizationId:guid}/assignment", async (
+    string patientId,
+    Guid authorizationId,
+    AuthorizationAssignmentRequest request,
+    AuthorizationRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.UpdateAssignmentAsync(
+            patientId,
+            authorizationId,
+            request,
+            session.Username,
+            cancellationToken));
+    }
+    catch (ClinicalWorkflowVersionConflictException ex)
+    {
+        return Results.Conflict(new
+        {
+            error = ex.Message,
+            expectedVersion = ex.ExpectedVersion,
+            currentVersion = ex.CurrentVersion,
+            current = await repository.GetByIdAsync(
+                patientId,
+                authorizationId,
+                cancellationToken),
+        });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("UpdatePatientAuthorizationAssignment").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
+patients.MapGet("/{patientId}/authorizations/{authorizationId:guid}/history", async (
+    string patientId,
+    Guid authorizationId,
+    AuthorizationRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await repository.GetHistoryAsync(
+            patientId,
+            authorizationId,
+            cancellationToken) is { } history
+            ? Results.Ok(history)
+            : Results.NotFound();
+    }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithName("GetPatientAuthorizationHistory");
+patients.MapDelete("/{patientId}/authorizations/{authorizationId:guid}/test-fixture", async (
+    string patientId,
+    Guid authorizationId,
+    AuthorizationRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return await repository.DeleteFixtureAsync(
+            patientId,
+            authorizationId,
+            cancellationToken)
+            ? Results.NoContent()
+            : Results.NotFound();
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("DeletePatientAuthorizationTestFixture").AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
 patients.MapGet("/{patientId}/record-requests", async (string patientId, PatientRecordRequestRepository repository, CancellationToken cancellationToken) =>
 {

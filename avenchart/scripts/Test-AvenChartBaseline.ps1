@@ -10719,6 +10719,88 @@ catch {
     Add-Check -Name "printable patient output suite" -Result "failed" -Details $_.Exception.Message
 }
 
+$workflowAuthorizationId = $null
+try {
+    $workflowHeaders = Get-AdministrationHeaders
+    $workflowMarker = "TMP-CLIN-AUTH-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $workflowAssignees = Invoke-RestMethod -Uri "$ApiBaseUrl/api/clinical-workflows/assignees" -Method Get -Headers $workflowHeaders -TimeoutSec 20
+    $workflowCreated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations" -Method Post -Headers $workflowHeaders -ContentType "application/json" -Body (@{
+        payer = $workflowMarker
+        service = "$workflowMarker service"
+        assignedTo = "gold-provider-01"
+        dueAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+        expiresAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+        reason = "$workflowMarker created for baseline verification"
+    } | ConvertTo-Json) -TimeoutSec 20
+    $workflowAuthorizationId = $workflowCreated.id
+    $workflowAssigned = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/assignment" -Method Put -Headers $workflowHeaders -ContentType "application/json" -Body (@{
+        assignedTo = "admin"
+        dueAt = (Get-Date).AddDays(8).ToString("yyyy-MM-dd")
+        expectedVersion = 1
+        reasonCode = "responsibility-transfer"
+        reason = "$workflowMarker transferred for baseline verification"
+    } | ConvertTo-Json) -TimeoutSec 20
+    $workflowSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/status" -Method Put -Headers $workflowHeaders -ContentType "application/json" -Body (@{
+        status = "submitted"
+        expectedVersion = 2
+        reasonCode = "authorization-submitted"
+        reason = "$workflowMarker submitted for baseline verification"
+    } | ConvertTo-Json) -TimeoutSec 20
+    $workflowStaleRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/status" -Method Put -Headers $workflowHeaders -ContentType "application/json" -Body (@{
+            status = "approved"
+            authorizationNumber = "$workflowMarker-stale"
+            expectedVersion = 2
+            reasonCode = "authorization-approved"
+            reason = "$workflowMarker stale approval"
+        } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $workflowStaleRejected = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+    $workflowApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/status" -Method Put -Headers $workflowHeaders -ContentType "application/json" -Body (@{
+        status = "approved"
+        authorizationNumber = "$workflowMarker-approved"
+        expectedVersion = 3
+        reasonCode = "authorization-approved"
+        reason = "$workflowMarker approved for baseline verification"
+    } | ConvertTo-Json) -TimeoutSec 20
+    $workflowHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/history" -Method Get -Headers $workflowHeaders -TimeoutSec 20
+    $workflowPassed = $workflowAssignees.policyRevision -eq "local-clinical-workflow-v1" `
+        -and $workflowAssignees.count -ge 3 `
+        -and $workflowCreated.workflowVersion -eq 1 `
+        -and $workflowAssigned.workflowVersion -eq 2 `
+        -and $workflowAssigned.assignedTo -eq "admin" `
+        -and $workflowSubmitted.workflowVersion -eq 3 `
+        -and $workflowSubmitted.status -eq "submitted" `
+        -and $workflowStaleRejected `
+        -and $workflowApproved.workflowVersion -eq 4 `
+        -and $workflowApproved.status -eq "approved" `
+        -and $workflowHistory.total -eq 4 `
+        -and (@($workflowHistory.events.action) -join ",") -eq "approve,submit,reassigned,created"
+    Add-Check -Name "versioned patient authorization workflow lifecycle" -Result $(if ($workflowPassed) { "passed" } else { "failed" }) -Details @{
+        authorizationId = $workflowAuthorizationId
+        policyRevision = $workflowAssignees.policyRevision
+        finalVersion = $workflowApproved.workflowVersion
+        staleWriteRejected = $workflowStaleRejected
+        historyEvents = $workflowHistory.total
+    }
+}
+catch {
+    Add-Check -Name "versioned patient authorization workflow lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $workflowAuthorizationId) {
+        try {
+            Invoke-WebRequest -Uri "$ApiBaseUrl/api/patients/MOD-PAT-0001/authorizations/$workflowAuthorizationId/test-fixture" -Method Delete -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
+        }
+        catch {
+            Add-Check -Name "versioned patient authorization workflow fixture cleanup" -Result "failed" -Details $_.Exception.Message
+        }
+    }
+}
+
 try {
     $binaryTemplateHeaders = Get-AdministrationHeaders
     $binaryTemplate = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/document-templates/" -Method Post -Headers $binaryTemplateHeaders -ContentType "application/json" -Body (@{ name = "Smoke binary template $([Guid]::NewGuid().ToString('N').Substring(0, 8))"; content = "Attachment for ***NAME***"; active = $true } | ConvertTo-Json) -TimeoutSec 20

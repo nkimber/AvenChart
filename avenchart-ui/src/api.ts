@@ -1764,6 +1764,28 @@ export async function getPatientPrintableOutput(
     throw new Error(`Printable output failed with ${response.status}`)
   return response.text()
 }
+export type ClinicalWorkflowTransitionOption = {
+  action: string
+  fromState: string
+  toState: string
+  reasonCode: string
+  label: string
+  requiresAuthorizationNumber: boolean
+}
+
+export type ClinicalWorkflowAssignee = {
+  staffId?: number | null
+  username: string
+  displayName: string
+  role: string
+}
+
+export type ClinicalWorkflowAssigneesResponse = {
+  policyRevision: string
+  count: number
+  assignees: ClinicalWorkflowAssignee[]
+}
+
 export type PatientAuthorization = {
   id: string
   patientId: string
@@ -1774,9 +1796,44 @@ export type PatientAuthorization = {
   authorizationNumber?: string | null
   requestedAt: string
   expiresAt?: string | null
+  workflowVersion: number
+  assignedTo: string
+  assignedDisplayName: string
+  dueAt?: string | null
+  createdBy: string
+  policyRevision: string
   createdAt: string
   updatedAt: string
+  availableTransitions: ClinicalWorkflowTransitionOption[]
 }
+
+export type PatientAuthorizationWorkflowEvent = {
+  eventId: string
+  workflowVersion: number
+  action: string
+  fromState?: string | null
+  toState: string
+  fromAssignedTo?: string | null
+  toAssignedTo?: string | null
+  reasonCode: string
+  reason: string
+  actor: string
+  policyRevision: string
+  occurredAt: string
+}
+
+export type PatientAuthorizationWorkflowHistory = {
+  authorization: PatientAuthorization
+  total: number
+  events: PatientAuthorizationWorkflowEvent[]
+}
+
+export async function getClinicalWorkflowAssignees(
+  sessionId: string,
+): Promise<ClinicalWorkflowAssigneesResponse> {
+  return clinicianGet(sessionId, '/api/clinical-workflows/assignees')
+}
+
 export async function getPatientAuthorizations(
   sessionId: string,
   patientId: string,
@@ -1789,7 +1846,14 @@ export async function getPatientAuthorizations(
 export async function createPatientAuthorization(
   sessionId: string,
   patientId: string,
-  body: { payer: string; service: string; expiresAt?: string },
+  body: {
+    payer: string
+    service: string
+    expiresAt?: string
+    assignedTo: string
+    dueAt?: string
+    reason: string
+  },
 ): Promise<PatientAuthorization> {
   return clinicianPost(
     sessionId,
@@ -1801,13 +1865,59 @@ export async function updatePatientAuthorizationStatus(
   sessionId: string,
   patientId: string,
   authorizationId: string,
-  status: 'submitted' | 'approved' | 'denied' | 'expired' | 'cancelled',
-  authorizationNumber?: string,
+  body: {
+    status: 'submitted' | 'approved' | 'denied' | 'expired' | 'cancelled'
+    authorizationNumber?: string
+    expectedVersion: number
+    reasonCode: string
+    reason: string
+  },
 ): Promise<PatientAuthorization> {
   return clinicianPut(
     sessionId,
     `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/status`,
-    { status, authorizationNumber },
+    body,
+  )
+}
+
+export async function updatePatientAuthorizationAssignment(
+  sessionId: string,
+  patientId: string,
+  authorizationId: string,
+  body: {
+    assignedTo: string
+    dueAt?: string
+    expectedVersion: number
+    reasonCode: 'responsibility-transfer'
+    reason: string
+  },
+): Promise<PatientAuthorization> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/assignment`,
+    body,
+  )
+}
+
+export async function getPatientAuthorizationHistory(
+  sessionId: string,
+  patientId: string,
+  authorizationId: string,
+): Promise<PatientAuthorizationWorkflowHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/history`,
+  )
+}
+
+export async function deletePatientAuthorizationTestFixture(
+  sessionId: string,
+  patientId: string,
+  authorizationId: string,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/test-fixture`,
   )
 }
 

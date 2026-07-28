@@ -20,6 +20,7 @@ import {
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
+  createPatientAuthorization,
   createPatientScannerCapture,
   createPatientMessage,
   createPracticeSettingChangeRequest,
@@ -28,6 +29,7 @@ import {
   deleteImmunization,
   deleteMedication,
   deletePatientDocument,
+  deletePatientAuthorizationTestFixture,
   deleteProblem,
   decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
@@ -40,6 +42,7 @@ import {
   failPatientDocumentOcr,
   getCurrentSession,
   getAuthorizationPolicyCatalog,
+  getClinicalWorkflowAssignees,
   getDocumentTemplateHistory,
   getDocumentTemplates,
   getInventoryActivityReport,
@@ -50,6 +53,8 @@ import {
   getPatientBilling,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
+  getPatientAuthorizationHistory,
+  getPatientAuthorizations,
   getPatientDocumentArchiveHistory,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
@@ -93,6 +98,8 @@ import {
   submitInventoryPurchaseRequisition,
   transitionPracticeSettingChangeRequest,
   updatePatientCareTeam,
+  updatePatientAuthorizationAssignment,
+  updatePatientAuthorizationStatus,
   updatePatientEmployer,
   updatePatientGuardianContact,
   updatePatientMessageAssignment,
@@ -999,6 +1006,172 @@ describe('authenticated API transport', () => {
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
     )
+  })
+
+  it('uses the versioned patient-authorization workflow contract', async () => {
+    const draft = {
+      id: 'authorization-id',
+      patientId: 'MOD-PAT-0001',
+      payer: 'Example payer',
+      service: 'MRI',
+      status: 'draft',
+      requestedAt: '2026-07-28T12:00:00Z',
+      workflowVersion: 1,
+      assignedTo: 'gold-provider-01',
+      assignedDisplayName: 'Gold Provider',
+      createdBy: 'admin',
+      policyRevision: 'local-clinical-workflow-v1',
+      createdAt: '2026-07-28T12:00:00Z',
+      updatedAt: '2026-07-28T12:00:00Z',
+      availableTransitions: [
+        {
+          action: 'submit',
+          fromState: 'draft',
+          toState: 'submitted',
+          reasonCode: 'authorization-submitted',
+          label: 'Submit for review',
+          requiresAuthorizationNumber: false,
+        },
+      ],
+    }
+    const reassigned = {
+      ...draft,
+      workflowVersion: 2,
+      assignedTo: 'admin',
+      assignedDisplayName: 'Administrator',
+    }
+    const submitted = {
+      ...reassigned,
+      workflowVersion: 3,
+      status: 'submitted',
+    }
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          policyRevision: 'local-clinical-workflow-v1',
+          count: 2,
+          assignees: [
+            {
+              staffId: 1,
+              username: 'admin',
+              displayName: 'Administrator',
+              role: 'administrator',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([draft]))
+      .mockResolvedValueOnce(jsonResponse(draft, 201))
+      .mockResolvedValueOnce(jsonResponse(reassigned))
+      .mockResolvedValueOnce(jsonResponse(submitted))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          authorization: submitted,
+          total: 3,
+          events: [
+            {
+              eventId: 'event-3',
+              workflowVersion: 3,
+              action: 'submit',
+              fromState: 'draft',
+              toState: 'submitted',
+              reasonCode: 'authorization-submitted',
+              reason: 'Ready for review',
+              actor: 'admin',
+              policyRevision: 'local-clinical-workflow-v1',
+              occurredAt: '2026-07-28T12:02:00Z',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await getClinicalWorkflowAssignees('staff-session')
+    await getPatientAuthorizations('staff-session', 'MOD-PAT-0001')
+    await createPatientAuthorization('staff-session', 'MOD-PAT-0001', {
+      payer: 'Example payer',
+      service: 'MRI',
+      assignedTo: 'gold-provider-01',
+      dueAt: '2026-08-04',
+      reason: 'MRI requires local authorization tracking',
+    })
+    await updatePatientAuthorizationAssignment(
+      'staff-session',
+      'MOD-PAT-0001',
+      'authorization-id',
+      {
+        assignedTo: 'admin',
+        dueAt: '2026-08-05',
+        expectedVersion: 1,
+        reasonCode: 'responsibility-transfer',
+        reason: 'Transfer to authorization coordinator',
+      },
+    )
+    await updatePatientAuthorizationStatus(
+      'staff-session',
+      'MOD-PAT-0001',
+      'authorization-id',
+      {
+        status: 'submitted',
+        expectedVersion: 2,
+        reasonCode: 'authorization-submitted',
+        reason: 'Ready for review',
+      },
+    )
+    const history = await getPatientAuthorizationHistory(
+      'staff-session',
+      'MOD-PAT-0001',
+      'authorization-id',
+    )
+    await deletePatientAuthorizationTestFixture(
+      'staff-session',
+      'MOD-PAT-0001',
+      'authorization-id',
+    )
+
+    expect(history).toMatchObject({
+      total: 3,
+      events: [{ workflowVersion: 3, action: 'submit' }],
+    })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-workflows/assignees',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations/authorization-id/assignment',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations/authorization-id/status',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations/authorization-id/history',
+      'http://localhost:5001/api/patients/MOD-PAT-0001/authorizations/authorization-id/test-fixture',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        payer: 'Example payer',
+        service: 'MRI',
+        assignedTo: 'gold-provider-01',
+        dueAt: '2026-08-04',
+        reason: 'MRI requires local authorization tracking',
+      }),
+    })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        assignedTo: 'admin',
+        dueAt: '2026-08-05',
+        expectedVersion: 1,
+        reasonCode: 'responsibility-transfer',
+        reason: 'Transfer to authorization coordinator',
+      }),
+    })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        status: 'submitted',
+        expectedVersion: 2,
+        reasonCode: 'authorization-submitted',
+        reason: 'Ready for review',
+      }),
+    })
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
   it('uses the filtered, assigned, stale-safe patient document routing lifecycle', async () => {

@@ -5,6 +5,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $UiRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ProjectRoot = Resolve-Path (Join-Path $UiRoot "..")
+$MigrationScript = Join-Path $ProjectRoot "avenchart\scripts\Invoke-ModernizedMigrations.ps1"
 $ArtifactsRoot = Join-Path $UiRoot "test-results"
 $ResultPath = Join-Path $ArtifactsRoot "isolated-mutation-workflows-result.json"
 $startedAt = Get-Date
@@ -15,6 +17,11 @@ New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 
 Push-Location $UiRoot
 try {
+    & $MigrationScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized schema migrations failed before the isolated mutation proofs."
+    }
+
     $env:MODERN_UI_BASE_URL = $BaseUrl
     $env:MODERN_UI_RUN_ISOLATED_MUTATIONS = "1"
     & npx.cmd playwright test e2e/isolated-mutation-workflows.spec.ts --project=desktop-chromium --workers=1

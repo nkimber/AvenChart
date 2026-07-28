@@ -587,8 +587,13 @@ export default function PracticeSettingGovernance({
       )}
 
       {detailState?.status === "loading" && (
-        <div className="cl-card" aria-label="Loading change request detail">
-          <div className="skeleton-row" style={{ height: 120 }} />
+        <div className="cl-card" role="status">
+          <span className="sr-only">Loading change request detail</span>
+          <div
+            className="skeleton-row"
+            style={{ height: 120 }}
+            aria-hidden="true"
+          />
         </div>
       )}
       {detailState?.status === "error" && (

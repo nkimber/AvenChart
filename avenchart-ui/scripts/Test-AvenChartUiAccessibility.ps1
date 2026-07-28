@@ -5,6 +5,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $UiRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ProjectRoot = Resolve-Path (Join-Path $UiRoot "..")
+$MigrationScript = Join-Path $ProjectRoot "avenchart\scripts\Invoke-ModernizedMigrations.ps1"
 $ArtifactsRoot = Join-Path $UiRoot "test-results"
 $ResultPath = Join-Path $ArtifactsRoot "accessibility-result.json"
 $startedAt = Get-Date
@@ -15,8 +17,13 @@ New-Item -ItemType Directory -Force $ArtifactsRoot | Out-Null
 
 Push-Location $UiRoot
 try {
+    & $MigrationScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Modernized schema migrations failed before the accessibility gate."
+    }
+
     $env:MODERN_UI_BASE_URL = $BaseUrl
-    & npx.cmd playwright test e2e/accessibility.spec.ts --project=desktop-chromium --project=mobile-chromium
+    & npx.cmd playwright test e2e/accessibility.spec.ts --project=desktop-chromium --project=mobile-chromium --workers=1
     $exitCode = $LASTEXITCODE
     if ($exitCode -eq 0) {
         $status = "passed"

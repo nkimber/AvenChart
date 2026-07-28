@@ -10707,6 +10707,300 @@ h4 {
   cursor: pointer;
 }
 
+/* Versioned patient-authorization workflow */
+.authorization-workspace {
+  max-width: 1320px;
+}
+.authorization-page-heading {
+  align-items: center;
+}
+.authorization-policy-revision {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+}
+.authorization-boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-left: 4px solid var(--warning);
+  background: var(--warning-surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.authorization-boundary strong {
+  white-space: nowrap;
+}
+.authorization-create-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+.authorization-create-grid label,
+.authorization-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.authorization-create-grid .ne-input,
+.authorization-create-grid .cl-textarea,
+.authorization-editor .ne-input,
+.authorization-editor .cl-textarea {
+  margin: 0;
+}
+.authorization-reason-field {
+  grid-column: 1 / -1;
+}
+.authorization-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.authorization-feedback:empty {
+  display: none;
+}
+.authorization-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.authorization-message-error {
+  border-color: var(--danger);
+  background: #fef2f2;
+  color: #991b1b;
+}
+.authorization-message-success {
+  border-color: var(--success);
+  background: #ecfdf5;
+  color: #065f46;
+}
+.authorization-queue {
+  display: grid;
+  gap: 8px;
+}
+.authorization-queue-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.5fr) minmax(90px, 0.65fr)
+    minmax(170px, 1fr) minmax(120px, 0.7fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: #475569;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.authorization-queue-item:hover,
+.authorization-queue-item.is-selected {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+.authorization-queue-item:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--teal) 35%, transparent);
+  outline-offset: 2px;
+}
+.authorization-queue-main {
+  display: grid;
+  gap: 2px;
+}
+.authorization-queue-main strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.authorization-state {
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--bg);
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+.authorization-state-submitted {
+  background: var(--warning-surface);
+  color: #92400e;
+}
+.authorization-state-approved {
+  background: #ecfdf5;
+  color: #065f46;
+}
+.authorization-state-denied,
+.authorization-state-cancelled,
+.authorization-state-expired {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.authorization-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(330px, 0.75fr);
+  align-items: start;
+  gap: 16px;
+}
+.authorization-detail-card,
+.authorization-history-card {
+  min-width: 0;
+}
+.authorization-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin: 0;
+  background: var(--border);
+}
+.authorization-facts > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.authorization-facts dt,
+.authorization-history dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.authorization-facts dd,
+.authorization-history dd {
+  overflow-wrap: anywhere;
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 12px;
+}
+.authorization-action-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.authorization-action-section h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+.authorization-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.authorization-editor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  margin-top: 14px;
+  padding: 14px;
+}
+.authorization-editor > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.authorization-editor > div:first-child strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.authorization-assignment-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(140px, 0.6fr);
+  gap: 10px;
+}
+.authorization-history-card > .cl-card-header > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.authorization-history {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.authorization-history li {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  border-left: 2px solid var(--border);
+  margin-left: 5px;
+  padding: 0 0 18px 18px;
+}
+.authorization-history li::before {
+  position: absolute;
+  top: 2px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--teal);
+  content: "";
+}
+.authorization-history li:last-child {
+  padding-bottom: 0;
+}
+.authorization-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.authorization-history-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.authorization-history-heading span,
+.authorization-history p {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.authorization-history p,
+.authorization-history blockquote {
+  margin: 0;
+  line-height: 1.45;
+}
+.authorization-history blockquote {
+  border-left: 2px solid var(--teal);
+  color: var(--text);
+  font-size: 12px;
+  padding-left: 9px;
+}
+.authorization-history dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
 @media (max-width: 760px) {
   .authorization-policy-heading,
   .authorization-policy-pagination {
@@ -10726,6 +11020,29 @@ h4 {
     justify-content: center;
     width: 100%;
   }
+  .authorization-boundary,
+  .authorization-editor > div:first-child,
+  .authorization-history-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .authorization-create-grid,
+  .authorization-detail-grid,
+  .authorization-facts,
+  .authorization-assignment-grid,
+  .authorization-history dl {
+    grid-template-columns: 1fr;
+  }
+  .authorization-queue-item {
+    grid-template-columns: 1fr 1fr;
+  }
+  .authorization-queue-main {
+    grid-column: 1 / -1;
+  }
+  .authorization-form-actions button,
+  .authorization-action-list button {
+    width: 100%;
+  }
 }
 
 @media (forced-colors: active) {
@@ -10736,6 +11053,17 @@ h4 {
   .authorization-policy-detail dl > div,
   .authorization-policy-gaps {
     border: 1px solid CanvasText;
+  }
+  .authorization-boundary,
+  .authorization-message,
+  .authorization-queue-item,
+  .authorization-facts,
+  .authorization-editor {
+    border: 1px solid CanvasText;
+  }
+  .authorization-queue-item.is-selected,
+  .authorization-history li::before {
+    outline: 2px solid Highlight;
   }
 }
 

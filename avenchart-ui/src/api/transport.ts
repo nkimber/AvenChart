@@ -8,6 +8,7 @@ export type SessionScope = "clinician" | "portal";
 export type ApiProblemDetails = {
   title?: string;
   detail?: string;
+  error?: string;
   status?: number;
   errors?: Record<string, string[]>;
   traceId?: string;
@@ -67,6 +68,7 @@ export async function requireSuccessfulResponse(
   const problem = await parseProblemDetails(response);
   const message =
     problem?.detail ??
+    problem?.error ??
     problem?.title ??
     `${action} failed with ${response.status}`;
   throw new ApiRequestError(message, response.status, problem);

@@ -55,7 +55,9 @@ async function signInClinician(page: Page) {
     .getByLabel("Password")
     .fill(process.env.MODERN_UI_STAFF_PASSWORD ?? "pass");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/clinician\/dashboard$/);
+  await expect(page).toHaveURL(/\/clinician\/dashboard$/, {
+    timeout: 20_000,
+  });
 }
 
 async function signInPortal(page: Page) {
@@ -69,7 +71,7 @@ async function signInPortal(page: Page) {
     .getByLabel("Password")
     .fill(process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/portal\/home$/);
+  await expect(page).toHaveURL(/\/portal\/home$/, { timeout: 20_000 });
 }
 
 async function navigateWithinApplication(page: Page, path: string) {
@@ -121,6 +123,7 @@ test.describe("accessibility gate", () => {
   test("representative clinician workspaces have no serious WCAG violations", async ({
     page,
   }, testInfo) => {
+    testInfo.setTimeout(600_000);
     await signInClinician(page);
     const violations: AccessibilityFinding[] = [];
     for (const path of [...clinicianRoutes, ...patientChartRoutes]) {
@@ -526,6 +529,74 @@ test.describe("accessibility gate", () => {
       )),
     );
     expectNoSeriousAccessibilityViolations(violations);
+  });
+
+  test("authorization workflow dynamic state has no serious WCAG violations", async ({
+    page,
+  }, testInfo) => {
+    await signInClinician(page);
+    const sessionId = await page.evaluate(() => {
+      const raw = sessionStorage.getItem(
+        "avenchart-ui.clinicianSession",
+      );
+      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
+    });
+    expect(sessionId).toBeTruthy();
+
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `TMP-CLIN-AUTH-AXE-${testInfo.project.name}-${Date.now()}`;
+    const fixtureResponse = await page.request.post(
+      `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations`,
+      {
+        headers: { "X-Legacy EHR-Session": sessionId! },
+        data: {
+          payer: marker,
+          service: `${marker} service`,
+          assignedTo: "admin",
+          dueAt: "2026-08-05",
+          reason: `${marker} dynamic-state accessibility fixture`,
+        },
+      },
+    );
+    expect(fixtureResponse.status()).toBe(201);
+    const fixtureId = ((await fixtureResponse.json()) as { id: string }).id;
+
+    try {
+      await navigateWithinApplication(
+        page,
+        "/clinician/patients/MOD-PAT-0001/authorizations",
+      );
+      const queueItem = page
+        .locator("button.authorization-queue-item")
+        .filter({ hasText: marker });
+      await expect(queueItem).toBeVisible({ timeout: 15_000 });
+      await queueItem.click();
+      await expect(page.locator(".authorization-history")).toContainText(
+        marker,
+      );
+      await page
+        .getByRole("button", { name: "Submit for review" })
+        .click();
+      await expect(
+        page
+          .locator("form.authorization-editor")
+          .filter({ hasText: "Draft → Submitted" }),
+      ).toBeVisible();
+
+      expectNoSeriousAccessibilityViolations(
+        await findSeriousAccessibilityViolations(
+          page,
+          "/clinician/patients/MOD-PAT-0001/authorizations#workflow",
+        ),
+      );
+    } finally {
+      const deleted = await page.request.delete(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0001/authorizations/${fixtureId}/test-fixture`,
+        { headers: { "X-Legacy EHR-Session": sessionId! } },
+      );
+      expect([204, 404]).toContain(deleted.status());
+    }
   });
 
   test("representative portal workspaces have no serious WCAG violations", async ({

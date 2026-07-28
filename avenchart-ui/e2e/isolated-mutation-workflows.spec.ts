@@ -2485,6 +2485,229 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
+  test("staff govern patient-authorization responsibility, transitions, stale writes, and history", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `TMP-CLIN-AUTH-${Date.now()}`;
+    const patientId = "MOD-PAT-0001";
+    const headers = { "X-Legacy EHR-Session": sessionId };
+    let authorizationId: string | null = null;
+
+    try {
+      await page.goto(
+        `/clinician/patients/${patientId}/authorizations`,
+      );
+      await expect(
+        page.getByRole("heading", { name: "Payer authorizations" }),
+      ).toBeVisible();
+      await expect(page.getByText("Policy local-clinical-workflow-v1")).toBeVisible();
+
+      const createForm = page.locator("form.authorization-create-grid");
+      await createForm.getByLabel("Payer").fill(marker);
+      await createForm.getByLabel("Service").fill(`${marker} MRI`);
+      await createForm
+        .getByLabel("Responsible staff")
+        .selectOption("gold-provider-01");
+      await createForm.getByLabel("Work due date").fill("2026-08-05");
+      await createForm.getByLabel("Authorization expiry").fill("2026-09-01");
+      await createForm
+        .getByLabel("Creation reason")
+        .fill(`${marker} created for browser lifecycle verification`);
+      await createForm
+        .getByRole("button", { name: "Create governed draft" })
+        .click();
+
+      const queueItem = page
+        .locator("button.authorization-queue-item")
+        .filter({ hasText: marker });
+      await expect(queueItem).toBeVisible({ timeout: 30_000 });
+      await queueItem.click();
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Version 1",
+      );
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "8/5/2026",
+      );
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "9/1/2026",
+      );
+      await expect(page.locator(".authorization-history")).toContainText(
+        `${marker} created for browser lifecycle verification`,
+      );
+
+      const listResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/${patientId}/authorizations`,
+        { headers },
+      );
+      expect(listResponse.ok()).toBeTruthy();
+      const listed = (await listResponse.json()) as Array<{
+        id: string;
+        payer: string;
+        workflowVersion: number;
+      }>;
+      const created = listed.find((item) => item.payer === marker);
+      authorizationId = created?.id ?? null;
+      expect(created).toMatchObject({ workflowVersion: 1 });
+      expect(authorizationId).toBeTruthy();
+
+      const assignmentForm = page
+        .locator("form.authorization-editor")
+        .filter({ hasText: "Responsibility and due date" });
+      await assignmentForm
+        .getByLabel("Responsible staff")
+        .selectOption("admin");
+      await assignmentForm.getByLabel("Work due date").fill("2026-08-06");
+      await assignmentForm
+        .getByLabel("Assignment reason")
+        .fill(`${marker} transferred to authorization coordinator`);
+      await assignmentForm
+        .getByRole("button", { name: "Save responsibility" })
+        .click();
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Version 2",
+      );
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Administrator",
+      );
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "8/6/2026",
+      );
+
+      await page
+        .getByRole("button", { name: "Submit for review" })
+        .click();
+      const submitForm = page
+        .locator("form.authorization-editor")
+        .filter({ hasText: "Draft → Submitted" });
+      await submitForm
+        .getByLabel("Reason")
+        .fill(`${marker} ready for payer review`);
+      await submitForm
+        .getByRole("button", { name: "Confirm submit for review" })
+        .click();
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Version 3",
+      );
+
+      const staleApproval = await page.request.put(
+        `${apiBaseUrl}/api/patients/${patientId}/authorizations/${authorizationId}/status`,
+        {
+          headers,
+          data: {
+            status: "approved",
+            authorizationNumber: `${marker}-STALE`,
+            expectedVersion: 2,
+            reasonCode: "authorization-approved",
+            reason: `${marker} stale approval must be rejected`,
+          },
+        },
+      );
+      expect(staleApproval.status()).toBe(409);
+      await expect(staleApproval.json()).resolves.toMatchObject({
+        expectedVersion: 2,
+        currentVersion: 3,
+        current: { workflowVersion: 3, status: "submitted" },
+      });
+
+      await page.getByRole("button", { name: "Approve", exact: true }).click();
+      const approveForm = page
+        .locator("form.authorization-editor")
+        .filter({ hasText: "Submitted → Approved" });
+      await approveForm
+        .getByLabel("Authorization number")
+        .fill(`${marker}-APPROVED`);
+      await approveForm
+        .getByLabel("Reason")
+        .fill(`${marker} local approval recorded`);
+      await approveForm
+        .getByRole("button", { name: "Confirm approve" })
+        .click();
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Version 4",
+      );
+
+      await page.getByRole("button", { name: "Mark expired" }).click();
+      const expireForm = page
+        .locator("form.authorization-editor")
+        .filter({ hasText: "Approved → Expired" });
+      await expireForm
+        .getByLabel("Reason")
+        .fill(`${marker} lifecycle verification complete`);
+      await expireForm
+        .getByRole("button", { name: "Confirm mark expired" })
+        .click();
+      await expect(page.locator(".authorization-facts")).toContainText(
+        "Version 5",
+      );
+      await expect(
+        page.getByText("This authorization is in a terminal state."),
+      ).toBeVisible();
+
+      const terminalAssignment = await page.request.put(
+        `${apiBaseUrl}/api/patients/${patientId}/authorizations/${authorizationId}/assignment`,
+        {
+          headers,
+          data: {
+            assignedTo: "gold-provider-01",
+            expectedVersion: 5,
+            reasonCode: "responsibility-transfer",
+            reason: `${marker} terminal reassignment must be rejected`,
+          },
+        },
+      );
+      expect(terminalAssignment.status()).toBe(400);
+
+      await expect(page.locator(".authorization-history li")).toHaveCount(5);
+      await expect(page.locator(".authorization-history")).toContainText(
+        `${marker} transferred to authorization coordinator`,
+      );
+      await expect(page.locator(".authorization-history")).toContainText(
+        `${marker} lifecycle verification complete`,
+      );
+
+      const historyResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/${patientId}/authorizations/${authorizationId}/history`,
+        { headers },
+      );
+      expect(historyResponse.ok()).toBeTruthy();
+      await expect(historyResponse.json()).resolves.toMatchObject({
+        total: 5,
+        authorization: {
+          workflowVersion: 5,
+          status: "expired",
+          policyRevision: "local-clinical-workflow-v1",
+        },
+        events: [
+          { workflowVersion: 5, action: "expire" },
+          { workflowVersion: 4, action: "approve" },
+          { workflowVersion: 3, action: "submit" },
+          { workflowVersion: 2, action: "reassigned" },
+          { workflowVersion: 1, action: "created" },
+        ],
+      });
+    } finally {
+      if (authorizationId) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/patients/${patientId}/authorizations/${authorizationId}/test-fixture`,
+          { headers },
+        );
+        expect([204, 404]).toContain(deleted.status());
+      }
+      expect(
+        runProviderAssignmentSql(
+          `select
+            (select count(*) from authorizations where payer like '${marker}%')
+            + (select count(*) from clinical_workflow_events where workflow_type = 'patient-authorization' and reason like '${marker}%');`,
+        ),
+      ).toBe("0");
+    }
+  });
+
   test("administrators govern practice-setting proposals with version and baseline conflicts", async ({
     page,
   }) => {
