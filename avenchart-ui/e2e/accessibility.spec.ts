@@ -143,6 +143,19 @@ test.describe("accessibility gate", () => {
         ...(await findSeriousAccessibilityViolations(page, path)),
       );
     }
+    await navigateWithinApplication(page, "/portal/records");
+    await page.getByRole("button", { name: "Health summary" }).click();
+    await expect(page.getByRole("heading", { name: "Refill request history" }))
+      .toBeVisible();
+    await expect(page.locator(".refill-history-source")).toBeVisible({
+      timeout: 15_000,
+    });
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/portal/records#health-refill-history",
+      )),
+    );
     expectNoSeriousAccessibilityViolations(violations);
   });
 });

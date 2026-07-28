@@ -33,6 +33,7 @@ import {
   getPatientCareTeamOptions,
   getPatientPortalAppointments,
   getPatientPortalHome,
+  getPatientPortalMessages,
   getPatientProviderAssignmentOptions,
   getPrescriptionAuditHistory,
   getProcedureOrderQueue,
@@ -101,6 +102,49 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'DELETE',
         headers: { 'X-Legacy EHR-Patient-Portal-Session': 'portal-session' },
+      }),
+    )
+  })
+
+  it('retains the portal sent-mail projection used for refill history', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authenticated: true,
+        messageCount: 0,
+        messages: [],
+        sentMessageCount: 1,
+        sentMessages: [
+          {
+            id: '901',
+            date: '2026-07-28',
+            title: 'Prescription refill request - Metformin',
+            body: 'Prescription: Metformin\nPrescription ID: RX-901',
+            status: 'Done',
+            senderName: 'Portal Patient',
+            recipientName: 'Care Team',
+            portalRelation: 'portal:prescription-refill-request',
+          },
+        ],
+        allMessageCount: 1,
+        allMessages: [],
+        deletedMessageCount: 0,
+        deletedMessages: [],
+      }),
+    )
+
+    const result = await getPatientPortalMessages('portal-session')
+
+    expect(result.sentMessageCount).toBe(1)
+    expect(result.sentMessages?.[0]).toMatchObject({
+      status: 'Done',
+      portalRelation: 'portal:prescription-refill-request',
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patient-portal/messages',
+      expect.objectContaining({
+        headers: {
+          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+        },
       }),
     )
   })

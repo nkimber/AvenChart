@@ -9,6 +9,7 @@ import {
   FileText,
   FlaskConical,
   Heart,
+  RefreshCw,
 } from "lucide-react";
 import {
   downloadPatientPortalDocuments,
@@ -19,6 +20,7 @@ import {
   getPatientPortalGeneratedMedicalReportAudit,
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
+  getPatientPortalMessages,
   generatePatientPortalMedicalReport,
   requestPatientPortalPrescriptionRefill,
   type PatientPortalClinicalSummaryResponse,
@@ -30,6 +32,7 @@ import {
   type PatientPortalGeneratedMedicalReportResponse,
   type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
+  type PatientPortalMessagesResponse,
 } from "../../api.ts";
 import type { PortalOutletContext } from "./PortalShell.tsx";
 import { showToast } from "../../components/Toast.tsx";
@@ -76,6 +79,24 @@ function toggleSelection(ids: Set<string>, id: string) {
   if (next.has(id)) next.delete(id);
   else next.add(id);
   return next;
+}
+
+function readMessageBodyLine(body: string, label: string) {
+  const line = body
+    .split(/\r?\n/)
+    .find((value) => value.toLowerCase().startsWith(label.toLowerCase()));
+  return line?.slice(label.length).trim() ?? "";
+}
+
+function refillRequestStatus(status: string) {
+  if (status.toLowerCase() === "done")
+    return { label: "Approved", className: "refill-status-approved" };
+  if (status.toLowerCase() === "new")
+    return { label: "Pending review", className: "refill-status-pending" };
+  return {
+    label: `Submitted · ${status || "status unavailable"}`,
+    className: "refill-status-submitted",
+  };
 }
 
 function docIcon(name: string) {
@@ -229,6 +250,9 @@ export default function PortalRecords() {
   const [healthState, setHealthState] = useState<
     AsyncState<PatientPortalClinicalSummaryResponse>
   >({ status: "idle" });
+  const [refillHistoryState, setRefillHistoryState] = useState<
+    AsyncState<PatientPortalMessagesResponse>
+  >({ status: "idle" });
 
   const [reportDownloading, setReportDownloading] = useState(false);
   const [reportOptions, setReportOptions] = useState<
@@ -264,6 +288,7 @@ export default function PortalRecords() {
     loadDocs();
     loadLab();
     loadHealth();
+    loadRefillHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -312,6 +337,21 @@ export default function PortalRecords() {
             err instanceof Error
               ? err.message
               : "Could not load health summary.",
+        }),
+      );
+  }
+
+  function loadRefillHistory() {
+    setRefillHistoryState({ status: "loading" });
+    getPatientPortalMessages(session.sessionId)
+      .then((data) => setRefillHistoryState({ status: "ready", data }))
+      .catch((error) =>
+        setRefillHistoryState({
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load refill request history.",
         }),
       );
   }
@@ -524,6 +564,7 @@ export default function PortalRecords() {
         );
       setRefillOpenId(null);
       setRefillNote("");
+      loadRefillHistory();
       refreshHome();
       showToast(`Refill request sent for ${drug}.`, "success");
     } catch (error) {
@@ -793,6 +834,14 @@ export default function PortalRecords() {
                   empty: "No active prescriptions on file.",
                 },
               ] as const;
+              const refillRequests =
+                refillHistoryState.status === "ready"
+                  ? (refillHistoryState.data.sentMessages ?? []).filter(
+                      (message) =>
+                        message.portalRelation ===
+                        "portal:prescription-refill-request",
+                    )
+                  : [];
 
               return (
                 <>
@@ -820,6 +869,103 @@ export default function PortalRecords() {
                         )}
                       </div>
                     ))}
+                  </div>
+                  <div className="refill-history">
+                    <div className="refill-history-header">
+                      <div>
+                        <h3>Refill request history</h3>
+                        <p>
+                          Requests sent from this portal and their current
+                          local review status.
+                        </p>
+                      </div>
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        disabled={refillHistoryState.status === "loading"}
+                        onClick={loadRefillHistory}
+                      >
+                        <RefreshCw size={14} /> Refresh
+                      </button>
+                    </div>
+                    <div className="hint-banner">
+                      “Approved” means the care team processed the request
+                      against the current local prescription. This target does
+                      not yet publish denial, clarification, completion, or a
+                      staff response to this history.
+                    </div>
+                    {refillHistoryState.status === "loading" && (
+                      <p className="muted" aria-live="polite">
+                        Loading refill request history…
+                      </p>
+                    )}
+                    {refillHistoryState.status === "error" && (
+                      <div className="error-banner">
+                        <span>{refillHistoryState.message}</span>
+                        <button
+                          className="button-secondary"
+                          type="button"
+                          onClick={loadRefillHistory}
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                    {refillHistoryState.status === "ready" &&
+                      refillRequests.length === 0 && (
+                        <p className="muted empty-row">
+                          No refill requests have been submitted from this
+                          portal.
+                        </p>
+                      )}
+                    {refillHistoryState.status === "ready" &&
+                      refillRequests.length > 0 && (
+                        <ul className="refill-history-list">
+                          {refillRequests.map((request) => {
+                            const status = refillRequestStatus(request.status);
+                            const drug =
+                              readMessageBodyLine(
+                                request.body,
+                                "Prescription:",
+                              ) || request.title;
+                            const prescriptionId = readMessageBodyLine(
+                              request.body,
+                              "Prescription ID:",
+                            );
+                            const patientNote = readMessageBodyLine(
+                              request.body,
+                              "Patient note:",
+                            );
+                            return (
+                              <li key={request.id}>
+                                <div className="refill-history-title">
+                                  <strong>{drug}</strong>
+                                  <span className={status.className}>
+                                    {status.label}
+                                  </span>
+                                </div>
+                                <p>
+                                  Submitted {request.date}
+                                  {prescriptionId
+                                    ? ` · Prescription ${prescriptionId}`
+                                    : ""}
+                                </p>
+                                {patientNote && (
+                                  <p>Patient note: {patientNote}</p>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    {refillHistoryState.status === "ready" && (
+                      <p className="refill-history-source">
+                        Source: portal sent mailbox · dataset{" "}
+                        {refillHistoryState.data.datasetId ?? "unavailable"} ·{" "}
+                        {refillHistoryState.data.datasetVersion ??
+                          "version unavailable"}
+                      </p>
+                    )}
                   </div>
                 </>
               );

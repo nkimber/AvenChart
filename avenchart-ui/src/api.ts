@@ -225,12 +225,20 @@ export async function getPatientPortalHome(
 
 export type PatientPortalMessageItem = {
   id: string
+  type?: string
   date: string
   title: string
   body: string
   status: string
+  assignedTo?: string
+  senderId?: string
   senderName: string
+  recipientId?: string
   recipientName: string
+  mailChain?: number
+  replyMailChain?: number
+  portalRelation?: string | null
+  isEncrypted?: boolean
   attachmentCount?: number
   attachments?: PatientPortalMessageAttachment[]
 }
@@ -245,8 +253,17 @@ export type PatientPortalMessageAttachment = {
 
 export type PatientPortalMessagesResponse = {
   authenticated: boolean
+  datasetId?: string
+  datasetVersion?: string
+  asOfDate?: string
   messageCount: number
   messages: PatientPortalMessageItem[]
+  sentMessageCount?: number
+  sentMessages?: PatientPortalMessageItem[]
+  allMessageCount?: number
+  allMessages?: PatientPortalMessageItem[]
+  deletedMessageCount?: number
+  deletedMessages?: PatientPortalMessageItem[]
   failureReason?: string | null
 }
 

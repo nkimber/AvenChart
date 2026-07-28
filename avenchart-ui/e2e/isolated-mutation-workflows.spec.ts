@@ -29,6 +29,21 @@ async function signInClinician(page: Page) {
   }
 }
 
+async function signInPortal(page: Page) {
+  await page.goto("/portal/login");
+  await page
+    .getByLabel("Email or username")
+    .fill(
+      process.env.MODERN_UI_PORTAL_USERNAME ??
+        "mod-pat-0004@example.test",
+    );
+  await page
+    .getByLabel("Password")
+    .fill(process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/portal\/home$/, { timeout: 15_000 });
+}
+
 async function getClinicianSessionId(page: Page) {
   const sessionId = await page.evaluate(() => {
     const raw = sessionStorage.getItem(
@@ -385,8 +400,9 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can create a catalog prescription, approve its portal refill request, and inspect audit history", async ({
+  test("staff can approve a catalog refill request and the patient can see its history", async ({
     page,
+    context,
   }) => {
     await signInClinician(page);
     const sessionId = await getClinicianSessionId(page);
@@ -544,6 +560,23 @@ test.describe("isolated mutation workflows", () => {
       await expect(prescriptionCard).toContainText(
         "Browser-verified approval",
       );
+
+      const portalPage = await context.newPage();
+      await signInPortal(portalPage);
+      await portalPage.goto("/portal/records");
+      await portalPage
+        .getByRole("button", { name: "Health summary" })
+        .click();
+      const refillHistory = portalPage
+        .locator(".refill-history-list li")
+        .filter({ hasText: prescriptionId! });
+      await expect(refillHistory).toBeVisible({ timeout: 30_000 });
+      await expect(refillHistory).toContainText(
+        createdPrescription?.drug ?? "Metformin",
+      );
+      await expect(refillHistory).toContainText("Approved");
+      await expect(refillHistory).toContainText(requestNote);
+      await portalPage.close();
     } finally {
       deletePortalMailboxFixtures(messageIds);
       if (prescriptionId) {

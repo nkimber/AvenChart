@@ -7070,6 +7070,96 @@ a {
   width: auto;
   padding: 8px 12px;
 }
+.refill-history {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.refill-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.refill-history-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+.refill-history-header p,
+.refill-history-list p,
+.refill-history-source {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.refill-history-header .button-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+}
+.refill-history .hint-banner {
+  margin-bottom: 12px;
+}
+.refill-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.refill-history-list li {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.refill-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.refill-history-title strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.refill-status-approved,
+.refill-status-pending,
+.refill-status-submitted {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.refill-status-approved {
+  background: #dcfce7;
+  color: #166534;
+}
+.refill-status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+.refill-status-submitted {
+  background: var(--bg);
+  color: var(--text-muted);
+}
+.refill-history-source {
+  margin-top: 10px;
+}
+@media (max-width: 560px) {
+  .refill-history-header,
+  .refill-history-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .refill-history-title span {
+    align-self: flex-start;
+  }
+}
 
 /* Portal medical-report builder */
 .report-builder {
