@@ -15,6 +15,10 @@ import {
   createInventoryTransfer,
   createPatientMessage,
   createPrescription,
+  deleteAllergy,
+  deleteImmunization,
+  deleteMedication,
+  deleteProblem,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
   downloadInventoryActivityCsv,
@@ -35,6 +39,7 @@ import {
   getProcedureReportQueue,
   getStaffMessageInbox,
   logout,
+  markImmunizationEnteredInError,
   reopenLabReportReview,
   refillPrescription,
   replyToPatientMessage,
@@ -149,6 +154,46 @@ describe('authenticated API transport', () => {
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
     )
+  })
+
+  it('adopts clinical-list delete and entered-in-error contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ id: '41', detail: { immunizations: [] } }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await deleteProblem('staff-session', 'PROB-41')
+    await deleteAllergy('staff-session', 'ALG-41')
+    await deleteMedication('staff-session', 'MED-41')
+    await markImmunizationEnteredInError(
+      'staff-session',
+      41,
+      'Duplicate administration record',
+    )
+    await deleteImmunization('staff-session', 41)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/problems/PROB-41',
+      'http://localhost:5001/api/clinical-lists/allergies/ALG-41',
+      'http://localhost:5001/api/clinical-lists/medications/MED-41',
+      'http://localhost:5001/api/clinical-lists/immunizations/41/entered-in-error',
+      'http://localhost:5001/api/clinical-lists/immunizations/41',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
+      'DELETE',
+      'DELETE',
+      'DELETE',
+      'PUT',
+      'DELETE',
+    ])
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      body: JSON.stringify({ note: 'Duplicate administration record' }),
+    })
   })
 
   it('rejects an HTML response masquerading as a document', async () => {

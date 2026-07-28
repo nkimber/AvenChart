@@ -5,12 +5,16 @@ import {
   getClinicalLists,
   createProblem,
   deactivateProblem,
+  deleteProblem,
   createAllergy,
   deactivateAllergy,
+  deleteAllergy,
   createMedication,
   deactivateMedication,
+  deleteMedication,
   createImmunization,
   createPrescription,
+  deleteImmunization,
   markImmunizationEnteredInError,
   searchClinicalMedicationVocabulary,
   type ClinicalListsResponse,
@@ -34,10 +38,6 @@ function statusDot(activity: number) {
   );
 }
 
-function isoNow() {
-  return new Date().toISOString().replace("T", " ").slice(0, 19);
-}
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -56,6 +56,13 @@ type VocabularyState =
   | { status: "ready"; items: MedicationVocabularyItem[] }
   | { status: "error"; message: string };
 
+type LifecycleTarget = {
+  type: "problem" | "allergy" | "medication" | "immunization";
+  action: "deactivate" | "delete" | "entered-in-error";
+  id: string;
+  title: string;
+};
+
 export default function PatientChart() {
   const { session, patientId } = useOutletContext<PatientOutletContext>();
   const [state, setState] = useState<AsyncState<ClinicalListsResponse>>({
@@ -63,19 +70,28 @@ export default function PatientChart() {
   });
   const [addMode, setAddMode] = useState<AddMode>(null);
   const [working, setWorking] = useState(false);
+  const [lifecycleTarget, setLifecycleTarget] =
+    useState<LifecycleTarget | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
 
   // Add-problem form state
   const [newProbTitle, setNewProbTitle] = useState("");
   const [newProbDx, setNewProbDx] = useState("");
+  const [newProbDate, setNewProbDate] = useState(today());
+  const [newProbComments, setNewProbComments] = useState("");
 
   // Add-allergy form state
   const [newAllergyTitle, setNewAllergyTitle] = useState("");
   const [newAllergyReaction, setNewAllergyReaction] = useState("");
   const [newAllergySeverity, setNewAllergySeverity] = useState("mild");
+  const [newAllergyDate, setNewAllergyDate] = useState(today());
+  const [newAllergyComments, setNewAllergyComments] = useState("");
 
   // Add-medication form state
   const [newMedTitle, setNewMedTitle] = useState("");
   const [newMedDx, setNewMedDx] = useState("");
+  const [newMedDate, setNewMedDate] = useState(today());
+  const [newMedComments, setNewMedComments] = useState("");
 
   // Add-prescription form state
   const [rxQuery, setRxQuery] = useState("");
@@ -118,20 +134,22 @@ export default function PatientChart() {
 
   async function handleAddProblem(e: React.FormEvent) {
     e.preventDefault();
-    if (!newProbTitle) return;
+    if (!newProbTitle.trim() || !newProbDate) return;
     setWorking(true);
     try {
       const result = await createProblem(session.sessionId, {
         patientId,
-        title: newProbTitle,
-        dateTime: isoNow(),
-        diagnosis: newProbDx || null,
-        comments: "",
+        title: newProbTitle.trim(),
+        dateTime: newProbDate,
+        diagnosis: newProbDx.trim() || null,
+        comments: newProbComments.trim(),
       });
       setState({ status: "ready", data: result.detail });
       setAddMode(null);
       setNewProbTitle("");
       setNewProbDx("");
+      setNewProbDate(today());
+      setNewProbComments("");
       showToast("Problem added.", "success");
     } catch {
       showToast("Could not add problem.", "error");
@@ -140,41 +158,26 @@ export default function PatientChart() {
     }
   }
 
-  async function handleDeactivateProblem(id: string) {
-    setWorking(true);
-    try {
-      const result = await deactivateProblem(
-        session.sessionId,
-        id,
-        "Marked inactive by clinician",
-      );
-      setState({ status: "ready", data: result.detail });
-      showToast("Problem marked inactive.", "success");
-    } catch {
-      showToast("Could not update problem.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
   async function handleAddAllergy(e: React.FormEvent) {
     e.preventDefault();
-    if (!newAllergyTitle) return;
+    if (!newAllergyTitle.trim() || !newAllergyDate) return;
     setWorking(true);
     try {
       const result = await createAllergy(session.sessionId, {
         patientId,
-        title: newAllergyTitle,
-        dateTime: isoNow(),
-        reaction: newAllergyReaction,
+        title: newAllergyTitle.trim(),
+        dateTime: newAllergyDate,
+        reaction: newAllergyReaction.trim(),
         severity: newAllergySeverity,
-        comments: "",
+        comments: newAllergyComments.trim(),
       });
       setState({ status: "ready", data: result.detail });
       setAddMode(null);
       setNewAllergyTitle("");
       setNewAllergyReaction("");
       setNewAllergySeverity("mild");
+      setNewAllergyDate(today());
+      setNewAllergyComments("");
       showToast("Allergy added.", "success");
     } catch {
       showToast("Could not add allergy.", "error");
@@ -183,59 +186,27 @@ export default function PatientChart() {
     }
   }
 
-  async function handleDeactivateAllergy(id: string) {
-    setWorking(true);
-    try {
-      const result = await deactivateAllergy(
-        session.sessionId,
-        id,
-        "Marked inactive by clinician",
-      );
-      setState({ status: "ready", data: result.detail });
-      showToast("Allergy marked inactive.", "success");
-    } catch {
-      showToast("Could not update allergy.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
   async function handleAddMedication(e: React.FormEvent) {
     e.preventDefault();
-    if (!newMedTitle) return;
+    if (!newMedTitle.trim() || !newMedDate) return;
     setWorking(true);
     try {
       const result = await createMedication(session.sessionId, {
         patientId,
-        title: newMedTitle,
-        dateTime: isoNow(),
-        diagnosis: newMedDx || null,
-        comments: "",
+        title: newMedTitle.trim(),
+        dateTime: newMedDate,
+        diagnosis: newMedDx.trim() || null,
+        comments: newMedComments.trim(),
       });
       setState({ status: "ready", data: result.detail });
       setAddMode(null);
       setNewMedTitle("");
       setNewMedDx("");
+      setNewMedDate(today());
+      setNewMedComments("");
       showToast("Medication added.", "success");
     } catch {
       showToast("Could not add medication.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function handleDeactivateMedication(id: string) {
-    setWorking(true);
-    try {
-      const result = await deactivateMedication(
-        session.sessionId,
-        id,
-        "Marked inactive by clinician",
-      );
-      setState({ status: "ready", data: result.detail });
-      showToast("Medication marked inactive.", "success");
-    } catch {
-      showToast("Could not update medication.", "error");
     } finally {
       setWorking(false);
     }
@@ -368,20 +339,159 @@ export default function PatientChart() {
     }
   }
 
-  async function handleMarkImmunizationError(id: number) {
+  function beginLifecycleAction(target: LifecycleTarget) {
+    setLifecycleTarget(target);
+    setLifecycleReason("");
+  }
+
+  function cancelLifecycleAction() {
+    setLifecycleTarget(null);
+    setLifecycleReason("");
+  }
+
+  async function confirmLifecycleAction() {
+    if (!lifecycleTarget || !lifecycleReason.trim()) return;
     setWorking(true);
     try {
-      const result = await markImmunizationEnteredInError(
-        session.sessionId,
-        id,
+      const reason = lifecycleReason.trim();
+      let detail: ClinicalListsResponse;
+      if (
+        lifecycleTarget.type === "problem" &&
+        lifecycleTarget.action === "deactivate"
+      ) {
+        detail = (
+          await deactivateProblem(
+            session.sessionId,
+            lifecycleTarget.id,
+            reason,
+          )
+        ).detail;
+      } else if (
+        lifecycleTarget.type === "allergy" &&
+        lifecycleTarget.action === "deactivate"
+      ) {
+        detail = (
+          await deactivateAllergy(
+            session.sessionId,
+            lifecycleTarget.id,
+            reason,
+          )
+        ).detail;
+      } else if (
+        lifecycleTarget.type === "medication" &&
+        lifecycleTarget.action === "deactivate"
+      ) {
+        detail = (
+          await deactivateMedication(
+            session.sessionId,
+            lifecycleTarget.id,
+            reason,
+          )
+        ).detail;
+      } else if (
+        lifecycleTarget.type === "immunization" &&
+        lifecycleTarget.action === "entered-in-error"
+      ) {
+        detail = (
+          await markImmunizationEnteredInError(
+            session.sessionId,
+            Number(lifecycleTarget.id),
+            reason,
+          )
+        ).detail;
+      } else {
+        if (lifecycleTarget.type === "problem") {
+          await deleteProblem(
+            session.sessionId,
+            lifecycleTarget.id,
+          );
+        } else if (lifecycleTarget.type === "allergy") {
+          await deleteAllergy(
+            session.sessionId,
+            lifecycleTarget.id,
+          );
+        } else if (lifecycleTarget.type === "medication") {
+          await deleteMedication(
+            session.sessionId,
+            lifecycleTarget.id,
+          );
+        } else {
+          await deleteImmunization(
+            session.sessionId,
+            Number(lifecycleTarget.id),
+          );
+        }
+        detail = await getClinicalLists(session.sessionId, patientId);
+      }
+      setState({ status: "ready", data: detail });
+      showToast(
+        lifecycleTarget.action === "delete"
+          ? `${lifecycleTarget.title} permanently deleted.`
+          : `${lifecycleTarget.title} moved to history.`,
+        "success",
       );
-      setState({ status: "ready", data: result.detail });
-      showToast("Immunization marked entered-in-error.", "success");
+      cancelLifecycleAction();
     } catch {
-      showToast("Could not update immunization.", "error");
+      showToast("Could not complete the clinical-list action.", "error");
     } finally {
       setWorking(false);
     }
+  }
+
+  function renderLifecycleConfirmation(type: LifecycleTarget["type"], id: string) {
+    if (
+      !lifecycleTarget ||
+      lifecycleTarget.type !== type ||
+      lifecycleTarget.id !== id
+    )
+      return null;
+
+    const destructive = lifecycleTarget.action === "delete";
+    return (
+      <div className="cl-lifecycle-confirmation">
+        <p>
+          {destructive
+            ? `Permanently delete ${lifecycleTarget.title}? This removes the local record and its visible history.`
+            : lifecycleTarget.action === "entered-in-error"
+              ? `Why was ${lifecycleTarget.title} entered in error?`
+              : `Why is ${lifecycleTarget.title} being deactivated?`}
+        </p>
+        <label>
+          {destructive ? "Type DELETE to confirm" : "Clinical reason"}
+          <input
+            className="ne-input"
+            value={lifecycleReason}
+            onChange={(event) => setLifecycleReason(event.target.value)}
+            maxLength={500}
+            required
+            autoFocus
+          />
+        </label>
+        <div className="cl-inline-form-actions">
+          <button
+            className={destructive ? "cl-btn-danger" : "cl-btn-primary"}
+            type="button"
+            disabled={
+              working ||
+              (destructive
+                ? lifecycleReason.trim() !== "DELETE"
+                : !lifecycleReason.trim())
+            }
+            onClick={confirmLifecycleAction}
+          >
+            {destructive ? "Delete permanently" : "Confirm"}
+          </button>
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            disabled={working}
+            onClick={cancelLifecycleAction}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (state.status === "loading")
@@ -409,6 +519,18 @@ export default function PatientChart() {
     );
 
   const { data } = state;
+  const activeProblemCount = data.problems.filter(
+    (item) => item.activity === 1,
+  ).length;
+  const activeAllergyCount = data.allergies.filter(
+    (item) => item.activity === 1,
+  ).length;
+  const activeMedicationCount = data.medications.filter(
+    (item) => item.activity === 1,
+  ).length;
+  const activeImmunizationCount = data.immunizations.filter(
+    (item) => !item.enteredInError,
+  ).length;
 
   return (
     <div className="clinician-page">
@@ -416,7 +538,13 @@ export default function PatientChart() {
         {/* Problems */}
         <section className="cl-card">
           <div className="cl-card-header">
-            <h2 className="cl-card-title">Problems ({data.problems.length})</h2>
+            <div>
+              <h2 className="cl-card-title">Problems</h2>
+              <p className="clinician-page-subtitle">
+                {activeProblemCount} active ·{" "}
+                {data.problems.length - activeProblemCount} historical
+              </p>
+            </div>
             <button
               className="cl-btn-icon"
               type="button"
@@ -430,24 +558,54 @@ export default function PatientChart() {
           </div>
           {addMode === "problem" && (
             <form className="cl-inline-form" onSubmit={handleAddProblem}>
-              <input
-                className="ne-input"
-                placeholder="Problem title…"
-                value={newProbTitle}
-                onChange={(e) => setNewProbTitle(e.target.value)}
-                required
-              />
-              <input
-                className="ne-input"
-                placeholder="Diagnosis code (optional)"
-                value={newProbDx}
-                onChange={(e) => setNewProbDx(e.target.value)}
-              />
+              <label>
+                Problem title
+                <input
+                  className="ne-input"
+                  value={newProbTitle}
+                  onChange={(e) => setNewProbTitle(e.target.value)}
+                  maxLength={255}
+                  required
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  Onset or recorded date
+                  <input
+                    className="ne-input"
+                    type="date"
+                    value={newProbDate}
+                    onChange={(e) => setNewProbDate(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Diagnosis code (optional)
+                  <input
+                    className="ne-input"
+                    value={newProbDx}
+                    onChange={(e) => setNewProbDx(e.target.value)}
+                    maxLength={64}
+                  />
+                </label>
+              </div>
+              <label>
+                Clinical note (optional)
+                <textarea
+                  className="ne-input"
+                  value={newProbComments}
+                  onChange={(e) => setNewProbComments(e.target.value)}
+                  maxLength={500}
+                  rows={2}
+                />
+              </label>
               <div className="cl-inline-form-actions">
                 <button
                   className="cl-btn-primary"
                   type="submit"
-                  disabled={working || !newProbTitle}
+                  disabled={
+                    working || !newProbTitle.trim() || !newProbDate
+                  }
                 >
                   Add
                 </button>
@@ -479,18 +637,39 @@ export default function PatientChart() {
                         {p.date ? ` · ${p.date}` : ""}
                       </p>
                     )}
+                    {p.activity === 0 && (
+                      <p className="cl-clinical-meta">
+                        Inactive{p.endDate ? ` since ${p.endDate}` : ""}
+                      </p>
+                    )}
+                    {p.comments && (
+                      <p className="cl-clinical-meta">{p.comments}</p>
+                    )}
                   </div>
-                  {p.activity === 1 && (
+                  <div className="cl-lifecycle-actions">
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label="Mark inactive"
+                      aria-label={
+                        p.activity === 1
+                          ? `Deactivate ${p.title}`
+                          : `Delete ${p.title}`
+                      }
                       disabled={working}
-                      onClick={() => handleDeactivateProblem(p.id)}
+                      onClick={() =>
+                        beginLifecycleAction({
+                          type: "problem",
+                          action: p.activity === 1 ? "deactivate" : "delete",
+                          id: p.id,
+                          title: p.title,
+                        })
+                      }
                     >
                       <X size={12} />
+                      {p.activity === 1 ? "Deactivate" : "Delete record"}
                     </button>
-                  )}
+                  </div>
+                  {renderLifecycleConfirmation("problem", p.id)}
                 </li>
               ))}
             </ul>
@@ -500,9 +679,13 @@ export default function PatientChart() {
         {/* Allergies */}
         <section className="cl-card">
           <div className="cl-card-header">
-            <h2 className="cl-card-title">
-              Allergies ({data.allergies.length})
-            </h2>
+            <div>
+              <h2 className="cl-card-title">Allergies</h2>
+              <p className="clinician-page-subtitle">
+                {activeAllergyCount} active ·{" "}
+                {data.allergies.length - activeAllergyCount} historical
+              </p>
+            </div>
             <button
               className="cl-btn-icon"
               type="button"
@@ -516,34 +699,71 @@ export default function PatientChart() {
           </div>
           {addMode === "allergy" && (
             <form className="cl-inline-form" onSubmit={handleAddAllergy}>
-              <input
-                className="ne-input"
-                placeholder="Allergen name…"
-                value={newAllergyTitle}
-                onChange={(e) => setNewAllergyTitle(e.target.value)}
-                required
-              />
-              <input
-                className="ne-input"
-                placeholder="Reaction (optional)"
-                value={newAllergyReaction}
-                onChange={(e) => setNewAllergyReaction(e.target.value)}
-              />
-              <select
-                className="ne-input"
-                value={newAllergySeverity}
-                onChange={(e) => setNewAllergySeverity(e.target.value)}
-              >
-                <option value="mild">Mild</option>
-                <option value="moderate">Moderate</option>
-                <option value="severe">Severe</option>
-                <option value="life-threatening">Life-threatening</option>
-              </select>
+              <label>
+                Allergen name
+                <input
+                  className="ne-input"
+                  value={newAllergyTitle}
+                  onChange={(e) => setNewAllergyTitle(e.target.value)}
+                  maxLength={255}
+                  required
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  Recorded date
+                  <input
+                    className="ne-input"
+                    type="date"
+                    value={newAllergyDate}
+                    onChange={(e) => setNewAllergyDate(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Severity
+                  <select
+                    className="ne-input"
+                    value={newAllergySeverity}
+                    onChange={(e) => setNewAllergySeverity(e.target.value)}
+                  >
+                    <option value="mild">Mild</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="severe">Severe</option>
+                    <option value="life-threatening">
+                      Life-threatening
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Reaction (optional)
+                <input
+                  className="ne-input"
+                  value={newAllergyReaction}
+                  onChange={(e) => setNewAllergyReaction(e.target.value)}
+                  maxLength={255}
+                />
+              </label>
+              <label>
+                Clinical note (optional)
+                <textarea
+                  className="ne-input"
+                  value={newAllergyComments}
+                  onChange={(e) => setNewAllergyComments(e.target.value)}
+                  maxLength={500}
+                  rows={2}
+                />
+              </label>
               <div className="cl-inline-form-actions">
                 <button
                   className="cl-btn-primary"
                   type="submit"
-                  disabled={working || !newAllergyTitle}
+                  disabled={
+                    working ||
+                    !newAllergyTitle.trim() ||
+                    !newAllergyDate
+                  }
                 >
                   Add
                 </button>
@@ -575,18 +795,39 @@ export default function PatientChart() {
                         {a.severity ? ` · ${a.severity}` : ""}
                       </p>
                     )}
+                    {a.activity === 0 && (
+                      <p className="cl-clinical-meta">
+                        Inactive{a.endDate ? ` since ${a.endDate}` : ""}
+                      </p>
+                    )}
+                    {a.comments && (
+                      <p className="cl-clinical-meta">{a.comments}</p>
+                    )}
                   </div>
-                  {a.activity === 1 && (
+                  <div className="cl-lifecycle-actions">
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label="Mark inactive"
+                      aria-label={
+                        a.activity === 1
+                          ? `Deactivate ${a.title}`
+                          : `Delete ${a.title}`
+                      }
                       disabled={working}
-                      onClick={() => handleDeactivateAllergy(a.id)}
+                      onClick={() =>
+                        beginLifecycleAction({
+                          type: "allergy",
+                          action: a.activity === 1 ? "deactivate" : "delete",
+                          id: a.id,
+                          title: a.title,
+                        })
+                      }
                     >
                       <X size={12} />
+                      {a.activity === 1 ? "Deactivate" : "Delete record"}
                     </button>
-                  )}
+                  </div>
+                  {renderLifecycleConfirmation("allergy", a.id)}
                 </li>
               ))}
             </ul>
@@ -596,9 +837,13 @@ export default function PatientChart() {
         {/* Medications */}
         <section className="cl-card">
           <div className="cl-card-header">
-            <h2 className="cl-card-title">
-              Medications ({data.medications.length})
-            </h2>
+            <div>
+              <h2 className="cl-card-title">Medications</h2>
+              <p className="clinician-page-subtitle">
+                {activeMedicationCount} active ·{" "}
+                {data.medications.length - activeMedicationCount} historical
+              </p>
+            </div>
             <button
               className="cl-btn-icon"
               type="button"
@@ -612,24 +857,54 @@ export default function PatientChart() {
           </div>
           {addMode === "medication" && (
             <form className="cl-inline-form" onSubmit={handleAddMedication}>
-              <input
-                className="ne-input"
-                placeholder="Medication name…"
-                value={newMedTitle}
-                onChange={(e) => setNewMedTitle(e.target.value)}
-                required
-              />
-              <input
-                className="ne-input"
-                placeholder="Diagnosis code (optional)"
-                value={newMedDx}
-                onChange={(e) => setNewMedDx(e.target.value)}
-              />
+              <label>
+                Medication name
+                <input
+                  className="ne-input"
+                  value={newMedTitle}
+                  onChange={(e) => setNewMedTitle(e.target.value)}
+                  maxLength={255}
+                  required
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  Started or recorded date
+                  <input
+                    className="ne-input"
+                    type="date"
+                    value={newMedDate}
+                    onChange={(e) => setNewMedDate(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Diagnosis code (optional)
+                  <input
+                    className="ne-input"
+                    value={newMedDx}
+                    onChange={(e) => setNewMedDx(e.target.value)}
+                    maxLength={64}
+                  />
+                </label>
+              </div>
+              <label>
+                Clinical note (optional)
+                <textarea
+                  className="ne-input"
+                  value={newMedComments}
+                  onChange={(e) => setNewMedComments(e.target.value)}
+                  maxLength={500}
+                  rows={2}
+                />
+              </label>
               <div className="cl-inline-form-actions">
                 <button
                   className="cl-btn-primary"
                   type="submit"
-                  disabled={working || !newMedTitle}
+                  disabled={
+                    working || !newMedTitle.trim() || !newMedDate
+                  }
                 >
                   Add
                 </button>
@@ -655,19 +930,45 @@ export default function PatientChart() {
                   {statusDot(m.activity)}
                   <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{m.title}</p>
-                    {m.date && <p className="cl-clinical-meta">{m.date}</p>}
+                    {(m.diagnosis ?? m.date) && (
+                      <p className="cl-clinical-meta">
+                        {m.diagnosis ?? ""}
+                        {m.date ? ` · ${m.date}` : ""}
+                      </p>
+                    )}
+                    {m.activity === 0 && (
+                      <p className="cl-clinical-meta">
+                        Inactive{m.endDate ? ` since ${m.endDate}` : ""}
+                      </p>
+                    )}
+                    {m.comments && (
+                      <p className="cl-clinical-meta">{m.comments}</p>
+                    )}
                   </div>
-                  {m.activity === 1 && (
+                  <div className="cl-lifecycle-actions">
                     <button
                       className="cl-clinical-action"
                       type="button"
-                      aria-label="Mark inactive"
+                      aria-label={
+                        m.activity === 1
+                          ? `Deactivate ${m.title}`
+                          : `Delete ${m.title}`
+                      }
                       disabled={working}
-                      onClick={() => handleDeactivateMedication(m.id)}
+                      onClick={() =>
+                        beginLifecycleAction({
+                          type: "medication",
+                          action: m.activity === 1 ? "deactivate" : "delete",
+                          id: m.id,
+                          title: m.title,
+                        })
+                      }
                     >
                       <X size={12} />
+                      {m.activity === 1 ? "Deactivate" : "Delete record"}
                     </button>
-                  )}
+                  </div>
+                  {renderLifecycleConfirmation("medication", m.id)}
                 </li>
               ))}
             </ul>
@@ -1042,9 +1343,14 @@ export default function PatientChart() {
         {/* Immunizations */}
         <section className="cl-card cl-card-wide">
           <div className="cl-card-header">
-            <h2 className="cl-card-title">
-              Immunizations ({data.immunizations.length})
-            </h2>
+            <div>
+              <h2 className="cl-card-title">Immunizations</h2>
+              <p className="clinician-page-subtitle">
+                {activeImmunizationCount} recorded ·{" "}
+                {data.immunizations.length - activeImmunizationCount} entered
+                in error
+              </p>
+            </div>
             <button
               className="cl-btn-icon"
               type="button"
@@ -1117,9 +1423,16 @@ export default function PatientChart() {
                   key={imm.id}
                   className="cl-clinical-row cl-clinical-row-interactive"
                 >
-                  <div
-                    className="cl-activity-dot cl-activity-active"
-                    aria-hidden="true"
+                  <span
+                    role="img"
+                    className={`cl-activity-dot ${
+                      imm.enteredInError
+                        ? "cl-activity-inactive"
+                        : "cl-activity-active"
+                    }`}
+                    aria-label={
+                      imm.enteredInError ? "Entered in error" : "Recorded"
+                    }
                   />
                   <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{imm.vaccine}</p>
@@ -1128,16 +1441,41 @@ export default function PatientChart() {
                       {imm.manufacturer ? ` · ${imm.manufacturer}` : ""}
                       {imm.lotNumber ? ` · Lot: ${imm.lotNumber}` : ""}
                     </p>
+                    {imm.note && (
+                      <p className="cl-clinical-meta">{imm.note}</p>
+                    )}
                   </div>
-                  <button
-                    className="cl-clinical-action"
-                    type="button"
-                    aria-label="Mark entered in error"
-                    disabled={working}
-                    onClick={() => handleMarkImmunizationError(imm.id)}
-                  >
-                    <X size={12} />
-                  </button>
+                  <div className="cl-lifecycle-actions">
+                    <button
+                      className="cl-clinical-action"
+                      type="button"
+                      aria-label={
+                        imm.enteredInError
+                          ? `Delete ${imm.vaccine}`
+                          : `Mark ${imm.vaccine} entered in error`
+                      }
+                      disabled={working}
+                      onClick={() =>
+                        beginLifecycleAction({
+                          type: "immunization",
+                          action: imm.enteredInError
+                            ? "delete"
+                            : "entered-in-error",
+                          id: String(imm.id),
+                          title: imm.vaccine,
+                        })
+                      }
+                    >
+                      <X size={12} />
+                      {imm.enteredInError
+                        ? "Delete record"
+                        : "Entered in error"}
+                    </button>
+                  </div>
+                  {renderLifecycleConfirmation(
+                    "immunization",
+                    String(imm.id),
+                  )}
                 </li>
               ))}
             </ul>

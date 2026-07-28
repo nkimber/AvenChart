@@ -24,6 +24,7 @@ public sealed record ProblemListItem(
     string Title,
     string? Diagnosis,
     string? Date,
+    string? EndDate,
     string? Comments,
     int Activity);
 
@@ -40,6 +41,7 @@ public sealed record AllergyListItem(
     string? Reaction,
     string? Severity,
     string? Date,
+    string? EndDate,
     string? Comments,
     int Activity,
     string? ListOptionId);
@@ -88,6 +90,7 @@ public sealed record MedicationListItem(
     string Title,
     string? Diagnosis,
     string? Date,
+    string? EndDate,
     string? Comments,
     int Activity);
 
@@ -206,7 +209,8 @@ public sealed record ImmunizationListItem(
     string? CompletionStatus,
     string? InformationSource,
     string? Note,
-    int? Encounter);
+    int? Encounter,
+    bool EnteredInError);
 
 public sealed record ClinicalImmunizationCreateRequest(
     string PatientId,

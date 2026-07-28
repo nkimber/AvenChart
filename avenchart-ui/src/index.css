@@ -6253,6 +6253,9 @@ a {
 .cl-clinical-row-interactive:hover {
   background: var(--bg);
 }
+.cl-clinical-row-interactive {
+  flex-wrap: wrap;
+}
 .cl-clinical-body {
   flex: 1;
   min-width: 0;
@@ -6279,6 +6282,59 @@ a {
   color: #ef4444;
   background: #fee2e2;
   border-color: #fca5a5;
+}
+.cl-lifecycle-actions {
+  display: flex;
+  align-items: center;
+}
+.cl-lifecycle-actions .cl-clinical-action {
+  gap: 4px;
+  opacity: 1;
+  white-space: nowrap;
+}
+.cl-lifecycle-confirmation {
+  flex: 1 0 calc(100% - 18px);
+  margin-left: 18px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.cl-lifecycle-confirmation p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.cl-lifecycle-confirmation label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.cl-lifecycle-confirmation .cl-inline-form-actions {
+  margin-top: 8px;
+}
+.cl-btn-danger {
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-md);
+  padding: 7px 11px;
+  background: #fee2e2;
+  color: #991b1b;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cl-btn-danger:hover:not(:disabled) {
+  background: #fecaca;
+}
+.cl-btn-danger:focus-visible {
+  outline: 3px solid rgba(239, 68, 68, 0.3);
+  outline-offset: 2px;
+}
+.cl-btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .cl-btn-icon {
   background: none;
@@ -6319,6 +6375,13 @@ a {
 }
 .cl-inline-form .ne-input {
   margin: 0;
+}
+.cl-inline-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 .cl-inline-form-actions {
   display: flex;

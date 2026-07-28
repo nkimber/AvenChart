@@ -3190,6 +3190,7 @@ export type ProblemListItem = {
   title: string
   diagnosis?: string | null
   date?: string | null
+  endDate?: string | null
   comments?: string | null
   activity: number
 }
@@ -3200,7 +3201,10 @@ export type AllergyListItem = {
   reaction?: string | null
   severity?: string | null
   date?: string | null
+  endDate?: string | null
+  comments?: string | null
   activity: number
+  listOptionId?: string | null
 }
 
 export type MedicationListItem = {
@@ -3208,6 +3212,8 @@ export type MedicationListItem = {
   title: string
   diagnosis?: string | null
   date?: string | null
+  endDate?: string | null
+  comments?: string | null
   activity: number
 }
 
@@ -3232,6 +3238,7 @@ export type ImmunizationListItem = {
   informationSource?: string | null
   note?: string | null
   encounter?: number | null
+  enteredInError: boolean
 }
 
 export type PrescriptionListItem = {
@@ -6001,6 +6008,18 @@ export async function deactivateAllergy(
   )
 }
 
+export async function deleteAllergy(
+  sessionId: string,
+  allergyId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/clinical-lists/allergies/${allergyId}`,
+    signal,
+  )
+}
+
 export type CreateMedicationInput = {
   patientId: string
   title: string
@@ -6032,6 +6051,18 @@ export async function deactivateMedication(
     sessionId,
     `/api/clinical-lists/medications/${medicationId}/deactivate`,
     { comments },
+    signal,
+  )
+}
+
+export async function deleteMedication(
+  sessionId: string,
+  medicationId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/clinical-lists/medications/${medicationId}`,
     signal,
   )
 }
@@ -6488,12 +6519,25 @@ export async function createImmunization(
 export async function markImmunizationEnteredInError(
   sessionId: string,
   immunizationId: number,
+  note: string,
   signal?: AbortSignal,
 ): Promise<ClinicalListMutationResponse> {
   return clinicianPut(
     sessionId,
     `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`,
-    {},
+    { note },
+    signal,
+  )
+}
+
+export async function deleteImmunization(
+  sessionId: string,
+  immunizationId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/clinical-lists/immunizations/${immunizationId}`,
     signal,
   )
 }

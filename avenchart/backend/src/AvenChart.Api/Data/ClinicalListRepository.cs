@@ -76,11 +76,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         var problems = await GetProblemsAsync(connection, patient.LegacyPid, cancellationToken);
         var allergies = await GetAllergiesAsync(connection, patient.LegacyPid, cancellationToken);
         var medications = await GetMedicationsAsync(connection, patient.LegacyPid, cancellationToken);
-        var medicationDuplicates = BuildMedicationDuplicates(medications);
+        var activeProblems = problems.Where(item => item.Activity == 1).ToList();
+        var activeMedications = medications.Where(item => item.Activity == 1).ToList();
+        var medicationDuplicates = BuildMedicationDuplicates(activeMedications);
         var immunizations = await GetImmunizationsAsync(connection, patient.LegacyPid, cancellationToken);
         var prescriptions = await GetPrescriptionsAsync(connection, patient.LegacyPid, cancellationToken);
-        var medicationReconciliations = BuildMedicationReconciliations(medications, prescriptions);
-        var prescriptionDiagnosisInteractions = BuildPrescriptionDiagnosisInteractions(problems, prescriptions);
+        var medicationReconciliations = BuildMedicationReconciliations(activeMedications, prescriptions);
+        var prescriptionDiagnosisInteractions = BuildPrescriptionDiagnosisInteractions(activeProblems, prescriptions);
         var prescriptionRefillRequests = await GetPrescriptionRefillRequestsAsync(connection, patient.LegacyPid, cancellationToken);
 
         return new ClinicalListsResponse(
@@ -206,7 +208,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 returning patient_id;
                 """;
             command.Parameters.AddWithValue("id", problemId);
-            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = new DateOnly(2026, 6, 18);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(DateTime.UtcNow);
             command.Parameters.AddWithValue("comments", NullableText(request.Comments));
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         }
@@ -299,7 +301,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 returning patient_id;
                 """;
             command.Parameters.AddWithValue("id", medicationId);
-            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = new DateOnly(2026, 6, 18);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(DateTime.UtcNow);
             command.Parameters.AddWithValue("comments", NullableText(request.Comments));
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         }
@@ -353,7 +355,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 returning patient_id;
                 """;
             command.Parameters.AddWithValue("id", allergyId);
-            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = new DateOnly(2026, 6, 18);
+            command.Parameters.Add("endDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(DateTime.UtcNow);
             command.Parameters.AddWithValue("comments", NullableText(request.Comments));
             patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         }
@@ -1111,10 +1113,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, diagnosis, problem_date, comments, activity
+            select id, title, diagnosis, problem_date, end_date, comments, activity
             from problems
-            where pid = @pid and activity = 1
-            order by problem_date desc, id;
+            where pid = @pid
+            order by activity desc, problem_date desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
 
@@ -1127,6 +1129,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Title: reader.GetString(reader.GetOrdinal("title")),
                 Diagnosis: ReadNullableString(reader, "diagnosis"),
                 Date: ReadNullableDate(reader, "problem_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
                 Comments: ReadNullableString(reader, "comments"),
                 Activity: reader.GetInt32(reader.GetOrdinal("activity"))));
         }
@@ -1141,10 +1144,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, reaction, severity, allergy_date, comments, activity, list_option_id
+            select id, title, reaction, severity, allergy_date, end_date, comments, activity, list_option_id
             from allergies
-            where pid = @pid and activity = 1
-            order by allergy_date desc, id;
+            where pid = @pid
+            order by activity desc, allergy_date desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
 
@@ -1158,6 +1161,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Reaction: ReadNullableString(reader, "reaction"),
                 Severity: ReadNullableString(reader, "severity"),
                 Date: ReadNullableDate(reader, "allergy_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
                 Comments: ReadNullableString(reader, "comments"),
                 Activity: reader.GetInt32(reader.GetOrdinal("activity")),
                 ListOptionId: ReadNullableString(reader, "list_option_id")));
@@ -1173,10 +1177,10 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            select id, title, diagnosis, medication_date, comments, activity
+            select id, title, diagnosis, medication_date, end_date, comments, activity
             from medications
-            where pid = @pid and activity = 1
-            order by medication_date desc, id;
+            where pid = @pid
+            order by activity desc, medication_date desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
 
@@ -1189,6 +1193,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Title: reader.GetString(reader.GetOrdinal("title")),
                 Diagnosis: ReadNullableString(reader, "diagnosis"),
                 Date: ReadNullableDate(reader, "medication_date"),
+                EndDate: ReadNullableDate(reader, "end_date"),
                 Comments: ReadNullableString(reader, "comments"),
                 Activity: reader.GetInt32(reader.GetOrdinal("activity"))));
         }
@@ -1579,10 +1584,11 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 completion_status,
                 information_source,
                 note,
-                encounter
+                encounter,
+                added_erroneously
             from immunizations
-            where pid = @pid and added_erroneously = 0
-            order by administered_at desc, id;
+            where pid = @pid
+            order by added_erroneously, administered_at desc, id;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
 
@@ -1610,7 +1616,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 CompletionStatus: ReadNullableString(reader, "completion_status"),
                 InformationSource: ReadNullableString(reader, "information_source"),
                 Note: ReadNullableString(reader, "note"),
-                Encounter: ReadNullableInt(reader, "encounter")));
+                Encounter: ReadNullableInt(reader, "encounter"),
+                EnteredInError: reader.GetInt32(reader.GetOrdinal("added_erroneously")) == 1));
         }
 
         return items;

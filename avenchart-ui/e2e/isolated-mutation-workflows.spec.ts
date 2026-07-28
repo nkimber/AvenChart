@@ -252,6 +252,139 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
+  test("staff can retain and remove clinical-list lifecycle history with required reasons", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const suffix = Date.now();
+    const fixtures = [
+      {
+        type: "problem",
+        title: `Temporary problem ${suffix}`,
+        path: "problems",
+        data: {
+          patientId: "MOD-PAT-0004",
+          title: `Temporary problem ${suffix}`,
+          dateTime: "2026-07-27",
+          diagnosis: "Z00.00",
+          comments: "Temporary lifecycle proof",
+        },
+      },
+      {
+        type: "allergy",
+        title: `Temporary allergy ${suffix}`,
+        path: "allergies",
+        data: {
+          patientId: "MOD-PAT-0004",
+          title: `Temporary allergy ${suffix}`,
+          dateTime: "2026-07-27",
+          reaction: "Temporary reaction",
+          severity: "mild",
+          comments: "Temporary lifecycle proof",
+        },
+      },
+      {
+        type: "medication",
+        title: `Temporary medication ${suffix}`,
+        path: "medications",
+        data: {
+          patientId: "MOD-PAT-0004",
+          title: `Temporary medication ${suffix}`,
+          dateTime: "2026-07-27",
+          diagnosis: "Z00.00",
+          comments: "Temporary lifecycle proof",
+        },
+      },
+      {
+        type: "immunization",
+        title: `Temporary vaccine ${suffix}`,
+        path: "immunizations",
+        data: {
+          patientId: "MOD-PAT-0004",
+          vaccine: `Temporary vaccine ${suffix}`,
+          administeredAt: "2026-07-27T09:00:00",
+          manufacturer: "Temporary manufacturer",
+          lotNumber: `LOT-${suffix}`,
+          note: "Temporary lifecycle proof",
+        },
+      },
+    ] as const;
+    const created: Array<{
+      type: (typeof fixtures)[number]["type"];
+      path: string;
+      id: string;
+      title: string;
+    }> = [];
+
+    try {
+      for (const fixture of fixtures) {
+        const response = await page.request.post(
+          `${apiBaseUrl}/api/clinical-lists/${fixture.path}`,
+          {
+            headers: { "X-Legacy EHR-Session": sessionId },
+            data: fixture.data,
+          },
+        );
+        expect(response.ok()).toBeTruthy();
+        const mutation = (await response.json()) as { id?: string };
+        expect(mutation.id).toBeTruthy();
+        created.push({
+          type: fixture.type,
+          path: fixture.path,
+          id: String(mutation.id),
+          title: fixture.title,
+        });
+      }
+
+      await page.goto("/clinician/patients/MOD-PAT-0004/chart");
+
+      for (const fixture of created) {
+        let row = page
+          .locator("li.cl-clinical-row-interactive")
+          .filter({ hasText: fixture.title });
+        await expect(row).toBeVisible({ timeout: 30_000 });
+        const actionName =
+          fixture.type === "immunization"
+            ? `Mark ${fixture.title} entered in error`
+            : `Deactivate ${fixture.title}`;
+        await row.getByRole("button", { name: actionName }).click();
+        await row
+          .getByLabel("Clinical reason")
+          .fill(`Lifecycle proof reason for ${fixture.type}`);
+        await row.getByRole("button", { name: "Confirm" }).click();
+
+        row = page
+          .locator("li.cl-clinical-row-interactive")
+          .filter({ hasText: fixture.title });
+        await expect(row).toContainText(
+          fixture.type === "immunization" ? "Lifecycle proof reason" : "Inactive",
+          { timeout: 30_000 },
+        );
+        await row
+          .getByRole("button", { name: `Delete ${fixture.title}` })
+          .click();
+        await row
+          .getByLabel("Type DELETE to confirm")
+          .fill("DELETE");
+        await row
+          .getByRole("button", { name: "Delete permanently" })
+          .click();
+        await expect(row).toHaveCount(0);
+      }
+    } finally {
+      for (const fixture of created) {
+        const response = await page.request.delete(
+          `${apiBaseUrl}/api/clinical-lists/${fixture.path}/${encodeURIComponent(fixture.id)}`,
+          { headers: { "X-Legacy EHR-Session": sessionId } },
+        );
+        expect([204, 404]).toContain(response.status());
+      }
+    }
+  });
+
   test("staff can create a catalog prescription, approve its portal refill request, and inspect audit history", async ({
     page,
   }) => {
