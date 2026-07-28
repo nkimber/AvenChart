@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FileText,
   FileUp,
+  Files,
   FolderOpen,
   History,
   Link2,
@@ -20,23 +21,29 @@ import {
   createPatientDocument,
   createPatientExternalLinkDocument,
   downloadPatientDocument,
+  downloadPatientDocumentVersion,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
+  getPatientDocumentVersionHistory,
   getPatientDocuments,
   isRequestCancellation,
   searchEncounters,
+  replacePatientDocumentBinaryContent,
+  replacePatientDocumentContent,
   updatePatientDocumentMetadata,
   type EncounterListItem,
   type PatientDocumentCategoryOptionsResponse,
   type PatientDocumentItem,
   type PatientDocumentMetadataHistoryItem,
   type PatientDocumentMetadataHistoryResponse,
+  type PatientDocumentVersionHistoryResponse,
   type PatientDocumentsResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 type IntakeMode = 'note' | 'file' | 'link'
+type ReplacementMode = 'text' | 'file'
 
 type WorkspaceData = {
   documents: PatientDocumentsResponse
@@ -77,6 +84,21 @@ type DocumentHistoryState =
     }
   | { documentId: number; status: 'error'; message: string }
 
+type DocumentVersionState =
+  | { documentId: number; status: 'loading' }
+  | {
+      documentId: number
+      status: 'ready'
+      data: PatientDocumentVersionHistoryResponse
+    }
+  | { documentId: number; status: 'error'; message: string }
+
+type ReplacementDraft = {
+  fileName: string
+  content: string
+  reason: string
+}
+
 const TODAY = new Date().toISOString().slice(0, 10)
 
 function blankDraft(): IntakeDraft {
@@ -108,6 +130,16 @@ function displayEncounter(value?: number | null) {
 
 function displayMetadataValue(value?: string | null) {
   return value?.trim() || 'None'
+}
+
+function shortHash(value?: string | null) {
+  if (!value) return 'Hash unavailable'
+  return value.length > 16 ? `${value.slice(0, 16)}…` : value
+}
+
+function formatVersionTime(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 function formatBytes(value?: number | null) {
@@ -223,6 +255,24 @@ export default function PatientDocuments() {
   const [metadataError, setMetadataError] = useState('')
   const [historyState, setHistoryState] =
     useState<DocumentHistoryState | null>(null)
+  const [versionState, setVersionState] =
+    useState<DocumentVersionState | null>(null)
+  const [replacingDocumentId, setReplacingDocumentId] = useState<number | null>(
+    null,
+  )
+  const [replacementMode, setReplacementMode] =
+    useState<ReplacementMode>('text')
+  const [replacementDraft, setReplacementDraft] =
+    useState<ReplacementDraft | null>(null)
+  const [replacementFile, setReplacementFile] = useState<File | null>(null)
+  const [replacementFileInputKey, setReplacementFileInputKey] = useState(0)
+  const [replacementStatus, setReplacementStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [replacementError, setReplacementError] = useState('')
+  const [versionDownloadingKey, setVersionDownloadingKey] = useState<
+    string | null
+  >(null)
 
   const loadWorkspace = useCallback(
     async (signal?: AbortSignal) => {
@@ -284,6 +334,12 @@ export default function PatientDocuments() {
     setMetadataStatus('idle')
     setMetadataError('')
     setHistoryState(null)
+    setVersionState(null)
+    setReplacingDocumentId(null)
+    setReplacementDraft(null)
+    setReplacementFile(null)
+    setReplacementStatus('idle')
+    setReplacementError('')
   }, [patientId])
 
   function setDraftField<K extends keyof IntakeDraft>(
@@ -430,6 +486,8 @@ export default function PatientDocuments() {
       setMetadataError('')
       return
     }
+    closeContentReplacement()
+    setVersionState(null)
     setEditingDocumentId(item.id)
     setMetadataDraft(metadataDraftFor(item))
     setMetadataStatus('idle')
@@ -489,6 +547,7 @@ export default function PatientDocuments() {
       setHistoryState(null)
       return
     }
+    setVersionState(null)
     void fetchMetadataHistory(documentId)
   }
 
@@ -545,6 +604,205 @@ export default function PatientDocuments() {
     }
   }
 
+  async function fetchVersionHistory(documentId: number) {
+    setVersionState({ documentId, status: 'loading' })
+    try {
+      const history = await getPatientDocumentVersionHistory(
+        session.sessionId,
+        documentId,
+      )
+      setVersionState({ documentId, status: 'ready', data: history })
+      return history
+    } catch (error) {
+      setVersionState({
+        documentId,
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Content version history could not be loaded.',
+      })
+      return null
+    }
+  }
+
+  function toggleVersionHistory(documentId: number) {
+    if (versionState?.documentId === documentId) {
+      setVersionState(null)
+      return
+    }
+    setHistoryState(null)
+    void fetchVersionHistory(documentId)
+  }
+
+  function closeContentReplacement() {
+    setReplacingDocumentId(null)
+    setReplacementDraft(null)
+    setReplacementFile(null)
+    setReplacementFileInputKey((current) => current + 1)
+    setReplacementStatus('idle')
+    setReplacementError('')
+  }
+
+  function beginContentReplacement(item: PatientDocumentItem) {
+    if (replacingDocumentId === item.id) {
+      closeContentReplacement()
+      return
+    }
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setMetadataStatus('idle')
+    setMetadataError('')
+    setHistoryState(null)
+    setReplacingDocumentId(item.id)
+    setReplacementMode(item.mimetype === 'text/plain' ? 'text' : 'file')
+    setReplacementDraft({
+      fileName: item.fileName || `${item.name}.txt`,
+      content: '',
+      reason: '',
+    })
+    setReplacementFile(null)
+    setReplacementFileInputKey((current) => current + 1)
+    setReplacementStatus('idle')
+    setReplacementError('')
+    if (
+      versionState?.documentId !== item.id ||
+      versionState.status !== 'ready'
+    ) {
+      void fetchVersionHistory(item.id)
+    }
+  }
+
+  function setReplacementField<K extends keyof ReplacementDraft>(
+    field: K,
+    value: ReplacementDraft[K],
+  ) {
+    setReplacementDraft((current) =>
+      current ? { ...current, [field]: value } : current,
+    )
+    if (replacementStatus === 'error') {
+      setReplacementStatus('idle')
+      setReplacementError('')
+    }
+  }
+
+  function chooseReplacementMode(mode: ReplacementMode) {
+    setReplacementMode(mode)
+    setReplacementFile(null)
+    setReplacementFileInputKey((current) => current + 1)
+    setReplacementStatus('idle')
+    setReplacementError('')
+  }
+
+  function handleReplacementFileSelection(file: File | null) {
+    if (!file || state.status !== 'ready') {
+      setReplacementFile(null)
+      return
+    }
+    if (file.size > state.data.options.maxFileSizeBytes) {
+      setReplacementFile(null)
+      setReplacementFileInputKey((current) => current + 1)
+      setReplacementStatus('error')
+      setReplacementError(
+        `${file.name} is ${formatBytes(file.size)}. Choose a replacement no larger than ${formatBytes(state.data.options.maxFileSizeBytes)}.`,
+      )
+      return
+    }
+    setReplacementFile(file)
+    setReplacementDraft((current) =>
+      current ? { ...current, fileName: file.name } : current,
+    )
+    setReplacementStatus('idle')
+    setReplacementError('')
+  }
+
+  async function handleContentReplacement(
+    event: React.FormEvent<HTMLFormElement>,
+    item: PatientDocumentItem,
+  ) {
+    event.preventDefault()
+    if (
+      !replacementDraft ||
+      versionState?.documentId !== item.id ||
+      versionState.status !== 'ready'
+    ) {
+      setReplacementStatus('error')
+      setReplacementError(
+        'Load the current version history before replacing content.',
+      )
+      return
+    }
+    if (!replacementDraft.reason.trim()) {
+      setReplacementStatus('error')
+      setReplacementError('Explain why the protected content is changing.')
+      return
+    }
+
+    setReplacementStatus('saving')
+    setReplacementError('')
+    try {
+      const expectedVersion = versionState.data.currentVersion
+      const result =
+        replacementMode === 'text'
+          ? await replacePatientDocumentContent(
+              session.sessionId,
+              item.id,
+              {
+                fileName: replacementDraft.fileName.trim(),
+                content: replacementDraft.content.trim(),
+                reason: replacementDraft.reason.trim(),
+                expectedVersion,
+              },
+            )
+          : await (async () => {
+              if (!replacementFile) {
+                throw new Error('Choose a replacement file.')
+              }
+              if (
+                state.status === 'ready' &&
+                replacementFile.size > state.data.options.maxFileSizeBytes
+              ) {
+                throw new Error(
+                  `Choose a replacement no larger than ${formatBytes(state.data.options.maxFileSizeBytes)}.`,
+                )
+              }
+              return replacePatientDocumentBinaryContent(
+                session.sessionId,
+                item.id,
+                {
+                  fileName: replacementDraft.fileName.trim(),
+                  mimetype:
+                    replacementFile.type.trim() || 'application/octet-stream',
+                  contentBase64: await readFileAsBase64(replacementFile),
+                  reason: replacementDraft.reason.trim(),
+                  expectedVersion,
+                },
+              )
+            })()
+
+      setState((current) =>
+        current.status === 'ready'
+          ? {
+              status: 'ready',
+              data: { ...current.data, documents: result.detail },
+            }
+          : current,
+      )
+      setRecentDocumentId(result.id)
+      closeContentReplacement()
+      showToast('A new protected document version was filed.', 'success')
+      await fetchVersionHistory(item.id)
+    } catch (error) {
+      setReplacementStatus('error')
+      setReplacementError(
+        error instanceof Error
+          ? error.message
+          : 'Protected document content could not be replaced.',
+      )
+      await fetchVersionHistory(item.id)
+    }
+  }
+
   async function downloadDocument(item: PatientDocumentItem) {
     setDownloadingId(item.id)
     try {
@@ -572,6 +830,42 @@ export default function PatientDocuments() {
       )
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  async function downloadDocumentVersion(
+    item: PatientDocumentItem,
+    version: number,
+    fileName?: string | null,
+  ) {
+    const downloadKey = `${item.id}-${version}`
+    setVersionDownloadingKey(downloadKey)
+    try {
+      const file = await downloadPatientDocumentVersion(
+        session.sessionId,
+        item.id,
+        version,
+        fileName || `${item.name}-v${version}`,
+      )
+      const objectUrl = URL.createObjectURL(file.blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = file.fileName
+      link.style.display = 'none'
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+      showToast(`${file.fileName} version ${version} downloaded.`, 'success')
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'The document version could not be downloaded.',
+        'error',
+      )
+    } finally {
+      setVersionDownloadingKey(null)
     }
   }
 
@@ -1011,6 +1305,36 @@ export default function PatientDocuments() {
                     <History size={14} />
                     Filing history
                   </button>
+                  {item.storageMethod !== 'web_url' && (
+                    <>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        onClick={() => toggleVersionHistory(item.id)}
+                        aria-expanded={versionState?.documentId === item.id}
+                        aria-controls={`document-version-history-${item.id}`}
+                      >
+                        <Files size={14} />
+                        Content versions
+                      </button>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        onClick={() => beginContentReplacement(item)}
+                        aria-expanded={replacingDocumentId === item.id}
+                        aria-controls={`document-content-replace-${item.id}`}
+                      >
+                        {replacingDocumentId === item.id ? (
+                          <X size={14} />
+                        ) : (
+                          <FileUp size={14} />
+                        )}
+                        {replacingDocumentId === item.id
+                          ? 'Close replacement'
+                          : 'Replace content'}
+                      </button>
+                    </>
+                  )}
                   {item.storageMethod === 'web_url' && item.url && (
                     <a
                       className="cl-btn-secondary"
@@ -1210,6 +1534,197 @@ export default function PatientDocuments() {
                     </div>
                   </form>
                 )}
+                {replacingDocumentId === item.id && replacementDraft && (
+                  <form
+                    className="patient-document-content-replace"
+                    id={`document-content-replace-${item.id}`}
+                    onSubmit={(event) =>
+                      void handleContentReplacement(event, item)
+                    }
+                  >
+                    <div className="patient-document-panel-heading">
+                      <div>
+                        <span className="document-workspace-eyebrow">
+                          Protected content
+                        </span>
+                        <h4>Create the next immutable version</h4>
+                      </div>
+                      <p>
+                        The current bytes remain retrievable as a prior version.
+                        Filing metadata is unchanged.
+                      </p>
+                    </div>
+                    <div
+                      className="patient-document-replacement-modes"
+                      role="group"
+                      aria-label="Replacement content type"
+                    >
+                      <button
+                        className={replacementMode === 'text' ? 'active' : ''}
+                        type="button"
+                        aria-pressed={replacementMode === 'text'}
+                        onClick={() => chooseReplacementMode('text')}
+                      >
+                        <FileText size={15} />
+                        Clinical text
+                      </button>
+                      <button
+                        className={replacementMode === 'file' ? 'active' : ''}
+                        type="button"
+                        aria-pressed={replacementMode === 'file'}
+                        onClick={() => chooseReplacementMode('file')}
+                      >
+                        <FileUp size={15} />
+                        Replacement file
+                      </button>
+                    </div>
+                    <div className="patient-document-content-replace-grid">
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-replace-file-name-${item.id}`}
+                        >
+                          Stored file name *
+                        </label>
+                        <input
+                          id={`document-replace-file-name-${item.id}`}
+                          className="input"
+                          value={replacementDraft.fileName}
+                          onChange={(event) =>
+                            setReplacementField(
+                              'fileName',
+                              event.target.value,
+                            )
+                          }
+                          maxLength={255}
+                          required
+                        />
+                      </div>
+                      <div className="patient-document-version-target">
+                        <span>Loaded version</span>
+                        <strong>
+                          {versionState?.documentId === item.id &&
+                          versionState.status === 'ready'
+                            ? `Version ${versionState.data.currentVersion}`
+                            : 'Loading current version…'}
+                        </strong>
+                        <small>
+                          A stale save is rejected; reload and review before
+                          retrying.
+                        </small>
+                      </div>
+                    </div>
+                    {replacementMode === 'text' ? (
+                      <div className="field">
+                        <label
+                          className="label"
+                          htmlFor={`document-replace-text-${item.id}`}
+                        >
+                          New document content *
+                        </label>
+                        <textarea
+                          id={`document-replace-text-${item.id}`}
+                          className="textarea patient-document-replacement-body"
+                          value={replacementDraft.content}
+                          onChange={(event) =>
+                            setReplacementField('content', event.target.value)
+                          }
+                          required
+                        />
+                      </div>
+                    ) : (
+                      <div className="patient-document-replacement-file">
+                        <label
+                          className="patient-document-file-drop"
+                          htmlFor={`document-replace-file-${item.id}`}
+                        >
+                          <FileUp size={24} aria-hidden="true" />
+                          <span>
+                            {replacementFile
+                              ? replacementFile.name
+                              : 'Choose the complete replacement file'}
+                          </span>
+                          <small>
+                            {replacementFile
+                              ? `${formatBytes(replacementFile.size)} · ${replacementFile.type || 'application/octet-stream'}`
+                              : state.status === 'ready'
+                                ? `Protected limit ${formatBytes(state.data.options.maxFileSizeBytes)}`
+                                : 'Protected service limit applies'}
+                          </small>
+                        </label>
+                        <input
+                          key={replacementFileInputKey}
+                          id={`document-replace-file-${item.id}`}
+                          className="patient-document-file-input"
+                          type="file"
+                          onChange={(event) =>
+                            handleReplacementFileSelection(
+                              event.target.files?.[0] ?? null,
+                            )
+                          }
+                          required
+                        />
+                      </div>
+                    )}
+                    <div className="field">
+                      <label
+                        className="label"
+                        htmlFor={`document-replace-reason-${item.id}`}
+                      >
+                        Replacement reason *
+                      </label>
+                      <textarea
+                        id={`document-replace-reason-${item.id}`}
+                        className="textarea"
+                        value={replacementDraft.reason}
+                        onChange={(event) =>
+                          setReplacementField('reason', event.target.value)
+                        }
+                        maxLength={250}
+                        required
+                      />
+                    </div>
+                    <p className="patient-document-content-boundary">
+                      Saving creates a new current version with hash, size,
+                      type, reason, actor, and time evidence. It never edits a
+                      prior version in place.
+                    </p>
+                    {replacementStatus === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        {replacementError}
+                      </div>
+                    )}
+                    <div className="patient-document-intake-actions">
+                      <button
+                        className="cl-btn-primary"
+                        type="submit"
+                        disabled={
+                          replacementStatus === 'saving' ||
+                          !replacementDraft.fileName.trim() ||
+                          !replacementDraft.reason.trim() ||
+                          (replacementMode === 'text'
+                            ? !replacementDraft.content.trim()
+                            : !replacementFile) ||
+                          versionState?.documentId !== item.id ||
+                          versionState.status !== 'ready'
+                        }
+                      >
+                        <Save size={15} />
+                        {replacementStatus === 'saving'
+                          ? 'Creating version…'
+                          : 'Create next version'}
+                      </button>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        disabled={replacementStatus === 'saving'}
+                        onClick={closeContentReplacement}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
                 {historyState?.documentId === item.id && (
                   <section
                     className="patient-document-metadata-history"
@@ -1282,6 +1797,142 @@ export default function PatientDocuments() {
                             {historyState.data.eventCount} changes.
                           </p>
                         )}
+                      </>
+                    )}
+                  </section>
+                )}
+                {versionState?.documentId === item.id && (
+                  <section
+                    className="patient-document-version-history"
+                    id={`document-version-history-${item.id}`}
+                    aria-label={`Content versions for ${item.name}`}
+                  >
+                    {versionState.status === 'loading' && (
+                      <div className="patient-document-panel-loading" role="status">
+                        <span className="spinner" aria-hidden="true" />
+                        Loading protected content versions…
+                      </div>
+                    )}
+                    {versionState.status === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        <span>{versionState.message}</span>
+                        <button
+                          className="cl-link"
+                          type="button"
+                          onClick={() => void fetchVersionHistory(item.id)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                    {versionState.status === 'ready' && (
+                      <>
+                        <div className="patient-document-history-heading">
+                          <div>
+                            <span className="document-workspace-eyebrow">
+                              Immutable protected bytes
+                            </span>
+                            <h4>Content version history</h4>
+                          </div>
+                          <span className="cl-badge cl-badge-muted">
+                            {versionState.data.versionCount}{' '}
+                            {versionState.data.versionCount === 1
+                              ? 'version'
+                              : 'versions'}
+                          </span>
+                        </div>
+                        <ol className="patient-document-version-list">
+                          {versionState.data.versions.map((version) => {
+                            const downloadKey = `${item.id}-${version.version}`
+                            return (
+                              <li key={version.version}>
+                                <div className="patient-document-version-heading">
+                                  <div>
+                                    <strong>{version.versionLabel}</strong>
+                                    <span
+                                      className={
+                                        version.version ===
+                                        versionState.data.currentVersion
+                                          ? 'cl-badge cl-badge-green'
+                                          : 'cl-badge cl-badge-muted'
+                                      }
+                                    >
+                                      {version.versionStatus}
+                                    </span>
+                                  </div>
+                                  <button
+                                    className="cl-btn-secondary"
+                                    type="button"
+                                    disabled={
+                                      !version.canDownload ||
+                                      versionDownloadingKey === downloadKey
+                                    }
+                                    onClick={() =>
+                                      void downloadDocumentVersion(
+                                        item,
+                                        version.version,
+                                        version.fileName,
+                                      )
+                                    }
+                                    aria-label={`Download ${item.name} ${version.versionLabel}`}
+                                  >
+                                    <Download size={14} />
+                                    {versionDownloadingKey === downloadKey
+                                      ? 'Downloading…'
+                                      : `Download V${version.version}`}
+                                  </button>
+                                </div>
+                                <dl className="patient-document-version-facts">
+                                  <div>
+                                    <dt>File</dt>
+                                    <dd>
+                                      {version.fileName || 'Stored document'}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Type and size</dt>
+                                    <dd>
+                                      {version.mimetype || 'Unknown type'} ·{' '}
+                                      {formatBytes(version.sizeBytes)}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Hash</dt>
+                                    <dd title={version.hash || undefined}>
+                                      {shortHash(version.hash)}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Revision</dt>
+                                    <dd>
+                                      {version.revisionActor
+                                        ? `By ${version.revisionActor}`
+                                        : 'Original filing'}{' '}
+                                      ·{' '}
+                                      <time dateTime={version.revisionAt}>
+                                        {formatVersionTime(version.revisionAt)}
+                                      </time>
+                                    </dd>
+                                  </div>
+                                </dl>
+                                <p className="patient-document-version-reason">
+                                  {version.revisionReason ||
+                                    'Original filed content'}
+                                </p>
+                                {version.contentPreview && (
+                                  <p className="patient-document-version-preview">
+                                    {version.contentPreview}
+                                  </p>
+                                )}
+                              </li>
+                            )
+                          })}
+                        </ol>
+                        <p className="patient-document-content-boundary">
+                          Every download uses the protected version route. The
+                          displayed hash, type, size, actor, reason, and time are
+                          server evidence for that exact version.
+                        </p>
                       </>
                     )}
                   </section>

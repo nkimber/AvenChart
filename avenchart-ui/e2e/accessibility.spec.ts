@@ -156,6 +156,30 @@ test.describe("accessibility gate", () => {
         "/clinician/patients/MOD-PAT-0001/documents#metadata",
       )),
     );
+    await page.getByRole("button", { name: "Close edit" }).first().click();
+    await page.getByRole("button", { name: "Filing history" }).first().click();
+    await page
+      .getByRole("button", { name: "Content versions" })
+      .first()
+      .click();
+    await page
+      .getByRole("button", { name: "Replace content" })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", {
+        name: "Create the next immutable version",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Content version history" }),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#content-versions",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

@@ -28,6 +28,7 @@ import {
   dispenseInventoryPrescription,
   downloadInventoryActivityCsv,
   downloadPatientDocument,
+  downloadPatientDocumentVersion,
   endPatientPortalSession,
   findPatientDuplicateCandidates,
   getCurrentSession,
@@ -41,6 +42,7 @@ import {
   getPatientAdministrationHistory,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
+  getPatientDocumentVersionHistory,
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
@@ -55,6 +57,8 @@ import {
   logout,
   markImmunizationEnteredInError,
   reopenLabReportReview,
+  replacePatientDocumentBinaryContent,
+  replacePatientDocumentContent,
   refillPrescription,
   replyToPatientMessage,
   routePrescriptionToPharmacy,
@@ -277,6 +281,45 @@ describe('authenticated API transport', () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: detail.datasetId,
+          datasetVersion: detail.datasetVersion,
+          documentId: 91,
+          documentKey: 'DOC-91',
+          patientId: detail.patientId,
+          legacyPid: detail.legacyPid,
+          name: 'Updated care note',
+          currentVersion: 1,
+          versionCount: 1,
+          versions: [
+            {
+              version: 1,
+              versionLabel: 'Version 1',
+              versionStatus: 'Current version',
+              capturedAt: '2026-07-28 12:00:00',
+              revisionAt: '2026-07-28 12:00:00',
+              fileName: 'care-note.txt',
+              mimetype: 'text/plain',
+              sizeBytes: 20,
+              hash: 'abc123',
+              contentPreview: 'Documented care instructions.',
+              canDownload: true,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 91, detail }))
+      .mockResolvedValueOnce(
+        new Response('original version', {
+          status: 200,
+          headers: {
+            'content-type': 'text/plain',
+            'content-disposition': 'attachment; filename="care-note-v1.txt"',
+          },
+        }),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
 
     const categories = await getPatientDocumentCategoryOptions('staff-session')
@@ -318,10 +361,36 @@ describe('authenticated API transport', () => {
       notes: 'Refiled in chart.',
       reason: 'Correct filing metadata.',
     })
+    const versions = await getPatientDocumentVersionHistory(
+      'staff-session',
+      91,
+    )
+    await replacePatientDocumentContent('staff-session', 91, {
+      fileName: 'care-note-v2.txt',
+      content: 'Corrected clinical content.',
+      reason: 'Correct transcription.',
+      expectedVersion: 1,
+    })
+    await replacePatientDocumentBinaryContent('staff-session', 91, {
+      fileName: 'care-note-v3.pdf',
+      mimetype: 'application/pdf',
+      contentBase64: 'JVBERi0xLjQK',
+      reason: 'Attach signed source.',
+      expectedVersion: 2,
+    })
+    const priorVersion = await downloadPatientDocumentVersion(
+      'staff-session',
+      91,
+      1,
+      'fallback.txt',
+    )
     await deletePatientDocument('staff-session', 93)
 
     expect(categories.maxFileSizeBytes).toBe(26_214_400)
     expect(history.resultLimit).toBe(100)
+    expect(versions.currentVersion).toBe(1)
+    expect(priorVersion.fileName).toBe('care-note-v1.txt')
+    expect(await priorVersion.blob.text()).toBe('original version')
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/documents/category-options',
       'http://localhost:5001/api/documents',
@@ -329,6 +398,10 @@ describe('authenticated API transport', () => {
       'http://localhost:5001/api/documents/external-link',
       'http://localhost:5001/api/documents/91/metadata-history',
       'http://localhost:5001/api/documents/91/metadata',
+      'http://localhost:5001/api/documents/91/versions',
+      'http://localhost:5001/api/documents/91/content',
+      'http://localhost:5001/api/documents/91/content/binary',
+      'http://localhost:5001/api/documents/91/versions/1/download',
       'http://localhost:5001/api/documents/93',
     ])
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual([
@@ -338,6 +411,10 @@ describe('authenticated API transport', () => {
       'POST',
       undefined,
       'PUT',
+      undefined,
+      'PUT',
+      'PUT',
+      undefined,
       'DELETE',
     ])
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
@@ -369,6 +446,18 @@ describe('authenticated API transport', () => {
         encounter: 1000011,
         notes: 'Refiled in chart.',
         reason: 'Correct filing metadata.',
+      }),
+    })
+    expect(fetchMock.mock.calls[7]?.[1]).toMatchObject({
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: 'care-note-v2.txt',
+        content: 'Corrected clinical content.',
+        reason: 'Correct transcription.',
+        expectedVersion: 1,
       }),
     })
   })

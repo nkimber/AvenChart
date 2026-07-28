@@ -1978,6 +1978,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/move", async (
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
         PatientDocumentContentReplaceRequest request,
@@ -1994,16 +1996,32 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
             return Results.NotFound();
         }
 
-        var mutation = await documentRepository.ReplaceContentAsync(documentId, request, cancellationToken);
-        if (mutation is null)
+        try
         {
-            return Results.BadRequest("Encounter document content could not be replaced from the supplied text payload.");
-        }
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await documentRepository.ReplaceContentAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            if (mutation is null)
+            {
+                return Results.BadRequest("Encounter document content could not be replaced from the supplied text payload or did not materially change.");
+            }
 
-        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
-        return refreshed is null
-            ? Results.NotFound()
-            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+            var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+            return refreshed is null
+                ? Results.NotFound()
+                : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+        }
+        catch (DocumentVersionConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = "The document changed after this version was loaded. Reload its version history before replacing content.",
+                currentVersion = conflict.CurrentVersion
+            });
+        }
     })
     .WithName("ReplaceEncounterDocumentContent")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
@@ -2011,6 +2029,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content", async (
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
         PatientDocumentBinaryContentReplaceRequest request,
@@ -2027,16 +2047,32 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/content/binary", 
             return Results.NotFound();
         }
 
-        var mutation = await documentRepository.ReplaceBinaryContentAsync(documentId, request, cancellationToken);
-        if (mutation is null)
+        try
         {
-            return Results.BadRequest("Encounter binary document content could not be replaced from the supplied file payload.");
-        }
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await documentRepository.ReplaceBinaryContentAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            if (mutation is null)
+            {
+                return Results.BadRequest("Encounter binary document content could not be replaced from the supplied file payload or did not materially change.");
+            }
 
-        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
-        return refreshed is null
-            ? Results.NotFound()
-            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+            var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+            return refreshed is null
+                ? Results.NotFound()
+                : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+        }
+        catch (DocumentVersionConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = "The document changed after this version was loaded. Reload its version history before replacing content.",
+                currentVersion = conflict.CurrentVersion
+            });
+        }
     })
     .WithName("ReplaceEncounterDocumentBinaryContent")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
@@ -2844,6 +2880,50 @@ documents.MapGet("/{documentId:int}/download", async (
     })
     .WithName("DownloadPatientDocument");
 
+documents.MapGet("/{documentId:int}/versions", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetVersionHistoryAsync(documentId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDocumentVersionHistory");
+
+documents.MapGet("/{documentId:int}/versions/{version:int}/content", async (
+        DocumentRepository repository,
+        int documentId,
+        int version,
+        CancellationToken cancellationToken) =>
+    {
+        var content = await repository.GetVersionContentAsync(documentId, version, cancellationToken);
+        return content is null ? Results.NotFound() : Results.Ok(content);
+    })
+    .WithName("GetPatientDocumentVersionContent");
+
+documents.MapGet("/{documentId:int}/versions/{version:int}/download", async (
+        DocumentRepository repository,
+        int documentId,
+        int version,
+        CancellationToken cancellationToken) =>
+    {
+        var content = await repository.GetVersionContentAsync(documentId, version, cancellationToken);
+        if (content is null)
+        {
+            return Results.NotFound();
+        }
+
+        var fileBytes = content.IsBinary && !string.IsNullOrWhiteSpace(content.ContentBase64)
+            ? Convert.FromBase64String(content.ContentBase64)
+            : Encoding.UTF8.GetBytes(content.Content);
+
+        return Results.File(
+            fileBytes,
+            content.Mimetype ?? "application/octet-stream",
+            content.FileName);
+    })
+    .WithName("DownloadPatientDocumentVersion");
+
 documents.MapGet("/category-options", async (
         DocumentRepository repository,
         CancellationToken cancellationToken) =>
@@ -2949,28 +3029,64 @@ documents.MapPut("/{documentId:int}/metadata", async (
 
 documents.MapPut("/{documentId:int}/content", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
         PatientDocumentContentReplaceRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ReplaceContentAsync(documentId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Patient document content could not be replaced from the supplied text payload.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.ReplaceContentAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Patient document content could not be replaced from the supplied text payload or did not materially change.")
+                : Results.Ok(mutation);
+        }
+        catch (DocumentVersionConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = "The document changed after this version was loaded. Reload its version history before replacing content.",
+                currentVersion = conflict.CurrentVersion
+            });
+        }
     })
     .WithName("ReplacePatientDocumentContent")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPut("/{documentId:int}/content/binary", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
         PatientDocumentBinaryContentReplaceRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ReplaceBinaryContentAsync(documentId, request, cancellationToken);
-        return mutation is null
-            ? Results.BadRequest("Binary patient document content could not be replaced from the supplied file payload.")
-            : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.ReplaceBinaryContentAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null
+                ? Results.BadRequest("Binary patient document content could not be replaced from the supplied file payload or did not materially change.")
+                : Results.Ok(mutation);
+        }
+        catch (DocumentVersionConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = "The document changed after this version was loaded. Reload its version history before replacing content.",
+                currentVersion = conflict.CurrentVersion
+            });
+        }
     })
     .WithName("ReplaceBinaryPatientDocumentContent")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));

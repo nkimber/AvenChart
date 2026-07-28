@@ -80,12 +80,49 @@ public sealed record PatientDocumentVersionItem(
     string VersionLabel,
     string VersionStatus,
     string CapturedAt,
+    string? RevisionActor,
+    string? RevisionReason,
+    string RevisionAt,
     string? FileName,
     string? Mimetype,
     int? SizeBytes,
     int? Pages,
     string? Hash,
-    string ContentPreview);
+    string ContentPreview,
+    bool CanDownload);
+
+public sealed record PatientDocumentVersionHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    int CurrentVersion,
+    int VersionCount,
+    IReadOnlyList<PatientDocumentVersionItem> Versions);
+
+public sealed record PatientDocumentVersionContentResponse(
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    int Version,
+    string VersionLabel,
+    string VersionStatus,
+    string RevisionAt,
+    string? RevisionActor,
+    string? RevisionReason,
+    string FileName,
+    string? Mimetype,
+    int? SizeBytes,
+    int? Pages,
+    string? Hash,
+    string Content,
+    string? ContentBase64,
+    bool IsBinary);
 
 public sealed record PatientDocumentOcrQueueResponse(
     string DatasetId,
@@ -295,12 +332,16 @@ public sealed record EncounterDocumentMoveResponse(
 
 public sealed record PatientDocumentContentReplaceRequest(
     string FileName,
-    string Content);
+    string Content,
+    string? Reason = null,
+    int? ExpectedVersion = null);
 
 public sealed record PatientDocumentBinaryContentReplaceRequest(
     string FileName,
     string Mimetype,
-    string ContentBase64);
+    string ContentBase64,
+    string? Reason = null,
+    int? ExpectedVersion = null);
 
 public sealed record PatientDocumentContentResponse(
     int Id,

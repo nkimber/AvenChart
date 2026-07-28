@@ -4392,10 +4392,16 @@ export type PatientDocumentItem = {
   name: string
   docDate: string
   uploadedAt: string
+  revisionAt: string
   currentVersion: number
   versionLabel: string
+  versionStatus: string
+  versionHistoryCount: number
+  hasPriorVersions: boolean
+  revisionHash?: string | null
   mimetype?: string | null
   sizeBytes?: number | null
+  pages?: number | null
   encounter?: number | null
   storageMethod?: string | null
   fileName?: string | null
@@ -4405,6 +4411,36 @@ export type PatientDocumentItem = {
   contentPreview?: string | null
   previewKind: string
   canDownload: boolean
+}
+
+export type PatientDocumentVersionItem = {
+  version: number
+  versionLabel: string
+  versionStatus: string
+  capturedAt: string
+  revisionActor?: string | null
+  revisionReason?: string | null
+  revisionAt: string
+  fileName?: string | null
+  mimetype?: string | null
+  sizeBytes?: number | null
+  pages?: number | null
+  hash?: string | null
+  contentPreview: string
+  canDownload: boolean
+}
+
+export type PatientDocumentVersionHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  name: string
+  currentVersion: number
+  versionCount: number
+  versions: PatientDocumentVersionItem[]
 }
 
 export type PatientDocumentsResponse = {
@@ -4474,6 +4510,21 @@ export type PatientDocumentMetadataUpdateInput = {
   encounter?: number | null
   notes?: string | null
   reason: string
+}
+
+export type PatientDocumentContentReplaceInput = {
+  fileName: string
+  content: string
+  reason: string
+  expectedVersion: number
+}
+
+export type PatientDocumentBinaryContentReplaceInput = {
+  fileName: string
+  mimetype: string
+  contentBase64: string
+  reason: string
+  expectedVersion: number
 }
 
 export type PatientDocumentMetadataHistoryItem = {
@@ -4584,6 +4635,46 @@ export async function updatePatientDocumentMetadata(
   )
 }
 
+export async function getPatientDocumentVersionHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentVersionHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/versions`,
+    signal,
+  )
+}
+
+export async function replacePatientDocumentContent(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/content`,
+    input,
+    signal,
+  )
+}
+
+export async function replacePatientDocumentBinaryContent(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentBinaryContentReplaceInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/content/binary`,
+    input,
+    signal,
+  )
+}
+
 export async function deletePatientDocument(
   sessionId: string,
   documentId: number,
@@ -4641,6 +4732,45 @@ export async function downloadPatientDocument(
   ) {
     throw new ApiRequestError(
       'The document service returned a web page instead of the requested file.',
+      response.status,
+    )
+  }
+
+  return {
+    blob: await response.blob(),
+    fileName: getDownloadFileName(response, fallbackName),
+    contentType,
+  }
+}
+
+export async function downloadPatientDocumentVersion(
+  sessionId: string,
+  documentId: number,
+  version: number,
+  fallbackName: string,
+  signal?: AbortSignal,
+): Promise<DownloadedFile> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/versions/${encodeURIComponent(String(version))}/download`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Document version download',
+    'clinician',
+  )
+
+  const contentType =
+    response.headers.get('content-type') ?? 'application/octet-stream'
+  if (
+    contentType.includes('text/html') ||
+    contentType.includes('application/xhtml+xml')
+  ) {
+    throw new ApiRequestError(
+      'The document service returned a web page instead of the requested version.',
       response.status,
     )
   }

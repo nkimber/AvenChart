@@ -8674,7 +8674,9 @@ h4 {
   white-space: nowrap;
 }
 .patient-document-metadata-edit,
-.patient-document-metadata-history {
+.patient-document-metadata-history,
+.patient-document-content-replace,
+.patient-document-version-history {
   grid-column: 2 / -1;
   min-width: 0;
   margin-top: 2px;
@@ -8687,6 +8689,11 @@ h4 {
   display: grid;
   gap: 12px;
   border-top: 3px solid var(--teal);
+}
+.patient-document-content-replace {
+  display: grid;
+  gap: 12px;
+  border-top: 3px solid var(--warning);
 }
 .patient-document-panel-heading,
 .patient-document-history-heading {
@@ -8726,6 +8733,123 @@ h4 {
   border-left: 3px solid var(--teal);
   background: #fcfcff;
 }
+.patient-document-version-history {
+  border-left: 3px solid var(--info);
+  background: #fbfdff;
+}
+.patient-document-replacement-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-replacement-modes button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #4f5968;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.patient-document-replacement-modes button[aria-pressed='true'] {
+  border-color: #cfd5f0;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+.patient-document-replacement-modes button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.patient-document-content-replace-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.8fr);
+  gap: 10px;
+}
+.patient-document-version-target {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid #d8e7ef;
+  border-radius: var(--radius-md);
+  background: var(--info-surface);
+}
+.patient-document-version-target span {
+  color: #4f5968;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.patient-document-version-target strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.patient-document-version-target small {
+  color: #4f5968;
+  font-size: 10px;
+}
+.patient-document-replacement-body {
+  min-height: 150px;
+}
+.patient-document-replacement-file {
+  position: relative;
+}
+.patient-document-file-drop {
+  display: grid;
+  min-height: 104px;
+  place-items: center;
+  gap: 3px;
+  padding: 14px;
+  border: 1.5px dashed #aeb6dc;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--teal);
+  cursor: pointer;
+  text-align: center;
+}
+.patient-document-file-drop span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.patient-document-file-drop small {
+  color: #4f5968;
+  font-size: 10px;
+}
+.patient-document-replacement-file:focus-within .patient-document-file-drop {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.patient-document-content-boundary,
+.patient-document-version-reason,
+.patient-document-version-preview {
+  margin: 0;
+  color: #4f5968;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.patient-document-version-reason {
+  margin-top: 9px;
+  color: var(--text);
+  font-weight: 700;
+}
+.patient-document-version-preview {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
 .patient-document-panel-loading {
   display: flex;
   align-items: center;
@@ -8752,6 +8876,58 @@ h4 {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+.patient-document-version-list {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-document-version-list > li {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-version-heading,
+.patient-document-version-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.patient-document-version-heading {
+  justify-content: space-between;
+}
+.patient-document-version-heading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.patient-document-version-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.patient-document-version-facts div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.patient-document-version-facts dt {
+  color: #4f5968;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.patient-document-version-facts dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
 }
 .patient-document-history-event-heading {
   display: flex;
@@ -8802,7 +8978,8 @@ h4 {
 }
 @media (max-width: 1050px) {
   .patient-document-intake-grid,
-  .patient-document-metadata-grid {
+  .patient-document-metadata-grid,
+  .patient-document-version-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -8827,7 +9004,9 @@ h4 {
     grid-template-columns: auto minmax(0, 1fr);
   }
   .patient-document-metadata-edit,
-  .patient-document-metadata-history {
+  .patient-document-metadata-history,
+  .patient-document-content-replace,
+  .patient-document-version-history {
     grid-column: 1 / -1;
   }
   .patient-document-panel-heading,
@@ -8840,6 +9019,9 @@ h4 {
     text-align: left;
   }
   .patient-document-metadata-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+  .patient-document-content-replace-grid {
     grid-template-columns: 1fr;
   }
   .patient-document-register-actions {
@@ -8873,6 +9055,8 @@ h4 {
     flex-direction: column;
   }
   .patient-document-metadata-grid,
+  .patient-document-replacement-modes,
+  .patient-document-version-facts,
   .patient-document-history-changes > div,
   .patient-document-history-changes dd {
     grid-template-columns: 1fr;
@@ -8887,7 +9071,10 @@ h4 {
   .patient-document-file-picker,
   .patient-document-register-item.is-recent,
   .patient-document-metadata-edit,
-  .patient-document-metadata-history {
+  .patient-document-metadata-history,
+  .patient-document-content-replace,
+  .patient-document-version-history,
+  .patient-document-file-drop {
     border-color: CanvasText;
   }
 }

@@ -979,7 +979,7 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can file and refile text, bounded binary, and http document-link records from the patient chart", async ({
+  test("staff can file, refile, and version text, bounded binary, and http document-link records from the patient chart", async ({
     page,
   }) => {
     await signInClinician(page);
@@ -992,6 +992,18 @@ test.describe("isolated mutation workflows", () => {
     const fileName = `${marker}-FILE`;
     const linkName = `${marker}-LINK`;
     const metadataReason = `Correct filing metadata ${marker}`;
+    const originalNoteContent = `Browser-created clinical note ${marker}.`;
+    const replacementNoteContent = `Corrected clinical note content ${marker}.`;
+    const replacementNoteFileName = `${marker}-NOTE-V2.txt`;
+    const contentReason = `Correct document content ${marker}`;
+    const binaryReason = `Replace source PDF ${marker}`;
+    const originalPdfBytes = Buffer.from(
+      "%PDF-1.4\n% Modern UI document proof\n",
+    );
+    const replacementPdfBytes = Buffer.from(
+      "%PDF-1.4\n% Modern UI replacement proof\n",
+    );
+    const replacementPdfFileName = `${marker}-FILE-V2.pdf`;
     const headers = { "X-Legacy EHR-Session": sessionId };
 
     async function getMarkerDocuments() {
@@ -1077,7 +1089,7 @@ test.describe("isolated mutation workflows", () => {
         .selectOption("1000013");
       await page
         .getByLabel("Note content *")
-        .fill(`Browser-created clinical note ${marker}.`);
+        .fill(originalNoteContent);
       await page.getByLabel("Filing notes").fill(`Proof ${marker}`);
       await page
         .getByRole("button", { name: "File clinical note" })
@@ -1193,6 +1205,141 @@ test.describe("isolated mutation workflows", () => {
         eventCount: 1,
       });
 
+      await refiledNoteCard
+        .getByRole("button", { name: "Replace content" })
+        .click();
+      await expect(
+        refiledNoteCard.getByText("Create the next immutable version"),
+      ).toBeVisible();
+      await expect(
+        refiledNoteCard.locator(".patient-document-version-target strong"),
+      ).toHaveText("Version 1");
+      await refiledNoteCard
+        .getByLabel("Stored file name *")
+        .fill(replacementNoteFileName);
+      await refiledNoteCard
+        .getByLabel("New document content *")
+        .fill(replacementNoteContent);
+      await refiledNoteCard
+        .getByLabel("Replacement reason *")
+        .fill(contentReason);
+      await refiledNoteCard
+        .getByRole("button", { name: "Create next version" })
+        .click();
+
+      await expect(
+        refiledNoteCard.getByRole("heading", {
+          name: "Content version history",
+        }),
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(refiledNoteCard.getByText(contentReason)).toBeVisible();
+      await expect(refiledNoteCard.getByText("By admin")).toBeVisible();
+      await expect(
+        refiledNoteCard.getByText("Current version", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        refiledNoteCard.getByText("Prior version", { exact: true }),
+      ).toBeVisible();
+
+      const noteVersionsResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/versions`,
+        { headers },
+      );
+      expect(noteVersionsResponse.ok()).toBeTruthy();
+      const noteVersions = (await noteVersionsResponse.json()) as {
+        currentVersion: number;
+        versionCount: number;
+        versions: Array<{
+          version: number;
+          versionStatus: string;
+          revisionActor?: string | null;
+          revisionReason?: string | null;
+          fileName?: string | null;
+          mimetype?: string | null;
+          sizeBytes?: number | null;
+          hash?: string | null;
+        }>;
+      };
+      expect(noteVersions).toMatchObject({
+        currentVersion: 2,
+        versionCount: 2,
+      });
+      expect(noteVersions.versions[0]).toMatchObject({
+        version: 2,
+        versionStatus: "Current version",
+        revisionActor: "admin",
+        revisionReason: contentReason,
+        fileName: replacementNoteFileName,
+        mimetype: "text/plain",
+        sizeBytes: Buffer.byteLength(replacementNoteContent),
+        hash: expect.any(String),
+      });
+      expect(noteVersions.versions[1]).toMatchObject({
+        version: 1,
+        versionStatus: "Prior version",
+        revisionActor: null,
+        revisionReason: null,
+        mimetype: "text/plain",
+        hash: expect.any(String),
+      });
+
+      const originalVersionContent = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/versions/1/content`,
+        { headers },
+      );
+      expect(originalVersionContent.ok()).toBeTruthy();
+      await expect(originalVersionContent.json()).resolves.toMatchObject({
+        version: 1,
+        versionStatus: "Prior version",
+        content: originalNoteContent,
+        isBinary: false,
+      });
+      const originalVersionDownload = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/versions/1/download`,
+        { headers },
+      );
+      expect(originalVersionDownload.ok()).toBeTruthy();
+      expect(await originalVersionDownload.text()).toBe(originalNoteContent);
+
+      const staleReplacement = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/content`,
+        {
+          headers,
+          data: {
+            fileName: `${marker}-STALE.txt`,
+            content: `Stale content ${marker}`,
+            reason: `Stale replacement ${marker}`,
+            expectedVersion: 1,
+          },
+        },
+      );
+      expect(staleReplacement.status()).toBe(409);
+      await expect(staleReplacement.json()).resolves.toMatchObject({
+        currentVersion: 2,
+      });
+
+      const noOpReplacement = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/content`,
+        {
+          headers,
+          data: {
+            fileName: replacementNoteFileName,
+            content: replacementNoteContent,
+            reason: `No-op content ${marker}`,
+            expectedVersion: 2,
+          },
+        },
+      );
+      expect(noOpReplacement.status()).toBe(400);
+      const noteHistoryAfterNoOp = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/versions`,
+        { headers },
+      );
+      await expect(noteHistoryAfterNoOp.json()).resolves.toMatchObject({
+        currentVersion: 2,
+        versionCount: 2,
+      });
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /Upload file Up to/ })
@@ -1208,7 +1355,7 @@ test.describe("isolated mutation workflows", () => {
       await page.getByLabel("Document file *").setInputFiles({
         name: `${marker}.pdf`,
         mimeType: "application/pdf",
-        buffer: Buffer.from("%PDF-1.4\n% Modern UI document proof\n"),
+        buffer: originalPdfBytes,
       });
       await page.getByLabel("Document name *").fill(fileName);
       await page.getByLabel("Filing notes").fill(`Binary proof ${marker}`);
@@ -1220,6 +1367,69 @@ test.describe("isolated mutation workflows", () => {
       await expect(fileCard).toBeVisible({ timeout: 20_000 });
       await expect(fileCard).toContainText("application/pdf");
       await expect(fileCard).toContainText("Just filed");
+
+      await fileCard
+        .getByRole("button", { name: "Replace content" })
+        .click();
+      await fileCard
+        .getByLabel("Choose the complete replacement file")
+        .setInputFiles({
+          name: replacementPdfFileName,
+          mimeType: "application/pdf",
+          buffer: replacementPdfBytes,
+        });
+      await fileCard.getByLabel("Replacement reason *").fill(binaryReason);
+      await fileCard
+        .getByRole("button", { name: "Create next version" })
+        .click();
+      await expect(fileCard.getByText(binaryReason)).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(fileCard.getByText("By admin")).toBeVisible();
+
+      const fileDocument = (await getMarkerDocuments()).find(
+        (document) => document.name === fileName,
+      );
+      expect(fileDocument).toBeTruthy();
+      const fileVersionsResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${fileDocument!.id}/versions`,
+        { headers },
+      );
+      expect(fileVersionsResponse.ok()).toBeTruthy();
+      await expect(fileVersionsResponse.json()).resolves.toMatchObject({
+        currentVersion: 2,
+        versionCount: 2,
+        versions: [
+          {
+            version: 2,
+            revisionActor: "admin",
+            revisionReason: binaryReason,
+            fileName: replacementPdfFileName,
+            mimetype: "application/pdf",
+            sizeBytes: replacementPdfBytes.length,
+            hash: expect.any(String),
+          },
+          {
+            version: 1,
+            mimetype: "application/pdf",
+            sizeBytes: originalPdfBytes.length,
+            hash: expect.any(String),
+          },
+        ],
+      });
+      const originalPdfContent = await page.request.get(
+        `${apiBaseUrl}/api/documents/${fileDocument!.id}/versions/1/content`,
+        { headers },
+      );
+      expect(originalPdfContent.ok()).toBeTruthy();
+      const originalPdfVersion = (await originalPdfContent.json()) as {
+        isBinary: boolean;
+        contentBase64?: string | null;
+      };
+      expect(originalPdfVersion.isBinary).toBe(true);
+      expect(Buffer.from(originalPdfVersion.contentBase64 ?? "", "base64")).toEqual(
+        originalPdfBytes,
+      );
 
       await page.getByRole("button", { name: "Add document" }).click();
       await page
@@ -1306,7 +1516,10 @@ test.describe("isolated mutation workflows", () => {
       await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
       expect(
         runProviderAssignmentSql(
-          `select count(*) from patient_document_metadata_events where reason like '%${marker}%';`,
+          `select
+            (select count(*) from patient_document_metadata_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_content_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");
     }
