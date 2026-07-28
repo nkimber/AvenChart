@@ -180,6 +180,19 @@ test.describe("accessibility gate", () => {
         "/clinician/patients/MOD-PAT-0001/documents#content-versions",
       )),
     );
+    await page
+      .getByRole("button", { name: "Preview", exact: true })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /^Previewing / }),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#inline-preview",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

@@ -990,6 +990,8 @@ test.describe("isolated mutation workflows", () => {
     const noteName = `${marker}-NOTE`;
     const refiledNoteName = `${noteName}-REFILED`;
     const fileName = `${marker}-FILE`;
+    const imageName = `${marker}-IMAGE`;
+    const unsupportedName = `${marker}-UNSUPPORTED`;
     const linkName = `${marker}-LINK`;
     const metadataReason = `Correct filing metadata ${marker}`;
     const originalNoteContent = `Browser-created clinical note ${marker}.`;
@@ -1004,6 +1006,11 @@ test.describe("isolated mutation workflows", () => {
       "%PDF-1.4\n% Modern UI replacement proof\n",
     );
     const replacementPdfFileName = `${marker}-FILE-V2.pdf`;
+    const imageBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const unsupportedBytes = Buffer.from(`Unsupported archive ${marker}`);
     const headers = { "X-Legacy EHR-Session": sessionId };
 
     async function getMarkerDocuments() {
@@ -1021,9 +1028,14 @@ test.describe("isolated mutation workflows", () => {
           docDate: string;
           encounter?: number | null;
           mimetype?: string | null;
+          fileName?: string | null;
           storageMethod?: string | null;
           url?: string | null;
           notes?: string | null;
+          previewKind: string;
+          previewStatus: string;
+          canPreviewInline: boolean;
+          canDownload: boolean;
         }>;
       };
       return body.documents.filter((document) =>
@@ -1340,6 +1352,24 @@ test.describe("isolated mutation workflows", () => {
         versionCount: 2,
       });
 
+      await refiledNoteCard
+        .getByRole("button", { name: "Preview", exact: true })
+        .click();
+      await expect(
+        refiledNoteCard.getByRole("heading", {
+          name: `Previewing ${refiledNoteName}`,
+        }),
+      ).toBeVisible();
+      await expect(
+        refiledNoteCard.getByLabel(`Text content of ${refiledNoteName}`),
+      ).toHaveText(replacementNoteContent);
+      await expect(refiledNoteCard).toContainText("text/plain");
+      await expect(refiledNoteCard).toContainText("Version 2");
+      await refiledNoteCard
+        .getByRole("button", { name: "Close preview" })
+        .last()
+        .click();
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /Upload file Up to/ })
@@ -1431,6 +1461,81 @@ test.describe("isolated mutation workflows", () => {
         originalPdfBytes,
       );
 
+      await fileCard
+        .getByRole("button", { name: "Preview", exact: true })
+        .click();
+      const pdfPreview = fileCard.getByTitle(`${fileName} PDF preview`);
+      await expect(pdfPreview).toBeVisible();
+      await expect(pdfPreview).toHaveAttribute("src", /^blob:/);
+      await expect(fileCard).toContainText("application/pdf");
+      await fileCard
+        .getByRole("button", { name: "Close preview" })
+        .last()
+        .click();
+
+      await page.getByRole("button", { name: "Add document" }).click();
+      await page
+        .getByRole("button", { name: /Upload file Up to/ })
+        .click();
+      await page.getByLabel("Document file *").setInputFiles({
+        name: `${marker}.png`,
+        mimeType: "image/png",
+        buffer: imageBytes,
+      });
+      await page.getByLabel("Document name *").fill(imageName);
+      await page.getByLabel("Filing notes").fill(`Image proof ${marker}`);
+      await page
+        .getByRole("button", { name: "Upload document" })
+        .click();
+
+      const imageCard = page.locator("article").filter({ hasText: imageName });
+      await expect(imageCard).toBeVisible({ timeout: 20_000 });
+      await expect(imageCard).toContainText("Inline image");
+      await imageCard
+        .getByRole("button", { name: "Preview", exact: true })
+        .click();
+      const imagePreview = imageCard.getByAltText(`Preview of ${imageName}`);
+      await expect(imagePreview).toBeVisible();
+      await expect(imagePreview).toHaveAttribute("src", /^blob:/);
+      await imageCard
+        .getByRole("button", { name: "Close preview" })
+        .last()
+        .click();
+
+      const unsupportedResponse = await page.request.post(
+        `${apiBaseUrl}/api/documents/binary`,
+        {
+          headers,
+          data: {
+            patientId: "MOD-PAT-0001",
+            categoryId: 3,
+            name: unsupportedName,
+            docDate: "2026-07-28",
+            encounter: null,
+            fileName: `${marker}.zip`,
+            mimetype: "application/zip",
+            contentBase64: unsupportedBytes.toString("base64"),
+            notes: `Unsupported preview proof ${marker}`,
+          },
+        },
+      );
+      expect(unsupportedResponse.status()).toBe(201);
+      await page.getByRole("button", { name: "Refresh" }).click();
+      const unsupportedCard = page
+        .locator("article")
+        .filter({ hasText: unsupportedName });
+      await expect(unsupportedCard).toBeVisible({ timeout: 20_000 });
+      await expect(unsupportedCard).toContainText("application/zip");
+      await expect(unsupportedCard).toContainText("Download only");
+      await expect(
+        unsupportedCard.getByRole("button", { name: "Preview", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        unsupportedCard.getByRole("button", {
+          name: `Download ${unsupportedName}`,
+        }),
+      ).toBeVisible();
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /External link HTTP/ })
@@ -1465,7 +1570,7 @@ test.describe("isolated mutation workflows", () => {
       ).toHaveAttribute("href", `https://example.test/${marker}`);
 
       const documents = await getMarkerDocuments();
-      expect(documents).toHaveLength(3);
+      expect(documents).toHaveLength(5);
       expect(documents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1480,6 +1585,23 @@ test.describe("isolated mutation workflows", () => {
             name: fileName,
             mimetype: "application/pdf",
             storageMethod: "database",
+            previewKind: "pdf",
+            canPreviewInline: true,
+          }),
+          expect.objectContaining({
+            name: imageName,
+            mimetype: "image/png",
+            storageMethod: "database",
+            previewKind: "image",
+            canPreviewInline: true,
+          }),
+          expect.objectContaining({
+            name: unsupportedName,
+            mimetype: "application/zip",
+            storageMethod: "database",
+            previewKind: "binary",
+            canPreviewInline: false,
+            canDownload: true,
           }),
           expect.objectContaining({
             name: linkName,

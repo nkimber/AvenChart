@@ -4410,6 +4410,8 @@ export type PatientDocumentItem = {
   reviewStatus: string
   contentPreview?: string | null
   previewKind: string
+  previewStatus: string
+  canPreviewInline: boolean
   canDownload: boolean
 }
 

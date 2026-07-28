@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
   Download,
@@ -8,6 +8,7 @@ import {
   Files,
   FolderOpen,
   History,
+  Eye,
   Link2,
   Pencil,
   Plus,
@@ -93,6 +94,23 @@ type DocumentVersionState =
     }
   | { documentId: number; status: 'error'; message: string }
 
+type SupportedPreviewKind = 'text' | 'pdf' | 'image'
+
+type DocumentPreviewState =
+  | { documentId: number; status: 'loading' }
+  | {
+      documentId: number
+      status: 'ready'
+      kind: SupportedPreviewKind
+      fileName: string
+      contentType: string
+      sizeBytes: number
+      text?: string
+      objectUrl?: string
+      isTruncated: boolean
+    }
+  | { documentId: number; status: 'error'; message: string }
+
 type ReplacementDraft = {
   fileName: string
   content: string
@@ -100,6 +118,14 @@ type ReplacementDraft = {
 }
 
 const TODAY = new Date().toISOString().slice(0, 10)
+const TEXT_PREVIEW_LIMIT_BYTES = 512 * 1024
+const SAFE_IMAGE_PREVIEW_TYPES = new Set([
+  'image/avif',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
 
 function blankDraft(): IntakeDraft {
   return {
@@ -175,6 +201,34 @@ function documentKind(item: PatientDocumentItem) {
   }
   if (item.mimetype === 'text/plain') return 'Clinical note'
   return item.mimetype || 'Stored file'
+}
+
+function supportedPreviewKind(
+  item: PatientDocumentItem,
+): SupportedPreviewKind | null {
+  if (!item.canPreviewInline) return null
+  const mimetype = item.mimetype?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  if (item.previewKind === 'text' && mimetype.startsWith('text/')) {
+    return 'text'
+  }
+  if (item.previewKind === 'pdf' && mimetype === 'application/pdf') {
+    return 'pdf'
+  }
+  if (
+    item.previewKind === 'image' &&
+    SAFE_IMAGE_PREVIEW_TYPES.has(mimetype)
+  ) {
+    return 'image'
+  }
+  return null
+}
+
+function previewAvailability(item: PatientDocumentItem) {
+  const kind = supportedPreviewKind(item)
+  if (kind === 'text') return 'Inline text'
+  if (kind === 'pdf') return 'Inline PDF'
+  if (kind === 'image') return 'Inline image'
+  return item.storageMethod === 'web_url' ? 'External link' : 'Download only'
 }
 
 function MetadataChangeSummary({
@@ -257,6 +311,10 @@ export default function PatientDocuments() {
     useState<DocumentHistoryState | null>(null)
   const [versionState, setVersionState] =
     useState<DocumentVersionState | null>(null)
+  const [previewState, setPreviewState] =
+    useState<DocumentPreviewState | null>(null)
+  const previewAbortRef = useRef<AbortController | null>(null)
+  const previewObjectUrlRef = useRef<string | null>(null)
   const [replacingDocumentId, setReplacingDocumentId] = useState<number | null>(
     null,
   )
@@ -276,6 +334,13 @@ export default function PatientDocuments() {
 
   const loadWorkspace = useCallback(
     async (signal?: AbortSignal) => {
+      previewAbortRef.current?.abort()
+      previewAbortRef.current = null
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current)
+        previewObjectUrlRef.current = null
+      }
+      setPreviewState(null)
       setState({ status: 'loading' })
       try {
         const [documents, options, encounters] = await Promise.all([
@@ -328,6 +393,16 @@ export default function PatientDocuments() {
     return () => controller.abort()
   }, [loadWorkspace])
 
+  useEffect(
+    () => () => {
+      previewAbortRef.current?.abort()
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     setEditingDocumentId(null)
     setMetadataDraft(null)
@@ -335,6 +410,7 @@ export default function PatientDocuments() {
     setMetadataError('')
     setHistoryState(null)
     setVersionState(null)
+    setPreviewState(null)
     setReplacingDocumentId(null)
     setReplacementDraft(null)
     setReplacementFile(null)
@@ -487,6 +563,7 @@ export default function PatientDocuments() {
       return
     }
     closeContentReplacement()
+    closeDocumentPreview()
     setVersionState(null)
     setEditingDocumentId(item.id)
     setMetadataDraft(metadataDraftFor(item))
@@ -547,6 +624,7 @@ export default function PatientDocuments() {
       setHistoryState(null)
       return
     }
+    closeDocumentPreview()
     setVersionState(null)
     void fetchMetadataHistory(documentId)
   }
@@ -631,6 +709,7 @@ export default function PatientDocuments() {
       setVersionState(null)
       return
     }
+    closeDocumentPreview()
     setHistoryState(null)
     void fetchVersionHistory(documentId)
   }
@@ -654,6 +733,7 @@ export default function PatientDocuments() {
     setMetadataStatus('idle')
     setMetadataError('')
     setHistoryState(null)
+    closeDocumentPreview()
     setReplacingDocumentId(item.id)
     setReplacementMode(item.mimetype === 'text/plain' ? 'text' : 'file')
     setReplacementDraft({
@@ -789,6 +869,7 @@ export default function PatientDocuments() {
           : current,
       )
       setRecentDocumentId(result.id)
+      closeDocumentPreview()
       closeContentReplacement()
       showToast('A new protected document version was filed.', 'success')
       await fetchVersionHistory(item.id)
@@ -866,6 +947,125 @@ export default function PatientDocuments() {
       )
     } finally {
       setVersionDownloadingKey(null)
+    }
+  }
+
+  function closeDocumentPreview() {
+    previewAbortRef.current?.abort()
+    previewAbortRef.current = null
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current)
+      previewObjectUrlRef.current = null
+    }
+    setPreviewState(null)
+  }
+
+  async function openDocumentPreview(
+    item: PatientDocumentItem,
+    forceReload = false,
+  ) {
+    if (!forceReload && previewState?.documentId === item.id) {
+      closeDocumentPreview()
+      return
+    }
+
+    const expectedKind = supportedPreviewKind(item)
+    if (!expectedKind) return
+
+    closeDocumentPreview()
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setMetadataStatus('idle')
+    setMetadataError('')
+    setHistoryState(null)
+    setVersionState(null)
+    closeContentReplacement()
+
+    const controller = new AbortController()
+    previewAbortRef.current = controller
+    setPreviewState({ documentId: item.id, status: 'loading' })
+
+    try {
+      const file = await downloadPatientDocument(
+        session.sessionId,
+        item.id,
+        item.fileName || item.name,
+        controller.signal,
+      )
+      if (controller.signal.aborted || previewAbortRef.current !== controller) {
+        return
+      }
+
+      const contentType = file.contentType
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase()
+      const actualKind: SupportedPreviewKind | null = contentType.startsWith(
+        'text/',
+      )
+        ? 'text'
+        : contentType === 'application/pdf'
+          ? 'pdf'
+          : SAFE_IMAGE_PREVIEW_TYPES.has(contentType)
+            ? 'image'
+            : null
+
+      if (!actualKind || actualKind !== expectedKind) {
+        throw new Error(
+          `${contentType || 'This file type'} is not available for inline preview. Use the protected download instead.`,
+        )
+      }
+
+      if (actualKind === 'text') {
+        const isTruncated = file.blob.size > TEXT_PREVIEW_LIMIT_BYTES
+        const text = await file.blob
+          .slice(0, TEXT_PREVIEW_LIMIT_BYTES)
+          .text()
+        if (
+          controller.signal.aborted ||
+          previewAbortRef.current !== controller
+        ) {
+          return
+        }
+        setPreviewState({
+          documentId: item.id,
+          status: 'ready',
+          kind: actualKind,
+          fileName: file.fileName,
+          contentType,
+          sizeBytes: file.blob.size,
+          text,
+          isTruncated,
+        })
+        return
+      }
+
+      const objectUrl = URL.createObjectURL(file.blob)
+      previewObjectUrlRef.current = objectUrl
+      setPreviewState({
+        documentId: item.id,
+        status: 'ready',
+        kind: actualKind,
+        fileName: file.fileName,
+        contentType,
+        sizeBytes: file.blob.size,
+        objectUrl,
+        isTruncated: false,
+      })
+    } catch (error) {
+      if (isRequestCancellation(error) || controller.signal.aborted) return
+      setPreviewState({
+        documentId: item.id,
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The protected inline preview could not be loaded.',
+      })
+    } finally {
+      if (previewAbortRef.current === controller) {
+        previewAbortRef.current = null
+      }
     }
   }
 
@@ -1268,6 +1468,10 @@ export default function PatientDocuments() {
                         {item.fileName || 'Link record'} · {formatBytes(item.sizeBytes)}
                       </dd>
                     </div>
+                    <div>
+                      <dt>Viewing</dt>
+                      <dd>{previewAvailability(item)}</dd>
+                    </div>
                   </dl>
                   {item.contentPreview && (
                     <p className="patient-document-register-preview">
@@ -1345,6 +1549,24 @@ export default function PatientDocuments() {
                       <ExternalLink size={14} />
                       Open link
                     </a>
+                  )}
+                  {supportedPreviewKind(item) && (
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() => void openDocumentPreview(item)}
+                      aria-expanded={previewState?.documentId === item.id}
+                      aria-controls={`document-inline-preview-${item.id}`}
+                    >
+                      {previewState?.documentId === item.id ? (
+                        <X size={14} />
+                      ) : (
+                        <Eye size={14} />
+                      )}
+                      {previewState?.documentId === item.id
+                        ? 'Close preview'
+                        : 'Preview'}
+                    </button>
                   )}
                   {item.canDownload && (
                     <button
@@ -1724,6 +1946,126 @@ export default function PatientDocuments() {
                       </button>
                     </div>
                   </form>
+                )}
+                {previewState?.documentId === item.id && (
+                  <section
+                    className="patient-document-inline-preview"
+                    id={`document-inline-preview-${item.id}`}
+                    aria-label={`Inline preview for ${item.name}`}
+                  >
+                    <div className="patient-document-preview-heading">
+                      <div>
+                        <span className="document-workspace-eyebrow">
+                          Authenticated on demand
+                        </span>
+                        <h4>Previewing {item.name}</h4>
+                      </div>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        onClick={closeDocumentPreview}
+                      >
+                        <X size={14} />
+                        Close preview
+                      </button>
+                    </div>
+                    {previewState.status === 'loading' && (
+                      <div
+                        className="patient-document-panel-loading"
+                        role="status"
+                      >
+                        <span className="spinner" aria-hidden="true" />
+                        Loading protected document bytes…
+                      </div>
+                    )}
+                    {previewState.status === 'error' && (
+                      <div className="patient-document-preview-error">
+                        <div className="cl-inline-error" role="alert">
+                          {previewState.message}
+                        </div>
+                        <div className="patient-document-preview-error-actions">
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            onClick={() => void openDocumentPreview(item, true)}
+                          >
+                            <RefreshCw size={14} />
+                            Retry preview
+                          </button>
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={downloadingId === item.id}
+                            onClick={() => void downloadDocument(item)}
+                          >
+                            <Download size={14} />
+                            Protected download
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {previewState.status === 'ready' && (
+                      <>
+                        <dl className="patient-document-preview-facts">
+                          <div>
+                            <dt>File</dt>
+                            <dd>{previewState.fileName}</dd>
+                          </div>
+                          <div>
+                            <dt>Type</dt>
+                            <dd>{previewState.contentType}</dd>
+                          </div>
+                          <div>
+                            <dt>Size</dt>
+                            <dd>{formatBytes(previewState.sizeBytes)}</dd>
+                          </div>
+                          <div>
+                            <dt>Version</dt>
+                            <dd>{item.versionLabel}</dd>
+                          </div>
+                        </dl>
+                        {previewState.kind === 'text' && (
+                          <pre
+                            className="patient-document-text-preview"
+                            tabIndex={0}
+                            aria-label={`Text content of ${item.name}`}
+                          >
+                            {previewState.text}
+                          </pre>
+                        )}
+                        {previewState.kind === 'image' &&
+                          previewState.objectUrl && (
+                            <div className="patient-document-image-preview">
+                              <img
+                                src={previewState.objectUrl}
+                                alt={`Preview of ${item.name}`}
+                              />
+                            </div>
+                          )}
+                        {previewState.kind === 'pdf' &&
+                          previewState.objectUrl && (
+                            <iframe
+                              className="patient-document-pdf-preview"
+                              src={previewState.objectUrl}
+                              title={`${item.name} PDF preview`}
+                            />
+                          )}
+                        {previewState.isTruncated && (
+                          <p className="patient-document-preview-notice">
+                            Showing the first{' '}
+                            {formatBytes(TEXT_PREVIEW_LIMIT_BYTES)}. Download
+                            the file to read the complete document.
+                          </p>
+                        )}
+                        <p className="patient-document-content-boundary">
+                          Preview bytes are fetched only after this panel opens
+                          through the same protected transport as download. The
+                          temporary browser URL is revoked when the panel
+                          closes.
+                        </p>
+                      </>
+                    )}
+                  </section>
                 )}
                 {historyState?.documentId === item.id && (
                   <section
