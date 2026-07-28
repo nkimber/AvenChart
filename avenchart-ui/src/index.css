@@ -6614,6 +6614,130 @@ a {
 .provider-history-list p {
   margin: 0;
 }
+.administration-history-header {
+  align-items: flex-start;
+}
+.administration-history-header .cl-empty-text {
+  max-width: 720px;
+  margin: 4px 0 0;
+}
+.administration-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 12px 0;
+}
+.administration-history-toolbar label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.administration-history-toolbar select {
+  min-width: 220px;
+  padding: 8px 30px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.administration-history-toolbar span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.administration-history-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.administration-history-list > li {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.administration-history-event-heading,
+.administration-history-event-heading > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+.administration-history-event-heading {
+  justify-content: space-between;
+}
+.administration-history-event-heading strong {
+  color: var(--text);
+  font-size: 13px;
+  text-transform: capitalize;
+}
+.administration-history-event-heading span,
+.administration-history-event-heading time,
+.administration-history-actor,
+.administration-history-list summary {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.administration-history-event-heading code {
+  color: inherit;
+  font-size: 11px;
+}
+.administration-history-actor {
+  margin: 3px 0 8px;
+}
+.administration-history-list summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 700;
+}
+.administration-history-list summary:focus-visible,
+.administration-history-toolbar select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.administration-history-values {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+}
+.administration-history-values > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);
+  gap: 10px 16px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+.administration-history-values dt {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.administration-history-values dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .administration-history-toolbar,
+  .administration-history-toolbar label,
+  .administration-history-toolbar select {
+    width: 100%;
+  }
+  .administration-history-values > div {
+    grid-template-columns: 1fr;
+  }
+}
 .cl-care-team-editor-list,
 .cl-care-team-summary {
   display: grid;

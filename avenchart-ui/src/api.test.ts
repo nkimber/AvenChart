@@ -33,6 +33,7 @@ import {
   getClinicalPharmacyDirectory,
   getPatientBilling,
   getPatientCareTeamOptions,
+  getPatientAdministrationHistory,
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
@@ -608,6 +609,9 @@ describe('authenticated API transport', () => {
       .mockResolvedValueOnce(
         jsonResponse({ patientId: 'MOD-PAT-0004', eventCount: 0, events: [] }),
       )
+      .mockResolvedValueOnce(
+        jsonResponse({ patientId: 'MOD-PAT-0004', eventCount: 0, events: [] }),
+      )
       .mockResolvedValueOnce(jsonResponse({ providers: [], contacts: [] }))
       .mockResolvedValueOnce(jsonResponse(responseBody))
       .mockResolvedValueOnce(jsonResponse(responseBody))
@@ -619,6 +623,7 @@ describe('authenticated API transport', () => {
       'staff-session',
       'MOD-PAT-0004',
     )
+    await getPatientAdministrationHistory('staff-session', 'MOD-PAT-0004')
     await getPatientCareTeamOptions('staff-session', 'MOD-PAT-0004')
     await updatePatientGuardianContact('staff-session', 'MOD-PAT-0004', {
       motherName: 'Maria Kim',
@@ -665,13 +670,14 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/patients/provider-options',
       'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment-history',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/administration-history',
       'http://localhost:5001/api/patients/MOD-PAT-0004/care-team-options',
       'http://localhost:5001/api/patients/MOD-PAT-0004/guardian-contact',
       'http://localhost:5001/api/patients/MOD-PAT-0004/employer',
       'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment',
       'http://localhost:5001/api/patients/MOD-PAT-0004/care-team',
     ])
-    for (const call of fetchMock.mock.calls.slice(3)) {
+    for (const call of fetchMock.mock.calls.slice(4)) {
       expect(call[1]).toEqual(
         expect.objectContaining({
           method: 'PUT',
@@ -682,7 +688,7 @@ describe('authenticated API transport', () => {
         }),
       )
     }
-    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({
       body: JSON.stringify({
         providerId: 7,
         reason: 'Care team reassignment',

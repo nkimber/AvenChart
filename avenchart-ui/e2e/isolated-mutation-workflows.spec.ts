@@ -137,6 +137,30 @@ function deleteProviderAssignmentFixtures(reasons: string[]) {
   );
 }
 
+function deletePatientAdministrationFixtures(
+  eventIds: string[],
+  marker: string,
+) {
+  const ids = eventIds.filter((eventId) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      eventId,
+    ),
+  );
+  const eventPredicate =
+    ids.length > 0
+      ? `event_id in (${ids.map((eventId) => `'${eventId}'::uuid`).join(",")})`
+      : "false";
+  const markerLiteral = marker.replaceAll("'", "''");
+  runProviderAssignmentSql(
+    [
+      "begin;",
+      `delete from insurance_records where patient_id = 'MOD-PAT-0004' and policy_number like '%${markerLiteral}%';`,
+      `delete from patient_administration_audit_events where patient_id = 'MOD-PAT-0004' and (${eventPredicate} or before_values::text like '%${markerLiteral}%' or after_values::text like '%${markerLiteral}%');`,
+      "commit;",
+    ].join(" "),
+  );
+}
+
 test.describe("isolated mutation workflows", () => {
   test("staff can claim and reply to a patient message from the inbox", async ({
     page,
@@ -554,6 +578,309 @@ test.describe("isolated mutation workflows", () => {
       deleteProviderAssignmentFixtures(fixtureReasons);
       const residue = runProviderAssignmentSql(
         `select count(*) from patient_provider_assignment_events where patient_id = 'MOD-PAT-0004' and reason in ('${changeReason}', '${restoreReason}');`,
+      );
+      expect(residue).toBe("0");
+    }
+  });
+
+  test("contact, demographic, and insurance mutations retain bounded actor-stamped before-and-after history", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `admin-audit-${Date.now()}`;
+    const headers = { "X-Legacy EHR-Session": sessionId };
+    const eventIds = new Set<string>();
+
+    const patientResponse = await page.request.get(
+      `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
+      { headers },
+    );
+    expect(patientResponse.ok()).toBeTruthy();
+    const patient = (await patientResponse.json()) as {
+      firstName: string;
+      lastName: string;
+      preferredName?: string | null;
+      sex?: string | null;
+      dateOfBirth: string;
+      street?: string | null;
+      city?: string | null;
+      state?: string | null;
+      postalCode?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      phoneCell?: string | null;
+      hipaaAllowSms?: string | null;
+      hipaaAllowEmail?: string | null;
+      maritalStatus?: string | null;
+      occupation?: string | null;
+      race?: string | null;
+      ethnicity?: string | null;
+      interpreter?: string | null;
+      familySize?: string | null;
+      monthlyIncome?: string | null;
+      homeless?: string | null;
+      financialReviewDate?: string | null;
+      insurance: Array<{ id: string; policyNumber?: string | null }>;
+    };
+    const originalContact = {
+      phoneHome: patient.phone ?? "",
+      phoneCell: patient.phoneCell ?? "",
+      email: patient.email ?? "",
+      hipaaAllowSms: patient.hipaaAllowSms ?? "NO",
+      hipaaAllowEmail: patient.hipaaAllowEmail ?? "NO",
+    };
+    const originalDemographics = {
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      preferredName: patient.preferredName ?? "",
+      sex: patient.sex ?? "",
+      dateOfBirth: patient.dateOfBirth,
+      street: patient.street ?? "",
+      city: patient.city ?? "",
+      state: patient.state ?? "",
+      postalCode: patient.postalCode ?? "",
+      maritalStatus: patient.maritalStatus ?? "",
+      occupation: patient.occupation ?? "",
+      race: patient.race ?? "",
+      ethnicity: patient.ethnicity ?? "",
+      interpreter: patient.interpreter ?? "",
+      familySize: patient.familySize ?? "",
+      monthlyIncome: patient.monthlyIncome ?? "",
+      homeless: patient.homeless ?? "NO",
+      financialReviewDate: patient.financialReviewDate ?? "",
+    };
+    const changedContact = {
+      ...originalContact,
+      email: `${marker}@example.test`,
+    };
+    const changedDemographics = {
+      ...originalDemographics,
+      occupation: `Audit proof ${marker}`,
+    };
+    const createdInsurance = {
+      type: "secondary",
+      provider: `Audit Health ${marker}`,
+      planName: "Mutation proof",
+      policyNumber: marker,
+      groupNumber: "QA-ADMIN",
+      relationship: "self",
+      subscriberFirstName: patient.firstName,
+      subscriberLastName: patient.lastName,
+      subscriberDateOfBirth: patient.dateOfBirth,
+      subscriberSex: patient.sex ?? "unknown",
+    };
+    const updatedInsurance = {
+      ...createdInsurance,
+      planName: "Updated mutation proof",
+      policyNumber: `${marker}-updated`,
+    };
+    let insuranceId: string | null = null;
+
+    try {
+      const contactUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
+        { headers, data: changedContact },
+      );
+      expect(contactUpdate.ok()).toBeTruthy();
+
+      const noOpContactUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
+        { headers, data: changedContact },
+      );
+      expect(noOpContactUpdate.ok()).toBeTruthy();
+
+      const demographicsUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/demographics`,
+        { headers, data: changedDemographics },
+      );
+      expect(demographicsUpdate.ok()).toBeTruthy();
+
+      const insuranceCreate = await page.request.post(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/insurance`,
+        { headers, data: createdInsurance },
+      );
+      expect(insuranceCreate.ok()).toBeTruthy();
+      const afterCreate = (await insuranceCreate.json()) as {
+        insurance: Array<{ id: string; policyNumber?: string | null }>;
+      };
+      insuranceId =
+        afterCreate.insurance.find(
+          (insurance) => insurance.policyNumber === marker,
+        )?.id ?? null;
+      expect(insuranceId).toBeTruthy();
+
+      const insuranceUpdate = await page.request.put(
+        `${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId!)}`,
+        { headers, data: updatedInsurance },
+      );
+      expect(insuranceUpdate.ok()).toBeTruthy();
+
+      const insuranceDelete = await page.request.delete(
+        `${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId!)}`,
+        { headers },
+      );
+      expect(insuranceDelete.ok()).toBeTruthy();
+      insuranceId = null;
+
+      const historyResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration-history`,
+        { headers },
+      );
+      expect(historyResponse.ok()).toBeTruthy();
+      const history = (await historyResponse.json()) as {
+        eventCount: number;
+        returnedCount: number;
+        resultLimit: number;
+        events: Array<{
+          eventId: string;
+          area: string;
+          action: string;
+          entityId?: string | null;
+          changedFields: string[];
+          beforeValues: Record<string, string | null>;
+          afterValues: Record<string, string | null>;
+          actor: string;
+          occurredAt: string;
+        }>;
+      };
+      expect(history.returnedCount).toBeLessThanOrEqual(history.resultLimit);
+      expect(history.eventCount).toBeGreaterThanOrEqual(
+        history.returnedCount,
+      );
+      const markerEvents = history.events.filter((event) =>
+        JSON.stringify(event).includes(marker),
+      );
+      markerEvents.forEach((event) => eventIds.add(event.eventId));
+      expect(
+        markerEvents.map((event) => `${event.area}:${event.action}`).sort(),
+      ).toEqual(
+        [
+          "contact:updated",
+          "demographics:updated",
+          "insurance:created",
+          "insurance:deleted",
+          "insurance:updated",
+        ].sort(),
+      );
+      expect(
+        markerEvents.filter(
+          (event) =>
+            event.area === "contact" && event.action === "updated",
+        ),
+      ).toHaveLength(1);
+      for (const event of markerEvents) {
+        expect(event.actor).toBe("admin");
+        expect(event.occurredAt).toEqual(expect.any(String));
+        expect(event.changedFields.length).toBeGreaterThan(0);
+      }
+      expect(
+        markerEvents.find((event) => event.area === "contact")?.afterValues
+          .email,
+      ).toBe(changedContact.email);
+      expect(
+        markerEvents.find((event) => event.area === "demographics")
+          ?.afterValues.occupation,
+      ).toBe(changedDemographics.occupation);
+
+      await page.goto("/clinician/patients/MOD-PAT-0004/summary");
+      const historySection = page.locator("section").filter({
+        has: page.getByRole("heading", {
+          name: "Administrative change history",
+        }),
+      });
+      await expect(historySection).toBeVisible();
+      await expect(
+        historySection.getByText("By admin").first(),
+      ).toBeVisible({ timeout: 20_000 });
+      await historySection
+        .getByLabel("Show")
+        .selectOption("demographics");
+      const demographicEvent = historySection
+        .locator(".administration-history-list > li")
+        .filter({ hasText: marker });
+      await expect(demographicEvent).toContainText("Demographics updated");
+      await demographicEvent.locator("summary").click();
+      await expect(demographicEvent).toContainText("Occupation");
+      await expect(demographicEvent).toContainText(
+        changedDemographics.occupation,
+      );
+
+      await historySection.getByLabel("Show").selectOption("insurance");
+      await expect(
+        historySection
+          .locator(".administration-history-list > li")
+          .filter({ hasText: "Insurance created" }),
+      ).toHaveCount(1);
+      await expect(
+        historySection
+          .locator(".administration-history-list > li")
+          .filter({ hasText: "Insurance updated" }),
+      ).toHaveCount(1);
+      await expect(
+        historySection
+          .locator(".administration-history-list > li")
+          .filter({ hasText: "Insurance deleted" }),
+      ).toHaveCount(1);
+    } finally {
+      if (insuranceId) {
+        await page.request.delete(
+          `${apiBaseUrl}/api/patients/insurance/${encodeURIComponent(insuranceId)}`,
+          { headers },
+        );
+      }
+      const restoreContact = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/contact`,
+        { headers, data: originalContact },
+      );
+      expect(restoreContact.ok()).toBeTruthy();
+      const restoreDemographics = await page.request.put(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/demographics`,
+        { headers, data: originalDemographics },
+      );
+      expect(restoreDemographics.ok()).toBeTruthy();
+
+      const restoredHistoryResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/administration-history`,
+        { headers },
+      );
+      if (restoredHistoryResponse.ok()) {
+        const restoredHistory = (await restoredHistoryResponse.json()) as {
+          events: Array<{
+            eventId: string;
+            beforeValues: Record<string, string | null>;
+            afterValues: Record<string, string | null>;
+          }>;
+        };
+        restoredHistory.events
+          .filter((event) => JSON.stringify(event).includes(marker))
+          .forEach((event) => eventIds.add(event.eventId));
+      }
+      deletePatientAdministrationFixtures([...eventIds], marker);
+
+      const restoredPatientResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
+        { headers },
+      );
+      expect(restoredPatientResponse.ok()).toBeTruthy();
+      const restoredPatient = (await restoredPatientResponse.json()) as {
+        email?: string | null;
+        occupation?: string | null;
+        insurance: Array<{ policyNumber?: string | null }>;
+      };
+      expect(restoredPatient.email ?? "").toBe(originalContact.email);
+      expect(restoredPatient.occupation ?? "").toBe(
+        originalDemographics.occupation,
+      );
+      expect(
+        restoredPatient.insurance.some((insurance) =>
+          insurance.policyNumber?.includes(marker),
+        ),
+      ).toBe(false);
+      const residue = runProviderAssignmentSql(
+        `select (select count(*) from patient_administration_audit_events where patient_id = 'MOD-PAT-0004' and (before_values::text like '%${marker}%' or after_values::text like '%${marker}%')) + (select count(*) from insurance_records where patient_id = 'MOD-PAT-0004' and policy_number like '%${marker}%');`,
       );
       expect(residue).toBe("0");
     }

@@ -427,6 +427,27 @@ public sealed record PatientProviderAssignmentHistoryItem(
     string Actor,
     string OccurredAt);
 
+public sealed record PatientAdministrationHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string PatientId,
+    int LegacyPid,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientAdministrationHistoryItem> Events);
+
+public sealed record PatientAdministrationHistoryItem(
+    Guid EventId,
+    string Area,
+    string Action,
+    string? EntityId,
+    IReadOnlyList<string> ChangedFields,
+    IReadOnlyDictionary<string, string?> BeforeValues,
+    IReadOnlyDictionary<string, string?> AfterValues,
+    string Actor,
+    string OccurredAt);
+
 public sealed record PatientCareTeamMemberUpdateRequest(
     int? UserId,
     long? ContactId,

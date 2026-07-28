@@ -19,6 +19,7 @@ import {
   deletePatientInsurance,
   executePatientMerge,
   getPatientCareTeamOptions,
+  getPatientAdministrationHistory,
   getPatientMergePreview,
   getPatientProviderAssignmentHistory,
   getPatientProviderAssignmentOptions,
@@ -42,6 +43,8 @@ import {
   type PatientEmployerUpdate,
   type PatientGuardianContactUpdate,
   type PatientInsuranceMutationInput,
+  type PatientAdministrationHistoryItem,
+  type PatientAdministrationHistoryResponse,
   type PatientMergePreview,
   type PatientProviderAssignmentHistoryResponse,
   type PatientProviderAssignmentOptionsResponse,
@@ -86,6 +89,91 @@ type ProviderAssignmentHistoryState =
   | { status: "loading" }
   | { status: "ready"; data: PatientProviderAssignmentHistoryResponse }
   | { status: "error" };
+type PatientAdministrationHistoryState =
+  | { status: "loading" }
+  | { status: "ready"; data: PatientAdministrationHistoryResponse }
+  | { status: "error" };
+type PatientAdministrationArea =
+  | "all"
+  | "demographics"
+  | "contact"
+  | "insurance";
+
+const administrationAreaLabels: Record<
+  Exclude<PatientAdministrationArea, "all">,
+  string
+> = {
+  demographics: "Demographics",
+  contact: "Contact",
+  insurance: "Insurance",
+};
+
+const administrationFieldLabels: Record<string, string> = {
+  firstName: "First name",
+  lastName: "Last name",
+  preferredName: "Preferred name",
+  sex: "Sex",
+  dateOfBirth: "Date of birth",
+  street: "Street",
+  city: "City",
+  state: "State",
+  postalCode: "Postal code",
+  maritalStatus: "Marital status",
+  occupation: "Occupation",
+  race: "Race",
+  ethnicity: "Ethnicity",
+  interpreter: "Interpreter",
+  familySize: "Family size",
+  monthlyIncome: "Monthly income",
+  homeless: "Homeless",
+  financialReviewDate: "Financial review date",
+  phoneHome: "Home phone",
+  phoneCell: "Mobile phone",
+  email: "Email",
+  hipaaAllowSms: "SMS permission",
+  hipaaAllowEmail: "Email permission",
+  type: "Coverage type",
+  provider: "Insurance company",
+  planName: "Plan name",
+  policyNumber: "Policy number",
+  groupNumber: "Group number",
+  relationship: "Subscriber relationship",
+  subscriberFirstName: "Subscriber first name",
+  subscriberMiddleName: "Subscriber middle name",
+  subscriberLastName: "Subscriber last name",
+  subscriberDateOfBirth: "Subscriber date of birth",
+  subscriberSex: "Subscriber sex",
+  subscriberStreet: "Subscriber street",
+  subscriberStreetLine2: "Subscriber street line 2",
+  subscriberCity: "Subscriber city",
+  subscriberState: "Subscriber state",
+  subscriberPostalCode: "Subscriber postal code",
+  subscriberCountry: "Subscriber country",
+  subscriberPhone: "Subscriber phone",
+  subscriberEmployer: "Subscriber employer",
+  subscriberEmployerStreet: "Employer street",
+  subscriberEmployerStreetLine2: "Employer street line 2",
+  subscriberEmployerCity: "Employer city",
+  subscriberEmployerState: "Employer state",
+  subscriberEmployerPostalCode: "Employer postal code",
+  subscriberEmployerCountry: "Employer country",
+};
+
+function administrationEventTitle(event: PatientAdministrationHistoryItem) {
+  const area =
+    administrationAreaLabels[
+      event.area as Exclude<PatientAdministrationArea, "all">
+    ] ?? "Patient record";
+  return `${area} ${event.action}`;
+}
+
+function administrationFieldLabel(field: string) {
+  return administrationFieldLabels[field] ?? field;
+}
+
+function administrationValue(value: string | null | undefined) {
+  return value?.trim() ? value : "Not recorded";
+}
 
 const mergeCountLabels: Array<{
   key: keyof PatientMergePreview["combinedCounts"];
@@ -232,6 +320,12 @@ export default function PatientSummary() {
   const [providerHistoryState, setProviderHistoryState] =
     useState<ProviderAssignmentHistoryState>({ status: "loading" });
   const [providerHistoryRetry, setProviderHistoryRetry] = useState(0);
+  const [administrationHistoryState, setAdministrationHistoryState] =
+    useState<PatientAdministrationHistoryState>({ status: "loading" });
+  const [administrationHistoryRetry, setAdministrationHistoryRetry] =
+    useState(0);
+  const [administrationArea, setAdministrationArea] =
+    useState<PatientAdministrationArea>("all");
   const [careTeamForm, setCareTeamForm] = useState<CareTeamDraft>(() =>
     buildCareTeamDraft(patient),
   );
@@ -253,7 +347,7 @@ export default function PatientSummary() {
   const [demoForm, setDemoForm] = useState({
     firstName: patient.firstName ?? "",
     lastName: patient.lastName ?? "",
-    preferredName: "",
+    preferredName: patient.preferredName ?? "",
     sex: patient.sex ?? "",
     dateOfBirth: patient.dateOfBirth ?? "",
     street: patient.street ?? "",
@@ -345,6 +439,25 @@ export default function PatientSummary() {
     return () => controller.abort();
   }, [patientId, providerHistoryRetry, session.sessionId]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setAdministrationHistoryState({ status: "loading" });
+    getPatientAdministrationHistory(
+      session.sessionId,
+      patientId,
+      controller.signal,
+    )
+      .then((data) =>
+        setAdministrationHistoryState({ status: "ready", data }),
+      )
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
+        setAdministrationHistoryState({ status: "error" });
+      });
+    return () => controller.abort();
+  }, [administrationHistoryRetry, patientId, session.sessionId]);
+
   async function loadRecordRequests() {
     setRecordRequestLoading(true);
     try {
@@ -394,6 +507,7 @@ export default function PatientSummary() {
       await updatePatientDemographics(session.sessionId, patientId, demoForm);
       showToast("Demographics saved.", "success");
       setEditDemoOpen(false);
+      setAdministrationHistoryRetry((current) => current + 1);
       reload();
     } catch {
       showToast("Could not save demographics.", "error");
@@ -418,6 +532,7 @@ export default function PatientSummary() {
         showToast("Insurance updated.", "success");
       }
       setInsMode({ kind: "none" });
+      setAdministrationHistoryRetry((current) => current + 1);
       reload();
     } catch {
       showToast("Could not save insurance.", "error");
@@ -432,6 +547,7 @@ export default function PatientSummary() {
     try {
       await deletePatientInsurance(session.sessionId, id);
       showToast("Insurance removed.", "success");
+      setAdministrationHistoryRetry((current) => current + 1);
       reload();
     } catch {
       showToast("Could not remove insurance.", "error");
@@ -834,6 +950,13 @@ export default function PatientSummary() {
       : providerOptions?.providers.find(
           (provider) => provider.id === (patient.providerId ?? null),
         )?.facilityName;
+  const administrationHistoryEvents =
+    administrationHistoryState.status === "ready"
+      ? administrationHistoryState.data.events.filter(
+          (event) =>
+            administrationArea === "all" || event.area === administrationArea,
+        )
+      : [];
 
   return (
     <div className="clinician-page">
@@ -2445,6 +2568,147 @@ export default function PatientSummary() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="cl-card cl-card-wide">
+          <div className="cl-card-header administration-history-header">
+            <div>
+              <h2 className="cl-card-title">
+                <CalendarClock size={15} /> Administrative change history
+              </h2>
+              <p className="cl-empty-text">
+                Recorded contact, demographic, and insurance mutations with
+                their authenticated actor and before/after values.
+              </p>
+            </div>
+            {administrationHistoryState.status === "ready" && (
+              <span className="cl-badge cl-badge-muted">
+                {administrationHistoryState.data.returnedCount <
+                administrationHistoryState.data.eventCount
+                  ? `${administrationHistoryState.data.returnedCount} newest of ${administrationHistoryState.data.eventCount}`
+                  : `${administrationHistoryState.data.eventCount} ${
+                      administrationHistoryState.data.eventCount === 1
+                        ? "change"
+                        : "changes"
+                    }`}
+              </span>
+            )}
+          </div>
+
+          {administrationHistoryState.status === "loading" && (
+            <p className="cl-empty-text" role="status">
+              Loading administrative history…
+            </p>
+          )}
+
+          {administrationHistoryState.status === "error" && (
+            <div className="cl-inline-error" role="alert">
+              <span>Administrative history is unavailable.</span>
+              <button
+                className="cl-link"
+                type="button"
+                onClick={() =>
+                  setAdministrationHistoryRetry((current) => current + 1)
+                }
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {administrationHistoryState.status === "ready" &&
+            administrationHistoryState.data.events.length === 0 && (
+              <p className="cl-empty-text">
+                No administrative changes have been recorded.
+              </p>
+            )}
+
+          {administrationHistoryState.status === "ready" &&
+            administrationHistoryState.data.events.length > 0 && (
+              <>
+                <div className="administration-history-toolbar">
+                  <label htmlFor="administration-history-area">
+                    Show
+                    <select
+                      id="administration-history-area"
+                      value={administrationArea}
+                      onChange={(event) =>
+                        setAdministrationArea(
+                          event.target.value as PatientAdministrationArea,
+                        )
+                      }
+                    >
+                      <option value="all">All administrative areas</option>
+                      <option value="demographics">Demographics</option>
+                      <option value="contact">Contact</option>
+                      <option value="insurance">Insurance</option>
+                    </select>
+                  </label>
+                  <span>
+                    Showing {administrationHistoryEvents.length} of{" "}
+                    {administrationHistoryState.data.returnedCount} loaded
+                  </span>
+                </div>
+
+                {administrationHistoryEvents.length === 0 ? (
+                  <p className="cl-empty-text">
+                    No changes match this administrative area.
+                  </p>
+                ) : (
+                  <ol className="administration-history-list">
+                    {administrationHistoryEvents.map((event) => (
+                      <li key={event.eventId}>
+                        <div className="administration-history-event-heading">
+                          <div>
+                            <strong>{administrationEventTitle(event)}</strong>
+                            {event.entityId && (
+                              <span>
+                                Record <code>{event.entityId}</code>
+                              </span>
+                            )}
+                          </div>
+                          <time dateTime={event.occurredAt}>
+                            {new Date(event.occurredAt).toLocaleString()}
+                          </time>
+                        </div>
+                        <p className="administration-history-actor">
+                          By {event.actor}
+                        </p>
+                        <details>
+                          <summary>
+                            {event.changedFields.length}{" "}
+                            {event.changedFields.length === 1
+                              ? "field"
+                              : "fields"}{" "}
+                            changed
+                          </summary>
+                          <dl className="administration-history-values">
+                            {event.changedFields.map((field) => (
+                              <div key={field}>
+                                <dt>{administrationFieldLabel(field)}</dt>
+                                <dd>
+                                  <span>
+                                    {administrationValue(
+                                      event.beforeValues[field],
+                                    )}
+                                  </span>
+                                  <span aria-hidden="true">→</span>
+                                  <span>
+                                    {administrationValue(
+                                      event.afterValues[field],
+                                    )}
+                                  </span>
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </details>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </>
+            )}
         </section>
 
         <section className="cl-card">

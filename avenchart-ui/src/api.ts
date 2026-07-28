@@ -1497,6 +1497,29 @@ export type PatientProviderAssignmentHistoryResponse = {
   events: PatientProviderAssignmentHistoryItem[]
 }
 
+export type PatientAdministrationHistoryItem = {
+  eventId: string
+  area: 'demographics' | 'contact' | 'insurance' | string
+  action: 'created' | 'updated' | 'deleted' | string
+  entityId?: string | null
+  changedFields: string[]
+  beforeValues: Record<string, string | null>
+  afterValues: Record<string, string | null>
+  actor: string
+  occurredAt: string
+}
+
+export type PatientAdministrationHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientAdministrationHistoryItem[]
+}
+
 export type PatientCareTeamMemberUpdate = {
   userId: number | null
   contactId: number | null
@@ -1540,6 +1563,18 @@ export async function getPatientProviderAssignmentHistory(
   return clinicianGet(
     sessionId,
     `/api/patients/${encodeURIComponent(patientId)}/provider-assignment-history`,
+    signal,
+  )
+}
+
+export async function getPatientAdministrationHistory(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientAdministrationHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/administration-history`,
     signal,
   )
 }

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Net.Mail;
+using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using AvenChart.Api.Models;
@@ -1031,38 +1032,68 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<PatientChartSummary?> UpdateContactAsync(
         string patientId,
         PatientContactUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update patients
-            set
-                phone = @phoneHome,
-                phone_home = @phoneHome,
-                phone_cell = @phoneCell,
-                email = @email,
-                hipaa_allow_sms = @hipaaAllowSms,
-                hipaa_allow_email = @hipaaAllowEmail
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
-            returning canonical_id;
-            """;
-        command.Parameters.AddWithValue("patientId", patientId);
-        command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = NormalizeNullable(request.PhoneHome);
-        command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = NormalizeNullable(request.PhoneCell);
-        command.Parameters.Add("email", NpgsqlDbType.Text).Value = NormalizeNullable(request.Email);
-        command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = NormalizePermission(request.HipaaAllowSms);
-        command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = NormalizePermission(request.HipaaAllowEmail);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var prior = await ReadPatientAdministrationSnapshotAsync(
+            connection,
+            transaction,
+            patientId,
+            cancellationToken);
+        if (prior is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        var after = BuildContactAuditValues(request);
+        if (ChangedFields(prior.ContactValues, after).Count > 0)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                update patients
+                set
+                    phone = @phoneHome,
+                    phone_home = @phoneHome,
+                    phone_cell = @phoneCell,
+                    email = @email,
+                    hipaa_allow_sms = @hipaaAllowSms,
+                    hipaa_allow_email = @hipaaAllowEmail
+                where canonical_id = @patientId;
+                """;
+            command.Parameters.AddWithValue("patientId", prior.Patient.CanonicalId);
+            command.Parameters.Add("phoneHome", NpgsqlDbType.Text).Value = ToDatabaseValue(after["phoneHome"]);
+            command.Parameters.Add("phoneCell", NpgsqlDbType.Text).Value = ToDatabaseValue(after["phoneCell"]);
+            command.Parameters.Add("email", NpgsqlDbType.Text).Value = ToDatabaseValue(after["email"]);
+            command.Parameters.Add("hipaaAllowSms", NpgsqlDbType.Text).Value = ToDatabaseValue(after["hipaaAllowSms"]);
+            command.Parameters.Add("hipaaAllowEmail", NpgsqlDbType.Text).Value = ToDatabaseValue(after["hipaaAllowEmail"]);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await InsertPatientAdministrationAuditAsync(
+                connection,
+                transaction,
+                prior.Patient,
+                area: "contact",
+                action: "updated",
+                entityId: null,
+                prior.ContactValues,
+                after,
+                username,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(prior.Patient.CanonicalId, cancellationToken);
     }
 
     public async Task<PatientChartSummary?> UpdateDemographicsAsync(
         string patientId,
         PatientDemographicsUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (!TryNormalizeDemographics(request, out var normalized))
@@ -1070,62 +1101,67 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update patients
-            set
-                first_name = @firstName,
-                last_name = @lastName,
-                preferred_name = @preferredName,
-                sex = @sex,
-                date_of_birth = @dateOfBirth,
-                street = @street,
-                city = @city,
-                state = @state,
-                postal_code = @postalCode,
-                marital_status = @maritalStatus,
-                occupation = @occupation,
-                race = @race,
-                ethnicity = @ethnicity,
-                interpreter = @interpreter,
-                family_size = @familySize,
-                monthly_income = @monthlyIncome,
-                homeless = @homeless,
-                financial_review_date = @financialReviewDate
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
-            returning canonical_id;
-            """;
-        command.Parameters.AddWithValue("patientId", patientId);
-        command.Parameters.AddWithValue("firstName", normalized.FirstName);
-        command.Parameters.AddWithValue("lastName", normalized.LastName);
-        command.Parameters.Add("preferredName", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PreferredName);
-        command.Parameters.Add("sex", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Sex);
-        command.Parameters.Add("dateOfBirth", NpgsqlDbType.Date).Value = normalized.DateOfBirth;
-        command.Parameters.Add("street", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Street);
-        command.Parameters.Add("city", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.City);
-        command.Parameters.Add("state", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.State);
-        command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
-        command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
-        command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
-        command.Parameters.Add("race", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Race);
-        command.Parameters.Add("ethnicity", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Ethnicity);
-        command.Parameters.Add("interpreter", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Interpreter);
-        command.Parameters.Add("familySize", NpgsqlDbType.Integer).Value = normalized.FamilySize is null
-            ? DBNull.Value
-            : normalized.FamilySize.Value;
-        command.Parameters.Add("monthlyIncome", NpgsqlDbType.Integer).Value = normalized.MonthlyIncome is null
-            ? DBNull.Value
-            : normalized.MonthlyIncome.Value;
-        command.Parameters.Add("homeless", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Homeless);
-        command.Parameters.Add("financialReviewDate", NpgsqlDbType.Date).Value = normalized.FinancialReviewDate is null
-            ? DBNull.Value
-            : normalized.FinancialReviewDate.Value;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var prior = await ReadPatientAdministrationSnapshotAsync(
+            connection,
+            transaction,
+            patientId,
+            cancellationToken);
+        if (prior is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        var after = BuildDemographicsAuditValues(normalized);
+        if (ChangedFields(prior.DemographicValues, after).Count > 0)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                update patients
+                set
+                    first_name = @firstName,
+                    last_name = @lastName,
+                    preferred_name = @preferredName,
+                    sex = @sex,
+                    date_of_birth = @dateOfBirth,
+                    street = @street,
+                    city = @city,
+                    state = @state,
+                    postal_code = @postalCode,
+                    marital_status = @maritalStatus,
+                    occupation = @occupation,
+                    race = @race,
+                    ethnicity = @ethnicity,
+                    interpreter = @interpreter,
+                    family_size = @familySize,
+                    monthly_income = @monthlyIncome,
+                    homeless = @homeless,
+                    financial_review_date = @financialReviewDate
+                where canonical_id = @patientId;
+                """;
+            command.Parameters.AddWithValue("patientId", prior.Patient.CanonicalId);
+            AddDemographicsParameters(command, normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await InsertPatientAdministrationAuditAsync(
+                connection,
+                transaction,
+                prior.Patient,
+                area: "demographics",
+                action: "updated",
+                entityId: null,
+                prior.DemographicValues,
+                after,
+                username,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(prior.Patient.CanonicalId, cancellationToken);
     }
 
     public async Task<PatientChartSummary?> UpdateDeceasedStatusAsync(
@@ -1610,6 +1646,72 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             Events: events);
     }
 
+    public async Task<PatientAdministrationHistoryResponse?> GetAdministrationHistoryAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        const int resultLimit = 100;
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var eventCount = 0;
+        var events = new List<PatientAdministrationHistoryItem>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                count(*) over()::int as event_count,
+                event_id,
+                area,
+                action,
+                entity_id,
+                changed_fields,
+                before_values,
+                after_values,
+                actor,
+                occurred_at
+            from patient_administration_audit_events
+            where patient_id = @patientId
+            order by occurred_at desc, event_id desc
+            limit @resultLimit;
+            """;
+        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+        command.Parameters.AddWithValue("resultLimit", resultLimit);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
+            events.Add(new PatientAdministrationHistoryItem(
+                EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                Area: reader.GetString(reader.GetOrdinal("area")),
+                Action: reader.GetString(reader.GetOrdinal("action")),
+                EntityId: ReadNullableString(reader, "entity_id"),
+                ChangedFields: reader.GetFieldValue<string[]>(reader.GetOrdinal("changed_fields")),
+                BeforeValues: ReadAuditValues(reader, "before_values"),
+                AfterValues: ReadAuditValues(reader, "after_values"),
+                Actor: reader.GetString(reader.GetOrdinal("actor")),
+                OccurredAt: reader.GetFieldValue<DateTime>(reader.GetOrdinal("occurred_at"))
+                    .ToUniversalTime()
+                    .ToString("O", CultureInfo.InvariantCulture)));
+        }
+
+        return new PatientAdministrationHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            PatientId: patient.CanonicalId,
+            LegacyPid: patient.LegacyPid,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: resultLimit,
+            Events: events);
+    }
+
     public async Task<PatientChartSummary?> UpdateCareTeamAsync(
         string patientId,
         PatientCareTeamUpdateRequest request,
@@ -1740,6 +1842,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<PatientChartSummary?> CreateInsuranceAsync(
         string patientId,
         PatientInsuranceMutationRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (!TryNormalizeInsurance(request, out var normalized))
@@ -1747,6 +1850,7 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var patient = await GetPatientIdentityAsync(connection, patientId, cancellationToken);
         if (patient is null)
@@ -1754,83 +1858,101 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            insert into insurance_records
-                (
-                    id,
-                    patient_id,
-                    pid,
-                    type,
-                    provider,
-                    plan_name,
-                    policy_number,
-                    group_number,
-                    relationship,
-                    subscriber_first_name,
-                    subscriber_middle_name,
-                    subscriber_last_name,
-                    subscriber_date_of_birth,
-                    subscriber_sex,
-                    subscriber_street,
-                    subscriber_street_line_2,
-                    subscriber_city,
-                    subscriber_state,
-                    subscriber_postal_code,
-                    subscriber_country,
-                    subscriber_phone,
-                    subscriber_employer,
-                    subscriber_employer_street,
-                    subscriber_employer_street_line_2,
-                    subscriber_employer_city,
-                    subscriber_employer_state,
-                    subscriber_employer_postal_code,
-                    subscriber_employer_country
-                )
-            values
-                (
-                    @id,
-                    @patientId,
-                    @pid,
-                    @type,
-                    @provider,
-                    @planName,
-                    @policyNumber,
-                    @groupNumber,
-                    @relationship,
-                    @subscriberFirstName,
-                    @subscriberMiddleName,
-                    @subscriberLastName,
-                    @subscriberDateOfBirth,
-                    @subscriberSex,
-                    @subscriberStreet,
-                    @subscriberStreetLine2,
-                    @subscriberCity,
-                    @subscriberState,
-                    @subscriberPostalCode,
-                    @subscriberCountry,
-                    @subscriberPhone,
-                    @subscriberEmployer,
-                    @subscriberEmployerStreet,
-                    @subscriberEmployerStreetLine2,
-                    @subscriberEmployerCity,
-                    @subscriberEmployerState,
-                    @subscriberEmployerPostalCode,
-                    @subscriberEmployerCountry
-                );
-            """;
-        command.Parameters.AddWithValue("id", $"INS-PARITY-{Guid.NewGuid():N}");
-        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
-        command.Parameters.AddWithValue("pid", patient.LegacyPid);
-        AddInsuranceParameters(command, normalized);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var insuranceId = $"INS-PARITY-{Guid.NewGuid():N}";
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into insurance_records
+                    (
+                        id,
+                        patient_id,
+                        pid,
+                        type,
+                        provider,
+                        plan_name,
+                        policy_number,
+                        group_number,
+                        relationship,
+                        subscriber_first_name,
+                        subscriber_middle_name,
+                        subscriber_last_name,
+                        subscriber_date_of_birth,
+                        subscriber_sex,
+                        subscriber_street,
+                        subscriber_street_line_2,
+                        subscriber_city,
+                        subscriber_state,
+                        subscriber_postal_code,
+                        subscriber_country,
+                        subscriber_phone,
+                        subscriber_employer,
+                        subscriber_employer_street,
+                        subscriber_employer_street_line_2,
+                        subscriber_employer_city,
+                        subscriber_employer_state,
+                        subscriber_employer_postal_code,
+                        subscriber_employer_country
+                    )
+                values
+                    (
+                        @id,
+                        @patientId,
+                        @pid,
+                        @type,
+                        @provider,
+                        @planName,
+                        @policyNumber,
+                        @groupNumber,
+                        @relationship,
+                        @subscriberFirstName,
+                        @subscriberMiddleName,
+                        @subscriberLastName,
+                        @subscriberDateOfBirth,
+                        @subscriberSex,
+                        @subscriberStreet,
+                        @subscriberStreetLine2,
+                        @subscriberCity,
+                        @subscriberState,
+                        @subscriberPostalCode,
+                        @subscriberCountry,
+                        @subscriberPhone,
+                        @subscriberEmployer,
+                        @subscriberEmployerStreet,
+                        @subscriberEmployerStreetLine2,
+                        @subscriberEmployerCity,
+                        @subscriberEmployerState,
+                        @subscriberEmployerPostalCode,
+                        @subscriberEmployerCountry
+                    );
+                """;
+            command.Parameters.AddWithValue("id", insuranceId);
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.AddWithValue("pid", patient.LegacyPid);
+            AddInsuranceParameters(command, normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
 
+        await InsertPatientAdministrationAuditAsync(
+            connection,
+            transaction,
+            patient,
+            area: "insurance",
+            action: "created",
+            entityId: insuranceId,
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            BuildInsuranceAuditValues(normalized),
+            username,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
     }
 
     public async Task<PatientChartSummary?> UpdateInsuranceAsync(
         string insuranceId,
         PatientInsuranceMutationRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(insuranceId) || !TryNormalizeInsurance(request, out var normalized))
@@ -1838,64 +1960,121 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update insurance_records
-            set
-                type = @type,
-                provider = @provider,
-                plan_name = @planName,
-                policy_number = @policyNumber,
-                group_number = @groupNumber,
-                relationship = @relationship,
-                subscriber_first_name = @subscriberFirstName,
-                subscriber_middle_name = @subscriberMiddleName,
-                subscriber_last_name = @subscriberLastName,
-                subscriber_date_of_birth = @subscriberDateOfBirth,
-                subscriber_sex = @subscriberSex,
-                subscriber_street = @subscriberStreet,
-                subscriber_street_line_2 = @subscriberStreetLine2,
-                subscriber_city = @subscriberCity,
-                subscriber_state = @subscriberState,
-                subscriber_postal_code = @subscriberPostalCode,
-                subscriber_country = @subscriberCountry,
-                subscriber_phone = @subscriberPhone,
-                subscriber_employer = @subscriberEmployer,
-                subscriber_employer_street = @subscriberEmployerStreet,
-                subscriber_employer_street_line_2 = @subscriberEmployerStreetLine2,
-                subscriber_employer_city = @subscriberEmployerCity,
-                subscriber_employer_state = @subscriberEmployerState,
-                subscriber_employer_postal_code = @subscriberEmployerPostalCode,
-                subscriber_employer_country = @subscriberEmployerCountry
-            where id = @id
-            returning patient_id;
-            """;
-        command.Parameters.AddWithValue("id", insuranceId);
-        AddInsuranceParameters(command, normalized);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var prior = await ReadInsuranceAuditSnapshotAsync(
+            connection,
+            transaction,
+            insuranceId,
+            cancellationToken);
+        if (prior is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        var after = BuildInsuranceAuditValues(normalized);
+        if (ChangedFields(prior.Values, after).Count > 0)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                update insurance_records
+                set
+                    type = @type,
+                    provider = @provider,
+                    plan_name = @planName,
+                    policy_number = @policyNumber,
+                    group_number = @groupNumber,
+                    relationship = @relationship,
+                    subscriber_first_name = @subscriberFirstName,
+                    subscriber_middle_name = @subscriberMiddleName,
+                    subscriber_last_name = @subscriberLastName,
+                    subscriber_date_of_birth = @subscriberDateOfBirth,
+                    subscriber_sex = @subscriberSex,
+                    subscriber_street = @subscriberStreet,
+                    subscriber_street_line_2 = @subscriberStreetLine2,
+                    subscriber_city = @subscriberCity,
+                    subscriber_state = @subscriberState,
+                    subscriber_postal_code = @subscriberPostalCode,
+                    subscriber_country = @subscriberCountry,
+                    subscriber_phone = @subscriberPhone,
+                    subscriber_employer = @subscriberEmployer,
+                    subscriber_employer_street = @subscriberEmployerStreet,
+                    subscriber_employer_street_line_2 = @subscriberEmployerStreetLine2,
+                    subscriber_employer_city = @subscriberEmployerCity,
+                    subscriber_employer_state = @subscriberEmployerState,
+                    subscriber_employer_postal_code = @subscriberEmployerPostalCode,
+                    subscriber_employer_country = @subscriberEmployerCountry
+                where id = @id;
+                """;
+            command.Parameters.AddWithValue("id", insuranceId);
+            AddInsuranceParameters(command, normalized);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await InsertPatientAdministrationAuditAsync(
+                connection,
+                transaction,
+                prior.Patient,
+                area: "insurance",
+                action: "updated",
+                entityId: insuranceId,
+                prior.Values,
+                after,
+                username,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(prior.Patient.CanonicalId, cancellationToken);
     }
 
-    public async Task<PatientChartSummary?> DeleteInsuranceAsync(string insuranceId, CancellationToken cancellationToken)
+    public async Task<PatientChartSummary?> DeleteInsuranceAsync(
+        string insuranceId,
+        string username,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(insuranceId))
         {
             return null;
         }
 
+        await EnsurePatientAdministrationAuditEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from insurance_records
-            where id = @id
-            returning patient_id;
-            """;
-        command.Parameters.AddWithValue("id", insuranceId);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var prior = await ReadInsuranceAuditSnapshotAsync(
+            connection,
+            transaction,
+            insuranceId,
+            cancellationToken);
+        if (prior is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "delete from insurance_records where id = @id;";
+            command.Parameters.AddWithValue("id", insuranceId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertPatientAdministrationAuditAsync(
+            connection,
+            transaction,
+            prior.Patient,
+            area: "insurance",
+            action: "deleted",
+            entityId: insuranceId,
+            prior.Values,
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            username,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(prior.Patient.CanonicalId, cancellationToken);
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
@@ -1967,6 +2146,360 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private async Task EnsurePatientAdministrationAuditEventsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists patient_administration_audit_events (
+                event_id uuid primary key,
+                patient_id text not null,
+                legacy_pid integer not null,
+                area varchar(24) not null,
+                action varchar(24) not null,
+                entity_id text,
+                changed_fields text[] not null,
+                before_values jsonb not null,
+                after_values jsonb not null,
+                actor text not null,
+                occurred_at timestamptz not null default now()
+            );
+
+            create index if not exists ix_patient_administration_audit_events_patient_time
+                on patient_administration_audit_events (patient_id, occurred_at desc, event_id desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<PatientAdministrationSnapshot?> ReadPatientAdministrationSnapshotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select
+                canonical_id,
+                legacy_pid,
+                first_name,
+                last_name,
+                preferred_name,
+                sex,
+                date_of_birth,
+                street,
+                city,
+                state,
+                postal_code,
+                marital_status,
+                occupation,
+                race,
+                ethnicity,
+                interpreter,
+                family_size,
+                monthly_income,
+                homeless,
+                financial_review_date,
+                coalesce(phone_home, phone) as phone_home,
+                phone_cell,
+                email,
+                hipaa_allow_sms,
+                hipaa_allow_email
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1
+            for update;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var patient = new PatientIdentity(
+            CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")));
+        var demographics = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["firstName"] = ReadNullableString(reader, "first_name"),
+            ["lastName"] = ReadNullableString(reader, "last_name"),
+            ["preferredName"] = ReadNullableString(reader, "preferred_name"),
+            ["sex"] = ReadNullableString(reader, "sex"),
+            ["dateOfBirth"] = ReadNullableDate(reader, "date_of_birth"),
+            ["street"] = ReadNullableString(reader, "street"),
+            ["city"] = ReadNullableString(reader, "city"),
+            ["state"] = ReadNullableString(reader, "state"),
+            ["postalCode"] = ReadNullableString(reader, "postal_code"),
+            ["maritalStatus"] = ReadNullableString(reader, "marital_status"),
+            ["occupation"] = ReadNullableString(reader, "occupation"),
+            ["race"] = ReadNullableString(reader, "race"),
+            ["ethnicity"] = ReadNullableString(reader, "ethnicity"),
+            ["interpreter"] = ReadNullableString(reader, "interpreter"),
+            ["familySize"] = ReadNullableIntAsString(reader, "family_size"),
+            ["monthlyIncome"] = ReadNullableIntAsString(reader, "monthly_income"),
+            ["homeless"] = ReadNullableString(reader, "homeless"),
+            ["financialReviewDate"] = ReadNullableDate(reader, "financial_review_date")
+        };
+        var contact = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["phoneHome"] = ReadNullableString(reader, "phone_home"),
+            ["phoneCell"] = ReadNullableString(reader, "phone_cell"),
+            ["email"] = ReadNullableString(reader, "email"),
+            ["hipaaAllowSms"] = ReadNullableString(reader, "hipaa_allow_sms")?.ToUpperInvariant(),
+            ["hipaaAllowEmail"] = ReadNullableString(reader, "hipaa_allow_email")?.ToUpperInvariant()
+        };
+        return new PatientAdministrationSnapshot(patient, demographics, contact);
+    }
+
+    private static async Task<InsuranceAuditSnapshot?> ReadInsuranceAuditSnapshotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string insuranceId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select
+                patient_id,
+                pid,
+                type,
+                provider,
+                plan_name,
+                policy_number,
+                group_number,
+                relationship,
+                subscriber_first_name,
+                subscriber_middle_name,
+                subscriber_last_name,
+                subscriber_date_of_birth,
+                subscriber_sex,
+                subscriber_street,
+                subscriber_street_line_2,
+                subscriber_city,
+                subscriber_state,
+                subscriber_postal_code,
+                subscriber_country,
+                subscriber_phone,
+                subscriber_employer,
+                subscriber_employer_street,
+                subscriber_employer_street_line_2,
+                subscriber_employer_city,
+                subscriber_employer_state,
+                subscriber_employer_postal_code,
+                subscriber_employer_country
+            from insurance_records
+            where id = @insuranceId
+            for update;
+            """;
+        command.Parameters.AddWithValue("insuranceId", insuranceId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var patient = new PatientIdentity(
+            CanonicalId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")));
+        return new InsuranceAuditSnapshot(
+            patient,
+            ReadInsuranceAuditValues(reader));
+    }
+
+    private static Dictionary<string, string?> ReadInsuranceAuditValues(DbDataReader reader) => new(StringComparer.Ordinal)
+    {
+        ["type"] = ReadNullableString(reader, "type"),
+        ["provider"] = ReadNullableString(reader, "provider"),
+        ["planName"] = ReadNullableString(reader, "plan_name"),
+        ["policyNumber"] = ReadNullableString(reader, "policy_number"),
+        ["groupNumber"] = ReadNullableString(reader, "group_number"),
+        ["relationship"] = ReadNullableString(reader, "relationship"),
+        ["subscriberFirstName"] = ReadNullableString(reader, "subscriber_first_name"),
+        ["subscriberMiddleName"] = ReadNullableString(reader, "subscriber_middle_name"),
+        ["subscriberLastName"] = ReadNullableString(reader, "subscriber_last_name"),
+        ["subscriberDateOfBirth"] = ReadNullableDate(reader, "subscriber_date_of_birth"),
+        ["subscriberSex"] = ReadNullableString(reader, "subscriber_sex"),
+        ["subscriberStreet"] = ReadNullableString(reader, "subscriber_street"),
+        ["subscriberStreetLine2"] = ReadNullableString(reader, "subscriber_street_line_2"),
+        ["subscriberCity"] = ReadNullableString(reader, "subscriber_city"),
+        ["subscriberState"] = ReadNullableString(reader, "subscriber_state"),
+        ["subscriberPostalCode"] = ReadNullableString(reader, "subscriber_postal_code"),
+        ["subscriberCountry"] = ReadNullableString(reader, "subscriber_country"),
+        ["subscriberPhone"] = ReadNullableString(reader, "subscriber_phone"),
+        ["subscriberEmployer"] = ReadNullableString(reader, "subscriber_employer"),
+        ["subscriberEmployerStreet"] = ReadNullableString(reader, "subscriber_employer_street"),
+        ["subscriberEmployerStreetLine2"] = ReadNullableString(reader, "subscriber_employer_street_line_2"),
+        ["subscriberEmployerCity"] = ReadNullableString(reader, "subscriber_employer_city"),
+        ["subscriberEmployerState"] = ReadNullableString(reader, "subscriber_employer_state"),
+        ["subscriberEmployerPostalCode"] = ReadNullableString(reader, "subscriber_employer_postal_code"),
+        ["subscriberEmployerCountry"] = ReadNullableString(reader, "subscriber_employer_country")
+    };
+
+    private static async Task<bool> InsertPatientAdministrationAuditAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PatientIdentity patient,
+        string area,
+        string action,
+        string? entityId,
+        IReadOnlyDictionary<string, string?> beforeValues,
+        IReadOnlyDictionary<string, string?> afterValues,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var changedFields = ChangedFields(beforeValues, afterValues);
+        if (changedFields.Count == 0)
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into patient_administration_audit_events (
+                event_id,
+                patient_id,
+                legacy_pid,
+                area,
+                action,
+                entity_id,
+                changed_fields,
+                before_values,
+                after_values,
+                actor,
+                occurred_at
+            )
+            values (
+                @eventId,
+                @patientId,
+                @legacyPid,
+                @area,
+                @action,
+                @entityId,
+                @changedFields,
+                @beforeValues,
+                @afterValues,
+                @actor,
+                now()
+            );
+            """;
+        command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+        command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+        command.Parameters.AddWithValue("legacyPid", patient.LegacyPid);
+        command.Parameters.AddWithValue("area", area);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.Add("entityId", NpgsqlDbType.Text).Value =
+            string.IsNullOrWhiteSpace(entityId) ? DBNull.Value : entityId;
+        command.Parameters.Add("changedFields", NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+            changedFields.ToArray();
+        command.Parameters.Add("beforeValues", NpgsqlDbType.Jsonb).Value =
+            JsonSerializer.Serialize(beforeValues);
+        command.Parameters.Add("afterValues", NpgsqlDbType.Jsonb).Value =
+            JsonSerializer.Serialize(afterValues);
+        command.Parameters.AddWithValue(
+            "actor",
+            string.IsNullOrWhiteSpace(username) ? "unknown" : username.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return true;
+    }
+
+    private static IReadOnlyList<string> ChangedFields(
+        IReadOnlyDictionary<string, string?> beforeValues,
+        IReadOnlyDictionary<string, string?> afterValues) =>
+        beforeValues.Keys
+            .Concat(afterValues.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Where(key =>
+            {
+                beforeValues.TryGetValue(key, out var before);
+                afterValues.TryGetValue(key, out var after);
+                return !string.Equals(before, after, StringComparison.Ordinal);
+            })
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static Dictionary<string, string?> BuildContactAuditValues(
+        PatientContactUpdateRequest request) => new(StringComparer.Ordinal)
+        {
+            ["phoneHome"] = NormalizeString(request.PhoneHome),
+            ["phoneCell"] = NormalizeString(request.PhoneCell),
+            ["email"] = NormalizeString(request.Email),
+            ["hipaaAllowSms"] = NormalizeString(request.HipaaAllowSms)?.ToUpperInvariant(),
+            ["hipaaAllowEmail"] = NormalizeString(request.HipaaAllowEmail)?.ToUpperInvariant()
+        };
+
+    private static Dictionary<string, string?> BuildDemographicsAuditValues(
+        NormalizedPatientDemographics normalized) => new(StringComparer.Ordinal)
+        {
+            ["firstName"] = normalized.FirstName,
+            ["lastName"] = normalized.LastName,
+            ["preferredName"] = normalized.PreferredName,
+            ["sex"] = normalized.Sex,
+            ["dateOfBirth"] = normalized.DateOfBirth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["street"] = normalized.Street,
+            ["city"] = normalized.City,
+            ["state"] = normalized.State,
+            ["postalCode"] = normalized.PostalCode,
+            ["maritalStatus"] = normalized.MaritalStatus,
+            ["occupation"] = normalized.Occupation,
+            ["race"] = normalized.Race,
+            ["ethnicity"] = normalized.Ethnicity,
+            ["interpreter"] = normalized.Interpreter,
+            ["familySize"] = normalized.FamilySize?.ToString(CultureInfo.InvariantCulture),
+            ["monthlyIncome"] = normalized.MonthlyIncome?.ToString(CultureInfo.InvariantCulture),
+            ["homeless"] = normalized.Homeless,
+            ["financialReviewDate"] = normalized.FinancialReviewDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        };
+
+    private static Dictionary<string, string?> BuildInsuranceAuditValues(
+        NormalizedInsurance normalized) => new(StringComparer.Ordinal)
+        {
+            ["type"] = normalized.Type,
+            ["provider"] = normalized.Provider,
+            ["planName"] = normalized.PlanName,
+            ["policyNumber"] = normalized.PolicyNumber,
+            ["groupNumber"] = normalized.GroupNumber,
+            ["relationship"] = normalized.Relationship,
+            ["subscriberFirstName"] = normalized.SubscriberFirstName,
+            ["subscriberMiddleName"] = normalized.SubscriberMiddleName,
+            ["subscriberLastName"] = normalized.SubscriberLastName,
+            ["subscriberDateOfBirth"] = normalized.SubscriberDateOfBirth?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["subscriberSex"] = normalized.SubscriberSex,
+            ["subscriberStreet"] = normalized.SubscriberStreet,
+            ["subscriberStreetLine2"] = normalized.SubscriberStreetLine2,
+            ["subscriberCity"] = normalized.SubscriberCity,
+            ["subscriberState"] = normalized.SubscriberState,
+            ["subscriberPostalCode"] = normalized.SubscriberPostalCode,
+            ["subscriberCountry"] = normalized.SubscriberCountry,
+            ["subscriberPhone"] = normalized.SubscriberPhone,
+            ["subscriberEmployer"] = normalized.SubscriberEmployer,
+            ["subscriberEmployerStreet"] = normalized.SubscriberEmployerStreet,
+            ["subscriberEmployerStreetLine2"] = normalized.SubscriberEmployerStreetLine2,
+            ["subscriberEmployerCity"] = normalized.SubscriberEmployerCity,
+            ["subscriberEmployerState"] = normalized.SubscriberEmployerState,
+            ["subscriberEmployerPostalCode"] = normalized.SubscriberEmployerPostalCode,
+            ["subscriberEmployerCountry"] = normalized.SubscriberEmployerCountry
+        };
+
+    private static IReadOnlyDictionary<string, string?> ReadAuditValues(
+        DbDataReader reader,
+        string columnName)
+    {
+        var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(
+            reader.GetString(reader.GetOrdinal(columnName)));
+        return values ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+    }
+
+    private static object ToDatabaseValue(string? value) =>
+        value is null ? DBNull.Value : value;
 
     private static void AddNullableProviderAssignmentParameters(
         NpgsqlCommand command,
@@ -2292,12 +2825,6 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     {
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed;
-    }
-
-    private static object NormalizePermission(string? value)
-    {
-        var trimmed = value?.Trim();
-        return string.IsNullOrWhiteSpace(trimmed) ? DBNull.Value : trimmed.ToUpperInvariant();
     }
 
     private static bool TryNormalizeDemographics(
@@ -2918,6 +3445,33 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("subscriberEmployerCountry", NpgsqlDbType.Text).Value = normalized.SubscriberEmployerCountry is null ? DBNull.Value : normalized.SubscriberEmployerCountry;
     }
 
+    private static void AddDemographicsParameters(
+        NpgsqlCommand command,
+        NormalizedPatientDemographics normalized)
+    {
+        command.Parameters.AddWithValue("firstName", normalized.FirstName);
+        command.Parameters.AddWithValue("lastName", normalized.LastName);
+        command.Parameters.Add("preferredName", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PreferredName);
+        command.Parameters.Add("sex", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Sex);
+        command.Parameters.Add("dateOfBirth", NpgsqlDbType.Date).Value = normalized.DateOfBirth;
+        command.Parameters.Add("street", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Street);
+        command.Parameters.Add("city", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.City);
+        command.Parameters.Add("state", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.State);
+        command.Parameters.Add("postalCode", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.PostalCode);
+        command.Parameters.Add("maritalStatus", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.MaritalStatus);
+        command.Parameters.Add("occupation", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Occupation);
+        command.Parameters.Add("race", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Race);
+        command.Parameters.Add("ethnicity", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Ethnicity);
+        command.Parameters.Add("interpreter", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Interpreter);
+        command.Parameters.Add("familySize", NpgsqlDbType.Integer).Value =
+            normalized.FamilySize is null ? DBNull.Value : normalized.FamilySize.Value;
+        command.Parameters.Add("monthlyIncome", NpgsqlDbType.Integer).Value =
+            normalized.MonthlyIncome is null ? DBNull.Value : normalized.MonthlyIncome.Value;
+        command.Parameters.Add("homeless", NpgsqlDbType.Text).Value = NormalizeNullable(normalized.Homeless);
+        command.Parameters.Add("financialReviewDate", NpgsqlDbType.Date).Value =
+            normalized.FinancialReviewDate is null ? DBNull.Value : normalized.FinancialReviewDate.Value;
+    }
+
     private static PatientActivityCounts ReadCounts(DbDataReader reader) => new(
         Appointments: ReadInt(reader, "appointment_count"),
         Encounters: ReadInt(reader, "encounter_count"),
@@ -3091,6 +3645,15 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         string? ProviderName,
         int? FacilityId,
         string? FacilityName);
+
+    private sealed record PatientAdministrationSnapshot(
+        PatientIdentity Patient,
+        IReadOnlyDictionary<string, string?> DemographicValues,
+        IReadOnlyDictionary<string, string?> ContactValues);
+
+    private sealed record InsuranceAuditSnapshot(
+        PatientIdentity Patient,
+        IReadOnlyDictionary<string, string?> Values);
 
     private sealed record PatientMergePreviewRow(PatientMergePreviewPatient Patient, PatientActivityCounts Counts);
 

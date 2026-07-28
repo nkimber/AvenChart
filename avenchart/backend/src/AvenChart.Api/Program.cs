@@ -1061,6 +1061,17 @@ patients.MapGet("/{patientId}/provider-assignment-history", async (
     .WithName("GetPatientProviderAssignmentHistory")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
 
+patients.MapGet("/{patientId}/administration-history", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetAdministrationHistoryAsync(patientId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientAdministrationHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
+
 patients.MapPost("/", async (
         PatientRepository repository,
         PatientRegistrationRequest request,
@@ -1101,11 +1112,18 @@ patients.MapGet("/{patientId}/print/{output}", async (string patientId, string o
 
 patients.MapPut("/{patientId}/contact", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string patientId,
         PatientContactUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.UpdateContactAsync(patientId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.UpdateContactAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("UpdatePatientContact")
@@ -1113,11 +1131,18 @@ patients.MapPut("/{patientId}/contact", async (
 
 patients.MapPut("/{patientId}/demographics", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string patientId,
         PatientDemographicsUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.UpdateDemographicsAsync(patientId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.UpdateDemographicsAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
         return patient is null
             ? Results.BadRequest("Patient demographics could not be updated from the supplied patient and demographic details.")
             : Results.Ok(patient);
@@ -1253,11 +1278,18 @@ patients.MapDelete("/{patientId}", async (
 
 patients.MapPost("/{patientId}/insurance", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string patientId,
         PatientInsuranceMutationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.CreateInsuranceAsync(patientId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.CreateInsuranceAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
         return patient is null
             ? Results.BadRequest("Insurance coverage could not be created from the supplied patient and coverage details.")
             : Results.Created($"/api/patients/{patient.CanonicalId}", patient);
@@ -1267,11 +1299,18 @@ patients.MapPost("/{patientId}/insurance", async (
 
 patients.MapPut("/insurance/{insuranceId}", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string insuranceId,
         PatientInsuranceMutationRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.UpdateInsuranceAsync(insuranceId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.UpdateInsuranceAsync(
+            insuranceId,
+            request,
+            session.Username,
+            cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("UpdatePatientInsurance")
@@ -1279,10 +1318,16 @@ patients.MapPut("/insurance/{insuranceId}", async (
 
 patients.MapDelete("/insurance/{insuranceId}", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string insuranceId,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.DeleteInsuranceAsync(insuranceId, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.DeleteInsuranceAsync(
+            insuranceId,
+            session.Username,
+            cancellationToken);
         return patient is null ? Results.NotFound() : Results.Ok(patient);
     })
     .WithName("DeletePatientInsurance")
