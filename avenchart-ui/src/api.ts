@@ -2562,6 +2562,154 @@ export async function unlinkInventoryMedicationLink(
   await requireSuccessfulResponse(response, `DELETE ${path}`, 'clinician')
   return response.json()
 }
+export type InventoryControlledLocation = {
+  locationId: string
+  facilityId: number
+  facilityCode: string
+  facilityName: string
+  locationCode: string
+  displayName: string
+  dualAttestationRequired: boolean
+  active: boolean
+  updatedAt: string
+  updatedBy: string
+}
+export type InventoryControlledSubstanceItem = {
+  itemId: number
+  itemCode: string
+  name: string
+  category: string
+  unit: string
+  scheduleCode: string
+}
+export type InventoryControlledSubstanceCatalogResponse = {
+  locations: InventoryControlledLocation[]
+  items: InventoryControlledSubstanceItem[]
+}
+export type InventoryControlledCountLine = {
+  lineId: string
+  lotId: number
+  lotNumber: string
+  itemCode: string
+  expectedQuantity: number
+  observedQuantity: number | null
+  varianceQuantity: number | null
+  discrepancyId: string | null
+  discrepancyStatus: string | null
+}
+export type InventoryControlledCountSession = {
+  sessionId: string
+  locationId: string
+  locationCode: string
+  locationName: string
+  countType: 'opening' | 'shift' | 'cycle' | 'closing'
+  status: string
+  movementLockActive: boolean
+  reason: string
+  startedBy: string
+  startedAt: string
+  submittedBy: string | null
+  submittedAt: string | null
+  counterUsername: string | null
+  lines: InventoryControlledCountLine[]
+}
+export type InventoryControlledCountSessionSummary = Omit<
+  InventoryControlledCountSession,
+  'reason' | 'submittedBy' | 'counterUsername' | 'lines'
+> & {
+  lineCount: number
+  discrepancyCount: number
+  openDiscrepancyCount: number
+}
+export async function getInventoryControlledSubstanceCatalog(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryControlledSubstanceCatalogResponse> {
+  return clinicianGet(sessionId, '/api/inventory/controlled-substances', signal)
+}
+export async function getInventoryControlledCountSessions(
+  sessionId: string,
+  limit = 30,
+  signal?: AbortSignal,
+): Promise<InventoryControlledCountSessionSummary[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/controlled-count-sessions?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  )
+}
+export async function getInventoryControlledCountSession(
+  sessionId: string,
+  countSessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryControlledCountSession> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/controlled-count-sessions/${countSessionId}`,
+    signal,
+  )
+}
+export async function createInventoryControlledCountSession(
+  sessionId: string,
+  input: {
+    locationId: string
+    countType: string
+    movementLockActive: boolean
+    reason: string
+    idempotencyKey: string
+  },
+): Promise<InventoryControlledCountSession> {
+  return clinicianPost(sessionId, '/api/inventory/controlled-count-sessions', input)
+}
+export async function submitInventoryControlledCountSession(
+  sessionId: string,
+  countSessionId: string,
+  input: {
+    counterSessionId: string
+    reason: string
+    idempotencyKey: string
+    observations: { lotId: number; observedQuantity: number }[]
+  },
+): Promise<InventoryControlledCountSession> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/controlled-count-sessions/${countSessionId}/submit`,
+    input,
+  )
+}
+export async function investigateInventoryControlledDiscrepancy(
+  sessionId: string,
+  discrepancyId: string,
+  notes: string,
+): Promise<InventoryControlledCountSession> {
+  return clinicianPut(
+    sessionId,
+    `/api/inventory/controlled-count-discrepancies/${discrepancyId}/investigation`,
+    { notes },
+  )
+}
+export async function correctInventoryControlledDiscrepancy(
+  sessionId: string,
+  discrepancyId: string,
+  input: { notes: string; idempotencyKey: string; witnessSessionId?: string },
+): Promise<unknown> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/controlled-count-discrepancies/${discrepancyId}/corrections`,
+    input,
+  )
+}
+export async function closeInventoryControlledDiscrepancy(
+  sessionId: string,
+  discrepancyId: string,
+  notes: string,
+): Promise<InventoryControlledCountSession> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/controlled-count-discrepancies/${discrepancyId}/close`,
+    { notes },
+  )
+}
 export type InventoryItem = {
   itemId: number
   itemCode: string

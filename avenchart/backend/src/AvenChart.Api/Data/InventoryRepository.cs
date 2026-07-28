@@ -440,6 +440,29 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         return new(sessionId,locationId,locationCode,locationName,countType,status,movementLock,reason,startedBy,startedAt.ToString("O",CultureInfo.InvariantCulture),submittedBy,submittedAt?.ToString("O",CultureInfo.InvariantCulture),counter,lines);
     }
 
+    public async Task<IReadOnlyList<InventoryControlledCountSessionSummary>> GetControlledCountSessionsAsync(int limit, CancellationToken cancellationToken)
+    {
+        if (limit is < 1 or > 100) throw new ArgumentException("Count-session limit must be between 1 and 100.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select s.session_id,s.location_id,l.location_code,l.display_name,s.count_type,s.status,s.movement_lock_active,s.started_by,s.started_at,s.submitted_at,
+                   (select count(*)::int from inventory_controlled_count_lines c where c.session_id=s.session_id),
+                   (select count(*)::int from inventory_controlled_count_discrepancies d where d.session_id=s.session_id),
+                   (select count(*)::int from inventory_controlled_count_discrepancies d where d.session_id=s.session_id and d.status in ('open','investigating','corrected'))
+            from inventory_controlled_count_sessions s
+            join inventory_controlled_locations l on l.location_id=s.location_id
+            order by case when s.status='in_progress' and s.movement_lock_active then 0 when s.status in ('discrepancy_open','investigating') then 1 else 2 end, s.started_at desc, s.session_id desc
+            limit @limit;
+            """;
+        command.Parameters.AddWithValue("limit", limit);
+        var sessions = new List<InventoryControlledCountSessionSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            sessions.Add(new InventoryControlledCountSessionSummary(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetBoolean(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12)));
+        return sessions;
+    }
+
     public async Task<InventoryControlledCountSession> InvestigateControlledCountDiscrepancyAsync(Guid discrepancyId, InventoryControlledDiscrepancyInvestigationRequest request, string username, CancellationToken cancellationToken)
     {
         var notes=NormalizeOptional(request.Notes);if(discrepancyId==Guid.Empty||string.IsNullOrWhiteSpace(notes)||notes.Length>1000)throw new ArgumentException("A controlled discrepancy and investigation notes are required.");
