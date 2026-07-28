@@ -88,6 +88,7 @@ import CodingCatalogGovernance from "./CodingCatalogGovernance.tsx";
 import FormsLayoutGovernance from "./FormsLayoutGovernance.tsx";
 import AlertRuleGovernance from "./AlertRuleGovernance.tsx";
 import ApiClientGovernance from "./ApiClientGovernance.tsx";
+import ModuleGovernance from "./ModuleGovernance.tsx";
 import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
 
 type AsyncState<T> =
@@ -3426,7 +3427,9 @@ export default function AdminDirectory() {
               )}
 
               {tab === "modules" && (
-                <section className="cl-card">
+                <>
+                <ModuleGovernance sessionId={session.sessionId} />
+                <div hidden aria-hidden="true"><section className="cl-card">
                   <h2 className="cl-card-title">Module inventory</h2>
                   <p className="clinician-page-subtitle">
                     Only the local Therapy Groups module can be enabled or
@@ -3536,7 +3539,8 @@ export default function AdminDirectory() {
                       </table>
                     </div>
                   ) : null}
-                </section>
+                </section></div>
+                </>
               )}
 
               {tab === "apiClients" && (

@@ -7092,6 +7092,8 @@ export type ClinicalAlertRuleChangeRequest = {
   proposedDefinition: ClinicalAlertRuleItem; baselineDefinition?: ClinicalAlertRuleItem | null
 }
 export type ClinicalAlertRuleChangeRequestDetail = { request: ClinicalAlertRuleChangeRequest; activeRule?: ClinicalAlertRuleItem | null; events: GovernanceEvent[] }
+export type ClinicalAlertRuleChangeRequestsResponse = { requests: ClinicalAlertRuleChangeRequest[]; total: number; returned: number; offset: number; limit: number; status: GovernanceStatus | 'all' | 'open' }
+export async function getClinicalAlertRuleChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ClinicalAlertRuleChangeRequestsResponse> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests?status=${encodeURIComponent(status)}`) }
 export async function createClinicalAlertRuleChangeRequest(sessionId: string, input: ClinicalAlertRuleItem & { reason: string }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/clinical-alert-rule-change-requests', input) }
 export async function getClinicalAlertRuleChangeRequest(sessionId: string, requestId: string): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}`) }
 export async function transitionClinicalAlertRuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
@@ -7157,6 +7159,19 @@ export async function getModuleCatalog(
 ): Promise<{ modules: ModuleCatalogItem[] }> {
   return clinicianGet(sessionId, '/api/administration/modules')
 }
+export type ModuleChangeRequest = {
+  requestId: string
+  moduleKey: string
+  proposedStatus: 'enabled' | 'disabled'
+  baselineStatus: 'enabled' | 'disabled'
+  reason: string
+  status: GovernanceStatus
+  version: number
+}
+export type ModuleChangeRequestsResponse = { requests: ModuleChangeRequest[]; total: number; status: GovernanceStatus | 'all' | 'open' }
+export async function getModuleChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ModuleChangeRequestsResponse> { return clinicianGet(sessionId, `/api/administration/module-change-requests?status=${encodeURIComponent(status)}`) }
+export async function createModuleChangeRequest(sessionId: string, input: { moduleKey: string; status: 'enabled' | 'disabled'; reason: string }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, '/api/administration/module-change-requests', input) }
+export async function transitionModuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, `/api/administration/module-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
 export type ModuleCatalogRevision = {
   revisionId: number
   displayName: string

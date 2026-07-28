@@ -319,6 +319,8 @@ public sealed record ModuleChangeRequestCreateRequest(string ModuleKey, string S
 public sealed record ModuleChangeRequestDecisionRequest(string? Note, int? ExpectedVersion = null);
 public sealed record ModuleChangeRequestItem(Guid RequestId, string ModuleKey, string ProposedStatus, string BaselineStatus, string BaselineUpdatedAt, string Reason, string Status, int Version, string CreatedAt, string CreatedBy, string UpdatedAt, string UpdatedBy);
 public sealed record ModuleChangeRequestEvent(long EventId, string Action, string? Note, string OccurredAt, string Username);
+public sealed record ModuleChangeRequestCounts(int Draft, int Submitted, int Approved, int Rejected, int Activated, int Cancelled);
+public sealed record ModuleChangeRequestsResponse(IReadOnlyList<ModuleChangeRequestItem> Requests, int Total, string Status, ModuleChangeRequestCounts Counts);
 public sealed record ModuleChangeRequestDetailResponse(ModuleChangeRequestItem Request, ModuleCatalogItem Module, IReadOnlyList<ModuleChangeRequestEvent> Events);
 public sealed class ModuleChangeRequestConflictException(string message) : Exception(message);
 public sealed record ApiClientRegistryItem(string Key, string DisplayName, string RedirectUri, string Scopes, bool Active, string UpdatedAt, string UpdatedBy);
