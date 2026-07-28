@@ -938,9 +938,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var sourceTransactionId = Guid.NewGuid();
         await InsertTransactionAsync(connection, transaction, sourceTransactionId, sourceLotId, transferId, "transfer", -request.Quantity,
             request.Reason, username, now, cancellationToken);
-        await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility transfer requires destination-layer reallocation; no valuation is implied.", username, now, cancellationToken);
-        await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), destinationLot.LotId, transferId, "transfer", request.Quantity,
+        var destinationTransactionId = Guid.NewGuid();
+        await InsertTransactionAsync(connection, transaction, destinationTransactionId, destinationLot.LotId, transferId, "transfer", request.Quantity,
             request.Reason, username, now, cancellationToken);
+        await ReallocateTransferCostLayersAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, sourceLotId, destinationLot, destinationFacility.FacilityId, request.Quantity, username, now, cancellationToken);
 
         decimal itemQuantity;
         await using (var itemQuantityCommand = connection.CreateCommand())
@@ -2192,6 +2193,42 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             remaining -= applied;
         }
         if (remaining > 0) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete quantity movement.", username, now, cancellationToken);
+    }
+
+    private static async Task ReallocateTransferCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid destinationTransactionId, Guid transferId, int sourceLotId, InventoryLot destinationLot, int destinationFacilityId, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var layers = new List<InventoryCostLayerForApplication>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "select l.layer_id,l.remaining_quantity,l.unit_cost,l.method,l.policy_id,p.rounding_rule from inventory_cost_layers l join inventory_cost_policies p on p.policy_id=l.policy_id where l.lot_id=@lot and l.status='open' and l.remaining_quantity>0 order by l.created_at,l.layer_id for update of l;";
+            select.Parameters.AddWithValue("lot", sourceLotId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) layers.Add(new(reader.GetGuid(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetString(3), reader.GetGuid(4), reader.GetString(5)));
+        }
+        if (layers.Count == 0)
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "no_open_layer", "No policy-backed receipt cost layer is available for this transfer.", username, now, cancellationToken);
+            return;
+        }
+        if (layers.Select(layer => layer.PolicyId).Distinct().Skip(1).Any() || layers[0].Method != "fifo")
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility cost-layer reallocation currently supports one FIFO policy revision only.", username, now, cancellationToken);
+            return;
+        }
+        var remaining = quantity;
+        foreach (var layer in layers)
+        {
+            if (remaining <= 0) break;
+            var moved = Math.Min(remaining, layer.Remaining);
+            var sourceRemaining = layer.Remaining - moved;
+            var sourceApplicationId = Guid.NewGuid();
+            await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_cost_layers set remaining_quantity=@remaining,status=@status where layer_id=@layer;"; update.Parameters.AddWithValue("remaining",sourceRemaining); update.Parameters.AddWithValue("status",sourceRemaining==0 ? "exhausted" : "open"); update.Parameters.AddWithValue("layer",layer.Id); await update.ExecuteNonQueryAsync(cancellationToken); }
+            await using (var application = connection.CreateCommand()) { application.Transaction=transaction; application.CommandText="insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,applied_at,applied_by) values(@id,@layer,@source,'issue',@quantity,@unitCost,@extended,@rounding,@at,@user);"; application.Parameters.AddWithValue("id",sourceApplicationId); application.Parameters.AddWithValue("layer",layer.Id); application.Parameters.AddWithValue("source",sourceTransactionId); application.Parameters.AddWithValue("quantity",-moved); application.Parameters.AddWithValue("unitCost",layer.UnitCost); application.Parameters.AddWithValue("extended",-RoundAccordingToPolicy(moved*layer.UnitCost,4,layer.RoundingRule)); application.Parameters.AddWithValue("rounding",$"FIFO transfer out to lot {destinationLot.LotId}; {layer.RoundingRule} to four decimal places"); application.Parameters.AddWithValue("at",now); application.Parameters.AddWithValue("user",username); await application.ExecuteNonQueryAsync(cancellationToken); }
+            await using (var destination = connection.CreateCommand()) { destination.Transaction=transaction; destination.CommandText="insert into inventory_cost_layers(layer_id,source_transaction_id,receipt_id,lot_id,item_id,facility_id,received_quantity,remaining_quantity,unit_cost,currency,policy_id,policy_revision,method,status,created_at,created_by,transfer_id,origin_application_id) select @id,@source,null,@destinationLot,item_id,@destinationFacility,@quantity,@quantity,@unitCost,currency,policy_id,policy_revision,method,'open',@at,@user,@transfer,@origin from inventory_cost_layers where layer_id=@sourceLayer;"; destination.Parameters.AddWithValue("id",Guid.NewGuid()); destination.Parameters.AddWithValue("source",destinationTransactionId); destination.Parameters.AddWithValue("destinationLot",destinationLot.LotId); destination.Parameters.AddWithValue("destinationFacility",destinationFacilityId); destination.Parameters.AddWithValue("quantity",moved); destination.Parameters.AddWithValue("unitCost",layer.UnitCost); destination.Parameters.AddWithValue("at",now); destination.Parameters.AddWithValue("user",username); destination.Parameters.AddWithValue("transfer",transferId); destination.Parameters.AddWithValue("origin",sourceApplicationId); destination.Parameters.AddWithValue("sourceLayer",layer.Id); await destination.ExecuteNonQueryAsync(cancellationToken); }
+            remaining -= moved;
+        }
+        if (remaining > 0) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete transfer quantity.", username, now, cancellationToken);
     }
 
     private static async Task ApplyWeightedAverageCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, string applicationType, IReadOnlyList<InventoryCostLayerForApplication> layers, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken)
