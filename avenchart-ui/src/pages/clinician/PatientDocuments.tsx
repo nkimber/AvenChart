@@ -27,6 +27,7 @@ import {
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
+  createPatientScannerCapture,
   downloadPatientDocument,
   downloadPatientDocumentVersion,
   getPatientDocumentCategoryOptions,
@@ -55,7 +56,7 @@ import {
 import { showToast } from '../../components/Toast.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
-type IntakeMode = 'note' | 'file' | 'link'
+type IntakeMode = 'note' | 'file' | 'scanner' | 'link'
 type ReplacementMode = 'text' | 'file'
 
 type WorkspaceData = {
@@ -77,6 +78,8 @@ type IntakeDraft = {
   notes: string
   content: string
   url: string
+  captureSource: string
+  pageCount: string
 }
 
 type MetadataDraft = {
@@ -167,6 +170,8 @@ function blankDraft(): IntakeDraft {
     notes: '',
     content: '',
     url: '',
+    captureSource: 'Chart scanner',
+    pageCount: '1',
   }
 }
 
@@ -584,45 +589,59 @@ export default function PatientDocuments() {
         encounter,
         notes: draft.notes.trim() || null,
       }
-      const result =
-        mode === 'note'
-          ? await createPatientDocument(session.sessionId, {
-              ...shared,
-              content: draft.content.trim(),
-            })
-          : mode === 'file'
-            ? await (async () => {
-                if (!selectedFile) {
-                  throw new Error('Choose a file to upload.')
-                }
-                if (selectedFile.size > state.data.options.maxFileSizeBytes) {
-                  throw new Error(
-                    `Choose a file no larger than ${formatBytes(state.data.options.maxFileSizeBytes)}.`,
-                  )
-                }
-                return createPatientBinaryDocument(session.sessionId, {
-                  ...shared,
-                  fileName: selectedFile.name,
-                  mimetype:
-                    selectedFile.type.trim() || 'application/octet-stream',
-                  contentBase64: await readFileAsBase64(selectedFile),
-                })
-              })()
-            : await (async () => {
-                let link: URL
-                try {
-                  link = new URL(draft.url.trim())
-                } catch {
-                  throw new Error('Enter a complete http or https URL.')
-                }
-                if (!['http:', 'https:'].includes(link.protocol)) {
-                  throw new Error('External document links must use http or https.')
-                }
-                return createPatientExternalLinkDocument(session.sessionId, {
-                  ...shared,
-                  url: link.toString(),
-                })
-              })()
+      let result
+      if (mode === 'note') {
+        result = await createPatientDocument(session.sessionId, {
+          ...shared,
+          content: draft.content.trim(),
+        })
+      } else if (mode === 'file') {
+        if (!selectedFile) {
+          throw new Error('Choose a file to upload.')
+        }
+        if (selectedFile.size > state.data.options.maxFileSizeBytes) {
+          throw new Error(
+            `Choose a file no larger than ${formatBytes(state.data.options.maxFileSizeBytes)}.`,
+          )
+        }
+        result = await createPatientBinaryDocument(session.sessionId, {
+          ...shared,
+          fileName: selectedFile.name,
+          mimetype: selectedFile.type.trim() || 'application/octet-stream',
+          contentBase64: await readFileAsBase64(selectedFile),
+        })
+      } else if (mode === 'scanner') {
+        const pageCount = Number(draft.pageCount)
+        if (
+          !Number.isInteger(pageCount) ||
+          pageCount < 1 ||
+          pageCount > 100
+        ) {
+          throw new Error('Scanner page count must be between 1 and 100.')
+        }
+        if (!draft.captureSource.trim()) {
+          throw new Error('Enter the scanner or capture source.')
+        }
+        result = await createPatientScannerCapture(session.sessionId, {
+          ...shared,
+          captureSource: draft.captureSource.trim(),
+          pageCount,
+        })
+      } else {
+        let link: URL
+        try {
+          link = new URL(draft.url.trim())
+        } catch {
+          throw new Error('Enter a complete http or https URL.')
+        }
+        if (!['http:', 'https:'].includes(link.protocol)) {
+          throw new Error('External document links must use http or https.')
+        }
+        result = await createPatientExternalLinkDocument(session.sessionId, {
+          ...shared,
+          url: link.toString(),
+        })
+      }
 
       setState({
         status: 'ready',
@@ -635,7 +654,9 @@ export default function PatientDocuments() {
           ? 'Clinical note filed.'
           : mode === 'file'
             ? 'Document uploaded.'
-            : 'External document link filed.',
+            : mode === 'scanner'
+              ? 'Scanner capture receipt filed and queued for OCR.'
+              : 'External document link filed.',
         'success',
       )
     } catch (error) {
@@ -1495,8 +1516,9 @@ export default function PatientDocuments() {
           <span className="document-workspace-eyebrow">Protected chart files</span>
           <h2 id="documents-heading">Document register</h2>
           <p>
-            File notes, local uploads, and external web links in this patient
-            chart. Every new item remains pending review.
+            File notes, local uploads, scanner capture receipts, and external
+            web links in this patient chart. Every new item remains pending
+            review.
           </p>
         </div>
         <div className="document-workspace-brief-actions">
@@ -1567,6 +1589,17 @@ export default function PatientDocuments() {
               <span>
                 <strong>Upload file</strong>
                 <small>Up to {formatBytes(options.maxFileSizeBytes)}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === 'scanner'}
+              onClick={() => chooseMode('scanner')}
+            >
+              <ScanText size={17} />
+              <span>
+                <strong>Scanner capture</strong>
+                <small>Local receipt, 1–100 pages</small>
               </span>
             </button>
             <button
@@ -1730,6 +1763,52 @@ export default function PatientDocuments() {
               </div>
             )}
 
+            {mode === 'scanner' && (
+              <div className="patient-document-scanner-capture">
+                <div className="patient-document-scanner-grid">
+                  <div className="field">
+                    <label className="label" htmlFor="document-capture-source">
+                      Scanner or capture source *
+                    </label>
+                    <input
+                      id="document-capture-source"
+                      className="input"
+                      value={draft.captureSource}
+                      onChange={(event) =>
+                        setDraftField('captureSource', event.target.value)
+                      }
+                      maxLength={200}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="label" htmlFor="document-page-count">
+                      Captured pages *
+                    </label>
+                    <input
+                      id="document-page-count"
+                      className="input"
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={draft.pageCount}
+                      onChange={(event) =>
+                        setDraftField('pageCount', event.target.value)
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+                <p className="patient-document-scanner-boundary">
+                  This records a deterministic local PDF capture receipt and
+                  queues it for OCR. It does not control scanner hardware,
+                  import device bytes, or perform malware/quarantine release.
+                  Your authenticated account is retained as the capture actor.
+                </p>
+              </div>
+            )}
+
             <div className="field">
               <label className="label" htmlFor="document-notes">
                 Filing notes
@@ -1760,14 +1839,22 @@ export default function PatientDocuments() {
                   (mode === 'file' && !selectedFile)
                 }
               >
-                {mode === 'file' ? <FileUp size={16} /> : <Plus size={16} />}
+                {mode === 'file' ? (
+                  <FileUp size={16} />
+                ) : mode === 'scanner' ? (
+                  <ScanText size={16} />
+                ) : (
+                  <Plus size={16} />
+                )}
                 {mutationStatus === 'saving'
                   ? 'Filing…'
                   : mode === 'note'
                     ? 'File clinical note'
                     : mode === 'file'
                       ? 'Upload document'
-                      : 'File external link'}
+                      : mode === 'scanner'
+                        ? 'File scanner capture'
+                        : 'File external link'}
               </button>
               <button
                 className="cl-btn-secondary"

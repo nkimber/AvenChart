@@ -1034,9 +1034,6 @@ test.describe("isolated mutation workflows", () => {
       "base64",
     );
     const unsupportedBytes = Buffer.from(`Unsupported archive ${marker}`);
-    const scannedPdfBytes = Buffer.from(
-      `%PDF-1.4\n% Scanned OCR workflow proof ${marker}\n`,
-    );
     const headers = { "X-Legacy EHR-Session": sessionId };
     let ocrDocumentId: number;
 
@@ -1855,27 +1852,38 @@ test.describe("isolated mutation workflows", () => {
         }),
       ).toBeVisible();
 
-      const scannedResponse = await page.request.post(
-        `${apiBaseUrl}/api/documents/binary`,
-        {
-          headers,
-          data: {
-            patientId: "MOD-PAT-0001",
-            categoryId: 3,
-            name: ocrName,
-            docDate: "2026-07-28",
-            encounter: 1000013,
-            fileName: `${marker}-SCANNED-OCR.pdf`,
-            mimetype: "application/pdf",
-            contentBase64: scannedPdfBytes.toString("base64"),
-            notes: `Scan source: chart scanner; OCR pending; Proof ${marker}`,
-          },
-        },
+      await page.getByRole("button", { name: "Add document" }).click();
+      await page
+        .getByRole("button", { name: /Scanner capture Local receipt/ })
+        .click();
+      await page.getByLabel("Document name *").fill(ocrName);
+      await page.getByLabel("Filing category *").selectOption("3");
+      await page.getByLabel("Document date *").fill("2026-07-28");
+      await page.getByLabel("Related encounter").selectOption("1000013");
+      await page
+        .getByLabel("Scanner or capture source *")
+        .fill("chart scanner");
+      await page.getByLabel("Captured pages *").fill("3");
+      await page
+        .getByLabel("Filing notes")
+        .fill(`Scanner capture proof ${marker}`);
+      await page
+        .getByRole("button", { name: "File scanner capture" })
+        .click();
+      await expect(page.getByText("Scanner capture receipt filed")).toBeVisible();
+
+      const ocrDocument = (await getMarkerDocuments()).find(
+        (document) => document.name === ocrName,
       );
-      expect(scannedResponse.status()).toBe(201);
-      ocrDocumentId = Number(
-        ((await scannedResponse.json()) as { id: number }).id,
-      );
+      expect(ocrDocument).toMatchObject({
+        mimetype: "application/pdf",
+        isScannedAttachment: true,
+        captureSource: "chart scanner",
+        scanPageCount: 3,
+        ocrStatus: "OCR pending",
+      });
+      expect(ocrDocument?.notes).toContain("Captured by: admin");
+      ocrDocumentId = Number(ocrDocument?.id);
       expect(ocrDocumentId).toBeGreaterThan(0);
 
       await page.getByRole("button", { name: "Add document" }).click();
@@ -2101,9 +2109,12 @@ test.describe("isolated mutation workflows", () => {
         ocrStatus: string;
       };
       expect(ocrSourceBefore.ocrStatus).toBe("OCR pending");
-      expect(
-        Buffer.from(ocrSourceBefore.contentBase64 ?? "", "base64"),
-      ).toEqual(scannedPdfBytes);
+      const ocrSourceBytesBefore = Buffer.from(
+        ocrSourceBefore.contentBase64 ?? "",
+        "base64",
+      );
+      expect(ocrSourceBytesBefore.length).toBeGreaterThan(0);
+      expect(ocrSourceBytesBefore.toString("utf8", 0, 8)).toContain("%PDF");
 
       await page.goto("/clinician/document-ocr");
       await page.getByLabel("Search documents").fill(marker);
@@ -2114,7 +2125,7 @@ test.describe("isolated mutation workflows", () => {
         .filter({ hasText: ocrName });
       await expect(ocrCard).toBeVisible({ timeout: 20_000 });
       await expect(ocrCard).toContainText("Ready for OCR");
-      await expect(ocrCard).toContainText("chart scanner / 1 page");
+      await expect(ocrCard).toContainText("chart scanner / 3 pages");
       await expect(ocrCard).toContainText("Task v0 / document v1");
 
       await ocrCard.getByRole("button", { name: "Start OCR" }).click();
@@ -2408,7 +2419,7 @@ test.describe("isolated mutation workflows", () => {
             mimetype: "application/pdf",
             isScannedAttachment: true,
             captureSource: "chart scanner",
-            scanPageCount: 1,
+            scanPageCount: 3,
             ocrStatus: "OCR complete",
           }),
         ]),

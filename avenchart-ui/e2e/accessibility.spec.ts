@@ -1,6 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { Buffer } from "node:buffer";
 import {
   clinicianRoutes,
   patientChartRoutes,
@@ -138,6 +137,11 @@ test.describe("accessibility gate", () => {
     await expect(
       page.getByRole("heading", { name: "Choose how to file it" }),
     ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Scanner capture Local receipt/ })
+      .click();
+    await expect(page.getByLabel("Scanner or capture source *")).toBeVisible();
+    await expect(page.getByLabel("Captured pages *")).toBeVisible();
     violations.push(
       ...(await findSeriousAccessibilityViolations(
         page,
@@ -259,7 +263,7 @@ test.describe("accessibility gate", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const ocrMarker = `TMP-OCR-AXE-${testInfo.project.name}-${Date.now()}`;
     const ocrFixtureResponse = await page.request.post(
-      `${apiBaseUrl}/api/documents/binary`,
+      `${apiBaseUrl}/api/documents/scanner-captures`,
       {
         headers: { "X-Legacy EHR-Session": sessionId! },
         data: {
@@ -268,12 +272,9 @@ test.describe("accessibility gate", () => {
           name: ocrMarker,
           docDate: "2026-07-28",
           encounter: 1000013,
-          fileName: `${ocrMarker}.pdf`,
-          mimetype: "application/pdf",
-          contentBase64: Buffer.from(
-            `%PDF-1.4\n% Accessibility OCR fixture ${ocrMarker}\n`,
-          ).toString("base64"),
-          notes: `Scan source: accessibility scanner; OCR pending; ${ocrMarker}`,
+          captureSource: "accessibility scanner",
+          pageCount: 2,
+          notes: `Accessibility scanner fixture ${ocrMarker}`,
         },
       },
     );

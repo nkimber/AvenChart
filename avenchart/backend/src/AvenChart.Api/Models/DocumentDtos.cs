@@ -523,7 +523,7 @@ public sealed record PatientDocumentScannerCaptureRequest(
     int? Encounter,
     string CaptureSource,
     int PageCount,
-    string CapturedBy,
+    string? CapturedBy,
     string? Notes);
 
 public sealed record PatientDocumentExternalLinkCreateRequest(

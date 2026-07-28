@@ -20,6 +20,7 @@ import {
   createPatientBinaryDocument,
   createPatientDocument,
   createPatientExternalLinkDocument,
+  createPatientScannerCapture,
   createPatientMessage,
   createPrescription,
   deleteAllergy,
@@ -477,6 +478,57 @@ describe('authenticated API transport', () => {
         expectedVersion: 1,
       }),
     })
+  })
+
+  it('uses the protected server-attributed scanner capture contract', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: 94,
+          detail: {
+            datasetId: 'legacy-ehr-shared-synthetic-v1',
+            datasetVersion: '2026.07',
+            patientId: 'MOD-PAT-0001',
+            count: 1,
+            documents: [],
+          },
+        },
+        201,
+      ),
+    )
+
+    const result = await createPatientScannerCapture('staff-session', {
+      patientId: 'MOD-PAT-0001',
+      categoryId: 3,
+      name: 'Chart scanner receipt',
+      docDate: '2026-07-28',
+      encounter: 1000013,
+      captureSource: 'Chart scanner',
+      pageCount: 3,
+      notes: 'Local capture proof.',
+    })
+
+    expect(result.id).toBe(94)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/documents/scanner-captures',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'X-Legacy EHR-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          patientId: 'MOD-PAT-0001',
+          categoryId: 3,
+          name: 'Chart scanner receipt',
+          docDate: '2026-07-28',
+          encounter: 1000013,
+          captureSource: 'Chart scanner',
+          pageCount: 3,
+          notes: 'Local capture proof.',
+        }),
+      }),
+    )
   })
 
   it('uses authenticated stale-safe patient document review contracts', async () => {

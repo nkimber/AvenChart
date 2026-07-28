@@ -4499,6 +4499,17 @@ export type PatientDocumentBinaryCreateInput = {
   notes?: string | null
 }
 
+export type PatientDocumentScannerCaptureInput = {
+  patientId: string
+  categoryId: number
+  name: string
+  docDate: string
+  encounter?: number | null
+  captureSource: string
+  pageCount: number
+  notes?: string | null
+}
+
 export type PatientDocumentExternalLinkCreateInput = {
   patientId: string
   categoryId: number
@@ -4983,6 +4994,19 @@ export async function createPatientBinaryDocument(
   signal?: AbortSignal,
 ): Promise<PatientDocumentMutationResponse> {
   return clinicianPost(sessionId, '/api/documents/binary', input, signal)
+}
+
+export async function createPatientScannerCapture(
+  sessionId: string,
+  input: PatientDocumentScannerCaptureInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/documents/scanner-captures',
+    input,
+    signal,
+  )
 }
 
 export async function createPatientExternalLinkDocument(

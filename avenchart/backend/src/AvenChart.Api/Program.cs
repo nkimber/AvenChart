@@ -3333,10 +3333,19 @@ documents.MapPost("/binary", async (
 
 documents.MapPost("/scanner-captures", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         PatientDocumentScannerCaptureRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.CreateScannerCaptureAsync(request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var mutation = await repository.CreateScannerCaptureAsync(
+            request,
+            session.Username,
+            cancellationToken);
         return mutation is null
             ? Results.BadRequest("Scanner-captured patient document could not be created from the supplied patient, scanner, and document details.")
             : Results.Created($"/api/documents/{mutation.Id}", mutation);

@@ -8453,7 +8453,7 @@ h4 {
 }
 .patient-document-mode-switch {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 5px;
   border: 1px solid var(--border);
@@ -8511,6 +8511,26 @@ h4 {
 }
 .patient-document-content-input {
   min-height: 140px;
+}
+.patient-document-scanner-capture {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid #bfd8d5;
+  border-radius: var(--radius-md);
+  background: #f5fbfa;
+}
+.patient-document-scanner-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.4fr);
+  gap: 12px;
+}
+.patient-document-scanner-boundary {
+  margin: 0;
+  color: #40505c;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .patient-document-file-picker {
   display: flex;
@@ -9389,6 +9409,7 @@ h4 {
   color: var(--text);
 }
 @media (max-width: 1050px) {
+  .patient-document-mode-switch,
   .patient-document-intake-grid,
   .patient-document-metadata-grid,
   .patient-document-preview-facts,
@@ -9410,6 +9431,7 @@ h4 {
     text-align: left;
   }
   .patient-document-mode-switch,
+  .patient-document-scanner-grid,
   .patient-document-intake-grid {
     grid-template-columns: 1fr;
   }

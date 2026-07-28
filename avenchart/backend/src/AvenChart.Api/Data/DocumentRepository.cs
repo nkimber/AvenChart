@@ -1762,12 +1762,16 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientDocumentMutationResponse?> CreateScannerCaptureAsync(
         PatientDocumentScannerCaptureRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PatientId)
             || string.IsNullOrWhiteSpace(request.Name)
             || string.IsNullOrWhiteSpace(request.CaptureSource)
-            || string.IsNullOrWhiteSpace(request.CapturedBy)
+            || string.IsNullOrWhiteSpace(actor)
+            || request.Name.Trim().Length > 255
+            || request.CaptureSource.Trim().Length > 200
+            || NormalizeText(request.Notes)?.Length > 2_000
             || request.PageCount <= 0
             || request.PageCount > 100
             || !DateOnly.TryParse(request.DocDate, out var documentDate))
@@ -1796,7 +1800,7 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var categoryName = CategoryNameFor(categoryId);
         var name = request.Name.Trim();
         var captureSource = request.CaptureSource.Trim();
-        var capturedBy = request.CapturedBy.Trim();
+        var capturedBy = actor.Trim();
         var pageCount = request.PageCount;
         var fileName = BuildDownloadFileName(name, "application/pdf");
         var notes = string.Join(
