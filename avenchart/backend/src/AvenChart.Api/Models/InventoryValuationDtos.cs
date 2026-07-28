@@ -11,3 +11,8 @@ public sealed record InventoryCostPolicyChangeRequestDecisionRequest(int? Expect
 public sealed class InventoryCostPolicyChangeRequestConflictException(string message) : Exception(message);
 public sealed record InventoryReceiptCostLayer(Guid LayerId, Guid SourceTransactionId, Guid ReceiptId, int LotId, int ItemId, int FacilityId, decimal ReceivedQuantity, decimal RemainingQuantity, decimal UnitCost, string Currency, Guid? PolicyId, int? PolicyRevision, string? Method, string Status, string CreatedAt, string CreatedBy);
 public sealed record InventoryReceiptCostLayerApplication(Guid ApplicationId, Guid LayerId, Guid SourceTransactionId, string ApplicationType, decimal Quantity, decimal UnitCost, decimal ExtendedCost, string RoundingTrace, Guid? ReversalApplicationId, string AppliedAt, string AppliedBy);
+public sealed record InventoryValuationRunCreateRequest(string AsOfAt, int? FacilityId);
+public sealed record InventoryValuationRun(Guid RunId, string RequestedAt, string RequestedBy, string AsOfAt, int? FacilityId, Guid PolicyId, int PolicyRevision, string Method, string Currency, string RoundingRule, string Status, int LayerCount, int ApplicationCount, int ExceptionCount, int UnvaluedLayerCount, decimal QuantityTotal, decimal ValueTotal, string CalculationVersion, string ResultChecksum, string CompletedAt);
+public sealed record InventoryValuationRunLine(Guid LayerId, int LotId, int ItemId, int FacilityId, decimal ReceivedQuantity, decimal RemainingQuantity, decimal UnitCost, decimal ValueTotal, int ApplicationCount);
+public sealed record InventoryValuationRunDetailResponse(InventoryValuationRun Run, IReadOnlyList<InventoryValuationRunLine> Lines);
+public sealed class InventoryValuationPolicyMissingException(string message) : Exception(message);

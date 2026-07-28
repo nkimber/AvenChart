@@ -86,6 +86,7 @@ builder.Services.AddScoped<PatientDisclosureRepository>();
 builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<InventoryCostPolicyRepository>();
+builder.Services.AddScoped<InventoryValuationRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
 
@@ -4759,6 +4760,36 @@ inventory.MapGet("/receipt-cost-layers/{layerId:guid}/applications", async (Guid
 })
     .WithName("GetInventoryReceiptCostLayerApplications")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+inventory.MapGet("/valuation-runs", async (int? limit, InventoryValuationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetRunsAsync(limit ?? 30, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryValuationRun"] = [exception.Message] }); }
+})
+    .WithName("GetInventoryValuationRuns")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+inventory.MapGet("/valuation-runs/{runId:guid}", async (Guid runId, InventoryValuationRepository repository, CancellationToken cancellationToken) =>
+{
+    var result = await repository.GetDetailAsync(runId, cancellationToken);
+    return result is null ? Results.NotFound(new { error = "The inventory valuation run was not found." }) : Results.Ok(result);
+})
+    .WithName("GetInventoryValuationRun")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+inventory.MapPost("/valuation-runs", async (InventoryValuationRunCreateRequest request, InventoryValuationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var result = await repository.CreateAsync(request, session.Username, cancellationToken);
+        return Results.Created($"/api/inventory/valuation-runs/{result.Run.RunId}", result);
+    }
+    catch (InventoryValuationPolicyMissingException exception) { return Results.Conflict(new { error = exception.Message, code = "inventory_cost_policy_missing" }); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryValuationRun"] = [exception.Message] }); }
+})
+    .WithName("CreateInventoryValuationRun")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
 inventory.MapPost("/cost-policy-change-requests", async (InventoryCostPolicyChangeRequestCreateRequest request, InventoryCostPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var created = await repository.CreateAsync(request, session.Username, cancellationToken); return Results.Created($"/api/inventory/cost-policy-change-requests/{created.Request.RequestId}", created); } catch (InventoryCostPolicyChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryCostPolicy"] = [exception.Message] }); } })
