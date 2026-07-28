@@ -861,16 +861,18 @@ try {
         }
     }
 
-    $authorityHistory = @(Invoke-RestMethod `
+    $authorityHistoryResponse = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities/$($authority.authorityId)/history" `
         -Method Get `
         -Headers $disclosureHeaders `
-        -TimeoutSec 20)
-    $requestHistory = @(Invoke-RestMethod `
+        -TimeoutSec 20
+    $authorityHistory = @($authorityHistoryResponse.events)
+    $requestHistoryResponse = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-requests/$($firstDisclosureRequest.requestId)/history" `
         -Method Get `
         -Headers $disclosureHeaders `
-        -TimeoutSec 20)
+        -TimeoutSec 20
+    $requestHistory = @($requestHistoryResponse.events)
     $authorityList = @(Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/patients/$disclosurePatientId/disclosure-authorities" `
         -Method Get `
@@ -11355,6 +11357,175 @@ try {
 }
 catch {
     Add-Check -Name "document template binary version and attachment lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+$managedRecordIntakeId = $null
+try {
+    $managedRecordHeaders = Get-AdministrationHeaders
+    $managedRecordMarker = "TMP-RECORD-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $managedRecordBytes = [Text.Encoding]::UTF8.GetBytes("$managedRecordMarker content")
+    $managedRecordHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $managedRecordChecksum = ([BitConverter]::ToString(
+            $managedRecordHasher.ComputeHash($managedRecordBytes)
+        )).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $managedRecordHasher.Dispose()
+    }
+    $managedRecordIdempotencyKey = [Guid]::NewGuid().ToString()
+    $managedRecordCreateBody = @{
+        patientId = "MOD-PAT-0001"
+        categoryId = 3
+        title = $managedRecordMarker
+        serviceDate = "2026-07-28"
+        encounter = $null
+        recordClass = "clinical-record"
+        sourceType = "file-upload"
+        authorName = "Smoke test intake"
+        facilityId = $null
+        sensitivity = "standard"
+        languageTag = "en-US"
+        fileName = "$managedRecordMarker.txt"
+        mediaType = "text/plain"
+        contentBase64 = [Convert]::ToBase64String($managedRecordBytes)
+        expectedChecksumSha256 = $managedRecordChecksum
+        idempotencyKey = $managedRecordIdempotencyKey
+        reason = "REC-01/02 smoke capture"
+    }
+
+    $managedRecordUnauthenticatedRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/policy" -Method Get -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $managedRecordUnauthenticatedRejected = $_.Exception.Response.StatusCode.value__ -eq 401
+    }
+
+    $managedRecordPolicy = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/policy" -Method Get -Headers $managedRecordHeaders -TimeoutSec 20
+    $managedRecordCreated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body ($managedRecordCreateBody | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordIntakeId = $managedRecordCreated.intake.intakeId
+    $managedRecordReplay = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body ($managedRecordCreateBody | ConvertTo-Json) -TimeoutSec 20
+
+    $managedRecordIdempotencyConflict = $false
+    try {
+        $conflictingManagedRecordBody = $managedRecordCreateBody.Clone()
+        $conflictingManagedRecordBody.title = "$managedRecordMarker conflict"
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body ($conflictingManagedRecordBody | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $managedRecordIdempotencyConflict = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+
+    $managedRecordChecksumRejected = $false
+    try {
+        $invalidManagedRecordBody = $managedRecordCreateBody.Clone()
+        $invalidManagedRecordBody.idempotencyKey = [Guid]::NewGuid().ToString()
+        $invalidManagedRecordBody.expectedChecksumSha256 = ("0" * 64)
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body ($invalidManagedRecordBody | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $managedRecordChecksumRejected = $_.Exception.Response.StatusCode.value__ -eq 400
+    }
+
+    $managedRecordDocumentsBeforeRelease = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker';"
+    $managedRecordListed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/?patientId=MOD-PAT-0001" -Method Get -Headers $managedRecordHeaders -TimeoutSec 20
+    $managedRecordClassification = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/classification" -Method Put -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{
+        expectedVersion = 0
+        recordClass = "correspondence"
+        sourceType = "scanner-capture"
+        authorName = "Smoke test classification"
+        facilityId = $null
+        sensitivity = "restricted"
+        languageTag = "en-US"
+        reason = "REC-01 classification correction"
+    } | ConvertTo-Json) -TimeoutSec 20
+
+    $managedRecordQuarantined = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/quarantine" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 1; reason = "REC-02 quarantine" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordStaleRejected = $false
+    try {
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/start" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 1; reason = "Stale REC-02 start" } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null
+    }
+    catch {
+        $managedRecordStaleRejected = $_.Exception.Response.StatusCode.value__ -eq 409
+    }
+    $managedRecordStarted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/start" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 2; reason = "REC-02 structural validation start" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordFailed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/fail" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 3; reason = "REC-02 simulated adapter failure" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordRetried = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/retry" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 4; reason = "REC-02 authorized retry" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordRestarted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/start" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 5; reason = "REC-02 structural validation restart" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordReleased = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/release" -Method Post -Headers $managedRecordHeaders -ContentType "application/json" -Body (@{ expectedVersion = 6; reason = "REC-02 local structural release" } | ConvertTo-Json) -TimeoutSec 20
+    $managedRecordHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/history" -Method Get -Headers $managedRecordHeaders -TimeoutSec 20
+    $managedRecordDocumentsAfterRelease = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from patient_documents where name = '$managedRecordMarker' and id = $($managedRecordReleased.documentId);"
+
+    $managedRecordPassed = $managedRecordUnauthenticatedRejected `
+        -and $managedRecordPolicy.revision -eq "local-record-control-v1" `
+        -and -not $managedRecordPolicy.antiMalwareVerified `
+        -and $managedRecordCreated.intake.workflowVersion -eq 0 `
+        -and -not $managedRecordCreated.idempotentReplay `
+        -and $managedRecordReplay.idempotentReplay `
+        -and $managedRecordReplay.intake.intakeId -eq $managedRecordIntakeId `
+        -and $managedRecordIdempotencyConflict `
+        -and $managedRecordChecksumRejected `
+        -and $managedRecordDocumentsBeforeRelease.Trim() -eq "0" `
+        -and @($managedRecordListed.items | Where-Object { $_.intakeId -eq $managedRecordIntakeId -and $_.availabilityStatus -eq "withheld" }).Count -eq 1 `
+        -and $managedRecordClassification.workflowVersion -eq 1 `
+        -and $managedRecordClassification.recordClass -eq "correspondence" `
+        -and $managedRecordClassification.sensitivity -eq "restricted" `
+        -and $managedRecordQuarantined.workflowVersion -eq 2 `
+        -and $managedRecordStaleRejected `
+        -and $managedRecordStarted.workflowVersion -eq 3 `
+        -and $managedRecordFailed.workflowVersion -eq 4 `
+        -and $managedRecordFailed.state -eq "failed" `
+        -and $managedRecordRetried.workflowVersion -eq 5 `
+        -and $managedRecordRestarted.workflowVersion -eq 6 `
+        -and $managedRecordReleased.workflowVersion -eq 7 `
+        -and $managedRecordReleased.state -eq "available" `
+        -and $managedRecordReleased.availabilityStatus -eq "available" `
+        -and -not $managedRecordReleased.antiMalwareVerified `
+        -and $managedRecordDocumentsAfterRelease.Trim() -eq "1" `
+        -and $managedRecordHistory.eventCount -eq 8 `
+        -and (@($managedRecordHistory.events.action) -join ",") -eq "release,start,retry,fail,start,quarantine,reclassified,captured"
+    Add-Check -Name "managed record metadata, quarantine, and release lifecycle" -Result $(if ($managedRecordPassed) { "passed" } else { "failed" }) -Details @{
+        intakeId = $managedRecordIntakeId
+        policyRevision = $managedRecordPolicy.revision
+        antiMalwareVerified = $managedRecordPolicy.antiMalwareVerified
+        finalVersion = $managedRecordReleased.workflowVersion
+        documentId = $managedRecordReleased.documentId
+        historyEvents = $managedRecordHistory.eventCount
+        historyActions = (@($managedRecordHistory.events.action) -join ",")
+        unauthenticatedRejected = $managedRecordUnauthenticatedRejected
+        createdReplay = $managedRecordCreated.idempotentReplay
+        exactReplay = $managedRecordReplay.idempotentReplay
+        idempotencyConflict = $managedRecordIdempotencyConflict
+        checksumRejected = $managedRecordChecksumRejected
+        documentsBeforeRelease = $managedRecordDocumentsBeforeRelease.Trim()
+        listedWithheld = @($managedRecordListed.items | Where-Object { $_.intakeId -eq $managedRecordIntakeId -and $_.availabilityStatus -eq "withheld" }).Count
+        classificationVersion = $managedRecordClassification.workflowVersion
+        quarantinedVersion = $managedRecordQuarantined.workflowVersion
+        startedVersion = $managedRecordStarted.workflowVersion
+        failedVersion = $managedRecordFailed.workflowVersion
+        retriedVersion = $managedRecordRetried.workflowVersion
+        restartedVersion = $managedRecordRestarted.workflowVersion
+        documentsAfterRelease = $managedRecordDocumentsAfterRelease.Trim()
+        staleWriteRejected = $managedRecordStaleRejected
+    }
+}
+catch {
+    Add-Check -Name "managed record metadata, quarantine, and release lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($null -ne $managedRecordIntakeId) {
+        try {
+            Invoke-WebRequest -Uri "$ApiBaseUrl/api/records/$managedRecordIntakeId/test-fixture" -Method Delete -Headers (Get-AdministrationHeaders) -UseBasicParsing -TimeoutSec 20 | Out-Null
+            $managedRecordRemaining = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select (select count(*) from managed_record_intakes where intake_id = '$managedRecordIntakeId') + (select count(*) from patient_documents where name = '$managedRecordMarker');"
+            if ($managedRecordRemaining.Trim() -ne "0") {
+                throw "Managed record fixture cleanup left $($managedRecordRemaining.Trim()) owned rows."
+            }
+        }
+        catch {
+            Add-Check -Name "managed record lifecycle fixture cleanup" -Result "failed" -Details $_.Exception.Message
+        }
+    }
 }
 
 $result = [ordered]@{

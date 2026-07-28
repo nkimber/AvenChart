@@ -53,9 +53,10 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     private const int MaxInlineThumbnailBytes = 262_144;
     public const int MaxOcrExtractedTextCharacters = 262_144;
     public const int MaxBinaryDocumentBytes = 25 * 1024 * 1024;
+    // Retained only while older document schema helper code is removed in a
+    // later cleanup. No request path invokes either helper after V0083.
     private static readonly SemaphoreSlim DocumentMetadataSchemaGate = new(1, 1);
     private static readonly SemaphoreSlim DocumentVersionSchemaGate = new(1, 1);
-
     private static readonly IReadOnlyList<PatientDocumentCategoryOption> CategoryOptions =
     [
         new(2, "Lab Report"),
@@ -76,7 +77,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var metadata = await GetMetadataAsync(cancellationToken);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         var patient = await GetPatientAsync(connection, patientId, cancellationToken);
         if (patient is null)
         {
@@ -134,7 +134,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var now = DateTimeOffset.UtcNow;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
@@ -317,7 +316,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var now = DateTimeOffset.UtcNow;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
@@ -510,7 +508,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
         string documentKey;
         string patientId;
@@ -647,7 +644,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetRoutingDocumentForUpdateAsync(
             connection,
@@ -796,7 +792,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var reason = NormalizeRequiredRoutingText(request.Reason, "A completion note", 250);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetRoutingDocumentForUpdateAsync(
             connection,
@@ -999,7 +994,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
         string documentKey;
         string patientId;
@@ -1146,7 +1140,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR start or retry reason");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetOcrDocumentForUpdateAsync(
             connection,
@@ -1220,7 +1213,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
     {
         var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR failure reason");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetOcrDocumentForUpdateAsync(
             connection,
@@ -1301,7 +1293,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             ? NormalizeRequiredOcrReason(suppliedReason, "An OCR completion reason")
             : "OCR completion recorded.";
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetOcrDocumentForUpdateAsync(
             connection,
@@ -1393,7 +1384,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             MaxOcrExtractedTextCharacters);
         var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR correction reason");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var document = await GetOcrDocumentForUpdateAsync(
             connection,
@@ -1977,7 +1967,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, document_key, patient_id, pid, category_id, category_name, name, doc_date, uploaded_at,
@@ -2124,7 +2113,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -2209,7 +2197,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
         string documentKey;
         string patientId;
@@ -2383,7 +2370,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
         const int resultLimit = 100;
         var metadata = await GetMetadataAsync(cancellationToken);
-        await EnsureDocumentMetadataEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
         DocumentMetadataSnapshot? current;
@@ -2513,7 +2499,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         var name = request.Name.Trim();
         var notes = NormalizeText(request.Notes);
         var actor = string.IsNullOrWhiteSpace(username) ? "unknown" : username.Trim();
-        await EnsureDocumentMetadataEventsAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -2823,7 +2808,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? patientId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         {
-            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             var current = await GetContentSnapshotForUpdateAsync(
                 connection,
@@ -2992,7 +2976,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         const int resultLimit = 100;
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
         string documentKey;
         string patientId;
@@ -3147,7 +3130,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? patientId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         {
-            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
             string documentKey;
@@ -3282,7 +3264,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         const int resultLimit = 100;
         var metadata = await GetMetadataAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
         string documentKey;
         string patientId;
@@ -3453,7 +3434,6 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? patientId = null;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         {
-            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
             string documentKey;

@@ -54,6 +54,7 @@ import {
   type PatientDocumentsResponse,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
+import ManagedRecordIntake from './ManagedRecordIntake.tsx'
 import type { PatientOutletContext } from './PatientShell.tsx'
 
 type IntakeMode = 'note' | 'file' | 'scanner' | 'link'
@@ -1549,6 +1550,13 @@ export default function PatientDocuments() {
           </button>
         </div>
       </section>
+
+      <ManagedRecordIntake
+        sessionId={session.sessionId}
+        patientId={patientId}
+        categories={options.categories}
+        onReleased={loadWorkspace}
+      />
 
       {showIntake && (
         <section
