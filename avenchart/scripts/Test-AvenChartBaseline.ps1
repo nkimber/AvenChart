@@ -167,6 +167,26 @@ catch {
 }
 
 try {
+    $flowBoardDate = "2026-07-28"
+    $flowBoard = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/appointments/flow-board?date=$flowBoardDate" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $flowBoardLaneKeys = @($flowBoard.lanes.key)
+    $flowBoardPassed = $flowBoard.date -eq $flowBoardDate `
+        -and $flowBoardLaneKeys.Count -eq 5 `
+        -and (@($flowBoardLaneKeys | Sort-Object) -join ",") -eq "arrived,complete,in-room,other,scheduled"
+    Add-Check -Name "appointment flow-board projection" -Result $(if ($flowBoardPassed) { "passed" } else { "failed" }) -Details @{
+        date = $flowBoard.date
+        lanes = $flowBoardLaneKeys
+    }
+}
+catch {
+    Add-Check -Name "appointment flow-board projection" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $correlationId = "smoke-correlation-$([Guid]::NewGuid().ToString('N').Substring(0, 10))"
     $correlatedHealth = Invoke-WebRequest -Uri "$ApiBaseUrl/health" -Method Get -Headers @{ "X-Correlation-ID" = $correlationId } -UseBasicParsing -TimeoutSec 15
     $correlatedHeaders = Get-AdministrationHeaders

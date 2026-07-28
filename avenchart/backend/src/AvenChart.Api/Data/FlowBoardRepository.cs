@@ -28,15 +28,17 @@ public sealed class FlowBoardRepository(NpgsqlDataSource dataSource)
         {
             ["scheduled"] = [], ["arrived"] = [], ["in-room"] = [], ["complete"] = [], ["other"] = [],
         };
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            var status = reader.IsDBNull(8) ? null : reader.GetString(8);
-            var flowStatus = ToFlowStatus(status);
-            lanes[flowStatus].Add(new FlowBoardItem(
-                reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<TimeOnly>(3).ToString("HH:mm", CultureInfo.InvariantCulture),
-                reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
-                reader.IsDBNull(7) ? null : reader.GetString(7), status, flowStatus));
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var status = reader.IsDBNull(8) ? null : reader.GetString(8);
+                var flowStatus = ToFlowStatus(status);
+                lanes[flowStatus].Add(new FlowBoardItem(
+                    reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<TimeOnly>(3).ToString("HH:mm", CultureInfo.InvariantCulture),
+                    reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.IsDBNull(7) ? null : reader.GetString(7), status, flowStatus));
+            }
         }
         var metadata = await GetMetadataAsync(connection, cancellationToken);
         return new FlowBoardResponse(metadata.DatasetId, metadata.Version, requestedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), [
