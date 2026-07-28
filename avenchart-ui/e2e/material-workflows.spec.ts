@@ -363,6 +363,58 @@ test.describe("material workflows", () => {
     await expect(receiving.getByLabel("Inventory item")).toBeDisabled();
   });
 
+  test("inventory exposes named stock-control workflows instead of generic adjustments", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const actions = page
+      .getByRole("heading", { name: "Authoritative stock actions" })
+      .locator("xpath=ancestor::section");
+    const workflow = actions.getByLabel("Stock workflow");
+    await expect(workflow).toBeVisible({ timeout: 15_000 });
+    await expect(workflow.locator("option")).toHaveText([
+      "Consume or transfer stock",
+      "Reconcile a physical count",
+      "Disposition an expired lot",
+      "Witness full-lot destruction",
+    ]);
+    await expect(actions).not.toContainText("Purchase receipt");
+    await expect(actions).not.toContainText("Count adjustment");
+
+    await workflow.selectOption("count");
+    await expect(actions.getByLabel(/^Lot to count/)).toBeVisible();
+    await expect(
+      actions.getByLabel("Counted quantity", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      actions.getByLabel("Count notes", { exact: true }),
+    ).toBeVisible();
+
+    await workflow.selectOption("expiry");
+    await expect(actions.getByLabel(/^Expired lot/)).toBeVisible();
+    await expect(
+      actions.getByLabel(/^Disposition/).locator("option"),
+    ).toHaveText([
+      "Quarantine pending decision",
+      "Return expired stock",
+      "Destroy expired stock",
+    ]);
+
+    await workflow.selectOption("destruction");
+    await expect(actions.getByLabel(/^Lot to destroy/)).toBeVisible();
+    await expect(
+      actions.getByLabel("Destruction method", { exact: true }),
+    ).toBeVisible();
+    await expect(actions.getByLabel("Witness", { exact: true })).toBeVisible();
+    await expect(
+      actions.getByRole("button", {
+        name: "Record witnessed destruction",
+      }),
+    ).toBeDisabled();
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {

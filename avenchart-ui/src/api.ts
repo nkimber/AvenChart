@@ -2268,16 +2268,25 @@ export async function getInventoryLotMetadataHistory(
     signal,
   )
 }
+export type InventoryMutationResponse = {
+  transaction: InventoryTransactionItem
+  lot: InventoryLot
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
+  counterpartyLot?: InventoryLot | null
+  transferId?: string | null
+}
 export async function createInventoryTransaction(
   sessionId: string,
   input: {
     lotId: number
-    transactionType: string
+    transactionType: 'consumption'
     quantity: number
-    reason?: string | null
+    reason: string
   },
-) {
-  return clinicianPost(sessionId, '/api/inventory/transactions', input)
+  signal?: AbortSignal,
+): Promise<InventoryMutationResponse> {
+  return clinicianPost(sessionId, '/api/inventory/transactions', input, signal)
 }
 export async function createInventoryTransfer(
   sessionId: string,
@@ -2285,10 +2294,105 @@ export async function createInventoryTransfer(
     sourceLotId: number
     destinationFacilityId: number
     quantity: number
-    reason?: string | null
+    reason: string
   },
-) {
-  return clinicianPost(sessionId, '/api/inventory/transfers', input)
+  signal?: AbortSignal,
+): Promise<InventoryMutationResponse> {
+  return clinicianPost(sessionId, '/api/inventory/transfers', input, signal)
+}
+export type InventoryCountReconciliationCreateInput = {
+  lotId: number
+  countedQuantity: number
+  notes: string
+}
+export type InventoryCountReconciliation = {
+  reconciliationId: string
+  lotId: number
+  expectedQuantity: number
+  countedQuantity: number
+  quantityDelta: number
+  notes: string
+  countedBy: string
+  countedAt: string
+  lot: InventoryLot
+  transaction: InventoryTransactionItem
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
+}
+export async function createInventoryCountReconciliation(
+  sessionId: string,
+  input: InventoryCountReconciliationCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryCountReconciliation> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/count-reconciliations',
+    input,
+    signal,
+  )
+}
+export type InventoryLotDestructionCreateInput = {
+  destructionDate?: string | null
+  method: string
+  witness: string
+  notes: string
+}
+export type InventoryLotDestruction = {
+  destructionId: string
+  lot: InventoryLot
+  quantityAffected: number
+  transaction: InventoryTransactionItem
+  destructionDate: string
+  method: string
+  witness: string
+  notes: string
+  destroyedBy: string
+  recordedAt: string
+}
+export async function createInventoryLotDestruction(
+  sessionId: string,
+  lotId: number,
+  input: InventoryLotDestructionCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryLotDestruction> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/lots/${lotId}/destructions`,
+    input,
+    signal,
+  )
+}
+export type InventoryExpiryDispositionCreateInput = {
+  disposition: 'quarantine' | 'return' | 'destroy'
+  notes: string
+  method?: string | null
+  witness?: string | null
+}
+export type InventoryExpiryDisposition = {
+  dispositionId: string
+  disposition: 'quarantine' | 'return' | 'destroy'
+  lot: InventoryLot
+  quantityAffected: number
+  notes: string
+  method?: string | null
+  witness?: string | null
+  disposedBy: string
+  disposedAt: string
+  transaction?: InventoryTransactionItem | null
+  destructionId?: string | null
+}
+export async function createInventoryExpiryDisposition(
+  sessionId: string,
+  lotId: number,
+  input: InventoryExpiryDispositionCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryExpiryDisposition> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/lots/${lotId}/expiry-dispositions`,
+    input,
+    signal,
+  )
 }
 export type InventoryVendor = {
   vendorId: string

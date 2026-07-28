@@ -1,8 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
-  createInventoryTransaction,
-  createInventoryTransfer,
   downloadInventoryActivityCsv,
   getInventory,
   getInventoryActivityReport,
@@ -18,6 +16,7 @@ import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
+import InventoryStockActionsPanel from './InventoryStockActionsPanel.tsx'
 
 type LotWithItem = {
   item: InventoryItem
@@ -53,12 +52,6 @@ export default function InventoryWorkspace() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [data, setData] = useState<InventoryResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [lotId, setLotId] = useState('')
-  const [kind, setKind] = useState('consumption')
-  const [destination, setDestination] = useState('')
-  const [quantity, setQuantity] = useState('1')
-  const [reason, setReason] = useState('')
-  const [saving, setSaving] = useState(false)
   const [activity, setActivity] = useState<InventoryActivityReport | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -79,7 +72,6 @@ export default function InventoryWorkspace() {
       [],
     [data],
   )
-  const selected = lots.find((entry) => String(entry.lot.lotId) === lotId)
   const filteredLots = useMemo(() => {
     const query = lotQuery.trim().toLowerCase()
     return lots.filter(({ item, lot }) => {
@@ -125,41 +117,6 @@ export default function InventoryWorkspace() {
   useEffect(() => {
     void loadOnSessionChange()
   }, [session.sessionId])
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    if (!selected || !Number(quantity)) return
-    setSaving(true)
-    try {
-      if (kind === 'transfer') {
-        await createInventoryTransfer(session.sessionId, {
-          sourceLotId: selected.lot.lotId,
-          destinationFacilityId: Number(destination),
-          quantity: Number(quantity),
-          reason: reason || null,
-        })
-      } else {
-        await createInventoryTransaction(session.sessionId, {
-          lotId: selected.lot.lotId,
-          transactionType: kind,
-          quantity: Number(quantity),
-          reason: reason || null,
-        })
-      }
-      showToast(
-        kind === 'transfer'
-          ? 'Inventory transferred.'
-          : 'Inventory activity recorded.',
-        'success',
-      )
-      setReason('')
-      await load()
-    } catch {
-      showToast('Could not record inventory activity.', 'error')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   async function loadActivity() {
     try {
@@ -273,91 +230,12 @@ export default function InventoryWorkspace() {
             </div>
           </section>
 
-          <section className="cl-card">
-            <div className="cl-card-header">
-              <h2 className="cl-card-title">Record activity</h2>
-            </div>
-            <form className="inventory-record-form" onSubmit={submit}>
-              <label className="cl-admin-field">
-                <span>Inventory lot</span>
-                <select
-                  value={lotId}
-                  onChange={(event) => setLotId(event.target.value)}
-                  required
-                >
-                  <option value="">Select a lot</option>
-                  {lots.map(({ item, lot }) => (
-                    <option key={lot.lotId} value={lot.lotId}>
-                      {item.itemCode} / {lot.facilityCode} / {lot.lotNumber}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="cl-admin-field">
-                <span>Activity</span>
-                <select
-                  value={kind}
-                  onChange={(event) => setKind(event.target.value)}
-                >
-                  <option value="consumption">Consumption</option>
-                  <option value="purchase">Purchase receipt</option>
-                  <option value="adjustment">Count adjustment</option>
-                  <option value="destruction">Destruction</option>
-                  <option value="transfer">Transfer</option>
-                </select>
-              </label>
-              {kind === 'transfer' && (
-                <label className="cl-admin-field">
-                  <span>Destination facility</span>
-                  <select
-                    value={destination}
-                    onChange={(event) => setDestination(event.target.value)}
-                    required
-                  >
-                    <option value="">Select a destination</option>
-                    {data.facilities
-                      .filter(
-                        (facility) =>
-                          facility.code !== selected?.lot.facilityCode,
-                      )
-                      .map((facility) => (
-                        <option
-                          key={facility.facilityId}
-                          value={facility.facilityId}
-                        >
-                          {facility.code} / {facility.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              )}
-              <label className="cl-admin-field">
-                <span>Quantity</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={quantity}
-                  onChange={(event) => setQuantity(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Reason</span>
-                <input
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-              </label>
-              <button
-                type="submit"
-                className="cl-btn-primary"
-                disabled={saving}
-              >
-                {saving ? 'Recording...' : 'Record'}
-              </button>
-            </form>
-          </section>
+          <InventoryStockActionsPanel
+            facilities={data.facilities}
+            items={data.items}
+            onChanged={handleInventoryWorkflowChanged}
+            sessionId={session.sessionId}
+          />
 
           <InventoryReceivingPanel
             facilities={data.facilities}

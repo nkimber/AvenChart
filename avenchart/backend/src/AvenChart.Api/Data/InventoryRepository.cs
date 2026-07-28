@@ -956,28 +956,38 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         CancellationToken cancellationToken)
     {
         if (lotId <= 0 || string.IsNullOrWhiteSpace(username)
+            || string.IsNullOrWhiteSpace(request.Method)
+            || string.IsNullOrWhiteSpace(request.Witness)
+            || string.IsNullOrWhiteSpace(request.Notes)
             || request.Method?.Trim().Length > 250
             || request.Witness?.Trim().Length > 250
             || request.Notes?.Trim().Length > 250)
         {
-            throw new ArgumentException("A valid lot, authenticated user, and destruction details of 250 characters or fewer are required.");
+            throw new ArgumentException("A valid lot, destruction method, witness, notes, authenticated user, and details of 250 characters or fewer are required.");
         }
 
         var destructionDate = ParseOptionalDate(request.DestructionDate, "Destruction date must be an ISO date.")
             ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (destructionDate < new DateOnly(2000, 1, 1) || destructionDate > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            throw new ArgumentException("Destruction date cannot be in the future or before 2000-01-01.");
+        }
         var method = NormalizeOptional(request.Method);
         var witness = NormalizeOptional(request.Witness);
         var notes = NormalizeOptional(request.Notes);
         var recordedAt = DateTimeOffset.UtcNow;
         var destructionId = Guid.NewGuid();
+        var transactionId = Guid.NewGuid();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var lotCommand = connection.CreateCommand();
         lotCommand.Transaction = transaction;
         lotCommand.CommandText = """
-            select f.code, f.name, l.lot_number, l.expiration_date, l.quantity_on_hand, l.unit_cost, l.status
+            select i.item_code, i.name, f.code, f.name, l.lot_number, l.expiration_date,
+              l.quantity_on_hand, l.unit_cost, l.status
             from inventory_lots l
+            join inventory_items i on i.item_id = l.item_id
             join facilities f on f.id = l.facility_id
             where l.lot_id = @lotId
             for update;
@@ -986,26 +996,51 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using var reader = await lotCommand.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
 
-        var facilityCode = reader.GetString(0);
-        var facilityName = reader.GetString(1);
-        var lotNumber = reader.GetString(2);
-        var expirationDate = reader.IsDBNull(3) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(3);
-        var quantityOnHand = reader.GetDecimal(4);
-        var unitCost = reader.GetDecimal(5);
-        var status = reader.GetString(6);
+        var itemCode = reader.GetString(0);
+        var itemName = reader.GetString(1);
+        var facilityCode = reader.GetString(2);
+        var facilityName = reader.GetString(3);
+        var lotNumber = reader.GetString(4);
+        var expirationDate = reader.IsDBNull(5) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(5);
+        var quantityOnHand = reader.GetDecimal(6);
+        var unitCost = reader.GetDecimal(7);
+        var status = reader.GetString(8);
         await reader.DisposeAsync();
         await EnsureGeneralInventoryLotAsync(connection, transaction, lotId, cancellationToken);
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("The inventory lot has already been destroyed or is inactive.");
         }
+        if (quantityOnHand <= 0)
+        {
+            throw new ArgumentException("Only an active inventory lot with quantity on hand can be destroyed.");
+        }
 
         await using (var updateCommand = connection.CreateCommand())
         {
             updateCommand.Transaction = transaction;
-            updateCommand.CommandText = "update inventory_lots set status = 'inactive' where lot_id = @lotId;";
+            updateCommand.CommandText = "update inventory_lots set status = 'inactive', quantity_on_hand = 0 where lot_id = @lotId;";
             updateCommand.Parameters.AddWithValue("lotId", lotId);
             await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var ledgerCommand = connection.CreateCommand())
+        {
+            ledgerCommand.Transaction = transaction;
+            ledgerCommand.CommandText = """
+                insert into inventory_transactions (
+                  transaction_id, lot_id, transaction_type, quantity_delta, reason, performed_by, occurred_at
+                ) values (
+                  @transactionId, @lotId, 'destruction', @quantityDelta, @reason, @user, @recordedAt
+                );
+                """;
+            ledgerCommand.Parameters.AddWithValue("transactionId", transactionId);
+            ledgerCommand.Parameters.AddWithValue("lotId", lotId);
+            ledgerCommand.Parameters.AddWithValue("quantityDelta", -quantityOnHand);
+            ledgerCommand.Parameters.AddWithValue("reason", notes!);
+            ledgerCommand.Parameters.AddWithValue("user", username);
+            ledgerCommand.Parameters.AddWithValue("recordedAt", recordedAt);
+            await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var auditCommand = connection.CreateCommand())
@@ -1024,10 +1059,16 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
 
         await transaction.CommitAsync(cancellationToken);
+        var lot = new InventoryLot(lotId, facilityCode, facilityName, lotNumber,
+            expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 0, unitCost, "inactive");
+        var ledgerEntry = new InventoryTransactionItem(
+            transactionId, lotId, itemCode, itemName, facilityCode, "destruction", -quantityOnHand, notes,
+            username, recordedAt, null, null);
         return new InventoryLotDestructionResponse(
             destructionId,
-            new InventoryLot(lotId, facilityCode, facilityName, lotNumber,
-                expirationDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), quantityOnHand, unitCost, "inactive"),
+            lot,
+            quantityOnHand,
+            ledgerEntry,
             destructionDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), method, witness, notes, username,
             recordedAt.ToString("O", CultureInfo.InvariantCulture));
     }
@@ -1036,8 +1077,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     {
         var disposition = request.Disposition?.Trim().ToLowerInvariant();
         if (lotId <= 0 || string.IsNullOrWhiteSpace(username) || disposition is not ("quarantine" or "return" or "destroy") || string.IsNullOrWhiteSpace(request.Notes)
+            || (disposition == "destroy" && (string.IsNullOrWhiteSpace(request.Method) || string.IsNullOrWhiteSpace(request.Witness)))
             || request.Notes.Trim().Length > 500 || request.Method?.Trim().Length > 250 || request.Witness?.Trim().Length > 250)
-            throw new ArgumentException("An expired lot, quarantine/return/destroy decision, required notes, authenticated user, and valid optional method or witness are required.");
+            throw new ArgumentException("An expired lot, quarantine/return/destroy decision, required notes, authenticated user, and valid method and witness for destruction are required.");
         var notes = request.Notes.Trim(); var method = NormalizeOptional(request.Method); var witness = NormalizeOptional(request.Witness); var now = DateTimeOffset.UtcNow; var dispositionId = Guid.NewGuid();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         int itemId; string itemCode; string itemName; string facilityCode; string facilityName; string lotNumber; DateOnly? expirationDate; decimal quantity; decimal unitCost; string status; decimal reorderPoint;
@@ -1054,13 +1096,13 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (disposition == "quarantine" && !string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Only active expired lots can be quarantined.");
         if (disposition != "quarantine" && status is not ("active" or "quarantined")) throw new ArgumentException("Only active or quarantined expired lots can be returned or destroyed.");
         InventoryTransactionItem? ledgerEntry = null; Guid? transactionId = null; Guid? destructionId = null; var resultingStatus = disposition == "quarantine" ? "quarantined" : "inactive";
-        if (disposition == "return" && quantity > 0)
+        if ((disposition is "return" or "destroy") && quantity > 0)
         {
             transactionId = Guid.NewGuid();
             await using var ledger = connection.CreateCommand(); ledger.Transaction=transaction;
-            ledger.CommandText="insert into inventory_transactions (transaction_id,lot_id,transaction_type,quantity_delta,reason,performed_by,occurred_at) values (@id,@lot,'return',@quantity,@reason,@user,@at);";
-            ledger.Parameters.AddWithValue("id",transactionId.Value); ledger.Parameters.AddWithValue("lot",lotId); ledger.Parameters.AddWithValue("quantity",-quantity); ledger.Parameters.AddWithValue("reason",notes); ledger.Parameters.AddWithValue("user",username); ledger.Parameters.AddWithValue("at",now); await ledger.ExecuteNonQueryAsync(cancellationToken);
-            ledgerEntry = new InventoryTransactionItem(transactionId.Value, lotId, itemCode, itemName, facilityCode, "return", -quantity, notes, username, now, null, null);
+            ledger.CommandText="insert into inventory_transactions (transaction_id,lot_id,transaction_type,quantity_delta,reason,performed_by,occurred_at) values (@id,@lot,@type,@quantity,@reason,@user,@at);";
+            ledger.Parameters.AddWithValue("id",transactionId.Value); ledger.Parameters.AddWithValue("lot",lotId); ledger.Parameters.AddWithValue("type",disposition); ledger.Parameters.AddWithValue("quantity",-quantity); ledger.Parameters.AddWithValue("reason",notes); ledger.Parameters.AddWithValue("user",username); ledger.Parameters.AddWithValue("at",now); await ledger.ExecuteNonQueryAsync(cancellationToken);
+            ledgerEntry = new InventoryTransactionItem(transactionId.Value, lotId, itemCode, itemName, facilityCode, disposition, -quantity, notes, username, now, null, null);
         }
         if (disposition == "destroy")
         {
@@ -1069,10 +1111,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             destruction.CommandText="insert into inventory_lot_destructions (destruction_id,lot_id,destruction_date,destruction_method,destruction_witness,destruction_notes,destroyed_by,recorded_at) values (@id,@lot,@date,@method,@witness,@notes,@user,@at);";
             destruction.Parameters.AddWithValue("id",destructionId.Value); destruction.Parameters.AddWithValue("lot",lotId); destruction.Parameters.AddWithValue("date",DateOnly.FromDateTime(DateTime.UtcNow)); destruction.Parameters.AddWithValue("method",(object?)method??DBNull.Value); destruction.Parameters.AddWithValue("witness",(object?)witness??DBNull.Value); destruction.Parameters.AddWithValue("notes",notes); destruction.Parameters.AddWithValue("user",username); destruction.Parameters.AddWithValue("at",now); await destruction.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_lots set status=@status where lot_id=@lotId;"; update.Parameters.AddWithValue("status",resultingStatus); update.Parameters.AddWithValue("lotId",lotId); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_lots set status=@status, quantity_on_hand=@quantity where lot_id=@lotId;"; update.Parameters.AddWithValue("status",resultingStatus); update.Parameters.AddWithValue("quantity",disposition == "quarantine" ? quantity : 0); update.Parameters.AddWithValue("lotId",lotId); await update.ExecuteNonQueryAsync(cancellationToken); }
         await using (var audit = connection.CreateCommand()) { audit.Transaction=transaction; audit.CommandText="insert into inventory_lot_expiry_dispositions (disposition_id,lot_id,disposition,quantity_affected,notes,method,witness,transaction_id,destruction_id,disposed_by,disposed_at) values (@id,@lot,@disposition,@quantity,@notes,@method,@witness,@transaction,@destruction,@user,@at);"; audit.Parameters.AddWithValue("id",dispositionId); audit.Parameters.AddWithValue("lot",lotId); audit.Parameters.AddWithValue("disposition",disposition); audit.Parameters.AddWithValue("quantity",quantity); audit.Parameters.AddWithValue("notes",notes); audit.Parameters.AddWithValue("method",(object?)method??DBNull.Value); audit.Parameters.AddWithValue("witness",(object?)witness??DBNull.Value); audit.Parameters.AddWithValue("transaction",(object?)transactionId??DBNull.Value); audit.Parameters.AddWithValue("destruction",(object?)destructionId??DBNull.Value); audit.Parameters.AddWithValue("user",username); audit.Parameters.AddWithValue("at",now); await audit.ExecuteNonQueryAsync(cancellationToken); }
         await transaction.CommitAsync(cancellationToken);
-        var lot = new InventoryLot(lotId,facilityCode,facilityName,lotNumber,expirationDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),quantity,unitCost,resultingStatus);
+        var lot = new InventoryLot(lotId,facilityCode,facilityName,lotNumber,expirationDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),disposition == "quarantine" ? quantity : 0,unitCost,resultingStatus);
         return new InventoryExpiryDispositionResponse(dispositionId,disposition,lot,quantity,notes,method,witness,username,now.ToString("O",CultureInfo.InvariantCulture),ledgerEntry,destructionId);
     }
 

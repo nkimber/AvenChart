@@ -237,6 +237,8 @@ public sealed record InventoryLotDestructionRequest(
 public sealed record InventoryLotDestructionResponse(
     Guid DestructionId,
     InventoryLot Lot,
+    decimal QuantityAffected,
+    InventoryTransactionItem Transaction,
     string DestructionDate,
     string? Method,
     string? Witness,

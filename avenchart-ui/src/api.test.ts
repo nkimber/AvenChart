@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiRequestError,
+  createInventoryCountReconciliation,
+  createInventoryExpiryDisposition,
+  createInventoryLotDestruction,
   createInventoryPurchaseReceipt,
   createInventoryPurchaseRequisition,
+  createInventoryTransaction,
+  createInventoryTransfer,
   decideInventoryPurchaseRequisition,
   downloadPatientDocument,
   endPatientPortalSession,
@@ -414,6 +419,175 @@ describe('authenticated API transport', () => {
           notes: 'Partial receipt',
           requisitionId: 'req-1',
         }),
+      }),
+    )
+  })
+
+  it('limits the generic stock mutation contract to named consumption', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          transaction: { transactionId: 'transaction-1' },
+          lot: { lotId: 20001, quantityOnHand: 4 },
+        },
+        201,
+      ),
+    )
+
+    const result = await createInventoryTransaction('staff-session', {
+      lotId: 20001,
+      transactionType: 'consumption',
+      quantity: 2,
+      reason: 'Used by clinic operations',
+    })
+
+    expect(result.transaction.transactionId).toBe('transaction-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/inventory/transactions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          lotId: 20001,
+          transactionType: 'consumption',
+          quantity: 2,
+          reason: 'Used by clinic operations',
+        }),
+      }),
+    )
+  })
+
+  it('records a protected facility transfer with an explicit reason', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          transferId: 'transfer-1',
+          transaction: { transactionId: 'transaction-1' },
+        },
+        201,
+      ),
+    )
+
+    const result = await createInventoryTransfer('staff-session', {
+      sourceLotId: 20001,
+      destinationFacilityId: 13,
+      quantity: 2,
+      reason: 'Move stock to the north clinic',
+    })
+
+    expect(result.transferId).toBe('transfer-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/inventory/transfers',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          sourceLotId: 20001,
+          destinationFacilityId: 13,
+          quantity: 2,
+          reason: 'Move stock to the north clinic',
+        }),
+      }),
+    )
+  })
+
+  it('records a protected physical-count reconciliation', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          reconciliationId: 'reconciliation-1',
+          expectedQuantity: 8,
+          countedQuantity: 7,
+          quantityDelta: -1,
+        },
+        201,
+      ),
+    )
+
+    const result = await createInventoryCountReconciliation('staff-session', {
+      lotId: 20001,
+      countedQuantity: 7,
+      notes: 'Two-person shelf count',
+    })
+
+    expect(result.quantityDelta).toBe(-1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/inventory/count-reconciliations',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          lotId: 20001,
+          countedQuantity: 7,
+          notes: 'Two-person shelf count',
+        }),
+      }),
+    )
+  })
+
+  it('records witnessed destruction and expired-lot dispositions through distinct contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            destructionId: 'destruction-1',
+            quantityAffected: 5,
+            transaction: { transactionId: 'transaction-1' },
+          },
+          201,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            dispositionId: 'disposition-1',
+            disposition: 'destroy',
+            quantityAffected: 3,
+            destructionId: 'destruction-2',
+            transaction: { transactionId: 'transaction-2' },
+          },
+          201,
+        ),
+      )
+
+    const destruction = await createInventoryLotDestruction(
+      'staff-session',
+      20001,
+      {
+        destructionDate: '2026-07-27',
+        method: 'Approved waste service',
+        witness: 'Second staff member',
+        notes: 'Damaged stock',
+      },
+    )
+    const expiry = await createInventoryExpiryDisposition(
+      'staff-session',
+      20002,
+      {
+        disposition: 'destroy',
+        method: 'Approved waste service',
+        witness: 'Second staff member',
+        notes: 'Expired stock',
+      },
+    )
+
+    expect(destruction.transaction.transactionId).toBe('transaction-1')
+    expect(expiry.destructionId).toBe('destruction-2')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/lots/20001/destructions',
+      'http://localhost:5001/api/inventory/lots/20002/expiry-dispositions',
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({
+        destructionDate: '2026-07-27',
+        method: 'Approved waste service',
+        witness: 'Second staff member',
+        notes: 'Damaged stock',
+      }),
+    )
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(
+      JSON.stringify({
+        disposition: 'destroy',
+        method: 'Approved waste service',
+        witness: 'Second staff member',
+        notes: 'Expired stock',
       }),
     )
   })

@@ -7117,6 +7117,84 @@ a {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.inventory-stock-actions {
+  display: grid;
+  gap: 16px;
+}
+.inventory-workflow-picker {
+  max-width: 420px;
+}
+.inventory-action-form {
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.inventory-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.inventory-action-lot,
+.inventory-action-notes {
+  grid-column: span 2;
+}
+.inventory-action-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.inventory-destruction-confirmation {
+  display: grid;
+  gap: 10px;
+}
+.inventory-destruction-confirmation label {
+  color: var(--text);
+  font-size: 13px;
+}
+.inventory-action-result {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #b8ddd2;
+  border-radius: var(--radius-md);
+  background: var(--teal-soft);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.inventory-stock-actions .cl-btn-danger {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.inventory-stock-actions .cl-btn-danger:hover:not(:disabled) {
+  background: #b42331;
+}
+.inventory-stock-actions .cl-btn-danger:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+.inventory-stock-actions .cl-btn-danger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 @media (max-width: 700px) {
   .inventory-modern-item {
     grid-template-columns: 1fr;
@@ -7140,6 +7218,13 @@ a {
   }
   .inventory-receiving-grid {
     grid-template-columns: 1fr;
+  }
+  .inventory-action-grid {
+    grid-template-columns: 1fr;
+  }
+  .inventory-action-lot,
+  .inventory-action-notes {
+    grid-column: auto;
   }
 }
 
