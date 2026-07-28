@@ -7,6 +7,7 @@ import {
   getStaffMessageInbox,
   isRequestCancellation,
   replyToPatientMessage,
+  updatePatientMessageAssignment,
   type PatientMessageItem,
   type StaffMessageInboxQuery,
   type StaffMessageInboxResponse,
@@ -102,6 +103,8 @@ export default function ClinicianMessages() {
   const [composeBody, setComposeBody] = useState('')
   const [sending, setSending] = useState(false)
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null)
+  const [assigningId, setAssigningId] = useState<string | null>(null)
+  const [assignmentError, setAssignmentError] = useState<{ id: string; message: string } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -154,6 +157,7 @@ export default function ClinicianMessages() {
     setThreadState({ status: 'loading', patient })
     setReplyBody('')
     setActiveMessageId(null)
+    setAssignmentError(null)
     getPatientMessages(session.sessionId, patient.canonicalId)
       .then((data) => setThreadState({
         status: 'ready',
@@ -196,6 +200,37 @@ export default function ClinicianMessages() {
       showToast(error instanceof Error ? error.message : 'Reply failed.', 'error')
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleClaim(messageId: string) {
+    setAssigningId(messageId)
+    setAssignmentError(null)
+    try {
+      const updated = await updatePatientMessageAssignment(
+        session.sessionId,
+        messageId,
+        session.username,
+      )
+      setThreadState((previous) =>
+        previous.status === 'ready'
+          ? {
+              ...previous,
+              thread: {
+                ...previous.thread,
+                messages: updated.messages.filter((message) => !message.deleted),
+              },
+            }
+          : previous,
+      )
+      setReload((value) => value + 1)
+      showToast('Message assigned to you.', 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update the assignment.'
+      setAssignmentError({ id: messageId, message })
+      showToast(message, 'error')
+    } finally {
+      setAssigningId(null)
     }
   }
 
@@ -514,6 +549,27 @@ export default function ClinicianMessages() {
                         </span>
                       </div>
                       {message.body && <p className="msg-item-body">{message.body}</p>}
+                      <div className="ne-actions">
+                        {message.assignedTo === session.username ? (
+                          <span className="cl-badge cl-badge-green">Assigned to you</span>
+                        ) : (
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={assigningId !== null}
+                            onClick={() => void handleClaim(message.id)}
+                          >
+                            {assigningId === message.id
+                              ? 'Assigning…'
+                              : message.assignedTo
+                                ? 'Reassign to me'
+                                : 'Claim'}
+                          </button>
+                        )}
+                      </div>
+                      {assignmentError?.id === message.id && (
+                        <p className="field-error" role="alert">{assignmentError.message}</p>
+                      )}
                       {activeMessageId === message.id ? (
                         <div className="msg-reply-form">
                           <label className="ne-field">

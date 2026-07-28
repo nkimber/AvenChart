@@ -10,6 +10,7 @@ import {
   createInventoryPurchaseRequisition,
   createInventoryTransaction,
   createInventoryTransfer,
+  createPatientMessage,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
   downloadInventoryActivityCsv,
@@ -27,12 +28,15 @@ import {
   getPatientProviderAssignmentOptions,
   getStaffMessageInbox,
   logout,
+  replyToPatientMessage,
   searchEncounters,
   SESSION_INVALID_EVENT,
   submitInventoryPurchaseRequisition,
   updatePatientCareTeam,
   updatePatientEmployer,
   updatePatientGuardianContact,
+  updatePatientMessageAssignment,
+  updatePatientMessageStatus,
   updatePatientProviderAssignment,
   updateInventoryMedicationLink,
 } from './api.ts'
@@ -206,6 +210,136 @@ describe('authenticated API transport', () => {
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
     )
+  })
+
+  it('uses the PUT reply contract and unwraps the refreshed patient thread', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
+      portalEnabled: true,
+      messages: [
+        {
+          id: 'MSG-1',
+          title: 'Medication question',
+          body: 'Original message\n\nReply from admin: Take with food.',
+          status: 'new',
+          assignedTo: 'admin',
+          deleted: 0,
+        },
+      ],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'MSG-1', detail }))
+
+    const result = await replyToPatientMessage(
+      'staff-session',
+      'MSG-1',
+      { body: 'Take with food.', assignedTo: 'admin' },
+    )
+
+    expect(result).toEqual(detail)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/messages/MSG-1/reply',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: {
+          'X-Legacy EHR-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          body: 'Take with food.',
+          assignedTo: 'admin',
+        }),
+      }),
+    )
+  })
+
+  it('assigns a message through the mutation envelope and returns its refreshed thread', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
+      portalEnabled: true,
+      messages: [
+        {
+          id: 'MSG-1',
+          title: 'Medication question',
+          status: 'new',
+          assignedTo: 'admin',
+          deleted: 0,
+        },
+      ],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'MSG-1', detail }))
+
+    const result = await updatePatientMessageAssignment(
+      'staff-session',
+      'MSG-1',
+      'admin',
+    )
+
+    expect(result).toEqual(detail)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/messages/MSG-1/assignment',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ assignedTo: 'admin' }),
+      }),
+    )
+  })
+
+  it('unwraps create and status mutation envelopes consistently', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
+      portalEnabled: true,
+      messages: [
+        {
+          id: 'MSG-2',
+          title: 'Follow-up',
+          status: 'new',
+          assignedTo: 'admin',
+          deleted: 0,
+        },
+      ],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'MSG-2', detail }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'MSG-2', detail }))
+
+    const created = await createPatientMessage('staff-session', {
+      patientId: 'MOD-PAT-0004',
+      title: 'Follow-up',
+      body: 'Please review.',
+      assignedTo: 'admin',
+    })
+    const updated = await updatePatientMessageStatus(
+      'staff-session',
+      'MSG-2',
+      { status: 'done', body: 'Reviewed.' },
+    )
+
+    expect(created).toEqual(detail)
+    expect(updated).toEqual(detail)
+    expect(fetchMock.mock.calls).toEqual([
+      [
+        'http://localhost:5001/api/messages',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            patientId: 'MOD-PAT-0004',
+            title: 'Follow-up',
+            body: 'Please review.',
+            assignedTo: 'admin',
+          }),
+        }),
+      ],
+      [
+        'http://localhost:5001/api/messages/MSG-2/status',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ status: 'done', body: 'Reviewed.' }),
+        }),
+      ],
+    ])
   })
 
   it('uses the protected patient relationship and care-team contracts', async () => {

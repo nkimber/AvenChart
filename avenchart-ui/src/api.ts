@@ -3306,6 +3306,11 @@ export type PatientMessagesResponse = {
   messages: PatientMessageItem[]
 }
 
+export type PatientMessageMutationResponse = {
+  id: string
+  detail: PatientMessagesResponse
+}
+
 export type StaffMessageInboxCounts = {
   total: number
   unread: number
@@ -3381,12 +3386,13 @@ export async function replyToPatientMessage(
   body: { body: string; assignedTo: string },
   signal?: AbortSignal,
 ): Promise<PatientMessagesResponse> {
-  return clinicianPost(
+  const result = await clinicianPut<PatientMessageMutationResponse>(
     sessionId,
     `/api/messages/${messageId}/reply`,
     body,
     signal,
   )
+  return result.detail
 }
 
 export async function updatePatientMessageStatus(
@@ -3395,12 +3401,28 @@ export async function updatePatientMessageStatus(
   body: { status: string; body: string },
   signal?: AbortSignal,
 ): Promise<PatientMessagesResponse> {
-  return clinicianPut(
+  const result = await clinicianPut<PatientMessageMutationResponse>(
     sessionId,
     `/api/messages/${messageId}/status`,
     body,
     signal,
   )
+  return result.detail
+}
+
+export async function updatePatientMessageAssignment(
+  sessionId: string,
+  messageId: string,
+  assignedTo: string,
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPut<PatientMessageMutationResponse>(
+    sessionId,
+    `/api/messages/${messageId}/assignment`,
+    { assignedTo },
+    signal,
+  )
+  return result.detail
 }
 
 export type OfficeNoteItem = {
@@ -5941,8 +5963,14 @@ export async function createPatientMessage(
   sessionId: string,
   input: CreatePatientMessageInput,
   signal?: AbortSignal,
-): Promise<PatientMessageItem> {
-  return clinicianPost(sessionId, '/api/messages', input, signal)
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(
+    sessionId,
+    '/api/messages',
+    input,
+    signal,
+  )
+  return result.detail
 }
 
 // ── Patient mutations ─────────────────────────────────────────────────────────

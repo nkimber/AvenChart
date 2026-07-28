@@ -54,7 +54,10 @@ export default function PatientMessages() {
     if (!selectedId || !replyBody.trim()) return
     setReplying(true)
     try {
-      await replyToPatientMessage(session.sessionId, selectedId, { body: replyBody.trim(), assignedTo: '' })
+      await replyToPatientMessage(session.sessionId, selectedId, {
+        body: replyBody.trim(),
+        assignedTo: session.username,
+      })
       showToast('Reply sent')
       setReplyBody('')
       load()

@@ -160,6 +160,87 @@ test.describe("material workflows", () => {
     await expect(page.getByLabel("Status")).toHaveValue("new");
   });
 
+  test("staff can claim and reply to a patient message from the inbox", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-chromium",
+      "The isolated message mutation proof runs once while the other projects stay read-only.",
+    );
+    await signInClinician(page);
+    const sessionId = await page.evaluate(() => {
+      const raw = sessionStorage.getItem(
+        "avenchart-ui.clinicianSession",
+      );
+      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
+    });
+    expect(sessionId).toBeTruthy();
+
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const subject = `Inbox claim proof ${Date.now()}`;
+    const reply = `Browser-verified reply ${Date.now()}`;
+    let messageId: string | null = null;
+
+    try {
+      const created = await page.request.post(`${apiBaseUrl}/api/messages`, {
+        headers: { "X-Legacy EHR-Session": sessionId! },
+        data: {
+          patientId: "MOD-PAT-0004",
+          title: subject,
+          body: "Please confirm the message workflow.",
+          assignedTo: "gold-provider-01",
+        },
+      });
+      expect(created.ok()).toBeTruthy();
+      const mutation = (await created.json()) as { id?: string };
+      messageId = mutation.id ?? null;
+      expect(messageId).toBeTruthy();
+
+      const params = new URLSearchParams({
+        patient: "MOD-PAT-0004",
+        subject,
+      });
+      await page.goto(`/clinician/messages?${params}`);
+      const inboxItem = page
+        .getByRole("button")
+        .filter({ hasText: subject });
+      await expect(inboxItem).toBeVisible({ timeout: 30_000 });
+      await inboxItem.click();
+
+      const message = page.locator("article.msg-item").filter({
+        has: page.getByRole("heading", { name: subject }),
+      });
+      await expect(message).toBeVisible({ timeout: 30_000 });
+      await message
+        .getByRole("button", { name: "Reassign to me" })
+        .click();
+      await expect(message.getByText("Assigned to you")).toBeVisible();
+
+      await message
+        .getByRole("button", { name: "Reply", exact: true })
+        .click();
+      await message.getByLabel("Reply").fill(reply);
+      await message
+        .getByRole("button", { name: "Reply", exact: true })
+        .click();
+      await expect(message).toContainText(reply);
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Reply recorded." }),
+      ).toBeVisible();
+    } finally {
+      if (messageId && sessionId) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/messages/${messageId}`,
+          { headers: { "X-Legacy EHR-Session": sessionId } },
+        );
+        expect(deleted.ok()).toBeTruthy();
+      }
+    }
+  });
+
   test("encounter alerts expose severity and acknowledgement evidence", async ({
     page,
   }, testInfo) => {
