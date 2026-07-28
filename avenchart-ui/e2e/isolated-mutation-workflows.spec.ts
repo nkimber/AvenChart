@@ -2466,6 +2466,276 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
+  test("administrators can page, render, version, attach, and audit document templates", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `TMP-DOC-TEMPLATE-${Date.now()}`;
+    const primaryName = `${marker}-00`;
+    const binaryFileName = `${marker}-version.txt`;
+    const binaryContent = `Binary patient-template proof ${marker}.`;
+    const headers = { "X-Legacy EHR-Session": sessionId };
+    const templateIds = new Set<string>();
+
+    async function getMarkerTemplates() {
+      const response = await page.request.get(
+        `${apiBaseUrl}/api/administration/document-templates/?search=${encodeURIComponent(
+          marker,
+        )}&includeInactive=true&offset=0&limit=100`,
+        { headers },
+      );
+      expect(response.ok()).toBeTruthy();
+      return (
+        (await response.json()) as {
+          total: number;
+          items: Array<{ id: string; name: string }>;
+        }
+      ).items;
+    }
+
+    async function getMarkerDocuments() {
+      const response = await page.request.get(
+        `${apiBaseUrl}/api/documents/MOD-PAT-0001?includeArchived=true`,
+        { headers },
+      );
+      expect(response.ok()).toBeTruthy();
+      return (
+        (await response.json()) as {
+          documents: Array<{ id: number; name: string }>;
+        }
+      ).documents.filter((document) => document.name.includes(marker));
+    }
+
+    try {
+      await page.goto("/clinician/document-templates");
+      await expect(
+        page.getByRole("heading", { name: "Document Templates" }),
+      ).toBeVisible();
+      await page.getByLabel("Template name *").fill(primaryName);
+      await page
+        .getByLabel("Text content *")
+        .fill(
+          `Care plan for ***NAME*** (DOB ***DOB***, chart ***PATIENT_ID***).\n\nBrowser proof ${marker}.`,
+        );
+      await page.getByRole("button", { name: "Save template" }).click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Document template created." }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: `Edit ${primaryName}` }),
+      ).toBeVisible();
+
+      const primary = (await getMarkerTemplates()).find(
+        (template) => template.name === primaryName,
+      );
+      expect(primary).toBeTruthy();
+      templateIds.add(primary!.id);
+
+      for (let index = 1; index < 9; index += 1) {
+        const response = await page.request.post(
+          `${apiBaseUrl}/api/administration/document-templates/`,
+          {
+            headers,
+            data: {
+              name: `${marker}-${String(index).padStart(2, "0")}`,
+              content: `Paged template ${index} for ***NAME***.`,
+              active: true,
+            },
+          },
+        );
+        expect(response.status()).toBe(201);
+        templateIds.add(((await response.json()) as { id: string }).id);
+      }
+
+      const library = page
+        .getByRole("heading", { name: "Template library" })
+        .locator("xpath=ancestor::section");
+      await library.getByLabel("Search templates").fill(marker);
+      await library.getByRole("button", { name: "Apply" }).click();
+      await expect(library.getByText("Page 1 of 2 · 9 results")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        library.getByRole("button", { name: new RegExp(primaryName) }),
+      ).toBeVisible();
+      await library.getByRole("button", { name: "Next" }).click();
+      await expect(library.getByText("Page 2 of 2 · 9 results")).toBeVisible();
+      await expect(
+        library.getByRole("button", {
+          name: new RegExp(`${marker}-08`),
+        }),
+      ).toBeVisible();
+      await library.getByRole("button", { name: "Previous" }).click();
+      await library
+        .getByRole("button", { name: new RegExp(primaryName) })
+        .click();
+
+      const activeCheckbox = page.getByLabel(
+        "Active for preview and patient attachment",
+      );
+      await activeCheckbox.uncheck();
+      await page.getByRole("button", { name: "Save template" }).click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Document template updated." })
+          .last(),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Render text preview" }),
+      ).toBeDisabled();
+      await activeCheckbox.check();
+      await page.getByRole("button", { name: "Save template" }).click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Document template updated." })
+          .last(),
+      ).toBeVisible();
+
+      const output = page
+        .getByRole("heading", {
+          name: "Preview and patient attachment",
+        })
+        .locator("xpath=ancestor::section");
+      await output.getByLabel("Find patient *").fill("MOD-PAT-0001");
+      await output.getByRole("button", { name: "Search" }).click();
+      const patientResult = output.getByRole("button", {
+        name: /Stone, Avery.*MOD-PAT-0001/,
+      });
+      await expect(patientResult).toBeVisible({ timeout: 15_000 });
+      await patientResult.click();
+      await expect(output.getByText("Stone, Avery")).toBeVisible();
+      await output.getByLabel("Filing category *").selectOption("3");
+      await output.getByLabel("Document date *").fill("2026-07-28");
+      await output
+        .getByRole("button", { name: "Render text preview" })
+        .click();
+      await expect(output.getByText(/Care plan for Avery Stone/)).toBeVisible();
+
+      await output
+        .getByRole("button", { name: "Attach rendered text" })
+        .click();
+      await expect(output.getByText(/Patient document \d+ was created/)).toBeVisible(
+        { timeout: 20_000 },
+      );
+      await expect(
+        output.getByRole("link", { name: "Open patient documents" }),
+      ).toHaveAttribute(
+        "href",
+        "/clinician/patients/MOD-PAT-0001/documents",
+      );
+
+      const versions = page
+        .getByRole("heading", { name: "Binary versions" })
+        .locator("xpath=ancestor::section");
+      await versions.locator('input[type="file"]').setInputFiles({
+        name: binaryFileName,
+        mimeType: "text/plain",
+        buffer: Buffer.from(binaryContent),
+      });
+      const versionRow = versions.getByRole("row").filter({
+        hasText: binaryFileName,
+      });
+      await expect(versionRow).toContainText("v1", { timeout: 20_000 });
+      await versionRow.getByRole("button", { name: "Preview" }).click();
+      await expect(
+        output.getByText(`Binary patient-template proof ${marker}.`),
+      ).toBeVisible();
+
+      const downloadPromise = page.waitForEvent("download");
+      await versionRow.getByRole("button", { name: "Download" }).click();
+      const download = await downloadPromise;
+      expect(download.suggestedFilename()).toBe(binaryFileName);
+
+      await versionRow.getByRole("button", { name: "Attach" }).click();
+      await expect(output.getByText(/Patient document \d+ was created/)).toBeVisible(
+        { timeout: 20_000 },
+      );
+
+      const historySection = page
+        .getByRole("heading", { name: "Audit history" })
+        .locator("xpath=ancestor::section");
+      await expect(historySection.getByText("6 of 6 events")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        historySection.getByText("patient attachment generated").first(),
+      ).toBeVisible();
+      await expect(historySection.getByText(/Actor: admin/).first()).toBeVisible();
+      await expect(historySection.getByText(/Patient: MOD-PAT-0001/).first()).toBeVisible();
+
+      const historyResponse = await page.request.get(
+        `${apiBaseUrl}/api/administration/document-templates/${primary!.id}/history`,
+        { headers },
+      );
+      expect(historyResponse.ok()).toBeTruthy();
+      const historyBody = (await historyResponse.json()) as {
+        eventCount: number;
+        returnedCount: number;
+        resultLimit: number;
+        events: Array<{
+          action: string;
+          username: string;
+          patientId?: string | null;
+        }>;
+      };
+      expect(historyBody).toMatchObject({
+        eventCount: 6,
+        returnedCount: 6,
+        resultLimit: 100,
+      });
+      expect(historyBody.events[0]).toMatchObject({
+        action: "patient-attachment-generated",
+        username: "admin",
+        patientId: "MOD-PAT-0001",
+      });
+      expect(historyBody.events.map((event) => event.action)).toEqual([
+        "patient-attachment-generated",
+        "binary-version-uploaded",
+        "patient-attachment-generated",
+        "activated",
+        "retired",
+        "created",
+      ]);
+      expect(await getMarkerDocuments()).toHaveLength(2);
+    } finally {
+      for (const document of await getMarkerDocuments()) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/documents/${document.id}`,
+          { headers },
+        );
+        expect([204, 404]).toContain(deleted.status());
+      }
+      for (const template of await getMarkerTemplates()) {
+        templateIds.add(template.id);
+      }
+      for (const templateId of templateIds) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/administration/document-templates/${templateId}/test-fixture`,
+          { headers },
+        );
+        expect([204, 404]).toContain(deleted.status());
+      }
+      await expect.poll(async () => (await getMarkerTemplates()).length).toBe(0);
+      await expect.poll(async () => (await getMarkerDocuments()).length).toBe(0);
+      expect(
+        runProviderAssignmentSql(
+          `select
+            (select count(*) from document_templates where name like '${marker}%')
+            + (select count(*) from document_template_events where summary like '%${marker}%')
+            + (select count(*) from document_template_binary_versions where file_name like '${marker}%')
+            + (select count(*) from patient_documents where name like '%${marker}%');`,
+        ),
+      ).toBe("0");
+    }
+  });
+
   test("staff can operate the global refill lifecycle, reject stale edits, route locally, and expose patient-visible outcomes", async ({
     page,
     context,

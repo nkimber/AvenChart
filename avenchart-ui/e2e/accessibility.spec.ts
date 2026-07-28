@@ -261,6 +261,79 @@ test.describe("accessibility gate", () => {
     expect(sessionId).toBeTruthy();
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const templateMarker = `TMP-DOC-TEMPLATE-AXE-${testInfo.project.name}-${Date.now()}`;
+    const templateFixtureResponse = await page.request.post(
+      `${apiBaseUrl}/api/administration/document-templates/`,
+      {
+        headers: { "X-Legacy EHR-Session": sessionId! },
+        data: {
+          name: templateMarker,
+          content:
+            "Accessibility care instructions for ***NAME***, DOB ***DOB***.",
+          active: true,
+        },
+      },
+    );
+    expect(templateFixtureResponse.status()).toBe(201);
+    const templateFixtureId = (
+      (await templateFixtureResponse.json()) as { id: string }
+    ).id;
+    try {
+      const versionFixtureResponse = await page.request.post(
+        `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/binary-versions`,
+        {
+          headers: { "X-Legacy EHR-Session": sessionId! },
+          data: {
+            fileName: `${templateMarker}.txt`,
+            mimetype: "text/plain",
+            contentBase64:
+              "QWNjZXNzaWJpbGl0eSB0ZW1wbGF0ZSBwcm9vZi4=",
+          },
+        },
+      );
+      expect(versionFixtureResponse.status()).toBe(201);
+      await navigateWithinApplication(page, "/clinician/document-templates");
+      const templateLibrary = page
+        .getByRole("heading", { name: "Template library" })
+        .locator("xpath=ancestor::section");
+      await templateLibrary
+        .getByLabel("Search templates")
+        .fill(templateMarker);
+      await templateLibrary.getByRole("button", { name: "Apply" }).click();
+      await templateLibrary
+        .getByRole("button", { name: new RegExp(templateMarker) })
+        .click();
+      const templateOutput = page
+        .getByRole("heading", {
+          name: "Preview and patient attachment",
+        })
+        .locator("xpath=ancestor::section");
+      await templateOutput.getByLabel("Find patient *").fill("MOD-PAT-0001");
+      await templateOutput.getByRole("button", { name: "Search" }).click();
+      const templatePatientResult = templateOutput.getByRole("button", {
+        name: /Stone, Avery.*MOD-PAT-0001/,
+      });
+      await expect(templatePatientResult).toBeVisible({ timeout: 15_000 });
+      await templatePatientResult.click();
+      await expect(
+        page.getByRole("heading", { name: "Binary versions" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Audit history" }),
+      ).toBeVisible();
+      violations.push(
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          "/clinician/document-templates#lifecycle",
+        )),
+      );
+    } finally {
+      const deleted = await page.request.delete(
+        `${apiBaseUrl}/api/administration/document-templates/${templateFixtureId}/test-fixture`,
+        { headers: { "X-Legacy EHR-Session": sessionId! } },
+      );
+      expect([204, 404]).toContain(deleted.status());
+    }
     const ocrMarker = `TMP-OCR-AXE-${testInfo.project.name}-${Date.now()}`;
     const ocrFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/documents/scanner-captures`,

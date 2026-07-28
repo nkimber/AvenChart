@@ -4250,13 +4250,37 @@ export type DocumentTemplateItem = {
   createdAt: string
   updatedAt: string
 }
+
+export type DocumentTemplateListResponse = {
+  search: string
+  includeInactive: boolean
+  offset: number
+  limit: number
+  total: number
+  activeCount: number
+  retiredCount: number
+  items: DocumentTemplateItem[]
+}
+
 export async function getDocumentTemplates(
   sessionId: string,
-  includeInactive = true,
-): Promise<DocumentTemplateItem[]> {
+  params: {
+    search?: string
+    includeInactive?: boolean
+    offset?: number
+    limit?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<DocumentTemplateListResponse> {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  query.set('includeInactive', String(params.includeInactive ?? true))
+  query.set('offset', String(params.offset ?? 0))
+  query.set('limit', String(params.limit ?? 10))
   return clinicianGet(
     sessionId,
-    `/api/administration/document-templates/?includeInactive=${includeInactive}`,
+    `/api/administration/document-templates/?${query}`,
+    signal,
   )
 }
 export async function createDocumentTemplate(
@@ -4301,6 +4325,45 @@ export type DocumentTemplateBinaryVersion = {
   sha256: string
   createdAt: string
 }
+
+export type DocumentTemplateEvent = {
+  eventId: number
+  templateId: string
+  action:
+    | 'created'
+    | 'updated'
+    | 'activated'
+    | 'retired'
+    | 'binary-version-uploaded'
+    | 'patient-attachment-generated'
+  summary: string
+  binaryVersionId?: string | null
+  patientDocumentId?: number | null
+  patientId?: string | null
+  occurredAt: string
+  username: string
+}
+
+export type DocumentTemplateHistoryResponse = {
+  template: DocumentTemplateItem
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: DocumentTemplateEvent[]
+}
+
+export async function getDocumentTemplateHistory(
+  sessionId: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<DocumentTemplateHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/document-templates/${id}/history`,
+    signal,
+  )
+}
+
 export async function getDocumentTemplateBinaryVersions(
   sessionId: string,
   id: string,
@@ -4328,6 +4391,7 @@ export async function generateDocumentTemplateAttachment(
     patientId: string
     categoryId: number
     encounter?: number | null
+    docDate?: string | null
     binaryVersionId?: string | null
   },
 ): Promise<{ id: number }> {

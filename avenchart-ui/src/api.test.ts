@@ -38,6 +38,8 @@ import {
   findPatientDuplicateCandidates,
   failPatientDocumentOcr,
   getCurrentSession,
+  getDocumentTemplateHistory,
+  getDocumentTemplates,
   getInventoryActivityReport,
   getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
@@ -673,6 +675,75 @@ describe('authenticated API transport', () => {
         reason: 'Returned after chart reconciliation.',
         expectedArchived: true,
       }),
+    })
+  })
+
+  it('uses the paged document-template library and protected audit-history contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          search: 'care plan',
+          includeInactive: true,
+          offset: 8,
+          limit: 8,
+          total: 9,
+          activeCount: 8,
+          retiredCount: 1,
+          items: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          template: {
+            id: 'template-id',
+            name: 'Care plan',
+            content: 'Hello ***NAME***',
+            active: true,
+            createdAt: '2026-07-28T12:00:00Z',
+            updatedAt: '2026-07-28T12:00:00Z',
+          },
+          eventCount: 1,
+          returnedCount: 1,
+          resultLimit: 100,
+          events: [
+            {
+              eventId: 1,
+              templateId: 'template-id',
+              action: 'created',
+              summary: 'Created template "Care plan".',
+              occurredAt: '2026-07-28T12:00:00Z',
+              username: 'admin',
+            },
+          ],
+        }),
+      )
+
+    const library = await getDocumentTemplates('staff-session', {
+      search: 'care plan',
+      includeInactive: true,
+      offset: 8,
+      limit: 8,
+    })
+    const history = await getDocumentTemplateHistory(
+      'staff-session',
+      'template-id',
+    )
+
+    expect(library).toMatchObject({
+      total: 9,
+      activeCount: 8,
+      retiredCount: 1,
+    })
+    expect(history.events[0]).toMatchObject({
+      action: 'created',
+      username: 'admin',
+    })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/administration/document-templates/?search=care+plan&includeInactive=true&offset=8&limit=8',
+      'http://localhost:5001/api/administration/document-templates/template-id/history',
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { 'X-Legacy EHR-Session': 'staff-session' },
     })
   })
 
