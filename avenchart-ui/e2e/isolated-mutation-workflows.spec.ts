@@ -993,6 +993,7 @@ test.describe("isolated mutation workflows", () => {
     const imageName = `${marker}-IMAGE`;
     const unsupportedName = `${marker}-UNSUPPORTED`;
     const linkName = `${marker}-LINK`;
+    const ocrName = `${marker}-SCANNED-OCR`;
     const metadataReason = `Correct filing metadata ${marker}`;
     const originalNoteContent = `Browser-created clinical note ${marker}.`;
     const replacementNoteContent = `Corrected clinical note content ${marker}.`;
@@ -1006,6 +1007,15 @@ test.describe("isolated mutation workflows", () => {
     const restoreReason = `Restore after chart reconciliation ${marker}`;
     const routingReason = `Route directive review ${marker}`;
     const routingCompletionReason = `Complete directive handoff ${marker}`;
+    const ocrStartReason = `Begin OCR review ${marker}`;
+    const ocrFailureReason = `Low contrast source ${marker}`;
+    const ocrRetryReason = `Retry after local image adjustment ${marker}`;
+    const ocrCompletionReason = `Verify extracted referral text ${marker}`;
+    const ocrCorrectionReason = `Correct source surname ${marker}`;
+    const ocrExtractedText =
+      `Referral received for Morgan Sample. Browser OCR proof ${marker}.`;
+    const ocrCorrectedText =
+      `Referral received for Morgan Samuels. Browser OCR proof ${marker}.`;
     const routingDueAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
     const routingDueLocal = new Date(
       routingDueAt.valueOf() - routingDueAt.getTimezoneOffset() * 60_000,
@@ -1024,7 +1034,11 @@ test.describe("isolated mutation workflows", () => {
       "base64",
     );
     const unsupportedBytes = Buffer.from(`Unsupported archive ${marker}`);
+    const scannedPdfBytes = Buffer.from(
+      `%PDF-1.4\n% Scanned OCR workflow proof ${marker}\n`,
+    );
     const headers = { "X-Legacy EHR-Session": sessionId };
+    let ocrDocumentId: number;
 
     async function getMarkerDocuments() {
       const response = await page.request.get(
@@ -1053,6 +1067,10 @@ test.describe("isolated mutation workflows", () => {
           previewStatus: string;
           canPreviewInline: boolean;
           canDownload: boolean;
+          isScannedAttachment: boolean;
+          captureSource: string;
+          scanPageCount: number;
+          ocrStatus: string;
         }>;
       };
       return body.documents.filter((document) =>
@@ -1837,6 +1855,29 @@ test.describe("isolated mutation workflows", () => {
         }),
       ).toBeVisible();
 
+      const scannedResponse = await page.request.post(
+        `${apiBaseUrl}/api/documents/binary`,
+        {
+          headers,
+          data: {
+            patientId: "MOD-PAT-0001",
+            categoryId: 3,
+            name: ocrName,
+            docDate: "2026-07-28",
+            encounter: 1000013,
+            fileName: `${marker}-SCANNED-OCR.pdf`,
+            mimetype: "application/pdf",
+            contentBase64: scannedPdfBytes.toString("base64"),
+            notes: `Scan source: chart scanner; OCR pending; Proof ${marker}`,
+          },
+        },
+      );
+      expect(scannedResponse.status()).toBe(201);
+      ocrDocumentId = Number(
+        ((await scannedResponse.json()) as { id: number }).id,
+      );
+      expect(ocrDocumentId).toBeGreaterThan(0);
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /External link HTTP/ })
@@ -2048,8 +2089,282 @@ test.describe("isolated mutation workflows", () => {
         dashboardDocumentQueue.locator(".dash-stat-value"),
       ).toHaveText(String(activeQueue.counts.active), { timeout: 20_000 });
 
+      const ocrSourceBeforeResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${ocrDocumentId}/content`,
+        { headers },
+      );
+      expect(ocrSourceBeforeResponse.ok()).toBeTruthy();
+      const ocrSourceBefore = (await ocrSourceBeforeResponse.json()) as {
+        uploadedAt: string;
+        hash?: string | null;
+        contentBase64?: string | null;
+        ocrStatus: string;
+      };
+      expect(ocrSourceBefore.ocrStatus).toBe("OCR pending");
+      expect(
+        Buffer.from(ocrSourceBefore.contentBase64 ?? "", "base64"),
+      ).toEqual(scannedPdfBytes);
+
+      await page.goto("/clinician/document-ocr");
+      await page.getByLabel("Search documents").fill(marker);
+      await page.getByRole("button", { name: "Apply filters" }).click();
+      const ocrQueue = page.getByLabel("Document OCR queue");
+      const ocrCard = ocrQueue
+        .locator(".document-ocr-card")
+        .filter({ hasText: ocrName });
+      await expect(ocrCard).toBeVisible({ timeout: 20_000 });
+      await expect(ocrCard).toContainText("Ready for OCR");
+      await expect(ocrCard).toContainText("chart scanner / 1 page");
+      await expect(ocrCard).toContainText("Task v0 / document v1");
+
+      await ocrCard.getByRole("button", { name: "Start OCR" }).click();
+      await ocrCard.getByLabel("Work note *").fill(ocrStartReason);
+      await ocrCard
+        .getByRole("button", { name: "Start OCR", exact: true })
+        .last()
+        .click();
+      await expect(ocrCard).toContainText("OCR running", {
+        timeout: 20_000,
+      });
+      await expect(ocrCard).toContainText("Task v1 / document v1");
+
+      const staleOcrStart = await page.request.post(
+        `${apiBaseUrl}/api/documents/${ocrDocumentId}/ocr/start`,
+        {
+          headers,
+          data: {
+            expectedTaskVersion: 0,
+            reason: `Stale OCR start ${marker}`,
+          },
+        },
+      );
+      expect(staleOcrStart.status()).toBe(409);
+      await expect(staleOcrStart.json()).resolves.toMatchObject({
+        currentTaskVersion: 1,
+        currentStatus: "running",
+      });
+
+      await ocrCard
+        .getByRole("button", { name: "Record failure" })
+        .click();
+      await ocrCard.getByLabel("Failure reason *").fill(ocrFailureReason);
+      await ocrCard
+        .getByRole("button", { name: "Record failure", exact: true })
+        .last()
+        .click();
+      await expect(ocrCard).toContainText("OCR failed", {
+        timeout: 20_000,
+      });
+      await expect(ocrCard).toContainText(ocrFailureReason);
+      await expect(ocrCard).toContainText("Task v2 / document v1");
+
+      await ocrCard.getByRole("button", { name: "OCR history" }).click();
+      await expect(ocrCard.getByText("2 of 2 events")).toBeVisible();
+      const failedOcrEvents = ocrCard.locator(
+        ".patient-document-history-list > li",
+      );
+      await expect(failedOcrEvents).toHaveCount(2);
+      await expect(failedOcrEvents.nth(0)).toContainText(ocrFailureReason);
+      await expect(failedOcrEvents.nth(1)).toContainText(ocrStartReason);
+      await ocrCard
+        .getByRole("button", { name: "Close OCR history" })
+        .click();
+
+      await ocrCard.getByRole("button", { name: "Retry OCR" }).click();
+      await ocrCard.getByLabel("Work note *").fill(ocrRetryReason);
+      await ocrCard.getByRole("button", { name: "Start OCR" }).click();
+      await expect(ocrCard).toContainText("OCR running", {
+        timeout: 20_000,
+      });
+      await expect(ocrCard).toContainText("Task v3 / document v1");
+
+      await ocrCard.getByRole("button", { name: "Complete OCR" }).click();
+      await ocrCard.getByLabel("Extracted text *").fill(ocrExtractedText);
+      await ocrCard.getByLabel("Work note *").fill(ocrCompletionReason);
+      await ocrCard
+        .getByRole("button", { name: "Complete OCR", exact: true })
+        .last()
+        .click();
+      await expect(ocrCard).toHaveCount(0, { timeout: 20_000 });
+
+      await page.getByLabel("Status").selectOption("completed");
+      await page.getByRole("button", { name: "Apply filters" }).click();
+      const completedOcrCard = page
+        .getByLabel("Document OCR queue")
+        .locator(".document-ocr-card")
+        .filter({ hasText: ocrName });
+      await expect(completedOcrCard).toBeVisible({ timeout: 20_000 });
+      await expect(completedOcrCard).toContainText("OCR complete");
+      await expect(completedOcrCard).toContainText(
+        `${ocrExtractedText.length} retained characters`,
+      );
+      await expect(completedOcrCard).toContainText(ocrExtractedText);
+
+      await completedOcrCard
+        .getByRole("button", { name: "Correct extracted text" })
+        .click();
+      await expect(
+        completedOcrCard.getByLabel("Extracted text *"),
+      ).toHaveValue(ocrExtractedText);
+      await completedOcrCard
+        .getByLabel("Extracted text *")
+        .fill(ocrCorrectedText);
+      await completedOcrCard
+        .getByLabel("Correction reason *")
+        .fill(ocrCorrectionReason);
+      await completedOcrCard
+        .getByRole("button", { name: "Save correction" })
+        .click();
+      await expect(completedOcrCard).toContainText(
+        `${ocrCorrectedText.length} retained characters`,
+        { timeout: 20_000 },
+      );
+      await expect(completedOcrCard).toContainText(ocrCorrectedText);
+      await expect(completedOcrCard).toContainText(
+        "Task v5 / document v1",
+      );
+
+      const staleOcrCorrection = await page.request.post(
+        `${apiBaseUrl}/api/documents/${ocrDocumentId}/ocr/correct`,
+        {
+          headers,
+          data: {
+            expectedTaskVersion: 4,
+            extractedText: `Stale corrected text ${marker}`,
+            reason: `Stale OCR correction ${marker}`,
+          },
+        },
+      );
+      expect(staleOcrCorrection.status()).toBe(409);
+      await expect(staleOcrCorrection.json()).resolves.toMatchObject({
+        currentTaskVersion: 5,
+        currentStatus: "completed",
+      });
+
+      await completedOcrCard
+        .getByRole("button", { name: "OCR history" })
+        .click();
+      await expect(completedOcrCard.getByText("5 of 5 events")).toBeVisible();
+      await expect(
+        completedOcrCard.getByText(
+          `Current extracted text (${ocrCorrectedText.length} characters)`,
+        ),
+      ).toBeVisible();
+      const completedOcrEvents = completedOcrCard.locator(
+        ".patient-document-history-list > li",
+      );
+      await expect(completedOcrEvents).toHaveCount(5);
+      await expect(completedOcrEvents.nth(0)).toContainText("Corrected");
+      await expect(completedOcrEvents.nth(0)).toContainText(
+        ocrCorrectionReason,
+      );
+      await expect(completedOcrEvents.nth(1)).toContainText("Completed");
+      await expect(completedOcrEvents.nth(2)).toContainText("Retried");
+      await expect(completedOcrEvents.nth(3)).toContainText("Failed");
+      await expect(completedOcrEvents.nth(4)).toContainText("Started");
+
+      const ocrHistoryResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${ocrDocumentId}/ocr-history`,
+        { headers },
+      );
+      expect(ocrHistoryResponse.ok()).toBeTruthy();
+      await expect(ocrHistoryResponse.json()).resolves.toMatchObject({
+        documentId: ocrDocumentId,
+        currentTaskVersion: 5,
+        currentStatus: "completed",
+        currentOcrStatus: "OCR complete",
+        currentExtractedText: ocrCorrectedText,
+        eventCount: 5,
+        returnedCount: 5,
+        resultLimit: 100,
+        events: [
+          {
+            action: "corrected",
+            fromStatus: "completed",
+            toStatus: "completed",
+            reason: ocrCorrectionReason,
+            actor: "admin",
+            taskVersion: 5,
+            documentVersion: 1,
+            fromExtractedTextLength: ocrExtractedText.length,
+            toExtractedTextLength: ocrCorrectedText.length,
+            fromExtractedTextHash: expect.any(String),
+            toExtractedTextHash: expect.any(String),
+          },
+          {
+            action: "completed",
+            fromStatus: "running",
+            toStatus: "completed",
+            reason: ocrCompletionReason,
+            actor: "admin",
+            taskVersion: 4,
+          },
+          {
+            action: "retried",
+            fromStatus: "failed",
+            toStatus: "running",
+            reason: ocrRetryReason,
+            actor: "admin",
+            taskVersion: 3,
+          },
+          {
+            action: "failed",
+            fromStatus: "running",
+            toStatus: "failed",
+            reason: ocrFailureReason,
+            actor: "admin",
+            taskVersion: 2,
+          },
+          {
+            action: "started",
+            fromStatus: "queued",
+            toStatus: "running",
+            reason: ocrStartReason,
+            actor: "admin",
+            taskVersion: 1,
+          },
+        ],
+      });
+
+      const ocrSourceAfterResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${ocrDocumentId}/content`,
+        { headers },
+      );
+      expect(ocrSourceAfterResponse.ok()).toBeTruthy();
+      const ocrSourceAfter = (await ocrSourceAfterResponse.json()) as {
+        uploadedAt: string;
+        hash?: string | null;
+        contentBase64?: string | null;
+        ocrStatus: string;
+      };
+      expect(ocrSourceAfter).toMatchObject({
+        uploadedAt: ocrSourceBefore.uploadedAt,
+        hash: ocrSourceBefore.hash,
+        contentBase64: ocrSourceBefore.contentBase64,
+        ocrStatus: "OCR complete",
+      });
+
+      const activeOcrQueueResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/ocr-queue?status=active&limit=1`,
+        { headers },
+      );
+      expect(activeOcrQueueResponse.ok()).toBeTruthy();
+      const activeOcrQueue = (await activeOcrQueueResponse.json()) as {
+        count: number;
+        counts: { active: number };
+      };
+      expect(activeOcrQueue.count).toBe(activeOcrQueue.counts.active);
+      await page.goto("/clinician/dashboard");
+      const dashboardOcrQueue = page
+        .locator('a[href="/clinician/document-ocr"]')
+        .filter({ hasText: "OCR items active" });
+      await expect(dashboardOcrQueue.locator(".dash-stat-value")).toHaveText(
+        String(activeOcrQueue.counts.active),
+        { timeout: 20_000 },
+      );
+
       const documents = await getMarkerDocuments();
-      expect(documents).toHaveLength(5);
+      expect(documents).toHaveLength(6);
       expect(documents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2088,6 +2403,14 @@ test.describe("isolated mutation workflows", () => {
             storageMethod: "web_url",
             url: `https://example.test/${marker}`,
           }),
+          expect.objectContaining({
+            name: ocrName,
+            mimetype: "application/pdf",
+            isScannedAttachment: true,
+            captureSource: "chart scanner",
+            scanPageCount: 1,
+            ocrStatus: "OCR complete",
+          }),
         ]),
       );
 
@@ -2124,6 +2447,8 @@ test.describe("isolated mutation workflows", () => {
             + (select count(*) from patient_document_archive_events where reason like '%${marker}%')
             + (select count(*) from patient_document_routing_tasks where routing_reason like '%${marker}%')
             + (select count(*) from patient_document_routing_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_ocr_tasks where failure_reason like '%${marker}%')
+            + (select count(*) from patient_document_ocr_events where reason like '%${marker}%')
             + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");

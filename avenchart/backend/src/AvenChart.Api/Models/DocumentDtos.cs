@@ -189,7 +189,21 @@ public sealed record PatientDocumentOcrQueueResponse(
     string DatasetId,
     string DatasetVersion,
     int Count,
+    int TotalCount,
+    int ReturnedCount,
+    int Offset,
+    int Limit,
+    string StatusFilter,
+    PatientDocumentOcrQueueCounts Counts,
     IReadOnlyList<PatientDocumentOcrQueueItem> Items);
+
+public sealed record PatientDocumentOcrQueueCounts(
+    int Active,
+    int Queued,
+    int Running,
+    int Failed,
+    int HighPriority,
+    int Completed);
 
 public sealed record PatientDocumentOcrQueueItem(
     int Id,
@@ -212,7 +226,89 @@ public sealed record PatientDocumentOcrQueueItem(
     string OcrStatus,
     string QueueStatus,
     string Priority,
+    int TaskVersion,
+    bool Inferred,
+    int AgeHours,
+    string LastUpdatedAt,
+    string? StartedBy,
+    string? StartedAt,
+    string? CompletedBy,
+    string? CompletedAt,
+    string? FailedBy,
+    string? FailedAt,
+    string? FailureReason,
+    int ExtractedTextLength,
+    string? ExtractedTextPreview,
+    int DocumentVersion,
+    string ReviewStatus,
     string? Notes);
+
+public sealed record PatientDocumentOcrStartRequest(
+    int ExpectedTaskVersion,
+    string Reason);
+
+public sealed record PatientDocumentOcrFailRequest(
+    int ExpectedTaskVersion,
+    string Reason);
+
+public sealed record PatientDocumentOcrCorrectRequest(
+    int ExpectedTaskVersion,
+    string ExtractedText,
+    string Reason);
+
+public sealed record PatientDocumentOcrMutationResponse(
+    int Id,
+    int TaskVersion,
+    string Status,
+    string OcrStatus,
+    string QueueStatus,
+    int ExtractedTextLength,
+    string? FailureReason,
+    string UpdatedBy,
+    string UpdatedAt);
+
+public sealed record PatientDocumentOcrEvent(
+    Guid EventId,
+    string Action,
+    string FromStatus,
+    string ToStatus,
+    string Reason,
+    string Actor,
+    string OccurredAt,
+    int TaskVersion,
+    int DocumentVersion,
+    string ReviewStatus,
+    int FromExtractedTextLength,
+    int ToExtractedTextLength,
+    string? FromExtractedTextPreview,
+    string? ToExtractedTextPreview,
+    string? FromExtractedTextHash,
+    string? ToExtractedTextHash,
+    string? FailureReason);
+
+public sealed record PatientDocumentOcrHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    int CurrentTaskVersion,
+    string CurrentStatus,
+    string CurrentOcrStatus,
+    string? CurrentExtractedText,
+    string? CurrentFailureReason,
+    string? CurrentStartedBy,
+    string? CurrentStartedAt,
+    string? CurrentCompletedBy,
+    string? CurrentCompletedAt,
+    string? CurrentFailedBy,
+    string? CurrentFailedAt,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientDocumentOcrEvent> Events);
 
 public sealed record PatientDocumentRoutingQueueResponse(
     string DatasetId,
@@ -372,13 +468,17 @@ public sealed record PatientDocumentRetentionPolicyItem(
 
 public sealed record PatientDocumentOcrCompleteRequest(
     string ExtractedText,
-    string CompletedBy);
+    string? CompletedBy = null,
+    int? ExpectedTaskVersion = null,
+    string? Reason = null);
 
 public sealed record PatientDocumentOcrCompleteResponse(
     int Id,
     string OcrStatus,
     string CompletedBy,
     string CompletedAt,
+    int TaskVersion,
+    string Status,
     PatientDocumentContentResponse Document,
     PatientDocumentOcrQueueResponse Queue);
 

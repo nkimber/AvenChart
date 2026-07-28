@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import {
   clinicianRoutes,
   patientChartRoutes,
@@ -120,7 +121,7 @@ test.describe("accessibility gate", () => {
 
   test("representative clinician workspaces have no serious WCAG violations", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await signInClinician(page);
     const violations: AccessibilityFinding[] = [];
     for (const path of [...clinicianRoutes, ...patientChartRoutes]) {
@@ -247,6 +248,76 @@ test.describe("accessibility gate", () => {
         "/clinician/documents#routing-history",
       )),
     );
+    const sessionId = await page.evaluate(() => {
+      const raw = sessionStorage.getItem(
+        "avenchart-ui.clinicianSession",
+      );
+      return raw ? (JSON.parse(raw) as { sessionId?: string }).sessionId : null;
+    });
+    expect(sessionId).toBeTruthy();
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const ocrMarker = `TMP-OCR-AXE-${testInfo.project.name}-${Date.now()}`;
+    const ocrFixtureResponse = await page.request.post(
+      `${apiBaseUrl}/api/documents/binary`,
+      {
+        headers: { "X-Legacy EHR-Session": sessionId! },
+        data: {
+          patientId: "MOD-PAT-0001",
+          categoryId: 3,
+          name: ocrMarker,
+          docDate: "2026-07-28",
+          encounter: 1000013,
+          fileName: `${ocrMarker}.pdf`,
+          mimetype: "application/pdf",
+          contentBase64: Buffer.from(
+            `%PDF-1.4\n% Accessibility OCR fixture ${ocrMarker}\n`,
+          ).toString("base64"),
+          notes: `Scan source: accessibility scanner; OCR pending; ${ocrMarker}`,
+        },
+      },
+    );
+    expect(ocrFixtureResponse.status()).toBe(201);
+    const ocrFixtureId = Number(
+      ((await ocrFixtureResponse.json()) as { id: number }).id,
+    );
+    try {
+      await navigateWithinApplication(page, "/clinician/document-ocr");
+      await page.getByLabel("Search documents").fill(ocrMarker);
+      await page.getByRole("button", { name: "Apply filters" }).click();
+      const ocrCard = page
+        .getByLabel("Document OCR queue")
+        .locator(".document-ocr-card")
+        .filter({ hasText: ocrMarker });
+      await expect(ocrCard).toBeVisible({ timeout: 15_000 });
+      await ocrCard.getByRole("button", { name: "Start OCR" }).click();
+      await expect(
+        ocrCard.getByRole("button", { name: "Close OCR form" }),
+      ).toBeVisible();
+      violations.push(
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          "/clinician/document-ocr#ocr-editor",
+        )),
+      );
+      await ocrCard.getByRole("button", { name: "Close OCR form" }).click();
+      await ocrCard.getByRole("button", { name: "OCR history" }).click();
+      await expect(
+        ocrCard.getByRole("heading", { name: "OCR history" }),
+      ).toBeVisible();
+      violations.push(
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          "/clinician/document-ocr#ocr-history",
+        )),
+      );
+    } finally {
+      const deleted = await page.request.delete(
+        `${apiBaseUrl}/api/documents/${ocrFixtureId}`,
+        { headers: { "X-Legacy EHR-Session": sessionId! } },
+      );
+      expect([204, 404]).toContain(deleted.status());
+    }
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

@@ -6,7 +6,9 @@ import {
   archivePatientDocument,
   assignLabReportReviewer,
   bulkSignLabReports,
+  completePatientDocumentOcr,
   completePatientDocumentRouting,
+  correctPatientDocumentOcr,
   createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
@@ -33,6 +35,7 @@ import {
   downloadPatientDocumentVersion,
   endPatientPortalSession,
   findPatientDuplicateCandidates,
+  failPatientDocumentOcr,
   getCurrentSession,
   getInventoryActivityReport,
   getInventoryMedicationCatalog,
@@ -45,6 +48,8 @@ import {
   getPatientDocumentArchiveHistory,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
+  getPatientDocumentOcrHistory,
+  getPatientDocumentOcrQueue,
   getPatientDocumentReviewHistory,
   getPatientDocumentRoutingAssignees,
   getPatientDocumentRoutingHistory,
@@ -77,6 +82,7 @@ import {
   searchClinicalMedicationVocabulary,
   SESSION_INVALID_EVENT,
   signLabReport,
+  startPatientDocumentOcr,
   submitInventoryPurchaseRequisition,
   updatePatientCareTeam,
   updatePatientEmployer,
@@ -738,6 +744,145 @@ describe('authenticated API transport', () => {
       body: JSON.stringify({
         reason: 'Clinical review handoff completed.',
         expectedTaskVersion: 1,
+      }),
+    })
+  })
+
+  it('uses the filtered, versioned patient document OCR lifecycle', async () => {
+    const queue = {
+      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetVersion: 'v1',
+      count: 1,
+      totalCount: 1,
+      returnedCount: 1,
+      offset: 0,
+      limit: 10,
+      statusFilter: 'active',
+      counts: {
+        active: 1,
+        queued: 1,
+        running: 0,
+        failed: 0,
+        highPriority: 1,
+        completed: 0,
+      },
+      items: [{ id: 92, taskVersion: 0, queueStatus: 'Ready for OCR' }],
+    }
+    const history = {
+      datasetId: queue.datasetId,
+      datasetVersion: queue.datasetVersion,
+      documentId: 92,
+      documentKey: 'DOC-92',
+      patientId: 'MOD-PAT-0001',
+      legacyPid: 1,
+      name: 'Scanned referral',
+      currentTaskVersion: 0,
+      currentStatus: 'queued',
+      currentOcrStatus: 'OCR pending',
+      eventCount: 0,
+      returnedCount: 0,
+      resultLimit: 100,
+      events: [],
+    }
+    const mutation = {
+      id: 92,
+      taskVersion: 1,
+      status: 'running',
+      ocrStatus: 'OCR running',
+      queueStatus: 'OCR running',
+      extractedTextLength: 0,
+      updatedBy: 'admin',
+      updatedAt: '2026-07-28T11:00:00Z',
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(queue))
+      .mockResolvedValueOnce(jsonResponse(history))
+      .mockResolvedValueOnce(jsonResponse(mutation))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...mutation,
+          taskVersion: 2,
+          status: 'failed',
+          ocrStatus: 'OCR failed',
+          queueStatus: 'OCR failed',
+          failureReason: 'Image contrast was too low.',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 92,
+          taskVersion: 3,
+          status: 'completed',
+          ocrStatus: 'OCR complete',
+          completedBy: 'admin',
+          completedAt: '2026-07-28T11:05:00Z',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...mutation,
+          taskVersion: 4,
+          status: 'completed',
+          ocrStatus: 'OCR complete',
+          queueStatus: 'OCR complete',
+          extractedTextLength: 28,
+        }),
+      )
+
+    const loaded = await getPatientDocumentOcrQueue('staff-session', {
+      patientId: ' MOD-PAT-0001 ',
+      status: 'active',
+      priority: 'High',
+      query: ' referral ',
+      offset: 0,
+      limit: 10,
+    })
+    const loadedHistory = await getPatientDocumentOcrHistory(
+      'staff-session',
+      92,
+    )
+    await startPatientDocumentOcr('staff-session', 92, {
+      expectedTaskVersion: 0,
+      reason: 'Begin local OCR review.',
+    })
+    await failPatientDocumentOcr('staff-session', 92, {
+      expectedTaskVersion: 1,
+      reason: 'Image contrast was too low.',
+    })
+    await completePatientDocumentOcr('staff-session', 92, {
+      extractedText: 'Referral text from local review.',
+      expectedTaskVersion: 2,
+      reason: 'Manual extraction verified.',
+    })
+    await correctPatientDocumentOcr('staff-session', 92, {
+      expectedTaskVersion: 3,
+      extractedText: 'Corrected referral text.',
+      reason: 'Corrected patient surname.',
+    })
+
+    expect(loaded.counts.queued).toBe(1)
+    expect(loadedHistory.currentStatus).toBe('queued')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/documents/ocr-queue?patientId=MOD-PAT-0001&status=active&priority=High&query=referral&offset=0&limit=10',
+      'http://localhost:5001/api/documents/92/ocr-history',
+      'http://localhost:5001/api/documents/92/ocr/start',
+      'http://localhost:5001/api/documents/92/ocr/fail',
+      'http://localhost:5001/api/documents/92/ocr/complete',
+      'http://localhost:5001/api/documents/92/ocr/correct',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        expectedTaskVersion: 0,
+        reason: 'Begin local OCR review.',
+      }),
+    })
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        expectedTaskVersion: 3,
+        extractedText: 'Corrected referral text.',
+        reason: 'Corrected patient surname.',
       }),
     })
   })

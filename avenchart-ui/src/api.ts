@@ -4600,6 +4600,159 @@ export type PatientDocumentArchiveHistoryResponse = {
   events: PatientDocumentArchiveEvent[]
 }
 
+export type PatientDocumentOcrQueueCounts = {
+  active: number
+  queued: number
+  running: number
+  failed: number
+  highPriority: number
+  completed: number
+}
+
+export type PatientDocumentOcrQueueItem = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  fileName?: string | null
+  pages?: number | null
+  encounter?: number | null
+  captureSource: string
+  scanPageCount: number
+  ocrStatus: string
+  queueStatus: string
+  priority: string
+  taskVersion: number
+  inferred: boolean
+  ageHours: number
+  lastUpdatedAt: string
+  startedBy?: string | null
+  startedAt?: string | null
+  completedBy?: string | null
+  completedAt?: string | null
+  failedBy?: string | null
+  failedAt?: string | null
+  failureReason?: string | null
+  extractedTextLength: number
+  extractedTextPreview?: string | null
+  documentVersion: number
+  reviewStatus: string
+  notes?: string | null
+}
+
+export type PatientDocumentOcrQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  count: number
+  totalCount: number
+  returnedCount: number
+  offset: number
+  limit: number
+  statusFilter: string
+  counts: PatientDocumentOcrQueueCounts
+  items: PatientDocumentOcrQueueItem[]
+}
+
+export type PatientDocumentOcrQueueFilters = {
+  patientId?: string
+  status?: 'active' | 'queued' | 'running' | 'failed' | 'completed' | 'all'
+  priority?: 'High' | 'Standard'
+  query?: string
+  offset?: number
+  limit?: number
+}
+
+export type PatientDocumentOcrVersionedReasonInput = {
+  expectedTaskVersion: number
+  reason: string
+}
+
+export type PatientDocumentOcrCompleteInput = {
+  extractedText: string
+  expectedTaskVersion?: number
+  reason?: string
+}
+
+export type PatientDocumentOcrCorrectInput = {
+  expectedTaskVersion: number
+  extractedText: string
+  reason: string
+}
+
+export type PatientDocumentOcrMutationResponse = {
+  id: number
+  taskVersion: number
+  status: string
+  ocrStatus: string
+  queueStatus: string
+  extractedTextLength: number
+  failureReason?: string | null
+  updatedBy: string
+  updatedAt: string
+}
+
+export type PatientDocumentOcrCompleteResponse = {
+  id: number
+  ocrStatus: string
+  completedBy: string
+  completedAt: string
+  taskVersion: number
+  status: string
+}
+
+export type PatientDocumentOcrEvent = {
+  eventId: string
+  action: string
+  fromStatus: string
+  toStatus: string
+  reason: string
+  actor: string
+  occurredAt: string
+  taskVersion: number
+  documentVersion: number
+  reviewStatus: string
+  fromExtractedTextLength: number
+  toExtractedTextLength: number
+  fromExtractedTextPreview?: string | null
+  toExtractedTextPreview?: string | null
+  fromExtractedTextHash?: string | null
+  toExtractedTextHash?: string | null
+  failureReason?: string | null
+}
+
+export type PatientDocumentOcrHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  name: string
+  currentTaskVersion: number
+  currentStatus: string
+  currentOcrStatus: string
+  currentExtractedText?: string | null
+  currentFailureReason?: string | null
+  currentStartedBy?: string | null
+  currentStartedAt?: string | null
+  currentCompletedBy?: string | null
+  currentCompletedAt?: string | null
+  currentFailedBy?: string | null
+  currentFailedAt?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientDocumentOcrEvent[]
+}
+
 export type PatientDocumentRoutingQueueCounts = {
   active: number
   pending: number
@@ -4939,6 +5092,94 @@ export async function restorePatientDocument(
   return clinicianPut(
     sessionId,
     `/api/documents/${encodeURIComponent(String(documentId))}/restore`,
+    input,
+    signal,
+  )
+}
+
+export async function getPatientDocumentOcrQueue(
+  sessionId: string,
+  filters: PatientDocumentOcrQueueFilters = {},
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrQueueResponse> {
+  const params = new URLSearchParams()
+  if (filters.patientId?.trim()) params.set('patientId', filters.patientId.trim())
+  if (filters.status) params.set('status', filters.status)
+  if (filters.priority) params.set('priority', filters.priority)
+  if (filters.query?.trim()) params.set('query', filters.query.trim())
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset))
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit))
+  const query = params.toString()
+  return clinicianGet(
+    sessionId,
+    `/api/documents/ocr-queue${query ? `?${query}` : ''}`,
+    signal,
+  )
+}
+
+export async function getPatientDocumentOcrHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/ocr-history`,
+    signal,
+  )
+}
+
+export async function startPatientDocumentOcr(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentOcrVersionedReasonInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/ocr/start`,
+    input,
+    signal,
+  )
+}
+
+export async function failPatientDocumentOcr(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentOcrVersionedReasonInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/ocr/fail`,
+    input,
+    signal,
+  )
+}
+
+export async function completePatientDocumentOcr(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentOcrCompleteInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrCompleteResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/ocr/complete`,
+    input,
+    signal,
+  )
+}
+
+export async function correctPatientDocumentOcr(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentOcrCorrectInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentOcrMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/ocr/correct`,
     input,
     signal,
   )

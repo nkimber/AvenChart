@@ -38,9 +38,20 @@ public sealed class DocumentRoutingConflictException(
     public string CurrentStatus { get; } = currentStatus;
 }
 
+public sealed class DocumentOcrConflictException(
+    int currentTaskVersion,
+    string currentStatus,
+    string message)
+    : Exception(message)
+{
+    public int CurrentTaskVersion { get; } = currentTaskVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
+
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
+    public const int MaxOcrExtractedTextCharacters = 262_144;
     public const int MaxBinaryDocumentBytes = 25 * 1024 * 1024;
     private static readonly SemaphoreSlim DocumentMetadataSchemaGate = new(1, 1);
     private static readonly SemaphoreSlim DocumentVersionSchemaGate = new(1, 1);
@@ -107,22 +118,41 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientDocumentOcrQueueResponse> GetOcrQueueAsync(
         CancellationToken cancellationToken,
-        string? patientId = null)
+        string? patientId = null,
+        string? status = null,
+        string? priority = null,
+        string? query = null,
+        int offset = 0,
+        int limit = 1_000)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
+        var normalizedStatus = NormalizeOcrStatusFilter(status);
+        var normalizedPriority = NormalizeOcrPriorityFilter(priority);
+        var normalizedQuery = NormalizeText(query);
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, 1_000);
+        var now = DateTimeOffset.UtcNow;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
               d.category_id, d.category_name, d.name, d.doc_date, d.uploaded_at, d.mimetype, d.file_name, d.pages,
-              d.encounter, d.storage_method, d.notes,
+              d.encounter, d.storage_method, d.notes, coalesce(d.review_status, 'pending') as review_status,
+              coalesce((select count(*) from patient_document_versions v where v.document_id = d.id), 0) + 1
+                as document_version,
+              t.task_version, t.status as task_status, t.priority as task_priority,
+              t.extracted_text, t.failure_reason,
+              t.started_by, t.started_at, t.completed_by, t.completed_at,
+              t.failed_by, t.failed_at, t.updated_at,
               case
                 when d.content_bytes is not null then left(coalesce(d.content, ''), 260)
                 else left(regexp_replace(coalesce(d.content, ''), E'[\\r\\n]+', ' ', 'g'), 260)
               end as content_preview
             from patient_documents d
             join patients p on p.canonical_id = d.patient_id
+            left join patient_document_ocr_tasks t on t.document_id = d.id
             where d.deleted = 0
               and (@patientId is null
                    or lower(d.patient_id) = lower(@patientId)
@@ -151,8 +181,16 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 notes,
                 ReadNullableString(reader, "content_preview"));
 
-            if (!scanReadiness.IsScannedAttachment
-                || !string.Equals(scanReadiness.OcrStatus, "OCR pending", StringComparison.OrdinalIgnoreCase))
+            if (!scanReadiness.IsScannedAttachment)
+            {
+                continue;
+            }
+
+            var inferred = reader.IsDBNull(reader.GetOrdinal("task_version"));
+            var taskStatus = inferred
+                ? NormalizeInferredOcrStatus(scanReadiness.OcrStatus)
+                : reader.GetString(reader.GetOrdinal("task_status"));
+            if (taskStatus is null)
             {
                 continue;
             }
@@ -161,6 +199,18 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             var lastName = reader.GetString(reader.GetOrdinal("last_name"));
             var preferredName = ReadNullableString(reader, "preferred_name");
             var scanPageCount = scanReadiness.ScanPageCount;
+            var queueStatus = OcrQueueStatus(taskStatus);
+            var ocrStatus = OcrStatusLabel(taskStatus);
+            var taskPriority = inferred
+                ? scanPageCount >= 5 ? "High" : "Standard"
+                : reader.GetString(reader.GetOrdinal("task_priority"));
+            var uploadedAt = new DateTimeOffset(DateTime.SpecifyKind(
+                reader.GetDateTime(reader.GetOrdinal("uploaded_at")),
+                DateTimeKind.Utc));
+            var lastUpdatedAt = inferred
+                ? uploadedAt
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at"));
+            var extractedText = ReadNullableString(reader, "extracted_text");
             items.Add(new PatientDocumentOcrQueueItem(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
                 DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
@@ -181,17 +231,68 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 Encounter: ReadNullableInt32(reader, "encounter"),
                 CaptureSource: scanReadiness.CaptureSource,
                 ScanPageCount: scanPageCount,
-                OcrStatus: scanReadiness.OcrStatus,
-                QueueStatus: "Ready for OCR",
-                Priority: scanPageCount >= 5 ? "High" : "Standard",
+                OcrStatus: ocrStatus,
+                QueueStatus: queueStatus,
+                Priority: taskPriority,
+                TaskVersion: inferred ? 0 : reader.GetInt32(reader.GetOrdinal("task_version")),
+                Inferred: inferred,
+                AgeHours: Math.Max(0, (int)Math.Floor((now - lastUpdatedAt).TotalHours)),
+                LastUpdatedAt: lastUpdatedAt.ToString("O"),
+                StartedBy: ReadNullableString(reader, "started_by"),
+                StartedAt: ReadNullableDateTimeOffset(reader, "started_at")?.ToString("O"),
+                CompletedBy: ReadNullableString(reader, "completed_by"),
+                CompletedAt: ReadNullableDateTimeOffset(reader, "completed_at")?.ToString("O"),
+                FailedBy: ReadNullableString(reader, "failed_by"),
+                FailedAt: ReadNullableDateTimeOffset(reader, "failed_at")?.ToString("O"),
+                FailureReason: ReadNullableString(reader, "failure_reason"),
+                ExtractedTextLength: extractedText?.Length ?? 0,
+                ExtractedTextPreview: BuildOcrTextPreview(extractedText),
+                DocumentVersion: Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("document_version"))),
+                ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
                 Notes: notes));
         }
+
+        var counts = new PatientDocumentOcrQueueCounts(
+            Active: items.Count(item => item.QueueStatus != "OCR complete"),
+            Queued: items.Count(item => item.QueueStatus == "Ready for OCR"),
+            Running: items.Count(item => item.QueueStatus == "OCR running"),
+            Failed: items.Count(item => item.QueueStatus == "OCR failed"),
+            HighPriority: items.Count(item => item.QueueStatus != "OCR complete"
+                && item.Priority == "High"),
+            Completed: items.Count(item => item.QueueStatus == "OCR complete"));
+        var filtered = items
+            .Where(item => normalizedStatus switch
+            {
+                "active" => item.QueueStatus != "OCR complete",
+                "queued" => item.QueueStatus == "Ready for OCR",
+                "running" => item.QueueStatus == "OCR running",
+                "failed" => item.QueueStatus == "OCR failed",
+                "completed" => item.QueueStatus == "OCR complete",
+                _ => true
+            })
+            .Where(item => normalizedPriority is null || item.Priority == normalizedPriority)
+            .Where(item => normalizedQuery is null
+                || ContainsIgnoreCase(item.Name, normalizedQuery)
+                || ContainsIgnoreCase(item.PatientDisplayName, normalizedQuery)
+                || ContainsIgnoreCase(item.Pubpid, normalizedQuery)
+                || ContainsIgnoreCase(item.CategoryName, normalizedQuery)
+                || ContainsIgnoreCase(item.CaptureSource, normalizedQuery)
+                || ContainsIgnoreCase(item.ExtractedTextPreview, normalizedQuery)
+                || ContainsIgnoreCase(item.FailureReason, normalizedQuery))
+            .ToList();
+        var page = filtered.Skip(offset).Take(limit).ToList();
 
         return new PatientDocumentOcrQueueResponse(
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
-            Count: items.Count,
-            Items: items);
+            Count: filtered.Count,
+            TotalCount: filtered.Count,
+            ReturnedCount: page.Count,
+            Offset: offset,
+            Limit: limit,
+            StatusFilter: normalizedStatus,
+            Counts: counts,
+            Items: page);
     }
 
     public async Task<PatientDocumentRoutingQueueResponse> GetRoutingQueueAsync(
@@ -892,69 +993,476 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
-    public async Task<PatientDocumentOcrCompleteResponse?> CompleteOcrAsync(
+    public async Task<PatientDocumentOcrHistoryResponse?> GetOcrHistoryAsync(
         int documentId,
-        PatientDocumentOcrCompleteRequest request,
         CancellationToken cancellationToken)
     {
-        if (documentId <= 0
-            || string.IsNullOrWhiteSpace(request.ExtractedText)
-            || string.IsNullOrWhiteSpace(request.CompletedBy))
-        {
-            return null;
-        }
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
-        var extractedText = request.ExtractedText.Trim();
-        var completedBy = request.CompletedBy.Trim();
-        var completedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-        string? patientId = null;
+        string documentKey;
+        string patientId;
+        int legacyPid;
+        string name;
+        int currentTaskVersion;
+        string currentStatus;
+        string currentOcrStatus;
+        string? currentExtractedText;
+        string? currentFailureReason;
+        string? currentStartedBy;
+        string? currentStartedAt;
+        string? currentCompletedBy;
+        string? currentCompletedAt;
+        string? currentFailedBy;
+        string? currentFailedAt;
 
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                update patient_documents
-                set notes = concat_ws('; ',
-                        nullif(regexp_replace(coalesce(notes, ''), '(?i)\\bOCR pending\\b', 'OCR complete', 'g'), ''),
-                        @ocrNote),
-                    documentation_of = concat_ws('; ',
-                        nullif(regexp_replace(coalesce(documentation_of, ''), '(?i)\\bOCR pending\\b', 'OCR complete', 'g'), ''),
-                        @ocrNote),
-                    content = case
-                        when content_bytes is null then @ocrContent
-                        else concat(coalesce(content, ''), E'\nOCR extracted text: ', @extractedText)
-                    end,
-                    uploaded_at = @completedAt
-                where id = @id and deleted = 0
-                returning patient_id;
+                select d.document_key, d.patient_id, d.pid, d.name, d.file_name, d.mimetype, d.pages,
+                  d.storage_method, d.notes, d.content,
+                  t.task_version, t.status, t.extracted_text, t.failure_reason,
+                  t.started_by, t.started_at, t.completed_by, t.completed_at,
+                  t.failed_by, t.failed_at
+                from patient_documents d
+                left join patient_document_ocr_tasks t on t.document_id = d.id
+                where d.id = @documentId;
                 """;
-            command.Parameters.AddWithValue("id", documentId);
-            command.Parameters.AddWithValue("ocrNote", $"OCR complete by {completedBy}");
-            command.Parameters.AddWithValue("ocrContent", $"OCR extracted text: {extractedText}");
-            command.Parameters.AddWithValue("extractedText", extractedText);
-            command.Parameters.AddWithValue("completedAt", completedAt);
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            command.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            name = reader.GetString(reader.GetOrdinal("name"));
+            var scanReadiness = BuildScanReadiness(
+                name,
+                ReadNullableString(reader, "file_name"),
+                ReadNullableString(reader, "mimetype"),
+                ReadNullableInt32(reader, "pages"),
+                ReadNullableString(reader, "storage_method"),
+                ReadNullableString(reader, "notes"),
+                ReadNullableString(reader, "content"));
+            if (!scanReadiness.IsScannedAttachment)
+            {
+                throw new ArgumentException("OCR lifecycle is available only for scanned document attachments.");
+            }
+
+            var inferred = reader.IsDBNull(reader.GetOrdinal("task_version"));
+            currentTaskVersion = inferred ? 0 : reader.GetInt32(reader.GetOrdinal("task_version"));
+            currentStatus = inferred
+                ? NormalizeInferredOcrStatus(scanReadiness.OcrStatus) ?? "queued"
+                : reader.GetString(reader.GetOrdinal("status"));
+            currentOcrStatus = OcrStatusLabel(currentStatus);
+            currentExtractedText = inferred
+                ? ExtractOcrText(ReadNullableString(reader, "content"))
+                : ReadNullableString(reader, "extracted_text");
+            currentFailureReason = ReadNullableString(reader, "failure_reason");
+            currentStartedBy = ReadNullableString(reader, "started_by");
+            currentStartedAt = ReadNullableDateTimeOffset(reader, "started_at")?.ToString("O");
+            currentCompletedBy = ReadNullableString(reader, "completed_by");
+            currentCompletedAt = ReadNullableDateTimeOffset(reader, "completed_at")?.ToString("O");
+            currentFailedBy = ReadNullableString(reader, "failed_by");
+            currentFailedAt = ReadNullableDateTimeOffset(reader, "failed_at")?.ToString("O");
         }
 
-        if (patientId is null)
+        var events = new List<PatientDocumentOcrEvent>();
+        var eventCount = 0;
+        await using (var command = connection.CreateCommand())
         {
-            return null;
+            command.CommandText = """
+                select count(*) over() as event_count,
+                  event_id, action, from_status, to_status, reason, actor, occurred_at,
+                  task_version, document_version, review_status,
+                  from_extracted_text_length, to_extracted_text_length,
+                  from_extracted_text_preview, to_extracted_text_preview,
+                  from_extracted_text_hash, to_extracted_text_hash, failure_reason
+                from patient_document_ocr_events
+                where document_id = @documentId
+                order by occurred_at desc, event_id desc
+                limit 100;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                eventCount = Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("event_count")));
+                events.Add(new PatientDocumentOcrEvent(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    Action: reader.GetString(reader.GetOrdinal("action")),
+                    FromStatus: reader.GetString(reader.GetOrdinal("from_status")),
+                    ToStatus: reader.GetString(reader.GetOrdinal("to_status")),
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("occurred_at")).ToString("O"),
+                    TaskVersion: reader.GetInt32(reader.GetOrdinal("task_version")),
+                    DocumentVersion: reader.GetInt32(reader.GetOrdinal("document_version")),
+                    ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                    FromExtractedTextLength: reader.GetInt32(reader.GetOrdinal("from_extracted_text_length")),
+                    ToExtractedTextLength: reader.GetInt32(reader.GetOrdinal("to_extracted_text_length")),
+                    FromExtractedTextPreview: ReadNullableString(reader, "from_extracted_text_preview"),
+                    ToExtractedTextPreview: ReadNullableString(reader, "to_extracted_text_preview"),
+                    FromExtractedTextHash: ReadNullableString(reader, "from_extracted_text_hash"),
+                    ToExtractedTextHash: ReadNullableString(reader, "to_extracted_text_hash"),
+                    FailureReason: ReadNullableString(reader, "failure_reason")));
+            }
         }
 
-        var document = await GetContentAsync(documentId, cancellationToken);
+        return new PatientDocumentOcrHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            DocumentId: documentId,
+            DocumentKey: documentKey,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Name: name,
+            CurrentTaskVersion: currentTaskVersion,
+            CurrentStatus: currentStatus,
+            CurrentOcrStatus: currentOcrStatus,
+            CurrentExtractedText: currentExtractedText,
+            CurrentFailureReason: currentFailureReason,
+            CurrentStartedBy: currentStartedBy,
+            CurrentStartedAt: currentStartedAt,
+            CurrentCompletedBy: currentCompletedBy,
+            CurrentCompletedAt: currentCompletedAt,
+            CurrentFailedBy: currentFailedBy,
+            CurrentFailedAt: currentFailedAt,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: 100,
+            Events: events);
+    }
+
+    public async Task<PatientDocumentOcrMutationResponse?> StartOcrAsync(
+        int documentId,
+        PatientDocumentOcrStartRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR start or retry reason");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetOcrDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
         if (document is null)
         {
             return null;
         }
 
-        var queue = await GetOcrQueueAsync(cancellationToken, patientId);
+        ValidateOcrDocument(document);
+        var currentTask = await GetOcrTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = ResolveOcrStatus(document, currentTask);
+        ValidateExpectedOcrTaskVersion(request.ExpectedTaskVersion, currentVersion, currentStatus);
+        if (currentStatus is not ("queued" or "failed"))
+        {
+            throw new DocumentOcrConflictException(
+                currentVersion,
+                currentStatus,
+                $"OCR can start only from queued or failed state; current state is {currentStatus}.");
+        }
+
+        var nextVersion = currentVersion + 1;
+        var now = DateTimeOffset.UtcNow;
+        await UpdateOcrDocumentStatusEvidenceAsync(
+            connection,
+            transaction,
+            documentId,
+            "OCR running",
+            $"OCR running by {actor}",
+            cancellationToken);
+        await PersistOcrTaskTransitionAsync(
+            connection,
+            transaction,
+            documentId,
+            document,
+            currentTask,
+            currentStatus,
+            "running",
+            currentStatus == "failed" ? "retried" : "started",
+            reason,
+            actor,
+            nextVersion,
+            currentTask?.ExtractedText ?? document.InferredExtractedText,
+            currentTask?.ExtractedText ?? document.InferredExtractedText,
+            null,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return BuildOcrMutationResponse(
+            documentId,
+            nextVersion,
+            "running",
+            currentTask?.ExtractedText ?? document.InferredExtractedText,
+            null,
+            actor,
+            now);
+    }
+
+    public async Task<PatientDocumentOcrMutationResponse?> FailOcrAsync(
+        int documentId,
+        PatientDocumentOcrFailRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR failure reason");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetOcrDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        ValidateOcrDocument(document);
+        var currentTask = await GetOcrTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = ResolveOcrStatus(document, currentTask);
+        ValidateExpectedOcrTaskVersion(request.ExpectedTaskVersion, currentVersion, currentStatus);
+        if (currentStatus != "running")
+        {
+            throw new DocumentOcrConflictException(
+                currentVersion,
+                currentStatus,
+                $"OCR can fail only from running state; current state is {currentStatus}.");
+        }
+
+        var nextVersion = currentVersion + 1;
+        var now = DateTimeOffset.UtcNow;
+        var extractedText = currentTask?.ExtractedText ?? document.InferredExtractedText;
+        await UpdateOcrDocumentStatusEvidenceAsync(
+            connection,
+            transaction,
+            documentId,
+            "OCR failed",
+            $"OCR failed by {actor}",
+            cancellationToken);
+        await PersistOcrTaskTransitionAsync(
+            connection,
+            transaction,
+            documentId,
+            document,
+            currentTask,
+            currentStatus,
+            "failed",
+            "failed",
+            reason,
+            actor,
+            nextVersion,
+            extractedText,
+            extractedText,
+            reason,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return BuildOcrMutationResponse(
+            documentId,
+            nextVersion,
+            "failed",
+            extractedText,
+            reason,
+            actor,
+            now);
+    }
+
+    public async Task<PatientDocumentOcrCompleteResponse?> CompleteOcrAsync(
+        int documentId,
+        PatientDocumentOcrCompleteRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var extractedText = NormalizeRequiredOcrText(
+            request.ExtractedText,
+            "Extracted OCR text",
+            MaxOcrExtractedTextCharacters);
+        var reason = NormalizeText(request.Reason) is { } suppliedReason
+            ? NormalizeRequiredOcrReason(suppliedReason, "An OCR completion reason")
+            : "OCR completion recorded.";
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetOcrDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        ValidateOcrDocument(document);
+        var currentTask = await GetOcrTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = ResolveOcrStatus(document, currentTask);
+        if (request.ExpectedTaskVersion is { } expectedTaskVersion)
+        {
+            ValidateExpectedOcrTaskVersion(expectedTaskVersion, currentVersion, currentStatus);
+        }
+
+        if (currentStatus is not ("queued" or "running"))
+        {
+            throw new DocumentOcrConflictException(
+                currentVersion,
+                currentStatus,
+                $"OCR can complete only from queued or running state; current state is {currentStatus}.");
+        }
+
+        var nextVersion = currentVersion + 1;
+        var now = DateTimeOffset.UtcNow;
+        var previousText = currentTask?.ExtractedText ?? document.InferredExtractedText;
+        await UpdateOcrDocumentStatusEvidenceAsync(
+            connection,
+            transaction,
+            documentId,
+            "OCR complete",
+            $"OCR complete by {actor}",
+            cancellationToken);
+        await PersistOcrTaskTransitionAsync(
+            connection,
+            transaction,
+            documentId,
+            document,
+            currentTask,
+            currentStatus,
+            "completed",
+            "completed",
+            reason,
+            actor,
+            nextVersion,
+            previousText,
+            extractedText,
+            null,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var completedDocument = await GetContentAsync(documentId, cancellationToken);
+        if (completedDocument is null)
+        {
+            return null;
+        }
+
+        var queue = await GetOcrQueueAsync(cancellationToken, document.PatientId);
         return new PatientDocumentOcrCompleteResponse(
             Id: documentId,
-            OcrStatus: document.OcrStatus,
-            CompletedBy: completedBy,
-            CompletedAt: completedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-            Document: document,
+            OcrStatus: "OCR complete",
+            CompletedBy: actor,
+            CompletedAt: now.ToString("O"),
+            TaskVersion: nextVersion,
+            Status: "completed",
+            Document: completedDocument,
             Queue: queue);
+    }
+
+    public async Task<PatientDocumentOcrMutationResponse?> CorrectOcrTextAsync(
+        int documentId,
+        PatientDocumentOcrCorrectRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var extractedText = NormalizeRequiredOcrText(
+            request.ExtractedText,
+            "Corrected OCR text",
+            MaxOcrExtractedTextCharacters);
+        var reason = NormalizeRequiredOcrReason(request.Reason, "An OCR correction reason");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetOcrDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        ValidateOcrDocument(document);
+        var currentTask = await GetOcrTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = ResolveOcrStatus(document, currentTask);
+        ValidateExpectedOcrTaskVersion(request.ExpectedTaskVersion, currentVersion, currentStatus);
+        if (currentStatus != "completed")
+        {
+            throw new DocumentOcrConflictException(
+                currentVersion,
+                currentStatus,
+                $"OCR text can be corrected only after completion; current state is {currentStatus}.");
+        }
+
+        var previousText = currentTask?.ExtractedText ?? document.InferredExtractedText;
+        if (string.Equals(previousText, extractedText, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Corrected OCR text must differ from the retained extracted text.");
+        }
+
+        var nextVersion = currentVersion + 1;
+        var now = DateTimeOffset.UtcNow;
+        await UpdateOcrDocumentStatusEvidenceAsync(
+            connection,
+            transaction,
+            documentId,
+            "OCR complete",
+            $"OCR text corrected by {actor}",
+            cancellationToken);
+        await PersistOcrTaskTransitionAsync(
+            connection,
+            transaction,
+            documentId,
+            document,
+            currentTask,
+            currentStatus,
+            "completed",
+            "corrected",
+            reason,
+            actor,
+            nextVersion,
+            previousText,
+            extractedText,
+            null,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return BuildOcrMutationResponse(
+            documentId,
+            nextVersion,
+            "completed",
+            extractedText,
+            null,
+            actor,
+            now);
     }
 
     public async Task<PatientDocumentRetentionDispositionResponse?> DisposeRetentionAsync(
@@ -3523,6 +4031,59 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
                 create index if not exists ix_patient_document_archive_events_patient_time
                   on patient_document_archive_events (patient_id, occurred_at desc, event_id desc);
 
+                create table if not exists patient_document_ocr_tasks (
+                  document_id integer primary key references patient_documents(id) on delete cascade,
+                  task_version integer not null,
+                  status varchar(20) not null,
+                  priority varchar(20) not null,
+                  extracted_text text,
+                  failure_reason varchar(500),
+                  started_by text,
+                  started_at timestamptz,
+                  completed_by text,
+                  completed_at timestamptz,
+                  failed_by text,
+                  failed_at timestamptz,
+                  updated_by text not null,
+                  updated_at timestamptz not null default now()
+                );
+
+                create index if not exists ix_patient_document_ocr_tasks_status_updated
+                  on patient_document_ocr_tasks (status, updated_at, document_id);
+
+                create index if not exists ix_patient_document_ocr_tasks_priority_status
+                  on patient_document_ocr_tasks (priority, status, updated_at);
+
+                create table if not exists patient_document_ocr_events (
+                  event_id uuid primary key,
+                  document_id integer not null references patient_documents(id) on delete cascade,
+                  document_key text not null,
+                  patient_id text not null,
+                  legacy_pid integer not null,
+                  action varchar(20) not null,
+                  from_status varchar(20) not null,
+                  to_status varchar(20) not null,
+                  reason varchar(500) not null,
+                  actor text not null,
+                  occurred_at timestamptz not null default now(),
+                  task_version integer not null,
+                  document_version integer not null,
+                  review_status varchar(20) not null,
+                  from_extracted_text_length integer not null,
+                  to_extracted_text_length integer not null,
+                  from_extracted_text_preview varchar(500),
+                  to_extracted_text_preview varchar(500),
+                  from_extracted_text_hash text,
+                  to_extracted_text_hash text,
+                  failure_reason varchar(500)
+                );
+
+                create index if not exists ix_patient_document_ocr_events_document_time
+                  on patient_document_ocr_events (document_id, occurred_at desc, event_id desc);
+
+                create index if not exists ix_patient_document_ocr_events_patient_time
+                  on patient_document_ocr_events (patient_id, occurred_at desc, event_id desc);
+
                 create table if not exists patient_document_routing_tasks (
                   document_id integer primary key references patient_documents(id) on delete cascade,
                   task_version integer not null,
@@ -4136,9 +4697,522 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             return "OCR failed";
         }
 
+        if (evidence.Contains("ocr running", StringComparison.Ordinal))
+        {
+            return "OCR running";
+        }
+
         return evidence.Contains("ocr pending", StringComparison.Ordinal)
             ? "OCR pending"
             : "OCR not started";
+    }
+
+    private static async Task<OcrDocumentSnapshot?> GetOcrDocumentForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select d.document_key, d.patient_id, d.pid, d.name, d.file_name, d.mimetype,
+              d.pages, d.storage_method, d.notes, d.documentation_of, d.content, d.uploaded_at,
+              d.deleted, coalesce(d.review_status, 'pending') as review_status, d.hash,
+              coalesce((select count(*) from patient_document_versions v where v.document_id = d.id), 0) + 1
+                as document_version
+            from patient_documents d
+            where d.id = @documentId
+            for update;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var name = reader.GetString(reader.GetOrdinal("name"));
+        var fileName = ReadNullableString(reader, "file_name");
+        var mimetype = ReadNullableString(reader, "mimetype");
+        var pages = ReadNullableInt32(reader, "pages");
+        var storageMethod = ReadNullableString(reader, "storage_method");
+        var notes = ReadNullableString(reader, "notes");
+        var content = ReadNullableString(reader, "content");
+        var readiness = BuildScanReadiness(
+            name,
+            fileName,
+            mimetype,
+            pages,
+            storageMethod,
+            notes,
+            content);
+
+        return new OcrDocumentSnapshot(
+            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+            Name: name,
+            FileName: fileName,
+            Mimetype: mimetype,
+            Pages: pages,
+            StorageMethod: storageMethod,
+            Notes: notes,
+            DocumentationOf: ReadNullableString(reader, "documentation_of"),
+            Content: content,
+            UploadedAt: new DateTimeOffset(DateTime.SpecifyKind(
+                reader.GetDateTime(reader.GetOrdinal("uploaded_at")),
+                DateTimeKind.Utc)),
+            Archived: reader.GetInt32(reader.GetOrdinal("deleted")) != 0,
+            ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+            DocumentVersion: Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("document_version"))),
+            ContentHash: ReadNullableString(reader, "hash"),
+            ScanReadiness: readiness,
+            InferredExtractedText: ExtractOcrText(content));
+    }
+
+    private static async Task<OcrTaskSnapshot?> GetOcrTaskForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select task_version, status, priority, extracted_text, failure_reason,
+              started_by, started_at, completed_by, completed_at,
+              failed_by, failed_at, updated_by, updated_at
+            from patient_document_ocr_tasks
+            where document_id = @documentId
+            for update;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new OcrTaskSnapshot(
+            TaskVersion: reader.GetInt32(reader.GetOrdinal("task_version")),
+            Status: reader.GetString(reader.GetOrdinal("status")),
+            Priority: reader.GetString(reader.GetOrdinal("priority")),
+            ExtractedText: ReadNullableString(reader, "extracted_text"),
+            FailureReason: ReadNullableString(reader, "failure_reason"),
+            StartedBy: ReadNullableString(reader, "started_by"),
+            StartedAt: ReadNullableDateTimeOffset(reader, "started_at"),
+            CompletedBy: ReadNullableString(reader, "completed_by"),
+            CompletedAt: ReadNullableDateTimeOffset(reader, "completed_at"),
+            FailedBy: ReadNullableString(reader, "failed_by"),
+            FailedAt: ReadNullableDateTimeOffset(reader, "failed_at"),
+            UpdatedBy: reader.GetString(reader.GetOrdinal("updated_by")),
+            UpdatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")));
+    }
+
+    private static void ValidateOcrDocument(OcrDocumentSnapshot document)
+    {
+        if (document.Archived)
+        {
+            throw new ArgumentException("OCR lifecycle changes are not available for archived documents.");
+        }
+
+        if (!document.ScanReadiness.IsScannedAttachment)
+        {
+            throw new ArgumentException("OCR lifecycle is available only for scanned document attachments.");
+        }
+    }
+
+    private static string ResolveOcrStatus(
+        OcrDocumentSnapshot document,
+        OcrTaskSnapshot? task)
+    {
+        if (task is not null)
+        {
+            return task.Status;
+        }
+
+        return NormalizeInferredOcrStatus(document.ScanReadiness.OcrStatus) ?? "queued";
+    }
+
+    private static void ValidateExpectedOcrTaskVersion(
+        int expectedTaskVersion,
+        int currentTaskVersion,
+        string currentStatus)
+    {
+        if (expectedTaskVersion < 0)
+        {
+            throw new ArgumentException("Expected OCR task version cannot be negative.");
+        }
+
+        if (expectedTaskVersion != currentTaskVersion)
+        {
+            throw new DocumentOcrConflictException(
+                currentTaskVersion,
+                currentStatus,
+                $"The OCR task changed from version {expectedTaskVersion} to {currentTaskVersion}. Reload OCR history before acting.");
+        }
+    }
+
+    private static string NormalizeOcrStatusFilter(string? value)
+    {
+        return NormalizeText(value)?.ToLowerInvariant() switch
+        {
+            null or "" => "queued",
+            "active" => "active",
+            "queued" or "pending" => "queued",
+            "running" => "running",
+            "failed" => "failed",
+            "completed" or "complete" => "completed",
+            "all" => "all",
+            _ => throw new ArgumentException("OCR status must be active, queued, running, failed, completed, or all.")
+        };
+    }
+
+    private static string? NormalizeOcrPriorityFilter(string? value)
+    {
+        return NormalizeText(value)?.ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "high" => "High",
+            "standard" => "Standard",
+            _ => throw new ArgumentException("OCR priority must be High or Standard.")
+        };
+    }
+
+    private static string? NormalizeInferredOcrStatus(string? value)
+    {
+        return NormalizeText(value)?.ToLowerInvariant() switch
+        {
+            "ocr pending" => "queued",
+            "ocr running" => "running",
+            "ocr failed" => "failed",
+            "ocr complete" => "completed",
+            _ => null
+        };
+    }
+
+    private static string OcrQueueStatus(string status)
+    {
+        return status switch
+        {
+            "queued" => "Ready for OCR",
+            "running" => "OCR running",
+            "failed" => "OCR failed",
+            "completed" => "OCR complete",
+            _ => "OCR unavailable"
+        };
+    }
+
+    private static string OcrStatusLabel(string status)
+    {
+        return status switch
+        {
+            "queued" => "OCR pending",
+            "running" => "OCR running",
+            "failed" => "OCR failed",
+            "completed" => "OCR complete",
+            _ => "OCR not started"
+        };
+    }
+
+    private static string NormalizeRequiredOcrText(
+        string? value,
+        string fieldLabel,
+        int maximumLength)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            throw new ArgumentException($"{fieldLabel} is required.");
+        }
+
+        if (normalized.Length > maximumLength)
+        {
+            throw new ArgumentException($"{fieldLabel} cannot exceed {maximumLength} characters.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeRequiredOcrReason(
+        string? value,
+        string fieldLabel)
+    {
+        var normalized = NormalizeRequiredOcrText(value, fieldLabel, 500);
+        if (normalized.Length < 3)
+        {
+            throw new ArgumentException($"{fieldLabel} of at least 3 characters is required.");
+        }
+
+        return normalized;
+    }
+
+    private static string? BuildOcrTextPreview(string? value)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        var collapsed = string.Join(
+            " ",
+            normalized.Split(
+                [' ', '\t', '\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return collapsed.Length <= 500 ? collapsed : $"{collapsed[..497]}...";
+    }
+
+    private static string? HashOcrText(string? value)
+    {
+        return NormalizeText(value) is { } normalized
+            ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant()
+            : null;
+    }
+
+    private static string? ExtractOcrText(string? content)
+    {
+        var normalized = NormalizeText(content);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        const string marker = "OCR extracted text:";
+        var markerIndex = normalized.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        return NormalizeText(normalized[(markerIndex + marker.Length)..]);
+    }
+
+    private static async Task UpdateOcrDocumentStatusEvidenceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        string ocrStatus,
+        string auditNote,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            update patient_documents
+            set notes = concat_ws(
+                  '; ',
+                  nullif(trim(both ' ;' from regexp_replace(
+                    coalesce(notes, ''),
+                    'OCR (pending|running|complete|failed)',
+                    '',
+                    'gi')),
+                    ''),
+                  @ocrStatus,
+                  @auditNote),
+                documentation_of = concat_ws(
+                  '; ',
+                  nullif(trim(both ' ;' from regexp_replace(
+                    coalesce(documentation_of, ''),
+                    'OCR (pending|running|complete|failed)',
+                    '',
+                    'gi')),
+                    ''),
+                  @ocrStatus,
+                  @auditNote)
+            where id = @documentId;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        command.Parameters.AddWithValue("ocrStatus", ocrStatus);
+        command.Parameters.AddWithValue("auditNote", auditNote);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task PersistOcrTaskTransitionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        OcrDocumentSnapshot document,
+        OcrTaskSnapshot? currentTask,
+        string fromStatus,
+        string toStatus,
+        string action,
+        string reason,
+        string actor,
+        int nextVersion,
+        string? fromExtractedText,
+        string? toExtractedText,
+        string? failureReason,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        var priority = currentTask?.Priority
+            ?? (document.ScanReadiness.ScanPageCount >= 5 ? "High" : "Standard");
+        var startedBy = currentTask?.StartedBy;
+        var startedAt = currentTask?.StartedAt;
+        var completedBy = currentTask?.CompletedBy;
+        var completedAt = currentTask?.CompletedAt;
+        var failedBy = currentTask?.FailedBy;
+        var failedAt = currentTask?.FailedAt;
+
+        switch (toStatus)
+        {
+            case "running":
+                startedBy = actor;
+                startedAt = occurredAt;
+                completedBy = null;
+                completedAt = null;
+                failedBy = null;
+                failedAt = null;
+                failureReason = null;
+                break;
+            case "failed":
+                startedBy ??= actor;
+                startedAt ??= occurredAt;
+                completedBy = null;
+                completedAt = null;
+                failedBy = actor;
+                failedAt = occurredAt;
+                break;
+            case "completed" when action == "completed":
+                startedBy ??= actor;
+                startedAt ??= occurredAt;
+                completedBy = actor;
+                completedAt = occurredAt;
+                failedBy = null;
+                failedAt = null;
+                failureReason = null;
+                break;
+            case "completed":
+                failureReason = null;
+                break;
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_document_ocr_tasks (
+                  document_id, task_version, status, priority, extracted_text, failure_reason,
+                  started_by, started_at, completed_by, completed_at,
+                  failed_by, failed_at, updated_by, updated_at
+                )
+                values (
+                  @documentId, @taskVersion, @status, @priority, @extractedText, @failureReason,
+                  @startedBy, @startedAt, @completedBy, @completedAt,
+                  @failedBy, @failedAt, @updatedBy, @updatedAt
+                )
+                on conflict (document_id) do update
+                set task_version = excluded.task_version,
+                    status = excluded.status,
+                    priority = excluded.priority,
+                    extracted_text = excluded.extracted_text,
+                    failure_reason = excluded.failure_reason,
+                    started_by = excluded.started_by,
+                    started_at = excluded.started_at,
+                    completed_by = excluded.completed_by,
+                    completed_at = excluded.completed_at,
+                    failed_by = excluded.failed_by,
+                    failed_at = excluded.failed_at,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("taskVersion", nextVersion);
+            command.Parameters.AddWithValue("status", toStatus);
+            command.Parameters.AddWithValue("priority", priority);
+            command.Parameters.Add("extractedText", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                toExtractedText is null ? DBNull.Value : toExtractedText;
+            command.Parameters.Add("failureReason", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                failureReason is null ? DBNull.Value : failureReason;
+            command.Parameters.Add("startedBy", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                startedBy is null ? DBNull.Value : startedBy;
+            command.Parameters.Add("startedAt", NpgsqlTypes.NpgsqlDbType.TimestampTz).Value =
+                startedAt.HasValue ? startedAt.Value : DBNull.Value;
+            command.Parameters.Add("completedBy", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                completedBy is null ? DBNull.Value : completedBy;
+            command.Parameters.Add("completedAt", NpgsqlTypes.NpgsqlDbType.TimestampTz).Value =
+                completedAt.HasValue ? completedAt.Value : DBNull.Value;
+            command.Parameters.Add("failedBy", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                failedBy is null ? DBNull.Value : failedBy;
+            command.Parameters.Add("failedAt", NpgsqlTypes.NpgsqlDbType.TimestampTz).Value =
+                failedAt.HasValue ? failedAt.Value : DBNull.Value;
+            command.Parameters.AddWithValue("updatedBy", actor);
+            command.Parameters.AddWithValue("updatedAt", occurredAt);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_document_ocr_events (
+                  event_id, document_id, document_key, patient_id, legacy_pid,
+                  action, from_status, to_status, reason, actor, occurred_at,
+                  task_version, document_version, review_status,
+                  from_extracted_text_length, to_extracted_text_length,
+                  from_extracted_text_preview, to_extracted_text_preview,
+                  from_extracted_text_hash, to_extracted_text_hash, failure_reason
+                )
+                values (
+                  @eventId, @documentId, @documentKey, @patientId, @legacyPid,
+                  @action, @fromStatus, @toStatus, @reason, @actor, @occurredAt,
+                  @taskVersion, @documentVersion, @reviewStatus,
+                  @fromTextLength, @toTextLength,
+                  @fromTextPreview, @toTextPreview,
+                  @fromTextHash, @toTextHash, @failureReason
+                );
+                """;
+            command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("documentKey", document.DocumentKey);
+            command.Parameters.AddWithValue("patientId", document.PatientId);
+            command.Parameters.AddWithValue("legacyPid", document.LegacyPid);
+            command.Parameters.AddWithValue("action", action);
+            command.Parameters.AddWithValue("fromStatus", fromStatus);
+            command.Parameters.AddWithValue("toStatus", toStatus);
+            command.Parameters.AddWithValue("reason", reason);
+            command.Parameters.AddWithValue("actor", actor);
+            command.Parameters.AddWithValue("occurredAt", occurredAt);
+            command.Parameters.AddWithValue("taskVersion", nextVersion);
+            command.Parameters.AddWithValue("documentVersion", document.DocumentVersion);
+            command.Parameters.AddWithValue("reviewStatus", document.ReviewStatus);
+            command.Parameters.AddWithValue("fromTextLength", fromExtractedText?.Length ?? 0);
+            command.Parameters.AddWithValue("toTextLength", toExtractedText?.Length ?? 0);
+            command.Parameters.Add("fromTextPreview", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                BuildOcrTextPreview(fromExtractedText) is { } fromPreview ? fromPreview : DBNull.Value;
+            command.Parameters.Add("toTextPreview", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                BuildOcrTextPreview(toExtractedText) is { } toPreview ? toPreview : DBNull.Value;
+            command.Parameters.Add("fromTextHash", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                HashOcrText(fromExtractedText) is { } fromHash ? fromHash : DBNull.Value;
+            command.Parameters.Add("toTextHash", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                HashOcrText(toExtractedText) is { } toHash ? toHash : DBNull.Value;
+            command.Parameters.Add("failureReason", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                failureReason is null ? DBNull.Value : failureReason;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static PatientDocumentOcrMutationResponse BuildOcrMutationResponse(
+        int documentId,
+        int taskVersion,
+        string status,
+        string? extractedText,
+        string? failureReason,
+        string actor,
+        DateTimeOffset updatedAt)
+    {
+        return new PatientDocumentOcrMutationResponse(
+            Id: documentId,
+            TaskVersion: taskVersion,
+            Status: status,
+            OcrStatus: OcrStatusLabel(status),
+            QueueStatus: OcrQueueStatus(status),
+            ExtractedTextLength: extractedText?.Length ?? 0,
+            FailureReason: failureReason,
+            UpdatedBy: actor,
+            UpdatedAt: updatedAt.ToString("O"));
     }
 
     private static async Task<RoutingDocumentSnapshot?> GetRoutingDocumentForUpdateAsync(
@@ -4511,6 +5585,41 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string RoutedBy,
         DateTimeOffset RoutedAt,
         DateTimeOffset DueAt);
+
+    private sealed record OcrDocumentSnapshot(
+        string DocumentKey,
+        string PatientId,
+        int LegacyPid,
+        string Name,
+        string? FileName,
+        string? Mimetype,
+        int? Pages,
+        string? StorageMethod,
+        string? Notes,
+        string? DocumentationOf,
+        string? Content,
+        DateTimeOffset UploadedAt,
+        bool Archived,
+        string ReviewStatus,
+        int DocumentVersion,
+        string? ContentHash,
+        PatientDocumentScanReadiness ScanReadiness,
+        string? InferredExtractedText);
+
+    private sealed record OcrTaskSnapshot(
+        int TaskVersion,
+        string Status,
+        string Priority,
+        string? ExtractedText,
+        string? FailureReason,
+        string? StartedBy,
+        DateTimeOffset? StartedAt,
+        string? CompletedBy,
+        DateTimeOffset? CompletedAt,
+        string? FailedBy,
+        DateTimeOffset? FailedAt,
+        string UpdatedBy,
+        DateTimeOffset UpdatedAt);
 
     private sealed record DocumentPreviewInfo(
         string PreviewKind,

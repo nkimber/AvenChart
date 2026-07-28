@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import {
   Archive,
   Ban,
@@ -17,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  ScanText,
   Save,
   StickyNote,
   X,
@@ -1507,6 +1508,13 @@ export default function PatientDocuments() {
             <strong>{documents.archivedCount}</strong>
             archived {documents.archivedCount === 1 ? 'document' : 'documents'}
           </span>
+          <Link
+            className="cl-btn-secondary"
+            to={`/clinician/document-ocr?patientId=${encodeURIComponent(patientId)}&status=all`}
+          >
+            <ScanText size={16} aria-hidden="true" />
+            Open patient OCR
+          </Link>
           <button
             className="cl-btn-primary"
             type="button"

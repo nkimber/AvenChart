@@ -65,6 +65,9 @@ const DocumentTemplates = lazy(
 const DocumentRoutingQueue = lazy(
   () => import('./pages/clinician/DocumentRoutingQueue.tsx'),
 )
+const DocumentOcrQueue = lazy(
+  () => import('./pages/clinician/DocumentOcrQueue.tsx'),
+)
 const DuplicateReview = lazy(() => import('./pages/clinician/DuplicateReview.tsx'))
 
 export default function App() {
@@ -106,6 +109,7 @@ export default function App() {
           <Route path="chart-tracker" element={<ChartTracker />} />
           <Route path="document-templates" element={<DocumentTemplates />} />
           <Route path="documents" element={<DocumentRoutingQueue />} />
+          <Route path="document-ocr" element={<DocumentOcrQueue />} />
           <Route path="duplicate-review" element={<DuplicateReview />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />

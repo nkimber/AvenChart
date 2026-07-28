@@ -2,14 +2,16 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import {
   CalendarClock, ChevronRight, ClipboardList,
-  Clock, FileText, FlaskConical, Mail, Plus, RefreshCw, Route, Users, UserPlus,
+  Clock, FileText, FlaskConical, Mail, Plus, RefreshCw, Route, ScanText, Users, UserPlus,
 } from 'lucide-react'
 import {
+  getPatientDocumentOcrQueue,
   getPatientDocumentRoutingQueue,
   getProcedureReportQueue,
   searchAppointments,
   getOperationalReports,
   type AppointmentListItem,
+  type PatientDocumentOcrQueueResponse,
   type PatientDocumentRoutingQueueResponse,
   type ProcedureReportQueueResponse,
   type OperationalReportsResponse,
@@ -58,6 +60,8 @@ export default function ClinicianDashboard() {
   const [reportsState, setReportsState] = useState<AsyncState<OperationalReportsResponse>>({ status: 'loading' })
   const [documentRouteState, setDocumentRouteState] =
     useState<AsyncState<PatientDocumentRoutingQueueResponse>>({ status: 'loading' })
+  const [documentOcrState, setDocumentOcrState] =
+    useState<AsyncState<PatientDocumentOcrQueueResponse>>({ status: 'loading' })
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>(() => loadRecentPatients())
   const [refreshing, setRefreshing] = useState(false)
 
@@ -139,6 +143,25 @@ export default function ClinicianDashboard() {
             updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
           })),
         ),
+      getPatientDocumentOcrQueue(session.sessionId, {
+        status: 'active',
+        limit: 5,
+      })
+        .then((data) =>
+          setDocumentOcrState({
+            status: 'ready',
+            data,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .catch(() =>
+          setDocumentOcrState((current) => ({
+            status: 'error',
+            message: 'The document-OCR count could not be refreshed.',
+            data: 'data' in current ? current.data : undefined,
+            updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
+          })),
+        ),
     ]
     return Promise.allSettled(requests).finally(() => setRefreshing(false))
   }
@@ -168,17 +191,22 @@ export default function ClinicianDashboard() {
     'data' in documentRouteState && documentRouteState.data
       ? documentRouteState.data.counts.active
       : null
+  const activeDocumentOcr =
+    'data' in documentOcrState && documentOcrState.data
+      ? documentOcrState.data.counts.active
+      : null
   const lastUpdated = [
     'updatedAt' in apptState ? apptState.updatedAt : undefined,
     'updatedAt' in labState ? labState.updatedAt : undefined,
     'updatedAt' in reportsState ? reportsState.updatedAt : undefined,
     'updatedAt' in documentRouteState ? documentRouteState.updatedAt : undefined,
+    'updatedAt' in documentOcrState ? documentOcrState.updatedAt : undefined,
   ]
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1)
   const hasAppointmentSnapshot = 'data' in apptState && Boolean(apptState.data)
-  const refreshErrors = [apptState, labState, reportsState, documentRouteState]
+  const refreshErrors = [apptState, labState, reportsState, documentRouteState, documentOcrState]
     .filter((state) => state.status === 'error')
     .map((state) => state.status === 'error' ? state.message : '')
 
@@ -293,6 +321,24 @@ export default function ClinicianDashboard() {
           </div>
           <ChevronRight size={14} className="dash-stat-arrow" />
         </Link>
+
+        <Link
+          to="/clinician/document-ocr"
+          className={`dash-stat-tile${activeDocumentOcr ? ' dash-stat-tile-alert' : ''}`}
+        >
+          <div className={`dash-stat-icon${activeDocumentOcr ? ' dash-stat-icon-amber' : ' dash-stat-icon-muted'}`}><ScanText size={18} /></div>
+          <div className="dash-stat-body">
+            <p className="dash-stat-value">
+              {documentOcrState.status === 'loading'
+                ? '—'
+                : documentOcrState.status === 'error' && !documentOcrState.data
+                  ? 'Unavailable'
+                  : (activeDocumentOcr ?? 0)}
+            </p>
+            <p className="dash-stat-label">OCR items active</p>
+          </div>
+          <ChevronRight size={14} className="dash-stat-arrow" />
+        </Link>
       </div>
 
       <div className="clinician-dashboard-grid">
@@ -377,6 +423,7 @@ export default function ClinicianDashboard() {
                 { label: 'Register patient', path: '/clinician/patients/new', icon: UserPlus, color: 'teal' },
                 { label: 'Lab queue', path: '/clinician/labs', icon: FlaskConical, color: 'amber' },
                 { label: 'Document queue', path: '/clinician/documents', icon: Route, color: activeDocumentRoutes ? 'amber' : 'muted' },
+                { label: 'OCR queue', path: '/clinician/document-ocr', icon: ScanText, color: activeDocumentOcr ? 'amber' : 'muted' },
                 { label: 'Rx renewals', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
                 { label: 'Messages', path: '/clinician/messages', icon: Mail, color: newMessages ? 'indigo' : 'muted' },
                 { label: 'Reports', path: '/clinician/reports', icon: ClipboardList, color: 'muted' },

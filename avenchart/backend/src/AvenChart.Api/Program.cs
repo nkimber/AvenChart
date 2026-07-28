@@ -2860,13 +2860,49 @@ RequireAccessPermission(documents, "patients", "docs", "view");
 
 documents.MapGet("/ocr-queue", async (
         DocumentRepository repository,
-        CancellationToken cancellationToken,
-        string? patientId = null) =>
+        string? patientId,
+        string? status,
+        string? priority,
+        string? query,
+        int? offset,
+        int? limit,
+        CancellationToken cancellationToken) =>
     {
-        var queue = await repository.GetOcrQueueAsync(cancellationToken, patientId);
-        return Results.Ok(queue);
+        try
+        {
+            var queue = await repository.GetOcrQueueAsync(
+                cancellationToken,
+                patientId,
+                status,
+                priority,
+                query,
+                offset ?? 0,
+                limit ?? 1_000);
+            return Results.Ok(queue);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("GetPatientDocumentOcrQueue");
+
+documents.MapGet("/{documentId:int}/ocr-history", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var history = await repository.GetOcrHistoryAsync(documentId, cancellationToken);
+            return history is null ? Results.NotFound() : Results.Ok(history);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetPatientDocumentOcrHistory");
 
 documents.MapGet("/routing-queue", async (
         DocumentRepository repository,
@@ -3001,16 +3037,142 @@ documents.MapGet("/retention-policy", async (
 
 documents.MapPost("/{documentId:int}/ocr/complete", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
         PatientDocumentOcrCompleteRequest request,
         CancellationToken cancellationToken) =>
     {
-        var completion = await repository.CompleteOcrAsync(documentId, request, cancellationToken);
-        return completion is null
-            ? Results.BadRequest("Patient document OCR could not be completed from the supplied document and extracted text.")
-            : Results.Ok(completion);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var completion = await repository.CompleteOcrAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return completion is null ? Results.NotFound() : Results.Ok(completion);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentOcrConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
     })
     .WithName("CompletePatientDocumentOcr")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
+documents.MapPost("/{documentId:int}/ocr/start", async (
+        DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int documentId,
+        PatientDocumentOcrStartRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var result = await repository.StartOcrAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentOcrConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
+    })
+    .WithName("StartPatientDocumentOcr")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
+documents.MapPost("/{documentId:int}/ocr/fail", async (
+        DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int documentId,
+        PatientDocumentOcrFailRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var result = await repository.FailOcrAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentOcrConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
+    })
+    .WithName("FailPatientDocumentOcr")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
+documents.MapPost("/{documentId:int}/ocr/correct", async (
+        DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int documentId,
+        PatientDocumentOcrCorrectRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var result = await repository.CorrectOcrTextAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentOcrConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
+    })
+    .WithName("CorrectPatientDocumentOcrText")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapPost("/{documentId:int}/retention/dispose", async (
