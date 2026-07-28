@@ -930,6 +930,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var sourceTransactionId = Guid.NewGuid();
         await InsertTransactionAsync(connection, transaction, sourceTransactionId, sourceLotId, transferId, "transfer", -request.Quantity,
             request.Reason, username, now, cancellationToken);
+        await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility transfer requires destination-layer reallocation; no valuation is implied.", username, now, cancellationToken);
         await InsertTransactionAsync(connection, transaction, Guid.NewGuid(), destinationLot.LotId, transferId, "transfer", request.Quantity,
             request.Reason, username, now, cancellationToken);
 
