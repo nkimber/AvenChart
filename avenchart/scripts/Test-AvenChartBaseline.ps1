@@ -10237,6 +10237,37 @@ catch {
 }
 
 try {
+    $formLayoutChangeHeaders = Get-AdministrationHeaders
+    $formLayoutChangeHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/DEM/history" -Method Get -Headers $formLayoutChangeHeaders -TimeoutSec 20
+    $formLayoutChangeDetail = $formLayoutChangeHistory.detail
+    $formLayoutChangeBaseline = $formLayoutChangeHistory.revisions[0]
+    $formLayoutChangeMarker = "$($formLayoutChangeDetail.layout.title) smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $formLayoutChangeGroups = @($formLayoutChangeDetail.groups | ForEach-Object { @{ key = $_.key; title = $_.title; sequence = $_.sequence; active = $_.active } })
+    $formLayoutChangeFields = @($formLayoutChangeDetail.fields | ForEach-Object { @{ key = $_.key; groupKey = $_.groupKey; label = $_.label; fieldType = $_.fieldType; sequence = $_.sequence; required = $_.required; active = $_.active; maxLength = $_.maxLength; listId = $_.listId; defaultValue = $_.defaultValue } })
+    $formLayoutChangeDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layout-change-requests" -Method Post -Headers $formLayoutChangeHeaders -ContentType "application/json" -Body (@{ key = $formLayoutChangeDetail.layout.key; title = $formLayoutChangeMarker; mapping = $formLayoutChangeDetail.layout.mapping; sequence = $formLayoutChangeDetail.layout.sequence; active = $formLayoutChangeDetail.layout.active; groups = $formLayoutChangeGroups; fields = $formLayoutChangeFields; reason = "Lifecycle smoke validation" } | ConvertTo-Json -Depth 8) -TimeoutSec 20
+    $formLayoutChangeSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layout-change-requests/$($formLayoutChangeDraft.request.requestId)/submit" -Method Post -Headers $formLayoutChangeHeaders -ContentType "application/json" -Body (@{ note = "Submit"; expectedVersion = $formLayoutChangeDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $formLayoutChangeApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layout-change-requests/$($formLayoutChangeDraft.request.requestId)/approve" -Method Post -Headers $formLayoutChangeHeaders -ContentType "application/json" -Body (@{ note = "Approve"; expectedVersion = $formLayoutChangeSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $formLayoutChangeActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layout-change-requests/$($formLayoutChangeDraft.request.requestId)/activate" -Method Post -Headers $formLayoutChangeHeaders -ContentType "application/json" -Body (@{ note = "Activate"; expectedVersion = $formLayoutChangeApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $formLayoutChangeRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-layouts/DEM/revisions/$($formLayoutChangeBaseline.revisionId)/rollback" -Method Post -Headers $formLayoutChangeHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $formLayoutChangeActions = @($formLayoutChangeActivated.events.action)
+    $formLayoutChangePassed = $formLayoutChangeDraft.request.status -eq "draft" `
+        -and $formLayoutChangeSubmitted.request.status -eq "submitted" `
+        -and $formLayoutChangeApproved.request.status -eq "approved" `
+        -and $formLayoutChangeActivated.request.status -eq "activated" `
+        -and $formLayoutChangeActivated.activeLayout.layout.title -eq $formLayoutChangeMarker `
+        -and $formLayoutChangeActions -contains "created" `
+        -and $formLayoutChangeActions -contains "submitted" `
+        -and $formLayoutChangeActions -contains "approved" `
+        -and $formLayoutChangeActions -contains "activated" `
+        -and $formLayoutChangeRestored.detail.layout.title -eq $formLayoutChangeDetail.layout.title `
+        -and $formLayoutChangeRestored.revisions[0].action -eq "rolled-back"
+    Add-Check -Name "form layout change-request lifecycle" -Result $(if ($formLayoutChangePassed) { "passed" } else { "failed" }) -Details @{ requestId = $formLayoutChangeDraft.request.requestId; actions = $formLayoutChangeActions; restoredLayout = $formLayoutChangeRestored.detail.layout.title }
+}
+catch {
+    Add-Check -Name "form layout change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $optionListHeaders = Get-AdministrationHeaders
     $optionListHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListHeaders -TimeoutSec 20
     $massachusetts = @($optionListHistoryBefore.detail.options | Where-Object { $_.key -eq "MA" }) | Select-Object -First 1

@@ -267,6 +267,17 @@ public sealed record FormLayoutRevision(long RevisionId, string Title, string Ma
 public sealed record FormLayoutHistoryResponse(FormLayoutDetailResponse Detail, IReadOnlyList<FormLayoutRevision> Revisions);
 public sealed record FormLayoutGroupMutationRequest(string Title, int Sequence, bool Active);
 public sealed record FormLayoutFieldMutationRequest(string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string? ListId, string? DefaultValue);
+public sealed record FormLayoutDefinitionGroup(string Key, string Title, int Sequence, bool Active);
+public sealed record FormLayoutDefinitionField(string Key, string GroupKey, string Label, string FieldType, int Sequence, bool Required, bool Active, int MaxLength, string? ListId, string? DefaultValue);
+public sealed record FormLayoutDefinition(string Key, string Title, string Mapping, int Sequence, bool Active, IReadOnlyList<FormLayoutDefinitionGroup> Groups, IReadOnlyList<FormLayoutDefinitionField> Fields);
+public sealed record FormLayoutChangeRequestCreateRequest(string Key, string Title, string Mapping, int Sequence, bool Active, IReadOnlyList<FormLayoutDefinitionGroup> Groups, IReadOnlyList<FormLayoutDefinitionField> Fields, string Reason);
+public sealed record FormLayoutChangeRequestDecisionRequest(string? Note, int? ExpectedVersion = null);
+public sealed record FormLayoutChangeRequestItem(Guid RequestId, string LayoutKey, string ChangeKind, FormLayoutDefinition ProposedDefinition, FormLayoutDefinition? BaselineDefinition, string? BaselineUpdatedAt, string Reason, string Status, int Version, string CreatedAt, string CreatedBy, string UpdatedAt, string UpdatedBy);
+public sealed record FormLayoutChangeRequestEvent(long EventId, string Action, string? Note, string OccurredAt, string Username);
+public sealed record FormLayoutChangeRequestCounts(int Draft, int Submitted, int Approved, int Rejected, int Activated, int Cancelled);
+public sealed record FormLayoutChangeRequestsResponse(IReadOnlyList<FormLayoutChangeRequestItem> Requests, int Total, int Returned, int Offset, int Limit, string Status, FormLayoutChangeRequestCounts Counts);
+public sealed record FormLayoutChangeRequestDetailResponse(FormLayoutChangeRequestItem Request, FormLayoutDetailResponse? ActiveLayout, IReadOnlyList<FormLayoutChangeRequestEvent> Events);
+public sealed class FormLayoutChangeRequestConflictException(string message) : Exception(message);
 public sealed record FormOptionListItem(string Key, string Title, bool Active, int OptionCount, string UpdatedAt, string UpdatedBy);
 public sealed record FormOptionValueItem(string Key, string Title, int Sequence, bool IsDefault, bool Active, string Value, string UpdatedAt, string UpdatedBy);
 public sealed record FormOptionListCatalogResponse(IReadOnlyList<FormOptionListItem> Lists);
