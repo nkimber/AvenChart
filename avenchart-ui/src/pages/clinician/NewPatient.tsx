@@ -1,7 +1,17 @@
-﻿import { useState } from "react"
-import { useNavigate, useOutletContext } from "react-router-dom"
-import { ChevronLeft, UserPlus } from "lucide-react"
-import { createPatient, type PatientRegistrationInput } from "../../api.ts"
+﻿import { useRef, useState } from "react"
+import { Link, useNavigate, useOutletContext } from "react-router-dom"
+import {
+  AlertTriangle,
+  CheckCircle,
+  ChevronLeft,
+  UserPlus,
+} from "lucide-react"
+import {
+  createPatient,
+  findPatientDuplicateCandidates,
+  type PatientDuplicateSearchResponse,
+  type PatientRegistrationInput,
+} from "../../api.ts"
 import { showToast } from "../../components/Toast.tsx"
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx"
 
@@ -12,18 +22,56 @@ const BLANK: PatientRegistrationInput = {
   occupation: "", race: "", ethnicity: "", hipaaAllowSms: "NO", hipaaAllowEmail: "NO",
 }
 
+type DuplicateCheckState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | {
+      status: "ready"
+      fingerprint: string
+      data: PatientDuplicateSearchResponse
+    }
+  | { status: "error"; message: string }
+
+const duplicateIdentityFields: Array<keyof PatientRegistrationInput> = [
+  "firstName",
+  "lastName",
+  "dateOfBirth",
+  "phoneHome",
+  "phoneCell",
+  "email",
+]
+
+function duplicateFingerprint(form: PatientRegistrationInput) {
+  return JSON.stringify({
+    firstName: form.firstName.trim().toLocaleLowerCase(),
+    lastName: form.lastName.trim().toLocaleLowerCase(),
+    dateOfBirth: form.dateOfBirth.trim(),
+    phone: (form.phoneHome || form.phoneCell).replace(/\D/g, ""),
+    email: form.email.trim().toLocaleLowerCase(),
+  })
+}
+
 export default function NewPatient() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const navigate = useNavigate()
   const [form, setForm] = useState<PatientRegistrationInput>(BLANK)
   const [saving, setSaving] = useState(false)
+  const [duplicateCheck, setDuplicateCheck] =
+    useState<DuplicateCheckState>({ status: "idle" })
+  const [separatePatientConfirmed, setSeparatePatientConfirmed] =
+    useState(false)
+  const duplicateRequestId = useRef(0)
 
   function set(patch: Partial<PatientRegistrationInput>) {
+    if (duplicateIdentityFields.some((field) => field in patch)) {
+      duplicateRequestId.current += 1
+      setDuplicateCheck({ status: "idle" })
+      setSeparatePatientConfirmed(false)
+    }
     setForm((f) => ({ ...f, ...patch }))
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function registerPatient() {
     setSaving(true)
     try {
       const patient = await createPatient(session.sessionId, form)
@@ -35,6 +83,57 @@ export default function NewPatient() {
       setSaving(false)
     }
   }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const fingerprint = duplicateFingerprint(form)
+    const reviewedCurrentValues =
+      duplicateCheck.status === "ready" &&
+      duplicateCheck.fingerprint === fingerprint
+
+    if (!reviewedCurrentValues) {
+      const requestId = ++duplicateRequestId.current
+      setDuplicateCheck({ status: "loading" })
+      setSeparatePatientConfirmed(false)
+      try {
+        const data = await findPatientDuplicateCandidates(
+          session.sessionId,
+          {
+            firstName: form.firstName,
+            lastName: form.lastName,
+            dateOfBirth: form.dateOfBirth,
+            phone: form.phoneHome || form.phoneCell,
+            email: form.email,
+            limit: 10,
+          },
+        )
+        if (requestId !== duplicateRequestId.current) return
+        setDuplicateCheck({ status: "ready", fingerprint, data })
+        if (data.candidates.length > 0) return
+      } catch (error) {
+        if (requestId !== duplicateRequestId.current) return
+        setDuplicateCheck({
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Duplicate detection is unavailable.",
+        })
+        return
+      }
+    } else if (
+      duplicateCheck.data.candidates.length > 0 &&
+      !separatePatientConfirmed
+    ) {
+      return
+    }
+
+    await registerPatient()
+  }
+
+  const hasDuplicateCandidates =
+    duplicateCheck.status === "ready" &&
+    duplicateCheck.data.candidates.length > 0
 
   return (
     <div className="clinician-page">
@@ -54,8 +153,8 @@ export default function NewPatient() {
           <section className="cl-card">
             <div className="cl-card-header"><h2 className="cl-card-title">Identity</h2></div>
             <div className="field">
-              <label className="label" htmlFor="np-pubpid">Chart number (optional)</label>
-              <input id="np-pubpid" className="input" value={form.pubpid} onChange={(e) => set({ pubpid: e.target.value })} />
+              <label className="label" htmlFor="np-pubpid">Chart number *</label>
+              <input id="np-pubpid" className="input" value={form.pubpid} onChange={(e) => set({ pubpid: e.target.value })} required />
             </div>
             <div className="form-row">
               <div className="field">
@@ -175,12 +274,171 @@ export default function NewPatient() {
           </section>
         </div>
 
+        <section
+          className="cl-card patient-registration-duplicate-check"
+          aria-labelledby="patient-registration-duplicate-heading"
+          aria-live="polite"
+        >
+          <div className="cl-card-header">
+            <div>
+              <h2
+                className="cl-card-title"
+                id="patient-registration-duplicate-heading"
+              >
+                Duplicate record check
+              </h2>
+              <p className="cl-empty-text">
+                Registration checks name, date of birth, phone, and email
+                against active patient records before creating a chart.
+              </p>
+            </div>
+            {duplicateCheck.status === "ready" && (
+              <span className="cl-badge cl-badge-muted">
+                {duplicateCheck.data.candidates.length} returned
+              </span>
+            )}
+          </div>
+
+          {duplicateCheck.status === "idle" && (
+            <p className="cl-empty-text">
+              Submit the form to run the required check. No chart is created
+              until the check succeeds.
+            </p>
+          )}
+
+          {duplicateCheck.status === "loading" && (
+            <p className="cl-empty-text" role="status">
+              Checking for possible duplicate records…
+            </p>
+          )}
+
+          {duplicateCheck.status === "error" && (
+            <div className="cl-inline-error" role="alert">
+              <span>
+                Duplicate detection is unavailable. Registration is paused.{" "}
+                {duplicateCheck.message}
+              </span>
+              <button className="cl-link" type="submit">
+                Retry
+              </button>
+            </div>
+          )}
+
+          {duplicateCheck.status === "ready" &&
+            duplicateCheck.data.candidates.length === 0 && (
+              <div className="patient-registration-duplicate-clear">
+                <CheckCircle size={18} aria-hidden="true" />
+                <div>
+                  <strong>No possible duplicate was returned.</strong>
+                  <p>
+                    Checked dataset {duplicateCheck.data.datasetId} version{" "}
+                    {duplicateCheck.data.datasetVersion}.
+                  </p>
+                </div>
+              </div>
+            )}
+
+          {duplicateCheck.status === "ready" &&
+            duplicateCheck.data.candidates.length > 0 && (
+              <>
+                <div className="patient-registration-duplicate-warning">
+                  <AlertTriangle size={18} aria-hidden="true" />
+                  <div>
+                    <strong>
+                      Review possible existing records before continuing.
+                    </strong>
+                    <p>
+                      Match scores are review evidence, not identity proof.
+                      Open an existing chart if it represents this patient.
+                    </p>
+                  </div>
+                </div>
+                <ul className="patient-registration-duplicate-list">
+                  {duplicateCheck.data.candidates.map((candidate) => (
+                    <li key={candidate.canonicalId}>
+                      <div>
+                        <strong>
+                          {candidate.displayName}{" "}
+                          <span className="cl-badge cl-badge-muted">
+                            {candidate.matchScore}% match
+                          </span>
+                        </strong>
+                        <p>
+                          DOB {candidate.dateOfBirth} · Chart #
+                          {candidate.pubpid} · {candidate.canonicalId}
+                        </p>
+                        <p>{candidate.matchReasons.join(" · ")}</p>
+                        {(candidate.email ||
+                          candidate.phoneHome ||
+                          candidate.phoneCell ||
+                          candidate.phone) && (
+                          <p>
+                            {[
+                              candidate.email,
+                              candidate.phoneHome ??
+                                candidate.phoneCell ??
+                                candidate.phone,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                      <Link
+                        className="cl-btn-secondary"
+                        to={`/clinician/patients/${encodeURIComponent(candidate.canonicalId)}/summary`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open existing chart
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <label className="patient-registration-separate-confirmation">
+                  <input
+                    type="checkbox"
+                    checked={separatePatientConfirmed}
+                    onChange={(event) =>
+                      setSeparatePatientConfirmed(event.target.checked)
+                    }
+                  />
+                  <span>
+                    I reviewed these records and intend to register a separate
+                    patient. This does not mark candidates unique or merge
+                    records.
+                  </span>
+                </label>
+                <p className="cl-empty-text">
+                  {duplicateCheck.data.candidates.length} of at most{" "}
+                  {duplicateCheck.data.limit} candidates are shown from dataset{" "}
+                  {duplicateCheck.data.datasetId} version{" "}
+                  {duplicateCheck.data.datasetVersion}.
+                </p>
+              </>
+            )}
+
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="cl-btn-primary" type="submit" disabled={saving}>
-            {saving ? "Registering..." : "Register patient"}
+          <button
+            className="cl-btn-primary"
+            type="submit"
+            disabled={
+              saving ||
+              duplicateCheck.status === "loading" ||
+              (hasDuplicateCandidates && !separatePatientConfirmed)
+            }
+          >
+            {saving
+              ? "Registering…"
+              : duplicateCheck.status === "loading"
+                ? "Checking…"
+                : hasDuplicateCandidates
+                  ? "Register separate patient"
+                  : "Review and register"}
           </button>
           <button className="cl-btn-secondary" type="button" onClick={() => navigate(-1)}>Cancel</button>
         </div>
+        </section>
       </form>
     </div>
   )

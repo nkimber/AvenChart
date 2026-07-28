@@ -886,6 +886,98 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
+  test("registration pauses for duplicate review and requires a deliberate separate-patient acknowledgement", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const publicId = `TMP-PAT-REG-DUP-${Date.now()}`;
+    const headers = { "X-Legacy EHR-Session": sessionId };
+    let created = false;
+
+    try {
+      await page.goto("/clinician/patients/new");
+      await page.getByLabel("Chart number").fill(publicId);
+      await page.getByLabel("First name").fill("Nora");
+      await page.getByLabel("Last name").fill("Kim");
+      await page.getByLabel("Sex").selectOption("Female");
+      await page.getByLabel("Date of birth").fill("2002-05-05");
+      await page.getByLabel("Home phone").fill("(619) 555-1004");
+      await page
+        .getByLabel("Email", { exact: true })
+        .fill("mod-pat-0004@example.test");
+
+      await page
+        .getByRole("button", { name: "Review and register" })
+        .click();
+      await expect(page).toHaveURL(/\/clinician\/patients\/new$/);
+      const duplicateCheck = page.getByRole("region", {
+        name: "Duplicate record check",
+      });
+      await expect(
+        duplicateCheck.getByText(
+          "Review possible existing records before continuing.",
+        ),
+      ).toBeVisible({ timeout: 20_000 });
+      const candidate = duplicateCheck
+        .locator(".patient-registration-duplicate-list li")
+        .filter({ hasText: "MOD-PAT-0004" });
+      await expect(candidate).toContainText("Kim, Nora");
+      await expect(candidate).toContainText("100% match");
+      await expect(candidate).toContainText(
+        "Same first name, last name, and date of birth",
+      );
+      await expect(
+        candidate.getByRole("link", { name: "Open existing chart" }),
+      ).toHaveAttribute(
+        "href",
+        "/clinician/patients/MOD-PAT-0004/summary",
+      );
+
+      const separatePatientButton = page.getByRole("button", {
+        name: "Register separate patient",
+      });
+      await expect(separatePatientButton).toBeDisabled();
+      await duplicateCheck
+        .getByLabel(
+          /I reviewed these records and intend to register a separate patient/,
+        )
+        .check();
+      await expect(separatePatientButton).toBeEnabled();
+      await separatePatientButton.click();
+      created = true;
+
+      await expect(page).toHaveURL(
+        new RegExp(
+          `/clinician/patients/${encodeURIComponent(publicId)}/summary$`,
+        ),
+        { timeout: 20_000 },
+      );
+      const chartDuplicateSection = page.locator("section").filter({
+        has: page.getByRole("heading", {
+          name: "Potential duplicate records",
+        }),
+      });
+      await expect(chartDuplicateSection).toContainText("Kim, Nora");
+      await expect(chartDuplicateSection).toContainText("100% match");
+    } finally {
+      if (created) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/patients/${encodeURIComponent(publicId)}`,
+          { headers },
+        );
+        expect(deleted.status()).toBe(204);
+      }
+      const residue = await page.request.get(
+        `${apiBaseUrl}/api/patients/${encodeURIComponent(publicId)}`,
+        { headers },
+      );
+      expect(residue.status()).toBe(404);
+    }
+  });
+
   test("staff can operate the global refill lifecycle, reject stale edits, route locally, and expose patient-visible outcomes", async ({
     page,
     context,

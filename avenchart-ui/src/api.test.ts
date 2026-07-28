@@ -25,6 +25,7 @@ import {
   downloadInventoryActivityCsv,
   downloadPatientDocument,
   endPatientPortalSession,
+  findPatientDuplicateCandidates,
   getCurrentSession,
   getInventoryActivityReport,
   getInventoryMedicationCatalog,
@@ -694,6 +695,39 @@ describe('authenticated API transport', () => {
         reason: 'Care team reassignment',
       }),
     })
+  })
+
+  it('encodes the complete protected patient duplicate search contract', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        datasetId: 'legacy-ehr-shared-synthetic-v1',
+        datasetVersion: '2026.07',
+        limit: 10,
+        totalCandidates: 1,
+        candidates: [{ canonicalId: 'MOD-PAT-0004', matchScore: 100 }],
+      }),
+    )
+
+    const result = await findPatientDuplicateCandidates('staff-session', {
+      firstName: ' Nora ',
+      lastName: ' Kim ',
+      dateOfBirth: '2002-05-05',
+      phone: ' (619) 555-1004 ',
+      email: ' mod-pat-0004@example.test ',
+      excludePatientId: ' MOD-PAT-9999 ',
+      limit: 10,
+    })
+
+    expect(result.candidates[0]).toMatchObject({
+      canonicalId: 'MOD-PAT-0004',
+      matchScore: 100,
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patients/duplicates?firstName=Nora&lastName=Kim&dateOfBirth=2002-05-05&phone=%28619%29+555-1004&email=mod-pat-0004%40example.test&excludePatientId=MOD-PAT-9999&limit=10',
+      expect.objectContaining({
+        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
   })
 
   it('loads a patient account through the protected billing route', async () => {

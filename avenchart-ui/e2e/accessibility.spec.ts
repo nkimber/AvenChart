@@ -129,6 +129,28 @@ test.describe("accessibility gate", () => {
         ...(await findSeriousAccessibilityViolations(page, path)),
       );
     }
+    await navigateWithinApplication(page, "/clinician/patients/new");
+    await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
+    await page.getByLabel("First name").fill("Nora");
+    await page.getByLabel("Last name").fill("Kim");
+    await page.getByLabel("Sex").selectOption("Female");
+    await page.getByLabel("Date of birth").fill("2002-05-05");
+    await page.getByLabel("Home phone").fill("(619) 555-1004");
+    await page
+      .getByLabel("Email", { exact: true })
+      .fill("mod-pat-0004@example.test");
+    await page
+      .getByRole("button", { name: "Review and register" })
+      .click();
+    await expect(
+      page.getByText("Review possible existing records before continuing."),
+    ).toBeVisible({ timeout: 15_000 });
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/new#duplicate-check",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/renewals");
     await page.getByLabel("Patient name or ID").fill("MOD-PAT-0004");
     await page

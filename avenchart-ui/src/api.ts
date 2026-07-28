@@ -1217,6 +1217,19 @@ export type PatientDuplicateCandidate = {
   matchReasons: string[]
 }
 
+export type PatientDuplicateSearchResponse = {
+  datasetId: string
+  datasetVersion: string
+  firstName?: string | null
+  lastName?: string | null
+  dateOfBirth?: string | null
+  phone?: string | null
+  email?: string | null
+  limit: number
+  totalCandidates: number
+  candidates: PatientDuplicateCandidate[]
+}
+
 export type PatientMergePreviewPatient = {
   canonicalId: string
   legacyPid: number
@@ -1408,6 +1421,39 @@ export async function getPatientChartSummary(
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
+}
+
+export async function findPatientDuplicateCandidates(
+  sessionId: string,
+  input: {
+    firstName?: string | null
+    lastName?: string | null
+    dateOfBirth?: string | null
+    phone?: string | null
+    email?: string | null
+    excludePatientId?: string | null
+    limit?: number | null
+  },
+  signal?: AbortSignal,
+): Promise<PatientDuplicateSearchResponse> {
+  const params = new URLSearchParams()
+  const fields = [
+    ['firstName', input.firstName],
+    ['lastName', input.lastName],
+    ['dateOfBirth', input.dateOfBirth],
+    ['phone', input.phone],
+    ['email', input.email],
+    ['excludePatientId', input.excludePatientId],
+  ] as const
+  for (const [name, value] of fields) {
+    if (value?.trim()) params.set(name, value.trim())
+  }
+  params.set('limit', String(input.limit ?? 10))
+  return clinicianGet(
+    sessionId,
+    `/api/patients/duplicates?${params.toString()}`,
+    signal,
+  )
 }
 
 export type PatientGuardianContactUpdate = {
