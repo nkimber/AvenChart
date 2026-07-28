@@ -6979,6 +6979,99 @@ a {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+.inventory-requisition-form {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.inventory-requisition-lines {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.inventory-requisition-lines legend {
+  padding: 0 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.inventory-requisition-line {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(120px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.inventory-requisition-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.inventory-requisition-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(160px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.inventory-requisition-filters > .cl-badge {
+  justify-self: end;
+  margin-bottom: 7px;
+}
+.inventory-requisition-table {
+  min-width: 880px;
+}
+.inventory-requisition-detail {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.inventory-requisition-events {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inventory-requisition-events li {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(180px, 1fr) minmax(
+      180px,
+      2fr
+    );
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.inventory-requisition-events strong {
+  color: var(--text);
+  text-transform: capitalize;
+}
+.inventory-requisition-events code {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.inventory-requisition-decision {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+}
 @media (max-width: 700px) {
   .inventory-modern-item {
     grid-template-columns: 1fr;
@@ -6990,6 +7083,15 @@ a {
   }
   .inventory-lot-pagination {
     justify-content: space-between;
+  }
+  .inventory-requisition-line,
+  .inventory-requisition-filters,
+  .inventory-requisition-events li {
+    grid-template-columns: 1fr;
+  }
+  .inventory-requisition-filters > .cl-badge {
+    justify-self: start;
+    margin-bottom: 0;
   }
 }
 

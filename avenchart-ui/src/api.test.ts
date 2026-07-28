@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiRequestError,
+  createInventoryPurchaseRequisition,
+  decideInventoryPurchaseRequisition,
   downloadPatientDocument,
   endPatientPortalSession,
   getCurrentSession,
   getInventoryLotMetadataHistory,
+  getInventoryPurchaseRequisitions,
   getPatientBilling,
   getPatientCareTeamOptions,
   getPatientPortalAppointments,
@@ -13,6 +16,7 @@ import {
   getStaffMessageInbox,
   logout,
   SESSION_INVALID_EVENT,
+  submitInventoryPurchaseRequisition,
   updatePatientCareTeam,
   updatePatientEmployer,
   updatePatientGuardianContact,
@@ -310,6 +314,54 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         headers: { 'X-Legacy EHR-Session': 'staff-session' },
       }),
+    )
+  })
+
+  it('uses protected inventory requisition lifecycle contracts', async () => {
+    const draft = {
+      requisitionId: 'req-1',
+      status: 'draft',
+      lines: [],
+      events: [],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([draft]))
+      .mockResolvedValueOnce(jsonResponse(draft, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...draft, status: 'submitted' }))
+      .mockResolvedValueOnce(jsonResponse({ ...draft, status: 'approved' }))
+
+    await getInventoryPurchaseRequisitions('staff-session')
+    await createInventoryPurchaseRequisition('staff-session', {
+      facilityId: 12,
+      vendorId: null,
+      notes: 'Restock',
+      lines: [{ itemId: 10001, quantity: 4 }],
+    })
+    await submitInventoryPurchaseRequisition('staff-session', 'req-1')
+    await decideInventoryPurchaseRequisition(
+      'staff-session',
+      'req-1',
+      'approve',
+      'Approved for restock',
+    )
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/purchase-requisitions',
+      'http://localhost:5001/api/inventory/purchase-requisitions',
+      'http://localhost:5001/api/inventory/purchase-requisitions/req-1/submit',
+      'http://localhost:5001/api/inventory/purchase-requisitions/req-1/decisions/approve',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'X-Legacy EHR-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+      }),
+    )
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(
+      JSON.stringify({ notes: 'Approved for restock' }),
     )
   })
 

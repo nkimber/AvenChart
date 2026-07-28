@@ -2290,6 +2290,114 @@ export async function createInventoryTransfer(
 ) {
   return clinicianPost(sessionId, '/api/inventory/transfers', input)
 }
+export type InventoryVendor = {
+  vendorId: string
+  name: string
+  contactName?: string | null
+  phone?: string | null
+  email?: string | null
+  active: boolean
+}
+export type InventoryVendorsResponse = {
+  vendors: InventoryVendor[]
+}
+export async function getInventoryVendors(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryVendorsResponse> {
+  return clinicianGet(sessionId, '/api/inventory/vendors', signal)
+}
+export type InventoryPurchaseRequisitionLineInput = {
+  itemId: number
+  quantity: number
+}
+export type InventoryPurchaseRequisitionCreateInput = {
+  facilityId: number
+  vendorId?: string | null
+  notes?: string | null
+  lines: InventoryPurchaseRequisitionLineInput[]
+}
+export type InventoryPurchaseRequisitionLine = {
+  requisitionLineId: string
+  itemId: number
+  itemCode: string
+  itemName: string
+  requestedQuantity: number
+  receivedQuantity: number
+  outstandingQuantity: number
+  unit: string
+}
+export type InventoryPurchaseRequisitionEvent = {
+  eventId: string
+  action: string
+  note?: string | null
+  actor: string
+  occurredAt: string
+}
+export type InventoryPurchaseRequisition = {
+  requisitionId: string
+  facilityId: number
+  facilityCode: string
+  facilityName: string
+  vendorId?: string | null
+  vendorName?: string | null
+  status: string
+  notes?: string | null
+  requestedBy: string
+  requestedAt: string
+  submittedBy?: string | null
+  submittedAt?: string | null
+  decidedBy?: string | null
+  decidedAt?: string | null
+  decisionNotes?: string | null
+  receiptStatus: string
+  lines: InventoryPurchaseRequisitionLine[]
+  events: InventoryPurchaseRequisitionEvent[]
+}
+export async function getInventoryPurchaseRequisitions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseRequisition[]> {
+  return clinicianGet(sessionId, '/api/inventory/purchase-requisitions', signal)
+}
+export async function createInventoryPurchaseRequisition(
+  sessionId: string,
+  input: InventoryPurchaseRequisitionCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseRequisition> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/purchase-requisitions',
+    input,
+    signal,
+  )
+}
+export async function submitInventoryPurchaseRequisition(
+  sessionId: string,
+  requisitionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseRequisition> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/purchase-requisitions/${encodeURIComponent(requisitionId)}/submit`,
+    undefined,
+    signal,
+  )
+}
+export async function decideInventoryPurchaseRequisition(
+  sessionId: string,
+  requisitionId: string,
+  decision: 'approve' | 'reject',
+  notes?: string | null,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseRequisition> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/purchase-requisitions/${encodeURIComponent(requisitionId)}/decisions/${decision}`,
+    { notes: notes?.trim() || null },
+    signal,
+  )
+}
 export type InventoryActivityReport = {
   fromDate?: string | null
   toDate?: string | null

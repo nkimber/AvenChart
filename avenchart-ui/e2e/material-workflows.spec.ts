@@ -291,6 +291,49 @@ test.describe("material workflows", () => {
     ).toBeVisible();
   });
 
+  test("inventory requisitions expose validated lifecycle controls and immutable events", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const requisitions = page
+      .getByRole("heading", { name: "Purchase requisitions" })
+      .locator("xpath=ancestor::section");
+    await expect(requisitions.getByLabel("Search requisitions")).toBeVisible({
+      timeout: 15_000,
+    });
+    await requisitions.getByRole("button", { name: "New requisition" }).click();
+    await expect(requisitions.getByLabel("Requesting facility")).toBeVisible();
+    await expect(requisitions.getByLabel("Item 1")).toBeVisible();
+    await expect(requisitions.getByLabel("Quantity")).toHaveValue("1");
+    await requisitions.getByRole("button", { name: "Add line" }).click();
+    await expect(requisitions.getByLabel("Item 2")).toBeVisible();
+
+    await requisitions
+      .getByLabel("Search requisitions")
+      .fill("definitely-no-requisition");
+    await expect(
+      requisitions.getByText(
+        "No purchase requisitions match the active filters.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await requisitions.getByLabel("Search requisitions").fill("");
+
+    const openRequisition = requisitions.getByRole("button", {
+      name: /Open requisition/,
+    });
+    if ((await openRequisition.count()) > 0) {
+      await openRequisition.first().click();
+      await expect(
+        requisitions.getByRole("heading", {
+          name: "Immutable lifecycle events",
+        }),
+      ).toBeVisible();
+    }
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {

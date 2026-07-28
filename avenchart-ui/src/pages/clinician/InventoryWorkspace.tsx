@@ -16,6 +16,7 @@ import {
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
+import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 
 type LotWithItem = {
   item: InventoryItem
@@ -350,6 +351,12 @@ export default function InventoryWorkspace() {
               </button>
             </form>
           </section>
+
+          <InventoryRequisitionsPanel
+            facilities={data.facilities}
+            items={data.items}
+            sessionId={session.sessionId}
+          />
 
           <section className="cl-card">
             <div className="cl-card-header">
