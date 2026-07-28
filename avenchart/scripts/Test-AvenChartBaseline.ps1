@@ -10390,6 +10390,8 @@ try {
     $controlledCountCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke approved compensating count correction"; idempotencyKey = "count-correction-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -TimeoutSec 20
     $controlledCountClosed = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/close" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Smoke discrepancy closure" } | ConvertTo-Json) -TimeoutSec 20
     $controlledAsOfReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ asOfDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledAsOfExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/as-of/$($controlledAsOfReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
+    $controlledAsOfExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledAsOfReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledAsOfReport.run.resultChecksum)';"
     $controlledMovementReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "movement"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledWasteReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "waste"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledPatientDispenseReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "patient-dispense"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId; patientId = "MOD-PAT-0001" } | ConvertTo-Json) -TimeoutSec 20
@@ -10425,6 +10427,10 @@ try {
         -and $controlledAsOfReport.lines[0].lotId -eq $receipt.lot.lotId `
         -and $controlledAsOfReport.lines[0].quantityOnHand -eq 6 `
         -and $controlledAsOfReport.run.resultChecksum.Length -eq 64 `
+        -and $controlledAsOfExport.StatusCode -eq 200 `
+        -and $controlledAsOfExport.Headers["Content-Type"] -like "text/csv*" `
+        -and $controlledAsOfExport.Content -match [regex]::Escape($receipt.lot.lotId) `
+        -and $controlledAsOfExportAuditCount.Trim() -eq "1" `
         -and $controlledMovementReport.run.reportKey -eq "custody_activity" `
         -and $controlledMovementReport.run.reportType -eq "movement" `
         -and $controlledMovementReport.run.resultChecksum.Length -eq 64 `

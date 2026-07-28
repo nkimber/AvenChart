@@ -77,6 +77,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         var payload = string.Join("\n", lines.Select(line =>
             $"{line.LotId}|{line.ItemCode}|{line.ScheduleCode}|{line.FacilityCode}|{line.LocationCode}|{line.LotNumber}|{line.QuantityOnHand.ToString(CultureInfo.InvariantCulture)}"));
         var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var artifact = JsonSerializer.Serialize(lines);
         var runId = Guid.NewGuid();
         var requestedAt = DateTimeOffset.UtcNow;
 
@@ -84,15 +85,16 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         {
             insert.CommandText = """
                 insert into inventory_controlled_report_runs (
-                  run_id, report_key, as_of_date, location_id, requested_by,
+                  run_id, report_key, as_of_date, location_id, result_artifact, requested_by,
                   requested_at, row_count, result_checksum)
                 values (
-                  @runId, 'as_of_inventory', @asOf, @locationId, @requestedBy,
+                  @runId, 'as_of_inventory', @asOf, @locationId, @artifact, @requestedBy,
                   @requestedAt, @rowCount, @resultChecksum);
                 """;
             insert.Parameters.AddWithValue("runId", runId);
             insert.Parameters.AddWithValue("asOf", asOf);
             insert.Parameters.AddWithValue("locationId", (object?)request.LocationId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("artifact", NpgsqlDbType.Jsonb, artifact);
             insert.Parameters.AddWithValue("requestedBy", username);
             insert.Parameters.AddWithValue("requestedAt", requestedAt);
             insert.Parameters.AddWithValue("rowCount", lines.Count);
@@ -256,6 +258,57 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
                 lines.Count,
                 checksum),
             lines);
+    }
+
+    public async Task<string?> ExportControlledInventoryRunCsvAsync(Guid runId, string username, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select result_artifact, result_checksum
+            from inventory_controlled_report_runs
+            where run_id = @id and report_key = 'as_of_inventory';
+            """;
+        command.Parameters.AddWithValue("id", runId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        {
+            return null;
+        }
+
+        var artifact = reader.GetString(0);
+        var checksum = reader.GetString(1);
+        await reader.DisposeAsync();
+
+        var lines = JsonSerializer.Deserialize<List<ControlledInventoryReportLine>>(artifact) ?? [];
+        var csv = new StringBuilder("Lot ID,Item Code,Schedule,Facility,Location,Lot Number,Quantity On Hand\n");
+        foreach (var line in lines)
+        {
+            AppendCsvRow(
+                csv,
+                line.LotId,
+                line.ItemCode,
+                line.ScheduleCode,
+                line.FacilityCode,
+                line.LocationCode,
+                line.LotNumber,
+                line.QuantityOnHand);
+        }
+
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = """
+            insert into inventory_controlled_report_exports (
+              export_id, run_id, exported_by, exported_at, format, result_checksum)
+            values (@export, @run, @user, now(), 'csv', @checksum);
+            """;
+        insert.Parameters.AddWithValue("export", Guid.NewGuid());
+        insert.Parameters.AddWithValue("run", runId);
+        insert.Parameters.AddWithValue("user", username);
+        insert.Parameters.AddWithValue("checksum", checksum);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+
+        return csv.ToString();
     }
 
     public async Task<ControlledCountVarianceReportResponse> RunControlledCountVarianceReportAsync(ControlledCountVarianceReportRequest request, string username, CancellationToken cancellationToken)
