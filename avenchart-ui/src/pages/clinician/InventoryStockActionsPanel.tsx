@@ -125,7 +125,7 @@ export default function InventoryStockActionsPanel({
   )
   const movementAmount = Number(movementQuantity)
   const requiresSpecificIdentification =
-    movementKind === 'consumption' &&
+    movementKind !== 'restore' &&
     movementCostLayers.some(
       (layer) => layer.status === 'open' && layer.method === 'specific_identification',
     )
@@ -159,7 +159,7 @@ export default function InventoryStockActionsPanel({
   useEffect(() => {
     setMovementCostLayerId('')
     setMovementReversalApplicationId('')
-    if (!movementLotId || movementKind === 'transfer') {
+    if (!movementLotId) {
       setMovementCostLayers([])
       setMovementApplications([])
       return
@@ -248,6 +248,7 @@ export default function InventoryStockActionsPanel({
               destinationFacilityId: Number(destinationFacilityId),
               quantity: movementAmount,
               reason: movementReason.trim(),
+              costLayerId: movementCostLayerId || undefined,
             })
           : await createInventoryTransaction(sessionId, {
               lotId: movementLot.lot.lotId,

@@ -941,7 +941,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var destinationTransactionId = Guid.NewGuid();
         await InsertTransactionAsync(connection, transaction, destinationTransactionId, destinationLot.LotId, transferId, "transfer", request.Quantity,
             request.Reason, username, now, cancellationToken);
-        await ReallocateTransferCostLayersAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, sourceLotId, destinationLot, destinationFacility.FacilityId, request.Quantity, username, now, cancellationToken);
+        await ReallocateTransferCostLayersAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, sourceLotId, destinationLot, destinationFacility.FacilityId, request.Quantity, username, now, cancellationToken, request.CostLayerId);
 
         decimal itemQuantity;
         await using (var itemQuantityCommand = connection.CreateCommand())
@@ -2195,7 +2195,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (remaining > 0) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete quantity movement.", username, now, cancellationToken);
     }
 
-    private static async Task ReallocateTransferCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid destinationTransactionId, Guid transferId, int sourceLotId, InventoryLot destinationLot, int destinationFacilityId, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    private static async Task ReallocateTransferCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid destinationTransactionId, Guid transferId, int sourceLotId, InventoryLot destinationLot, int destinationFacilityId, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken, Guid? selectedLayerId = null)
     {
         var layers = new List<InventoryCostLayerForApplication>();
         await using (var select = connection.CreateCommand())
@@ -2219,6 +2219,15 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         if (layers[0].Method == "weighted_average")
         {
             await ReallocateWeightedAverageTransferCostLayersAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, sourceLotId, destinationLot, destinationFacilityId, layers, quantity, username, now, cancellationToken);
+            return;
+        }
+        if (layers[0].Method == "specific_identification")
+        {
+            if (selectedLayerId is null) throw new ArgumentException("Specific-identification transfer requires a source receipt cost-layer selection.");
+            var layer = layers.SingleOrDefault(candidate => candidate.Id == selectedLayerId.Value);
+            if (layer is null) throw new ArgumentException("The selected receipt cost layer is not open for this source transfer lot and policy.");
+            if (layer.Remaining < quantity) throw new ArgumentException("The selected receipt cost layer does not contain the requested transfer quantity.");
+            await MoveTransferCostLayerAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, destinationLot, destinationFacilityId, layer, quantity, layer.UnitCost, $"specific_identification transfer out to lot {destinationLot.LotId}; {layer.RoundingRule} to four decimal places", username, now, cancellationToken);
             return;
         }
         if (layers[0].Method != "fifo")

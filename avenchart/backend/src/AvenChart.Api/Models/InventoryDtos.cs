@@ -206,7 +206,8 @@ public sealed record InventoryTransferCreateRequest(
     int SourceLotId,
     int DestinationFacilityId,
     decimal Quantity,
-    string? Reason);
+    string? Reason,
+    Guid? CostLayerId = null);
 
 public sealed record InventoryMutationResponse(
     InventoryTransactionItem Transaction,

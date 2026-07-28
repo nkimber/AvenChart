@@ -2945,6 +2945,7 @@ export async function createInventoryTransfer(
     destinationFacilityId: number
     quantity: number
     reason: string
+    costLayerId?: string
   },
   signal?: AbortSignal,
 ): Promise<InventoryMutationResponse> {
