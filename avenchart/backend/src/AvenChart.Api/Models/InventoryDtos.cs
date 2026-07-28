@@ -155,7 +155,8 @@ public sealed record InventoryPrescriptionDispenseRequest(
     decimal Quantity,
     decimal Fee,
     string? SaleDate,
-    string? Notes);
+    string? Notes,
+    Guid? CostLayerId = null);
 
 public sealed record InventoryPrescriptionDispenseResponse(
     string PrescriptionId,
@@ -197,7 +198,8 @@ public sealed record InventoryTransactionCreateRequest(
     int LotId,
     string TransactionType,
     decimal Quantity,
-    string? Reason);
+    string? Reason,
+    Guid? CostLayerId = null);
 
 public sealed record InventoryTransferCreateRequest(
     int SourceLotId,
@@ -276,7 +278,8 @@ public sealed record InventoryPatientSaleCreateRequest(
     string? SaleDate,
     decimal Quantity,
     decimal Fee,
-    string? Notes);
+    string? Notes,
+    Guid? CostLayerId = null);
 
 public sealed record InventoryPatientSaleResponse(
     Guid SaleId,

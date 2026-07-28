@@ -637,7 +637,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var updatedQuantity=onHand-request.Quantity;
         await using (var update=connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_lots set quantity_on_hand=@quantity where lot_id=@lotId;"; update.Parameters.AddWithValue("quantity",updatedQuantity); update.Parameters.AddWithValue("lotId",lotId); await update.ExecuteNonQueryAsync(cancellationToken); }
         await using (var ledger=connection.CreateCommand()) { ledger.Transaction=transaction; ledger.CommandText="insert into inventory_transactions (transaction_id,lot_id,transaction_type,quantity_delta,reason,performed_by,occurred_at) values (@id,@lotId,'sale',@quantity,@reason,@user,@at);"; ledger.Parameters.AddWithValue("id",transactionId);ledger.Parameters.AddWithValue("lotId",lotId);ledger.Parameters.AddWithValue("quantity",-request.Quantity);ledger.Parameters.AddWithValue("reason",(object?)notes??DBNull.Value);ledger.Parameters.AddWithValue("user",username);ledger.Parameters.AddWithValue("at",now);await ledger.ExecuteNonQueryAsync(cancellationToken); }
-        await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, lotId, request.Quantity, "sale", username, now, cancellationToken);
+        await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, lotId, request.Quantity, "sale", username, now, cancellationToken, request.CostLayerId);
         await using (var sale=connection.CreateCommand()) { sale.Transaction=transaction; sale.CommandText="insert into inventory_patient_sales (sale_id,lot_id,patient_id,encounter,sale_date,quantity,fee,notes,transaction_id,sold_by,sold_at,prescription_id) values (@saleId,@lotId,@patientId,@encounter,@saleDate,@quantity,@fee,@notes,@transactionId,@user,@at,@prescriptionId);"; sale.Parameters.AddWithValue("saleId",saleId);sale.Parameters.AddWithValue("lotId",lotId);sale.Parameters.AddWithValue("patientId",patientId);sale.Parameters.AddWithValue("encounter",encounter);sale.Parameters.AddWithValue("saleDate",saleDate);sale.Parameters.AddWithValue("quantity",request.Quantity);sale.Parameters.AddWithValue("fee",request.Fee);sale.Parameters.AddWithValue("notes",(object?)notes??DBNull.Value);sale.Parameters.AddWithValue("transactionId",transactionId);sale.Parameters.AddWithValue("user",username);sale.Parameters.AddWithValue("at",now);sale.Parameters.AddWithValue("prescriptionId",prescriptionId);await sale.ExecuteNonQueryAsync(cancellationToken); }
         await using var total=connection.CreateCommand(); total.Transaction=transaction; total.CommandText="select coalesce(sum(quantity_on_hand),0) from inventory_lots where item_id=@itemId and status='active';"; total.Parameters.AddWithValue("itemId",itemId); var itemQuantity=Convert.ToDecimal(await total.ExecuteScalarAsync(cancellationToken),CultureInfo.InvariantCulture);
         await transaction.CommitAsync(cancellationToken);
@@ -748,7 +748,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
 
         if (quantityDelta < 0)
         {
-            await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, -quantityDelta, normalizedType, username, now, cancellationToken);
+            await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, -quantityDelta, normalizedType, username, now, cancellationToken, request.CostLayerId);
         }
 
         decimal itemQuantity;
@@ -814,7 +814,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         var updatedQuantity = onHand - request.Quantity; var notes = NormalizeOptional(request.Notes);
         await using (var update = connection.CreateCommand()) { update.Transaction = transaction; update.CommandText = "update inventory_lots set quantity_on_hand = @quantity where lot_id = @lotId;"; update.Parameters.AddWithValue("quantity", updatedQuantity); update.Parameters.AddWithValue("lotId", request.LotId); await update.ExecuteNonQueryAsync(cancellationToken); }
         await using (var ledger = connection.CreateCommand()) { ledger.Transaction = transaction; ledger.CommandText = "insert into inventory_transactions (transaction_id, lot_id, transaction_type, quantity_delta, reason, performed_by, occurred_at) values (@id, @lotId, 'sale', @quantity, @reason, @user, @at);"; ledger.Parameters.AddWithValue("id", transactionId); ledger.Parameters.AddWithValue("lotId", request.LotId); ledger.Parameters.AddWithValue("quantity", -request.Quantity); ledger.Parameters.AddWithValue("reason", (object?)notes ?? DBNull.Value); ledger.Parameters.AddWithValue("user", username); ledger.Parameters.AddWithValue("at", now); await ledger.ExecuteNonQueryAsync(cancellationToken); }
-        await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, request.Quantity, "sale", username, now, cancellationToken);
+        await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, request.Quantity, "sale", username, now, cancellationToken, request.CostLayerId);
         await using (var sale = connection.CreateCommand()) { sale.Transaction = transaction; sale.CommandText = "insert into inventory_patient_sales (sale_id, lot_id, patient_id, encounter, sale_date, quantity, fee, notes, transaction_id, sold_by, sold_at) values (@saleId, @lotId, @patientId, @encounter, @saleDate, @quantity, @fee, @notes, @transactionId, @user, @at);"; sale.Parameters.AddWithValue("saleId", saleId); sale.Parameters.AddWithValue("lotId", request.LotId); sale.Parameters.AddWithValue("patientId", request.PatientId.Trim()); sale.Parameters.AddWithValue("encounter", request.Encounter); sale.Parameters.AddWithValue("saleDate", saleDate); sale.Parameters.AddWithValue("quantity", request.Quantity); sale.Parameters.AddWithValue("fee", request.Fee); sale.Parameters.AddWithValue("notes", (object?)notes ?? DBNull.Value); sale.Parameters.AddWithValue("transactionId", transactionId); sale.Parameters.AddWithValue("user", username); sale.Parameters.AddWithValue("at", now); await sale.ExecuteNonQueryAsync(cancellationToken); }
         await using var total = connection.CreateCommand(); total.Transaction = transaction; total.CommandText = "select coalesce(sum(quantity_on_hand), 0) from inventory_lots where item_id = @itemId and status = 'active';"; total.Parameters.AddWithValue("itemId", itemId); var itemQuantity = Convert.ToDecimal(await total.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         await transaction.CommitAsync(cancellationToken);
@@ -2127,7 +2127,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task ApplyReceiptCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, decimal quantity, string transactionType, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    private static async Task ApplyReceiptCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, decimal quantity, string transactionType, string username, DateTimeOffset now, CancellationToken cancellationToken, Guid? selectedLayerId = null)
     {
         var applicationType = transactionType is "consumption" or "destruction" or "sale" ? "issue" : transactionType;
         if (applicationType is not ("issue" or "return")) return;
@@ -2151,12 +2151,18 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             return;
         }
         var method = layers[0].Method;
-        if (method is "practice_specific" or "specific_identification")
+        if (method == "specific_identification")
         {
-            var reason = method == "specific_identification"
-                ? "Specific identification requires an explicit receipt-layer selection; the current quantity command only identifies a lot."
-                : "The active practice-specific method has no local movement-cost implementation.";
-            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "unsupported_method", reason, username, now, cancellationToken);
+            if (selectedLayerId is null) throw new ArgumentException("Specific identification requires a receipt cost-layer selection.");
+            var layer = layers.SingleOrDefault(candidate => candidate.Id == selectedLayerId.Value);
+            if (layer is null) throw new ArgumentException("The selected receipt cost layer is not open for this inventory lot and policy.");
+            if (layer.Remaining < quantity) throw new ArgumentException("The selected receipt cost layer does not contain the requested quantity.");
+            await ApplyCostLayerAsync(connection, transaction, sourceTransactionId, applicationType, layer, quantity, layer.UnitCost, $"specific_identification; {layer.RoundingRule} to four decimal places", username, now, cancellationToken);
+            return;
+        }
+        if (method == "practice_specific")
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, lotId, "unsupported_method", "The active practice-specific method has no local movement-cost implementation.", username, now, cancellationToken);
             return;
         }
         if (method == "weighted_average")

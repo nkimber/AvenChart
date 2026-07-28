@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
   createInventoryLotDestruction,
   createInventoryTransaction,
   createInventoryTransfer,
+  getInventoryReceiptCostLayers,
   type InventoryCountReconciliation,
   type InventoryExpiryDisposition,
   type InventoryItem,
   type InventoryLot,
   type InventoryLotDestruction,
   type InventoryMutationResponse,
+  type InventoryReceiptCostLayer,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 
@@ -67,6 +69,8 @@ export default function InventoryStockActionsPanel({
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
   const [movementQuantity, setMovementQuantity] = useState('1')
   const [movementReason, setMovementReason] = useState('')
+  const [movementCostLayers, setMovementCostLayers] = useState<InventoryReceiptCostLayer[]>([])
+  const [movementCostLayerId, setMovementCostLayerId] = useState('')
 
   const [countLotId, setCountLotId] = useState('')
   const [countedQuantity, setCountedQuantity] = useState('')
@@ -115,6 +119,17 @@ export default function InventoryStockActionsPanel({
     ({ lot }) => String(lot.lotId) === destructionLotId,
   )
   const movementAmount = Number(movementQuantity)
+  const requiresSpecificIdentification =
+    movementKind === 'consumption' &&
+    movementCostLayers.some(
+      (layer) => layer.status === 'open' && layer.method === 'specific_identification',
+    )
+  const selectableCostLayers = movementCostLayers.filter(
+    (layer) =>
+      layer.status === 'open' &&
+      layer.method === 'specific_identification' &&
+      layer.remainingQuantity >= movementAmount,
+  )
   const countedAmount = Number(countedQuantity)
   const countVariance =
     countLot && countedQuantity !== ''
@@ -126,6 +141,28 @@ export default function InventoryStockActionsPanel({
     setError(null)
     setResult(null)
   }
+
+  useEffect(() => {
+    setMovementCostLayerId('')
+    if (!movementLotId || movementKind !== 'consumption') {
+      setMovementCostLayers([])
+      return
+    }
+    let cancelled = false
+    void getInventoryReceiptCostLayers(sessionId, { lotId: Number(movementLotId) })
+      .then((layers) => {
+        if (!cancelled) setMovementCostLayers(layers)
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setMovementCostLayers([])
+          setError(caughtMessage(caught, 'Could not load receipt cost layers.'))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [movementKind, movementLotId, sessionId])
 
   async function finish(nextResult: Result, message: string) {
     setResult(nextResult)
@@ -155,6 +192,10 @@ export default function InventoryStockActionsPanel({
       setError('A reason is required for this stock movement.')
       return
     }
+    if (requiresSpecificIdentification && !movementCostLayerId) {
+      setError('Select the receipt cost layer to use for specific identification.')
+      return
+    }
     if (
       movementKind === 'transfer' &&
       (!destinationFacilityId ||
@@ -182,6 +223,7 @@ export default function InventoryStockActionsPanel({
               transactionType: 'consumption',
               quantity: movementAmount,
               reason: movementReason.trim(),
+              costLayerId: movementCostLayerId || undefined,
             })
       await finish(
         { kind: 'movement', unit: movementLot.item.unit, value },
@@ -434,6 +476,23 @@ export default function InventoryStockActionsPanel({
                         {facility.code} / {facility.name}
                       </option>
                     ))}
+                </select>
+              </label>
+            )}
+            {requiresSpecificIdentification && (
+              <label className="cl-admin-field inventory-action-lot">
+                <span>Receipt cost layer</span>
+                <select
+                  value={movementCostLayerId}
+                  onChange={(event) => setMovementCostLayerId(event.target.value)}
+                  required
+                >
+                  <option value="">Select the receipt layer</option>
+                  {selectableCostLayers.map((layer) => (
+                    <option key={layer.layerId} value={layer.layerId}>
+                      {layer.remainingQuantity} available at {formatCurrency(layer.unitCost)} / {layer.currency}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}

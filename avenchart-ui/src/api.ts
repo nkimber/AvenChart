@@ -2931,6 +2931,7 @@ export async function createInventoryTransaction(
     transactionType: 'consumption'
     quantity: number
     reason: string
+    costLayerId?: string
   },
   signal?: AbortSignal,
 ): Promise<InventoryMutationResponse> {
