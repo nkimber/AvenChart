@@ -2855,7 +2855,7 @@ export async function searchEncounters(
 ): Promise<EncounterSearchResponse> {
   const q = new URLSearchParams()
   if (params.patientId) q.set('patientId', params.patientId)
-  if (params.fromDate) q.set('fromDate', params.fromDate)
+  if (params.fromDate) q.set('from', params.fromDate)
   if (params.limit) q.set('limit', String(params.limit))
   if (params.archived) q.set('archived', 'true')
   return clinicianGet(sessionId, `/api/encounters/?${q}`, signal)

@@ -43,7 +43,9 @@ import {
   type EncounterClinicalAlert,
   type EncounterClinicalAlertAcknowledgement,
 } from "../../api.ts";
+import { ClinicalAlertSeverityBadge } from "../../components/ClinicalAlertSeverityBadge.tsx";
 import { showToast } from "../../components/Toast.tsx";
+import { getClinicalAlertSeverity } from "../../domain/clinicalAlertSeverity.ts";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 
 // Simple SVG sparkline for a series of numeric values
@@ -1291,52 +1293,76 @@ function EncounterClinicalAlerts({
   const [history, setHistory] = useState<
     EncounterClinicalAlertAcknowledgement[]
   >([]);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [historyRefreshError, setHistoryRefreshError] = useState<string | null>(
+    null,
+  );
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getEncounterClinicalAlerts(sessionId, encounter)
-      .then((response) => {
-        if (!cancelled) setAlerts(response.alerts);
+    setState("loading");
+    setLoadError(null);
+    setActionError(null);
+    setHistoryRefreshError(null);
+    Promise.all([
+      getEncounterClinicalAlerts(sessionId, encounter),
+      getEncounterClinicalAlertHistory(sessionId, encounter),
+    ])
+      .then(([activeResponse, historyResponse]) => {
+        if (cancelled) return;
+        setAlerts(activeResponse.alerts);
+        setHistory(historyResponse.acknowledgements);
+        setState("ready");
       })
-      .catch(() => {
-        if (!cancelled) setAlerts([]);
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Clinical alerts could not be loaded.",
+        );
+        setState("error");
       });
     return () => {
       cancelled = true;
     };
-  }, [sessionId, encounter]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getEncounterClinicalAlertHistory(sessionId, encounter)
-      .then((response) => {
-        if (!cancelled) setHistory(response.acknowledgements);
-      })
-      .catch(() => {
-        if (!cancelled) setHistory([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, encounter]);
+  }, [sessionId, encounter, loadAttempt]);
 
   async function acknowledge(key: string) {
     setAcknowledging(key);
+    setActionError(null);
+    setHistoryRefreshError(null);
     try {
-      setAlerts(
-        (await acknowledgeEncounterClinicalAlert(sessionId, encounter, key))
-          .alerts,
+      const response = await acknowledgeEncounterClinicalAlert(
+        sessionId,
+        encounter,
+        key,
       );
-      setHistory(
-        (await getEncounterClinicalAlertHistory(sessionId, encounter))
-          .acknowledgements,
-      );
+      setAlerts(response.alerts);
       showToast(
         "Clinical alert acknowledgement recorded for this encounter.",
         "success",
       );
-    } catch {
+      try {
+        setHistory(
+          (await getEncounterClinicalAlertHistory(sessionId, encounter))
+            .acknowledgements,
+        );
+      } catch {
+        setHistoryRefreshError(
+          "The acknowledgement was saved, but its updated history could not be loaded.",
+        );
+      }
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The acknowledgement could not be recorded.",
+      );
       showToast("Could not acknowledge this clinical alert.", "error");
     } finally {
       setAcknowledging(null);
@@ -1345,20 +1371,66 @@ function EncounterClinicalAlerts({
 
   async function reopen(key: string) {
     setAcknowledging(key);
+    setActionError(null);
+    setHistoryRefreshError(null);
     try {
-      setAlerts(
-        (await reopenEncounterClinicalAlert(sessionId, encounter, key)).alerts,
+      const response = await reopenEncounterClinicalAlert(
+        sessionId,
+        encounter,
+        key,
       );
-      setHistory(
-        (await getEncounterClinicalAlertHistory(sessionId, encounter))
-          .acknowledgements,
-      );
+      setAlerts(response.alerts);
       showToast("Clinical alert reopened for this encounter.", "success");
-    } catch {
+      try {
+        setHistory(
+          (await getEncounterClinicalAlertHistory(sessionId, encounter))
+            .acknowledgements,
+        );
+      } catch {
+        setHistoryRefreshError(
+          "The alert was reopened, but its updated history could not be loaded.",
+        );
+      }
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The alert could not be reopened.",
+      );
       showToast("Could not reopen this clinical alert.", "error");
     } finally {
       setAcknowledging(null);
     }
+  }
+
+  if (state === "loading") {
+    return (
+      <section className="cl-card" aria-label="Clinical alerts">
+        <h2 className="cl-card-title">Clinical alerts</h2>
+        <p className="cl-empty-text" role="status">
+          Loading clinical alerts and acknowledgement history...
+        </p>
+      </section>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <section className="cl-card" aria-label="Clinical alerts">
+        <h2 className="cl-card-title">Clinical alerts</h2>
+        <div className="error-banner" role="alert">
+          <strong>Clinical alerts are unavailable.</strong>
+          <span>{loadError}</span>
+          <button
+            className="cl-btn-secondary"
+            type="button"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          >
+            Retry alerts
+          </button>
+        </div>
+      </section>
+    );
   }
 
   if (alerts.length === 0 && history.length === 0) return null;
@@ -1372,17 +1444,30 @@ function EncounterClinicalAlerts({
           </p>
         </div>
       </div>
+      {actionError ? (
+        <div className="error-banner" role="alert">
+          <strong>Alert action was not saved.</strong>
+          <span>{actionError}</span>
+        </div>
+      ) : null}
+      {historyRefreshError ? (
+        <div className="error-banner" role="status">
+          <strong>Alert saved; history is stale.</strong>
+          <span>{historyRefreshError}</span>
+        </div>
+      ) : null}
       {alerts.map((alert) => (
         <div
           key={alert.key}
-          className="cl-soap-section"
-          style={{
-            borderLeft: `4px solid ${alert.severity === "critical" ? "#b42318" : alert.severity === "warning" ? "#b54708" : "#175cd3"}`,
-          }}
+          className="cl-soap-section clinical-alert-card"
+          data-alert-severity={
+            getClinicalAlertSeverity(alert.severity).severity
+          }
         >
-          <p className="cl-soap-label">
-            {alert.title} · {alert.severity}
-          </p>
+          <div className="clinical-alert-heading">
+            <p className="cl-soap-label">{alert.title}</p>
+            <ClinicalAlertSeverityBadge value={alert.severity} />
+          </div>
           <p className="cl-soap-text">{alert.message}</p>
           <p className="cl-empty-text">{alert.reason}</p>
           <button
@@ -1399,14 +1484,24 @@ function EncounterClinicalAlerts({
       ))}
       {history.length > 0 && (
         <div className="cl-soap-section">
-          <p className="cl-soap-label">Alert acknowledgement history</p>
+          <p className="cl-soap-label">
+            Alert acknowledgement history ({history.length})
+          </p>
           {history.map((entry) => (
             <div
               key={entry.ruleKey}
-              className="cl-empty-text"
-              style={{ marginBottom: 10 }}
+              className="cl-empty-text clinical-alert-history-entry"
             >
-              <strong>{entry.title}</strong>
+              <div className="clinical-alert-heading">
+                <strong>{entry.title}</strong>
+                <span
+                  className={`cl-badge ${
+                    entry.reopenedAt ? "cl-badge-amber" : "cl-badge-green"
+                  }`}
+                >
+                  {entry.reopenedAt ? "Reopened" : "Acknowledged"}
+                </span>
+              </div>
               <br />
               Acknowledged by {entry.acknowledgedBy} at{" "}
               {new Date(entry.acknowledgedAt).toLocaleString()}.
@@ -1479,6 +1574,7 @@ export default function PatientEncounters() {
     setDetailCache(new Map());
     searchEncounters(session.sessionId, {
       patientId,
+      fromDate: "1900-01-01",
       limit: 50,
       archived: showArchived,
     })
@@ -1537,6 +1633,7 @@ export default function PatientEncounters() {
       setDetailState({ status: "idle" });
       const response = await searchEncounters(session.sessionId, {
         patientId,
+        fromDate: "1900-01-01",
         limit: 50,
         archived: showArchived,
       });
@@ -1808,10 +1905,10 @@ export default function PatientEncounters() {
           {listState.status === "ready" &&
             listState.data.map((enc) => (
               <button
-                key={enc.id}
-                className={`cl-encounter-item${selectedId === enc.id ? " cl-encounter-item-active" : ""}`}
+                key={enc.encounter}
+                className={`cl-encounter-item${selectedId === enc.encounter ? " cl-encounter-item-active" : ""}`}
                 type="button"
-                onClick={() => openEncounter(enc.id)}
+                onClick={() => openEncounter(enc.encounter)}
               >
                 <div className="cl-encounter-item-inner">
                   <div>

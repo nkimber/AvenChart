@@ -27,6 +27,7 @@ import {
   getPatientProviderAssignmentOptions,
   getStaffMessageInbox,
   logout,
+  searchEncounters,
   SESSION_INVALID_EVENT,
   submitInventoryPurchaseRequisition,
   updatePatientCareTeam,
@@ -111,6 +112,28 @@ describe('authenticated API transport', () => {
     expect(result.fileName).toBe('visit summary.pdf')
     expect(result.contentType).toBe('application/pdf')
     expect(await result.blob.text()).toBe('clinical document')
+  })
+
+  it('uses the backend from parameter for longitudinal encounter searches', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        totalMatches: 1,
+        encounters: [],
+      }),
+    )
+
+    await searchEncounters('staff-session', {
+      patientId: 'MOD-PAT-0901',
+      fromDate: '1900-01-01',
+      limit: 50,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/encounters/?patientId=MOD-PAT-0901&from=1900-01-01&limit=50',
+      expect.objectContaining({
+        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
   })
 
   it('rejects an HTML response masquerading as a document', async () => {

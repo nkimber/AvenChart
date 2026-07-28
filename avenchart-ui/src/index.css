@@ -3199,6 +3199,42 @@ a {
   color: var(--coral);
 }
 
+.clinical-alert-card {
+  border-left: 4px solid var(--border);
+}
+
+.clinical-alert-card[data-alert-severity="info"] {
+  border-left-color: #175cd3;
+}
+
+.clinical-alert-card[data-alert-severity="warning"] {
+  border-left-color: #b54708;
+}
+
+.clinical-alert-card[data-alert-severity="critical"] {
+  border-left-color: #b42318;
+}
+
+.clinical-alert-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.clinical-alert-heading .cl-soap-label {
+  margin-bottom: 0;
+}
+
+.clinical-alert-history-entry {
+  margin-bottom: 12px;
+}
+
+.clinical-alert-history-entry:last-child {
+  margin-bottom: 0;
+}
+
 /* ─── Tables ───────────────────────────────────────────────────────────────── */
 
 .cl-table {

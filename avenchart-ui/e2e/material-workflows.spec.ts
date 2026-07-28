@@ -160,6 +160,50 @@ test.describe("material workflows", () => {
     await expect(page.getByLabel("Status")).toHaveValue("new");
   });
 
+  test("encounter alerts expose severity and acknowledgement evidence", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-chromium",
+      "The acknowledgement proof runs once to avoid concurrent writes to the shared synthetic encounter.",
+    );
+    await signInClinician(page);
+    await page.goto("/clinician/patients/MOD-PAT-0901/encounters");
+    await page
+      .getByRole("button", {
+        name: /Comprehensive new patient evaluation/,
+      })
+      .click();
+
+    const alertPanel = page.getByRole("region", { name: "Clinical alerts" });
+    const activeAlert = alertPanel.locator(".clinical-alert-card");
+    await expect(activeAlert.getByText("Allergy review")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(activeAlert.getByText("Warning alert")).toHaveAttribute(
+      "data-alert-severity",
+      "warning",
+    );
+    await expect(
+      activeAlert.getByText(
+        "No active allergy records are documented for this patient.",
+      ),
+    ).toBeVisible();
+
+    await alertPanel
+      .getByRole("button", { name: "Acknowledge review" })
+      .click();
+    await expect(alertPanel.getByText("Acknowledged")).toBeVisible();
+    await expect(
+      alertPanel.getByText(/Acknowledged by admin at/),
+    ).toBeVisible();
+
+    await alertPanel.getByRole("button", { name: "Reopen alert" }).click();
+    await expect(alertPanel.getByText("Warning alert")).toBeVisible();
+    await expect(alertPanel.getByText("Reopened")).toBeVisible();
+    await expect(alertPanel.getByText(/Reopened by admin at/)).toBeVisible();
+  });
+
   test("patient relationships and care team use the protected mutation workflows", async ({
     page,
   }, testInfo) => {
