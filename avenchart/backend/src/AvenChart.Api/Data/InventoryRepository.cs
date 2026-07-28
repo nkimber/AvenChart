@@ -42,7 +42,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "select rx_norm_code, drug_name, display_name, form, strength, route from medication_vocabulary order by display_name, rx_norm_code;";
+        command.CommandText = "select rx_norm_code, drug_name, display_name, form, strength, route from medication_vocabulary where active=true order by display_name, rx_norm_code;";
         var items = new List<InventoryMedicationCatalogItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -72,10 +72,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using (var vocabulary = connection.CreateCommand())
         {
             vocabulary.Transaction = transaction;
-            vocabulary.CommandText = "select exists(select 1 from medication_vocabulary where rx_norm_code=@code);";
+            vocabulary.CommandText = "select exists(select 1 from medication_vocabulary where rx_norm_code=@code and active=true);";
             vocabulary.Parameters.AddWithValue("code", rxNormCode);
             if (await vocabulary.ExecuteScalarAsync(cancellationToken) is not true)
-                throw new ArgumentException("The RXCUI code is not present in the medication vocabulary.");
+                throw new ArgumentException("The RXCUI code is not present in the active medication vocabulary.");
         }
         await using (var duplicate = connection.CreateCommand())
         {
@@ -99,7 +99,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         await using (var audit = connection.CreateCommand())
         {
             audit.Transaction = transaction;
-            audit.CommandText = "insert into inventory_item_medication_link_audits (audit_id,item_id,prior_rx_norm_code,new_rx_norm_code,action,changed_by,changed_at) values (@id,@itemId,@prior,@code,@action,@user,@at);";
+            audit.CommandText = "insert into inventory_item_medication_link_audits (audit_id,item_id,prior_rx_norm_code,new_rx_norm_code,action,changed_by,changed_at,reason) values (@id,@itemId,@prior,@code,@action,@user,@at,null);";
             audit.Parameters.AddWithValue("id", Guid.NewGuid());
             audit.Parameters.AddWithValue("itemId", itemId);
             audit.Parameters.AddWithValue("prior", (object?)priorCode ?? DBNull.Value);
@@ -121,6 +121,70 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         }
         await transaction.CommitAsync(cancellationToken);
         return link;
+    }
+
+    public async Task<InventoryMedicationLinkHistoryResponse> GetMedicationLinkHistoryAsync(int itemId, CancellationToken cancellationToken)
+    {
+        if (itemId <= 0) throw new ArgumentException("An inventory item is required.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using (var item = connection.CreateCommand())
+        {
+            item.CommandText = "select exists(select 1 from inventory_items where item_id=@itemId);";
+            item.Parameters.AddWithValue("itemId", itemId);
+            if (await item.ExecuteScalarAsync(cancellationToken) is not true) throw new ArgumentException("The inventory item was not found.");
+        }
+        var events = new List<InventoryMedicationLinkAuditEvent>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "select audit_id,prior_rx_norm_code,new_rx_norm_code,action,changed_by,changed_at,reason from inventory_item_medication_link_audits where item_id=@itemId order by changed_at desc,audit_id desc;";
+            command.Parameters.AddWithValue("itemId", itemId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                events.Add(new InventoryMedicationLinkAuditEvent(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetFieldValue<DateTimeOffset>(5).ToString("O", CultureInfo.InvariantCulture), reader.IsDBNull(6) ? null : reader.GetString(6)));
+        }
+        return new InventoryMedicationLinkHistoryResponse(itemId, events);
+    }
+
+    public async Task<InventoryMedicationLinkHistoryResponse> UnlinkMedicationAsync(int itemId, InventoryMedicationLinkUnlinkRequest request, string username, CancellationToken cancellationToken)
+    {
+        var reason = request.Reason?.Trim();
+        if (itemId <= 0 || string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("An active inventory item, unlink reason of 500 characters or fewer, and authenticated user are required.");
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        string? priorCode;
+        await using (var item = connection.CreateCommand())
+        {
+            item.Transaction = transaction;
+            item.CommandText = "select l.rx_norm_code from inventory_items i left join inventory_item_medication_links l on l.item_id=i.item_id where i.item_id=@itemId and i.active=true for update of i;";
+            item.Parameters.AddWithValue("itemId", itemId);
+            await using var reader = await item.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new ArgumentException("The active inventory item was not found.");
+            priorCode = reader.IsDBNull(0) ? null : reader.GetString(0);
+        }
+        if (priorCode is null) throw new ArgumentException("The inventory item does not currently have a medication link.");
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = "delete from inventory_item_medication_links where item_id=@itemId;";
+            delete.Parameters.AddWithValue("itemId", itemId);
+            await delete.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var audit = connection.CreateCommand())
+        {
+            audit.Transaction = transaction;
+            audit.CommandText = "insert into inventory_item_medication_link_audits (audit_id,item_id,prior_rx_norm_code,new_rx_norm_code,action,changed_by,changed_at,reason) values (@id,@itemId,@prior,null,'unlinked',@user,@at,@reason);";
+            audit.Parameters.AddWithValue("id", Guid.NewGuid());
+            audit.Parameters.AddWithValue("itemId", itemId);
+            audit.Parameters.AddWithValue("prior", priorCode);
+            audit.Parameters.AddWithValue("user", username);
+            audit.Parameters.AddWithValue("at", DateTimeOffset.UtcNow);
+            audit.Parameters.AddWithValue("reason", reason);
+            await audit.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return await GetMedicationLinkHistoryAsync(itemId, cancellationToken);
     }
 
     public async Task<InventoryControlledSubstanceCatalogResponse> GetControlledSubstanceCatalogAsync(CancellationToken cancellationToken)

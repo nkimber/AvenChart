@@ -1060,7 +1060,8 @@ create table medication_vocabulary (
   dose_unit text,
   frequency text,
   duration_days integer,
-  controlled_substance_schedule text
+  controlled_substance_schedule text,
+  active boolean not null default true
 );
 
 create table inventory_items (

@@ -53,6 +53,9 @@ public sealed record InventoryMedicationCatalogItem(
     string Route);
 
 public sealed record InventoryMedicationLinkUpdateRequest(string RxNormCode);
+public sealed record InventoryMedicationLinkUnlinkRequest(string Reason);
+public sealed record InventoryMedicationLinkAuditEvent(Guid AuditId, string? PriorRxNormCode, string? NewRxNormCode, string Action, string ChangedBy, string ChangedAt, string? Reason);
+public sealed record InventoryMedicationLinkHistoryResponse(int ItemId, IReadOnlyList<InventoryMedicationLinkAuditEvent> Events);
 
 public sealed record InventoryControlledLocation(
     Guid LocationId,

@@ -2503,6 +2503,19 @@ export type InventoryMedicationCatalogItem = {
   strength: string
   route: string
 }
+export type InventoryMedicationLinkAuditEvent = {
+  auditId: string
+  priorRxNormCode: string | null
+  newRxNormCode: string | null
+  action: 'linked' | 'updated' | 'unlinked'
+  changedBy: string
+  changedAt: string
+  reason: string | null
+}
+export type InventoryMedicationLinkHistoryResponse = {
+  itemId: number
+  events: InventoryMedicationLinkAuditEvent[]
+}
 export async function getInventoryMedicationCatalog(
   sessionId: string,
   signal?: AbortSignal,
@@ -2521,6 +2534,33 @@ export async function updateInventoryMedicationLink(
     { rxNormCode },
     signal,
   )
+}
+export async function getInventoryMedicationLinkHistory(
+  sessionId: string,
+  itemId: number,
+  signal?: AbortSignal,
+): Promise<InventoryMedicationLinkHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/items/${itemId}/medication-link/history`,
+    signal,
+  )
+}
+export async function unlinkInventoryMedicationLink(
+  sessionId: string,
+  itemId: number,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<InventoryMedicationLinkHistoryResponse> {
+  const path = `/api/inventory/items/${itemId}/medication-link`
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: 'DELETE',
+    headers: { ...clinicianHeaders(sessionId), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+    signal,
+  })
+  await requireSuccessfulResponse(response, `DELETE ${path}`, 'clinician')
+  return response.json()
 }
 export type InventoryItem = {
   itemId: number

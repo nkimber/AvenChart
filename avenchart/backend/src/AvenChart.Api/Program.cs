@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -4587,6 +4588,16 @@ inventory.MapPut("/items/{itemId:int}/medication-link", async (
         }
     })
     .WithName("UpdateInventoryMedicationLink")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
+
+inventory.MapGet("/items/{itemId:int}/medication-link/history", async (int itemId, InventoryRepository repository, CancellationToken cancellationToken) =>
+{ try { return Results.Ok(await repository.GetMedicationLinkHistoryAsync(itemId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } })
+    .WithName("GetInventoryMedicationLinkHistory")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
+inventory.MapDelete("/items/{itemId:int}/medication-link", async (int itemId, [FromBody] InventoryMedicationLinkUnlinkRequest request, InventoryRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.UnlinkMedicationAsync(itemId, request, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryMedicationLink"] = [exception.Message] }); } })
+    .WithName("UnlinkInventoryMedicationLink")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "write"));
 
 inventory.MapPost("/prescription-dispensations", async (

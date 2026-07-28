@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  getInventoryMedicationLinkHistory,
   getInventoryMedicationCatalog,
+  unlinkInventoryMedicationLink,
   updateInventoryMedicationLink,
   type InventoryItem,
+  type InventoryMedicationLinkHistoryResponse,
   type InventoryMedicationCatalogItem,
   type InventoryMedicationLink,
 } from '../../api.ts'
@@ -39,6 +42,9 @@ export default function InventoryMedicationLinksPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<InventoryMedicationLink | null>(null)
+  const [history, setHistory] =
+    useState<InventoryMedicationLinkHistoryResponse | null>(null)
+  const [unlinkReason, setUnlinkReason] = useState('')
 
   const selectedItem = items.find(
     (item) => String(item.itemId) === selectedItemId,
@@ -152,6 +158,8 @@ export default function InventoryMedicationLinksPanel({
     setMedicationQuery('')
     setError(null)
     setResult(null)
+    setHistory(null)
+    setUnlinkReason('')
   }
 
   async function saveLink(event: React.FormEvent) {
@@ -181,12 +189,50 @@ export default function InventoryMedicationLinksPanel({
         selectedMedication.rxNormCode,
       )
       setResult(link)
+      setHistory(await getInventoryMedicationLinkHistory(sessionId, selectedItem.itemId))
       showToast('Inventory medication link saved.', 'success')
       await onChanged()
     } catch (caught) {
       setError(
         caughtMessage(caught, 'Could not save the inventory medication link.'),
       )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function reviewHistory() {
+    if (!selectedItem) return
+    setError(null)
+    setBusy(true)
+    try {
+      setHistory(await getInventoryMedicationLinkHistory(sessionId, selectedItem.itemId))
+    } catch (caught) {
+      setError(caughtMessage(caught, 'Could not load medication link history.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function unlinkMedication() {
+    if (!selectedItem?.medicationLink) return
+    const reason = unlinkReason.trim()
+    if (!reason) {
+      setError('Provide a reason before unlinking this medication mapping.')
+      return
+    }
+    setError(null)
+    setBusy(true)
+    try {
+      const unlinkHistory = await unlinkInventoryMedicationLink(sessionId, selectedItem.itemId, reason)
+      setHistory(unlinkHistory)
+      setSelectedRxNormCode('')
+      setUnlinkReason('')
+      setResult(null)
+      showToast('Inventory medication link removed with audit evidence.', 'success')
+      await onChanged()
+    } catch (caught) {
+      setError(caughtMessage(caught, 'Could not unlink the medication mapping.'))
     } finally {
       setBusy(false)
     }
@@ -210,8 +256,8 @@ export default function InventoryMedicationLinksPanel({
       <div className="hint-banner">
         This is a local mapping catalog, not a production drug-knowledge source,
         pharmacy network, or eRx/EPCS workflow. The target records immutable
-        link audit rows but does not expose link-history review or unlink
-        contracts yet.
+        link audit rows. Active catalog entries can be mapped, and existing
+        links can be reviewed or removed only with a recorded reason.
       </div>
 
       {catalog.status === 'loading' && (
@@ -325,6 +371,23 @@ export default function InventoryMedicationLinksPanel({
             </div>
           )}
 
+          {selectedItem?.medicationLink && (
+            <div className="inventory-medication-current">
+              <label className="cl-admin-field">
+                <span>Reason to unlink this mapping</span>
+                <input
+                  value={unlinkReason}
+                  maxLength={500}
+                  onChange={(event) => setUnlinkReason(event.target.value)}
+                  placeholder="Why is this inventory-to-RXCUI mapping no longer valid?"
+                />
+              </label>
+              <button className="cl-btn-secondary" type="button" disabled={busy || !unlinkReason.trim()} onClick={() => void unlinkMedication()}>
+                {busy ? 'Working…' : 'Unlink with reason'}
+              </button>
+            </div>
+          )}
+
           {selectedMedication && (
             <dl className="inventory-medication-facts">
               <div>
@@ -375,7 +438,27 @@ export default function InventoryMedicationLinksPanel({
           >
             {busy ? 'Saving…' : 'Save medication link'}
           </button>
+          {selectedItem && (
+            <button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void reviewHistory()}>
+              Review link history
+            </button>
+          )}
         </form>
+      )}
+
+      {history && (
+        <div className="inventory-medication-result" aria-live="polite">
+          <strong>Medication link history</strong>
+          {history.events.length === 0 ? (
+            <span>No medication-link changes have been recorded for this item.</span>
+          ) : (
+            history.events.map((entry) => (
+              <span key={entry.auditId}>
+                {entry.action} / {entry.priorRxNormCode ?? 'none'} → {entry.newRxNormCode ?? 'none'} / {entry.changedBy} / {new Date(entry.changedAt).toLocaleString()}{entry.reason ? ` / ${entry.reason}` : ''}
+              </span>
+            ))
+          )}
+        </div>
       )}
 
       {result && (

@@ -10539,6 +10539,10 @@ try {
     $allocationLater = @($inventoryPatientSaleAllocation.allocations | Where-Object { $_.lotId -eq $allocationLaterReceipt.lot.lotId }) | Select-Object -First 1
     $allocationAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_patient_sales where sale_batch_id = '$($inventoryPatientSaleAllocation.saleBatchId)' and patient_id = 'MOD-PAT-0001' and encounter = 1000011;"
     $inventoryMedicationLink = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ rxNormCode = "860975" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryMedicationLinkHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link/history" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
+    $inventoryMedicationLinkHistoryEntry = @($inventoryMedicationLinkHistory.events | Where-Object { $_.newRxNormCode -eq "860975" -and $_.action -in @("linked", "updated") }) | Select-Object -First 1
+    $inventoryMedicationLinkUnlink = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link" -Method Delete -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ reason = "Smoke medication-link lifecycle verification" } | ConvertTo-Json) -TimeoutSec 20
+    $inventoryMedicationRelink = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/items/$($inventoryMedicationItem.itemId)/medication-link" -Method Put -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ rxNormCode = "860975" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryPrescriptionDispense = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/prescription-dispensations" -Method Post -Headers $inventoryHeaders -ContentType "application/json" -Body (@{ prescriptionId = "RX-MOD-PAT-0001-1"; quantity = 2; fee = 4.5; saleDate = "2026-07-27"; notes = "Smoke prescription dispense verification" } | ConvertTo-Json) -TimeoutSec 20
     $inventoryAfterPrescriptionDispense = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/" -Method Get -Headers $inventoryHeaders -TimeoutSec 20
     $inventoryMedicationProjection = @($inventoryAfterPrescriptionDispense.items | Where-Object { $_.itemId -eq $inventoryMedicationItem.itemId }) | Select-Object -First 1
@@ -10619,6 +10623,10 @@ try {
         -and $allocationLater.fee -eq 6.67 `
         -and $allocationAuditCount.Trim() -eq "2"
     $inventoryPrescriptionDispensePassed = $inventoryMedicationLink.rxNormCode -eq "860975" `
+        -and $null -ne $inventoryMedicationLinkHistoryEntry `
+        -and $inventoryMedicationLinkUnlink.events[0].action -eq "unlinked" `
+        -and $inventoryMedicationLinkUnlink.events[0].reason -eq "Smoke medication-link lifecycle verification" `
+        -and $inventoryMedicationRelink.rxNormCode -eq "860975" `
         -and $inventoryMedicationProjection.medicationLink.rxNormCode -eq "860975" `
         -and $inventoryPrescriptionDispense.prescriptionId -eq "RX-MOD-PAT-0001-1" `
         -and $inventoryPrescriptionDispense.itemId -eq $inventoryMedicationItem.itemId `
@@ -10642,7 +10650,7 @@ try {
     Add-Check -Name "inventory vendor return lifecycle" -Result $(if ($inventoryReturnPassed) { "passed" } else { "failed" }) -Details @{ transactionId = $inventoryReturn.transaction.transactionId; lotId = $inventoryReturn.lot.lotId; quantityDelta = $inventoryReturn.transaction.quantityDelta; quantityOnHand = $inventoryReturn.lot.quantityOnHand }
     Add-Check -Name "inventory patient sale lifecycle" -Result $(if ($inventoryPatientSalePassed) { "passed" } else { "failed" }) -Details @{ saleId = $inventoryPatientSale.saleId; lotId = $inventorySaleLot.lotId; patientId = $inventoryPatientSale.patientId; encounter = $inventoryPatientSale.encounter; fee = $inventoryPatientSale.fee; auditCount = $patientSaleAuditCount.Trim() }
     Add-Check -Name "inventory FEFO patient sale allocation lifecycle" -Result $(if ($inventoryPatientSaleAllocationPassed) { "passed" } else { "failed" }) -Details @{ saleBatchId = $inventoryPatientSaleAllocation.saleBatchId; allocationCount = @($inventoryPatientSaleAllocation.allocations).Count; early = $allocationEarly; later = $allocationLater; auditCount = $allocationAuditCount.Trim() }
-    Add-Check -Name "inventory prescription catalog link and dispense lifecycle" -Result $(if ($inventoryPrescriptionDispensePassed) { "passed" } else { "failed" }) -Details @{ prescriptionId = $inventoryPrescriptionDispense.prescriptionId; itemId = $inventoryPrescriptionDispense.itemId; saleId = $inventoryPrescriptionDispense.sale.saleId; auditCount = $prescriptionSaleAuditCount.Trim() }
+    Add-Check -Name "inventory medication link history, unlink, and dispense lifecycle" -Result $(if ($inventoryPrescriptionDispensePassed) { "passed" } else { "failed" }) -Details @{ prescriptionId = $inventoryPrescriptionDispense.prescriptionId; itemId = $inventoryPrescriptionDispense.itemId; saleId = $inventoryPrescriptionDispense.sale.saleId; auditCount = $prescriptionSaleAuditCount.Trim(); history = $inventoryMedicationLinkUnlink.events }
     Add-Check -Name "inventory legacy lot destruction lifecycle" -Result $(if ($inventoryLotDestructionPassed) { "passed" } else { "failed" }) -Details @{ destructionId = $inventoryLotDestruction.destructionId; lotId = $inventoryReceipt.lot.lotId; status = $inventoryLotDestruction.lot.status; quantityOnHand = $inventoryLotDestruction.lot.quantityOnHand; auditCount = $lotDestructionAuditCount.Trim() }
 }
 catch {
@@ -10655,7 +10663,7 @@ catch {
     Add-Check -Name "inventory vendor return lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory patient sale lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory FEFO patient sale allocation lifecycle" -Result "failed" -Details $_.Exception.Message
-    Add-Check -Name "inventory prescription catalog link and dispense lifecycle" -Result "failed" -Details $_.Exception.Message
+    Add-Check -Name "inventory medication link history, unlink, and dispense lifecycle" -Result "failed" -Details $_.Exception.Message
     Add-Check -Name "inventory legacy lot destruction lifecycle" -Result "failed" -Details $_.Exception.Message
 }
 
