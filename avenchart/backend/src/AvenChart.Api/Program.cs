@@ -83,6 +83,7 @@ builder.Services.AddScoped<PatientMergeExecutionRepository>();
 builder.Services.AddScoped<PatientRecordRequestRepository>();
 builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
+builder.Services.AddScoped<InventoryCostPolicyRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
 
@@ -4478,6 +4479,27 @@ inventory.MapGet("/", async (
         return Results.Ok(await repository.GetInventoryAsync(cancellationToken));
     })
     .WithName("GetInventory");
+
+inventory.MapGet("/cost-policies", async (InventoryCostPolicyRepository repository, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetCatalogAsync(cancellationToken)))
+    .WithName("GetInventoryCostPolicies")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+inventory.MapPost("/cost-policy-change-requests", async (InventoryCostPolicyChangeRequestCreateRequest request, InventoryCostPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var created = await repository.CreateAsync(request, session.Username, cancellationToken); return Results.Created($"/api/inventory/cost-policy-change-requests/{created.Request.RequestId}", created); } catch (InventoryCostPolicyChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryCostPolicy"] = [exception.Message] }); } })
+    .WithName("CreateInventoryCostPolicyChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
+
+inventory.MapGet("/cost-policy-change-requests/{requestId:guid}", async (Guid requestId, InventoryCostPolicyRepository repository, CancellationToken cancellationToken) =>
+{ try { return Results.Ok(await repository.GetDetailAsync(requestId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } })
+    .WithName("GetInventoryCostPolicyChangeRequest")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
+foreach (var action in new[] { "submit", "approve", "reject", "activate", "cancel" })
+    inventory.MapPost($"/cost-policy-change-requests/{{requestId:guid}}/{action}", async (Guid requestId, InventoryCostPolicyChangeRequestDecisionRequest request, InventoryCostPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+    { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = action switch { "submit" => await repository.SubmitAsync(requestId, request, session.Username, cancellationToken), "approve" => await repository.ApproveAsync(requestId, request, session.Username, cancellationToken), "reject" => await repository.RejectAsync(requestId, request, session.Username, cancellationToken), "activate" => await repository.ActivateAsync(requestId, request, session.Username, cancellationToken), _ => await repository.CancelAsync(requestId, request, session.Username, cancellationToken) }; return Results.Ok(result); } catch (InventoryCostPolicyChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } })
+        .WithName($"TransitionInventoryCostPolicyChangeRequest{action}")
+        .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "write"));
 
 inventory.MapGet("/medication-catalog", async (InventoryRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetMedicationCatalogAsync(cancellationToken)))

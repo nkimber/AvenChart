@@ -2710,6 +2710,88 @@ export async function closeInventoryControlledDiscrepancy(
     { notes },
   )
 }
+export type InventoryCostPolicyDefinition = {
+  method: 'fifo' | 'weighted_average' | 'specific_identification' | 'practice_specific'
+  currency: string
+  taxTreatment: string
+  freightTreatment: string
+  landedCostTreatment: string
+  roundingRule: 'half_up' | 'half_even' | 'truncate'
+  backdatedEntryRule: 'prohibited' | 'restatement'
+  effectiveDate: string
+  approvalReference: string
+  rationale: string
+}
+export type InventoryCostPolicy = {
+  policyId: string
+  scopeType: string
+  definition: InventoryCostPolicyDefinition
+  revision: number
+  status: string
+  activatedAt: string
+  activatedBy: string
+  supersededAt: string | null
+  supersededBy: string | null
+}
+export type InventoryCostPolicyChangeRequest = {
+  requestId: string
+  proposedDefinition: InventoryCostPolicyDefinition
+  baselinePolicyId: string | null
+  baselineRevision: number | null
+  reason: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type InventoryCostPolicyChangeRequestEvent = {
+  eventId: number
+  action: string
+  note: string | null
+  occurredAt: string
+  username: string
+}
+export type InventoryCostPolicyCatalogResponse = {
+  activePolicy: InventoryCostPolicy | null
+  requests: InventoryCostPolicyChangeRequest[]
+}
+export type InventoryCostPolicyChangeRequestDetailResponse = {
+  request: InventoryCostPolicyChangeRequest
+  activePolicy: InventoryCostPolicy | null
+  events: InventoryCostPolicyChangeRequestEvent[]
+}
+export async function getInventoryCostPolicies(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryCostPolicyCatalogResponse> {
+  return clinicianGet(sessionId, '/api/inventory/cost-policies', signal)
+}
+export async function createInventoryCostPolicyChangeRequest(
+  sessionId: string,
+  input: { proposedDefinition: InventoryCostPolicyDefinition; reason: string },
+): Promise<InventoryCostPolicyChangeRequestDetailResponse> {
+  return clinicianPost(sessionId, '/api/inventory/cost-policy-change-requests', input)
+}
+export async function getInventoryCostPolicyChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<InventoryCostPolicyChangeRequestDetailResponse> {
+  return clinicianGet(sessionId, `/api/inventory/cost-policy-change-requests/${requestId}`)
+}
+export async function transitionInventoryCostPolicyChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  input: { expectedVersion: number; note?: string },
+): Promise<InventoryCostPolicyChangeRequestDetailResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/inventory/cost-policy-change-requests/${requestId}/${action}`,
+    input,
+  )
+}
 export type InventoryItem = {
   itemId: number
   itemCode: string
