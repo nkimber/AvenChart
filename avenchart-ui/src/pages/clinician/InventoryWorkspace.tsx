@@ -14,6 +14,7 @@ import {
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
+import InventoryDispensingPanel from './InventoryDispensingPanel.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 import InventoryStockActionsPanel from './InventoryStockActionsPanel.tsx'
@@ -232,6 +233,12 @@ export default function InventoryWorkspace() {
 
           <InventoryStockActionsPanel
             facilities={data.facilities}
+            items={data.items}
+            onChanged={handleInventoryWorkflowChanged}
+            sessionId={session.sessionId}
+          />
+
+          <InventoryDispensingPanel
             items={data.items}
             onChanged={handleInventoryWorkflowChanged}
             sessionId={session.sessionId}

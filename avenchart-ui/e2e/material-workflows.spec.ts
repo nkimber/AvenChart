@@ -415,6 +415,47 @@ test.describe("material workflows", () => {
     ).toBeDisabled();
   });
 
+  test("inventory exposes patient, encounter, FEFO, and prescription dispensing context", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const dispensing = page
+      .getByRole("heading", { name: "Patient sales and dispensing" })
+      .locator("xpath=ancestor::section");
+    await expect(dispensing.getByLabel("Find patient")).toBeVisible({
+      timeout: 15_000,
+    });
+    await dispensing.getByLabel("Find patient").fill("MOD-PAT-0001");
+    await dispensing.getByRole("button", { name: "Search patients" }).click();
+    await expect(
+      dispensing.getByLabel("Patient", { exact: true }),
+    ).toBeVisible();
+    await dispensing
+      .getByLabel("Patient", { exact: true })
+      .selectOption("MOD-PAT-0001");
+
+    await expect(
+      dispensing.getByText(/canonical ID\s+MOD-PAT-0001/),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(dispensing.getByLabel("Patient encounter")).toBeVisible();
+    await expect(dispensing.getByLabel("Debit one selected lot")).toBeChecked();
+    await expect(dispensing.getByLabel("Sale inventory lot")).toBeVisible();
+
+    await dispensing.getByLabel("Allocate earliest expiry first").check();
+    await expect(dispensing.getByLabel("Sale inventory item")).toBeVisible();
+
+    await dispensing
+      .getByRole("button", { name: "Prescription dispense" })
+      .click();
+    await expect(dispensing.getByLabel("Active prescription")).toBeVisible();
+    await expect(dispensing).toContainText("never combines lots");
+    await expect(dispensing).toContainText(
+      "Fees below are local inventory-sale evidence and do not create a billing charge.",
+    );
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {

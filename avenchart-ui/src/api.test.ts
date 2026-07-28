@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  allocateInventoryPatientSale,
   ApiRequestError,
+  createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
   createInventoryLotDestruction,
@@ -9,6 +11,7 @@ import {
   createInventoryTransaction,
   createInventoryTransfer,
   decideInventoryPurchaseRequisition,
+  dispenseInventoryPrescription,
   downloadPatientDocument,
   endPatientPortalSession,
   getCurrentSession,
@@ -590,6 +593,81 @@ describe('authenticated API transport', () => {
         notes: 'Expired stock',
       }),
     )
+  })
+
+  it('records direct, FEFO, and prescription-linked patient dispensing through distinct contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ saleId: 'sale-1', quantity: 2 }, 201),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ saleBatchId: 'batch-1', quantity: 5 }, 201),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ prescriptionId: 'rx-1', rxNormCode: '860975' }, 201),
+      )
+
+    const direct = await createInventoryPatientSale('staff-session', {
+      lotId: 20001,
+      patientId: 'MOD-PAT-0001',
+      encounter: 90001,
+      saleDate: '2026-07-27',
+      quantity: 2,
+      fee: 12.5,
+      notes: 'Dispensed after visit',
+    })
+    const allocated = await allocateInventoryPatientSale('staff-session', {
+      itemId: 10001,
+      patientId: 'MOD-PAT-0001',
+      encounter: 90001,
+      saleDate: '2026-07-27',
+      quantity: 5,
+      fee: 20,
+      notes: 'Allocate earliest-expiring lots first',
+    })
+    const prescription = await dispenseInventoryPrescription('staff-session', {
+      prescriptionId: 'rx-1',
+      saleDate: '2026-07-27',
+      quantity: 1,
+      fee: 8.25,
+      notes: 'Prescription-linked dispense',
+    })
+
+    expect(direct.saleId).toBe('sale-1')
+    expect(allocated.saleBatchId).toBe('batch-1')
+    expect(prescription.rxNormCode).toBe('860975')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/patient-sales',
+      'http://localhost:5001/api/inventory/patient-sales/allocate',
+      'http://localhost:5001/api/inventory/prescription-dispensations',
+    ])
+    expect(fetchMock.mock.calls.map(([, init]) => init?.body)).toEqual([
+      JSON.stringify({
+        lotId: 20001,
+        patientId: 'MOD-PAT-0001',
+        encounter: 90001,
+        saleDate: '2026-07-27',
+        quantity: 2,
+        fee: 12.5,
+        notes: 'Dispensed after visit',
+      }),
+      JSON.stringify({
+        itemId: 10001,
+        patientId: 'MOD-PAT-0001',
+        encounter: 90001,
+        saleDate: '2026-07-27',
+        quantity: 5,
+        fee: 20,
+        notes: 'Allocate earliest-expiring lots first',
+      }),
+      JSON.stringify({
+        prescriptionId: 'rx-1',
+        saleDate: '2026-07-27',
+        quantity: 1,
+        fee: 8.25,
+        notes: 'Prescription-linked dispense',
+      }),
+    ])
   })
 
   it('normalizes network failures without treating the session as invalid', async () => {

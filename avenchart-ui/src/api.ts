@@ -2549,6 +2549,97 @@ export async function createInventoryPurchaseReceipt(
     signal,
   )
 }
+export type InventoryPatientSaleCreateInput = {
+  lotId: number
+  patientId: string
+  encounter: number
+  saleDate?: string | null
+  quantity: number
+  fee: number
+  notes?: string | null
+}
+export type InventoryPatientSale = {
+  saleId: string
+  patientId: string
+  encounter: number
+  saleDate: string
+  quantity: number
+  fee: number
+  notes?: string | null
+  soldBy: string
+  soldAt: string
+  inventoryMutation: InventoryMutationResponse
+}
+export async function createInventoryPatientSale(
+  sessionId: string,
+  input: InventoryPatientSaleCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryPatientSale> {
+  return clinicianPost(sessionId, '/api/inventory/patient-sales', input, signal)
+}
+export type InventoryPatientSaleAllocationCreateInput = Omit<
+  InventoryPatientSaleCreateInput,
+  'lotId'
+> & {
+  itemId: number
+}
+export type InventoryPatientSaleAllocationLine = {
+  saleId: string
+  lotId: number
+  lotNumber: string
+  quantity: number
+  fee: number
+  transactionId: string
+}
+export type InventoryPatientSaleAllocation = {
+  saleBatchId: string
+  itemId: number
+  patientId: string
+  encounter: number
+  saleDate: string
+  quantity: number
+  fee: number
+  allocations: InventoryPatientSaleAllocationLine[]
+}
+export async function allocateInventoryPatientSale(
+  sessionId: string,
+  input: InventoryPatientSaleAllocationCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryPatientSaleAllocation> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/patient-sales/allocate',
+    input,
+    signal,
+  )
+}
+export type InventoryPrescriptionDispenseInput = {
+  prescriptionId: string
+  quantity: number
+  fee: number
+  saleDate?: string | null
+  notes?: string | null
+}
+export type InventoryPrescriptionDispense = {
+  prescriptionId: string
+  itemId: number
+  patientId: string
+  encounter: number
+  rxNormCode: string
+  sale: InventoryPatientSale
+}
+export async function dispenseInventoryPrescription(
+  sessionId: string,
+  input: InventoryPrescriptionDispenseInput,
+  signal?: AbortSignal,
+): Promise<InventoryPrescriptionDispense> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/prescription-dispensations',
+    input,
+    signal,
+  )
+}
 export type InventoryActivityReport = {
   fromDate?: string | null
   toDate?: string | null
