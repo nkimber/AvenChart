@@ -10403,7 +10403,7 @@ try {
         -and $inventoryPrescriptionDispense.sale.inventoryMutation.transaction.quantityDelta -eq -2 `
         -and $prescriptionSaleAuditCount.Trim() -eq "1"
     $inventoryLotDestructionPassed = $inventoryLotDestruction.lot.status -eq "inactive" `
-        -and $inventoryLotDestruction.lot.quantityOnHand -eq 5 `
+        -and $inventoryLotDestruction.lot.quantityOnHand -eq 0 `
         -and $inventoryLotDestruction.destructionDate -eq "2026-07-27" `
         -and $inventoryLotDestruction.destroyedBy -eq "admin" `
         -and $lotDestructionAuditCount.Trim() -eq "1" `
