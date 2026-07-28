@@ -491,6 +491,227 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return lists is null ? null : new ClinicalListMutationResponse(id, lists);
     }
 
+    public async Task<ClinicalPrescriptionUpdateResult> UpdatePrescriptionAsync(
+        string prescriptionId,
+        ClinicalPrescriptionUpdateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prescriptionId)
+            || string.IsNullOrWhiteSpace(request.ExpectedVersion)
+            || string.IsNullOrWhiteSpace(request.Dosage)
+            || request.Dosage.Trim().Length > 250
+            || string.IsNullOrWhiteSpace(request.Quantity)
+            || request.Quantity.Trim().Length > 100
+            || request.DoseAmount < 0
+            || request.DoseUnit?.Trim().Length > 50
+            || request.Frequency?.Trim().Length > 100
+            || request.DurationDays is <= 0
+            || request.Route?.Trim().Length > 100
+            || request.Refills is < 0 or > 12
+            || request.Diagnosis?.Trim().Length > 100
+            || request.Note?.Trim().Length > 1000
+            || string.IsNullOrWhiteSpace(request.EditReason)
+            || request.EditReason.Trim().Length > 500
+            || !TryReadDate(request.StartDate, out var startDate))
+        {
+            return new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.Invalid,
+                CurrentVersion: null,
+                Mutation: null);
+        }
+
+        var dosage = request.Dosage.Trim();
+        var quantity = request.Quantity.Trim();
+        var doseUnit = NormalizeOptionalText(request.DoseUnit);
+        var frequency = NormalizeOptionalText(request.Frequency);
+        var route = NormalizeOptionalText(request.Route) ?? "oral";
+        var diagnosis = NormalizeOptionalText(request.Diagnosis);
+        var note = NormalizeOptionalText(request.Note);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionStructuredDoseColumnsAsync(connection, cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        PrescriptionEditSnapshot? current = null;
+        await using (var query = connection.CreateCommand())
+        {
+            query.Transaction = transaction;
+            query.CommandText = """
+                select
+                    patient_id,
+                    pid,
+                    start_date,
+                    dosage,
+                    quantity,
+                    dose_amount,
+                    dose_unit,
+                    frequency,
+                    duration_days,
+                    route,
+                    refills,
+                    diagnosis,
+                    note,
+                    pharmacy_id,
+                    erx_uploaded,
+                    xmin::text as version
+                from prescriptions
+                where id = @id
+                  and active = 1
+                for update;
+                """;
+            query.Parameters.AddWithValue("id", prescriptionId);
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                current = new PrescriptionEditSnapshot(
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    Pid: ReadInt(reader, "pid"),
+                    StartDate: ReadNullableDate(reader, "start_date"),
+                    Dosage: ReadNullableString(reader, "dosage"),
+                    Quantity: ReadNullableString(reader, "quantity"),
+                    DoseAmount: ReadNullableDecimal(reader, "dose_amount"),
+                    DoseUnit: ReadNullableString(reader, "dose_unit"),
+                    Frequency: ReadNullableString(reader, "frequency"),
+                    DurationDays: ReadNullableInt(reader, "duration_days"),
+                    Route: ReadNullableString(reader, "route"),
+                    Refills: ReadInt(reader, "refills"),
+                    Diagnosis: ReadNullableString(reader, "diagnosis"),
+                    Note: ReadNullableString(reader, "note"),
+                    HadRouteEvidence:
+                        !reader.IsDBNull(reader.GetOrdinal("pharmacy_id"))
+                        || ReadInt(reader, "erx_uploaded") == 1,
+                    Version: reader.GetString(reader.GetOrdinal("version")));
+            }
+        }
+
+        if (current is null)
+        {
+            return new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.NotFound,
+                CurrentVersion: null,
+                Mutation: null);
+        }
+
+        if (!string.Equals(current.Version, request.ExpectedVersion.Trim(), StringComparison.Ordinal))
+        {
+            return new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.Conflict,
+                current.Version,
+                Mutation: null);
+        }
+
+        var changes = new List<string>();
+        if (!string.Equals(current.StartDate, startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal))
+        {
+            changes.Add("start date");
+        }
+        if (!string.Equals(current.Dosage, dosage, StringComparison.Ordinal)) changes.Add("directions");
+        if (!string.Equals(current.Quantity, quantity, StringComparison.Ordinal)) changes.Add("quantity");
+        if (current.DoseAmount != request.DoseAmount) changes.Add("dose amount");
+        if (!string.Equals(current.DoseUnit, doseUnit, StringComparison.Ordinal)) changes.Add("dose unit");
+        if (!string.Equals(current.Frequency, frequency, StringComparison.Ordinal)) changes.Add("frequency");
+        if (current.DurationDays != request.DurationDays) changes.Add("duration");
+        if (!string.Equals(current.Route, route, StringComparison.Ordinal)) changes.Add("route");
+        if (current.Refills != request.Refills) changes.Add("refills");
+        if (!string.Equals(current.Diagnosis, diagnosis, StringComparison.Ordinal)) changes.Add("diagnosis");
+        if (!string.Equals(current.Note, note, StringComparison.Ordinal)) changes.Add("clinical note");
+
+        if (changes.Count == 0)
+        {
+            return new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.Invalid,
+                current.Version,
+                Mutation: null);
+        }
+
+        var modifiedDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update prescriptions
+                set start_date = @startDate,
+                    dosage = @dosage,
+                    quantity = @quantity,
+                    dose_amount = @doseAmount,
+                    dose_unit = @doseUnit,
+                    frequency = @frequency,
+                    duration_days = @durationDays,
+                    route = @route,
+                    refills = @refills,
+                    diagnosis = @diagnosis,
+                    note = @note,
+                    modified_date = @modifiedDate,
+                    pharmacy_id = null,
+                    pharmacy_name = null,
+                    pharmacy_ncpdp = null,
+                    erx_uploaded = 0,
+                    erx_sent_at = null,
+                    erx_payload = null
+                where id = @id
+                  and active = 1
+                  and xmin::text = @expectedVersion;
+                """;
+            update.Parameters.AddWithValue("id", prescriptionId);
+            update.Parameters.AddWithValue("expectedVersion", current.Version);
+            update.Parameters.Add("startDate", NpgsqlDbType.Date).Value = startDate;
+            update.Parameters.AddWithValue("dosage", dosage);
+            update.Parameters.AddWithValue("quantity", quantity);
+            AddNullableDecimal(update, "doseAmount", request.DoseAmount);
+            update.Parameters.AddWithValue("doseUnit", NullableText(doseUnit));
+            update.Parameters.AddWithValue("frequency", NullableText(frequency));
+            AddNullableInt(update, "durationDays", request.DurationDays);
+            update.Parameters.AddWithValue("route", route);
+            update.Parameters.AddWithValue("refills", request.Refills);
+            update.Parameters.AddWithValue("diagnosis", NullableText(diagnosis));
+            update.Parameters.AddWithValue("note", NullableText(note));
+            update.Parameters.Add("modifiedDate", NpgsqlDbType.Date).Value = modifiedDate;
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                return new ClinicalPrescriptionUpdateResult(
+                    ClinicalPrescriptionUpdateStatus.Conflict,
+                    CurrentVersion: null,
+                    Mutation: null);
+            }
+        }
+
+        var auditDetail =
+            $"{request.EditReason.Trim()} Updated fields: {string.Join(", ", changes)}."
+            + (current.HadRouteEvidence
+                ? " Prior local pharmacy route evidence was cleared."
+                : string.Empty);
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction,
+            prescriptionId,
+            current.PatientId,
+            current.Pid,
+            "update",
+            DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+            auditDetail,
+            beforeRefills: current.Refills,
+            afterRefills: request.Refills,
+            pharmacyId: null,
+            pharmacyName: null,
+            failureReason: null,
+            cancellationToken,
+            actor: username);
+        await transaction.CommitAsync(cancellationToken);
+
+        var lists = await GetForPatientAsync(current.PatientId, cancellationToken);
+        return lists is null
+            ? new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.NotFound,
+                CurrentVersion: null,
+                Mutation: null)
+            : new ClinicalPrescriptionUpdateResult(
+                ClinicalPrescriptionUpdateStatus.Updated,
+                CurrentVersion: null,
+                Mutation: new ClinicalListMutationResponse(prescriptionId, lists));
+    }
+
     public async Task<ClinicalListMutationResponse?> DeactivatePrescriptionAsync(
         string prescriptionId,
         ClinicalPrescriptionDeactivateRequest request,
@@ -1266,7 +1487,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 pr.pharmacy_ncpdp,
                 pr.erx_uploaded,
                 pr.erx_sent_at,
-                pr.erx_payload
+                pr.erx_payload,
+                pr.xmin::text as version
             from prescriptions pr
             left join staff s on s.id = pr.provider_id
             where pr.pid = @pid and pr.active = 1
@@ -1309,7 +1531,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 PharmacyNcpdp: ReadNullableInt(reader, "pharmacy_ncpdp"),
                 ErxUploaded: ReadInt(reader, "erx_uploaded"),
                 ErxSentAt: ReadNullableDateTime(reader, "erx_sent_at"),
-                ErxPayload: ReadNullableString(reader, "erx_payload")));
+                ErxPayload: ReadNullableString(reader, "erx_payload"),
+                Version: reader.GetString(reader.GetOrdinal("version"))));
         }
 
         return items;
@@ -1754,6 +1977,11 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     }
 
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static async Task EnsureMedicationVocabularyTableAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
@@ -1855,7 +2083,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int? pharmacyId,
         string? pharmacyName,
         string? failureReason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string actor = "admin")
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1864,7 +2093,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 (event_id, prescription_id, patient_id, pid, action, occurred_at, actor, detail, before_refills, after_refills,
                  pharmacy_id, pharmacy_name, failure_reason)
             values
-                (@eventId, @prescriptionId, @patientId, @pid, @action, @occurredAt, 'admin', @detail, @beforeRefills, @afterRefills,
+                (@eventId, @prescriptionId, @patientId, @pid, @action, @occurredAt, @actor, @detail, @beforeRefills, @afterRefills,
                  @pharmacyId, @pharmacyName, @failureReason);
             """;
         command.Parameters.AddWithValue("eventId", $"RXAUD-{Guid.NewGuid():N}");
@@ -1873,6 +2102,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = pid;
         command.Parameters.AddWithValue("action", action);
         command.Parameters.Add("occurredAt", NpgsqlDbType.Timestamp).Value = occurredAt;
+        command.Parameters.AddWithValue("actor", actor);
         command.Parameters.AddWithValue("detail", NullableText(detail));
         AddNullableInt(command, "beforeRefills", beforeRefills);
         AddNullableInt(command, "afterRefills", afterRefills);
@@ -1939,6 +2169,23 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int PharmacyId,
         string PharmacyName,
         int? PharmacyNcpdp);
+
+    private sealed record PrescriptionEditSnapshot(
+        string PatientId,
+        int Pid,
+        string? StartDate,
+        string? Dosage,
+        string? Quantity,
+        decimal? DoseAmount,
+        string? DoseUnit,
+        string? Frequency,
+        int? DurationDays,
+        string? Route,
+        int Refills,
+        string? Diagnosis,
+        string? Note,
+        bool HadRouteEvidence,
+        string Version);
 
     private sealed record ControlledSubstanceInfo(
         string? Schedule,

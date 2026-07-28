@@ -61,6 +61,19 @@ public sealed record ClinicalListMutationResponse(
     string Id,
     ClinicalListsResponse Detail);
 
+public enum ClinicalPrescriptionUpdateStatus
+{
+    Updated,
+    Invalid,
+    NotFound,
+    Conflict
+}
+
+public sealed record ClinicalPrescriptionUpdateResult(
+    ClinicalPrescriptionUpdateStatus Status,
+    string? CurrentVersion,
+    ClinicalListMutationResponse? Mutation);
+
 public sealed record ClinicalPrescriptionPharmacyRouteResponse(
     string Id,
     bool Routed,
@@ -176,7 +189,8 @@ public sealed record PrescriptionListItem(
     int? PharmacyNcpdp,
     int ErxUploaded,
     string? ErxSentAt,
-    string? ErxPayload);
+    string? ErxPayload,
+    string Version);
 
 public sealed record PrescriptionDiagnosisInteractionSummary(
     string Diagnosis,
@@ -270,6 +284,21 @@ public sealed record ClinicalPrescriptionCreateRequest(
 public sealed record ClinicalPrescriptionDeactivateRequest(
     string EndDate,
     string Note);
+
+public sealed record ClinicalPrescriptionUpdateRequest(
+    string ExpectedVersion,
+    string StartDate,
+    string Dosage,
+    string Quantity,
+    decimal? DoseAmount,
+    string? DoseUnit,
+    string? Frequency,
+    int? DurationDays,
+    string? Route,
+    int Refills,
+    string? Diagnosis,
+    string? Note,
+    string EditReason);
 
 public sealed record ClinicalPrescriptionRefillRequest(
     string RefillDate,

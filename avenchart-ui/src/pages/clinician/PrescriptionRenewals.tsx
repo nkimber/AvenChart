@@ -7,11 +7,13 @@ import {
   ChevronUp,
   History,
   MapPin,
+  Pencil,
   Pill,
   Search,
   XCircle,
 } from "lucide-react";
 import {
+  ApiRequestError,
   approvePrescriptionRefillRequest,
   deactivatePrescription,
   getClinicalPharmacyDirectory,
@@ -20,11 +22,13 @@ import {
   refillPrescription,
   routePrescriptionToPharmacy,
   searchPatients,
+  updatePrescription,
   type ClinicalPrescriptionAuditHistory,
   type ClinicalPharmacyDirectoryResponse,
   type PatientListItem,
   type PrescriptionListItem,
   type PrescriptionRefillRequestItem,
+  type PrescriptionUpdateInput,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
@@ -65,6 +69,22 @@ type PharmacyState =
   | { status: "loading" }
   | { status: "ready"; data: ClinicalPharmacyDirectoryResponse }
   | { status: "error"; message: string };
+
+type PrescriptionEditDraft = {
+  expectedVersion: string;
+  startDate: string;
+  dosage: string;
+  quantity: string;
+  doseAmount: string;
+  doseUnit: string;
+  frequency: string;
+  durationDays: string;
+  route: string;
+  refills: string;
+  diagnosis: string;
+  note: string;
+  editReason: string;
+};
 
 type QueueView = "requests" | "expiring" | "expired" | "all";
 
@@ -120,6 +140,9 @@ export default function PrescriptionRenewals() {
   const [routeTarget, setRouteTarget] = useState<string | null>(null);
   const [routePharmacyId, setRoutePharmacyId] = useState("");
   const [routeNote, setRouteNote] = useState("");
+  const [editTarget, setEditTarget] = useState<string | null>(null);
+  const [editDraft, setEditDraft] =
+    useState<PrescriptionEditDraft | null>(null);
   const [pharmacyState, setPharmacyState] = useState<PharmacyState>({
     status: "loading",
   });
@@ -231,6 +254,7 @@ export default function PrescriptionRenewals() {
     setSearchParams(next);
     setRefillTarget(null);
     setRouteTarget(null);
+    setEditTarget(null);
   }
 
   function submitPatientScope(event: React.FormEvent) {
@@ -244,6 +268,7 @@ export default function PrescriptionRenewals() {
 
   function beginRefill(key: string) {
     setRouteTarget(null);
+    setEditTarget(null);
     setRefillTarget(key);
     setRefillCount("1");
     setRefillNote("");
@@ -251,14 +276,141 @@ export default function PrescriptionRenewals() {
 
   function beginRoute(key: string, pharmacyId?: number | null) {
     setRefillTarget(null);
+    setEditTarget(null);
     setRouteTarget(key);
     setRoutePharmacyId(pharmacyId ? String(pharmacyId) : "");
     setRouteNote("");
   }
 
+  function beginEdit(key: string, prescription: PrescriptionListItem) {
+    setRefillTarget(null);
+    setRouteTarget(null);
+    setEditTarget(key);
+    setEditDraft({
+      expectedVersion: prescription.version,
+      startDate: prescription.startDate ?? "",
+      dosage: prescription.dosage ?? "",
+      quantity: prescription.quantity ?? "",
+      doseAmount:
+        prescription.doseAmount === null ||
+        prescription.doseAmount === undefined
+          ? ""
+          : String(prescription.doseAmount),
+      doseUnit: prescription.doseUnit ?? "",
+      frequency: prescription.frequency ?? "",
+      durationDays:
+        prescription.durationDays === null ||
+        prescription.durationDays === undefined
+          ? ""
+          : String(prescription.durationDays),
+      route: prescription.route ?? "",
+      refills: String(prescription.refills),
+      diagnosis: prescription.diagnosis ?? "",
+      note: prescription.note ?? "",
+      editReason: "",
+    });
+  }
+
+  function updateEditField(
+    field: keyof PrescriptionEditDraft,
+    value: string,
+  ) {
+    setEditDraft((current) =>
+      current ? { ...current, [field]: value } : current,
+    );
+  }
+
+  function readPrescriptionUpdate(): PrescriptionUpdateInput | null {
+    if (!editDraft) return null;
+    const refills = Number(editDraft.refills);
+    const doseAmount = editDraft.doseAmount.trim()
+      ? Number(editDraft.doseAmount)
+      : null;
+    const durationDays = editDraft.durationDays.trim()
+      ? Number(editDraft.durationDays)
+      : null;
+    if (
+      !editDraft.expectedVersion ||
+      !editDraft.startDate ||
+      !editDraft.dosage.trim() ||
+      !editDraft.quantity.trim() ||
+      !editDraft.editReason.trim() ||
+      !Number.isInteger(refills) ||
+      refills < 0 ||
+      refills > 12 ||
+      (doseAmount !== null &&
+        (!Number.isFinite(doseAmount) || doseAmount < 0)) ||
+      (durationDays !== null &&
+        (!Number.isInteger(durationDays) || durationDays <= 0))
+    ) {
+      return null;
+    }
+    return {
+      expectedVersion: editDraft.expectedVersion,
+      startDate: editDraft.startDate,
+      dosage: editDraft.dosage.trim(),
+      quantity: editDraft.quantity.trim(),
+      doseAmount,
+      doseUnit: editDraft.doseUnit.trim() || null,
+      frequency: editDraft.frequency.trim() || null,
+      durationDays,
+      route: editDraft.route.trim() || null,
+      refills,
+      diagnosis: editDraft.diagnosis.trim() || null,
+      note: editDraft.note.trim() || null,
+      editReason: editDraft.editReason.trim(),
+    };
+  }
+
   function readRefillCount() {
     const count = Number(refillCount);
     return Number.isInteger(count) && count > 0 && count <= 12 ? count : null;
+  }
+
+  async function handleEdit(entry: RxEntry) {
+    const update = readPrescriptionUpdate();
+    if (!update) return;
+    const key = `edit-${entry.rx.id}`;
+    setWorkingKey(key);
+    try {
+      await updatePrescription(
+        session.sessionId,
+        entry.rx.id,
+        update,
+      );
+      showToast(
+        `${entry.rx.drug} updated.${
+          entry.rx.pharmacyName
+            ? " The prior local pharmacy route was cleared and must be recorded again."
+            : ""
+        }`,
+        "success",
+      );
+      setEditTarget(null);
+      setEditDraft(null);
+      setAuditTarget(null);
+      setAuditByPrescription({});
+      await load();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        showToast(
+          "This prescription changed in another session. Current values were reloaded; review them before editing again.",
+          "error",
+        );
+        setEditTarget(null);
+        setEditDraft(null);
+        setAuditTarget(null);
+        setAuditByPrescription({});
+        await load();
+      } else {
+        showToast(
+          "The prescription changes could not be saved. Review the fields and retry.",
+          "error",
+        );
+      }
+    } finally {
+      setWorkingKey(null);
+    }
   }
 
   async function handleRefill(entry: RxEntry) {
@@ -770,6 +922,7 @@ export default function PrescriptionRenewals() {
             <div className="rx-renew-list">
               {visiblePrescriptions.map((entry) => {
                 const formKey = `prescription-${entry.rx.id}`;
+                const editBusyKey = `edit-${entry.rx.id}`;
                 const refillBusyKey = `refill-${entry.rx.id}`;
                 const routeBusyKey = `route-${entry.rx.id}`;
                 const deactivateBusyKey = `deactivate-${entry.rx.id}`;
@@ -834,7 +987,231 @@ export default function PrescriptionRenewals() {
                       >
                         {urgencyLabel(entry.daysUntilExpiry)}
                       </span>
-                      {routeTarget === formKey ? (
+                      {editTarget === formKey && editDraft ? (
+                        <div className="rx-edit-form">
+                          <p className="rx-renew-meta">
+                            Medication identity remains {entry.rx.drug}
+                            {entry.rx.rxNormCode
+                              ? ` · RXCUI ${entry.rx.rxNormCode}`
+                              : ""}
+                            . Use a new prescription to change the medication
+                            identity.
+                          </p>
+                          <div className="rx-edit-grid">
+                            <label>
+                              Start date
+                              <input
+                                className="ne-input"
+                                type="date"
+                                value={editDraft.startDate}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "startDate",
+                                    event.target.value,
+                                  )
+                                }
+                                required
+                              />
+                            </label>
+                            <label>
+                              Directions
+                              <input
+                                className="ne-input"
+                                value={editDraft.dosage}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "dosage",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={250}
+                                required
+                              />
+                            </label>
+                            <label>
+                              Quantity
+                              <input
+                                className="ne-input"
+                                value={editDraft.quantity}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "quantity",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={100}
+                                required
+                              />
+                            </label>
+                            <label>
+                              Dose amount
+                              <input
+                                className="ne-input"
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={editDraft.doseAmount}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "doseAmount",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </label>
+                            <label>
+                              Dose unit
+                              <input
+                                className="ne-input"
+                                value={editDraft.doseUnit}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "doseUnit",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={50}
+                              />
+                            </label>
+                            <label>
+                              Frequency
+                              <input
+                                className="ne-input"
+                                value={editDraft.frequency}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "frequency",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                            <label>
+                              Duration days
+                              <input
+                                className="ne-input"
+                                type="number"
+                                min={1}
+                                value={editDraft.durationDays}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "durationDays",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </label>
+                            <label>
+                              Route
+                              <input
+                                className="ne-input"
+                                value={editDraft.route}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "route",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                            <label>
+                              Authorized refills
+                              <input
+                                className="ne-input"
+                                type="number"
+                                min={0}
+                                max={12}
+                                value={editDraft.refills}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "refills",
+                                    event.target.value,
+                                  )
+                                }
+                                required
+                              />
+                            </label>
+                            <label>
+                              Diagnosis
+                              <input
+                                className="ne-input"
+                                value={editDraft.diagnosis}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "diagnosis",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={100}
+                              />
+                            </label>
+                            <label className="rx-edit-wide">
+                              Clinical note
+                              <textarea
+                                className="ne-input"
+                                rows={2}
+                                value={editDraft.note}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "note",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={1000}
+                              />
+                            </label>
+                            <label className="rx-edit-wide">
+                              Edit reason
+                              <textarea
+                                className="ne-input"
+                                rows={2}
+                                value={editDraft.editReason}
+                                onChange={(event) =>
+                                  updateEditField(
+                                    "editReason",
+                                    event.target.value,
+                                  )
+                                }
+                                maxLength={500}
+                                required
+                              />
+                            </label>
+                          </div>
+                          <p className="rx-renew-meta">
+                            Saving checks the version loaded with this form. A
+                            concurrent change is rejected and reloaded.
+                            {entry.rx.pharmacyName
+                              ? " Existing local pharmacy route evidence will be cleared and must be recorded again."
+                              : ""}
+                          </p>
+                          <div className="rx-renew-actions">
+                            <button
+                              className="cl-btn-primary"
+                              type="button"
+                              disabled={
+                                workingKey === editBusyKey ||
+                                readPrescriptionUpdate() === null
+                              }
+                              onClick={() => handleEdit(entry)}
+                            >
+                              <Pencil size={13} /> Save prescription
+                            </button>
+                            <button
+                              className="cl-btn-secondary"
+                              type="button"
+                              disabled={workingKey === editBusyKey}
+                              onClick={() => {
+                                setEditTarget(null);
+                                setEditDraft(null);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : routeTarget === formKey ? (
                         <div className="rx-refill-form">
                           <label>
                             Local pharmacy
@@ -962,6 +1339,21 @@ export default function PrescriptionRenewals() {
                         </div>
                       ) : (
                         <div className="rx-renew-actions">
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={
+                              entry.rx.controlledSubstanceReviewRequired
+                            }
+                            title={
+                              entry.rx.controlledSubstanceReviewRequired
+                                ? "Controlled-substance policy review blocks prescription editing."
+                                : undefined
+                            }
+                            onClick={() => beginEdit(formKey, entry.rx)}
+                          >
+                            <Pencil size={13} /> Edit prescription
+                          </button>
                           <button
                             className="cl-btn-primary"
                             type="button"

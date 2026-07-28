@@ -2240,6 +2240,44 @@ clinicalLists.MapPost("/prescriptions", async (
     })
     .WithName("CreateClinicalPrescription");
 
+clinicalLists.MapPut("/prescriptions/{prescriptionId}", async (
+        ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string prescriptionId,
+        ClinicalPrescriptionUpdateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var result = await repository.UpdatePrescriptionAsync(
+            prescriptionId,
+            request,
+            session.Username,
+            cancellationToken);
+        return result.Status switch
+        {
+            ClinicalPrescriptionUpdateStatus.Updated when result.Mutation is not null =>
+                Results.Ok(result.Mutation),
+            ClinicalPrescriptionUpdateStatus.Invalid =>
+                Results.BadRequest(new
+                {
+                    error = "Prescription changes require a current version, valid structured fields, at least one change, and an edit reason."
+                }),
+            ClinicalPrescriptionUpdateStatus.NotFound => Results.NotFound(),
+            ClinicalPrescriptionUpdateStatus.Conflict =>
+                Results.Conflict(new
+                {
+                    error = "The prescription changed after it was loaded. Reload the current prescription before editing again.",
+                    currentVersion = result.CurrentVersion
+                }),
+            _ => Results.Problem("The prescription update did not produce an authoritative result.")
+        };
+    })
+    .WithName("UpdateClinicalPrescription");
+
 clinicalLists.MapPut("/prescriptions/{prescriptionId}/deactivate", async (
         ClinicalListRepository repository,
         string prescriptionId,

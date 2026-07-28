@@ -57,6 +57,7 @@ import {
   updatePatientMessageAssignment,
   updatePatientMessageStatus,
   updatePatientProviderAssignment,
+  updatePrescription,
   updateInventoryMedicationLink,
 } from './api.ts'
 
@@ -1266,6 +1267,41 @@ describe('authenticated API transport', () => {
       },
       body: JSON.stringify(route),
     })
+  })
+
+  it('sends the loaded prescription version with structured edit fields', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id: 'rx id', detail: { prescriptions: [] } }),
+    )
+    const update = {
+      expectedVersion: '48190',
+      startDate: '2026-07-28',
+      dosage: '1 tablet twice daily',
+      quantity: '60',
+      doseAmount: 1,
+      doseUnit: 'tablet',
+      frequency: 'twice daily',
+      durationDays: 30,
+      route: 'oral',
+      refills: 2,
+      diagnosis: 'E11.9',
+      note: 'Take with food',
+      editReason: 'Dose instructions clarified after chart review',
+    }
+
+    await updatePrescription('staff-session', 'rx id', update)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/clinical-lists/prescriptions/rx%20id',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: {
+          'X-Legacy EHR-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(update),
+      }),
+    )
   })
 
   it('searches the local medication vocabulary and creates a structured prescription', async () => {

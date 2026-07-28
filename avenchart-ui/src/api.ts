@@ -3286,6 +3286,7 @@ export type PrescriptionListItem = {
   erxUploaded: number
   erxSentAt?: string | null
   erxPayload?: string | null
+  version: string
 }
 
 export type MedicationDuplicateSummary = {
@@ -6153,6 +6154,36 @@ export async function deactivatePrescription(
 }
 
 // ── Prescription refill and audit ─────────────────────────────────────────────
+
+export type PrescriptionUpdateInput = {
+  expectedVersion: string
+  startDate: string
+  dosage: string
+  quantity: string
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
+  route?: string | null
+  refills: number
+  diagnosis?: string | null
+  note?: string | null
+  editReason: string
+}
+
+export async function updatePrescription(
+  sessionId: string,
+  prescriptionId: string,
+  body: PrescriptionUpdateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`,
+    body,
+    signal,
+  )
+}
 
 export type PrescriptionRefillInput = {
   refillDate: string

@@ -146,6 +146,20 @@ test.describe("accessibility gate", () => {
         "/clinician/renewals#local-pharmacy-route",
       )),
     );
+    await page.getByRole("button", { name: "Cancel" }).click();
+    const editButton = page
+      .locator("button:not([disabled])")
+      .filter({ hasText: "Edit prescription" })
+      .first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    await expect(page.getByLabel("Edit reason")).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/renewals#prescription-edit",
+      )),
+    );
     expectNoSeriousAccessibilityViolations(violations);
   });
 

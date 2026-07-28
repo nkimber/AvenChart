@@ -400,7 +400,7 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can approve a catalog refill request, record its local pharmacy route, and expose patient history", async ({
+  test("staff can reject stale prescription edits, save reviewed changes, route locally, and expose refill history", async ({
     page,
     context,
   }) => {
@@ -547,6 +547,89 @@ test.describe("isolated mutation workflows", () => {
       });
       await expect(prescriptionCard).toBeVisible({ timeout: 30_000 });
       await expect(prescriptionCard).toContainText("2 refills");
+
+      const currentClinicalLists = await page.request.get(
+        `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
+        {
+          headers: { "X-Legacy EHR-Session": sessionId },
+        },
+      );
+      expect(currentClinicalLists.ok()).toBeTruthy();
+      const currentPrescription = (
+        (await currentClinicalLists.json()) as {
+          prescriptions?: Array<{
+            id: string;
+            version: string;
+            startDate?: string | null;
+            dosage?: string | null;
+            quantity?: string | null;
+            doseAmount?: number | null;
+            doseUnit?: string | null;
+            frequency?: string | null;
+            durationDays?: number | null;
+            route?: string | null;
+            refills: number;
+            diagnosis?: string | null;
+            note?: string | null;
+          }>;
+        }
+      ).prescriptions?.find((item) => item.id === prescriptionId);
+      expect(currentPrescription?.version).toBeTruthy();
+
+      await prescriptionCard
+        .getByRole("button", { name: "Edit prescription" })
+        .click();
+      const competingUpdate = await page.request.put(
+        `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId!)}`,
+        {
+          headers: { "X-Legacy EHR-Session": sessionId },
+          data: {
+            expectedVersion: currentPrescription!.version,
+            startDate: currentPrescription!.startDate,
+            dosage: currentPrescription!.dosage,
+            quantity: "31",
+            doseAmount: currentPrescription!.doseAmount,
+            doseUnit: currentPrescription!.doseUnit,
+            frequency: currentPrescription!.frequency,
+            durationDays: currentPrescription!.durationDays,
+            route: currentPrescription!.route,
+            refills: currentPrescription!.refills,
+            diagnosis: currentPrescription!.diagnosis,
+            note: currentPrescription!.note,
+            editReason: "Competing browser-test edit",
+          },
+        },
+      );
+      expect(competingUpdate.ok()).toBeTruthy();
+      await prescriptionCard.getByLabel("Quantity").fill("32");
+      await prescriptionCard
+        .getByLabel("Edit reason")
+        .fill("This stale edit must be rejected");
+      await prescriptionCard
+        .getByRole("button", { name: "Save prescription" })
+        .click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "changed in another session" }),
+      ).toBeVisible();
+      await expect(prescriptionCard).toContainText("Qty 31");
+
+      await prescriptionCard
+        .getByRole("button", { name: "Edit prescription" })
+        .click();
+      await prescriptionCard.getByLabel("Quantity").fill("30");
+      await prescriptionCard
+        .getByLabel("Edit reason")
+        .fill("Browser-verified prescription edit");
+      await prescriptionCard
+        .getByRole("button", { name: "Save prescription" })
+        .click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "updated." }),
+      ).toBeVisible();
+      await expect(prescriptionCard).toContainText("Qty 30");
+
       await prescriptionCard.getByRole("button", { name: /History/ }).click();
       await expect(
         prescriptionCard.getByRole("heading", {
@@ -559,6 +642,9 @@ test.describe("isolated mutation workflows", () => {
       );
       await expect(prescriptionCard).toContainText(
         "Browser-verified approval",
+      );
+      await expect(prescriptionCard).toContainText(
+        "Browser-verified prescription edit",
       );
 
       await prescriptionCard

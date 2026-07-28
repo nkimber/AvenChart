@@ -6100,6 +6100,27 @@ a {
   font-weight: 600;
   text-align: left;
 }
+.rx-edit-form {
+  width: min(620px, 58vw);
+  display: grid;
+  gap: 10px;
+}
+.rx-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.rx-edit-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.rx-edit-wide {
+  grid-column: span 2;
+}
 .rx-audit-panel {
   margin-top: 12px;
   padding-top: 12px;
@@ -6232,6 +6253,15 @@ a {
   }
   .rx-refill-form {
     width: 100%;
+  }
+  .rx-edit-form {
+    width: 100%;
+  }
+  .rx-edit-grid {
+    grid-template-columns: 1fr;
+  }
+  .rx-edit-wide {
+    grid-column: auto;
   }
   .rx-renew-actions,
   .rx-scope-controls {
