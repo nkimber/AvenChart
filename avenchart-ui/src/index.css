@@ -9518,6 +9518,278 @@ h4 {
   }
 }
 
+/* Document routing queue */
+.document-routing-page {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.document-routing-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.document-routing-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.document-routing-metric span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.document-routing-metric strong {
+  color: var(--text);
+  font-size: 22px;
+}
+.document-routing-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.document-routing-filters label,
+.document-routing-editor label,
+.document-routing-card > .patient-document-panel > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.document-routing-filters input,
+.document-routing-filters select,
+.document-routing-editor input,
+.document-routing-editor select,
+.document-routing-editor textarea,
+.document-routing-card > .patient-document-panel > label textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.document-routing-search > span {
+  position: relative;
+  display: block;
+}
+.document-routing-search > span svg {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.document-routing-search input {
+  padding-left: 34px;
+}
+.document-routing-filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.document-routing-result-summary,
+.document-routing-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.document-routing-result-summary {
+  margin: 12px 2px;
+}
+.document-routing-list {
+  display: grid;
+  gap: 14px;
+}
+.document-routing-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--teal);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.document-routing-card-overdue {
+  border-left-color: #991b1b;
+}
+.document-routing-card-heading,
+.document-routing-title-row,
+.document-routing-age {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.document-routing-card-heading {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.document-routing-card-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+}
+.document-routing-card-heading p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.document-routing-title-row {
+  flex-wrap: wrap;
+}
+.document-routing-priority,
+.document-routing-overdue {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.document-routing-priority-high {
+  background: #ffedd5;
+  color: #7c2d12;
+}
+.document-routing-priority-standard {
+  background: #eef2f7;
+  color: #334155;
+}
+.document-routing-overdue {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.document-routing-age {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.document-routing-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 16px 0 10px;
+}
+.document-routing-facts div {
+  min-width: 0;
+}
+.document-routing-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.document-routing-facts dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+.document-routing-reason {
+  margin: 8px 0 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.document-routing-editor {
+  margin-top: 16px;
+}
+.document-routing-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.document-routing-editor-reason {
+  grid-column: 1 / -1;
+}
+.document-routing-editor textarea,
+.document-routing-card > .patient-document-panel > label textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+.document-routing-card .patient-document-history-list svg {
+  display: inline;
+  vertical-align: -0.12em;
+}
+.document-routing-pagination {
+  justify-content: center;
+  margin-top: 18px;
+}
+
+@media (max-width: 1040px) {
+  .document-routing-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .document-routing-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .document-routing-search {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 680px) {
+  .document-routing-metrics,
+  .document-routing-filters,
+  .document-routing-facts,
+  .document-routing-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .document-routing-search,
+  .document-routing-editor-reason {
+    grid-column: auto;
+  }
+  .document-routing-card-heading,
+  .document-routing-result-summary,
+  .document-routing-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .document-routing-age {
+    align-self: flex-start;
+  }
+  .document-routing-filter-actions,
+  .document-routing-pagination {
+    justify-content: stretch;
+  }
+  .document-routing-filter-actions .cl-btn-primary,
+  .document-routing-filter-actions .cl-btn-secondary,
+  .document-routing-pagination .cl-btn-secondary {
+    flex: 1;
+  }
+}
+@media (forced-colors: active) {
+  .document-routing-metric,
+  .document-routing-filters,
+  .document-routing-card,
+  .document-routing-priority,
+  .document-routing-overdue {
+    border: 1px solid CanvasText;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

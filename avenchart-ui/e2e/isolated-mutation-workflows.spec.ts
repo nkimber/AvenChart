@@ -1004,6 +1004,14 @@ test.describe("isolated mutation workflows", () => {
     const denialReason = `Deny incomplete source ${marker}`;
     const archiveReason = `Archive superseded chart copy ${marker}`;
     const restoreReason = `Restore after chart reconciliation ${marker}`;
+    const routingReason = `Route directive review ${marker}`;
+    const routingCompletionReason = `Complete directive handoff ${marker}`;
+    const routingDueAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+    const routingDueLocal = new Date(
+      routingDueAt.valueOf() - routingDueAt.getTimezoneOffset() * 60_000,
+    )
+      .toISOString()
+      .slice(0, 16);
     const originalPdfBytes = Buffer.from(
       "%PDF-1.4\n% Modern UI document proof\n",
     );
@@ -1862,6 +1870,184 @@ test.describe("isolated mutation workflows", () => {
         linkCard.getByRole("link", { name: "Open link" }),
       ).toHaveAttribute("href", `https://example.test/${marker}`);
 
+      const linkDocument = (await getMarkerDocuments()).find(
+        (document) => document.name === linkName,
+      );
+      expect(linkDocument).toBeTruthy();
+
+      await page.goto("/clinician/documents");
+      await page
+        .getByLabel(
+          "Patient, chart, document, category, destination, or assignee",
+        )
+        .fill(marker);
+      await page.getByRole("button", { name: "Apply filters" }).click();
+      const routingQueue = page.getByLabel("Document routing queue");
+      const routingCard = routingQueue
+        .locator(".document-routing-card")
+        .filter({ hasText: linkName });
+      await expect(routingCard).toBeVisible({ timeout: 20_000 });
+      await expect(routingCard).toContainText("Awaiting review");
+      await expect(routingCard).toContainText("Clinical review");
+      await expect(routingCard).toContainText("High");
+      await expect(routingCard).toContainText("Inferred / not yet routed");
+
+      await routingCard
+        .getByRole("button", { name: "Route document" })
+        .click();
+      await routingCard.getByLabel("Assign to").selectOption("admin");
+      await routingCard.getByLabel("Due *").fill(routingDueLocal);
+      await routingCard.getByLabel("Routing reason *").fill(routingReason);
+      await routingCard
+        .getByRole("button", { name: "Save routing" })
+        .click();
+      await expect(routingCard).toContainText("In progress", {
+        timeout: 20_000,
+      });
+      await expect(routingCard).toContainText("Administrator (admin)");
+      await expect(routingCard).toContainText("Task version");
+      await expect(routingCard).toContainText("v1");
+
+      const staleRoute = await page.request.put(
+        `${apiBaseUrl}/api/documents/${linkDocument!.id}/routing`,
+        {
+          headers,
+          data: {
+            destination: "Records review",
+            priority: "Standard",
+            assignedTo: null,
+            reason: `Stale routing attempt ${marker}`,
+            dueAt: new Date(Date.now() + 96 * 60 * 60 * 1000).toISOString(),
+            expectedTaskVersion: 0,
+          },
+        },
+      );
+      expect(staleRoute.status()).toBe(409);
+      await expect(staleRoute.json()).resolves.toMatchObject({
+        currentTaskVersion: 1,
+        currentStatus: "in_progress",
+      });
+
+      await routingCard
+        .getByRole("button", { name: "Routing history" })
+        .click();
+      await expect(routingCard.getByText("1 of 1 events")).toBeVisible();
+      await expect(
+        routingCard
+          .locator(".patient-document-history-list")
+          .getByText(routingReason),
+      ).toBeVisible();
+      await expect(routingCard).toContainText("task v1");
+
+      await routingCard
+        .getByRole("button", { name: "Complete work" })
+        .click();
+      await routingCard
+        .getByLabel("Completion note *")
+        .fill(routingCompletionReason);
+      await routingCard
+        .getByRole("button", { name: "Complete routing work" })
+        .click();
+      await expect(routingCard).toHaveCount(0, { timeout: 20_000 });
+
+      await page.getByLabel("Status").selectOption("completed");
+      await page.getByRole("button", { name: "Apply filters" }).click();
+      const completedRoutingCard = page
+        .getByLabel("Document routing queue")
+        .locator(".document-routing-card")
+        .filter({ hasText: linkName });
+      await expect(completedRoutingCard).toBeVisible({ timeout: 20_000 });
+      await expect(completedRoutingCard).toContainText("Completed");
+      await expect(
+        completedRoutingCard.getByRole("button", { name: "Complete work" }),
+      ).toHaveCount(0);
+      await expect(
+        completedRoutingCard.getByRole("button", { name: "Reopen route" }),
+      ).toBeVisible();
+      await completedRoutingCard
+        .getByRole("button", { name: "Routing history" })
+        .click();
+      const routeEvents = completedRoutingCard.locator(
+        ".patient-document-history-list > li",
+      );
+      await expect(routeEvents).toHaveCount(2);
+      await expect(routeEvents.nth(0)).toContainText("Completed");
+      await expect(routeEvents.nth(0)).toContainText(routingCompletionReason);
+      await expect(routeEvents.nth(1)).toContainText("Routed");
+      await expect(routeEvents.nth(1)).toContainText(routingReason);
+
+      const staleCompletion = await page.request.post(
+        `${apiBaseUrl}/api/documents/${linkDocument!.id}/routing/complete`,
+        {
+          headers,
+          data: {
+            reason: `Stale routing completion ${marker}`,
+            expectedTaskVersion: 1,
+          },
+        },
+      );
+      expect(staleCompletion.status()).toBe(409);
+      await expect(staleCompletion.json()).resolves.toMatchObject({
+        currentTaskVersion: 2,
+        currentStatus: "completed",
+      });
+
+      const routingHistoryResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${linkDocument!.id}/routing-history`,
+        { headers },
+      );
+      expect(routingHistoryResponse.ok()).toBeTruthy();
+      await expect(routingHistoryResponse.json()).resolves.toMatchObject({
+        currentTaskVersion: 2,
+        currentStatus: "completed",
+        currentAssignedTo: "admin",
+        currentDestination: "Clinical review",
+        currentPriority: "High",
+        eventCount: 2,
+        returnedCount: 2,
+        resultLimit: 100,
+        events: [
+          {
+            action: "completed",
+            fromStatus: "in_progress",
+            toStatus: "completed",
+            reason: routingCompletionReason,
+            actor: "admin",
+            taskVersion: 2,
+            documentVersion: 1,
+            reviewStatus: "pending",
+          },
+          {
+            action: "routed",
+            fromStatus: "inferred",
+            toStatus: "in_progress",
+            reason: routingReason,
+            actor: "admin",
+            taskVersion: 1,
+            documentVersion: 1,
+            reviewStatus: "pending",
+          },
+        ],
+      });
+
+      const activeQueueResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/routing-queue?status=active&limit=1`,
+        { headers },
+      );
+      expect(activeQueueResponse.ok()).toBeTruthy();
+      const activeQueue = (await activeQueueResponse.json()) as {
+        count: number;
+        counts: { active: number };
+      };
+      expect(activeQueue.count).toBe(activeQueue.counts.active);
+      await page.goto("/clinician/dashboard");
+      const dashboardDocumentQueue = page
+        .locator('a[href="/clinician/documents"]')
+        .filter({ hasText: "Documents to route" });
+      await expect(
+        dashboardDocumentQueue.locator(".dash-stat-value"),
+      ).toHaveText(String(activeQueue.counts.active), { timeout: 20_000 });
+
       const documents = await getMarkerDocuments();
       expect(documents).toHaveLength(5);
       expect(documents).toEqual(
@@ -1936,6 +2122,8 @@ test.describe("isolated mutation workflows", () => {
             + (select count(*) from patient_document_content_events where reason like '%${marker}%')
             + (select count(*) from patient_document_review_events where reason like '%${marker}%')
             + (select count(*) from patient_document_archive_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_routing_tasks where routing_reason like '%${marker}%')
+            + (select count(*) from patient_document_routing_events where reason like '%${marker}%')
             + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");

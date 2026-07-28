@@ -221,6 +221,32 @@ test.describe("accessibility gate", () => {
         "/clinician/patients/MOD-PAT-0001/documents#inline-preview",
       )),
     );
+    await navigateWithinApplication(page, "/clinician/documents");
+    await page
+      .getByRole("button", { name: /Route document|Update route/ })
+      .first()
+      .click();
+    await expect(page.getByLabel("Routing reason *")).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/documents#routing-editor",
+      )),
+    );
+    await page.getByRole("button", { name: "Close routing form" }).click();
+    await page
+      .getByRole("button", { name: "Routing history" })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Routing history" }),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/documents#routing-history",
+      )),
+    );
     await navigateWithinApplication(page, "/clinician/patients/new");
     await page.getByLabel("Chart number").fill("TMP-PAT-REG-AXE");
     await page.getByLabel("First name").fill("Nora");

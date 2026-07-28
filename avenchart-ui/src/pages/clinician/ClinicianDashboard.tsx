@@ -2,13 +2,15 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import {
   CalendarClock, ChevronRight, ClipboardList,
-  Clock, FileText, FlaskConical, Mail, Plus, RefreshCw, Users, UserPlus,
+  Clock, FileText, FlaskConical, Mail, Plus, RefreshCw, Route, Users, UserPlus,
 } from 'lucide-react'
 import {
+  getPatientDocumentRoutingQueue,
   getProcedureReportQueue,
   searchAppointments,
   getOperationalReports,
   type AppointmentListItem,
+  type PatientDocumentRoutingQueueResponse,
   type ProcedureReportQueueResponse,
   type OperationalReportsResponse,
 } from '../../api.ts'
@@ -54,6 +56,8 @@ export default function ClinicianDashboard() {
   const [apptState, setApptState] = useState<AsyncState<AppointmentListItem[]>>({ status: 'loading' })
   const [labState, setLabState] = useState<AsyncState<ProcedureReportQueueResponse>>({ status: 'loading' })
   const [reportsState, setReportsState] = useState<AsyncState<OperationalReportsResponse>>({ status: 'loading' })
+  const [documentRouteState, setDocumentRouteState] =
+    useState<AsyncState<PatientDocumentRoutingQueueResponse>>({ status: 'loading' })
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>(() => loadRecentPatients())
   const [refreshing, setRefreshing] = useState(false)
 
@@ -116,6 +120,25 @@ export default function ClinicianDashboard() {
             updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
           })),
         ),
+      getPatientDocumentRoutingQueue(session.sessionId, {
+        status: 'active',
+        limit: 5,
+      })
+        .then((data) =>
+          setDocumentRouteState({
+            status: 'ready',
+            data,
+            updatedAt: new Date().toISOString(),
+          }),
+        )
+        .catch(() =>
+          setDocumentRouteState((current) => ({
+            status: 'error',
+            message: 'The document-routing count could not be refreshed.',
+            data: 'data' in current ? current.data : undefined,
+            updatedAt: 'updatedAt' in current ? current.updatedAt : undefined,
+          })),
+        ),
     ]
     return Promise.allSettled(requests).finally(() => setRefreshing(false))
   }
@@ -141,16 +164,21 @@ export default function ClinicianDashboard() {
     'data' in reportsState && reportsState.data
       ? reportsState.data.counts.newMessages
       : null
+  const activeDocumentRoutes =
+    'data' in documentRouteState && documentRouteState.data
+      ? documentRouteState.data.counts.active
+      : null
   const lastUpdated = [
     'updatedAt' in apptState ? apptState.updatedAt : undefined,
     'updatedAt' in labState ? labState.updatedAt : undefined,
     'updatedAt' in reportsState ? reportsState.updatedAt : undefined,
+    'updatedAt' in documentRouteState ? documentRouteState.updatedAt : undefined,
   ]
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1)
   const hasAppointmentSnapshot = 'data' in apptState && Boolean(apptState.data)
-  const refreshErrors = [apptState, labState, reportsState]
+  const refreshErrors = [apptState, labState, reportsState, documentRouteState]
     .filter((state) => state.status === 'error')
     .map((state) => state.status === 'error' ? state.message : '')
 
@@ -248,11 +276,20 @@ export default function ClinicianDashboard() {
           <ChevronRight size={14} className="dash-stat-arrow" />
         </Link>
 
-        <Link to="/clinician/renewals" className="dash-stat-tile">
-          <div className="dash-stat-icon dash-stat-icon-muted"><RefreshCw size={18} /></div>
+        <Link
+          to="/clinician/documents"
+          className={`dash-stat-tile${activeDocumentRoutes ? ' dash-stat-tile-alert' : ''}`}
+        >
+          <div className={`dash-stat-icon${activeDocumentRoutes ? ' dash-stat-icon-amber' : ' dash-stat-icon-muted'}`}><Route size={18} /></div>
           <div className="dash-stat-body">
-            <p className="dash-stat-value dash-stat-value-sm">Renewals</p>
-            <p className="dash-stat-label">Prescription queue</p>
+            <p className="dash-stat-value">
+              {documentRouteState.status === 'loading'
+                ? '—'
+                : documentRouteState.status === 'error' && !documentRouteState.data
+                  ? 'Unavailable'
+                  : (activeDocumentRoutes ?? 0)}
+            </p>
+            <p className="dash-stat-label">Documents to route</p>
           </div>
           <ChevronRight size={14} className="dash-stat-arrow" />
         </Link>
@@ -339,6 +376,7 @@ export default function ClinicianDashboard() {
                 { label: 'New encounter', path: '/clinician/encounters/new', icon: FileText, color: 'teal' },
                 { label: 'Register patient', path: '/clinician/patients/new', icon: UserPlus, color: 'teal' },
                 { label: 'Lab queue', path: '/clinician/labs', icon: FlaskConical, color: 'amber' },
+                { label: 'Document queue', path: '/clinician/documents', icon: Route, color: activeDocumentRoutes ? 'amber' : 'muted' },
                 { label: 'Rx renewals', path: '/clinician/renewals', icon: RefreshCw, color: 'muted' },
                 { label: 'Messages', path: '/clinician/messages', icon: Mail, color: newMessages ? 'indigo' : 'muted' },
                 { label: 'Reports', path: '/clinician/reports', icon: ClipboardList, color: 'muted' },

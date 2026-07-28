@@ -6,6 +6,7 @@ import {
   archivePatientDocument,
   assignLabReportReviewer,
   bulkSignLabReports,
+  completePatientDocumentRouting,
   createInventoryPatientSale,
   createInventoryCountReconciliation,
   createInventoryExpiryDisposition,
@@ -45,6 +46,9 @@ import {
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
   getPatientDocumentReviewHistory,
+  getPatientDocumentRoutingAssignees,
+  getPatientDocumentRoutingHistory,
+  getPatientDocumentRoutingQueue,
   getPatientDocumentVersionHistory,
   getPatientDocuments,
   getPatientPortalAppointments,
@@ -68,6 +72,7 @@ import {
   refillPrescription,
   replyToPatientMessage,
   routePrescriptionToPharmacy,
+  routePatientDocument,
   searchEncounters,
   searchClinicalMedicationVocabulary,
   SESSION_INVALID_EVENT,
@@ -609,6 +614,130 @@ describe('authenticated API transport', () => {
       body: JSON.stringify({
         reason: 'Returned after chart reconciliation.',
         expectedArchived: true,
+      }),
+    })
+  })
+
+  it('uses the filtered, assigned, stale-safe patient document routing lifecycle', async () => {
+    const queue = {
+      datasetId: 'legacy-ehr-shared-synthetic-v1',
+      datasetVersion: 'v1',
+      count: 1,
+      totalCount: 1,
+      returnedCount: 1,
+      offset: 0,
+      limit: 10,
+      statusFilter: 'active',
+      counts: {
+        active: 1,
+        pending: 1,
+        inProgress: 0,
+        unassigned: 1,
+        highPriority: 1,
+        overdue: 0,
+        completed: 0,
+      },
+      items: [{ id: 91, taskVersion: 0, queueStatus: 'Awaiting review' }],
+    }
+    const mutation = {
+      documentId: 91,
+      taskVersion: 1,
+      status: 'in_progress',
+      assignedTo: 'admin',
+      destination: 'Clinical review',
+      priority: 'High',
+      dueAt: '2026-07-30T16:00:00Z',
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(queue))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: queue.datasetId,
+          datasetVersion: queue.datasetVersion,
+          count: 1,
+          assignees: [
+            {
+              staffId: 1,
+              username: 'admin',
+              displayName: 'Administrator, System',
+              role: 'administrator',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: queue.datasetId,
+          datasetVersion: queue.datasetVersion,
+          documentId: 91,
+          documentKey: 'DOC-91',
+          patientId: 'MOD-PAT-0001',
+          legacyPid: 1,
+          name: 'Advance directive',
+          currentTaskVersion: 0,
+          currentStatus: 'pending',
+          eventCount: 0,
+          returnedCount: 0,
+          resultLimit: 100,
+          events: [],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(mutation))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...mutation, taskVersion: 2, status: 'completed' }),
+      )
+
+    const loaded = await getPatientDocumentRoutingQueue('staff-session', {
+      patientId: ' MOD-PAT-0001 ',
+      status: 'active',
+      priority: 'High',
+      assignedTo: 'unassigned',
+      minimumAgeHours: 24,
+      query: ' directive ',
+      offset: 0,
+      limit: 10,
+    })
+    const assignees = await getPatientDocumentRoutingAssignees('staff-session')
+    const history = await getPatientDocumentRoutingHistory('staff-session', 91)
+    await routePatientDocument('staff-session', 91, {
+      destination: 'Clinical review',
+      priority: 'High',
+      assignedTo: 'admin',
+      reason: 'Route advance directive for review.',
+      dueAt: '2026-07-30T16:00:00Z',
+      expectedTaskVersion: 0,
+    })
+    await completePatientDocumentRouting('staff-session', 91, {
+      reason: 'Clinical review handoff completed.',
+      expectedTaskVersion: 1,
+    })
+
+    expect(loaded.counts.active).toBe(1)
+    expect(assignees.assignees[0]?.username).toBe('admin')
+    expect(history.currentTaskVersion).toBe(0)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/documents/routing-queue?patientId=MOD-PAT-0001&status=active&priority=High&assignedTo=unassigned&minimumAgeHours=24&query=directive&offset=0&limit=10',
+      'http://localhost:5001/api/documents/routing-assignees',
+      'http://localhost:5001/api/documents/91/routing-history',
+      'http://localhost:5001/api/documents/91/routing',
+      'http://localhost:5001/api/documents/91/routing/complete',
+    ])
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        destination: 'Clinical review',
+        priority: 'High',
+        assignedTo: 'admin',
+        reason: 'Route advance directive for review.',
+        dueAt: '2026-07-30T16:00:00Z',
+        expectedTaskVersion: 0,
+      }),
+    })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        reason: 'Clinical review handoff completed.',
+        expectedTaskVersion: 1,
       }),
     })
   })

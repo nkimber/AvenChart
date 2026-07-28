@@ -62,6 +62,9 @@ const ChartTracker = lazy(() => import('./pages/clinician/ChartTracker.tsx'))
 const DocumentTemplates = lazy(
   () => import('./pages/clinician/DocumentTemplates.tsx'),
 )
+const DocumentRoutingQueue = lazy(
+  () => import('./pages/clinician/DocumentRoutingQueue.tsx'),
+)
 const DuplicateReview = lazy(() => import('./pages/clinician/DuplicateReview.tsx'))
 
 export default function App() {
@@ -102,6 +105,7 @@ export default function App() {
           <Route path="batch-communication" element={<BatchCommunication />} />
           <Route path="chart-tracker" element={<ChartTracker />} />
           <Route path="document-templates" element={<DocumentTemplates />} />
+          <Route path="documents" element={<DocumentRoutingQueue />} />
           <Route path="duplicate-review" element={<DuplicateReview />} />
           <Route path="renewals" element={<PrescriptionRenewals />} />
           <Route path="reports" element={<OperationalReports />} />

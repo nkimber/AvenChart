@@ -218,7 +218,22 @@ public sealed record PatientDocumentRoutingQueueResponse(
     string DatasetId,
     string DatasetVersion,
     int Count,
+    int TotalCount,
+    int ReturnedCount,
+    int Offset,
+    int Limit,
+    string StatusFilter,
+    PatientDocumentRoutingQueueCounts Counts,
     IReadOnlyList<PatientDocumentRoutingQueueItem> Items);
+
+public sealed record PatientDocumentRoutingQueueCounts(
+    int Active,
+    int Pending,
+    int InProgress,
+    int Unassigned,
+    int HighPriority,
+    int Overdue,
+    int Completed);
 
 public sealed record PatientDocumentRoutingQueueItem(
     int Id,
@@ -240,7 +255,90 @@ public sealed record PatientDocumentRoutingQueueItem(
     string RouteDestination,
     string Priority,
     string RoutingReason,
+    int TaskVersion,
+    bool Inferred,
+    string? AssignedTo,
+    string? AssignedDisplayName,
+    string RoutedAt,
+    string DueAt,
+    int AgeHours,
+    bool IsOverdue,
+    string? CompletedBy,
+    string? CompletedAt,
+    string? CompletionNote,
     string? Notes);
+
+public sealed record PatientDocumentRoutingAssignee(
+    int? StaffId,
+    string Username,
+    string DisplayName,
+    string Role);
+
+public sealed record PatientDocumentRoutingAssigneesResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int Count,
+    IReadOnlyList<PatientDocumentRoutingAssignee> Assignees);
+
+public sealed record PatientDocumentRoutingMutationRequest(
+    string Destination,
+    string Priority,
+    string? AssignedTo,
+    string Reason,
+    string? DueAt,
+    int ExpectedTaskVersion);
+
+public sealed record PatientDocumentRoutingCompleteRequest(
+    string Reason,
+    int ExpectedTaskVersion);
+
+public sealed record PatientDocumentRoutingMutationResponse(
+    int DocumentId,
+    int TaskVersion,
+    string Status,
+    string? AssignedTo,
+    string Destination,
+    string Priority,
+    string DueAt);
+
+public sealed record PatientDocumentRoutingEvent(
+    Guid EventId,
+    string Action,
+    string FromStatus,
+    string ToStatus,
+    string? FromDestination,
+    string ToDestination,
+    string? FromPriority,
+    string ToPriority,
+    string? FromAssignedTo,
+    string? ToAssignedTo,
+    string Reason,
+    string Actor,
+    string OccurredAt,
+    string DueAt,
+    int TaskVersion,
+    int DocumentVersion,
+    string ReviewStatus,
+    string? ContentHash);
+
+public sealed record PatientDocumentRoutingHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    int CurrentTaskVersion,
+    string CurrentStatus,
+    string? CurrentAssignedTo,
+    string? CurrentDestination,
+    string? CurrentPriority,
+    string? CurrentDueAt,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientDocumentRoutingEvent> Events);
 
 public sealed record PatientDocumentRetentionPolicyResponse(
     string DatasetId,

@@ -4600,6 +4600,153 @@ export type PatientDocumentArchiveHistoryResponse = {
   events: PatientDocumentArchiveEvent[]
 }
 
+export type PatientDocumentRoutingQueueCounts = {
+  active: number
+  pending: number
+  inProgress: number
+  unassigned: number
+  highPriority: number
+  overdue: number
+  completed: number
+}
+
+export type PatientDocumentRoutingQueueItem = {
+  id: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  categoryId: number
+  categoryName: string
+  name: string
+  docDate: string
+  uploadedAt: string
+  mimetype?: string | null
+  fileName?: string | null
+  encounter?: number | null
+  reviewStatus: string
+  queueStatus: string
+  routeDestination: string
+  priority: string
+  routingReason: string
+  taskVersion: number
+  inferred: boolean
+  assignedTo?: string | null
+  assignedDisplayName?: string | null
+  routedAt: string
+  dueAt: string
+  ageHours: number
+  isOverdue: boolean
+  completedBy?: string | null
+  completedAt?: string | null
+  completionNote?: string | null
+  notes?: string | null
+}
+
+export type PatientDocumentRoutingQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  count: number
+  totalCount: number
+  returnedCount: number
+  offset: number
+  limit: number
+  statusFilter: string
+  counts: PatientDocumentRoutingQueueCounts
+  items: PatientDocumentRoutingQueueItem[]
+}
+
+export type PatientDocumentRoutingQueueFilters = {
+  patientId?: string
+  status?: 'active' | 'pending' | 'in_progress' | 'completed' | 'all'
+  priority?: 'High' | 'Standard'
+  assignedTo?: string
+  minimumAgeHours?: number
+  query?: string
+  offset?: number
+  limit?: number
+}
+
+export type PatientDocumentRoutingAssignee = {
+  staffId?: number | null
+  username: string
+  displayName: string
+  role: string
+}
+
+export type PatientDocumentRoutingAssigneesResponse = {
+  datasetId: string
+  datasetVersion: string
+  count: number
+  assignees: PatientDocumentRoutingAssignee[]
+}
+
+export type PatientDocumentRoutingMutationInput = {
+  destination: string
+  priority: 'High' | 'Standard'
+  assignedTo?: string | null
+  reason: string
+  dueAt?: string | null
+  expectedTaskVersion: number
+}
+
+export type PatientDocumentRoutingCompleteInput = {
+  reason: string
+  expectedTaskVersion: number
+}
+
+export type PatientDocumentRoutingMutationResponse = {
+  documentId: number
+  taskVersion: number
+  status: string
+  assignedTo?: string | null
+  destination: string
+  priority: string
+  dueAt: string
+}
+
+export type PatientDocumentRoutingEvent = {
+  eventId: string
+  action: string
+  fromStatus: string
+  toStatus: string
+  fromDestination?: string | null
+  toDestination: string
+  fromPriority?: string | null
+  toPriority: string
+  fromAssignedTo?: string | null
+  toAssignedTo?: string | null
+  reason: string
+  actor: string
+  occurredAt: string
+  dueAt: string
+  taskVersion: number
+  documentVersion: number
+  reviewStatus: string
+  contentHash?: string | null
+}
+
+export type PatientDocumentRoutingHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  name: string
+  currentTaskVersion: number
+  currentStatus: string
+  currentAssignedTo?: string | null
+  currentDestination?: string | null
+  currentPriority?: string | null
+  currentDueAt?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientDocumentRoutingEvent[]
+}
+
 export type PatientDocumentBinaryContentReplaceInput = {
   fileName: string
   mimetype: string
@@ -4792,6 +4939,79 @@ export async function restorePatientDocument(
   return clinicianPut(
     sessionId,
     `/api/documents/${encodeURIComponent(String(documentId))}/restore`,
+    input,
+    signal,
+  )
+}
+
+export async function getPatientDocumentRoutingQueue(
+  sessionId: string,
+  filters: PatientDocumentRoutingQueueFilters = {},
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingQueueResponse> {
+  const params = new URLSearchParams()
+  if (filters.patientId?.trim()) params.set('patientId', filters.patientId.trim())
+  if (filters.status) params.set('status', filters.status)
+  if (filters.priority) params.set('priority', filters.priority)
+  if (filters.assignedTo?.trim()) {
+    params.set('assignedTo', filters.assignedTo.trim())
+  }
+  if (filters.minimumAgeHours !== undefined) {
+    params.set('minimumAgeHours', String(filters.minimumAgeHours))
+  }
+  if (filters.query?.trim()) params.set('query', filters.query.trim())
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset))
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit))
+  const query = params.toString()
+  return clinicianGet(
+    sessionId,
+    `/api/documents/routing-queue${query ? `?${query}` : ''}`,
+    signal,
+  )
+}
+
+export async function getPatientDocumentRoutingAssignees(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingAssigneesResponse> {
+  return clinicianGet(sessionId, '/api/documents/routing-assignees', signal)
+}
+
+export async function getPatientDocumentRoutingHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/routing-history`,
+    signal,
+  )
+}
+
+export async function routePatientDocument(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentRoutingMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/routing`,
+    input,
+    signal,
+  )
+}
+
+export async function completePatientDocumentRouting(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentRoutingCompleteInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentRoutingMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/routing/complete`,
     input,
     signal,
   )

@@ -16,6 +16,7 @@ export const clinicianRoutes = [
   "/clinician/recalls",
   "/clinician/batch-communication",
   "/clinician/chart-tracker",
+  "/clinician/documents",
   "/clinician/document-templates",
   "/clinician/duplicate-review",
   "/clinician/renewals",

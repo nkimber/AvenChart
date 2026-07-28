@@ -28,6 +28,16 @@ public sealed class DocumentArchiveConflictException(
     public bool CurrentArchived { get; } = currentArchived;
 }
 
+public sealed class DocumentRoutingConflictException(
+    int currentTaskVersion,
+    string currentStatus,
+    string message)
+    : Exception(message)
+{
+    public int CurrentTaskVersion { get; } = currentTaskVersion;
+    public string CurrentStatus { get; } = currentStatus;
+}
+
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
@@ -186,71 +196,625 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
     public async Task<PatientDocumentRoutingQueueResponse> GetRoutingQueueAsync(
         CancellationToken cancellationToken,
-        string? patientId = null)
+        string? patientId = null,
+        string? status = null,
+        string? priority = null,
+        string? assignedTo = null,
+        int? minimumAgeHours = null,
+        string? query = null,
+        int offset = 0,
+        int limit = 50)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
+        var normalizedStatus = NormalizeRoutingStatusFilter(status);
+        var normalizedPriority = NormalizeRoutingPriorityFilter(priority);
+        var normalizedAssignee = NormalizeText(assignedTo);
+        var normalizedQuery = NormalizeText(query);
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, 100);
+        var normalizedMinimumAgeHours = Math.Clamp(minimumAgeHours ?? 0, 0, 87_600);
+        var now = DateTimeOffset.UtcNow;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select d.id, d.document_key, d.patient_id, d.pid, p.pubpid, p.first_name, p.last_name, p.preferred_name,
               d.category_id, d.category_name, d.name, d.doc_date, d.uploaded_at, d.mimetype, d.file_name,
-              d.encounter, d.notes, coalesce(d.review_status, 'pending') as review_status
+              d.encounter, d.notes, coalesce(d.review_status, 'pending') as review_status,
+              t.task_version, t.status as task_status, t.destination, t.priority, t.assigned_to,
+              t.routing_reason, t.routed_at, t.due_at, t.completed_by, t.completed_at, t.completion_note,
+              a.display_name as assignee_display_name
             from patient_documents d
             join patients p on p.canonical_id = d.patient_id
+            left join patient_document_routing_tasks t on t.document_id = d.id
+            left join auth_accounts a on lower(a.username) = lower(t.assigned_to)
             where d.deleted = 0
-              and lower(coalesce(d.review_status, 'pending')) = 'pending'
+              and (t.document_id is not null or lower(coalesce(d.review_status, 'pending')) = 'pending')
               and (@patientId is null
                    or lower(d.patient_id) = lower(@patientId)
                    or lower(p.pubpid) = lower(@patientId)
                    or d.pid::text = @patientId)
-            order by d.uploaded_at, d.id;
+            order by coalesce(t.due_at, d.uploaded_at + interval '3 days'), d.uploaded_at, d.id;
             """;
         var patientParameter = command.Parameters.Add("patientId", NpgsqlTypes.NpgsqlDbType.Text);
         patientParameter.Value = string.IsNullOrWhiteSpace(patientId) ? DBNull.Value : patientId.Trim();
 
-        var items = new List<PatientDocumentRoutingQueueItem>();
+        var allItems = new List<PatientDocumentRoutingQueueItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var firstName = reader.GetString(reader.GetOrdinal("first_name"));
             var lastName = reader.GetString(reader.GetOrdinal("last_name"));
             var preferredName = ReadNullableString(reader, "preferred_name");
+            var patientDisplayName = string.IsNullOrWhiteSpace(preferredName)
+                ? $"{lastName}, {firstName}"
+                : $"{lastName}, {firstName} ({preferredName})";
             var categoryName = reader.GetString(reader.GetOrdinal("category_name"));
             var notes = ReadNullableString(reader, "notes");
-            var routeDestination = ExtractTaggedValue(notes, "Route to") ?? BuildRouteDestination(categoryName);
-            var priority = ExtractTaggedValue(notes, "Routing priority") ?? BuildRoutingPriority(categoryName, notes);
+            var inferred = reader.IsDBNull(reader.GetOrdinal("task_version"));
+            var routeDestination = inferred
+                ? ExtractTaggedValue(notes, "Route to") ?? BuildRouteDestination(categoryName)
+                : reader.GetString(reader.GetOrdinal("destination"));
+            var routePriority = inferred
+                ? ExtractTaggedValue(notes, "Routing priority") ?? BuildRoutingPriority(categoryName, notes)
+                : reader.GetString(reader.GetOrdinal("priority"));
+            var taskStatus = inferred
+                ? "pending"
+                : reader.GetString(reader.GetOrdinal("task_status"));
+            var uploadedAt = DateTime.SpecifyKind(
+                reader.GetDateTime(reader.GetOrdinal("uploaded_at")),
+                DateTimeKind.Utc);
+            var routedAt = inferred
+                ? new DateTimeOffset(uploadedAt)
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("routed_at"));
+            var dueAt = inferred
+                ? routedAt.AddHours(string.Equals(routePriority, "High", StringComparison.OrdinalIgnoreCase) ? 24 : 72)
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("due_at"));
+            var ageHours = Math.Max(0, (int)Math.Floor((now - routedAt).TotalHours));
+            var assignedUsername = ReadNullableString(reader, "assigned_to");
+            var assignedDisplayName = assignedUsername is null
+                ? null
+                : ReadNullableString(reader, "assignee_display_name") is { } displayName
+                    ? $"{displayName} ({assignedUsername})"
+                    : assignedUsername;
+            var queueStatus = inferred
+                ? "Awaiting review"
+                : taskStatus switch
+                {
+                    "pending" => "Awaiting assignment",
+                    "in_progress" => "In progress",
+                    "completed" => "Completed",
+                    _ => taskStatus
+                };
 
-            items.Add(new PatientDocumentRoutingQueueItem(
+            allItems.Add(new PatientDocumentRoutingQueueItem(
                 Id: reader.GetInt32(reader.GetOrdinal("id")),
                 DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
                 PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
                 LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
                 Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
-                PatientDisplayName: string.IsNullOrWhiteSpace(preferredName)
-                    ? $"{lastName}, {firstName}"
-                    : $"{lastName}, {firstName} ({preferredName})",
+                PatientDisplayName: patientDisplayName,
                 CategoryId: reader.GetInt32(reader.GetOrdinal("category_id")),
                 CategoryName: categoryName,
                 Name: reader.GetString(reader.GetOrdinal("name")),
                 DocDate: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("doc_date")).ToString("yyyy-MM-dd"),
-                UploadedAt: reader.GetDateTime(reader.GetOrdinal("uploaded_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                UploadedAt: uploadedAt.ToString("yyyy-MM-dd HH:mm:ss"),
                 Mimetype: ReadNullableString(reader, "mimetype"),
                 FileName: ReadNullableString(reader, "file_name"),
                 Encounter: ReadNullableInt32(reader, "encounter"),
                 ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
-                QueueStatus: "Awaiting review",
+                QueueStatus: queueStatus,
                 RouteDestination: routeDestination,
-                Priority: priority,
-                RoutingReason: $"Pending {categoryName} review",
+                Priority: routePriority,
+                RoutingReason: inferred
+                    ? $"Pending {categoryName} review"
+                    : reader.GetString(reader.GetOrdinal("routing_reason")),
+                TaskVersion: inferred ? 0 : reader.GetInt32(reader.GetOrdinal("task_version")),
+                Inferred: inferred,
+                AssignedTo: assignedUsername,
+                AssignedDisplayName: assignedDisplayName,
+                RoutedAt: routedAt.ToString("O"),
+                DueAt: dueAt.ToString("O"),
+                AgeHours: ageHours,
+                IsOverdue: taskStatus != "completed" && dueAt < now,
+                CompletedBy: ReadNullableString(reader, "completed_by"),
+                CompletedAt: ReadNullableDateTimeOffset(reader, "completed_at")?.ToString("O"),
+                CompletionNote: ReadNullableString(reader, "completion_note"),
                 Notes: notes));
         }
+
+        var counts = new PatientDocumentRoutingQueueCounts(
+            Active: allItems.Count(item => item.QueueStatus != "Completed"),
+            Pending: allItems.Count(item => item.TaskVersion == 0 || item.QueueStatus == "Awaiting assignment"),
+            InProgress: allItems.Count(item => item.QueueStatus == "In progress"),
+            Unassigned: allItems.Count(item => item.QueueStatus != "Completed" && item.AssignedTo is null),
+            HighPriority: allItems.Count(item => item.QueueStatus != "Completed"
+                && string.Equals(item.Priority, "High", StringComparison.OrdinalIgnoreCase)),
+            Overdue: allItems.Count(item => item.IsOverdue),
+            Completed: allItems.Count(item => item.QueueStatus == "Completed"));
+
+        var filtered = allItems
+            .Where(item => normalizedStatus switch
+            {
+                "active" => item.QueueStatus != "Completed",
+                "pending" => item.TaskVersion == 0 || item.QueueStatus == "Awaiting assignment",
+                "in_progress" => item.QueueStatus == "In progress",
+                "completed" => item.QueueStatus == "Completed",
+                _ => true
+            })
+            .Where(item => normalizedPriority is null
+                || string.Equals(item.Priority, normalizedPriority, StringComparison.OrdinalIgnoreCase))
+            .Where(item => normalizedAssignee is null
+                || (string.Equals(normalizedAssignee, "unassigned", StringComparison.OrdinalIgnoreCase)
+                    ? item.AssignedTo is null
+                    : string.Equals(item.AssignedTo, normalizedAssignee, StringComparison.OrdinalIgnoreCase)))
+            .Where(item => item.AgeHours >= normalizedMinimumAgeHours)
+            .Where(item => normalizedQuery is null
+                || ContainsIgnoreCase(item.Name, normalizedQuery)
+                || ContainsIgnoreCase(item.PatientDisplayName, normalizedQuery)
+                || ContainsIgnoreCase(item.Pubpid, normalizedQuery)
+                || ContainsIgnoreCase(item.CategoryName, normalizedQuery)
+                || ContainsIgnoreCase(item.RouteDestination, normalizedQuery)
+                || ContainsIgnoreCase(item.AssignedDisplayName, normalizedQuery))
+            .ToList();
+        var page = filtered.Skip(offset).Take(limit).ToList();
 
         return new PatientDocumentRoutingQueueResponse(
             DatasetId: metadata.DatasetId,
             DatasetVersion: metadata.DatasetVersion,
-            Count: items.Count,
-            Items: items);
+            Count: filtered.Count,
+            TotalCount: filtered.Count,
+            ReturnedCount: page.Count,
+            Offset: offset,
+            Limit: limit,
+            StatusFilter: normalizedStatus,
+            Counts: counts,
+            Items: page);
+    }
+
+    public async Task<PatientDocumentRoutingAssigneesResponse> GetRoutingAssigneesAsync(
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select staff_id, username, display_name, role
+            from auth_accounts
+            where active = true
+            order by display_name, username;
+            """;
+        var assignees = new List<PatientDocumentRoutingAssignee>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            assignees.Add(new PatientDocumentRoutingAssignee(
+                StaffId: ReadNullableInt32(reader, "staff_id"),
+                Username: reader.GetString(reader.GetOrdinal("username")),
+                DisplayName: reader.GetString(reader.GetOrdinal("display_name")),
+                Role: reader.GetString(reader.GetOrdinal("role"))));
+        }
+
+        return new PatientDocumentRoutingAssigneesResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            Count: assignees.Count,
+            Assignees: assignees);
+    }
+
+    public async Task<PatientDocumentRoutingHistoryResponse?> GetRoutingHistoryAsync(
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+
+        string documentKey;
+        string patientId;
+        int legacyPid;
+        string name;
+        string categoryName;
+        string? notes;
+        DateTimeOffset uploadedAt;
+        int currentTaskVersion;
+        string currentStatus;
+        string? currentAssignedTo;
+        string? currentDestination;
+        string? currentPriority;
+        string? currentDueAt;
+
+        await using (var current = connection.CreateCommand())
+        {
+            current.CommandText = """
+                select d.document_key, d.patient_id, d.pid, d.name, d.category_name, d.notes, d.uploaded_at,
+                  t.task_version, t.status, t.assigned_to, t.destination, t.priority, t.due_at
+                from patient_documents d
+                left join patient_document_routing_tasks t on t.document_id = d.id
+                where d.id = @documentId;
+                """;
+            current.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await current.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            name = reader.GetString(reader.GetOrdinal("name"));
+            categoryName = reader.GetString(reader.GetOrdinal("category_name"));
+            notes = ReadNullableString(reader, "notes");
+            uploadedAt = new DateTimeOffset(DateTime.SpecifyKind(
+                reader.GetDateTime(reader.GetOrdinal("uploaded_at")),
+                DateTimeKind.Utc));
+            var inferred = reader.IsDBNull(reader.GetOrdinal("task_version"));
+            currentTaskVersion = inferred ? 0 : reader.GetInt32(reader.GetOrdinal("task_version"));
+            currentStatus = inferred ? "pending" : reader.GetString(reader.GetOrdinal("status"));
+            currentAssignedTo = ReadNullableString(reader, "assigned_to");
+            currentDestination = inferred
+                ? ExtractTaggedValue(notes, "Route to") ?? BuildRouteDestination(categoryName)
+                : reader.GetString(reader.GetOrdinal("destination"));
+            currentPriority = inferred
+                ? ExtractTaggedValue(notes, "Routing priority") ?? BuildRoutingPriority(categoryName, notes)
+                : reader.GetString(reader.GetOrdinal("priority"));
+            currentDueAt = inferred
+                ? uploadedAt.AddHours(string.Equals(currentPriority, "High", StringComparison.OrdinalIgnoreCase) ? 24 : 72).ToString("O")
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("due_at")).ToString("O");
+        }
+
+        var events = new List<PatientDocumentRoutingEvent>();
+        var eventCount = 0;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                  count(*) over() as event_count,
+                  event_id, action, from_status, to_status,
+                  from_destination, to_destination, from_priority, to_priority,
+                  from_assigned_to, to_assigned_to, reason, actor, occurred_at,
+                  due_at, task_version, document_version, review_status, content_hash
+                from patient_document_routing_events
+                where document_id = @documentId
+                order by occurred_at desc, event_id desc
+                limit 100;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
+                events.Add(new PatientDocumentRoutingEvent(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    Action: reader.GetString(reader.GetOrdinal("action")),
+                    FromStatus: reader.GetString(reader.GetOrdinal("from_status")),
+                    ToStatus: reader.GetString(reader.GetOrdinal("to_status")),
+                    FromDestination: ReadNullableString(reader, "from_destination"),
+                    ToDestination: reader.GetString(reader.GetOrdinal("to_destination")),
+                    FromPriority: ReadNullableString(reader, "from_priority"),
+                    ToPriority: reader.GetString(reader.GetOrdinal("to_priority")),
+                    FromAssignedTo: ReadNullableString(reader, "from_assigned_to"),
+                    ToAssignedTo: ReadNullableString(reader, "to_assigned_to"),
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("occurred_at")).ToString("O"),
+                    DueAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("due_at")).ToString("O"),
+                    TaskVersion: reader.GetInt32(reader.GetOrdinal("task_version")),
+                    DocumentVersion: reader.GetInt32(reader.GetOrdinal("document_version")),
+                    ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+                    ContentHash: ReadNullableString(reader, "content_hash")));
+            }
+        }
+
+        return new PatientDocumentRoutingHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            DocumentId: documentId,
+            DocumentKey: documentKey,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Name: name,
+            CurrentTaskVersion: currentTaskVersion,
+            CurrentStatus: currentStatus,
+            CurrentAssignedTo: currentAssignedTo,
+            CurrentDestination: currentDestination,
+            CurrentPriority: currentPriority,
+            CurrentDueAt: currentDueAt,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: 100,
+            Events: events);
+    }
+
+    public async Task<PatientDocumentRoutingMutationResponse?> RouteDocumentAsync(
+        int documentId,
+        PatientDocumentRoutingMutationRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var destination = NormalizeRequiredRoutingText(request.Destination, "A routing destination", 100);
+        var routePriority = NormalizeRoutingPriority(request.Priority);
+        var reason = NormalizeRequiredRoutingText(request.Reason, "A routing reason", 250);
+        var assignedTo = NormalizeText(request.AssignedTo);
+        var dueAt = ParseRoutingDueAt(request.DueAt)
+            ?? DateTimeOffset.UtcNow.AddHours(routePriority == "High" ? 24 : 72);
+        if (dueAt <= DateTimeOffset.UtcNow)
+        {
+            throw new ArgumentException("The routing due time must be in the future.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetRoutingDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        if (document.Archived)
+        {
+            throw new ArgumentException("Archived documents must be restored before they can be routed.");
+        }
+
+        await ValidateRoutingAssigneeAsync(
+            connection,
+            transaction,
+            assignedTo,
+            cancellationToken);
+        var currentTask = await GetRoutingTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = currentTask?.Status ?? "pending";
+        if (request.ExpectedTaskVersion != currentVersion)
+        {
+            throw new DocumentRoutingConflictException(
+                currentVersion,
+                currentStatus,
+                $"The routing task is now at version {currentVersion} with status {currentStatus}.");
+        }
+
+        var nextStatus = assignedTo is null ? "pending" : "in_progress";
+        var inferredDestination = ExtractTaggedValue(document.Notes, "Route to")
+            ?? BuildRouteDestination(document.CategoryName);
+        var inferredPriority = ExtractTaggedValue(document.Notes, "Routing priority")
+            ?? BuildRoutingPriority(document.CategoryName, document.Notes);
+        var fromDestination = currentTask?.Destination ?? inferredDestination;
+        var fromPriority = currentTask?.Priority ?? inferredPriority;
+        var fromAssignedTo = currentTask?.AssignedTo;
+        if (currentTask is not null
+            && currentTask.Status != "completed"
+            && string.Equals(currentTask.Destination, destination, StringComparison.Ordinal)
+            && string.Equals(currentTask.Priority, routePriority, StringComparison.Ordinal)
+            && string.Equals(currentTask.AssignedTo, assignedTo, StringComparison.OrdinalIgnoreCase)
+            && currentTask.DueAt == dueAt)
+        {
+            throw new ArgumentException("The routing task already has these destination, priority, assignee, and due-time values.");
+        }
+
+        var nextVersion = currentVersion + 1;
+        var action = currentTask is null
+            ? "routed"
+            : currentTask.Status == "completed"
+                ? "reopened"
+                : "rerouted";
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_document_routing_tasks (
+                  document_id, task_version, status, destination, priority, assigned_to,
+                  routing_reason, routed_by, routed_at, due_at,
+                  completed_by, completed_at, completion_note)
+                values (
+                  @documentId, @taskVersion, @status, @destination, @priority, @assignedTo,
+                  @reason, @actor, now(), @dueAt,
+                  null, null, null)
+                on conflict (document_id) do update set
+                  task_version = excluded.task_version,
+                  status = excluded.status,
+                  destination = excluded.destination,
+                  priority = excluded.priority,
+                  assigned_to = excluded.assigned_to,
+                  routing_reason = excluded.routing_reason,
+                  routed_by = excluded.routed_by,
+                  routed_at = excluded.routed_at,
+                  due_at = excluded.due_at,
+                  completed_by = null,
+                  completed_at = null,
+                  completion_note = null;
+
+                insert into patient_document_routing_events (
+                  event_id, document_id, document_key, patient_id, legacy_pid,
+                  action, from_status, to_status,
+                  from_destination, to_destination, from_priority, to_priority,
+                  from_assigned_to, to_assigned_to,
+                  reason, actor, occurred_at, due_at, task_version,
+                  document_version, review_status, content_hash)
+                values (
+                  @eventId, @documentId, @documentKey, @patientId, @legacyPid,
+                  @action, @fromStatus, @toStatus,
+                  @fromDestination, @toDestination, @fromPriority, @toPriority,
+                  @fromAssignedTo, @toAssignedTo,
+                  @reason, @actor, now(), @dueAt, @taskVersion,
+                  @documentVersion, @reviewStatus, @contentHash);
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("taskVersion", nextVersion);
+            command.Parameters.AddWithValue("status", nextStatus);
+            command.Parameters.AddWithValue("destination", destination);
+            command.Parameters.AddWithValue("priority", routePriority);
+            command.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+            command.Parameters.AddWithValue("reason", reason);
+            command.Parameters.AddWithValue("actor", actor);
+            command.Parameters.AddWithValue("dueAt", dueAt);
+            command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+            command.Parameters.AddWithValue("documentKey", document.DocumentKey);
+            command.Parameters.AddWithValue("patientId", document.PatientId);
+            command.Parameters.AddWithValue("legacyPid", document.LegacyPid);
+            command.Parameters.AddWithValue("action", action);
+            command.Parameters.AddWithValue("fromStatus", currentTask is null ? "inferred" : currentStatus);
+            command.Parameters.AddWithValue("toStatus", nextStatus);
+            command.Parameters.AddWithValue("fromDestination", (object?)fromDestination ?? DBNull.Value);
+            command.Parameters.AddWithValue("toDestination", destination);
+            command.Parameters.AddWithValue("fromPriority", (object?)fromPriority ?? DBNull.Value);
+            command.Parameters.AddWithValue("toPriority", routePriority);
+            command.Parameters.AddWithValue("fromAssignedTo", (object?)fromAssignedTo ?? DBNull.Value);
+            command.Parameters.AddWithValue("toAssignedTo", (object?)assignedTo ?? DBNull.Value);
+            command.Parameters.AddWithValue("documentVersion", document.DocumentVersion);
+            command.Parameters.AddWithValue("reviewStatus", document.ReviewStatus);
+            command.Parameters.AddWithValue("contentHash", (object?)document.ContentHash ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new PatientDocumentRoutingMutationResponse(
+            DocumentId: documentId,
+            TaskVersion: nextVersion,
+            Status: nextStatus,
+            AssignedTo: assignedTo,
+            Destination: destination,
+            Priority: routePriority,
+            DueAt: dueAt.ToString("O"));
+    }
+
+    public async Task<PatientDocumentRoutingMutationResponse?> CompleteRoutingAsync(
+        int documentId,
+        PatientDocumentRoutingCompleteRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var reason = NormalizeRequiredRoutingText(request.Reason, "A completion note", 250);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var document = await GetRoutingDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        if (document.Archived)
+        {
+            throw new ArgumentException("Archived documents must be restored before routing can be completed.");
+        }
+
+        var currentTask = await GetRoutingTaskForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var currentVersion = currentTask?.TaskVersion ?? 0;
+        var currentStatus = currentTask?.Status ?? "pending";
+        if (request.ExpectedTaskVersion != currentVersion)
+        {
+            throw new DocumentRoutingConflictException(
+                currentVersion,
+                currentStatus,
+                $"The routing task is now at version {currentVersion} with status {currentStatus}.");
+        }
+
+        if (currentStatus == "completed")
+        {
+            throw new DocumentRoutingConflictException(
+                currentVersion,
+                currentStatus,
+                "This routing task is already completed.");
+        }
+
+        var destination = currentTask?.Destination
+            ?? ExtractTaggedValue(document.Notes, "Route to")
+            ?? BuildRouteDestination(document.CategoryName);
+        var routePriority = currentTask?.Priority
+            ?? ExtractTaggedValue(document.Notes, "Routing priority")
+            ?? BuildRoutingPriority(document.CategoryName, document.Notes);
+        var assignedTo = currentTask?.AssignedTo;
+        var routedAt = currentTask?.RoutedAt ?? document.UploadedAt;
+        var dueAt = currentTask?.DueAt
+            ?? routedAt.AddHours(routePriority == "High" ? 24 : 72);
+        var routingReason = currentTask?.RoutingReason
+            ?? $"Pending {document.CategoryName} review";
+        var routedBy = currentTask?.RoutedBy ?? actor;
+        var nextVersion = currentVersion + 1;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_document_routing_tasks (
+                  document_id, task_version, status, destination, priority, assigned_to,
+                  routing_reason, routed_by, routed_at, due_at,
+                  completed_by, completed_at, completion_note)
+                values (
+                  @documentId, @taskVersion, 'completed', @destination, @priority, @assignedTo,
+                  @routingReason, @routedBy, @routedAt, @dueAt,
+                  @actor, now(), @reason)
+                on conflict (document_id) do update set
+                  task_version = excluded.task_version,
+                  status = 'completed',
+                  completed_by = excluded.completed_by,
+                  completed_at = excluded.completed_at,
+                  completion_note = excluded.completion_note;
+
+                insert into patient_document_routing_events (
+                  event_id, document_id, document_key, patient_id, legacy_pid,
+                  action, from_status, to_status,
+                  from_destination, to_destination, from_priority, to_priority,
+                  from_assigned_to, to_assigned_to,
+                  reason, actor, occurred_at, due_at, task_version,
+                  document_version, review_status, content_hash)
+                values (
+                  @eventId, @documentId, @documentKey, @patientId, @legacyPid,
+                  'completed', @fromStatus, 'completed',
+                  @destination, @destination, @priority, @priority,
+                  @assignedTo, @assignedTo,
+                  @reason, @actor, now(), @dueAt, @taskVersion,
+                  @documentVersion, @reviewStatus, @contentHash);
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("taskVersion", nextVersion);
+            command.Parameters.AddWithValue("destination", destination);
+            command.Parameters.AddWithValue("priority", routePriority);
+            command.Parameters.AddWithValue("assignedTo", (object?)assignedTo ?? DBNull.Value);
+            command.Parameters.AddWithValue("routingReason", routingReason);
+            command.Parameters.AddWithValue("routedBy", routedBy);
+            command.Parameters.AddWithValue("routedAt", routedAt);
+            command.Parameters.AddWithValue("dueAt", dueAt);
+            command.Parameters.AddWithValue("actor", actor);
+            command.Parameters.AddWithValue("reason", reason);
+            command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+            command.Parameters.AddWithValue("documentKey", document.DocumentKey);
+            command.Parameters.AddWithValue("patientId", document.PatientId);
+            command.Parameters.AddWithValue("legacyPid", document.LegacyPid);
+            command.Parameters.AddWithValue("fromStatus", currentTask is null ? "inferred" : currentStatus);
+            command.Parameters.AddWithValue("documentVersion", document.DocumentVersion);
+            command.Parameters.AddWithValue("reviewStatus", document.ReviewStatus);
+            command.Parameters.AddWithValue("contentHash", (object?)document.ContentHash ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new PatientDocumentRoutingMutationResponse(
+            DocumentId: documentId,
+            TaskVersion: nextVersion,
+            Status: "completed",
+            AssignedTo: assignedTo,
+            Destination: destination,
+            Priority: routePriority,
+            DueAt: dueAt.ToString("O"));
     }
 
     public async Task<PatientDocumentRetentionPolicyResponse> GetRetentionPolicyAsync(
@@ -2958,6 +3522,59 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
                 create index if not exists ix_patient_document_archive_events_patient_time
                   on patient_document_archive_events (patient_id, occurred_at desc, event_id desc);
+
+                create table if not exists patient_document_routing_tasks (
+                  document_id integer primary key references patient_documents(id) on delete cascade,
+                  task_version integer not null,
+                  status varchar(20) not null,
+                  destination varchar(100) not null,
+                  priority varchar(20) not null,
+                  assigned_to text,
+                  routing_reason varchar(250) not null,
+                  routed_by text not null,
+                  routed_at timestamptz not null default now(),
+                  due_at timestamptz not null,
+                  completed_by text,
+                  completed_at timestamptz,
+                  completion_note varchar(250)
+                );
+
+                create index if not exists ix_patient_document_routing_tasks_status_due
+                  on patient_document_routing_tasks (status, due_at, document_id);
+
+                create index if not exists ix_patient_document_routing_tasks_assignee_status
+                  on patient_document_routing_tasks (assigned_to, status, due_at);
+
+                create table if not exists patient_document_routing_events (
+                  event_id uuid primary key,
+                  document_id integer not null references patient_documents(id) on delete cascade,
+                  document_key text not null,
+                  patient_id text not null,
+                  legacy_pid integer not null,
+                  action varchar(20) not null,
+                  from_status varchar(20) not null,
+                  to_status varchar(20) not null,
+                  from_destination varchar(100),
+                  to_destination varchar(100) not null,
+                  from_priority varchar(20),
+                  to_priority varchar(20) not null,
+                  from_assigned_to text,
+                  to_assigned_to text,
+                  reason varchar(250) not null,
+                  actor text not null,
+                  occurred_at timestamptz not null default now(),
+                  due_at timestamptz not null,
+                  task_version integer not null,
+                  document_version integer not null,
+                  review_status varchar(20) not null,
+                  content_hash text
+                );
+
+                create index if not exists ix_patient_document_routing_events_document_time
+                  on patient_document_routing_events (document_id, occurred_at desc, event_id desc);
+
+                create index if not exists ix_patient_document_routing_events_patient_time
+                  on patient_document_routing_events (patient_id, occurred_at desc, event_id desc);
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -3524,10 +4141,192 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
             : "OCR not started";
     }
 
+    private static async Task<RoutingDocumentSnapshot?> GetRoutingDocumentForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select d.document_key, d.patient_id, d.pid, d.category_name, d.notes, d.uploaded_at,
+              d.deleted, coalesce(d.review_status, 'pending') as review_status, d.hash,
+              coalesce((select count(*) from patient_document_versions v where v.document_id = d.id), 0) + 1
+                as document_version
+            from patient_documents d
+            where d.id = @documentId
+            for update;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new RoutingDocumentSnapshot(
+            DocumentKey: reader.GetString(reader.GetOrdinal("document_key")),
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
+            CategoryName: reader.GetString(reader.GetOrdinal("category_name")),
+            Notes: ReadNullableString(reader, "notes"),
+            UploadedAt: new DateTimeOffset(DateTime.SpecifyKind(
+                reader.GetDateTime(reader.GetOrdinal("uploaded_at")),
+                DateTimeKind.Utc)),
+            Archived: reader.GetInt32(reader.GetOrdinal("deleted")) != 0,
+            ReviewStatus: reader.GetString(reader.GetOrdinal("review_status")),
+            DocumentVersion: Convert.ToInt32(reader.GetInt64(reader.GetOrdinal("document_version"))),
+            ContentHash: ReadNullableString(reader, "hash"));
+    }
+
+    private static async Task<RoutingTaskSnapshot?> GetRoutingTaskForUpdateAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select task_version, status, destination, priority, assigned_to,
+              routing_reason, routed_by, routed_at, due_at
+            from patient_document_routing_tasks
+            where document_id = @documentId
+            for update;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new RoutingTaskSnapshot(
+            TaskVersion: reader.GetInt32(reader.GetOrdinal("task_version")),
+            Status: reader.GetString(reader.GetOrdinal("status")),
+            Destination: reader.GetString(reader.GetOrdinal("destination")),
+            Priority: reader.GetString(reader.GetOrdinal("priority")),
+            AssignedTo: ReadNullableString(reader, "assigned_to"),
+            RoutingReason: reader.GetString(reader.GetOrdinal("routing_reason")),
+            RoutedBy: reader.GetString(reader.GetOrdinal("routed_by")),
+            RoutedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("routed_at")),
+            DueAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("due_at")));
+    }
+
+    private static async Task ValidateRoutingAssigneeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string? assignedTo,
+        CancellationToken cancellationToken)
+    {
+        if (assignedTo is null)
+        {
+            return;
+        }
+
+        if (assignedTo.Length > 80)
+        {
+            throw new ArgumentException("The routing assignee is too long.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select exists(
+              select 1 from auth_accounts
+              where active = true and lower(username) = lower(@assignedTo)
+            );
+            """;
+        command.Parameters.AddWithValue("assignedTo", assignedTo);
+        var exists = (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        if (!exists)
+        {
+            throw new ArgumentException("The routing assignee must be an active staff user.");
+        }
+    }
+
+    private static string NormalizeRoutingStatusFilter(string? value)
+    {
+        return NormalizeText(value)?.ToLowerInvariant() switch
+        {
+            null or "" => "active",
+            "active" => "active",
+            "pending" => "pending",
+            "in_progress" or "in-progress" => "in_progress",
+            "completed" => "completed",
+            "all" => "all",
+            _ => throw new ArgumentException("Routing status must be active, pending, in_progress, completed, or all.")
+        };
+    }
+
+    private static string? NormalizeRoutingPriorityFilter(string? value)
+    {
+        return NormalizeText(value)?.ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "high" => "High",
+            "standard" => "Standard",
+            _ => throw new ArgumentException("Routing priority must be High or Standard.")
+        };
+    }
+
+    private static string NormalizeRoutingPriority(string? value)
+    {
+        return NormalizeRoutingPriorityFilter(value)
+            ?? throw new ArgumentException("A routing priority is required.");
+    }
+
+    private static string NormalizeRequiredRoutingText(
+        string? value,
+        string fieldLabel,
+        int maximumLength)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null || normalized.Length < 3)
+        {
+            throw new ArgumentException($"{fieldLabel} of at least 3 characters is required.");
+        }
+
+        if (normalized.Length > maximumLength)
+        {
+            throw new ArgumentException($"{fieldLabel} cannot exceed {maximumLength} characters.");
+        }
+
+        return normalized;
+    }
+
+    private static DateTimeOffset? ParseRoutingDueAt(string? value)
+    {
+        var normalized = NormalizeText(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (!DateTimeOffset.TryParse(normalized, out var dueAt))
+        {
+            throw new ArgumentException("The routing due time is invalid.");
+        }
+
+        return dueAt.ToUniversalTime();
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string search)
+    {
+        return value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     private static string? ReadNullableString(DbDataReader reader, string columnName)
     {
         var ordinal = reader.GetOrdinal(columnName);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static DateTimeOffset? ReadNullableDateTimeOffset(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
     private static string? ReadNullableDateTimeString(DbDataReader reader, string columnName)
@@ -3689,6 +4488,29 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         string? Mimetype,
         int? SizeBytes,
         string? Hash);
+
+    private sealed record RoutingDocumentSnapshot(
+        string DocumentKey,
+        string PatientId,
+        int LegacyPid,
+        string CategoryName,
+        string? Notes,
+        DateTimeOffset UploadedAt,
+        bool Archived,
+        string ReviewStatus,
+        int DocumentVersion,
+        string? ContentHash);
+
+    private sealed record RoutingTaskSnapshot(
+        int TaskVersion,
+        string Status,
+        string Destination,
+        string Priority,
+        string? AssignedTo,
+        string RoutingReason,
+        string RoutedBy,
+        DateTimeOffset RoutedAt,
+        DateTimeOffset DueAt);
 
     private sealed record DocumentPreviewInfo(
         string PreviewKind,

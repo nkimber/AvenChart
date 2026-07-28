@@ -2871,12 +2871,123 @@ documents.MapGet("/ocr-queue", async (
 documents.MapGet("/routing-queue", async (
         DocumentRepository repository,
         CancellationToken cancellationToken,
-        string? patientId = null) =>
+        string? patientId = null,
+        string? status = null,
+        string? priority = null,
+        string? assignedTo = null,
+        int? minimumAgeHours = null,
+        string? query = null,
+        int offset = 0,
+        int limit = 50) =>
     {
-        var queue = await repository.GetRoutingQueueAsync(cancellationToken, patientId);
-        return Results.Ok(queue);
+        try
+        {
+            var queue = await repository.GetRoutingQueueAsync(
+                cancellationToken,
+                patientId,
+                status,
+                priority,
+                assignedTo,
+                minimumAgeHours,
+                query,
+                offset,
+                limit);
+            return Results.Ok(queue);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("GetPatientDocumentRoutingQueue");
+
+documents.MapGet("/routing-assignees", async (
+        DocumentRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        return Results.Ok(await repository.GetRoutingAssigneesAsync(cancellationToken));
+    })
+    .WithName("GetPatientDocumentRoutingAssignees");
+
+documents.MapGet("/{documentId:int}/routing-history", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetRoutingHistoryAsync(documentId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDocumentRoutingHistory");
+
+documents.MapPut("/{documentId:int}/routing", async (
+        DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int documentId,
+        PatientDocumentRoutingMutationRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var result = await repository.RouteDocumentAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentRoutingConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
+    })
+    .WithName("RoutePatientDocument")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
+
+documents.MapPost("/{documentId:int}/routing/complete", async (
+        DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int documentId,
+        PatientDocumentRoutingCompleteRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var result = await repository.CompleteRoutingAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentRoutingConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentTaskVersion = conflict.CurrentTaskVersion,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
+    })
+    .WithName("CompletePatientDocumentRouting")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
 
 documents.MapGet("/retention-policy", async (
         DocumentRepository repository,
