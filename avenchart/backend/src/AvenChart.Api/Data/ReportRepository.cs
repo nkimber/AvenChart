@@ -219,17 +219,18 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         var payload = string.Join("\n", new[] { filterEvidence }.Concat(lines.Select(line =>
             $"{line.EventId}|{line.Action}|{line.LotId}|{line.ItemCode}|{line.ScheduleCode}|{line.FacilityCode}|{line.LotNumber}|{line.SourceLocationCode}|{line.DestinationLocationCode}|{line.PatientId}|{line.Encounter}|{line.Quantity.ToString(CultureInfo.InvariantCulture)}|{line.QuantityDelta.ToString(CultureInfo.InvariantCulture)}|{line.Reason}|{line.RelatedEventId}|{line.PerformedBy}|{line.OccurredAt}|{line.WitnessUsername}|{line.WitnessedAt}")));
         var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var artifact = JsonSerializer.Serialize(lines);
         var runId = Guid.NewGuid();
         var requestedAt = DateTimeOffset.UtcNow;
 
         await using (var insert = connection.CreateCommand())
         {
-            insert.CommandText = """
+                insert.CommandText = """
                 insert into inventory_controlled_report_runs (
                   run_id, report_key, as_of_date, date_from, location_id, input_filters,
-                  requested_by, requested_at, row_count, result_checksum)
+                  result_artifact, requested_by, requested_at, row_count, result_checksum)
                 values (
-                  @runId, 'custody_activity', @toDate, @fromDate, @locationId, @inputFilters,
+                  @runId, 'custody_activity', @toDate, @fromDate, @locationId, @inputFilters, @artifact,
                   @requestedBy, @requestedAt, @rowCount, @resultChecksum);
                 """;
             insert.Parameters.AddWithValue("runId", runId);
@@ -237,6 +238,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             insert.Parameters.AddWithValue("fromDate", fromDate);
             insert.Parameters.AddWithValue("locationId", (object?)request.LocationId ?? DBNull.Value);
             insert.Parameters.AddWithValue("inputFilters", NpgsqlDbType.Jsonb, filterEvidence);
+            insert.Parameters.AddWithValue("artifact", NpgsqlDbType.Jsonb, artifact);
             insert.Parameters.AddWithValue("requestedBy", username);
             insert.Parameters.AddWithValue("requestedAt", requestedAt);
             insert.Parameters.AddWithValue("rowCount", lines.Count);
@@ -263,25 +265,13 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
     public async Task<string?> ExportControlledInventoryRunCsvAsync(Guid runId, string username, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select result_artifact, result_checksum
-            from inventory_controlled_report_runs
-            where run_id = @id and report_key = 'as_of_inventory';
-            """;
-        command.Parameters.AddWithValue("id", runId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        var result = await GetControlledReportArtifactAsync(connection, runId, "as_of_inventory", cancellationToken);
+        if (result is null)
         {
             return null;
         }
 
-        var artifact = reader.GetString(0);
-        var checksum = reader.GetString(1);
-        await reader.DisposeAsync();
-
-        var lines = JsonSerializer.Deserialize<List<ControlledInventoryReportLine>>(artifact) ?? [];
+        var lines = JsonSerializer.Deserialize<List<ControlledInventoryReportLine>>(result.Value.Artifact) ?? [];
         var csv = new StringBuilder("Lot ID,Item Code,Schedule,Facility,Location,Lot Number,Quantity On Hand\n");
         foreach (var line in lines)
         {
@@ -296,18 +286,58 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
                 line.QuantityOnHand);
         }
 
-        await using var insert = connection.CreateCommand();
-        insert.CommandText = """
-            insert into inventory_controlled_report_exports (
-              export_id, run_id, exported_by, exported_at, format, result_checksum)
-            values (@export, @run, @user, now(), 'csv', @checksum);
-            """;
-        insert.Parameters.AddWithValue("export", Guid.NewGuid());
-        insert.Parameters.AddWithValue("run", runId);
-        insert.Parameters.AddWithValue("user", username);
-        insert.Parameters.AddWithValue("checksum", checksum);
-        await insert.ExecuteNonQueryAsync(cancellationToken);
+        await RecordControlledReportExportAsync(connection, runId, username, result.Value.Checksum, cancellationToken);
 
+        return csv.ToString();
+    }
+
+    public async Task<string?> ExportControlledInventoryActivityRunCsvAsync(Guid runId, string username, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var result = await GetControlledReportArtifactAsync(connection, runId, "custody_activity", cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        var lines = JsonSerializer.Deserialize<List<ControlledInventoryActivityReportLine>>(result.Value.Artifact) ?? [];
+        var csv = new StringBuilder("Event ID,Action,Lot ID,Item Code,Schedule,Facility,Lot Number,Source Location,Destination Location,Patient ID,Encounter,Quantity,Quantity Delta,Reason,Related Event ID,Performed By,Occurred At,Witness Username,Witnessed At\n");
+        foreach (var line in lines)
+        {
+            AppendCsvRow(csv, line.EventId, line.Action, line.LotId, line.ItemCode, line.ScheduleCode,
+                line.FacilityCode, line.LotNumber, line.SourceLocationCode ?? string.Empty,
+                line.DestinationLocationCode ?? string.Empty, line.PatientId ?? string.Empty,
+                line.Encounter?.ToString(CultureInfo.InvariantCulture) ?? string.Empty, line.Quantity,
+                line.QuantityDelta, line.Reason, line.RelatedEventId?.ToString() ?? string.Empty,
+                line.PerformedBy, line.OccurredAt, line.WitnessUsername ?? string.Empty,
+                line.WitnessedAt ?? string.Empty);
+        }
+
+        await RecordControlledReportExportAsync(connection, runId, username, result.Value.Checksum, cancellationToken);
+        return csv.ToString();
+    }
+
+    public async Task<string?> ExportControlledCountVarianceRunCsvAsync(Guid runId, string username, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var result = await GetControlledReportArtifactAsync(connection, runId, "count_variance", cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        var lines = JsonSerializer.Deserialize<List<ControlledCountVarianceReportLine>>(result.Value.Artifact) ?? [];
+        var csv = new StringBuilder("Session ID,Discrepancy ID,Location,Count Type,Session Status,Lot ID,Item Code,Lot Number,Expected Quantity,Observed Quantity,Variance Quantity,Discrepancy Status,Correction Event ID,Started At,Submitted At\n");
+        foreach (var line in lines)
+        {
+            AppendCsvRow(csv, line.SessionId, line.DiscrepancyId, line.LocationCode, line.CountType,
+                line.SessionStatus, line.LotId, line.ItemCode, line.LotNumber, line.ExpectedQuantity,
+                line.ObservedQuantity, line.VarianceQuantity, line.DiscrepancyStatus,
+                line.CorrectionEventId?.ToString() ?? string.Empty, line.StartedAt,
+                line.SubmittedAt ?? string.Empty);
+        }
+
+        await RecordControlledReportExportAsync(connection, runId, username, result.Value.Checksum, cancellationToken);
         return csv.ToString();
     }
 
@@ -325,9 +355,50 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
             """;
             command.Parameters.AddWithValue("fromDate",NpgsqlDbType.Date,fromDate); command.Parameters.AddWithValue("toDate",NpgsqlDbType.Date,toDate); command.Parameters.AddWithValue("locationId",NpgsqlDbType.Uuid,(object?)request.LocationId??DBNull.Value);
             await using var reader=await command.ExecuteReaderAsync(cancellationToken); while(await reader.ReadAsync(cancellationToken)) lines.Add(new(reader.GetGuid(0),reader.GetGuid(1),reader.GetString(2),reader.GetString(3),reader.GetString(4),reader.GetInt32(5),reader.GetString(6),reader.GetString(7),reader.GetDecimal(8),reader.GetDecimal(9),reader.GetDecimal(10),reader.GetString(11),reader.IsDBNull(12)?null:reader.GetGuid(12),reader.GetFieldValue<DateTimeOffset>(13).ToString("O"),reader.IsDBNull(14)?null:reader.GetFieldValue<DateTimeOffset>(14).ToString("O"))); }
-        var filters=JsonSerializer.Serialize(new { fromDate=fromDate.ToString("yyyy-MM-dd"),toDate=toDate.ToString("yyyy-MM-dd"),request.LocationId }); var payload=string.Join("\n",new[]{filters}.Concat(lines.Select(x=>$"{x.SessionId}|{x.DiscrepancyId}|{x.LotId}|{x.VarianceQuantity}|{x.DiscrepancyStatus}|{x.CorrectionEventId}"))); var checksum=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant(); var runId=Guid.NewGuid(); var requestedAt=DateTimeOffset.UtcNow;
-        await using(var insert=connection.CreateCommand()){insert.CommandText="insert into inventory_controlled_report_runs(run_id,report_key,as_of_date,date_from,location_id,input_filters,requested_by,requested_at,row_count,result_checksum) values(@id,'count_variance',@to,@from,@location,@filters,@user,@at,@count,@checksum);";insert.Parameters.AddWithValue("id",runId);insert.Parameters.AddWithValue("to",toDate);insert.Parameters.AddWithValue("from",fromDate);insert.Parameters.AddWithValue("location",(object?)request.LocationId??DBNull.Value);insert.Parameters.AddWithValue("filters",NpgsqlDbType.Jsonb,filters);insert.Parameters.AddWithValue("user",username);insert.Parameters.AddWithValue("at",requestedAt);insert.Parameters.AddWithValue("count",lines.Count);insert.Parameters.AddWithValue("checksum",checksum);await insert.ExecuteNonQueryAsync(cancellationToken);}
+        var filters=JsonSerializer.Serialize(new { fromDate=fromDate.ToString("yyyy-MM-dd"),toDate=toDate.ToString("yyyy-MM-dd"),request.LocationId }); var payload=string.Join("\n",new[]{filters}.Concat(lines.Select(x=>$"{x.SessionId}|{x.DiscrepancyId}|{x.LotId}|{x.VarianceQuantity}|{x.DiscrepancyStatus}|{x.CorrectionEventId}"))); var checksum=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant(); var artifact=JsonSerializer.Serialize(lines); var runId=Guid.NewGuid(); var requestedAt=DateTimeOffset.UtcNow;
+        await using(var insert=connection.CreateCommand()){insert.CommandText="insert into inventory_controlled_report_runs(run_id,report_key,as_of_date,date_from,location_id,input_filters,result_artifact,requested_by,requested_at,row_count,result_checksum) values(@id,'count_variance',@to,@from,@location,@filters,@artifact,@user,@at,@count,@checksum);";insert.Parameters.AddWithValue("id",runId);insert.Parameters.AddWithValue("to",toDate);insert.Parameters.AddWithValue("from",fromDate);insert.Parameters.AddWithValue("location",(object?)request.LocationId??DBNull.Value);insert.Parameters.AddWithValue("filters",NpgsqlDbType.Jsonb,filters);insert.Parameters.AddWithValue("artifact",NpgsqlDbType.Jsonb,artifact);insert.Parameters.AddWithValue("user",username);insert.Parameters.AddWithValue("at",requestedAt);insert.Parameters.AddWithValue("count",lines.Count);insert.Parameters.AddWithValue("checksum",checksum);await insert.ExecuteNonQueryAsync(cancellationToken);}
         return new(new(runId,"count_variance",fromDate.ToString("yyyy-MM-dd"),toDate.ToString("yyyy-MM-dd"),request.LocationId,username,requestedAt.ToString("O"),lines.Count,checksum),lines);
+    }
+
+    private static async Task<(string Artifact, string Checksum)?> GetControlledReportArtifactAsync(
+        NpgsqlConnection connection,
+        Guid runId,
+        string reportKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select result_artifact, result_checksum
+            from inventory_controlled_report_runs
+            where run_id = @id and report_key = @reportKey;
+            """;
+        command.Parameters.AddWithValue("id", runId);
+        command.Parameters.AddWithValue("reportKey", reportKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) && !reader.IsDBNull(0)
+            ? (reader.GetString(0), reader.GetString(1))
+            : null;
+    }
+
+    private static async Task RecordControlledReportExportAsync(
+        NpgsqlConnection connection,
+        Guid runId,
+        string username,
+        string checksum,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.CommandText = """
+            insert into inventory_controlled_report_exports (
+              export_id, run_id, exported_by, exported_at, format, result_checksum)
+            values (@export, @run, @user, now(), 'csv', @checksum);
+            """;
+        insert.Parameters.AddWithValue("export", Guid.NewGuid());
+        insert.Parameters.AddWithValue("run", runId);
+        insert.Parameters.AddWithValue("user", username);
+        insert.Parameters.AddWithValue("checksum", checksum);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)

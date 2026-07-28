@@ -5922,11 +5922,53 @@ reports.MapGet("/controlled-inventory/as-of/{runId:guid}/export", async (
 }).WithName("ExportControlledInventoryAsOfRun")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
 
+reports.MapGet("/controlled-inventory/activity/{runId:guid}/export", async (
+    Guid runId,
+    ReportRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    var csv = await repository.ExportControlledInventoryActivityRunCsvAsync(
+        runId,
+        session.Username,
+        cancellationToken);
+    return csv is null
+        ? Results.NotFound()
+        : Results.File(
+            Encoding.UTF8.GetBytes(csv),
+            "text/csv",
+            $"legacy-ehr-controlled-activity-{runId}.csv");
+}).WithName("ExportControlledInventoryActivityRun")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "lots", "view"));
+
 reports.MapPost("/controlled-inventory/count-variance", async (ControlledCountVarianceReportRequest request, ReportRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
     try { var session=await GetSessionFromHeaderAsync(authRepository,httpContext,cancellationToken); return Results.Created("/api/reports/controlled-inventory/count-variance",await repository.RunControlledCountVarianceReportAsync(request,session.Username,cancellationToken)); }
     catch(ArgumentException exception){ return Results.ValidationProblem(new Dictionary<string,string[]> { ["controlledReport"]=[exception.Message] }); }
 }).WithName("RunControlledCountVarianceReport").AddEndpointFilter(AccessPermissionFilter("inventory","adjustments","view"));
+
+reports.MapGet("/controlled-inventory/count-variance/{runId:guid}/export", async (
+    Guid runId,
+    ReportRepository repository,
+    AuthRepository authRepository,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    var csv = await repository.ExportControlledCountVarianceRunCsvAsync(
+        runId,
+        session.Username,
+        cancellationToken);
+    return csv is null
+        ? Results.NotFound()
+        : Results.File(
+            Encoding.UTF8.GetBytes(csv),
+            "text/csv",
+            $"legacy-ehr-controlled-count-variance-{runId}.csv");
+}).WithName("ExportControlledCountVarianceRun")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
 
 reports.MapGet("/operational/export", async (
         ReportRepository repository,

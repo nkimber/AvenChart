@@ -10496,6 +10496,10 @@ try {
     $controlledWasteReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "waste"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
     $controlledPatientDispenseReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ reportType = "patient-dispense"; fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId; patientId = "MOD-PAT-0001" } | ConvertTo-Json) -TimeoutSec 20
     $controlledVarianceReport = Invoke-RestMethod -Uri "$ApiBaseUrl/api/reports/controlled-inventory/count-variance" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ fromDate = (Get-Date).ToString("yyyy-MM-dd"); toDate = (Get-Date).ToString("yyyy-MM-dd"); locationId = $custodySource.locationId } | ConvertTo-Json) -TimeoutSec 20
+    $controlledMovementExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/activity/$($controlledMovementReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
+    $controlledVarianceExport = Invoke-WebRequest -Uri "$ApiBaseUrl/api/reports/controlled-inventory/count-variance/$($controlledVarianceReport.run.runId)/export" -Method Get -Headers $custodyHeaders -UseBasicParsing -TimeoutSec 20
+    $controlledActivityExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledMovementReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledMovementReport.run.resultChecksum)';"
+    $controlledVarianceExportAuditCount = docker compose exec -T postgres psql -X -U legacy-ehr -d legacy-ehr_modernized -t -A -v ON_ERROR_STOP=1 -c "select count(*) from inventory_controlled_report_exports where run_id = '$($controlledVarianceReport.run.runId)' and exported_by = 'admin' and format = 'csv' and result_checksum = '$($controlledVarianceReport.run.resultChecksum)';"
     $controlledCountAfterCorrection = Invoke-RestMethod -Uri "$ApiBaseUrl/api/inventory/controlled-count-sessions/$($controlledCount.sessionId)" -Method Get -Headers $custodyHeaders -TimeoutSec 20
     $countCorrectionRetryRejected = $false
     try { Invoke-WebRequest -Uri "$ApiBaseUrl/api/inventory/controlled-count-discrepancies/$($controlledCountSubmitted.lines[0].discrepancyId)/corrections" -Method Post -Headers $custodyHeaders -ContentType "application/json" -Body (@{ notes = "Retry count correction"; idempotencyKey = "count-correction-retry-$custodySuffix"; witnessSessionId = $custodyWitnessSessionId } | ConvertTo-Json) -UseBasicParsing -TimeoutSec 20 | Out-Null } catch { $countCorrectionRetryRejected = $_.Exception.Response.StatusCode.value__ -eq 400 }
@@ -10534,6 +10538,10 @@ try {
         -and $controlledMovementReport.run.reportKey -eq "custody_activity" `
         -and $controlledMovementReport.run.reportType -eq "movement" `
         -and $controlledMovementReport.run.resultChecksum.Length -eq 64 `
+        -and $controlledMovementExport.StatusCode -eq 200 `
+        -and $controlledMovementExport.Headers["Content-Type"] -like "text/csv*" `
+        -and $controlledMovementExport.Content -match [regex]::Escape($receipt.event.eventId) `
+        -and $controlledActivityExportAuditCount.Trim() -eq "1" `
         -and @($controlledMovementReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.action -eq "receipt" }).Count -eq 1 `
         -and @($controlledMovementReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.action -eq "transfer" }).Count -eq 1 `
         -and $controlledWasteReport.run.reportType -eq "waste" `
@@ -10544,6 +10552,10 @@ try {
         -and @($controlledPatientDispenseReport.lines | Where-Object { $_.lotId -eq $receipt.lot.lotId -and $_.patientId -eq "MOD-PAT-0001" -and $_.action -in @("dispense", "administration") }).Count -eq 2 `
         -and $controlledVarianceReport.run.reportKey -eq "count_variance" `
         -and $controlledVarianceReport.run.resultChecksum.Length -eq 64 `
+        -and $controlledVarianceExport.StatusCode -eq 200 `
+        -and $controlledVarianceExport.Headers["Content-Type"] -like "text/csv*" `
+        -and $controlledVarianceExport.Content -match [regex]::Escape($controlledCountSubmitted.lines[0].discrepancyId) `
+        -and $controlledVarianceExportAuditCount.Trim() -eq "1" `
         -and @($controlledVarianceReport.lines | Where-Object { $_.discrepancyId -eq $controlledCountSubmitted.lines[0].discrepancyId -and $_.varianceQuantity -eq -1 -and $_.discrepancyStatus -eq "closed" -and $null -ne $_.correctionEventId }).Count -eq 1 `
         -and $controlledDestruction.event.action -eq "destruction" `
         -and $controlledDestruction.lot.quantityOnHand -eq 5 `
