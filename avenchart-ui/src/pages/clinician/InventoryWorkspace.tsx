@@ -4,9 +4,11 @@ import {
   getInventory,
   getInventoryActivityReport,
   getInventoryLotMetadataHistory,
+  getInventoryReceiptCostLayers,
   type InventoryItem,
   type InventoryLot,
   type InventoryLotMetadataAuditItem,
+  type InventoryReceiptCostLayer,
   type InventoryResponse,
   type InventoryTransactionItem,
 } from '../../api.ts'
@@ -32,6 +34,7 @@ type LotDetailState =
   | {
       status: 'ready'
       metadataHistory: InventoryLotMetadataAuditItem[]
+      costLayers: InventoryReceiptCostLayer[]
       ledger: InventoryTransactionItem[]
       ledgerTotal: number
     }
@@ -121,16 +124,18 @@ export default function InventoryWorkspace() {
     setSelectedLotId(selectedLot.lot.lotId)
     setLotDetail({ status: 'loading' })
     try {
-      const [metadataHistory, report] = await Promise.all([
+      const [metadataHistory, report, costLayers] = await Promise.all([
         getInventoryLotMetadataHistory(
           session.sessionId,
           selectedLot.lot.lotId,
         ),
         getInventoryActivityReport(session.sessionId, {}),
+        getInventoryReceiptCostLayers(session.sessionId, { lotId: selectedLot.lot.lotId }),
       ])
       setLotDetail({
         status: 'ready',
         metadataHistory,
+        costLayers,
         ledger: report.entries.filter(
           (entry) => entry.lotId === selectedLot.lot.lotId,
         ),
@@ -551,6 +556,24 @@ export default function InventoryWorkspace() {
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                    )}
+                  </section>
+
+                  <section aria-labelledby="inventory-receipt-cost-layers">
+                    <h3 className="inventory-detail-heading" id="inventory-receipt-cost-layers">
+                      Receipt cost layers
+                    </h3>
+                    <p className="cl-card-subtitle">
+                      Receipt cost basis is immutable. Pending-policy layers are not accounting valuation and cannot be edited here.
+                    </p>
+                    {lotDetail.costLayers.length === 0 ? (
+                      <p className="cl-empty-text">No receipt cost layers are recorded for this lot.</p>
+                    ) : (
+                      <div className="cl-table-scroll" role="region" aria-label="Receipt cost layers" tabIndex={0}>
+                        <table className="cl-table"><thead><tr><th>Status</th><th>Received / remaining</th><th>Unit cost</th><th>Policy</th><th>Source transaction</th></tr></thead><tbody>
+                          {lotDetail.costLayers.map((layer) => <tr key={layer.layerId}><td>{layer.status}</td><td>{layer.receivedQuantity} / {layer.remainingQuantity}</td><td>{new Intl.NumberFormat('en-US', { style: 'currency', currency: layer.currency }).format(layer.unitCost)}</td><td>{layer.method ? `${layer.method} / revision ${layer.policyRevision}` : 'Policy not selected'}</td><td><code>{layer.sourceTransactionId}</code></td></tr>)}
+                        </tbody></table>
                       </div>
                     )}
                   </section>

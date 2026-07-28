@@ -9,3 +9,4 @@ public sealed record InventoryCostPolicyChangeRequestDetailResponse(InventoryCos
 public sealed record InventoryCostPolicyChangeRequestCreateRequest(InventoryCostPolicyDefinition ProposedDefinition, string Reason);
 public sealed record InventoryCostPolicyChangeRequestDecisionRequest(int? ExpectedVersion, string? Note);
 public sealed class InventoryCostPolicyChangeRequestConflictException(string message) : Exception(message);
+public sealed record InventoryReceiptCostLayer(Guid LayerId, Guid SourceTransactionId, Guid ReceiptId, int LotId, int ItemId, int FacilityId, decimal ReceivedQuantity, decimal RemainingQuantity, decimal UnitCost, string Currency, Guid? PolicyId, int? PolicyRevision, string? Method, string Status, string CreatedAt, string CreatedBy);

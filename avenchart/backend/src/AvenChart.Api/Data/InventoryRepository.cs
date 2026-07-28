@@ -745,6 +745,11 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await insertTransaction.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        if (quantityDelta < 0)
+        {
+            await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, request.LotId, -quantityDelta, normalizedType, username, now, cancellationToken);
+        }
+
         decimal itemQuantity;
         await using (var itemQuantityCommand = connection.CreateCommand())
         {
@@ -1129,7 +1134,6 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             ledgerCommand.Parameters.AddWithValue("recordedAt", recordedAt);
             await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
-
         await using (var auditCommand = connection.CreateCommand())
         {
             auditCommand.Transaction = transaction;
@@ -1465,6 +1469,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await CreateReceiptCostLayerAsync(connection, transaction, transactionId, receiptId, lot.LotId, item.ItemId, facility.FacilityId, request.Quantity, request.UnitCost, username, now, cancellationToken);
+
         var itemQuantity = await GetItemQuantityAsync(connection, transaction, item.ItemId, cancellationToken);
         InventoryPurchaseReceiptReconciliation? reconciliation = null;
         if (requisitionReconciliation is not null)
@@ -1485,6 +1491,18 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             request.Notes.Trim(), username, now, null, null, receiptId, referenceNumber);
         return new InventoryPurchaseReceiptResponse(receiptId, vendor, facility.Code, facility.Name, referenceNumber, now.ToString("O", CultureInfo.InvariantCulture), username,
             request.Notes.Trim(), lot, ledgerEntry, itemQuantity, itemQuantity <= item.ReorderPoint, reconciliation);
+    }
+
+    public async Task<IReadOnlyList<InventoryReceiptCostLayer>> GetReceiptCostLayersAsync(int? lotId, int limit, CancellationToken cancellationToken)
+    {
+        if (lotId is <= 0 || limit is < 1 or > 100) throw new ArgumentException("Lot and limit filters are invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select layer_id,source_transaction_id,receipt_id,lot_id,item_id,facility_id,received_quantity,remaining_quantity,unit_cost,currency,policy_id,policy_revision,method,status,created_at,created_by from inventory_cost_layers where (@lot is null or lot_id=@lot) order by created_at desc,layer_id desc limit @limit;";
+        command.Parameters.AddWithValue("lot", (object?)lotId ?? DBNull.Value); command.Parameters.AddWithValue("limit", limit);
+        var layers = new List<InventoryReceiptCostLayer>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) layers.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetGuid(10), reader.IsDBNull(11) ? null : reader.GetInt32(11), reader.IsDBNull(12) ? null : reader.GetString(12), reader.GetString(13), reader.GetFieldValue<DateTimeOffset>(14).ToString("O", CultureInfo.InvariantCulture), reader.GetString(15)));
+        return layers;
     }
 
     public async Task<InventoryCountReconciliationResponse?> CreateCountReconciliationAsync(
@@ -2072,6 +2090,58 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             || string.IsNullOrWhiteSpace(request.Notes) || request.Notes.Trim().Length > 500 || string.IsNullOrWhiteSpace(username))
         {
             throw new ArgumentException("Vendor, facility, item, lot, positive quantity, unit cost, and receipt notes are required.");
+        }
+    }
+
+    private static async Task CreateReceiptCostLayerAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid receiptId, int lotId, int itemId, int facilityId, decimal quantity, decimal unitCost, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        Guid? policyId = null; int? policyRevision = null; string? method = null; var currency = "USD";
+        await using (var policyCommand = connection.CreateCommand())
+        {
+            policyCommand.Transaction = transaction;
+            policyCommand.CommandText = "select policy_id,revision,method,currency from inventory_cost_policies where status='active' for key share;";
+            await using var reader = await policyCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken)) { policyId = reader.GetGuid(0); policyRevision = reader.GetInt32(1); method = reader.GetString(2); currency = reader.GetString(3); }
+        }
+        await using var insert = connection.CreateCommand(); insert.Transaction = transaction;
+        insert.CommandText = "insert into inventory_cost_layers(layer_id,source_transaction_id,receipt_id,lot_id,item_id,facility_id,received_quantity,remaining_quantity,unit_cost,currency,policy_id,policy_revision,method,status,created_at,created_by) values(@id,@source,@receipt,@lot,@item,@facility,@received,@remaining,@cost,@currency,@policy,@revision,@method,@status,@at,@user);";
+        insert.Parameters.AddWithValue("id", Guid.NewGuid()); insert.Parameters.AddWithValue("source", sourceTransactionId); insert.Parameters.AddWithValue("receipt", receiptId); insert.Parameters.AddWithValue("lot", lotId); insert.Parameters.AddWithValue("item", itemId); insert.Parameters.AddWithValue("facility", facilityId); insert.Parameters.AddWithValue("received", quantity); insert.Parameters.AddWithValue("remaining", quantity); insert.Parameters.AddWithValue("cost", unitCost); insert.Parameters.AddWithValue("currency", currency); insert.Parameters.AddWithValue("policy", (object?)policyId ?? DBNull.Value); insert.Parameters.AddWithValue("revision", (object?)policyRevision ?? DBNull.Value); insert.Parameters.AddWithValue("method", (object?)method ?? DBNull.Value); insert.Parameters.AddWithValue("status", policyId is null ? "pending_policy" : "open"); insert.Parameters.AddWithValue("at", now); insert.Parameters.AddWithValue("user", username);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ApplyReceiptCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, decimal quantity, string transactionType, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var applicationType = transactionType is "consumption" or "destruction" ? "issue" : transactionType;
+        if (applicationType is not ("issue" or "return")) return;
+        var layers = new List<(Guid Id, decimal Remaining, decimal UnitCost, string Method)>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "select layer_id,remaining_quantity,unit_cost,method from inventory_cost_layers where lot_id=@lot and status='open' and remaining_quantity>0 order by created_at,layer_id for update;";
+            select.Parameters.AddWithValue("lot", lotId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) layers.Add((reader.GetGuid(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetString(3)));
+        }
+        if (layers.Count == 0 || layers.Any(layer => layer.Method == "practice_specific")) return;
+        var remaining = quantity;
+        foreach (var layer in layers)
+        {
+            if (remaining <= 0) break;
+            var applied = Math.Min(remaining, layer.Remaining);
+            var resulting = layer.Remaining - applied;
+            await using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction; update.CommandText = "update inventory_cost_layers set remaining_quantity=@remaining,status=@status where layer_id=@id;";
+                update.Parameters.AddWithValue("remaining", resulting); update.Parameters.AddWithValue("status", resulting == 0 ? "exhausted" : "open"); update.Parameters.AddWithValue("id", layer.Id);
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await using (var insert = connection.CreateCommand())
+            {
+                insert.Transaction = transaction; insert.CommandText = "insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,applied_at,applied_by) values(@id,@layer,@source,@type,@quantity,@unitCost,@extended,'decimal(12,4) unit-cost multiplication',@at,@user);";
+                insert.Parameters.AddWithValue("id", Guid.NewGuid()); insert.Parameters.AddWithValue("layer", layer.Id); insert.Parameters.AddWithValue("source", sourceTransactionId); insert.Parameters.AddWithValue("type", applicationType); insert.Parameters.AddWithValue("quantity", -applied); insert.Parameters.AddWithValue("unitCost", layer.UnitCost); insert.Parameters.AddWithValue("extended", -decimal.Round(applied * layer.UnitCost, 4, MidpointRounding.ToEven)); insert.Parameters.AddWithValue("at", now); insert.Parameters.AddWithValue("user", username);
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+            remaining -= applied;
         }
     }
 

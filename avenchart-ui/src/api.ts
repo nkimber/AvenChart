@@ -2792,6 +2792,33 @@ export async function transitionInventoryCostPolicyChangeRequest(
     input,
   )
 }
+export type InventoryReceiptCostLayer = {
+  layerId: string
+  sourceTransactionId: string
+  receiptId: string
+  lotId: number
+  itemId: number
+  facilityId: number
+  receivedQuantity: number
+  remainingQuantity: number
+  unitCost: number
+  currency: string
+  policyId: string | null
+  policyRevision: number | null
+  method: string | null
+  status: 'open' | 'pending_policy' | 'exhausted' | 'corrected'
+  createdAt: string
+  createdBy: string
+}
+export async function getInventoryReceiptCostLayers(
+  sessionId: string,
+  input: { lotId?: number; limit?: number } = {},
+): Promise<InventoryReceiptCostLayer[]> {
+  const query = new URLSearchParams()
+  if (input.lotId) query.set('lotId', String(input.lotId))
+  if (input.limit) query.set('limit', String(input.limit))
+  return clinicianGet(sessionId, `/api/inventory/receipt-cost-layers?${query}`)
+}
 export type InventoryItem = {
   itemId: number
   itemCode: string
