@@ -42,6 +42,7 @@ import {
   getPatientAdministrationHistory,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
+  getPatientDocumentReviewHistory,
   getPatientDocumentVersionHistory,
   getPatientPortalAppointments,
   getPatientPortalHome,
@@ -59,6 +60,7 @@ import {
   reopenLabReportReview,
   replacePatientDocumentBinaryContent,
   replacePatientDocumentContent,
+  reviewPatientDocument,
   refillPrescription,
   replyToPatientMessage,
   routePrescriptionToPharmacy,
@@ -458,6 +460,67 @@ describe('authenticated API transport', () => {
         content: 'Corrected clinical content.',
         reason: 'Correct transcription.',
         expectedVersion: 1,
+      }),
+    })
+  })
+
+  it('uses authenticated stale-safe patient document review contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: 'legacy-ehr-shared-synthetic-v1',
+          datasetVersion: 'v1',
+          documentId: 91,
+          documentKey: 'DOC-91',
+          patientId: 'PAT-0001',
+          legacyPid: 1,
+          name: 'Care note',
+          currentStatus: 'pending',
+          currentReviewer: null,
+          currentReviewedAt: null,
+          eventCount: 0,
+          returnedCount: 0,
+          resultLimit: 100,
+          events: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 91,
+          detail: {
+            datasetId: 'legacy-ehr-shared-synthetic-v1',
+            datasetVersion: 'v1',
+            patientId: 'PAT-0001',
+            documents: [],
+          },
+        }),
+      )
+
+    const history = await getPatientDocumentReviewHistory(
+      'staff-session',
+      91,
+    )
+    await reviewPatientDocument('staff-session', 91, {
+      reviewStatus: 'denied',
+      reason: 'The source is incomplete.',
+      expectedReviewStatus: 'pending',
+    })
+
+    expect(history.currentStatus).toBe('pending')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/documents/91/review-history',
+      'http://localhost:5001/api/documents/91/sign',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        reviewStatus: 'denied',
+        reason: 'The source is incomplete.',
+        expectedReviewStatus: 'pending',
       }),
     })
   })

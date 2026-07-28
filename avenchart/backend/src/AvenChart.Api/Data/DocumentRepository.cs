@@ -12,6 +12,14 @@ public sealed class DocumentVersionConflictException(int currentVersion)
     public int CurrentVersion { get; } = currentVersion;
 }
 
+public sealed class DocumentReviewConflictException(
+    string currentStatus,
+    string message)
+    : Exception(message)
+{
+    public string CurrentStatus { get; } = currentStatus;
+}
+
 public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 {
     private const int MaxInlineThumbnailBytes = 262_144;
@@ -1879,44 +1887,290 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientDocumentMutationResponse(documentId, detail);
     }
 
-    public async Task<PatientDocumentMutationResponse?> SignAsync(
+    public async Task<PatientDocumentReviewHistoryResponse?> GetReviewHistoryAsync(
         int documentId,
-        PatientDocumentSignRequest request,
         CancellationToken cancellationToken)
     {
-        if (documentId <= 0 || string.IsNullOrWhiteSpace(request.ReviewStatus) || string.IsNullOrWhiteSpace(request.ReviewedBy))
+        if (documentId <= 0)
         {
             return null;
         }
 
-        var reviewStatus = NormalizeReviewStatus(request.ReviewStatus);
-        if (reviewStatus is null)
-        {
-            return null;
-        }
+        const int resultLimit = 100;
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsureDocumentVersionTableAsync(connection, cancellationToken);
 
-        string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        string documentKey;
+        string patientId;
+        int legacyPid;
+        string name;
+        string currentStatus;
+        string? currentReviewer;
+        string? currentReviewedAt;
+        int eventCount;
+
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                update patient_documents
-                set review_status = @reviewStatus,
-                    reviewed_by = @reviewedBy,
-                    reviewed_at = @reviewedAt
-                where id = @id and deleted = 0
-                returning patient_id;
+                select
+                  document_key,
+                  patient_id,
+                  pid,
+                  name,
+                  coalesce(review_status, 'pending') as review_status,
+                  reviewed_by,
+                  reviewed_at,
+                  (select count(*)
+                     from patient_document_review_events e
+                    where e.document_id = patient_documents.id) as event_count
+                from patient_documents
+                where id = @documentId
+                  and deleted = 0
+                limit 1;
                 """;
-            command.Parameters.AddWithValue("id", documentId);
-            command.Parameters.AddWithValue("reviewStatus", reviewStatus);
-            command.Parameters.AddWithValue("reviewedBy", request.ReviewedBy.Trim());
-            command.Parameters.AddWithValue("reviewedAt", DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified));
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            command.Parameters.AddWithValue("documentId", documentId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+            patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+            name = reader.GetString(reader.GetOrdinal("name"));
+            currentStatus = reader.GetString(reader.GetOrdinal("review_status"));
+            currentReviewer = ReadNullableString(reader, "reviewed_by");
+            currentReviewedAt = ReadNullableDateTimeString(reader, "reviewed_at");
+            eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
         }
 
-        if (patientId is null)
+        var events = new List<PatientDocumentReviewEvent>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                  event_id,
+                  from_status,
+                  to_status,
+                  reason,
+                  actor,
+                  occurred_at,
+                  document_version,
+                  content_hash
+                from patient_document_review_events
+                where document_id = @documentId
+                order by occurred_at desc, event_id desc
+                limit @resultLimit;
+                """;
+            command.Parameters.AddWithValue("documentId", documentId);
+            command.Parameters.AddWithValue("resultLimit", resultLimit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var toStatus = reader.GetString(reader.GetOrdinal("to_status"));
+                events.Add(new PatientDocumentReviewEvent(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    FromStatus: reader.GetString(reader.GetOrdinal("from_status")),
+                    ToStatus: toStatus,
+                    Action: toStatus switch
+                    {
+                        "approved" => "Approved",
+                        "denied" => "Denied",
+                        _ => "Reopened"
+                    },
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetDateTime(reader.GetOrdinal("occurred_at")).ToString("yyyy-MM-dd HH:mm:ss"),
+                    DocumentVersion: reader.GetInt32(reader.GetOrdinal("document_version")),
+                    ContentHash: ReadNullableString(reader, "content_hash")));
+            }
+        }
+
+        return new PatientDocumentReviewHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            DocumentId: documentId,
+            DocumentKey: documentKey,
+            PatientId: patientId,
+            LegacyPid: legacyPid,
+            Name: name,
+            CurrentStatus: currentStatus,
+            CurrentReviewer: currentReviewer,
+            CurrentReviewedAt: currentReviewedAt,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: resultLimit,
+            Events: events);
+    }
+
+    public async Task<PatientDocumentMutationResponse?> SignAsync(
+        int documentId,
+        PatientDocumentSignRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (documentId <= 0)
         {
             return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            throw new ArgumentException("An authenticated review actor is required.");
+        }
+
+        var reviewStatus = NormalizeReviewStatus(request.ReviewStatus)
+            ?? throw new ArgumentException("Review status must be pending, approved, or denied.");
+        var expectedStatus = NormalizeText(request.ExpectedReviewStatus) is { } rawExpectedStatus
+            ? NormalizeReviewStatus(rawExpectedStatus)
+                ?? throw new ArgumentException("Expected review status must be pending, approved, or denied.")
+            : null;
+        var reason = NormalizeText(request.Reason);
+        if (reason?.Length > 250)
+        {
+            throw new ArgumentException("Review reason must be 250 characters or fewer.");
+        }
+        if ((reviewStatus is "denied" or "pending") &&
+            reason is null &&
+            expectedStatus is not null)
+        {
+            throw new ArgumentException(
+                reviewStatus == "denied"
+                    ? "A denial reason is required."
+                    : "A reopen reason is required.");
+        }
+
+        reason ??= reviewStatus switch
+        {
+            "approved" => "Document approved.",
+            "denied" => "Document denied.",
+            _ => "Document review reopened."
+        };
+
+        string? patientId = null;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            await EnsureDocumentVersionTableAsync(connection, cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            string documentKey;
+            int legacyPid;
+            string currentStatus;
+            int documentVersion;
+            string? contentHash;
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    select
+                      document_key,
+                      patient_id,
+                      pid,
+                      coalesce(review_status, 'pending') as review_status,
+                      (select count(*) from patient_document_versions v where v.document_id = patient_documents.id) + 1 as document_version,
+                      hash
+                    from patient_documents
+                    where id = @id
+                      and deleted = 0
+                    for update;
+                    """;
+                command.Parameters.AddWithValue("id", documentId);
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return null;
+                }
+
+                documentKey = reader.GetString(reader.GetOrdinal("document_key"));
+                patientId = reader.GetString(reader.GetOrdinal("patient_id"));
+                legacyPid = reader.GetInt32(reader.GetOrdinal("pid"));
+                currentStatus = reader.GetString(reader.GetOrdinal("review_status"));
+                documentVersion = reader.GetInt32(reader.GetOrdinal("document_version"));
+                contentHash = ReadNullableString(reader, "hash");
+            }
+
+            if (expectedStatus is not null && currentStatus != expectedStatus)
+            {
+                throw new DocumentReviewConflictException(
+                    currentStatus,
+                    $"The document review changed from {expectedStatus} to {currentStatus}. Reload review history before acting.");
+            }
+
+            var transitionAllowed =
+                currentStatus == "pending" && reviewStatus is "approved" or "denied" ||
+                currentStatus is "approved" or "denied" && reviewStatus == "pending";
+            if (!transitionAllowed)
+            {
+                throw new DocumentReviewConflictException(
+                    currentStatus,
+                    $"A document in {currentStatus} review state cannot transition to {reviewStatus}.");
+            }
+
+            var occurredAt = DateTimeOffset.UtcNow;
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    update patient_documents
+                    set review_status = @reviewStatus,
+                        reviewed_by = @reviewedBy,
+                        reviewed_at = @reviewedAt
+                    where id = @id;
+
+                    insert into patient_document_review_events (
+                      event_id,
+                      document_id,
+                      document_key,
+                      patient_id,
+                      legacy_pid,
+                      from_status,
+                      to_status,
+                      reason,
+                      actor,
+                      occurred_at,
+                      document_version,
+                      content_hash
+                    )
+                    values (
+                      @eventId,
+                      @id,
+                      @documentKey,
+                      @patientId,
+                      @legacyPid,
+                      @fromStatus,
+                      @reviewStatus,
+                      @reason,
+                      @reviewedBy,
+                      @occurredAt,
+                      @documentVersion,
+                      @contentHash
+                    );
+                    """;
+                command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+                command.Parameters.AddWithValue("id", documentId);
+                command.Parameters.AddWithValue("documentKey", documentKey);
+                command.Parameters.AddWithValue("patientId", patientId);
+                command.Parameters.AddWithValue("legacyPid", legacyPid);
+                command.Parameters.AddWithValue("fromStatus", currentStatus);
+                command.Parameters.AddWithValue("reviewStatus", reviewStatus);
+                command.Parameters.AddWithValue("reason", reason);
+                command.Parameters.AddWithValue("reviewedBy", actor.Trim());
+                command.Parameters.AddWithValue("reviewedAt", occurredAt.UtcDateTime);
+                command.Parameters.AddWithValue("occurredAt", occurredAt);
+                command.Parameters.AddWithValue("documentVersion", documentVersion);
+                command.Parameters.Add("contentHash", NpgsqlTypes.NpgsqlDbType.Text).Value =
+                    contentHash is null ? DBNull.Value : contentHash;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
@@ -2341,6 +2595,27 @@ public sealed class DocumentRepository(NpgsqlDataSource dataSource)
 
                 create index if not exists ix_patient_document_content_events_patient_time
                   on patient_document_content_events (patient_id, occurred_at desc, event_id desc);
+
+                create table if not exists patient_document_review_events (
+                  event_id uuid primary key,
+                  document_id integer not null references patient_documents(id) on delete cascade,
+                  document_key text not null,
+                  patient_id text not null,
+                  legacy_pid integer not null,
+                  from_status varchar(20) not null,
+                  to_status varchar(20) not null,
+                  reason varchar(250) not null,
+                  actor text not null,
+                  occurred_at timestamptz not null default now(),
+                  document_version integer not null,
+                  content_hash text
+                );
+
+                create index if not exists ix_patient_document_review_events_document_time
+                  on patient_document_review_events (document_id, occurred_at desc, event_id desc);
+
+                create index if not exists ix_patient_document_review_events_patient_time
+                  on patient_document_review_events (patient_id, occurred_at desc, event_id desc);
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }

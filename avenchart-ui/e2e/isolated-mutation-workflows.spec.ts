@@ -999,6 +999,9 @@ test.describe("isolated mutation workflows", () => {
     const replacementNoteFileName = `${marker}-NOTE-V2.txt`;
     const contentReason = `Correct document content ${marker}`;
     const binaryReason = `Replace source PDF ${marker}`;
+    const approvalReason = `Approve verified content ${marker}`;
+    const reopenReason = `Reopen for source review ${marker}`;
+    const denialReason = `Deny incomplete source ${marker}`;
     const originalPdfBytes = Buffer.from(
       "%PDF-1.4\n% Modern UI document proof\n",
     );
@@ -1370,6 +1373,144 @@ test.describe("isolated mutation workflows", () => {
         .last()
         .click();
 
+      await refiledNoteCard
+        .getByRole("button", { name: "Review document" })
+        .click();
+      await expect(
+        refiledNoteCard.getByRole("heading", { name: "Review lifecycle" }),
+      ).toBeVisible();
+      await expect(
+        refiledNoteCard.getByRole("button", {
+          name: "Approve",
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await refiledNoteCard
+        .getByLabel("Approval rationale *")
+        .fill(approvalReason);
+      await refiledNoteCard
+        .getByRole("button", { name: "Approve document" })
+        .click();
+      await expect(refiledNoteCard.getByText(approvalReason)).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        refiledNoteCard
+          .locator(".patient-document-review-history")
+          .getByText("Approved", { exact: true }),
+      ).toBeVisible();
+      await expect(refiledNoteCard).toContainText("admin");
+      await expect(refiledNoteCard).toContainText("Version 2");
+
+      const staleDenial = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/sign`,
+        {
+          headers,
+          data: {
+            reviewStatus: "denied",
+            reason: `Stale denial ${marker}`,
+            expectedReviewStatus: "pending",
+          },
+        },
+      );
+      expect(staleDenial.status()).toBe(409);
+      await expect(staleDenial.json()).resolves.toMatchObject({
+        currentStatus: "approved",
+      });
+
+      await refiledNoteCard
+        .getByRole("button", { name: "Reopen review" })
+        .click();
+      await refiledNoteCard.getByLabel("Reopen reason *").fill(reopenReason);
+      await refiledNoteCard
+        .getByRole("button", { name: "Reopen review" })
+        .last()
+        .click();
+      await expect(refiledNoteCard.getByText(reopenReason)).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        refiledNoteCard
+          .locator(".patient-document-review-history")
+          .getByText("Reopened", { exact: true }),
+      ).toBeVisible();
+
+      await refiledNoteCard
+        .getByRole("button", { name: "Review document" })
+        .click();
+      await refiledNoteCard.getByRole("button", { name: "Deny" }).click();
+      await refiledNoteCard.getByLabel("Denial reason *").fill(denialReason);
+      await refiledNoteCard
+        .getByRole("button", { name: "Deny document" })
+        .click();
+      await expect(refiledNoteCard.getByText(denialReason)).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        refiledNoteCard
+          .locator(".patient-document-review-history")
+          .getByText("Denied", { exact: true }),
+      ).toBeVisible();
+      await expect(refiledNoteCard).toContainText("3 events");
+
+      const terminalApproval = await page.request.put(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/sign`,
+        {
+          headers,
+          data: {
+            reviewStatus: "approved",
+            reason: `Invalid terminal approval ${marker}`,
+            expectedReviewStatus: "denied",
+          },
+        },
+      );
+      expect(terminalApproval.status()).toBe(409);
+      await expect(terminalApproval.json()).resolves.toMatchObject({
+        currentStatus: "denied",
+      });
+
+      const reviewHistoryResponse = await page.request.get(
+        `${apiBaseUrl}/api/documents/${noteBeforeUpdate!.id}/review-history`,
+        { headers },
+      );
+      expect(reviewHistoryResponse.ok()).toBeTruthy();
+      await expect(reviewHistoryResponse.json()).resolves.toMatchObject({
+        currentStatus: "denied",
+        currentReviewer: "admin",
+        eventCount: 3,
+        returnedCount: 3,
+        resultLimit: 100,
+        events: [
+          {
+            fromStatus: "pending",
+            toStatus: "denied",
+            action: "Denied",
+            reason: denialReason,
+            actor: "admin",
+            documentVersion: 2,
+            contentHash: expect.any(String),
+          },
+          {
+            fromStatus: "approved",
+            toStatus: "pending",
+            action: "Reopened",
+            reason: reopenReason,
+            actor: "admin",
+            documentVersion: 2,
+            contentHash: expect.any(String),
+          },
+          {
+            fromStatus: "pending",
+            toStatus: "approved",
+            action: "Approved",
+            reason: approvalReason,
+            actor: "admin",
+            documentVersion: 2,
+            contentHash: expect.any(String),
+          },
+        ],
+      });
+
       await page.getByRole("button", { name: "Add document" }).click();
       await page
         .getByRole("button", { name: /Upload file Up to/ })
@@ -1641,6 +1782,7 @@ test.describe("isolated mutation workflows", () => {
           `select
             (select count(*) from patient_document_metadata_events where reason like '%${marker}%')
             + (select count(*) from patient_document_content_events where reason like '%${marker}%')
+            + (select count(*) from patient_document_review_events where reason like '%${marker}%')
             + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");

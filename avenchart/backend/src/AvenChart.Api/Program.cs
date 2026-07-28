@@ -2153,6 +2153,8 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/restore", async (
 encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
         EncounterRepository encounterRepository,
         DocumentRepository documentRepository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int encounter,
         int documentId,
         PatientDocumentSignRequest request,
@@ -2169,16 +2171,36 @@ encounters.MapPut("/{encounter:int}/documents/{documentId:int}/sign", async (
             return Results.NotFound();
         }
 
-        var mutation = await documentRepository.SignAsync(documentId, request, cancellationToken);
-        if (mutation is null)
+        try
         {
-            return Results.BadRequest("Encounter document could not be signed from the supplied review details.");
-        }
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await documentRepository.SignAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            if (mutation is null)
+            {
+                return Results.BadRequest("Encounter document review state could not be changed.");
+            }
 
-        var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
-        return refreshed is null
-            ? Results.NotFound()
-            : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+            var refreshed = await encounterRepository.GetByEncounterAsync(encounter, cancellationToken);
+            return refreshed is null
+                ? Results.NotFound()
+                : Results.Ok(new EncounterDocumentMutationResponse(documentId, refreshed));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentReviewConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
     })
     .WithName("SignEncounterDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));
@@ -2890,6 +2912,16 @@ documents.MapGet("/{documentId:int}/versions", async (
     })
     .WithName("GetPatientDocumentVersionHistory");
 
+documents.MapGet("/{documentId:int}/review-history", async (
+        DocumentRepository repository,
+        int documentId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetReviewHistoryAsync(documentId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDocumentReviewHistory");
+
 documents.MapGet("/{documentId:int}/versions/{version:int}/content", async (
         DocumentRepository repository,
         int documentId,
@@ -3115,12 +3147,34 @@ documents.MapPut("/{documentId:int}/restore", async (
 
 documents.MapPut("/{documentId:int}/sign", async (
         DocumentRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int documentId,
         PatientDocumentSignRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.SignAsync(documentId, request, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.SignAsync(
+                documentId,
+                request,
+                session.Username,
+                cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+        catch (DocumentReviewConflictException conflict)
+        {
+            return Results.Conflict(new
+            {
+                error = conflict.Message,
+                currentStatus = conflict.CurrentStatus
+            });
+        }
     })
     .WithName("SignPatientDocument")
     .AddEndpointFilter(AccessPermissionFilter("patients", "docs", "write"));

@@ -8676,6 +8676,7 @@ h4 {
 .patient-document-metadata-edit,
 .patient-document-metadata-history,
 .patient-document-content-replace,
+.patient-document-review,
 .patient-document-inline-preview,
 .patient-document-version-history {
   grid-column: 2 / -1;
@@ -8701,6 +8702,154 @@ h4 {
   gap: 12px;
   border-top: 3px solid var(--info);
   background: #f7fbff;
+}
+.patient-document-review {
+  display: grid;
+  gap: 14px;
+  border-top: 3px solid var(--success);
+  background: #f8fcfa;
+}
+.patient-document-review-form {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #cfe4d9;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-review-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.patient-document-review-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: #4f5968;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.patient-document-review-actions button.is-selected {
+  border-color: #90c5a9;
+  background: #edf8f2;
+  color: #16633c;
+  box-shadow: inset 0 0 0 1px #90c5a9;
+}
+.patient-document-review-actions button.is-selected.is-denial {
+  border-color: #e3a7a7;
+  background: #fff4f4;
+  color: #9a2929;
+  box-shadow: inset 0 0 0 1px #e3a7a7;
+}
+.patient-document-review-actions button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.patient-document-review-reopen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--warning-surface);
+  color: var(--warning);
+}
+.patient-document-review-reopen > div {
+  display: grid;
+  gap: 2px;
+}
+.patient-document-review-reopen strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.patient-document-review-reopen span {
+  color: #4f5968;
+  font-size: 10px;
+}
+.patient-document-review-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+}
+.patient-document-review-history-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.patient-document-review-history-heading span {
+  color: #4f5968;
+  font-size: 10px;
+}
+.patient-document-review-history {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.patient-document-review-history > li {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d6e5dd;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.patient-document-review-history > li > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.patient-document-review-history > li > div strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.patient-document-review-history > li > div span {
+  color: #4f5968;
+  font-size: 10px;
+  text-transform: capitalize;
+}
+.patient-document-review-history p {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.patient-document-review-history dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.patient-document-review-history dl div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.patient-document-review-history dt {
+  color: #4f5968;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.patient-document-review-history dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
 }
 .patient-document-preview-heading {
   display: flex;
@@ -9121,6 +9270,7 @@ h4 {
   .patient-document-metadata-edit,
   .patient-document-metadata-history,
   .patient-document-content-replace,
+  .patient-document-review,
   .patient-document-inline-preview,
   .patient-document-version-history {
     grid-column: 1 / -1;
@@ -9176,6 +9326,8 @@ h4 {
   }
   .patient-document-metadata-grid,
   .patient-document-replacement-modes,
+  .patient-document-review-actions,
+  .patient-document-review-history dl,
   .patient-document-preview-facts,
   .patient-document-version-facts,
   .patient-document-history-changes > div,
@@ -9194,12 +9346,15 @@ h4 {
   .patient-document-metadata-edit,
   .patient-document-metadata-history,
   .patient-document-content-replace,
+  .patient-document-review,
   .patient-document-inline-preview,
   .patient-document-version-history,
   .patient-document-preview-facts div,
   .patient-document-text-preview,
   .patient-document-image-preview,
   .patient-document-pdf-preview,
+  .patient-document-review-form,
+  .patient-document-review-history > li,
   .patient-document-file-drop {
     border-color: CanvasText;
   }

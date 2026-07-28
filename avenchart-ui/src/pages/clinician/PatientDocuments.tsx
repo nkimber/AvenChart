@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
+  Ban,
+  CheckCircle2,
   Download,
   ExternalLink,
   FileText,
@@ -13,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   StickyNote,
   X,
@@ -25,18 +28,21 @@ import {
   downloadPatientDocumentVersion,
   getPatientDocumentCategoryOptions,
   getPatientDocumentMetadataHistory,
+  getPatientDocumentReviewHistory,
   getPatientDocumentVersionHistory,
   getPatientDocuments,
   isRequestCancellation,
   searchEncounters,
   replacePatientDocumentBinaryContent,
   replacePatientDocumentContent,
+  reviewPatientDocument,
   updatePatientDocumentMetadata,
   type EncounterListItem,
   type PatientDocumentCategoryOptionsResponse,
   type PatientDocumentItem,
   type PatientDocumentMetadataHistoryItem,
   type PatientDocumentMetadataHistoryResponse,
+  type PatientDocumentReviewHistoryResponse,
   type PatientDocumentVersionHistoryResponse,
   type PatientDocumentsResponse,
 } from '../../api.ts'
@@ -94,7 +100,17 @@ type DocumentVersionState =
     }
   | { documentId: number; status: 'error'; message: string }
 
+type DocumentReviewState =
+  | { documentId: number; status: 'loading' }
+  | {
+      documentId: number
+      status: 'ready'
+      data: PatientDocumentReviewHistoryResponse
+    }
+  | { documentId: number; status: 'error'; message: string }
+
 type SupportedPreviewKind = 'text' | 'pdf' | 'image'
+type ReviewAction = 'approved' | 'denied' | 'pending'
 
 type DocumentPreviewState =
   | { documentId: number; status: 'loading' }
@@ -311,6 +327,18 @@ export default function PatientDocuments() {
     useState<DocumentHistoryState | null>(null)
   const [versionState, setVersionState] =
     useState<DocumentVersionState | null>(null)
+  const [reviewState, setReviewState] =
+    useState<DocumentReviewState | null>(null)
+  const [reviewingDocumentId, setReviewingDocumentId] = useState<number | null>(
+    null,
+  )
+  const [reviewAction, setReviewAction] =
+    useState<ReviewAction>('approved')
+  const [reviewReason, setReviewReason] = useState('')
+  const [reviewMutationStatus, setReviewMutationStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [reviewMutationError, setReviewMutationError] = useState('')
   const [previewState, setPreviewState] =
     useState<DocumentPreviewState | null>(null)
   const previewAbortRef = useRef<AbortController | null>(null)
@@ -341,6 +369,11 @@ export default function PatientDocuments() {
         previewObjectUrlRef.current = null
       }
       setPreviewState(null)
+      setReviewState(null)
+      setReviewingDocumentId(null)
+      setReviewReason('')
+      setReviewMutationStatus('idle')
+      setReviewMutationError('')
       setState({ status: 'loading' })
       try {
         const [documents, options, encounters] = await Promise.all([
@@ -410,6 +443,12 @@ export default function PatientDocuments() {
     setMetadataError('')
     setHistoryState(null)
     setVersionState(null)
+    setReviewState(null)
+    setReviewingDocumentId(null)
+    setReviewAction('approved')
+    setReviewReason('')
+    setReviewMutationStatus('idle')
+    setReviewMutationError('')
     setPreviewState(null)
     setReplacingDocumentId(null)
     setReplacementDraft(null)
@@ -417,6 +456,19 @@ export default function PatientDocuments() {
     setReplacementStatus('idle')
     setReplacementError('')
   }, [patientId])
+
+  useEffect(() => {
+    if (
+      reviewState?.status === 'ready' &&
+      reviewState.documentId === reviewingDocumentId
+    ) {
+      setReviewAction(
+        reviewState.data.currentStatus.toLowerCase() === 'pending'
+          ? 'approved'
+          : 'pending',
+      )
+    }
+  }, [reviewState, reviewingDocumentId])
 
   function setDraftField<K extends keyof IntakeDraft>(
     field: K,
@@ -564,6 +616,7 @@ export default function PatientDocuments() {
     }
     closeContentReplacement()
     closeDocumentPreview()
+    closeReviewWorkflow()
     setVersionState(null)
     setEditingDocumentId(item.id)
     setMetadataDraft(metadataDraftFor(item))
@@ -625,6 +678,7 @@ export default function PatientDocuments() {
       return
     }
     closeDocumentPreview()
+    closeReviewWorkflow()
     setVersionState(null)
     void fetchMetadataHistory(documentId)
   }
@@ -710,6 +764,7 @@ export default function PatientDocuments() {
       return
     }
     closeDocumentPreview()
+    closeReviewWorkflow()
     setHistoryState(null)
     void fetchVersionHistory(documentId)
   }
@@ -734,6 +789,7 @@ export default function PatientDocuments() {
     setMetadataError('')
     setHistoryState(null)
     closeDocumentPreview()
+    closeReviewWorkflow()
     setReplacingDocumentId(item.id)
     setReplacementMode(item.mimetype === 'text/plain' ? 'text' : 'file')
     setReplacementDraft({
@@ -950,6 +1006,153 @@ export default function PatientDocuments() {
     }
   }
 
+  async function fetchReviewHistory(documentId: number) {
+    setReviewState({ documentId, status: 'loading' })
+    try {
+      const history = await getPatientDocumentReviewHistory(
+        session.sessionId,
+        documentId,
+      )
+      setReviewState({ documentId, status: 'ready', data: history })
+      return history
+    } catch (error) {
+      setReviewState({
+        documentId,
+        status: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Document review history could not be loaded.',
+      })
+      return null
+    }
+  }
+
+  function closeReviewWorkflow() {
+    setReviewState(null)
+    setReviewingDocumentId(null)
+    setReviewAction('approved')
+    setReviewReason('')
+    setReviewMutationStatus('idle')
+    setReviewMutationError('')
+  }
+
+  function toggleReviewHistory(documentId: number) {
+    if (
+      reviewState?.documentId === documentId &&
+      reviewingDocumentId !== documentId
+    ) {
+      closeReviewWorkflow()
+      return
+    }
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setHistoryState(null)
+    setVersionState(null)
+    closeContentReplacement()
+    closeDocumentPreview()
+    setReviewingDocumentId(null)
+    setReviewReason('')
+    setReviewMutationStatus('idle')
+    setReviewMutationError('')
+    void fetchReviewHistory(documentId)
+  }
+
+  function beginDocumentReview(item: PatientDocumentItem) {
+    if (reviewingDocumentId === item.id) {
+      closeReviewWorkflow()
+      return
+    }
+    setEditingDocumentId(null)
+    setMetadataDraft(null)
+    setHistoryState(null)
+    setVersionState(null)
+    closeContentReplacement()
+    closeDocumentPreview()
+    setReviewingDocumentId(item.id)
+    setReviewAction(
+      item.reviewStatus.toLowerCase() === 'pending' ? 'approved' : 'pending',
+    )
+    setReviewReason('')
+    setReviewMutationStatus('idle')
+    setReviewMutationError('')
+    void fetchReviewHistory(item.id)
+  }
+
+  async function handleDocumentReview(
+    event: React.FormEvent<HTMLFormElement>,
+    item: PatientDocumentItem,
+  ) {
+    event.preventDefault()
+    if (
+      reviewState?.documentId !== item.id ||
+      reviewState.status !== 'ready'
+    ) {
+      setReviewMutationStatus('error')
+      setReviewMutationError(
+        'Load the authoritative review state before recording this action.',
+      )
+      return
+    }
+    if (!reviewReason.trim()) {
+      setReviewMutationStatus('error')
+      setReviewMutationError('Explain this review decision.')
+      return
+    }
+
+    const currentStatus = reviewState.data.currentStatus.toLowerCase()
+    if (!['pending', 'approved', 'denied'].includes(currentStatus)) {
+      setReviewMutationStatus('error')
+      setReviewMutationError(
+        `The current ${reviewState.data.currentStatus} state is not supported.`,
+      )
+      return
+    }
+
+    setReviewMutationStatus('saving')
+    setReviewMutationError('')
+    try {
+      const result = await reviewPatientDocument(
+        session.sessionId,
+        item.id,
+        {
+          reviewStatus: reviewAction,
+          reason: reviewReason.trim(),
+          expectedReviewStatus: currentStatus as ReviewAction,
+        },
+      )
+      setState((current) =>
+        current.status === 'ready'
+          ? {
+              status: 'ready',
+              data: { ...current.data, documents: result.detail },
+            }
+          : current,
+      )
+      setRecentDocumentId(result.id)
+      setReviewingDocumentId(null)
+      setReviewReason('')
+      setReviewMutationStatus('idle')
+      showToast(
+        reviewAction === 'approved'
+          ? 'Document approved.'
+          : reviewAction === 'denied'
+            ? 'Document denied.'
+            : 'Document review reopened.',
+        'success',
+      )
+      await fetchReviewHistory(item.id)
+    } catch (error) {
+      setReviewMutationStatus('error')
+      setReviewMutationError(
+        error instanceof Error
+          ? error.message
+          : 'The document review action could not be recorded.',
+      )
+      await fetchReviewHistory(item.id)
+    }
+  }
+
   function closeDocumentPreview() {
     previewAbortRef.current?.abort()
     previewAbortRef.current = null
@@ -979,6 +1182,7 @@ export default function PatientDocuments() {
     setMetadataError('')
     setHistoryState(null)
     setVersionState(null)
+    closeReviewWorkflow()
     closeContentReplacement()
 
     const controller = new AbortController()
@@ -1483,6 +1687,14 @@ export default function PatientDocuments() {
                       Filing note: {item.notes}
                     </p>
                   )}
+                  {item.reviewedBy && (
+                    <p className="patient-document-register-note">
+                      Last review action: {item.reviewedBy}
+                      {item.reviewedAt
+                        ? ` · ${formatVersionTime(item.reviewedAt)}`
+                        : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="patient-document-register-actions">
                   <button
@@ -1550,6 +1762,37 @@ export default function PatientDocuments() {
                       Open link
                     </a>
                   )}
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => beginDocumentReview(item)}
+                    aria-expanded={reviewingDocumentId === item.id}
+                    aria-controls={`document-review-${item.id}`}
+                  >
+                    {item.reviewStatus.toLowerCase() === 'pending' ? (
+                      <CheckCircle2 size={14} />
+                    ) : (
+                      <RotateCcw size={14} />
+                    )}
+                    {reviewingDocumentId === item.id
+                      ? 'Close review'
+                      : item.reviewStatus.toLowerCase() === 'pending'
+                        ? 'Review document'
+                        : 'Reopen review'}
+                  </button>
+                  <button
+                    className="cl-btn-secondary"
+                    type="button"
+                    onClick={() => toggleReviewHistory(item.id)}
+                    aria-expanded={
+                      reviewState?.documentId === item.id &&
+                      reviewingDocumentId !== item.id
+                    }
+                    aria-controls={`document-review-${item.id}`}
+                  >
+                    <History size={14} />
+                    Review history
+                  </button>
                   {supportedPreviewKind(item) && (
                     <button
                       className="cl-btn-secondary"
@@ -1946,6 +2189,254 @@ export default function PatientDocuments() {
                       </button>
                     </div>
                   </form>
+                )}
+                {reviewState?.documentId === item.id && (
+                  <section
+                    className="patient-document-review"
+                    id={`document-review-${item.id}`}
+                    aria-label={`Review lifecycle for ${item.name}`}
+                  >
+                    {reviewState.status === 'loading' && (
+                      <div
+                        className="patient-document-panel-loading"
+                        role="status"
+                      >
+                        <span className="spinner" aria-hidden="true" />
+                        Loading authoritative review state…
+                      </div>
+                    )}
+                    {reviewState.status === 'error' && (
+                      <div className="cl-inline-error" role="alert">
+                        <span>{reviewState.message}</span>
+                        <button
+                          className="cl-link"
+                          type="button"
+                          onClick={() => void fetchReviewHistory(item.id)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                    {reviewState.status === 'ready' && (
+                      <>
+                        <div className="patient-document-history-heading">
+                          <div>
+                            <span className="document-workspace-eyebrow">
+                              Version-bound decisions
+                            </span>
+                            <h4>Review lifecycle</h4>
+                          </div>
+                          <span
+                            className={
+                              reviewState.data.currentStatus === 'approved'
+                                ? 'cl-badge cl-badge-green'
+                                : 'cl-badge cl-badge-muted'
+                            }
+                          >
+                            {reviewState.data.currentStatus}
+                          </span>
+                        </div>
+                        {reviewingDocumentId === item.id && (
+                          <form
+                            className="patient-document-review-form"
+                            onSubmit={(event) =>
+                              void handleDocumentReview(event, item)
+                            }
+                          >
+                            {reviewState.data.currentStatus === 'pending' ? (
+                              <div
+                                className="patient-document-review-actions"
+                                role="group"
+                                aria-label="Document review decision"
+                              >
+                                <button
+                                  className={
+                                    reviewAction === 'approved'
+                                      ? 'is-selected'
+                                      : ''
+                                  }
+                                  type="button"
+                                  aria-pressed={reviewAction === 'approved'}
+                                  onClick={() => {
+                                    setReviewAction('approved')
+                                    setReviewMutationStatus('idle')
+                                    setReviewMutationError('')
+                                  }}
+                                >
+                                  <CheckCircle2 size={16} />
+                                  Approve
+                                </button>
+                                <button
+                                  className={
+                                    reviewAction === 'denied'
+                                      ? 'is-selected is-denial'
+                                      : ''
+                                  }
+                                  type="button"
+                                  aria-pressed={reviewAction === 'denied'}
+                                  onClick={() => {
+                                    setReviewAction('denied')
+                                    setReviewMutationStatus('idle')
+                                    setReviewMutationError('')
+                                  }}
+                                >
+                                  <Ban size={16} />
+                                  Deny
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="patient-document-review-reopen">
+                                <RotateCcw size={18} aria-hidden="true" />
+                                <div>
+                                  <strong>
+                                    Reopen this{' '}
+                                    {reviewState.data.currentStatus} review
+                                  </strong>
+                                  <span>
+                                    The document returns to pending and requires
+                                    a new decision.
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                            <div className="field">
+                              <label
+                                className="label"
+                                htmlFor={`document-review-reason-${item.id}`}
+                              >
+                                {reviewAction === 'approved'
+                                  ? 'Approval rationale *'
+                                  : reviewAction === 'denied'
+                                    ? 'Denial reason *'
+                                    : 'Reopen reason *'}
+                              </label>
+                              <textarea
+                                id={`document-review-reason-${item.id}`}
+                                className="textarea"
+                                value={reviewReason}
+                                onChange={(event) => {
+                                  setReviewReason(event.target.value)
+                                  if (reviewMutationStatus === 'error') {
+                                    setReviewMutationStatus('idle')
+                                    setReviewMutationError('')
+                                  }
+                                }}
+                                maxLength={250}
+                                required
+                              />
+                            </div>
+                            <p className="patient-document-content-boundary">
+                              This action is checked against the loaded{' '}
+                              {reviewState.data.currentStatus} state and records
+                              the authenticated actor, reason, time, document
+                              version, and content hash.
+                            </p>
+                            {reviewMutationStatus === 'error' && (
+                              <div className="cl-inline-error" role="alert">
+                                {reviewMutationError}
+                              </div>
+                            )}
+                            <div className="patient-document-intake-actions">
+                              <button
+                                className="cl-btn-primary"
+                                type="submit"
+                                disabled={
+                                  reviewMutationStatus === 'saving' ||
+                                  !reviewReason.trim()
+                                }
+                              >
+                                {reviewAction === 'approved' ? (
+                                  <CheckCircle2 size={15} />
+                                ) : reviewAction === 'denied' ? (
+                                  <Ban size={15} />
+                                ) : (
+                                  <RotateCcw size={15} />
+                                )}
+                                {reviewMutationStatus === 'saving'
+                                  ? 'Recording…'
+                                  : reviewAction === 'approved'
+                                    ? 'Approve document'
+                                    : reviewAction === 'denied'
+                                      ? 'Deny document'
+                                      : 'Reopen review'}
+                              </button>
+                              <button
+                                className="cl-btn-secondary"
+                                type="button"
+                                disabled={reviewMutationStatus === 'saving'}
+                                onClick={closeReviewWorkflow}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                        <div className="patient-document-review-history-heading">
+                          <strong>Decision history</strong>
+                          <span>
+                            {reviewState.data.eventCount}{' '}
+                            {reviewState.data.eventCount === 1
+                              ? 'event'
+                              : 'events'}
+                          </span>
+                        </div>
+                        {reviewState.data.events.length === 0 ? (
+                          <p className="patient-document-panel-empty">
+                            No review decisions have been retained.
+                          </p>
+                        ) : (
+                          <ol className="patient-document-review-history">
+                            {reviewState.data.events.map((reviewEvent) => (
+                              <li key={reviewEvent.eventId}>
+                                <div>
+                                  <strong>{reviewEvent.action}</strong>
+                                  <span>
+                                    {reviewEvent.fromStatus} →{' '}
+                                    {reviewEvent.toStatus}
+                                  </span>
+                                </div>
+                                <p>{reviewEvent.reason}</p>
+                                <dl>
+                                  <div>
+                                    <dt>Actor and time</dt>
+                                    <dd>
+                                      {reviewEvent.actor} ·{' '}
+                                      <time dateTime={reviewEvent.occurredAt}>
+                                        {formatVersionTime(
+                                          reviewEvent.occurredAt,
+                                        )}
+                                      </time>
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Reviewed bytes</dt>
+                                    <dd>
+                                      Version {reviewEvent.documentVersion} ·{' '}
+                                      <span
+                                        title={
+                                          reviewEvent.contentHash || undefined
+                                        }
+                                      >
+                                        {shortHash(reviewEvent.contentHash)}
+                                      </span>
+                                    </dd>
+                                  </div>
+                                </dl>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                        {reviewState.data.eventCount >
+                          reviewState.data.returnedCount && (
+                          <p className="patient-document-history-boundary">
+                            Showing the newest{' '}
+                            {reviewState.data.returnedCount} of{' '}
+                            {reviewState.data.eventCount} review events.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </section>
                 )}
                 {previewState?.documentId === item.id && (
                   <section

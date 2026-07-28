@@ -181,6 +181,20 @@ test.describe("accessibility gate", () => {
       )),
     );
     await page
+      .getByRole("button", { name: "Review document" })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Review lifecycle" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Approval rationale *")).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/patients/MOD-PAT-0001/documents#review",
+      )),
+    );
+    await page
       .getByRole("button", { name: "Preview", exact: true })
       .first()
       .click();

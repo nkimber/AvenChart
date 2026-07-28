@@ -124,6 +124,33 @@ public sealed record PatientDocumentVersionContentResponse(
     string? ContentBase64,
     bool IsBinary);
 
+public sealed record PatientDocumentReviewEvent(
+    Guid EventId,
+    string FromStatus,
+    string ToStatus,
+    string Action,
+    string Reason,
+    string Actor,
+    string OccurredAt,
+    int DocumentVersion,
+    string? ContentHash);
+
+public sealed record PatientDocumentReviewHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int DocumentId,
+    string DocumentKey,
+    string PatientId,
+    int LegacyPid,
+    string Name,
+    string CurrentStatus,
+    string? CurrentReviewer,
+    string? CurrentReviewedAt,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientDocumentReviewEvent> Events);
+
 public sealed record PatientDocumentOcrQueueResponse(
     string DatasetId,
     string DatasetVersion,
@@ -392,7 +419,9 @@ public sealed record PatientDocumentContentResponse(
 
 public sealed record PatientDocumentSignRequest(
     string ReviewStatus,
-    string ReviewedBy);
+    string? ReviewedBy = null,
+    string? Reason = null,
+    string? ExpectedReviewStatus = null);
 
 public sealed record PatientDocumentMutationResponse(
     int Id,

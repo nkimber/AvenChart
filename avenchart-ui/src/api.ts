@@ -4408,6 +4408,8 @@ export type PatientDocumentItem = {
   url?: string | null
   notes?: string | null
   reviewStatus: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   contentPreview?: string | null
   previewKind: string
   previewStatus: string
@@ -4519,6 +4521,41 @@ export type PatientDocumentContentReplaceInput = {
   content: string
   reason: string
   expectedVersion: number
+}
+
+export type PatientDocumentReviewInput = {
+  reviewStatus: 'pending' | 'approved' | 'denied'
+  reason: string
+  expectedReviewStatus: 'pending' | 'approved' | 'denied'
+}
+
+export type PatientDocumentReviewEvent = {
+  eventId: string
+  fromStatus: string
+  toStatus: string
+  action: string
+  reason: string
+  actor: string
+  occurredAt: string
+  documentVersion: number
+  contentHash?: string | null
+}
+
+export type PatientDocumentReviewHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  documentId: number
+  documentKey: string
+  patientId: string
+  legacyPid: number
+  name: string
+  currentStatus: string
+  currentReviewer?: string | null
+  currentReviewedAt?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientDocumentReviewEvent[]
 }
 
 export type PatientDocumentBinaryContentReplaceInput = {
@@ -4645,6 +4682,32 @@ export async function getPatientDocumentVersionHistory(
   return clinicianGet(
     sessionId,
     `/api/documents/${encodeURIComponent(String(documentId))}/versions`,
+    signal,
+  )
+}
+
+export async function getPatientDocumentReviewHistory(
+  sessionId: string,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<PatientDocumentReviewHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/review-history`,
+    signal,
+  )
+}
+
+export async function reviewPatientDocument(
+  sessionId: string,
+  documentId: number,
+  input: PatientDocumentReviewInput,
+  signal?: AbortSignal,
+): Promise<PatientDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/documents/${encodeURIComponent(String(documentId))}/sign`,
+    input,
     signal,
   )
 }
