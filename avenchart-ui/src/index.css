@@ -7072,6 +7072,51 @@ a {
   gap: 10px;
   max-width: 620px;
 }
+.inventory-receiving-form {
+  display: grid;
+  gap: 14px;
+}
+.inventory-receiving-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.inventory-receiving-mode legend {
+  padding: 0 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.inventory-receiving-mode label {
+  color: var(--text);
+  font-size: 13px;
+}
+.inventory-receiving-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.inventory-receiving-grid small,
+.inventory-requisition-form small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.inventory-receipt-result {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #b8ddd2;
+  border-radius: var(--radius-md);
+  background: var(--teal-soft);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 700px) {
   .inventory-modern-item {
     grid-template-columns: 1fr;
@@ -7092,6 +7137,9 @@ a {
   .inventory-requisition-filters > .cl-badge {
     justify-self: start;
     margin-bottom: 0;
+  }
+  .inventory-receiving-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiRequestError,
+  createInventoryPurchaseReceipt,
   createInventoryPurchaseRequisition,
   decideInventoryPurchaseRequisition,
   downloadPatientDocument,
@@ -362,6 +363,58 @@ describe('authenticated API transport', () => {
     )
     expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(
       JSON.stringify({ notes: 'Approved for restock' }),
+    )
+  })
+
+  it('records a protected inventory receipt with requisition reconciliation input', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          receiptId: 'receipt-1',
+          requisitionReconciliation: {
+            requisitionId: 'req-1',
+            receivedQuantity: 2,
+          },
+        },
+        201,
+      ),
+    )
+
+    const result = await createInventoryPurchaseReceipt('staff-session', {
+      vendorId: 'vendor-1',
+      facilityId: 12,
+      itemId: 10001,
+      lotNumber: 'LOT-NEW',
+      expirationDate: '2027-12-31',
+      quantity: 2,
+      unitCost: 8.75,
+      referenceNumber: 'REF-1',
+      notes: 'Partial receipt',
+      requisitionId: 'req-1',
+    })
+
+    expect(result.receiptId).toBe('receipt-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/inventory/purchase-receipts',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'X-Legacy EHR-Session': 'staff-session',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          vendorId: 'vendor-1',
+          facilityId: 12,
+          itemId: 10001,
+          lotNumber: 'LOT-NEW',
+          expirationDate: '2027-12-31',
+          quantity: 2,
+          unitCost: 8.75,
+          referenceNumber: 'REF-1',
+          notes: 'Partial receipt',
+          requisitionId: 'req-1',
+        }),
+      }),
     )
   })
 

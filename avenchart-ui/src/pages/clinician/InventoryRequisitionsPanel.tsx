@@ -14,6 +14,7 @@ import { showToast } from '../../components/Toast.tsx'
 type Props = {
   facilities: { facilityId: number; code: string; name: string }[]
   items: InventoryItem[]
+  refreshToken: number
   sessionId: string
 }
 
@@ -53,6 +54,7 @@ function lifecycleBadge(status: string) {
 export default function InventoryRequisitionsPanel({
   facilities,
   items,
+  refreshToken,
   sessionId,
 }: Props) {
   const [state, setState] = useState<RequisitionState>({ status: 'loading' })
@@ -97,7 +99,7 @@ export default function InventoryRequisitionsPanel({
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, refreshToken])
 
   useEffect(() => {
     setPage(1)

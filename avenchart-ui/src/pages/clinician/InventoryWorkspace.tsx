@@ -16,6 +16,7 @@ import {
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
+import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 
 type LotWithItem = {
@@ -67,6 +68,7 @@ export default function InventoryWorkspace() {
   const [lotStatus, setLotStatus] = useState('')
   const [lotPage, setLotPage] = useState(1)
   const [selectedLotId, setSelectedLotId] = useState<number | null>(null)
+  const [workflowRefreshToken, setWorkflowRefreshToken] = useState(0)
   const [lotDetail, setLotDetail] = useState<LotDetailState>({
     status: 'idle',
   })
@@ -221,6 +223,11 @@ export default function InventoryWorkspace() {
     }
   }
 
+  async function handleInventoryWorkflowChanged() {
+    await load()
+    setWorkflowRefreshToken((current) => current + 1)
+  }
+
   return (
     <div className="clinician-page">
       <div className="clinician-page-header">
@@ -352,9 +359,17 @@ export default function InventoryWorkspace() {
             </form>
           </section>
 
+          <InventoryReceivingPanel
+            facilities={data.facilities}
+            items={data.items}
+            onChanged={handleInventoryWorkflowChanged}
+            sessionId={session.sessionId}
+          />
+
           <InventoryRequisitionsPanel
             facilities={data.facilities}
             items={data.items}
+            refreshToken={workflowRefreshToken}
             sessionId={session.sessionId}
           />
 

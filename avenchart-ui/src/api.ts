@@ -2398,6 +2398,53 @@ export async function decideInventoryPurchaseRequisition(
     signal,
   )
 }
+export type InventoryPurchaseReceiptCreateInput = {
+  vendorId: string
+  facilityId: number
+  itemId: number
+  lotNumber: string
+  expirationDate?: string | null
+  quantity: number
+  unitCost: number
+  referenceNumber?: string | null
+  notes: string
+  requisitionId?: string | null
+}
+export type InventoryPurchaseReceiptReconciliation = {
+  reconciliationId: string
+  requisitionId: string
+  requisitionLineId: string
+  receivedQuantity: number
+  reconciledBy: string
+  reconciledAt: string
+}
+export type InventoryPurchaseReceipt = {
+  receiptId: string
+  vendor: InventoryVendor
+  facilityCode: string
+  facilityName: string
+  referenceNumber?: string | null
+  receivedAt: string
+  receivedBy: string
+  notes: string
+  lot: InventoryLot
+  transaction: InventoryTransactionItem
+  itemQuantityOnHand: number
+  belowReorderPoint: boolean
+  requisitionReconciliation?: InventoryPurchaseReceiptReconciliation | null
+}
+export async function createInventoryPurchaseReceipt(
+  sessionId: string,
+  input: InventoryPurchaseReceiptCreateInput,
+  signal?: AbortSignal,
+): Promise<InventoryPurchaseReceipt> {
+  return clinicianPost(
+    sessionId,
+    '/api/inventory/purchase-receipts',
+    input,
+    signal,
+  )
+}
 export type InventoryActivityReport = {
   fromDate?: string | null
   toDate?: string | null

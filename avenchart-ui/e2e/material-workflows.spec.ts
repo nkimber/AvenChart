@@ -334,6 +334,35 @@ test.describe("material workflows", () => {
     }
   });
 
+  test("inventory receiving distinguishes direct and requisition reconciliation", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const receiving = page
+      .getByRole("heading", { name: "Receive inventory" })
+      .locator("xpath=ancestor::section");
+    await expect(receiving.getByLabel("Direct vendor receipt")).toBeChecked({
+      timeout: 15_000,
+    });
+    await expect(receiving.getByLabel("Vendor", { exact: true })).toBeVisible();
+    await expect(receiving.getByLabel("Receiving facility")).toBeVisible();
+    await expect(receiving.getByLabel("Inventory item")).toBeVisible();
+    await expect(receiving.getByLabel("Lot number")).toBeVisible();
+    await expect(receiving.getByLabel(/Unit cost/)).toBeVisible();
+    await receiving.getByLabel("Reconcile approved requisition").check();
+    await expect(
+      receiving.getByLabel("Approved requisition request"),
+    ).toBeVisible();
+    await expect(receiving.getByLabel("Outstanding line")).toBeVisible();
+    await expect(
+      receiving.getByLabel("Vendor", { exact: true }),
+    ).toBeDisabled();
+    await expect(receiving.getByLabel("Receiving facility")).toBeDisabled();
+    await expect(receiving.getByLabel("Inventory item")).toBeDisabled();
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {
