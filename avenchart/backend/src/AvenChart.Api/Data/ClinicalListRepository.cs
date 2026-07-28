@@ -62,6 +62,38 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         return items;
     }
 
+    public async Task<ClinicalPharmacyDirectoryResponse> GetPharmacyDirectoryAsync(
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select id, name, transmit_method, email, ncpdp, npi
+            from pharmacies
+            order by name, id;
+            """;
+
+        var pharmacies = new List<ClinicalPharmacyDirectoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            pharmacies.Add(new ClinicalPharmacyDirectoryItem(
+                Id: reader.GetInt32(reader.GetOrdinal("id")),
+                Name: reader.GetString(reader.GetOrdinal("name")),
+                TransmitMethod: reader.GetInt32(reader.GetOrdinal("transmit_method")),
+                Email: ReadNullableString(reader, "email"),
+                Ncpdp: ReadNullableInt(reader, "ncpdp"),
+                Npi: ReadNullableInt(reader, "npi")));
+        }
+
+        return new ClinicalPharmacyDirectoryResponse(
+            metadata.DatasetId,
+            metadata.DatasetVersion,
+            pharmacies.Count,
+            pharmacies);
+    }
+
     public async Task<ClinicalListsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);

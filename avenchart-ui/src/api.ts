@@ -3352,6 +3352,22 @@ export type MedicationVocabularyItem = {
   controlledSubstanceSchedule?: string | null
 }
 
+export type ClinicalPharmacyDirectoryItem = {
+  id: number
+  name: string
+  transmitMethod: number
+  email?: string | null
+  ncpdp?: number | null
+  npi?: number | null
+}
+
+export type ClinicalPharmacyDirectoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  pharmacyCount: number
+  pharmacies: ClinicalPharmacyDirectoryItem[]
+}
+
 export type ClinicalListsResponse = {
   datasetId: string
   datasetVersion: string
@@ -3392,6 +3408,13 @@ export async function searchClinicalMedicationVocabulary(
     `/api/clinical-lists/medication-vocabulary?${params}`,
     signal,
   )
+}
+
+export async function getClinicalPharmacyDirectory(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalPharmacyDirectoryResponse> {
+  return clinicianGet(sessionId, '/api/clinical-lists/pharmacies', signal)
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -6160,6 +6183,33 @@ export async function approvePrescriptionRefillRequest(
   return clinicianPut(
     sessionId,
     `/api/clinical-lists/prescription-refill-requests/${messageId}/approve`,
+    body,
+    signal,
+  )
+}
+
+export type PrescriptionPharmacyRouteInput = {
+  pharmacyId: number
+  sentAt: string
+  note: string
+}
+
+export type PrescriptionPharmacyRouteResponse = {
+  id: string
+  routed: boolean
+  failureReason?: string | null
+  detail: ClinicalListsResponse
+}
+
+export async function routePrescriptionToPharmacy(
+  sessionId: string,
+  prescriptionId: string,
+  body: PrescriptionPharmacyRouteInput,
+  signal?: AbortSignal,
+): Promise<PrescriptionPharmacyRouteResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/route-pharmacy`,
     body,
     signal,
   )

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   History,
+  MapPin,
   Pill,
   Search,
   XCircle,
@@ -13,11 +14,14 @@ import {
 import {
   approvePrescriptionRefillRequest,
   deactivatePrescription,
+  getClinicalPharmacyDirectory,
   getClinicalLists,
   getPrescriptionAuditHistory,
   refillPrescription,
+  routePrescriptionToPharmacy,
   searchPatients,
   type ClinicalPrescriptionAuditHistory,
+  type ClinicalPharmacyDirectoryResponse,
   type PatientListItem,
   type PrescriptionListItem,
   type PrescriptionRefillRequestItem,
@@ -55,6 +59,11 @@ type AsyncState =
 type AuditState =
   | { status: "loading" }
   | { status: "ready"; history: ClinicalPrescriptionAuditHistory }
+  | { status: "error"; message: string };
+
+type PharmacyState =
+  | { status: "loading" }
+  | { status: "ready"; data: ClinicalPharmacyDirectoryResponse }
   | { status: "error"; message: string };
 
 type QueueView = "requests" | "expiring" | "expired" | "all";
@@ -108,12 +117,32 @@ export default function PrescriptionRenewals() {
   const [refillTarget, setRefillTarget] = useState<string | null>(null);
   const [refillCount, setRefillCount] = useState("1");
   const [refillNote, setRefillNote] = useState("");
+  const [routeTarget, setRouteTarget] = useState<string | null>(null);
+  const [routePharmacyId, setRoutePharmacyId] = useState("");
+  const [routeNote, setRouteNote] = useState("");
+  const [pharmacyState, setPharmacyState] = useState<PharmacyState>({
+    status: "loading",
+  });
   const [auditTarget, setAuditTarget] = useState<string | null>(null);
   const [auditByPrescription, setAuditByPrescription] = useState<
     Record<string, AuditState>
   >({});
 
   useEffect(() => setPatientInput(patientScope), [patientScope]);
+
+  useEffect(() => {
+    getClinicalPharmacyDirectory(session.sessionId)
+      .then((data) => setPharmacyState({ status: "ready", data }))
+      .catch((error) =>
+        setPharmacyState({
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The local pharmacy directory could not be loaded.",
+        }),
+      );
+  }, [session.sessionId]);
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
@@ -201,6 +230,7 @@ export default function PrescriptionRenewals() {
     next.set("view", nextView);
     setSearchParams(next);
     setRefillTarget(null);
+    setRouteTarget(null);
   }
 
   function submitPatientScope(event: React.FormEvent) {
@@ -213,9 +243,17 @@ export default function PrescriptionRenewals() {
   }
 
   function beginRefill(key: string) {
+    setRouteTarget(null);
     setRefillTarget(key);
     setRefillCount("1");
     setRefillNote("");
+  }
+
+  function beginRoute(key: string, pharmacyId?: number | null) {
+    setRefillTarget(null);
+    setRouteTarget(key);
+    setRoutePharmacyId(pharmacyId ? String(pharmacyId) : "");
+    setRouteNote("");
   }
 
   function readRefillCount() {
@@ -239,6 +277,7 @@ export default function PrescriptionRenewals() {
         "success",
       );
       setRefillTarget(null);
+      setAuditTarget(null);
       setAuditByPrescription({});
       await load();
     } catch {
@@ -270,6 +309,7 @@ export default function PrescriptionRenewals() {
         "success",
       );
       setRefillTarget(null);
+      setAuditTarget(null);
       setAuditByPrescription({});
       await load();
     } catch {
@@ -297,10 +337,54 @@ export default function PrescriptionRenewals() {
         note: "Discontinued from prescription review queue",
       });
       showToast(`${entry.rx.drug} discontinued.`, "success");
+      setAuditTarget(null);
       setAuditByPrescription({});
       await load();
     } catch {
       showToast("The prescription could not be discontinued.", "error");
+    } finally {
+      setWorkingKey(null);
+    }
+  }
+
+  async function handleRoute(entry: RxEntry) {
+    const pharmacyId = Number(routePharmacyId);
+    if (
+      !Number.isInteger(pharmacyId) ||
+      pharmacyId <= 0 ||
+      !routeNote.trim()
+    )
+      return;
+    const key = `route-${entry.rx.id}`;
+    setWorkingKey(key);
+    try {
+      const result = await routePrescriptionToPharmacy(
+        session.sessionId,
+        entry.rx.id,
+        {
+          pharmacyId,
+          sentAt: new Date().toISOString(),
+          note: routeNote.trim(),
+        },
+      );
+      setRouteTarget(null);
+      setAuditTarget(null);
+      setAuditByPrescription({});
+      if (result.routed) {
+        showToast(
+          `Local pharmacy route recorded for ${entry.rx.drug}. No external transmission occurred.`,
+          "success",
+        );
+      } else {
+        showToast(
+          result.failureReason ??
+            "The local pharmacy route was blocked by target policy.",
+          "error",
+        );
+      }
+      await load();
+    } catch {
+      showToast("The local pharmacy route could not be recorded.", "error");
     } finally {
       setWorkingKey(null);
     }
@@ -413,9 +497,10 @@ export default function PrescriptionRenewals() {
       <div className="hint-banner">
         <strong>Local workflow boundary</strong>
         <span>
-          Refill and discontinuation actions update the modernized target only.
-          They do not transmit an ePrescription, perform EPCS, check formulary
-          or interactions, or contact a pharmacy network.
+          Refill, discontinuation, and pharmacy-route actions update the
+          modernized target only. A pharmacy route records local synthetic
+          evidence; it does not transmit an ePrescription, perform EPCS, check
+          formulary or interactions, or contact a pharmacy network.
         </span>
       </div>
 
@@ -459,6 +544,18 @@ export default function PrescriptionRenewals() {
           {state.datasetId && (
             <span>
               Dataset {state.datasetId} · {state.datasetVersion}
+            </span>
+          )}
+          {pharmacyState.status === "ready" && (
+            <span>
+              {pharmacyState.data.pharmacyCount} local pharmacies ·{" "}
+              {pharmacyState.data.datasetId} ·{" "}
+              {pharmacyState.data.datasetVersion}
+            </span>
+          )}
+          {pharmacyState.status === "error" && (
+            <span className="rx-warning">
+              Local pharmacy directory unavailable
             </span>
           )}
           {state.totalMatches > state.patientCount && (
@@ -674,6 +771,7 @@ export default function PrescriptionRenewals() {
               {visiblePrescriptions.map((entry) => {
                 const formKey = `prescription-${entry.rx.id}`;
                 const refillBusyKey = `refill-${entry.rx.id}`;
+                const routeBusyKey = `route-${entry.rx.id}`;
                 const deactivateBusyKey = `deactivate-${entry.rx.id}`;
                 return (
                   <article
@@ -736,7 +834,85 @@ export default function PrescriptionRenewals() {
                       >
                         {urgencyLabel(entry.daysUntilExpiry)}
                       </span>
-                      {refillTarget === formKey ? (
+                      {routeTarget === formKey ? (
+                        <div className="rx-refill-form">
+                          <label>
+                            Local pharmacy
+                            <select
+                              className="ne-input"
+                              value={routePharmacyId}
+                              onChange={(event) =>
+                                setRoutePharmacyId(event.target.value)
+                              }
+                              required
+                            >
+                              <option value="">
+                                {pharmacyState.status === "loading"
+                                  ? "Loading local directory…"
+                                  : "Select a local pharmacy"}
+                              </option>
+                              {pharmacyState.status === "ready" &&
+                                pharmacyState.data.pharmacies.map(
+                                  (pharmacy) => (
+                                    <option
+                                      key={pharmacy.id}
+                                      value={pharmacy.id}
+                                    >
+                                      {pharmacy.name}
+                                      {pharmacy.ncpdp
+                                        ? ` · NCPDP ${pharmacy.ncpdp}`
+                                        : ""}
+                                    </option>
+                                  ),
+                                )}
+                            </select>
+                          </label>
+                          {pharmacyState.status === "error" && (
+                            <p className="rx-warning">
+                              {pharmacyState.message}
+                            </p>
+                          )}
+                          <label>
+                            Routing note
+                            <input
+                              className="ne-input"
+                              value={routeNote}
+                              onChange={(event) =>
+                                setRouteNote(event.target.value)
+                              }
+                              maxLength={250}
+                              required
+                            />
+                          </label>
+                          <p className="rx-renew-meta">
+                            Records local synthetic route evidence only. No
+                            pharmacy network, eRx, or EPCS transmission occurs.
+                          </p>
+                          <div className="rx-renew-actions">
+                            <button
+                              className="cl-btn-primary"
+                              type="button"
+                              disabled={
+                                workingKey === routeBusyKey ||
+                                pharmacyState.status !== "ready" ||
+                                !routePharmacyId ||
+                                !routeNote.trim()
+                              }
+                              onClick={() => handleRoute(entry)}
+                            >
+                              <MapPin size={13} /> Record local route
+                            </button>
+                            <button
+                              className="cl-btn-secondary"
+                              type="button"
+                              disabled={workingKey === routeBusyKey}
+                              onClick={() => setRouteTarget(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : refillTarget === formKey ? (
                         <div className="rx-refill-form">
                           <label>
                             Additional refills
@@ -792,6 +968,29 @@ export default function PrescriptionRenewals() {
                             onClick={() => beginRefill(formKey)}
                           >
                             <CheckCircle size={13} /> Add refills
+                          </button>
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={
+                              entry.rx.controlledSubstanceReviewRequired ||
+                              pharmacyState.status !== "ready"
+                            }
+                            title={
+                              entry.rx.controlledSubstanceReviewRequired
+                                ? "Controlled-substance policy review blocks local pharmacy routing."
+                                : pharmacyState.status !== "ready"
+                                  ? "The local pharmacy directory is not available."
+                                  : undefined
+                            }
+                            onClick={() =>
+                              beginRoute(formKey, entry.rx.pharmacyId)
+                            }
+                          >
+                            <MapPin size={13} />{" "}
+                            {entry.rx.pharmacyName
+                              ? "Change local route"
+                              : "Record pharmacy"}
                           </button>
                           <button
                             className="cl-btn-secondary"

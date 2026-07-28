@@ -6044,7 +6044,7 @@ a {
 }
 .rx-urgency-unknown {
   background: var(--border);
-  color: var(--text-muted);
+  color: var(--text);
 }
 .rx-scope-form {
   margin: 14px 0;

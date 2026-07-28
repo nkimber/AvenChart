@@ -129,6 +129,23 @@ test.describe("accessibility gate", () => {
         ...(await findSeriousAccessibilityViolations(page, path)),
       );
     }
+    await navigateWithinApplication(page, "/clinician/renewals");
+    await page
+      .getByRole("button", { name: "All active", exact: true })
+      .click();
+    const routeButton = page
+      .locator("button:not([disabled])")
+      .filter({ hasText: /Record pharmacy|Change local route/ })
+      .first();
+    await expect(routeButton).toBeVisible({ timeout: 15_000 });
+    await routeButton.click();
+    await expect(page.getByLabel("Local pharmacy")).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/renewals#local-pharmacy-route",
+      )),
+    );
     expectNoSeriousAccessibilityViolations(violations);
   });
 

@@ -2111,6 +2111,14 @@ clinicalLists.MapGet("/medication-vocabulary", async (
     })
     .WithName("SearchClinicalMedicationVocabulary");
 
+clinicalLists.MapGet("/pharmacies", async (
+        ClinicalListRepository repository,
+        CancellationToken cancellationToken) =>
+    {
+        return Results.Ok(await repository.GetPharmacyDirectoryAsync(cancellationToken));
+    })
+    .WithName("GetClinicalPharmacyDirectory");
+
 clinicalLists.MapGet("/{patientId}", async (
         ClinicalListRepository repository,
         string patientId,

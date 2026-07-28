@@ -29,6 +29,7 @@ import {
   getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
   getInventoryPurchaseRequisitions,
+  getClinicalPharmacyDirectory,
   getPatientBilling,
   getPatientCareTeamOptions,
   getPatientPortalAppointments,
@@ -44,6 +45,7 @@ import {
   reopenLabReportReview,
   refillPrescription,
   replyToPatientMessage,
+  routePrescriptionToPharmacy,
   searchEncounters,
   searchClinicalMedicationVocabulary,
   SESSION_INVALID_EVENT,
@@ -1203,6 +1205,66 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       body: JSON.stringify(requestApproval),
+    })
+  })
+
+  it('reads the local pharmacy directory and records local prescription route evidence', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: 'legacy-ehr-modernization-gold',
+          datasetVersion: 'v1',
+          pharmacyCount: 1,
+          pharmacies: [
+            {
+              id: 9001,
+              name: 'Northstar Community Pharmacy',
+              transmitMethod: 1,
+              ncpdp: 1234567,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'rx id',
+          routed: true,
+          failureReason: null,
+          detail: { prescriptions: [] },
+        }),
+      )
+
+    const directory = await getClinicalPharmacyDirectory('staff-session')
+    const route = {
+      pharmacyId: directory.pharmacies[0]!.id,
+      sentAt: '2026-07-28T12:30:00.000Z',
+      note: 'Browser-verified local route',
+    }
+    const result = await routePrescriptionToPharmacy(
+      'staff-session',
+      'rx id',
+      route,
+    )
+
+    expect(directory).toMatchObject({
+      pharmacyCount: 1,
+      pharmacies: [{ name: 'Northstar Community Pharmacy' }],
+    })
+    expect(result.routed).toBe(true)
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/pharmacies',
+      'http://localhost:5001/api/clinical-lists/prescriptions/rx%20id/route-pharmacy',
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(route),
     })
   })
 

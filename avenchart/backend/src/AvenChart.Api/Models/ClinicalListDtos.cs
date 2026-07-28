@@ -128,6 +128,20 @@ public sealed record MedicationVocabularyItem(
     int? DurationDays,
     string? ControlledSubstanceSchedule);
 
+public sealed record ClinicalPharmacyDirectoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    int PharmacyCount,
+    IReadOnlyList<ClinicalPharmacyDirectoryItem> Pharmacies);
+
+public sealed record ClinicalPharmacyDirectoryItem(
+    int Id,
+    string Name,
+    int TransmitMethod,
+    string? Email,
+    int? Ncpdp,
+    int? Npi);
+
 public sealed record ClinicalMedicationCreateRequest(
     string PatientId,
     string Title,

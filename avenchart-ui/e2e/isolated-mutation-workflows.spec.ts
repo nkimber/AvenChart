@@ -400,7 +400,7 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can approve a catalog refill request and the patient can see its history", async ({
+  test("staff can approve a catalog refill request, record its local pharmacy route, and expose patient history", async ({
     page,
     context,
   }) => {
@@ -559,6 +559,37 @@ test.describe("isolated mutation workflows", () => {
       );
       await expect(prescriptionCard).toContainText(
         "Browser-verified approval",
+      );
+
+      await prescriptionCard
+        .getByRole("button", { name: "Record pharmacy" })
+        .click();
+      const pharmacySelect =
+        prescriptionCard.getByLabel("Local pharmacy");
+      const northstarPharmacyId = await pharmacySelect
+        .locator("option")
+        .filter({ hasText: "Northstar Community Pharmacy" })
+        .getAttribute("value");
+      expect(northstarPharmacyId).toBeTruthy();
+      await pharmacySelect.selectOption(northstarPharmacyId!);
+      await prescriptionCard
+        .getByLabel("Routing note")
+        .fill("Browser-verified local route");
+      await prescriptionCard
+        .getByRole("button", { name: "Record local route" })
+        .click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "No external transmission occurred." }),
+      ).toBeVisible();
+      await expect(prescriptionCard).toContainText(
+        "Local route evidence: Northstar Community Pharmacy",
+      );
+      await prescriptionCard.getByRole("button", { name: /History/ }).click();
+      await expect(prescriptionCard).toContainText("Route Pharmacy");
+      await expect(prescriptionCard).toContainText(
+        "Browser-verified local route",
       );
 
       const portalPage = await context.newPage();
