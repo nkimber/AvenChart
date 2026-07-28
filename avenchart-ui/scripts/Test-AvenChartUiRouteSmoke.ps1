@@ -17,7 +17,10 @@ $exitCode = 1
 Push-Location $UiRoot
 try {
     $env:MODERN_UI_BASE_URL = $BaseUrl
-    & npx.cmd playwright test e2e/route-smoke.spec.ts
+    # Route projects intentionally reuse the same seeded staff and portal
+    # identities. Keep them serial so concurrent login/logout does not race
+    # those shared sessions and create a false navigation failure.
+    & npx.cmd playwright test e2e/route-smoke.spec.ts --workers=1
     $exitCode = $LASTEXITCODE
     if ($exitCode -eq 0) {
         $status = "passed"
@@ -30,6 +33,7 @@ finally {
         status = $status
         generatedAt = (Get-Date).ToUniversalTime().ToString("o")
         baseUrl = $BaseUrl
+        workers = 1
         exitCode = $exitCode
         durationMilliseconds = [int]((Get-Date) - $startedAt).TotalMilliseconds
         reportPath = "avenchart-ui/playwright-report/index.html"

@@ -39,6 +39,7 @@ import {
   findPatientDuplicateCandidates,
   failPatientDocumentOcr,
   getCurrentSession,
+  getAuthorizationPolicyCatalog,
   getDocumentTemplateHistory,
   getDocumentTemplates,
   getInventoryActivityReport,
@@ -877,6 +878,73 @@ describe('authenticated API transport', () => {
         expectedVersion: 1,
       }),
     })
+  })
+
+  it('loads the versioned authorization policy gap registry with server paging', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        revision: 'local-acl-compatibility-v1',
+        classification: 'policy-neutral local ACL compatibility registry',
+        effectiveState: 'locally-enforced-owner-gated',
+        rules: [
+          {
+            policyId: 'acl.admin.acl.write',
+            capability: 'Administration',
+            permissionName: 'Access control',
+            section: 'admin',
+            permission: 'acl',
+            minimumLevel: 'write',
+            owner: 'Practice administrator',
+            policyState: 'locally-enforced',
+            approvalState: 'owner-gated',
+            subjectType: 'authenticated-staff',
+            organizationScope: 'single-local-organization',
+            facilityScope: 'not-enforced',
+            patientScope: 'not-enforced',
+            purposeRequirement: 'not-required',
+            exceptionalAccess: 'not-selected',
+            enforcement: 'server-endpoint-filter',
+            verificationState: 'selected-family-fixtures',
+            openGaps: ['production-approval', 'facility-scope'],
+          },
+        ],
+        total: 1,
+        returned: 1,
+        offset: 8,
+        limit: 8,
+        query: 'access control',
+        gap: 'facility-scope',
+        counts: {
+          total: 46,
+          locallyEnforced: 46,
+          productionApproved: 0,
+          facilityScoped: 0,
+          patientScoped: 0,
+          purposeConditioned: 0,
+          exceptionalAccessDecided: 0,
+        },
+        registryGaps: ['Facility scope is not enforced.'],
+      }),
+    )
+
+    const result = await getAuthorizationPolicyCatalog('staff-session', {
+      query: 'access control',
+      gap: 'facility-scope',
+      offset: 8,
+      limit: 8,
+    })
+
+    expect(result).toMatchObject({
+      revision: 'local-acl-compatibility-v1',
+      total: 1,
+      counts: { total: 46, productionApproved: 0 },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/administration/authorization-policy-catalog?query=access+control&gap=facility-scope&offset=8&limit=8',
+      expect.objectContaining({
+        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
   })
 
   it('uses the filtered, assigned, stale-safe patient document routing lifecycle', async () => {

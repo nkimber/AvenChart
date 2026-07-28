@@ -406,6 +406,73 @@ catch {
 }
 
 try {
+    $authorizationCatalogUri = "$ApiBaseUrl/api/administration/authorization-policy-catalog"
+    $unauthenticatedAuthorizationCatalogStatus = 0
+    try {
+        Invoke-WebRequest -Uri $authorizationCatalogUri -Method Get -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $unauthenticatedAuthorizationCatalogStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $frontDeskAuthorizationCatalogStatus = 0
+    try {
+        Invoke-WebRequest -Uri $authorizationCatalogUri -Method Get -Headers (Get-FrontDeskHeaders) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $frontDeskAuthorizationCatalogStatus = [int]$_.Exception.Response.StatusCode
+        }
+        else {
+            throw
+        }
+    }
+
+    $authorizationCatalogPage = Invoke-RestMethod `
+        -Uri "$authorizationCatalogUri`?gap=facility-scope&offset=8&limit=8" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $authorizationCatalogFilter = Invoke-RestMethod `
+        -Uri "$authorizationCatalogUri`?query=access&gap=facility-scope&offset=0&limit=8" `
+        -Method Get `
+        -Headers (Get-AdministrationHeaders) `
+        -TimeoutSec 20
+    $authorizationCatalogPassed = $unauthenticatedAuthorizationCatalogStatus -eq 401 `
+        -and $frontDeskAuthorizationCatalogStatus -eq 403 `
+        -and $authorizationCatalogPage.revision -eq "local-acl-compatibility-v1" `
+        -and $authorizationCatalogPage.classification -eq "policy-neutral local ACL compatibility registry" `
+        -and $authorizationCatalogPage.counts.total -eq 46 `
+        -and $authorizationCatalogPage.counts.locallyEnforced -eq 46 `
+        -and $authorizationCatalogPage.counts.productionApproved -eq 0 `
+        -and $authorizationCatalogPage.counts.facilityScoped -eq 0 `
+        -and $authorizationCatalogPage.total -eq 46 `
+        -and $authorizationCatalogPage.returned -eq 8 `
+        -and $authorizationCatalogPage.offset -eq 8 `
+        -and @($authorizationCatalogPage.rules | Where-Object { $_.facilityScope -eq "enforced" }).Count -eq 0 `
+        -and $authorizationCatalogFilter.total -eq 1 `
+        -and $authorizationCatalogFilter.rules[0].policyId -eq "acl.admin.acl.write"
+    Add-Check -Name "versioned local authorization policy registry" -Result $(if ($authorizationCatalogPassed) { "passed" } else { "failed" }) -Details @{
+        revision = $authorizationCatalogPage.revision
+        registeredRules = $authorizationCatalogPage.counts.total
+        locallyEnforcedRules = $authorizationCatalogPage.counts.locallyEnforced
+        productionApprovedRules = $authorizationCatalogPage.counts.productionApproved
+        returnedRules = $authorizationCatalogPage.returned
+        filteredRules = $authorizationCatalogFilter.total
+        unauthenticatedStatus = $unauthenticatedAuthorizationCatalogStatus
+        frontDeskStatus = $frontDeskAuthorizationCatalogStatus
+    }
+}
+catch {
+    Add-Check -Name "versioned local authorization policy registry" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $auditExportHeaders = Get-AdministrationHeaders
     $auditExportResponse = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/audit/phi?limit=200&username=admin" -Method Get -Headers $auditExportHeaders -TimeoutSec 20
     $auditExportClient = New-AuthenticatedHttpClient

@@ -382,6 +382,34 @@ test.describe("accessibility gate", () => {
       );
       expect([204, 404]).toContain(deleted.status());
     }
+    await navigateWithinApplication(page, "/clinician/admin");
+    await page
+      .getByRole("button", { name: /^Access control \(/ })
+      .click();
+    const authorizationRegistry = page.getByRole("region", {
+      name: "Authorization policy coverage",
+    });
+    await expect(
+      authorizationRegistry.getByRole("heading", {
+        name: "Authorization policy coverage",
+      }),
+    ).toBeVisible();
+    await expect(
+      authorizationRegistry.getByText("local-acl-compatibility-v1"),
+    ).toBeVisible();
+    await authorizationRegistry
+      .getByRole("button", { name: "Open" })
+      .first()
+      .click();
+    await expect(
+      authorizationRegistry.getByLabel("Authorization policy detail"),
+    ).toBeVisible();
+    violations.push(
+      ...(await findSeriousAccessibilityViolations(
+        page,
+        "/clinician/admin#authorization-policy-registry",
+      )),
+    );
     const ocrMarker = `TMP-OCR-AXE-${testInfo.project.name}-${Date.now()}`;
     const ocrFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/documents/scanner-captures`,

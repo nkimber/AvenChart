@@ -10,6 +10,7 @@ using AvenChart.Api.Configuration;
 using AvenChart.Api.Data;
 using AvenChart.Api.Infrastructure;
 using AvenChart.Api.Models;
+using AvenChart.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -5255,6 +5256,29 @@ administration.MapGet("/configuration-catalog", () => Results.Ok(new Configurati
 administration.MapGet("/runtime-diagnostics", (RuntimeDiagnostics diagnostics) =>
     Results.Ok(diagnostics.GetSnapshot()))
     .WithName("GetRuntimeDiagnostics");
+administration.MapGet("/authorization-policy-catalog", (
+        string? query,
+        string? gap,
+        int? offset,
+        int? limit) =>
+    {
+        try
+        {
+            return Results.Ok(AuthorizationPolicyCatalog.Search(
+                query,
+                gap,
+                offset ?? 0,
+                limit ?? 8));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["authorizationPolicies"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("GetAuthorizationPolicyCatalog");
 
 administration.MapGet("/practice-settings", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");
@@ -6032,6 +6056,10 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
     string permissionValue,
     string returnValue)
 {
+    var policy = AuthorizationPolicyCatalog.Require(
+        sectionValue,
+        permissionValue,
+        returnValue);
     return async (context, next) =>
     {
         var repository = context.HttpContext.RequestServices.GetRequiredService<AuthRepository>();
@@ -6054,7 +6082,7 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 session,
                 context.HttpContext.Request.Method,
                 context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
-                $"{sectionValue}:{permissionValue}:{returnValue}",
+                $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
                 authorized: false,
                 responseStatus: StatusCodes.Status403Forbidden,
                 context.HttpContext.RequestAborted);
@@ -6078,7 +6106,7 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 session,
                 context.HttpContext.Request.Method,
                 context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
-                $"{sectionValue}:{permissionValue}:{returnValue}",
+                $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
                 authorized: true,
                 responseStatus: context.HttpContext.Response.StatusCode,
                 context.HttpContext.RequestAborted);
@@ -6090,7 +6118,7 @@ static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<o
                 session,
                 context.HttpContext.Request.Method,
                 context.HttpContext.GetEndpoint()?.DisplayName ?? "unmatched",
-                $"{sectionValue}:{permissionValue}:{returnValue}",
+                $"{policy.PolicyId}@{AuthorizationPolicyCatalog.Revision}",
                 authorized: true,
                 responseStatus: StatusCodes.Status500InternalServerError,
                 context.HttpContext.RequestAborted);

@@ -83,6 +83,7 @@ import {
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
+import AuthorizationPolicyRegistry from "./AuthorizationPolicyRegistry.tsx";
 import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
 
 type AsyncState<T> =
@@ -4037,6 +4038,9 @@ export default function AdminDirectory() {
                       </ul>
                     </section>
                   </div>
+                  <AuthorizationPolicyRegistry
+                    sessionId={session.sessionId}
+                  />
                 </section>
               )}
             </>

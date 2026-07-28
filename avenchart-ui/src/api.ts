@@ -6250,6 +6250,78 @@ export async function getAdministrationDirectory(
 ): Promise<AdministrationDirectoryResponse> {
   return clinicianGet(sessionId, '/api/administration/directory', signal)
 }
+export type AuthorizationPolicyGap =
+  | 'all'
+  | 'production-approval'
+  | 'facility-scope'
+  | 'patient-scope'
+  | 'purpose'
+  | 'exceptional-access'
+export type AuthorizationPolicyRule = {
+  policyId: string
+  capability: string
+  permissionName: string
+  section: string
+  permission: string
+  minimumLevel: string
+  owner: string
+  policyState: string
+  approvalState: string
+  subjectType: string
+  organizationScope: string
+  facilityScope: string
+  patientScope: string
+  purposeRequirement: string
+  exceptionalAccess: string
+  enforcement: string
+  verificationState: string
+  openGaps: string[]
+}
+export type AuthorizationPolicyCatalogResponse = {
+  revision: string
+  classification: string
+  effectiveState: string
+  rules: AuthorizationPolicyRule[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  query: string
+  gap: AuthorizationPolicyGap
+  counts: {
+    total: number
+    locallyEnforced: number
+    productionApproved: number
+    facilityScoped: number
+    patientScoped: number
+    purposeConditioned: number
+    exceptionalAccessDecided: number
+  }
+  registryGaps: string[]
+}
+export async function getAuthorizationPolicyCatalog(
+  sessionId: string,
+  params: {
+    query?: string
+    gap?: AuthorizationPolicyGap
+    offset?: number
+    limit?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<AuthorizationPolicyCatalogResponse> {
+  const query = new URLSearchParams()
+  if (params.query) query.set('query', params.query)
+  if (params.gap) query.set('gap', params.gap)
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  return clinicianGet(
+    sessionId,
+    `/api/administration/authorization-policy-catalog${
+      query.size > 0 ? `?${query.toString()}` : ''
+    }`,
+    signal,
+  )
+}
 export type ConfigurationCatalogItem = {
   key: string
   family: string
