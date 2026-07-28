@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, X } from "lucide-react";
+import { AlertTriangle, Plus, Search, X } from "lucide-react";
 import {
   getClinicalLists,
   createProblem,
@@ -10,8 +10,11 @@ import {
   createMedication,
   deactivateMedication,
   createImmunization,
+  createPrescription,
   markImmunizationEnteredInError,
+  searchClinicalMedicationVocabulary,
   type ClinicalListsResponse,
+  type MedicationVocabularyItem,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
@@ -35,7 +38,23 @@ function isoNow() {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-type AddMode = "problem" | "allergy" | "medication" | "immunization" | null;
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+type AddMode =
+  | "problem"
+  | "allergy"
+  | "medication"
+  | "prescription"
+  | "immunization"
+  | null;
+
+type VocabularyState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; items: MedicationVocabularyItem[] }
+  | { status: "error"; message: string };
 
 export default function PatientChart() {
   const { session, patientId } = useOutletContext<PatientOutletContext>();
@@ -57,6 +76,23 @@ export default function PatientChart() {
   // Add-medication form state
   const [newMedTitle, setNewMedTitle] = useState("");
   const [newMedDx, setNewMedDx] = useState("");
+
+  // Add-prescription form state
+  const [rxQuery, setRxQuery] = useState("");
+  const [rxVocabulary, setRxVocabulary] = useState<VocabularyState>({
+    status: "idle",
+  });
+  const [selectedRx, setSelectedRx] =
+    useState<MedicationVocabularyItem | null>(null);
+  const [newRxStartDate, setNewRxStartDate] = useState(today());
+  const [newRxDosage, setNewRxDosage] = useState("");
+  const [newRxQuantity, setNewRxQuantity] = useState("");
+  const [newRxFrequency, setNewRxFrequency] = useState("");
+  const [newRxDuration, setNewRxDuration] = useState("");
+  const [newRxRoute, setNewRxRoute] = useState("");
+  const [newRxRefills, setNewRxRefills] = useState("0");
+  const [newRxDiagnosis, setNewRxDiagnosis] = useState("");
+  const [newRxNote, setNewRxNote] = useState("");
 
   // Add-immunization form state
   const [newImmVaccine, setNewImmVaccine] = useState("");
@@ -200,6 +236,107 @@ export default function PatientChart() {
       showToast("Medication marked inactive.", "success");
     } catch {
       showToast("Could not update medication.", "error");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleVocabularySearch() {
+    setSelectedRx(null);
+    setRxVocabulary({ status: "loading" });
+    try {
+      const items = await searchClinicalMedicationVocabulary(
+        session.sessionId,
+        rxQuery,
+      );
+      setRxVocabulary({ status: "ready", items });
+    } catch (error) {
+      setRxVocabulary({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The local medication catalog could not be searched.",
+      });
+    }
+  }
+
+  function selectVocabularyItem(item: MedicationVocabularyItem) {
+    setSelectedRx(item);
+    setNewRxRoute(item.route);
+    setNewRxFrequency(item.frequency ?? "");
+    setNewRxDuration(
+      item.durationDays === null || item.durationDays === undefined
+        ? ""
+        : String(item.durationDays),
+    );
+    const suggestedDose = [
+      item.doseAmount,
+      item.doseUnit,
+      item.frequency,
+    ]
+      .filter((value) => value !== null && value !== undefined && value !== "")
+      .join(" ");
+    setNewRxDosage(suggestedDose);
+  }
+
+  function resetPrescriptionForm() {
+    setRxQuery("");
+    setRxVocabulary({ status: "idle" });
+    setSelectedRx(null);
+    setNewRxStartDate(today());
+    setNewRxDosage("");
+    setNewRxQuantity("");
+    setNewRxFrequency("");
+    setNewRxDuration("");
+    setNewRxRoute("");
+    setNewRxRefills("0");
+    setNewRxDiagnosis("");
+    setNewRxNote("");
+  }
+
+  async function handleAddPrescription(e: React.FormEvent) {
+    e.preventDefault();
+    const refills = Number(newRxRefills);
+    const durationDays = newRxDuration ? Number(newRxDuration) : null;
+    if (
+      !selectedRx ||
+      Boolean(selectedRx.controlledSubstanceSchedule) ||
+      !newRxStartDate ||
+      !newRxDosage.trim() ||
+      !newRxQuantity.trim() ||
+      !Number.isInteger(refills) ||
+      refills < 0 ||
+      refills > 12 ||
+      (durationDays !== null &&
+        (!Number.isInteger(durationDays) || durationDays <= 0))
+    )
+      return;
+
+    setWorking(true);
+    try {
+      const result = await createPrescription(session.sessionId, {
+        patientId,
+        startDate: newRxStartDate,
+        drug: selectedRx.displayName,
+        rxNormCode: selectedRx.rxNormCode,
+        dosage: newRxDosage.trim(),
+        quantity: newRxQuantity.trim(),
+        doseAmount: selectedRx.doseAmount ?? null,
+        doseUnit: selectedRx.doseUnit ?? null,
+        frequency: newRxFrequency.trim() || null,
+        durationDays,
+        route: newRxRoute.trim() || null,
+        refills,
+        diagnosis: newRxDiagnosis.trim(),
+        note: newRxNote.trim(),
+      });
+      setState({ status: "ready", data: result.detail });
+      setAddMode(null);
+      resetPrescriptionForm();
+      showToast("Prescription created in the local target.", "success");
+    } catch {
+      showToast("Could not create the prescription.", "error");
     } finally {
       setWorking(false);
     }
@@ -538,12 +675,254 @@ export default function PatientChart() {
         </section>
 
         {/* Prescriptions */}
-        <section className="cl-card">
+        <section className="cl-card cl-card-wide">
           <div className="cl-card-header">
-            <h2 className="cl-card-title">
-              Prescriptions ({data.prescriptions.length})
-            </h2>
+            <div>
+              <h2 className="cl-card-title">
+                Prescriptions ({data.prescriptions.length})
+              </h2>
+              <p className="clinician-page-subtitle">
+                Local target catalog · dataset {data.datasetId} ·{" "}
+                {data.datasetVersion}
+              </p>
+            </div>
+            <button
+              className="cl-btn-icon"
+              type="button"
+              onClick={() => {
+                const opening = addMode !== "prescription";
+                setAddMode(opening ? "prescription" : null);
+                if (!opening) resetPrescriptionForm();
+              }}
+              aria-label="Add prescription"
+            >
+              <Plus size={15} />
+            </button>
           </div>
+          <div className="hint-banner">
+            This searchable RXCUI list is a bounded local catalog for synthetic
+            workflow validation. It is not an authoritative drug knowledge
+            base and does not perform formulary, interaction, pharmacy,
+            eRx/EPCS, or controlled-substance authorization.
+          </div>
+          {addMode === "prescription" && (
+            <form
+              className="cl-inline-form rx-create-form"
+              onSubmit={handleAddPrescription}
+            >
+              <fieldset>
+                <legend>1. Select a local medication</legend>
+                <div className="rx-catalog-search">
+                  <label htmlFor="rx-catalog-query">Drug name or RXCUI</label>
+                  <div>
+                    <input
+                      id="rx-catalog-query"
+                      className="ne-input"
+                      value={rxQuery}
+                      onChange={(e) => setRxQuery(e.target.value)}
+                      placeholder="Search the local medication catalog"
+                    />
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      disabled={rxVocabulary.status === "loading"}
+                      onClick={handleVocabularySearch}
+                    >
+                      <Search size={14} /> Search catalog
+                    </button>
+                  </div>
+                </div>
+                {rxVocabulary.status === "loading" && (
+                  <p className="cl-empty-text" aria-live="polite">
+                    Searching the local medication catalog…
+                  </p>
+                )}
+                {rxVocabulary.status === "error" && (
+                  <div className="error-banner">
+                    {rxVocabulary.message}
+                  </div>
+                )}
+                {rxVocabulary.status === "ready" &&
+                  rxVocabulary.items.length === 0 && (
+                    <p className="cl-empty-text">
+                      No local medications match this search.
+                    </p>
+                  )}
+                {rxVocabulary.status === "ready" &&
+                  rxVocabulary.items.length > 0 && (
+                    <div
+                      className="rx-catalog-results"
+                      role="listbox"
+                      aria-label="Local medication matches"
+                    >
+                      {rxVocabulary.items.map((item) => (
+                        <button
+                          key={item.rxNormCode}
+                          className={
+                            selectedRx?.rxNormCode === item.rxNormCode
+                              ? "rx-catalog-option rx-catalog-option-selected"
+                              : "rx-catalog-option"
+                          }
+                          type="button"
+                          role="option"
+                          aria-selected={
+                            selectedRx?.rxNormCode === item.rxNormCode
+                          }
+                          onClick={() => selectVocabularyItem(item)}
+                        >
+                          <strong>{item.displayName}</strong>
+                          <span>
+                            RXCUI {item.rxNormCode} · {item.form} ·{" "}
+                            {item.route}
+                            {item.controlledSubstanceSchedule
+                              ? ` · Schedule ${item.controlledSubstanceSchedule}`
+                              : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </fieldset>
+
+              {selectedRx && (
+                <fieldset>
+                  <legend>2. Complete prescription details</legend>
+                  <div className="rx-selected-medication" role="status">
+                    <div>
+                      <strong>{selectedRx.displayName}</strong>
+                      <span>
+                        RXCUI {selectedRx.rxNormCode} ·{" "}
+                        {selectedRx.strength} · {selectedRx.form}
+                      </span>
+                    </div>
+                    {selectedRx.controlledSubstanceSchedule && (
+                      <span className="rx-warning">
+                        <AlertTriangle size={14} /> Schedule{" "}
+                        {selectedRx.controlledSubstanceSchedule}: governed
+                        authorization is not implemented
+                      </span>
+                    )}
+                  </div>
+                  <div className="rx-create-grid">
+                    <label>
+                      Start date
+                      <input
+                        className="ne-input"
+                        type="date"
+                        value={newRxStartDate}
+                        onChange={(e) => setNewRxStartDate(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Directions
+                      <input
+                        className="ne-input"
+                        value={newRxDosage}
+                        onChange={(e) => setNewRxDosage(e.target.value)}
+                        placeholder="For example, 1 tablet twice daily"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Quantity
+                      <input
+                        className="ne-input"
+                        value={newRxQuantity}
+                        onChange={(e) => setNewRxQuantity(e.target.value)}
+                        placeholder="For example, 30"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Route
+                      <input
+                        className="ne-input"
+                        value={newRxRoute}
+                        onChange={(e) => setNewRxRoute(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Frequency
+                      <input
+                        className="ne-input"
+                        value={newRxFrequency}
+                        onChange={(e) => setNewRxFrequency(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Duration (days)
+                      <input
+                        className="ne-input"
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={newRxDuration}
+                        onChange={(e) => setNewRxDuration(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Authorized refills
+                      <input
+                        className="ne-input"
+                        type="number"
+                        min={0}
+                        max={12}
+                        value={newRxRefills}
+                        onChange={(e) => setNewRxRefills(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Diagnosis
+                      <input
+                        className="ne-input"
+                        value={newRxDiagnosis}
+                        onChange={(e) => setNewRxDiagnosis(e.target.value)}
+                        placeholder="Optional diagnosis code"
+                      />
+                    </label>
+                    <label className="rx-create-note">
+                      Prescription note
+                      <input
+                        className="ne-input"
+                        value={newRxNote}
+                        onChange={(e) => setNewRxNote(e.target.value)}
+                        maxLength={250}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+              )}
+              <div className="cl-inline-form-actions">
+                <button
+                  className="cl-btn-primary"
+                  type="submit"
+                  disabled={
+                    working ||
+                    !selectedRx ||
+                    Boolean(selectedRx.controlledSubstanceSchedule) ||
+                    !newRxStartDate ||
+                    !newRxDosage.trim() ||
+                    !newRxQuantity.trim()
+                  }
+                >
+                  Create local prescription
+                </button>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  disabled={working}
+                  onClick={() => {
+                    setAddMode(null);
+                    resetPrescriptionForm();
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
           {data.prescriptions.length === 0 ? (
             <p className="cl-empty-text">No prescriptions on file.</p>
           ) : (
@@ -551,18 +930,32 @@ export default function PatientChart() {
               {data.prescriptions.map((rx) => (
                 <li key={rx.id} className="cl-clinical-row">
                   {statusDot(rx.active)}
-                  <div>
+                  <div className="cl-clinical-body">
                     <p className="cl-clinical-title">{rx.drug}</p>
                     <p className="cl-clinical-meta">
                       {[
                         rx.dosage,
                         rx.quantity ? `Qty ${rx.quantity}` : null,
                         rx.route,
+                        rx.rxNormCode ? `RXCUI ${rx.rxNormCode}` : null,
+                        `${rx.refills} refill${rx.refills === 1 ? "" : "s"}`,
                       ]
                         .filter(Boolean)
                         .join(" · ")}
                       {rx.providerName ? ` · ${rx.providerName}` : ""}
                     </p>
+                    <p className="cl-clinical-meta">
+                      RX ID {rx.id}
+                      {rx.startDate ? ` · Started ${rx.startDate}` : ""}
+                      {rx.note ? ` · ${rx.note}` : ""}
+                    </p>
+                    {rx.controlledSubstanceReviewRequired && (
+                      <p className="rx-warning">
+                        <AlertTriangle size={13} />{" "}
+                        {rx.controlledSubstanceReason ??
+                          "Controlled-substance review required."}
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}

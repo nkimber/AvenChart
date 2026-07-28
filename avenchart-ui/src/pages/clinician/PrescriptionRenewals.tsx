@@ -710,7 +710,8 @@ export default function PrescriptionRenewals() {
                         {entry.rx.refills} refill
                         {entry.rx.refills === 1 ? "" : "s"} · Started{" "}
                         {entry.rx.startDate ?? "not recorded"} · Ends{" "}
-                        {entry.rx.endDate ?? "not recorded"}
+                        {entry.rx.endDate ?? "not recorded"} · RX ID{" "}
+                        {entry.rx.id}
                       </p>
                       {entry.rx.controlledSubstanceReviewRequired && (
                         <p className="rx-warning">

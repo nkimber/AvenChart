@@ -3314,6 +3314,20 @@ export type PrescriptionRefillRequestItem = {
   body: string
 }
 
+export type MedicationVocabularyItem = {
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  form: string
+  strength: string
+  route: string
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
+  controlledSubstanceSchedule?: string | null
+}
+
 export type ClinicalListsResponse = {
   datasetId: string
   datasetVersion: string
@@ -3340,6 +3354,20 @@ export async function getClinicalLists(
   signal?: AbortSignal,
 ): Promise<ClinicalListsResponse> {
   return clinicianGet(sessionId, `/api/clinical-lists/${patientId}`, signal)
+}
+
+export async function searchClinicalMedicationVocabulary(
+  sessionId: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<MedicationVocabularyItem[]> {
+  const params = new URLSearchParams()
+  if (query.trim()) params.set('query', query.trim())
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/medication-vocabulary?${params}`,
+    signal,
+  )
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -6016,6 +6044,10 @@ export type CreatePrescriptionInput = {
   rxNormCode?: string | null
   dosage: string
   quantity: string
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
   route?: string | null
   refills: number
   note: string

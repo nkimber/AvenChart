@@ -252,41 +252,75 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can approve a portal refill request and inspect prescription audit history", async ({
+  test("staff can create a catalog prescription, approve its portal refill request, and inspect audit history", async ({
     page,
   }) => {
     await signInClinician(page);
     const sessionId = await getClinicianSessionId(page);
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
-    const drug = `Refill proof medication ${Date.now()}`;
+    const prescriptionNote = `Temporary catalog prescription ${Date.now()}`;
     const requestNote = `Temporary refill request ${Date.now()}`;
     let prescriptionId: string | null = null;
     let portalSessionId: string | null = null;
     const messageIds: string[] = [];
 
     try {
-      const createdPrescription = await page.request.post(
-        `${apiBaseUrl}/api/clinical-lists/prescriptions`,
+      await page.goto("/clinician/patients/MOD-PAT-0004/chart");
+      const prescriptions = page
+        .getByRole("heading", { name: /Prescriptions/ })
+        .locator("xpath=ancestor::section");
+      await prescriptions
+        .getByRole("button", { name: "Add prescription" })
+        .click();
+      await prescriptions
+        .getByLabel("Drug name or RXCUI")
+        .fill("Metformin");
+      await prescriptions
+        .getByRole("button", { name: "Search catalog" })
+        .click();
+      const catalogOption = prescriptions
+        .getByRole("option", { name: /Metformin/ })
+        .first();
+      await expect(catalogOption).toBeVisible({ timeout: 15_000 });
+      await catalogOption.click();
+      await prescriptions
+        .getByLabel("Directions")
+        .fill("1 tablet daily with food");
+      await prescriptions.getByLabel("Quantity").fill("30");
+      await prescriptions.getByLabel("Authorized refills").fill("0");
+      await prescriptions.getByLabel("Diagnosis").fill("E11.9");
+      await prescriptions
+        .getByLabel("Prescription note")
+        .fill(prescriptionNote);
+      await prescriptions
+        .getByRole("button", { name: "Create local prescription" })
+        .click();
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Prescription created in the local target." }),
+      ).toBeVisible();
+
+      const clinicalLists = await page.request.get(
+        `${apiBaseUrl}/api/clinical-lists/MOD-PAT-0004`,
         {
           headers: { "X-Legacy EHR-Session": sessionId },
-          data: {
-            patientId: "MOD-PAT-0004",
-            startDate: new Date().toISOString().slice(0, 10),
-            drug,
-            dosage: "1 tablet daily",
-            quantity: "30",
-            route: "oral",
-            refills: 0,
-            note: "Temporary browser verification fixture",
-            diagnosis: "Z00.00",
-          },
         },
       );
-      expect(createdPrescription.ok()).toBeTruthy();
-      prescriptionId = ((await createdPrescription.json()) as { id?: string })
-        .id ?? null;
+      expect(clinicalLists.ok()).toBeTruthy();
+      const createdPrescription = (
+        (await clinicalLists.json()) as {
+          prescriptions?: Array<{
+            id: string;
+            drug: string;
+            note?: string | null;
+          }>;
+        }
+      ).prescriptions?.find((item) => item.note === prescriptionNote);
+      prescriptionId = createdPrescription?.id ?? null;
       expect(prescriptionId).toBeTruthy();
+      expect(createdPrescription?.drug).toContain("Metformin");
 
       const portalLogin = await page.request.post(
         `${apiBaseUrl}/api/patient-portal/login`,
@@ -334,7 +368,7 @@ test.describe("isolated mutation workflows", () => {
         "/clinician/renewals?patient=MOD-PAT-0004&view=requests",
       );
       const requestCard = page.locator("article.rx-renew-item").filter({
-        hasText: drug,
+        hasText: requestNote,
       });
       await expect(requestCard).toBeVisible({ timeout: 30_000 });
       await expect(requestCard).toContainText(requestNote);
@@ -360,7 +394,7 @@ test.describe("isolated mutation workflows", () => {
         .getByRole("button", { name: "All active", exact: true })
         .click();
       const prescriptionCard = page.locator("article.rx-renew-item").filter({
-        hasText: drug,
+        hasText: prescriptionId!,
       });
       await expect(prescriptionCard).toBeVisible({ timeout: 30_000 });
       await expect(prescriptionCard).toContainText("2 refills");

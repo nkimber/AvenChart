@@ -14,6 +14,7 @@ import {
   createInventoryTransaction,
   createInventoryTransfer,
   createPatientMessage,
+  createPrescription,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
   downloadInventoryActivityCsv,
@@ -38,6 +39,7 @@ import {
   refillPrescription,
   replyToPatientMessage,
   searchEncounters,
+  searchClinicalMedicationVocabulary,
   SESSION_INVALID_EVENT,
   signLabReport,
   submitInventoryPurchaseRequisition,
@@ -1112,6 +1114,64 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       body: JSON.stringify(requestApproval),
+    })
+  })
+
+  it('searches the local medication vocabulary and creates a structured prescription', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            rxNormCode: '860975',
+            drugName: 'Metformin',
+            displayName: 'Metformin 500 MG Oral Tablet',
+            form: 'tablet',
+            strength: '500 mg',
+            route: 'oral',
+            doseAmount: 1,
+            doseUnit: 'tablet',
+            frequency: 'twice daily',
+            durationDays: 30,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ id: 'rx-1', detail: { prescriptions: [] } }, 201),
+      )
+
+    const catalog = await searchClinicalMedicationVocabulary(
+      'staff-session',
+      'metformin 500',
+    )
+    const prescription = {
+      patientId: 'MOD-PAT-0004',
+      startDate: '2026-07-28',
+      drug: catalog[0]!.displayName,
+      rxNormCode: catalog[0]!.rxNormCode,
+      dosage: '1 tablet twice daily',
+      quantity: '60',
+      doseAmount: 1,
+      doseUnit: 'tablet',
+      frequency: 'twice daily',
+      durationDays: 30,
+      route: 'oral',
+      refills: 1,
+      note: 'Catalog-backed local prescription',
+      diagnosis: 'E11.9',
+    }
+    await createPrescription('staff-session', prescription)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/medication-vocabulary?query=metformin+500',
+      'http://localhost:5001/api/clinical-lists/prescriptions',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(prescription),
     })
   })
 

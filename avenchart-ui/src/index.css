@@ -6134,6 +6134,93 @@ a {
 .rx-audit-list strong {
   color: var(--text);
 }
+.rx-create-form {
+  margin-bottom: 14px;
+}
+.rx-create-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.rx-create-form legend {
+  padding: 0 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.rx-catalog-search > label,
+.rx-create-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rx-catalog-search > div {
+  display: flex;
+  gap: 8px;
+}
+.rx-catalog-search .ne-input {
+  flex: 1;
+}
+.rx-catalog-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 230px;
+  margin-top: 10px;
+  padding: 2px;
+  overflow-y: auto;
+}
+.rx-catalog-option {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rx-catalog-option:hover,
+.rx-catalog-option:focus-visible {
+  border-color: var(--teal);
+}
+.rx-catalog-option-selected {
+  border-color: var(--teal);
+  background: var(--teal-light);
+}
+.rx-catalog-option span,
+.rx-selected-medication span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.rx-selected-medication {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.rx-selected-medication > div {
+  display: grid;
+  gap: 2px;
+}
+.rx-create-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.rx-create-note {
+  grid-column: span 2;
+}
 
 @media (max-width: 900px) {
   .rx-renew-item {
@@ -6148,6 +6235,16 @@ a {
   }
   .rx-renew-actions,
   .rx-scope-controls {
+    flex-wrap: wrap;
+  }
+  .rx-create-grid,
+  .rx-catalog-results {
+    grid-template-columns: 1fr;
+  }
+  .rx-create-note {
+    grid-column: auto;
+  }
+  .rx-catalog-search > div {
     flex-wrap: wrap;
   }
 }
