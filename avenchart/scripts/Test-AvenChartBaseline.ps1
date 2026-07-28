@@ -10288,6 +10288,86 @@ catch {
 }
 
 try {
+    $optionListChangeHeaders = Get-AdministrationHeaders
+    $optionListChangeHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListChangeHeaders -TimeoutSec 20
+    $optionListChangeDetail = $optionListChangeHistory.detail
+    $optionListChangeBaseline = $optionListChangeHistory.revisions[0]
+    $optionListChangeMarker = "$($optionListChangeDetail.list.title) smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $optionListChangeOptions = @($optionListChangeDetail.options | ForEach-Object { @{ key = $_.key; title = $_.title; sequence = $_.sequence; isDefault = $_.isDefault; active = $_.active; value = $_.value } })
+    $optionListChangeDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-list-change-requests" -Method Post -Headers $optionListChangeHeaders -ContentType "application/json" -Body (@{ key = $optionListChangeDetail.list.key; title = $optionListChangeMarker; active = $optionListChangeDetail.list.active; options = $optionListChangeOptions; reason = "Lifecycle smoke validation" } | ConvertTo-Json -Depth 8) -TimeoutSec 20
+    $optionListChangeSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-list-change-requests/$($optionListChangeDraft.request.requestId)/submit" -Method Post -Headers $optionListChangeHeaders -ContentType "application/json" -Body (@{ note = "Submit"; expectedVersion = $optionListChangeDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $optionListChangeApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-list-change-requests/$($optionListChangeDraft.request.requestId)/approve" -Method Post -Headers $optionListChangeHeaders -ContentType "application/json" -Body (@{ note = "Approve"; expectedVersion = $optionListChangeSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $optionListChangeActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-list-change-requests/$($optionListChangeDraft.request.requestId)/activate" -Method Post -Headers $optionListChangeHeaders -ContentType "application/json" -Body (@{ note = "Activate"; expectedVersion = $optionListChangeApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $optionListChangeRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/revisions/$($optionListChangeBaseline.revisionId)/rollback" -Method Post -Headers $optionListChangeHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $optionListChangeActions = @($optionListChangeActivated.events.action)
+    $optionListChangePassed = $optionListChangeDraft.request.status -eq "draft" `
+        -and $optionListChangeSubmitted.request.status -eq "submitted" `
+        -and $optionListChangeApproved.request.status -eq "approved" `
+        -and $optionListChangeActivated.request.status -eq "activated" `
+        -and $optionListChangeActivated.activeList.list.title -eq $optionListChangeMarker `
+        -and $optionListChangeActions -contains "created" `
+        -and $optionListChangeActions -contains "submitted" `
+        -and $optionListChangeActions -contains "approved" `
+        -and $optionListChangeActions -contains "activated" `
+        -and $optionListChangeRestored.detail.list.title -eq $optionListChangeDetail.list.title `
+        -and $optionListChangeRestored.revisions[0].action -eq "rolled-back"
+    Add-Check -Name "form option-list change-request lifecycle" -Result $(if ($optionListChangePassed) { "passed" } else { "failed" }) -Details @{ requestId = $optionListChangeDraft.request.requestId; actions = $optionListChangeActions; restoredList = $optionListChangeRestored.detail.list.title }
+}
+catch {
+    Add-Check -Name "form option-list change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $alertChangeHeaders = Get-AdministrationHeaders
+    $alertChangeHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER/history" -Method Get -Headers $alertChangeHeaders -TimeoutSec 20
+    $alertChangeRule = $alertChangeHistory.rule
+    $alertChangeBaseline = $alertChangeHistory.revisions[0]
+    $alertChangeMarker = "$($alertChangeRule.title) smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $alertChangeDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rule-change-requests" -Method Post -Headers $alertChangeHeaders -ContentType "application/json" -Body (@{ key = $alertChangeRule.key; title = $alertChangeMarker; triggerType = $alertChangeRule.triggerType; targetType = $alertChangeRule.targetType; severity = $alertChangeRule.severity; message = $alertChangeRule.message; sequence = $alertChangeRule.sequence; active = $alertChangeRule.active; reason = "Lifecycle smoke validation" } | ConvertTo-Json) -TimeoutSec 20
+    $alertChangeSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rule-change-requests/$($alertChangeDraft.request.requestId)/submit" -Method Post -Headers $alertChangeHeaders -ContentType "application/json" -Body (@{ note = "Submit"; expectedVersion = $alertChangeDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $alertChangeApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rule-change-requests/$($alertChangeDraft.request.requestId)/approve" -Method Post -Headers $alertChangeHeaders -ContentType "application/json" -Body (@{ note = "Approve"; expectedVersion = $alertChangeSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $alertChangeActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rule-change-requests/$($alertChangeDraft.request.requestId)/activate" -Method Post -Headers $alertChangeHeaders -ContentType "application/json" -Body (@{ note = "Activate"; expectedVersion = $alertChangeApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $alertChangeRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/clinical-alert-rules/APPOINTMENT_REMINDER/revisions/$($alertChangeBaseline.revisionId)/rollback" -Method Post -Headers $alertChangeHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $alertChangeActions = @($alertChangeActivated.events.action)
+    $alertChangePassed = $alertChangeDraft.request.status -eq "draft" -and $alertChangeSubmitted.request.status -eq "submitted" -and $alertChangeApproved.request.status -eq "approved" -and $alertChangeActivated.request.status -eq "activated" -and $alertChangeActivated.activeRule.title -eq $alertChangeMarker -and $alertChangeActions -contains "created" -and $alertChangeActions -contains "submitted" -and $alertChangeActions -contains "approved" -and $alertChangeActions -contains "activated" -and $alertChangeRestored.rule.title -eq $alertChangeRule.title -and $alertChangeRestored.revisions[0].action -eq "rolled-back"
+    Add-Check -Name "clinical alert-rule change-request lifecycle" -Result $(if ($alertChangePassed) { "passed" } else { "failed" }) -Details @{ requestId = $alertChangeDraft.request.requestId; actions = $alertChangeActions; restoredRule = $alertChangeRestored.rule.title }
+}
+catch {
+    Add-Check -Name "clinical alert-rule change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
+    $apiClientChangeHeaders = Get-AdministrationHeaders
+    $apiClientChangeHistory = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/history" -Method Get -Headers $apiClientChangeHeaders -TimeoutSec 20
+    $apiClientChangeClient = $apiClientChangeHistory.client
+    $apiClientChangeBaseline = $apiClientChangeHistory.revisions[0]
+    $apiClientChangeMarker = "$($apiClientChangeClient.displayName) smoke $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $apiClientChangeDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-client-change-requests" -Method Post -Headers $apiClientChangeHeaders -ContentType "application/json" -Body (@{ key = $apiClientChangeClient.key; displayName = $apiClientChangeMarker; redirectUri = $apiClientChangeClient.redirectUri; scopes = $apiClientChangeClient.scopes; active = $apiClientChangeClient.active; reason = "Lifecycle smoke validation" } | ConvertTo-Json) -TimeoutSec 20
+    $apiClientChangeQueue = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-client-change-requests?status=open" -Method Get -Headers $apiClientChangeHeaders -TimeoutSec 20
+    $apiClientChangeSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-client-change-requests/$($apiClientChangeDraft.request.requestId)/submit" -Method Post -Headers $apiClientChangeHeaders -ContentType "application/json" -Body (@{ note = "Submit"; expectedVersion = $apiClientChangeDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $apiClientChangeApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-client-change-requests/$($apiClientChangeDraft.request.requestId)/approve" -Method Post -Headers $apiClientChangeHeaders -ContentType "application/json" -Body (@{ note = "Approve"; expectedVersion = $apiClientChangeSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $apiClientChangeActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-client-change-requests/$($apiClientChangeDraft.request.requestId)/activate" -Method Post -Headers $apiClientChangeHeaders -ContentType "application/json" -Body (@{ note = "Activate"; expectedVersion = $apiClientChangeApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $apiClientChangeRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/api-clients/LOCAL_PORTAL/revisions/$($apiClientChangeBaseline.revisionId)/rollback" -Method Post -Headers $apiClientChangeHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
+    $apiClientChangeActions = @($apiClientChangeActivated.events.action)
+    $apiClientChangePassed = $apiClientChangeDraft.request.status -eq "draft" `
+        -and @($apiClientChangeQueue.requests | Where-Object { $_.requestId -eq $apiClientChangeDraft.request.requestId }).Count -eq 1 `
+        -and $apiClientChangeSubmitted.request.status -eq "submitted" `
+        -and $apiClientChangeApproved.request.status -eq "approved" `
+        -and $apiClientChangeActivated.request.status -eq "activated" `
+        -and $apiClientChangeActivated.activeClient.displayName -eq $apiClientChangeMarker `
+        -and $apiClientChangeActions -contains "created" `
+        -and $apiClientChangeActions -contains "submitted" `
+        -and $apiClientChangeActions -contains "approved" `
+        -and $apiClientChangeActions -contains "activated" `
+        -and $apiClientChangeRestored.client.displayName -eq $apiClientChangeClient.displayName `
+        -and $apiClientChangeRestored.revisions[0].action -eq "rolled-back"
+    Add-Check -Name "API-client change-request lifecycle" -Result $(if ($apiClientChangePassed) { "passed" } else { "failed" }) -Details @{ requestId = $apiClientChangeDraft.request.requestId; actions = $apiClientChangeActions; restoredClient = $apiClientChangeRestored.client.displayName }
+}
+catch {
+    Add-Check -Name "API-client change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+
+try {
     $optionListHeaders = Get-AdministrationHeaders
     $optionListHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/form-option-lists/state/history" -Method Get -Headers $optionListHeaders -TimeoutSec 20
     $massachusetts = @($optionListHistoryBefore.detail.options | Where-Object { $_.key -eq "MA" }) | Select-Object -First 1

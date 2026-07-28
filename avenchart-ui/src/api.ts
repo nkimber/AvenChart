@@ -7022,6 +7022,56 @@ export async function saveFormOptionValue(
     input,
   )
 }
+export type GovernanceStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'activated'
+  | 'cancelled'
+export type GovernanceEvent = {
+  eventId: number
+  action: GovernanceStatus | 'created'
+  note?: string | null
+  occurredAt: string
+  username: string
+}
+export type FormLayoutDefinition = {
+  key: string
+  title: string
+  mapping: string
+  sequence: number
+  active: boolean
+  groups: Array<Pick<FormLayoutGroupItem, 'key' | 'title' | 'sequence' | 'active'>>
+  fields: Array<Pick<FormLayoutFieldItem, 'key' | 'groupKey' | 'label' | 'fieldType' | 'sequence' | 'required' | 'active' | 'maxLength' | 'listId' | 'defaultValue'>>
+}
+export type FormLayoutChangeRequest = {
+  requestId: string
+  layoutKey: string
+  changeKind: 'create' | 'update'
+  proposedDefinition: FormLayoutDefinition
+  baselineDefinition?: FormLayoutDefinition | null
+  baselineUpdatedAt?: string | null
+  reason: string
+  status: GovernanceStatus
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type FormLayoutChangeRequestDetail = { request: FormLayoutChangeRequest; activeLayout?: FormLayoutDetail | null; events: GovernanceEvent[] }
+export async function getFormLayoutChangeRequests(sessionId: string, status = 'open'): Promise<{ requests: FormLayoutChangeRequest[] }> { return clinicianGet(sessionId, `/api/administration/form-layout-change-requests?status=${encodeURIComponent(status)}`) }
+export async function getFormLayoutChangeRequest(sessionId: string, requestId: string): Promise<FormLayoutChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}`) }
+export async function createFormLayoutChangeRequest(sessionId: string, input: FormLayoutDefinition & { reason: string }): Promise<FormLayoutChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/form-layout-change-requests', input) }
+export async function transitionFormLayoutChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<FormLayoutChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/form-layout-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
+export type FormOptionListDefinition = { key: string; title: string; active: boolean; options: Array<Pick<FormOptionValueItem, 'key' | 'title' | 'sequence' | 'isDefault' | 'active' | 'value'>> }
+export type FormOptionListChangeRequest = { requestId: string; listKey: string; changeKind: 'create' | 'update'; proposedDefinition: FormOptionListDefinition; baselineDefinition?: FormOptionListDefinition | null; baselineUpdatedAt?: string | null; reason: string; status: GovernanceStatus; version: number; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string }
+export type FormOptionListChangeRequestDetail = { request: FormOptionListChangeRequest; activeList?: FormOptionListDetail | null; events: GovernanceEvent[] }
+export async function getFormOptionListChangeRequests(sessionId: string, status = 'open'): Promise<{ requests: FormOptionListChangeRequest[] }> { return clinicianGet(sessionId, `/api/administration/form-option-list-change-requests?status=${encodeURIComponent(status)}`) }
+export async function getFormOptionListChangeRequest(sessionId: string, requestId: string): Promise<FormOptionListChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}`) }
+export async function createFormOptionListChangeRequest(sessionId: string, input: FormOptionListDefinition & { reason: string }): Promise<FormOptionListChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/form-option-list-change-requests', input) }
+export async function transitionFormOptionListChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<FormOptionListChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/form-option-list-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
 export type ClinicalAlertRuleItem = {
   key: string
   title: string
@@ -7037,6 +7087,14 @@ export async function getClinicalAlertRules(
 ): Promise<{ rules: ClinicalAlertRuleItem[] }> {
   return clinicianGet(sessionId, '/api/administration/clinical-alert-rules')
 }
+export type ClinicalAlertRuleChangeRequest = {
+  requestId: string; ruleKey: string; status: GovernanceStatus; version: number; reason: string
+  proposedDefinition: ClinicalAlertRuleItem; baselineDefinition?: ClinicalAlertRuleItem | null
+}
+export type ClinicalAlertRuleChangeRequestDetail = { request: ClinicalAlertRuleChangeRequest; activeRule?: ClinicalAlertRuleItem | null; events: GovernanceEvent[] }
+export async function createClinicalAlertRuleChangeRequest(sessionId: string, input: ClinicalAlertRuleItem & { reason: string }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/clinical-alert-rule-change-requests', input) }
+export async function getClinicalAlertRuleChangeRequest(sessionId: string, requestId: string): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}`) }
+export async function transitionClinicalAlertRuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
 export async function saveClinicalAlertRule(
   sessionId: string,
   key: string,
@@ -7151,6 +7209,41 @@ export async function getApiClients(
   sessionId: string,
 ): Promise<{ clients: ApiClientRegistryItem[] }> {
   return clinicianGet(sessionId, '/api/administration/api-clients')
+}
+export type ApiClientChangeRequest = {
+  requestId: string
+  clientKey: string
+  changeKind: 'create' | 'update'
+  proposedDefinition: ApiClientRegistryItem
+  baselineDefinition?: ApiClientRegistryItem | null
+  baselineUpdatedAt?: string | null
+  reason: string
+  status: GovernanceStatus
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type ApiClientChangeRequestDetail = {
+  request: ApiClientChangeRequest
+  activeClient?: ApiClientRegistryItem | null
+  events: GovernanceEvent[]
+}
+export type ApiClientChangeRequestsResponse = {
+  requests: ApiClientChangeRequest[]
+  total: number
+  status: GovernanceStatus | 'all' | 'open'
+  counts: { draft: number; submitted: number; approved: number; rejected: number; activated: number; cancelled: number }
+}
+export async function getApiClientChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ApiClientChangeRequestsResponse> {
+  return clinicianGet(sessionId, `/api/administration/api-client-change-requests?status=${encodeURIComponent(status)}`)
+}
+export async function createApiClientChangeRequest(sessionId: string, input: ApiClientRegistryItem & { reason: string }): Promise<ApiClientChangeRequestDetail> {
+  return clinicianPost(sessionId, '/api/administration/api-client-change-requests', input)
+}
+export async function transitionApiClientChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ApiClientChangeRequestDetail> {
+  return clinicianPost(sessionId, `/api/administration/api-client-change-requests/${encodeURIComponent(requestId)}/${action}`, input)
 }
 export async function saveApiClient(
   sessionId: string,

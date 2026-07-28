@@ -85,6 +85,9 @@ import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 import AuthorizationPolicyRegistry from "./AuthorizationPolicyRegistry.tsx";
 import CodingCatalogGovernance from "./CodingCatalogGovernance.tsx";
+import FormsLayoutGovernance from "./FormsLayoutGovernance.tsx";
+import AlertRuleGovernance from "./AlertRuleGovernance.tsx";
+import ApiClientGovernance from "./ApiClientGovernance.tsx";
 import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
 
 type AsyncState<T> =
@@ -2732,6 +2735,8 @@ export default function AdminDirectory() {
 
               {tab === "layouts" && (
                 <section className="cl-card">
+                  <FormsLayoutGovernance sessionId={session.sessionId} />
+                  <div hidden aria-hidden="true">
                   <h2 className="cl-card-title">Forms and layouts</h2>
                   <p className="clinician-page-subtitle">
                     Manage the metadata that organizes legacy-style forms. This
@@ -3278,11 +3283,14 @@ export default function AdminDirectory() {
                       )}
                     </section>
                   </div>
+                  </div>
                 </section>
               )}
 
               {tab === "rules" && (
                 <section className="cl-card">
+                  <AlertRuleGovernance sessionId={session.sessionId} />
+                  <div hidden aria-hidden="true">
                   <h2 className="cl-card-title">Rules and alerts</h2>
                   <p className="clinician-page-subtitle">
                     Local rule definitions control which clinical context
@@ -3413,6 +3421,7 @@ export default function AdminDirectory() {
                       </table>
                     </div>
                   ) : null}
+                  </div>
                 </section>
               )}
 
@@ -3531,7 +3540,9 @@ export default function AdminDirectory() {
               )}
 
               {tab === "apiClients" && (
-                <section className="cl-card">
+                <>
+                <ApiClientGovernance sessionId={session.sessionId} />
+                <div hidden aria-hidden="true"><section className="cl-card">
                   <div className="cl-admin-facility-header">
                     <div>
                       <h2 className="cl-card-title">API clients</h2>
@@ -3790,7 +3801,8 @@ export default function AdminDirectory() {
                       </table>
                     </div>
                   ) : null}
-                </section>
+                </section></div>
+                </>
               )}
 
               {tab === "access" && (
