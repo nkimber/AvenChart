@@ -4493,6 +4493,14 @@ inventory.MapGet("/receipt-cost-layers", async (int? lotId, int? limit, Inventor
     .WithName("GetInventoryReceiptCostLayers")
     .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
 
+inventory.MapGet("/receipt-cost-layers/{layerId:guid}/applications", async (Guid layerId, InventoryRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetReceiptCostLayerApplicationsAsync(layerId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryReceiptCostLayer"] = [exception.Message] }); }
+})
+    .WithName("GetInventoryReceiptCostLayerApplications")
+    .AddEndpointFilter(AccessPermissionFilter("inventory", "adjustments", "view"));
+
 inventory.MapPost("/cost-policy-change-requests", async (InventoryCostPolicyChangeRequestCreateRequest request, InventoryCostPolicyRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
 { try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var created = await repository.CreateAsync(request, session.Username, cancellationToken); return Results.Created($"/api/inventory/cost-policy-change-requests/{created.Request.RequestId}", created); } catch (InventoryCostPolicyChangeRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); } catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["inventoryCostPolicy"] = [exception.Message] }); } })
     .WithName("CreateInventoryCostPolicyChangeRequest")

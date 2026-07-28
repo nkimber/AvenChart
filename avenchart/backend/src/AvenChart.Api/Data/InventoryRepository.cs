@@ -1505,6 +1505,18 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         return layers;
     }
 
+    public async Task<IReadOnlyList<InventoryReceiptCostLayerApplication>> GetReceiptCostLayerApplicationsAsync(Guid layerId, CancellationToken cancellationToken)
+    {
+        if (layerId == Guid.Empty) throw new ArgumentException("The receipt cost layer is invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,reversal_application_id,applied_at,applied_by from inventory_cost_layer_applications where layer_id=@layer order by applied_at,application_id;";
+        command.Parameters.AddWithValue("layer", layerId);
+        var applications = new List<InventoryReceiptCostLayerApplication>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) applications.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetGuid(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O", CultureInfo.InvariantCulture), reader.GetString(10)));
+        return applications;
+    }
+
     public async Task<InventoryCountReconciliationResponse?> CreateCountReconciliationAsync(
         InventoryCountReconciliationCreateRequest request,
         string username,
