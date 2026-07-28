@@ -3213,10 +3213,25 @@ export type MedicationListItem = {
 
 export type ImmunizationListItem = {
   id: number
+  key: string
+  immunizationId?: number | null
+  cvxCode?: string | null
   vaccine: string
   administeredAt?: string | null
   manufacturer?: string | null
   lotNumber?: string | null
+  administeredBy?: string | null
+  educationDate?: string | null
+  visDate?: string | null
+  amountAdministered?: number | null
+  amountAdministeredUnit?: string | null
+  expirationDate?: string | null
+  route?: string | null
+  administrationSite?: string | null
+  completionStatus?: string | null
+  informationSource?: string | null
+  note?: string | null
+  encounter?: number | null
 }
 
 export type PrescriptionListItem = {
@@ -3224,11 +3239,29 @@ export type PrescriptionListItem = {
   drug: string
   dosage?: string | null
   quantity?: string | null
+  doseAmount?: number | null
+  doseUnit?: string | null
+  frequency?: string | null
+  durationDays?: number | null
   route?: string | null
+  rxNormCode?: string | null
+  controlledSubstanceSchedule?: string | null
+  controlledSubstanceReviewRequired: boolean
+  controlledSubstanceReason?: string | null
+  diagnosis?: string | null
   startDate?: string | null
   endDate?: string | null
+  refills: number
   active: number
+  note?: string | null
+  encounter?: number | null
   providerName?: string | null
+  pharmacyId?: number | null
+  pharmacyName?: string | null
+  pharmacyNcpdp?: number | null
+  erxUploaded: number
+  erxSentAt?: string | null
+  erxPayload?: string | null
 }
 
 export type MedicationDuplicateSummary = {
@@ -3264,9 +3297,32 @@ export type PrescriptionDiagnosisInteractionSummary = {
   drugs: string[]
 }
 
-export type ClinicalListsResponse = {
-  patientId: string
+export type PrescriptionRefillRequestItem = {
+  messageId: number
+  title: string
+  requestDate: string
   patientDisplayName: string
+  portalUsername: string
+  prescriptionId: string
+  drug: string
+  dosage?: string | null
+  quantity?: string | null
+  route?: string | null
+  currentRefills: number
+  status: string
+  patientNote?: string | null
+  body: string
+}
+
+export type ClinicalListsResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  firstName: string
+  lastName: string
   problems: ProblemListItem[]
   allergies: AllergyListItem[]
   medications: MedicationListItem[]
@@ -3275,7 +3331,7 @@ export type ClinicalListsResponse = {
   immunizations: ImmunizationListItem[]
   prescriptions: PrescriptionListItem[]
   prescriptionDiagnosisInteractions: PrescriptionDiagnosisInteractionSummary[]
-  prescriptionRefillRequests: unknown[]
+  prescriptionRefillRequests: PrescriptionRefillRequestItem[]
 }
 
 export async function getClinicalLists(
@@ -5989,6 +6045,74 @@ export async function deactivatePrescription(
     sessionId,
     `/api/clinical-lists/prescriptions/${prescriptionId}/deactivate`,
     body,
+    signal,
+  )
+}
+
+// ── Prescription refill and audit ─────────────────────────────────────────────
+
+export type PrescriptionRefillInput = {
+  refillDate: string
+  additionalRefills: number
+  note: string
+}
+
+export async function refillPrescription(
+  sessionId: string,
+  prescriptionId: string,
+  body: PrescriptionRefillInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/refill`,
+    body,
+    signal,
+  )
+}
+
+export async function approvePrescriptionRefillRequest(
+  sessionId: string,
+  messageId: number,
+  body: PrescriptionRefillInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescription-refill-requests/${messageId}/approve`,
+    body,
+    signal,
+  )
+}
+
+export type ClinicalPrescriptionAuditEvent = {
+  eventId: string
+  prescriptionId: string
+  action: string
+  occurredAt: string
+  actor: string
+  detail?: string | null
+  beforeRefills?: number | null
+  afterRefills?: number | null
+  pharmacyId?: number | null
+  pharmacyName?: string | null
+  failureReason?: string | null
+}
+
+export type ClinicalPrescriptionAuditHistory = {
+  prescriptionId: string
+  eventCount: number
+  events: ClinicalPrescriptionAuditEvent[]
+}
+
+export async function getPrescriptionAuditHistory(
+  sessionId: string,
+  prescriptionId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalPrescriptionAuditHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}/audit-history`,
     signal,
   )
 }

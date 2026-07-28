@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 test.describe.configure({ mode: "serial" });
 test.skip(
@@ -36,6 +38,46 @@ async function getClinicianSessionId(page: Page) {
   });
   if (!sessionId) throw new Error("Clinician session ID was not persisted.");
   return sessionId;
+}
+
+function deletePortalMailboxFixtures(messageIds: string[]) {
+  const ids = messageIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  if (ids.length === 0) return;
+  const numericIds = ids.join(",");
+  const textIds = ids.map((value) => `'${value}'`).join(",");
+  const sql = [
+    "begin;",
+    `delete from patient_portal_message_audit_events where message_id in (${textIds}) or thread_id in (${numericIds}) or related_message_ids && array[${textIds}]::text[];`,
+    `delete from portal_mailbox_messages where id in (${numericIds});`,
+    "commit;",
+  ].join(" ");
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-X",
+      "-U",
+      "legacy-ehr",
+      "-d",
+      "legacy-ehr_modernized",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      sql,
+    ],
+    {
+      cwd: fileURLToPath(
+        new URL("../../avenchart/", import.meta.url),
+      ),
+      stdio: "pipe",
+    },
+  );
 }
 
 test.describe("isolated mutation workflows", () => {
@@ -206,6 +248,153 @@ test.describe("isolated mutation workflows", () => {
           { headers: { "X-Legacy EHR-Session": sessionId } },
         );
         expect(deleted.ok()).toBeTruthy();
+      }
+    }
+  });
+
+  test("staff can approve a portal refill request and inspect prescription audit history", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const drug = `Refill proof medication ${Date.now()}`;
+    const requestNote = `Temporary refill request ${Date.now()}`;
+    let prescriptionId: string | null = null;
+    let portalSessionId: string | null = null;
+    const messageIds: string[] = [];
+
+    try {
+      const createdPrescription = await page.request.post(
+        `${apiBaseUrl}/api/clinical-lists/prescriptions`,
+        {
+          headers: { "X-Legacy EHR-Session": sessionId },
+          data: {
+            patientId: "MOD-PAT-0004",
+            startDate: new Date().toISOString().slice(0, 10),
+            drug,
+            dosage: "1 tablet daily",
+            quantity: "30",
+            route: "oral",
+            refills: 0,
+            note: "Temporary browser verification fixture",
+            diagnosis: "Z00.00",
+          },
+        },
+      );
+      expect(createdPrescription.ok()).toBeTruthy();
+      prescriptionId = ((await createdPrescription.json()) as { id?: string })
+        .id ?? null;
+      expect(prescriptionId).toBeTruthy();
+
+      const portalLogin = await page.request.post(
+        `${apiBaseUrl}/api/patient-portal/login`,
+        {
+          data: {
+            username:
+              process.env.MODERN_UI_PORTAL_USERNAME ??
+              "mod-pat-0004@example.test",
+            password:
+              process.env.MODERN_UI_PORTAL_PASSWORD ?? "PortalPass207!",
+          },
+        },
+      );
+      expect(portalLogin.ok()).toBeTruthy();
+      portalSessionId = (
+        (await portalLogin.json()) as { sessionId?: string | null }
+      ).sessionId ?? null;
+      expect(portalSessionId).toBeTruthy();
+
+      const requested = await page.request.post(
+        `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId!)}/refill-request`,
+        {
+          headers: {
+            "X-Legacy EHR-Patient-Portal-Session": portalSessionId!,
+          },
+          data: {
+            requestDate: new Date().toISOString().slice(0, 10),
+            note: requestNote,
+          },
+        },
+      );
+      expect(requested.ok()).toBeTruthy();
+      const requestResult = (await requested.json()) as {
+        sentMessage?: { id?: string };
+        recipientMessage?: { id?: string };
+      };
+      for (const id of [
+        requestResult.sentMessage?.id,
+        requestResult.recipientMessage?.id,
+      ]) {
+        if (id) messageIds.push(id);
+      }
+
+      await page.goto(
+        "/clinician/renewals?patient=MOD-PAT-0004&view=requests",
+      );
+      const requestCard = page.locator("article.rx-renew-item").filter({
+        hasText: drug,
+      });
+      await expect(requestCard).toBeVisible({ timeout: 30_000 });
+      await expect(requestCard).toContainText(requestNote);
+      await expect(requestCard).toContainText("0 current refills");
+      await requestCard
+        .getByRole("button", { name: "Review and approve" })
+        .click();
+      await requestCard.getByLabel("Additional refills").fill("2");
+      await requestCard
+        .getByLabel("Approval note")
+        .fill("Browser-verified approval");
+      await requestCard
+        .getByRole("button", { name: "Approve request" })
+        .click();
+      await expect(requestCard).toHaveCount(0, { timeout: 30_000 });
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "approved and reconciled" }),
+      ).toBeVisible();
+
+      await page
+        .getByRole("button", { name: "All active", exact: true })
+        .click();
+      const prescriptionCard = page.locator("article.rx-renew-item").filter({
+        hasText: drug,
+      });
+      await expect(prescriptionCard).toBeVisible({ timeout: 30_000 });
+      await expect(prescriptionCard).toContainText("2 refills");
+      await prescriptionCard.getByRole("button", { name: /History/ }).click();
+      await expect(
+        prescriptionCard.getByRole("heading", {
+          name: "Prescription audit history",
+        }),
+      ).toBeVisible();
+      await expect(prescriptionCard).toContainText("Create");
+      await expect(prescriptionCard).toContainText(
+        "Refill Request Approved",
+      );
+      await expect(prescriptionCard).toContainText(
+        "Browser-verified approval",
+      );
+    } finally {
+      deletePortalMailboxFixtures(messageIds);
+      if (prescriptionId) {
+        const deletedPrescription = await page.request.delete(
+          `${apiBaseUrl}/api/clinical-lists/prescriptions/${encodeURIComponent(prescriptionId)}`,
+          { headers: { "X-Legacy EHR-Session": sessionId } },
+        );
+        expect(deletedPrescription.ok()).toBeTruthy();
+      }
+      if (portalSessionId) {
+        await page.request.delete(
+          `${apiBaseUrl}/api/patient-portal/session`,
+          {
+            headers: {
+              "X-Legacy EHR-Patient-Portal-Session": portalSessionId,
+            },
+          },
+        );
       }
     }
   });

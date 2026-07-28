@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   allocateInventoryPatientSale,
   ApiRequestError,
+  approvePrescriptionRefillRequest,
   assignLabReportReviewer,
   bulkSignLabReports,
   createInventoryPatientSale,
@@ -28,11 +29,13 @@ import {
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientProviderAssignmentOptions,
+  getPrescriptionAuditHistory,
   getProcedureOrderQueue,
   getProcedureReportQueue,
   getStaffMessageInbox,
   logout,
   reopenLabReportReview,
+  refillPrescription,
   replyToPatientMessage,
   searchEncounters,
   SESSION_INVALID_EVENT,
@@ -1041,6 +1044,74 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       body: JSON.stringify({ rxNormCode: '860975' }),
+    })
+  })
+
+  it('uses the protected prescription refill, request approval, and audit contracts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ id: 'rx-1', detail: { prescriptions: [] } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ id: 'rx-1', detail: { prescriptions: [] } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          prescriptionId: 'rx-1',
+          eventCount: 2,
+          events: [
+            { eventId: 'event-1', action: 'create' },
+            { eventId: 'event-2', action: 'refill-request-approved' },
+          ],
+        }),
+      )
+
+    const directRefill = {
+      refillDate: '2026-07-28',
+      additionalRefills: 2,
+      note: 'Authorized after chart review',
+    }
+    const requestApproval = {
+      refillDate: '2026-07-28',
+      additionalRefills: 1,
+      note: 'Portal request approved',
+    }
+
+    await refillPrescription(
+      'staff-session',
+      'rx with spaces',
+      directRefill,
+    )
+    await approvePrescriptionRefillRequest(
+      'staff-session',
+      445,
+      requestApproval,
+    )
+    const audit = await getPrescriptionAuditHistory(
+      'staff-session',
+      'rx with spaces',
+    )
+
+    expect(audit.events.map((event) => event.action)).toEqual([
+      'create',
+      'refill-request-approved',
+    ])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/prescriptions/rx%20with%20spaces/refill',
+      'http://localhost:5001/api/clinical-lists/prescription-refill-requests/445/approve',
+      'http://localhost:5001/api/clinical-lists/prescriptions/rx%20with%20spaces/audit-history',
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'X-Legacy EHR-Session': 'staff-session',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(directRefill),
+    })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify(requestApproval),
     })
   })
 
