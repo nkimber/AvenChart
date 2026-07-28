@@ -7195,6 +7195,74 @@ a {
   opacity: 0.5;
   cursor: default;
 }
+.inventory-activity {
+  display: grid;
+  gap: 16px;
+}
+.inventory-activity-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+.inventory-activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.inventory-activity-facts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.inventory-activity-facts div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.inventory-activity-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.inventory-activity-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+.inventory-activity-view-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(210px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.inventory-activity-view-filters > .cl-badge {
+  margin-bottom: 7px;
+}
+.inventory-activity-table {
+  min-width: 1180px;
+}
+.inventory-activity-table code {
+  display: block;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+.inventory-activity-export {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #b8ddd2;
+  border-radius: var(--radius-md);
+  background: var(--teal-soft);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .inventory-dispensing {
   display: grid;
   gap: 16px;
@@ -7290,8 +7358,15 @@ a {
     grid-column: auto;
   }
   .inventory-patient-search,
-  .inventory-dispensing-grid {
+  .inventory-dispensing-grid,
+  .inventory-activity-filters,
+  .inventory-activity-facts,
+  .inventory-activity-view-filters {
     grid-template-columns: 1fr;
+  }
+  .inventory-activity-view-filters > .cl-badge {
+    justify-self: start;
+    margin-bottom: 0;
   }
 }
 

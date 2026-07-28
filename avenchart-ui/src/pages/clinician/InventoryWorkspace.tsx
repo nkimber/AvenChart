@@ -1,19 +1,17 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
-  downloadInventoryActivityCsv,
   getInventory,
   getInventoryActivityReport,
   getInventoryLotMetadataHistory,
-  type InventoryActivityReport,
   type InventoryItem,
   type InventoryLot,
   type InventoryLotMetadataAuditItem,
   type InventoryResponse,
   type InventoryTransactionItem,
 } from '../../api.ts'
-import { showToast } from '../../components/Toast.tsx'
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
+import InventoryActivityPanel from './InventoryActivityPanel.tsx'
 import InventoryDispensingPanel from './InventoryDispensingPanel.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
@@ -53,10 +51,6 @@ export default function InventoryWorkspace() {
   const { session } = useOutletContext<ClinicianOutletContext>()
   const [data, setData] = useState<InventoryResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activity, setActivity] = useState<InventoryActivityReport | null>(null)
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [activityFacility, setActivityFacility] = useState('')
   const [lotQuery, setLotQuery] = useState('')
   const [lotFacility, setLotFacility] = useState('')
   const [lotStatus, setLotStatus] = useState('')
@@ -118,38 +112,6 @@ export default function InventoryWorkspace() {
   useEffect(() => {
     void loadOnSessionChange()
   }, [session.sessionId])
-
-  async function loadActivity() {
-    try {
-      setActivity(
-        await getInventoryActivityReport(session.sessionId, {
-          from: from || undefined,
-          to: to || undefined,
-          facilityId: activityFacility ? Number(activityFacility) : undefined,
-        }),
-      )
-    } catch {
-      showToast('Could not load inventory activity.', 'error')
-    }
-  }
-
-  async function exportActivity() {
-    try {
-      const blob = await downloadInventoryActivityCsv(session.sessionId, {
-        from: from || undefined,
-        to: to || undefined,
-        facilityId: activityFacility ? Number(activityFacility) : undefined,
-      })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'legacy-ehr-inventory-activity.csv'
-      link.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      showToast('Could not export inventory activity.', 'error')
-    }
-  }
 
   async function loadLotDetail(selectedLot: LotWithItem) {
     setSelectedLotId(selectedLot.lot.lotId)
@@ -258,91 +220,11 @@ export default function InventoryWorkspace() {
             sessionId={session.sessionId}
           />
 
-          <section className="cl-card">
-            <div className="cl-card-header">
-              <h2 className="cl-card-title">Activity report</h2>
-            </div>
-            <div className="cl-inline-form">
-              <label className="cl-admin-field">
-                <span>From date</span>
-                <input
-                  className="ne-input"
-                  type="date"
-                  value={from}
-                  onChange={(event) => setFrom(event.target.value)}
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>To date</span>
-                <input
-                  className="ne-input"
-                  type="date"
-                  value={to}
-                  onChange={(event) => setTo(event.target.value)}
-                />
-              </label>
-              <label className="cl-admin-field">
-                <span>Facility</span>
-                <select
-                  value={activityFacility}
-                  onChange={(event) => setActivityFacility(event.target.value)}
-                >
-                  <option value="">All facilities</option>
-                  {data.facilities.map((facility) => (
-                    <option
-                      key={facility.facilityId}
-                      value={facility.facilityId}
-                    >
-                      {facility.code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={loadActivity}
-              >
-                Run report
-              </button>
-              <button
-                className="cl-btn-secondary"
-                type="button"
-                onClick={exportActivity}
-              >
-                CSV export
-              </button>
-            </div>
-            {activity && (
-              <>
-                <p className="cl-empty-text">
-                  {activity.totalEntries} matching entries
-                </p>
-                <table className="cl-table">
-                  <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Item</th>
-                      <th>Facility</th>
-                      <th>Type</th>
-                      <th>Delta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activity.entries.map((entry) => (
-                      <tr key={entry.transactionId}>
-                        <td>{new Date(entry.occurredAt).toLocaleString()}</td>
-                        <td>{entry.itemCode}</td>
-                        <td>{entry.facilityCode}</td>
-                        <td>{entry.transactionType}</td>
-                        <td>{entry.quantityDelta}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </section>
+          <InventoryActivityPanel
+            facilities={data.facilities}
+            refreshToken={workflowRefreshToken}
+            sessionId={session.sessionId}
+          />
 
           <section className="cl-card">
             <div className="cl-card-header">

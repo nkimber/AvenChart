@@ -2641,6 +2641,8 @@ export async function dispenseInventoryPrescription(
   )
 }
 export type InventoryActivityReport = {
+  datasetId: string
+  datasetVersion: string
   fromDate?: string | null
   toDate?: string | null
   facilityId?: number | null

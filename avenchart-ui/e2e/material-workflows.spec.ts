@@ -456,6 +456,43 @@ test.describe("material workflows", () => {
     );
   });
 
+  test("inventory activity exposes report metadata, bounded detail, and CSV output controls", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const activity = page
+      .getByRole("heading", { name: "Activity report" })
+      .locator("xpath=ancestor::section");
+    await expect(activity.getByLabel("Activity from date")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(activity.getByLabel("Activity facility")).toBeVisible();
+    await activity.getByRole("button", { name: "Run report" }).click();
+
+    await expect(activity.getByText("Dataset", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      activity.getByText("Dataset version", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      activity.getByText("Server filters", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      activity.getByText(/\d+ matching \/ \d+ returned/),
+    ).toBeVisible();
+    await expect(activity.getByLabel("Search returned activity")).toBeVisible();
+    await expect(
+      activity.getByLabel("Returned transaction type"),
+    ).toBeVisible();
+    await expect(activity.getByRole("table")).toBeVisible();
+    await expect(
+      activity.getByRole("button", { name: "CSV export" }),
+    ).toBeVisible();
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {

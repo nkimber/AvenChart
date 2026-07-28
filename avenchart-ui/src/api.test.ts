@@ -12,9 +12,11 @@ import {
   createInventoryTransfer,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
+  downloadInventoryActivityCsv,
   downloadPatientDocument,
   endPatientPortalSession,
   getCurrentSession,
+  getInventoryActivityReport,
   getInventoryLotMetadataHistory,
   getInventoryPurchaseRequisitions,
   getPatientBilling,
@@ -668,6 +670,49 @@ describe('authenticated API transport', () => {
         notes: 'Prescription-linked dispense',
       }),
     ])
+  })
+
+  it('loads and exports the same filtered inventory activity contract', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          datasetId: 'legacy-ehr-modernized-gold',
+          datasetVersion: '2026.07',
+          fromDate: '2026-07-01',
+          toDate: '2026-07-27',
+          facilityId: 13,
+          totalEntries: 1,
+          entries: [{ transactionId: 'transaction-1' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('Occurred At,Item Code\n2026-07-27,MED-1', {
+          status: 200,
+          headers: { 'content-type': 'text/csv' },
+        }),
+      )
+
+    const filters = {
+      from: '2026-07-01',
+      to: '2026-07-27',
+      facilityId: 13,
+    }
+    const report = await getInventoryActivityReport('staff-session', filters)
+    const csv = await downloadInventoryActivityCsv('staff-session', filters)
+
+    expect(report).toMatchObject({
+      datasetId: 'legacy-ehr-modernized-gold',
+      datasetVersion: '2026.07',
+      totalEntries: 1,
+    })
+    await expect(csv.text()).resolves.toContain('Occurred At,Item Code')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/activity?from=2026-07-01&to=2026-07-27&facilityId=13',
+      'http://localhost:5001/api/inventory/activity/export?from=2026-07-01&to=2026-07-27&facilityId=13',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
   })
 
   it('normalizes network failures without treating the session as invalid', async () => {
