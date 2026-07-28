@@ -1464,6 +1464,37 @@ export type PatientCareTeamOptionsResponse = {
 
 export type PatientProviderAssignmentUpdate = {
   providerId: number | null
+  reason?: string | null
+}
+
+export type PatientProviderAssignmentHistoryItem = {
+  eventId: string
+  fromProviderId?: number | null
+  fromProviderName?: string | null
+  fromFacilityId?: number | null
+  fromFacilityName?: string | null
+  toProviderId?: number | null
+  toProviderName?: string | null
+  toFacilityId?: number | null
+  toFacilityName?: string | null
+  reason: string
+  actor: string
+  occurredAt: string
+}
+
+export type PatientProviderAssignmentHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  currentProviderId?: number | null
+  currentProviderName?: string | null
+  currentFacilityId?: number | null
+  currentFacilityName?: string | null
+  eventCount: number
+  returnedCount: number
+  resultLimit: number
+  events: PatientProviderAssignmentHistoryItem[]
 }
 
 export type PatientCareTeamMemberUpdate = {
@@ -1497,6 +1528,18 @@ export async function getPatientCareTeamOptions(
   return clinicianGet(
     sessionId,
     `/api/patients/${encodeURIComponent(patientId)}/care-team-options`,
+    signal,
+  )
+}
+
+export async function getPatientProviderAssignmentHistory(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientProviderAssignmentHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/provider-assignment-history`,
     signal,
   )
 }

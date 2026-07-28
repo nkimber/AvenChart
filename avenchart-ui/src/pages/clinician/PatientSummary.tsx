@@ -20,6 +20,7 @@ import {
   executePatientMerge,
   getPatientCareTeamOptions,
   getPatientMergePreview,
+  getPatientProviderAssignmentHistory,
   getPatientProviderAssignmentOptions,
   getPatientRecordRequests,
   rollbackPatientMerge,
@@ -42,6 +43,7 @@ import {
   type PatientGuardianContactUpdate,
   type PatientInsuranceMutationInput,
   type PatientMergePreview,
+  type PatientProviderAssignmentHistoryResponse,
   type PatientProviderAssignmentOptionsResponse,
   type PatientRecordRequest,
 } from "../../api.ts";
@@ -80,6 +82,10 @@ type MergePreviewState =
   | { status: "loading"; sourcePatientId: string }
   | { status: "ready"; data: PatientMergePreview }
   | { status: "error"; message: string };
+type ProviderAssignmentHistoryState =
+  | { status: "loading" }
+  | { status: "ready"; data: PatientProviderAssignmentHistoryResponse }
+  | { status: "error" };
 
 const mergeCountLabels: Array<{
   key: keyof PatientMergePreview["combinedCounts"];
@@ -222,6 +228,10 @@ export default function PatientSummary() {
   const [providerId, setProviderId] = useState<number | null>(
     patient.providerId ?? null,
   );
+  const [providerReason, setProviderReason] = useState("");
+  const [providerHistoryState, setProviderHistoryState] =
+    useState<ProviderAssignmentHistoryState>({ status: "loading" });
+  const [providerHistoryRetry, setProviderHistoryRetry] = useState(0);
   const [careTeamForm, setCareTeamForm] = useState<CareTeamDraft>(() =>
     buildCareTeamDraft(patient),
   );
@@ -317,6 +327,23 @@ export default function PatientSummary() {
       });
     return () => controller.abort();
   }, [patientId, relationshipOptionsRetry, session.sessionId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setProviderHistoryState({ status: "loading" });
+    getPatientProviderAssignmentHistory(
+      session.sessionId,
+      patientId,
+      controller.signal,
+    )
+      .then((data) => setProviderHistoryState({ status: "ready", data }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
+        setProviderHistoryState({ status: "error" });
+      });
+    return () => controller.abort();
+  }, [patientId, providerHistoryRetry, session.sessionId]);
 
   async function loadRecordRequests() {
     setRecordRequestLoading(true);
@@ -421,6 +448,7 @@ export default function PatientSummary() {
       setEmployerForm(buildEmployerDraft(patient));
     } else if (editor === "provider") {
       setProviderId(patient.providerId ?? null);
+      setProviderReason("");
     } else {
       setCareTeamForm(buildCareTeamDraft(patient));
     }
@@ -479,14 +507,24 @@ export default function PatientSummary() {
 
   async function saveProvider(event: React.FormEvent) {
     event.preventDefault();
+    const assignmentChanged = providerId !== (patient.providerId ?? null);
+    if (assignmentChanged && !providerReason.trim()) {
+      setRelationshipError(
+        "Enter a reason for changing the primary provider assignment.",
+      );
+      return;
+    }
     setRelationshipSaving("provider");
     setRelationshipError(null);
     try {
       await updatePatientProviderAssignment(session.sessionId, patientId, {
         providerId,
+        reason: assignmentChanged ? providerReason.trim() : null,
       });
       showToast("Primary provider assignment saved.", "success");
       setRelationshipEditor(null);
+      setProviderReason("");
+      setProviderHistoryRetry((current) => current + 1);
       reload();
     } catch (error) {
       relationshipFailure(
@@ -787,6 +825,15 @@ export default function PatientSummary() {
 
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) =>
     setInsForm((f) => ({ ...f, ...patch }));
+
+  const providerAssignmentChanged =
+    providerId !== (patient.providerId ?? null);
+  const currentProviderFacility =
+    providerHistoryState.status === "ready"
+      ? providerHistoryState.data.currentFacilityName
+      : providerOptions?.providers.find(
+          (provider) => provider.id === (patient.providerId ?? null),
+        )?.facilityName;
 
   return (
     <div className="clinician-page">
@@ -1842,6 +1889,29 @@ export default function PatientSummary() {
                   ))}
                 </select>
               </div>
+              {providerAssignmentChanged && (
+                <div className="field">
+                  <label
+                    className="label"
+                    htmlFor="patient-primary-provider-reason"
+                  >
+                    Change reason
+                  </label>
+                  <textarea
+                    id="patient-primary-provider-reason"
+                    className="textarea"
+                    value={providerReason}
+                    maxLength={250}
+                    required
+                    rows={3}
+                    placeholder="Why is this assignment changing?"
+                    onChange={(event) => setProviderReason(event.target.value)}
+                  />
+                  <span className="field-hint">
+                    Required for a change · {providerReason.length}/250
+                  </span>
+                </div>
+              )}
               {relationshipError && (
                 <p className="cl-form-error" role="alert">
                   {relationshipError}
@@ -1853,7 +1923,8 @@ export default function PatientSummary() {
                   type="submit"
                   disabled={
                     relationshipSaving === "provider" ||
-                    relationshipOptionsState !== "ready"
+                    relationshipOptionsState !== "ready" ||
+                    (providerAssignmentChanged && !providerReason.trim())
                   }
                 >
                   {relationshipSaving === "provider"
@@ -1875,9 +1946,80 @@ export default function PatientSummary() {
                 "Primary provider",
                 patient.primaryProviderName ?? "Unassigned",
               )}
-              {fact("Facility", patient.facilityName)}
+              {fact("Provider facility", currentProviderFacility)}
             </ul>
           )}
+          <div className="provider-history">
+            <div className="provider-history-heading">
+              <h3>Assignment history</h3>
+              {providerHistoryState.status === "ready" && (
+                <span>
+                  {providerHistoryState.data.returnedCount <
+                  providerHistoryState.data.eventCount
+                    ? `${providerHistoryState.data.returnedCount} newest of ${providerHistoryState.data.eventCount} changes`
+                    : `${providerHistoryState.data.eventCount} ${
+                        providerHistoryState.data.eventCount === 1
+                          ? "change"
+                          : "changes"
+                      }`}
+                </span>
+              )}
+            </div>
+            {providerHistoryState.status === "loading" && (
+              <p className="cl-empty-text" role="status">
+                Loading assignment history…
+              </p>
+            )}
+            {providerHistoryState.status === "error" && (
+              <div className="cl-inline-error" role="alert">
+                <span>Assignment history is unavailable.</span>
+                <button
+                  className="cl-link"
+                  type="button"
+                  onClick={() =>
+                    setProviderHistoryRetry((current) => current + 1)
+                  }
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {providerHistoryState.status === "ready" &&
+              providerHistoryState.data.events.length === 0 && (
+                <p className="cl-empty-text">
+                  No primary-provider changes have been recorded.
+                </p>
+              )}
+            {providerHistoryState.status === "ready" &&
+              providerHistoryState.data.events.length > 0 && (
+                <ol className="provider-history-list">
+                  {providerHistoryState.data.events.map((assignment) => (
+                    <li key={assignment.eventId}>
+                      <div>
+                        <strong>
+                          {assignment.fromProviderName ?? "Unassigned"}
+                          {assignment.fromFacilityName
+                            ? ` (${assignment.fromFacilityName})`
+                            : ""}{" "}
+                          →{" "}
+                          {assignment.toProviderName ?? "Unassigned"}
+                          {assignment.toFacilityName
+                            ? ` (${assignment.toFacilityName})`
+                            : ""}
+                        </strong>
+                        <time dateTime={assignment.occurredAt}>
+                          {new Date(assignment.occurredAt).toLocaleString()}
+                        </time>
+                      </div>
+                      <p>{assignment.reason}</p>
+                      <p>
+                        By {assignment.actor}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+          </div>
         </section>
 
         <section className="cl-card cl-card-wide">

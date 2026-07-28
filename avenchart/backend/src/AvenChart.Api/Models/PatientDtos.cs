@@ -396,7 +396,36 @@ public sealed record PatientCareTeamOptionsResponse(
     IReadOnlyList<PatientCareTeamContactOption> Contacts);
 
 public sealed record PatientProviderAssignmentUpdateRequest(
-    int? ProviderId);
+    int? ProviderId,
+    string? Reason = null);
+
+public sealed record PatientProviderAssignmentHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string PatientId,
+    int LegacyPid,
+    int? CurrentProviderId,
+    string? CurrentProviderName,
+    int? CurrentFacilityId,
+    string? CurrentFacilityName,
+    int EventCount,
+    int ReturnedCount,
+    int ResultLimit,
+    IReadOnlyList<PatientProviderAssignmentHistoryItem> Events);
+
+public sealed record PatientProviderAssignmentHistoryItem(
+    Guid EventId,
+    int? FromProviderId,
+    string? FromProviderName,
+    int? FromFacilityId,
+    string? FromFacilityName,
+    int? ToProviderId,
+    string? ToProviderName,
+    int? ToFacilityId,
+    string? ToFacilityName,
+    string Reason,
+    string Actor,
+    string OccurredAt);
 
 public sealed record PatientCareTeamMemberUpdateRequest(
     int? UserId,

@@ -1331,37 +1331,283 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<PatientChartSummary?> UpdateProviderAssignmentAsync(
         string patientId,
         PatientProviderAssignmentUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            update patients
-            set provider_id = @providerId
-            where (
-                    lower(canonical_id) = lower(@patientId)
-                 or lower(pubpid) = lower(@patientId)
-                 or legacy_pid::text = @patientId
-            )
-              and (
-                    @providerId is null
-                 or exists (
-                        select 1
-                        from staff
-                        where id = @providerId
-                          and active = true
-                          and lower(role) = 'provider'
-                    )
-              )
-            returning canonical_id;
-            """;
-        command.Parameters.AddWithValue("patientId", patientId);
-        command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value = request.ProviderId is null
-            ? DBNull.Value
-            : request.ProviderId.Value;
+        var reason = request.Reason?.Trim();
+        if (reason?.Length > 250)
+        {
+            return null;
+        }
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        await EnsureProviderAssignmentEventsAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        ProviderAssignmentPatient? patient;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                select
+                    p.canonical_id,
+                    p.legacy_pid,
+                    p.provider_id,
+                    nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                    s.facility_id,
+                    f.name as facility_name
+                from patients p
+                left join staff s on s.id = p.provider_id
+                left join facilities f on f.id = s.facility_id
+                where lower(p.canonical_id) = lower(@patientId)
+                   or lower(p.pubpid) = lower(@patientId)
+                   or p.legacy_pid::text = @patientId
+                limit 1
+                for update of p;
+                """;
+            command.Parameters.AddWithValue("patientId", patientId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            patient = await reader.ReadAsync(cancellationToken)
+                ? new ProviderAssignmentPatient(
+                    CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                    Provider: new ProviderAssignmentSnapshot(
+                        ProviderId: ReadNullableInt(reader, "provider_id"),
+                        ProviderName: ReadNullableString(reader, "provider_name"),
+                        FacilityId: ReadNullableInt(reader, "facility_id"),
+                        FacilityName: ReadNullableString(reader, "facility_name")))
+                : null;
+        }
+
+        if (patient is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        ProviderAssignmentSnapshot targetProvider;
+        if (request.ProviderId is null)
+        {
+            targetProvider = new ProviderAssignmentSnapshot(null, null, null, null);
+        }
+        else
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                select
+                    s.id as provider_id,
+                    nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                    s.facility_id,
+                    f.name as facility_name
+                from staff s
+                left join facilities f on f.id = s.facility_id
+                where s.id = @providerId
+                  and s.active = true
+                  and lower(s.role) = 'provider';
+                """;
+            command.Parameters.AddWithValue("providerId", request.ProviderId.Value);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            targetProvider = new ProviderAssignmentSnapshot(
+                ProviderId: reader.GetInt32(reader.GetOrdinal("provider_id")),
+                ProviderName: ReadNullableString(reader, "provider_name"),
+                FacilityId: ReadNullableInt(reader, "facility_id"),
+                FacilityName: ReadNullableString(reader, "facility_name"));
+        }
+
+        if (patient.Provider.ProviderId == targetProvider.ProviderId)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                update patients
+                set provider_id = @providerId
+                where canonical_id = @patientId;
+                """;
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.Add("providerId", NpgsqlDbType.Integer).Value =
+                targetProvider.ProviderId is null ? DBNull.Value : targetProvider.ProviderId.Value;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                insert into patient_provider_assignment_events (
+                    event_id,
+                    patient_id,
+                    legacy_pid,
+                    from_provider_id,
+                    from_provider_name,
+                    from_facility_id,
+                    from_facility_name,
+                    to_provider_id,
+                    to_provider_name,
+                    to_facility_id,
+                    to_facility_name,
+                    reason,
+                    actor,
+                    occurred_at
+                )
+                values (
+                    @eventId,
+                    @patientId,
+                    @legacyPid,
+                    @fromProviderId,
+                    @fromProviderName,
+                    @fromFacilityId,
+                    @fromFacilityName,
+                    @toProviderId,
+                    @toProviderName,
+                    @toFacilityId,
+                    @toFacilityName,
+                    @reason,
+                    @actor,
+                    now()
+                );
+                """;
+            command.Parameters.AddWithValue("eventId", Guid.NewGuid());
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.AddWithValue("legacyPid", patient.LegacyPid);
+            AddNullableProviderAssignmentParameters(command, "from", patient.Provider);
+            AddNullableProviderAssignmentParameters(command, "to", targetProvider);
+            command.Parameters.AddWithValue(
+                "reason",
+                string.IsNullOrWhiteSpace(reason) ? "Primary provider assignment updated." : reason);
+            command.Parameters.AddWithValue(
+                "actor",
+                string.IsNullOrWhiteSpace(username) ? "unknown" : username.Trim());
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(patient.CanonicalId, cancellationToken);
+    }
+
+    public async Task<PatientProviderAssignmentHistoryResponse?> GetProviderAssignmentHistoryAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await EnsureProviderAssignmentEventsAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        ProviderAssignmentPatient? patient;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    p.canonical_id,
+                    p.legacy_pid,
+                    p.provider_id,
+                    nullif(trim(concat(s.first_name, ' ', s.last_name)), '') as provider_name,
+                    s.facility_id,
+                    f.name as facility_name
+                from patients p
+                left join staff s on s.id = p.provider_id
+                left join facilities f on f.id = s.facility_id
+                where lower(p.canonical_id) = lower(@patientId)
+                   or lower(p.pubpid) = lower(@patientId)
+                   or p.legacy_pid::text = @patientId
+                limit 1;
+                """;
+            command.Parameters.AddWithValue("patientId", patientId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            patient = await reader.ReadAsync(cancellationToken)
+                ? new ProviderAssignmentPatient(
+                    CanonicalId: reader.GetString(reader.GetOrdinal("canonical_id")),
+                    LegacyPid: reader.GetInt32(reader.GetOrdinal("legacy_pid")),
+                    Provider: new ProviderAssignmentSnapshot(
+                        ProviderId: ReadNullableInt(reader, "provider_id"),
+                        ProviderName: ReadNullableString(reader, "provider_name"),
+                        FacilityId: ReadNullableInt(reader, "facility_id"),
+                        FacilityName: ReadNullableString(reader, "facility_name")))
+                : null;
+        }
+
+        if (patient is null)
+        {
+            return null;
+        }
+
+        const int resultLimit = 100;
+        var events = new List<PatientProviderAssignmentHistoryItem>();
+        var eventCount = 0;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    count(*) over()::int as event_count,
+                    event_id,
+                    from_provider_id,
+                    from_provider_name,
+                    from_facility_id,
+                    from_facility_name,
+                    to_provider_id,
+                    to_provider_name,
+                    to_facility_id,
+                    to_facility_name,
+                    reason,
+                    actor,
+                    occurred_at
+                from patient_provider_assignment_events
+                where patient_id = @patientId
+                order by occurred_at desc, event_id desc
+                limit @resultLimit;
+                """;
+            command.Parameters.AddWithValue("patientId", patient.CanonicalId);
+            command.Parameters.AddWithValue("resultLimit", resultLimit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                eventCount = reader.GetInt32(reader.GetOrdinal("event_count"));
+                events.Add(new PatientProviderAssignmentHistoryItem(
+                    EventId: reader.GetGuid(reader.GetOrdinal("event_id")),
+                    FromProviderId: ReadNullableInt(reader, "from_provider_id"),
+                    FromProviderName: ReadNullableString(reader, "from_provider_name"),
+                    FromFacilityId: ReadNullableInt(reader, "from_facility_id"),
+                    FromFacilityName: ReadNullableString(reader, "from_facility_name"),
+                    ToProviderId: ReadNullableInt(reader, "to_provider_id"),
+                    ToProviderName: ReadNullableString(reader, "to_provider_name"),
+                    ToFacilityId: ReadNullableInt(reader, "to_facility_id"),
+                    ToFacilityName: ReadNullableString(reader, "to_facility_name"),
+                    Reason: reader.GetString(reader.GetOrdinal("reason")),
+                    Actor: reader.GetString(reader.GetOrdinal("actor")),
+                    OccurredAt: reader.GetFieldValue<DateTime>(reader.GetOrdinal("occurred_at"))
+                        .ToUniversalTime()
+                        .ToString("O", CultureInfo.InvariantCulture)));
+            }
+        }
+
+        return new PatientProviderAssignmentHistoryResponse(
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            PatientId: patient.CanonicalId,
+            LegacyPid: patient.LegacyPid,
+            CurrentProviderId: patient.Provider.ProviderId,
+            CurrentProviderName: patient.Provider.ProviderName,
+            CurrentFacilityId: patient.Provider.FacilityId,
+            CurrentFacilityName: patient.Provider.FacilityName,
+            EventCount: eventCount,
+            ReturnedCount: events.Count,
+            ResultLimit: resultLimit,
+            Events: events);
     }
 
     public async Task<PatientChartSummary?> UpdateCareTeamAsync(
@@ -1692,6 +1938,49 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
         Volatile.Write(ref mergeColumnsInitialized, 1);
+    }
+
+    private async Task EnsureProviderAssignmentEventsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists patient_provider_assignment_events (
+                event_id uuid primary key,
+                patient_id text not null,
+                legacy_pid integer not null,
+                from_provider_id integer,
+                from_provider_name text,
+                from_facility_id integer,
+                from_facility_name text,
+                to_provider_id integer,
+                to_provider_name text,
+                to_facility_id integer,
+                to_facility_name text,
+                reason varchar(250) not null,
+                actor text not null,
+                occurred_at timestamptz not null default now()
+            );
+
+            create index if not exists ix_patient_provider_assignment_events_patient_time
+                on patient_provider_assignment_events (patient_id, occurred_at desc, event_id desc);
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void AddNullableProviderAssignmentParameters(
+        NpgsqlCommand command,
+        string prefix,
+        ProviderAssignmentSnapshot provider)
+    {
+        command.Parameters.Add($"{prefix}ProviderId", NpgsqlDbType.Integer).Value =
+            provider.ProviderId is null ? DBNull.Value : provider.ProviderId.Value;
+        command.Parameters.Add($"{prefix}ProviderName", NpgsqlDbType.Text).Value =
+            provider.ProviderName is null ? DBNull.Value : provider.ProviderName;
+        command.Parameters.Add($"{prefix}FacilityId", NpgsqlDbType.Integer).Value =
+            provider.FacilityId is null ? DBNull.Value : provider.FacilityId.Value;
+        command.Parameters.Add($"{prefix}FacilityName", NpgsqlDbType.Text).Value =
+            provider.FacilityName is null ? DBNull.Value : provider.FacilityName;
     }
 
     private static async Task<int> CountMatchesAsync(NpgsqlConnection connection, string? normalizedSearch, CancellationToken cancellationToken)
@@ -2791,6 +3080,17 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
     private sealed record PatientIdentity(string CanonicalId, int LegacyPid);
+
+    private sealed record ProviderAssignmentPatient(
+        string CanonicalId,
+        int LegacyPid,
+        ProviderAssignmentSnapshot Provider);
+
+    private sealed record ProviderAssignmentSnapshot(
+        int? ProviderId,
+        string? ProviderName,
+        int? FacilityId,
+        string? FacilityName);
 
     private sealed record PatientMergePreviewRow(PatientMergePreviewPatient Patient, PatientActivityCounts Counts);
 

@@ -6566,6 +6566,54 @@ a {
   border-radius: var(--radius-md);
   background: #fef2f2;
 }
+.provider-history {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.provider-history-heading,
+.provider-history-list li > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.provider-history-heading {
+  margin-bottom: 8px;
+}
+.provider-history-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.provider-history-heading span,
+.provider-history-list time,
+.provider-history-list p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.provider-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.provider-history-list li {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.provider-history-list strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.provider-history-list p {
+  margin: 0;
+}
 .cl-care-team-editor-list,
 .cl-care-team-summary {
   display: grid;

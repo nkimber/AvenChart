@@ -37,6 +37,7 @@ import {
   getPatientPortalHome,
   getPatientPortalMessages,
   getPatientPortalPrescriptionRefillHistory,
+  getPatientProviderAssignmentHistory,
   getPatientProviderAssignmentOptions,
   getPrescriptionAuditHistory,
   getPrescriptionRefillQueue,
@@ -604,6 +605,9 @@ describe('authenticated API transport', () => {
     const responseBody = { canonicalId: 'MOD-PAT-0004' }
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ providers: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse({ patientId: 'MOD-PAT-0004', eventCount: 0, events: [] }),
+      )
       .mockResolvedValueOnce(jsonResponse({ providers: [], contacts: [] }))
       .mockResolvedValueOnce(jsonResponse(responseBody))
       .mockResolvedValueOnce(jsonResponse(responseBody))
@@ -611,6 +615,10 @@ describe('authenticated API transport', () => {
       .mockResolvedValueOnce(jsonResponse(responseBody))
 
     await getPatientProviderAssignmentOptions('staff-session')
+    await getPatientProviderAssignmentHistory(
+      'staff-session',
+      'MOD-PAT-0004',
+    )
     await getPatientCareTeamOptions('staff-session', 'MOD-PAT-0004')
     await updatePatientGuardianContact('staff-session', 'MOD-PAT-0004', {
       motherName: 'Maria Kim',
@@ -636,6 +644,7 @@ describe('authenticated API transport', () => {
     })
     await updatePatientProviderAssignment('staff-session', 'MOD-PAT-0004', {
       providerId: 7,
+      reason: 'Care team reassignment',
     })
     await updatePatientCareTeam('staff-session', 'MOD-PAT-0004', {
       teamName: 'Primary care team',
@@ -655,13 +664,14 @@ describe('authenticated API transport', () => {
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'http://localhost:5001/api/patients/provider-options',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment-history',
       'http://localhost:5001/api/patients/MOD-PAT-0004/care-team-options',
       'http://localhost:5001/api/patients/MOD-PAT-0004/guardian-contact',
       'http://localhost:5001/api/patients/MOD-PAT-0004/employer',
       'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment',
       'http://localhost:5001/api/patients/MOD-PAT-0004/care-team',
     ])
-    for (const call of fetchMock.mock.calls.slice(2)) {
+    for (const call of fetchMock.mock.calls.slice(3)) {
       expect(call[1]).toEqual(
         expect.objectContaining({
           method: 'PUT',
@@ -672,6 +682,12 @@ describe('authenticated API transport', () => {
         }),
       )
     }
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      body: JSON.stringify({
+        providerId: 7,
+        reason: 'Care team reassignment',
+      }),
+    })
   })
 
   it('loads a patient account through the protected billing route', async () => {

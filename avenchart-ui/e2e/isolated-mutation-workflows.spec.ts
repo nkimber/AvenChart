@@ -96,6 +96,47 @@ function deletePortalMailboxFixtures(messageIds: string[]) {
   );
 }
 
+function runProviderAssignmentSql(sql: string) {
+  return execFileSync(
+    "docker",
+    [
+      "compose",
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-X",
+      "-U",
+      "legacy-ehr",
+      "-d",
+      "legacy-ehr_modernized",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-t",
+      "-A",
+      "-c",
+      sql,
+    ],
+    {
+      cwd: fileURLToPath(
+        new URL("../../avenchart/", import.meta.url),
+      ),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  ).trim();
+}
+
+function deleteProviderAssignmentFixtures(reasons: string[]) {
+  if (reasons.length === 0) return;
+  const reasonLiterals = reasons
+    .map((reason) => `'${reason.replaceAll("'", "''")}'`)
+    .join(",");
+  runProviderAssignmentSql(
+    `delete from patient_provider_assignment_events where patient_id = 'MOD-PAT-0004' and reason in (${reasonLiterals});`,
+  );
+}
+
 test.describe("isolated mutation workflows", () => {
   test("staff can claim and reply to a patient message from the inbox", async ({
     page,
@@ -398,6 +439,123 @@ test.describe("isolated mutation workflows", () => {
         );
         expect([204, 404]).toContain(response.status());
       }
+    }
+  });
+
+  test("primary-provider changes require a reason and retain actor-stamped assignment history", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const changeReason = `Provider assignment proof ${Date.now()}`;
+    const restoreReason = `Provider assignment restore ${Date.now()}`;
+    const fixtureReasons = [changeReason, restoreReason];
+
+    const patientResponse = await page.request.get(
+      `${apiBaseUrl}/api/patients/MOD-PAT-0004`,
+      { headers: { "X-Legacy EHR-Session": sessionId } },
+    );
+    expect(patientResponse.ok()).toBeTruthy();
+    const patient = (await patientResponse.json()) as {
+      providerId?: number | null;
+      primaryProviderName?: string | null;
+    };
+    const originalProviderId = patient.providerId ?? null;
+    const originalProviderName =
+      patient.primaryProviderName?.trim() || "Unassigned";
+
+    const optionsResponse = await page.request.get(
+      `${apiBaseUrl}/api/patients/provider-options`,
+      { headers: { "X-Legacy EHR-Session": sessionId } },
+    );
+    expect(optionsResponse.ok()).toBeTruthy();
+    const options = (await optionsResponse.json()) as {
+      providers: Array<{ id: number; displayName: string }>;
+    };
+    const alternate = options.providers.find(
+      (provider) => provider.id !== originalProviderId,
+    );
+    expect(alternate).toBeTruthy();
+
+    let assignmentChanged = false;
+    try {
+      await page.goto("/clinician/patients/MOD-PAT-0004/summary");
+      const providerSection = page.locator("section").filter({
+        has: page.getByRole("heading", { name: "Primary provider" }),
+      });
+      await providerSection.getByRole("button", { name: "Edit" }).click();
+      await providerSection
+        .getByLabel("Provider")
+        .selectOption(String(alternate!.id));
+      const saveButton = providerSection.getByRole("button", {
+        name: "Save provider",
+      });
+      await expect(saveButton).toBeDisabled();
+      await providerSection.getByLabel("Change reason").fill(changeReason);
+      await expect(saveButton).toBeEnabled();
+      await saveButton.click();
+      assignmentChanged = true;
+
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "Primary provider assignment saved." }),
+      ).toBeVisible({ timeout: 20_000 });
+      const historyItem = providerSection
+        .locator(".provider-history-list li")
+        .filter({ hasText: changeReason });
+      await expect(historyItem).toBeVisible({ timeout: 20_000 });
+      await expect(historyItem).toContainText(originalProviderName);
+      await expect(historyItem).toContainText(alternate!.displayName);
+      await expect(historyItem).toContainText("By admin");
+      await expect(historyItem.locator("time")).toBeVisible();
+
+      const historyResponse = await page.request.get(
+        `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment-history`,
+        { headers: { "X-Legacy EHR-Session": sessionId } },
+      );
+      expect(historyResponse.ok()).toBeTruthy();
+      const history = (await historyResponse.json()) as {
+        currentProviderId?: number | null;
+        events: Array<{
+          fromProviderId?: number | null;
+          toProviderId?: number | null;
+          reason: string;
+          actor: string;
+          occurredAt: string;
+        }>;
+      };
+      expect(history.currentProviderId).toBe(alternate!.id);
+      expect(history.events).toContainEqual(
+        expect.objectContaining({
+          fromProviderId: originalProviderId,
+          toProviderId: alternate!.id,
+          reason: changeReason,
+          actor: "admin",
+          occurredAt: expect.any(String),
+        }),
+      );
+    } finally {
+      if (assignmentChanged) {
+        const restored = await page.request.put(
+          `${apiBaseUrl}/api/patients/MOD-PAT-0004/provider-assignment`,
+          {
+            headers: { "X-Legacy EHR-Session": sessionId },
+            data: {
+              providerId: originalProviderId,
+              reason: restoreReason,
+            },
+          },
+        );
+        expect(restored.ok()).toBeTruthy();
+      }
+      deleteProviderAssignmentFixtures(fixtureReasons);
+      const residue = runProviderAssignmentSql(
+        `select count(*) from patient_provider_assignment_events where patient_id = 'MOD-PAT-0004' and reason in ('${changeReason}', '${restoreReason}');`,
+      );
+      expect(residue).toBe("0");
     }
   });
 

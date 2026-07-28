@@ -1050,6 +1050,17 @@ patients.MapGet("/provider-options", async (
     .WithName("GetPatientProviderAssignmentOptions")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
 
+patients.MapGet("/{patientId}/provider-assignment-history", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetProviderAssignmentHistoryAsync(patientId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientProviderAssignmentHistory")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "view"));
+
 patients.MapPost("/", async (
         PatientRepository repository,
         PatientRegistrationRequest request,
@@ -1186,11 +1197,18 @@ patients.MapPut("/{patientId}/employer", async (
 
 patients.MapPut("/{patientId}/provider-assignment", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string patientId,
         PatientProviderAssignmentUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.UpdateProviderAssignmentAsync(patientId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var patient = await repository.UpdateProviderAssignmentAsync(
+            patientId,
+            request,
+            session.Username,
+            cancellationToken);
         return patient is null
             ? Results.BadRequest("Patient provider assignment could not be updated from the supplied patient and provider details.")
             : Results.Ok(patient);
