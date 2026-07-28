@@ -2928,10 +2928,11 @@ export async function createInventoryTransaction(
   sessionId: string,
   input: {
     lotId: number
-    transactionType: 'consumption'
+    transactionType: 'consumption' | 'adjustment'
     quantity: number
     reason: string
     costLayerId?: string
+    reversalApplicationId?: string
   },
   signal?: AbortSignal,
 ): Promise<InventoryMutationResponse> {

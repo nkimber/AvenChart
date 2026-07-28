@@ -6,6 +6,7 @@ import {
   createInventoryTransaction,
   createInventoryTransfer,
   getInventoryReceiptCostLayers,
+  getInventoryReceiptCostLayerApplications,
   type InventoryCountReconciliation,
   type InventoryExpiryDisposition,
   type InventoryItem,
@@ -13,6 +14,7 @@ import {
   type InventoryLotDestruction,
   type InventoryMutationResponse,
   type InventoryReceiptCostLayer,
+  type InventoryReceiptCostLayerApplication,
 } from '../../api.ts'
 import { showToast } from '../../components/Toast.tsx'
 
@@ -63,7 +65,7 @@ export default function InventoryStockActionsPanel({
   const [result, setResult] = useState<Result | null>(null)
 
   const [movementLotId, setMovementLotId] = useState('')
-  const [movementKind, setMovementKind] = useState<'consumption' | 'transfer'>(
+  const [movementKind, setMovementKind] = useState<'consumption' | 'transfer' | 'restore'>(
     'consumption',
   )
   const [destinationFacilityId, setDestinationFacilityId] = useState('')
@@ -71,6 +73,8 @@ export default function InventoryStockActionsPanel({
   const [movementReason, setMovementReason] = useState('')
   const [movementCostLayers, setMovementCostLayers] = useState<InventoryReceiptCostLayer[]>([])
   const [movementCostLayerId, setMovementCostLayerId] = useState('')
+  const [movementApplications, setMovementApplications] = useState<InventoryReceiptCostLayerApplication[]>([])
+  const [movementReversalApplicationId, setMovementReversalApplicationId] = useState('')
 
   const [countLotId, setCountLotId] = useState('')
   const [countedQuantity, setCountedQuantity] = useState('')
@@ -106,7 +110,8 @@ export default function InventoryStockActionsPanel({
       lot.expiryStatus === 'expired' &&
       (lot.status === 'active' || lot.status === 'quarantined'),
   )
-  const movementLot = activeLots.find(
+  const movementLots = movementKind === 'restore' ? countableLots : activeLots
+  const movementLot = movementLots.find(
     ({ lot }) => String(lot.lotId) === movementLotId,
   )
   const countLot = countableLots.find(
@@ -130,6 +135,15 @@ export default function InventoryStockActionsPanel({
       layer.method === 'specific_identification' &&
       layer.remainingQuantity >= movementAmount,
   )
+  const restoredApplicationIds = new Set(
+    movementApplications
+      .map((application) => application.reversalApplicationId)
+      .filter((applicationId): applicationId is string => Boolean(applicationId)),
+  )
+  const restorableApplications = movementApplications.filter(
+    (application) =>
+      application.quantity < 0 && !restoredApplicationIds.has(application.applicationId),
+  )
   const countedAmount = Number(countedQuantity)
   const countVariance =
     countLot && countedQuantity !== ''
@@ -144,14 +158,27 @@ export default function InventoryStockActionsPanel({
 
   useEffect(() => {
     setMovementCostLayerId('')
-    if (!movementLotId || movementKind !== 'consumption') {
+    setMovementReversalApplicationId('')
+    if (!movementLotId || movementKind === 'transfer') {
       setMovementCostLayers([])
+      setMovementApplications([])
       return
     }
     let cancelled = false
     void getInventoryReceiptCostLayers(sessionId, { lotId: Number(movementLotId) })
-      .then((layers) => {
-        if (!cancelled) setMovementCostLayers(layers)
+      .then(async (layers) => {
+        if (cancelled) return
+        setMovementCostLayers(layers)
+        if (movementKind === 'restore') {
+          const applications = await Promise.all(
+            layers.map((layer) =>
+              getInventoryReceiptCostLayerApplications(sessionId, layer.layerId),
+            ),
+          )
+          if (!cancelled) setMovementApplications(applications.flat())
+        } else {
+          setMovementApplications([])
+        }
       })
       .catch((caught) => {
         if (!cancelled) {
@@ -181,7 +208,7 @@ export default function InventoryStockActionsPanel({
     if (
       !Number.isFinite(movementAmount) ||
       movementAmount <= 0 ||
-      movementAmount > movementLot.lot.quantityOnHand
+      movementKind !== 'restore' && movementAmount > movementLot.lot.quantityOnHand
     ) {
       setError(
         `Quantity must be greater than zero and no more than ${movementLot.lot.quantityOnHand} ${movementLot.item.unit}.`,
@@ -194,6 +221,10 @@ export default function InventoryStockActionsPanel({
     }
     if (requiresSpecificIdentification && !movementCostLayerId) {
       setError('Select the receipt cost layer to use for specific identification.')
+      return
+    }
+    if (movementKind === 'restore' && !movementReversalApplicationId) {
+      setError('Select the original issue application to restore.')
       return
     }
     if (
@@ -220,16 +251,19 @@ export default function InventoryStockActionsPanel({
             })
           : await createInventoryTransaction(sessionId, {
               lotId: movementLot.lot.lotId,
-              transactionType: 'consumption',
+              transactionType: movementKind === 'restore' ? 'adjustment' : 'consumption',
               quantity: movementAmount,
               reason: movementReason.trim(),
               costLayerId: movementCostLayerId || undefined,
+              reversalApplicationId: movementReversalApplicationId || undefined,
             })
       await finish(
         { kind: 'movement', unit: movementLot.item.unit, value },
         movementKind === 'transfer'
           ? 'Inventory transfer recorded.'
-          : 'Inventory consumption recorded.',
+          : movementKind === 'restore'
+            ? 'Inventory correction restored.'
+            : 'Inventory consumption recorded.',
       )
       setMovementQuantity('1')
       setMovementReason('')
@@ -424,14 +458,14 @@ export default function InventoryStockActionsPanel({
         <form className="inventory-action-form" onSubmit={submitMovement}>
           <div className="inventory-action-grid">
             <label className="cl-admin-field inventory-action-lot">
-              <span>Active inventory lot</span>
+                  <span>{movementKind === 'restore' ? 'Inventory lot to restore' : 'Active inventory lot'}</span>
               <select
                 value={movementLotId}
                 onChange={(event) => setMovementLotId(event.target.value)}
                 required
               >
                 <option value="">Select a lot</option>
-                {activeLots.map((entry) => (
+                {movementLots.map((entry) => (
                   <option key={entry.lot.lotId} value={entry.lot.lotId}>
                     {lotLabel(entry)}
                   </option>
@@ -444,12 +478,13 @@ export default function InventoryStockActionsPanel({
                 value={movementKind}
                 onChange={(event) =>
                   setMovementKind(
-                    event.target.value as 'consumption' | 'transfer',
+                    event.target.value as 'consumption' | 'transfer' | 'restore',
                   )
                 }
               >
                 <option value="consumption">Consume from stock</option>
                 <option value="transfer">Transfer between facilities</option>
+                <option value="restore">Restore a corrected issue</option>
               </select>
             </label>
             {movementKind === 'transfer' && (
@@ -491,6 +526,29 @@ export default function InventoryStockActionsPanel({
                   {selectableCostLayers.map((layer) => (
                     <option key={layer.layerId} value={layer.layerId}>
                       {layer.remainingQuantity} available at {formatCurrency(layer.unitCost)} / {layer.currency}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {movementKind === 'restore' && (
+              <label className="cl-admin-field inventory-action-lot">
+                <span>Original issue to restore</span>
+                <select
+                  value={movementReversalApplicationId}
+                  onChange={(event) => {
+                    const application = restorableApplications.find(
+                      (candidate) => candidate.applicationId === event.target.value,
+                    )
+                    setMovementReversalApplicationId(event.target.value)
+                    if (application) setMovementQuantity(String(-application.quantity))
+                  }}
+                  required
+                >
+                  <option value="">Select an unreversed issue</option>
+                  {restorableApplications.map((application) => (
+                    <option key={application.applicationId} value={application.applicationId}>
+                      {Math.abs(application.quantity)} at {formatCurrency(application.unitCost)} on {new Date(application.appliedAt).toLocaleDateString()}
                     </option>
                   ))}
                 </select>
