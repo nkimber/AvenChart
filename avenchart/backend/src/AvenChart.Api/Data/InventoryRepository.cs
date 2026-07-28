@@ -1137,6 +1137,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             ledgerCommand.Parameters.AddWithValue("recordedAt", recordedAt);
             await ledgerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+        await ApplyReceiptCostLayersAsync(connection, transaction, transactionId, lotId, quantityOnHand, "destruction", username, recordedAt, cancellationToken);
         await using (var auditCommand = connection.CreateCommand())
         {
             auditCommand.Transaction = transaction;
@@ -1196,6 +1197,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await using var ledger = connection.CreateCommand(); ledger.Transaction=transaction;
             ledger.CommandText="insert into inventory_transactions (transaction_id,lot_id,transaction_type,quantity_delta,reason,performed_by,occurred_at) values (@id,@lot,@type,@quantity,@reason,@user,@at);";
             ledger.Parameters.AddWithValue("id",transactionId.Value); ledger.Parameters.AddWithValue("lot",lotId); ledger.Parameters.AddWithValue("type",disposition); ledger.Parameters.AddWithValue("quantity",-quantity); ledger.Parameters.AddWithValue("reason",notes); ledger.Parameters.AddWithValue("user",username); ledger.Parameters.AddWithValue("at",now); await ledger.ExecuteNonQueryAsync(cancellationToken);
+            await ApplyReceiptCostLayersAsync(connection, transaction, transactionId.Value, lotId, quantity, disposition == "destroy" ? "destruction" : "return", username, now, cancellationToken);
             ledgerEntry = new InventoryTransactionItem(transactionId.Value, lotId, itemCode, itemName, facilityCode, disposition, -quantity, notes, username, now, null, null);
         }
         if (disposition == "destroy")
