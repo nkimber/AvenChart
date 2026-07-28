@@ -4,11 +4,13 @@ import {
   getInventory,
   getInventoryActivityReport,
   getInventoryLotMetadataHistory,
+  getInventoryReceiptCostLayerApplications,
   getInventoryReceiptCostLayers,
   type InventoryItem,
   type InventoryLot,
   type InventoryLotMetadataAuditItem,
   type InventoryReceiptCostLayer,
+  type InventoryReceiptCostLayerApplication,
   type InventoryResponse,
   type InventoryTransactionItem,
 } from '../../api.ts'
@@ -67,6 +69,7 @@ export default function InventoryWorkspace() {
   const [lotDetail, setLotDetail] = useState<LotDetailState>({
     status: 'idle',
   })
+  const [costLayerApplications, setCostLayerApplications] = useState<Record<string, InventoryReceiptCostLayerApplication[]>>({})
 
   const lots = useMemo(
     () =>
@@ -149,6 +152,16 @@ export default function InventoryWorkspace() {
             ? caught.message
             : 'Could not load the lot history.',
       })
+    }
+  }
+
+  async function loadCostLayerApplications(layerId: string) {
+    try {
+      setCostLayerApplications((current) => ({ ...current, [layerId]: current[layerId] ?? [] }))
+      const applications = await getInventoryReceiptCostLayerApplications(session.sessionId, layerId)
+      setCostLayerApplications((current) => ({ ...current, [layerId]: applications }))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not load cost-layer applications.')
     }
   }
 
@@ -572,10 +585,11 @@ export default function InventoryWorkspace() {
                     ) : (
                       <div className="cl-table-scroll" role="region" aria-label="Receipt cost layers" tabIndex={0}>
                         <table className="cl-table"><thead><tr><th>Status</th><th>Received / remaining</th><th>Unit cost</th><th>Policy</th><th>Source transaction</th></tr></thead><tbody>
-                          {lotDetail.costLayers.map((layer) => <tr key={layer.layerId}><td>{layer.status}</td><td>{layer.receivedQuantity} / {layer.remainingQuantity}</td><td>{new Intl.NumberFormat('en-US', { style: 'currency', currency: layer.currency }).format(layer.unitCost)}</td><td>{layer.method ? `${layer.method} / revision ${layer.policyRevision}` : 'Policy not selected'}</td><td><code>{layer.sourceTransactionId}</code></td></tr>)}
+                          {lotDetail.costLayers.map((layer) => <tr key={layer.layerId}><td>{layer.status}</td><td>{layer.receivedQuantity} / {layer.remainingQuantity}</td><td>{new Intl.NumberFormat('en-US', { style: 'currency', currency: layer.currency }).format(layer.unitCost)}</td><td>{layer.method ? `${layer.method} / revision ${layer.policyRevision}` : 'Policy not selected'}</td><td><button className="link-button" type="button" onClick={() => void loadCostLayerApplications(layer.layerId)}>Review applications</button><code>{layer.sourceTransactionId}</code></td></tr>)}
                         </tbody></table>
                       </div>
                     )}
+                    {lotDetail.costLayers.map((layer) => costLayerApplications[layer.layerId] && <div className="inventory-medication-current" key={`${layer.layerId}-applications`}><strong>Applications for layer {layer.layerId}</strong>{costLayerApplications[layer.layerId].length === 0 ? <span>No cost applications have been recorded.</span> : costLayerApplications[layer.layerId].map((application) => <span key={application.applicationId}>{application.applicationType} {application.quantity} at {application.unitCost} / transaction {application.sourceTransactionId} / {new Date(application.appliedAt).toLocaleString()}</span>)}</div>)}
                   </section>
 
                   <section aria-labelledby="inventory-transaction-ledger">

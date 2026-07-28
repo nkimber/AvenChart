@@ -2810,6 +2810,19 @@ export type InventoryReceiptCostLayer = {
   createdAt: string
   createdBy: string
 }
+export type InventoryReceiptCostLayerApplication = {
+  applicationId: string
+  layerId: string
+  sourceTransactionId: string
+  applicationType: string
+  quantity: number
+  unitCost: number
+  extendedCost: number
+  roundingTrace: string
+  reversalApplicationId: string | null
+  appliedAt: string
+  appliedBy: string
+}
 export async function getInventoryReceiptCostLayers(
   sessionId: string,
   input: { lotId?: number; limit?: number } = {},
@@ -2818,6 +2831,12 @@ export async function getInventoryReceiptCostLayers(
   if (input.lotId) query.set('lotId', String(input.lotId))
   if (input.limit) query.set('limit', String(input.limit))
   return clinicianGet(sessionId, `/api/inventory/receipt-cost-layers?${query}`)
+}
+export async function getInventoryReceiptCostLayerApplications(
+  sessionId: string,
+  layerId: string,
+): Promise<InventoryReceiptCostLayerApplication[]> {
+  return clinicianGet(sessionId, `/api/inventory/receipt-cost-layers/${layerId}/applications`)
 }
 export type InventoryItem = {
   itemId: number
