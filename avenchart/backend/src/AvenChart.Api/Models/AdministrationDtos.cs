@@ -286,6 +286,16 @@ public sealed record FormOptionListRevision(long RevisionId, string Title, bool 
 public sealed record FormOptionListHistoryResponse(FormOptionListDetailResponse Detail, IReadOnlyList<FormOptionListRevision> Revisions);
 public sealed record FormOptionListMutationRequest(string Title, bool Active);
 public sealed record FormOptionValueMutationRequest(string Title, int Sequence, bool IsDefault, bool Active, string? Value);
+public sealed record FormOptionListDefinitionOption(string Key, string Title, int Sequence, bool IsDefault, bool Active, string? Value);
+public sealed record FormOptionListDefinition(string Key, string Title, bool Active, IReadOnlyList<FormOptionListDefinitionOption> Options);
+public sealed record FormOptionListChangeRequestCreateRequest(string Key, string Title, bool Active, IReadOnlyList<FormOptionListDefinitionOption> Options, string Reason);
+public sealed record FormOptionListChangeRequestDecisionRequest(string? Note, int? ExpectedVersion = null);
+public sealed record FormOptionListChangeRequestItem(Guid RequestId, string ListKey, string ChangeKind, FormOptionListDefinition ProposedDefinition, FormOptionListDefinition? BaselineDefinition, string? BaselineUpdatedAt, string Reason, string Status, int Version, string CreatedAt, string CreatedBy, string UpdatedAt, string UpdatedBy);
+public sealed record FormOptionListChangeRequestEvent(long EventId, string Action, string? Note, string OccurredAt, string Username);
+public sealed record FormOptionListChangeRequestCounts(int Draft, int Submitted, int Approved, int Rejected, int Activated, int Cancelled);
+public sealed record FormOptionListChangeRequestsResponse(IReadOnlyList<FormOptionListChangeRequestItem> Requests, int Total, int Returned, int Offset, int Limit, string Status, FormOptionListChangeRequestCounts Counts);
+public sealed record FormOptionListChangeRequestDetailResponse(FormOptionListChangeRequestItem Request, FormOptionListDetailResponse? ActiveList, IReadOnlyList<FormOptionListChangeRequestEvent> Events);
+public sealed class FormOptionListChangeRequestConflictException(string message) : Exception(message);
 public sealed record ClinicalAlertRuleItem(string Key, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string UpdatedAt, string UpdatedBy);
 public sealed record ClinicalAlertRulesResponse(IReadOnlyList<ClinicalAlertRuleItem> Rules);
 public sealed record ClinicalAlertRuleRevision(long RevisionId, string Title, string TriggerType, string TargetType, string Severity, string Message, int Sequence, bool Active, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
