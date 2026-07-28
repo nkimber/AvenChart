@@ -6320,6 +6320,128 @@ export async function rollbackPracticeSetting(
     {},
   )
 }
+export type PracticeSettingChangeRequestStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'activated'
+  | 'cancelled'
+export type PracticeSettingChangeRequestItem = {
+  requestId: string
+  settingKey: string
+  proposedValue: string
+  baselineValue: string
+  baselineUpdatedAt: string
+  reason: string
+  status: PracticeSettingChangeRequestStatus
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type PracticeSettingChangeRequestCounts = Record<
+  PracticeSettingChangeRequestStatus,
+  number
+>
+export type PracticeSettingChangeRequestsResponse = {
+  requests: PracticeSettingChangeRequestItem[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  status: 'all' | 'open' | PracticeSettingChangeRequestStatus
+  settingKey?: string | null
+  counts: PracticeSettingChangeRequestCounts
+}
+export type PracticeSettingChangeRequestEvent = {
+  eventId: number
+  action: string
+  note?: string | null
+  occurredAt: string
+  username: string
+}
+export type PracticeSettingChangeRequestDetail = {
+  request: PracticeSettingChangeRequestItem
+  setting: PracticeSettingItem
+  events: PracticeSettingChangeRequestEvent[]
+}
+export type PracticeSettingChangeRequestAction =
+  | 'submit'
+  | 'approve'
+  | 'reject'
+  | 'activate'
+  | 'cancel'
+
+export async function getPracticeSettingChangeRequests(
+  sessionId: string,
+  params: {
+    settingKey?: string
+    status?: 'all' | 'open' | PracticeSettingChangeRequestStatus
+    offset?: number
+    limit?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<PracticeSettingChangeRequestsResponse> {
+  const query = new URLSearchParams()
+  if (params.settingKey) query.set('settingKey', params.settingKey)
+  if (params.status) query.set('status', params.status)
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  return clinicianGet(
+    sessionId,
+    `/api/administration/practice-setting-change-requests${query.size > 0 ? `?${query.toString()}` : ''}`,
+    signal,
+  )
+}
+
+export async function getPracticeSettingChangeRequest(
+  sessionId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<PracticeSettingChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/practice-setting-change-requests/${encodeURIComponent(requestId)}`,
+    signal,
+  )
+}
+
+export async function createPracticeSettingChangeRequest(
+  sessionId: string,
+  settingKey: string,
+  input: { value: string; reason: string },
+): Promise<PracticeSettingChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/practice-settings/${encodeURIComponent(settingKey)}/change-requests`,
+    input,
+  )
+}
+
+export async function transitionPracticeSettingChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: PracticeSettingChangeRequestAction,
+  input: { note?: string | null; expectedVersion: number },
+): Promise<PracticeSettingChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/practice-setting-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
+
+export async function deletePracticeSettingChangeRequestTestFixture(
+  sessionId: string,
+  requestId: string,
+): Promise<void> {
+  await clinicianDelete(
+    sessionId,
+    `/api/administration/practice-setting-change-requests/${encodeURIComponent(requestId)}/test-fixture`,
+  )
+}
 export type CodingCatalogItem = {
   key: string
   displayName: string

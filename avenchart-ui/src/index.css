@@ -10021,7 +10021,7 @@ h4 {
 }
 .document-template-library-list small,
 .document-template-patient-results small {
-  color: var(--text-muted);
+  color: #555f6d;
   font-size: 11px;
 }
 .document-template-pagination {
@@ -10237,6 +10237,299 @@ h4 {
   .document-template-success,
   .document-template-preview {
     border: 1px solid CanvasText;
+  }
+}
+
+.practice-governance {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.practice-governance-header,
+.practice-change-form-heading,
+.practice-request-pagination {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.practice-governance-header .clinician-page-subtitle {
+  max-width: 780px;
+}
+.practice-governance-boundary {
+  padding: 12px 14px;
+  border: 1px solid #e0bd59;
+  border-radius: var(--radius-md);
+  background: var(--warning-surface);
+  color: #503b00;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.practice-setting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.practice-setting-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.practice-setting-card p {
+  margin: 0;
+}
+.practice-setting-value {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+.practice-setting-actions,
+.practice-transition-actions,
+.practice-request-counts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.practice-change-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #b9c0ed;
+  border-radius: var(--radius-lg);
+  background: var(--teal-soft);
+}
+.practice-change-form-heading,
+.practice-change-reason,
+.practice-change-error,
+.practice-change-form > .cl-btn-primary {
+  grid-column: 1 / -1;
+}
+.practice-change-form textarea,
+.practice-transition-panel textarea {
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+}
+.practice-request-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.practice-request-toolbar .cl-btn-secondary {
+  min-height: 38px;
+}
+.practice-request-list {
+  display: grid;
+  gap: 8px;
+}
+.practice-request-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.practice-request-row:hover {
+  border-color: #aeb6e7;
+  background: #fafbff;
+}
+.practice-request-row:focus-visible {
+  outline: 3px solid rgba(46, 55, 164, 0.28);
+  outline-offset: 2px;
+}
+.practice-request-row-selected {
+  border-color: var(--teal);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+.practice-request-row > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.practice-request-row small {
+  overflow-wrap: anywhere;
+  color: #555f6d;
+}
+.practice-request-pagination {
+  align-items: center;
+}
+.practice-request-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+.practice-governance .cl-empty-state {
+  padding: 24px;
+  border: 1px dashed #c8ced6;
+  border-radius: var(--radius-md);
+  background: #fbfcfe;
+  text-align: center;
+}
+.practice-governance .cl-empty-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-weight: 700;
+}
+.practice-request-detail {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #aeb6e7;
+  border-radius: var(--radius-lg);
+  background: #fafbff;
+}
+.practice-request-detail h3,
+.practice-request-detail h4,
+.practice-request-detail p {
+  margin-top: 0;
+}
+.practice-request-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.practice-request-facts > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.practice-request-facts dt {
+  color: #555f6d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.practice-request-facts dd {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 700;
+}
+.practice-request-facts small {
+  display: block;
+  margin-top: 3px;
+  color: #555f6d;
+  font-weight: 400;
+}
+.practice-request-reason {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.practice-transition-panel {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.practice-transition-panel .cl-empty-text {
+  margin: 0;
+}
+.practice-request-history {
+  display: grid;
+  gap: 8px;
+}
+.practice-request-history h4 {
+  margin-bottom: 0;
+}
+.practice-request-history article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.practice-request-history article:last-child {
+  border-bottom: 0;
+}
+.practice-request-history article p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.practice-request-history article small {
+  color: #555f6d;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .practice-governance-header,
+  .practice-change-form-heading,
+  .practice-request-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .practice-change-form,
+  .practice-request-toolbar,
+  .practice-request-facts {
+    grid-template-columns: 1fr;
+  }
+  .practice-change-form-heading,
+  .practice-change-reason,
+  .practice-change-error,
+  .practice-change-form > .cl-btn-primary {
+    grid-column: auto;
+  }
+  .practice-request-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .practice-request-row > small {
+    grid-column: 1 / -1;
+  }
+  .practice-request-pagination > div,
+  .practice-setting-actions,
+  .practice-transition-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .practice-request-pagination .cl-btn-secondary,
+  .practice-setting-actions button,
+  .practice-transition-actions button {
+    justify-content: center;
+    width: 100%;
+  }
+  .practice-request-history article {
+    grid-template-columns: 1fr;
+  }
+  .practice-request-history article small {
+    text-align: left;
+  }
+}
+
+@media (forced-colors: active) {
+  .practice-governance-boundary,
+  .practice-setting-card,
+  .practice-change-form,
+  .practice-request-row,
+  .practice-request-detail,
+  .practice-request-facts > div,
+  .practice-transition-panel {
+    border: 1px solid CanvasText;
+  }
+  .practice-request-row-selected {
+    outline: 2px solid Highlight;
   }
 }
 

@@ -22,6 +22,7 @@ import {
   createPatientExternalLinkDocument,
   createPatientScannerCapture,
   createPatientMessage,
+  createPracticeSettingChangeRequest,
   createPrescription,
   deleteAllergy,
   deleteImmunization,
@@ -65,6 +66,8 @@ import {
   getPatientPortalPrescriptionRefillHistory,
   getPatientProviderAssignmentHistory,
   getPatientProviderAssignmentOptions,
+  getPracticeSettingChangeRequest,
+  getPracticeSettingChangeRequests,
   getPrescriptionAuditHistory,
   getPrescriptionRefillQueue,
   getProcedureOrderQueue,
@@ -87,6 +90,7 @@ import {
   signLabReport,
   startPatientDocumentOcr,
   submitInventoryPurchaseRequisition,
+  transitionPracticeSettingChangeRequest,
   updatePatientCareTeam,
   updatePatientEmployer,
   updatePatientGuardianContact,
@@ -744,6 +748,134 @@ describe('authenticated API transport', () => {
     ])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
+  })
+
+  it('uses the paged, version-bound practice-setting governance lifecycle', async () => {
+    const request = {
+      requestId: 'change-request-id',
+      settingKey: 'practice.name',
+      proposedValue: 'Future clinic name',
+      baselineValue: 'AvenChart Demo',
+      baselineUpdatedAt: '2026-07-28T12:00:00Z',
+      reason: 'Align the displayed organization name.',
+      status: 'submitted',
+      version: 1,
+      createdAt: '2026-07-28T12:01:00Z',
+      createdBy: 'admin',
+      updatedAt: '2026-07-28T12:02:00Z',
+      updatedBy: 'admin',
+    }
+    const detail = {
+      request,
+      setting: {
+        key: 'practice.name',
+        label: 'Practice name',
+        value: 'AvenChart Demo',
+        valueType: 'string',
+        updatedAt: '2026-07-28T12:00:00Z',
+        updatedBy: 'seed',
+      },
+      events: [
+        {
+          eventId: 2,
+          action: 'submitted',
+          note: 'Ready for review.',
+          occurredAt: '2026-07-28T12:02:00Z',
+          username: 'admin',
+        },
+      ],
+    }
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          requests: [request],
+          total: 1,
+          returned: 1,
+          offset: 8,
+          limit: 8,
+          status: 'open',
+          settingKey: 'practice.name',
+          counts: {
+            draft: 0,
+            submitted: 1,
+            approved: 0,
+            rejected: 0,
+            activated: 0,
+            cancelled: 0,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(detail))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            ...detail,
+            request: { ...request, status: 'draft', version: 0 },
+          },
+          201,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...detail,
+          request: { ...request, status: 'approved', version: 2 },
+        }),
+      )
+
+    const list = await getPracticeSettingChangeRequests('staff-session', {
+      settingKey: 'practice.name',
+      status: 'open',
+      offset: 8,
+      limit: 8,
+    })
+    const loaded = await getPracticeSettingChangeRequest(
+      'staff-session',
+      'change-request-id',
+    )
+    await createPracticeSettingChangeRequest(
+      'staff-session',
+      'practice.name',
+      {
+        value: 'Future clinic name',
+        reason: 'Align the displayed organization name.',
+      },
+    )
+    await transitionPracticeSettingChangeRequest(
+      'staff-session',
+      'change-request-id',
+      'approve',
+      { note: 'Approved locally.', expectedVersion: 1 },
+    )
+
+    expect(list).toMatchObject({
+      total: 1,
+      status: 'open',
+      counts: { submitted: 1 },
+    })
+    expect(loaded.request).toMatchObject({
+      baselineValue: 'AvenChart Demo',
+      version: 1,
+    })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/administration/practice-setting-change-requests?settingKey=practice.name&status=open&offset=8&limit=8',
+      'http://localhost:5001/api/administration/practice-setting-change-requests/change-request-id',
+      'http://localhost:5001/api/administration/practice-settings/practice.name/change-requests',
+      'http://localhost:5001/api/administration/practice-setting-change-requests/change-request-id/approve',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        value: 'Future clinic name',
+        reason: 'Align the displayed organization name.',
+      }),
+    })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        note: 'Approved locally.',
+        expectedVersion: 1,
+      }),
     })
   })
 

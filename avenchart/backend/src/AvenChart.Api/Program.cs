@@ -5242,9 +5242,9 @@ var administration = app.MapGroup("/api/administration").WithTags("Administratio
 RequireAccessPermission(administration, "admin", "acl", "write");
 
 administration.MapGet("/configuration-catalog", () => Results.Ok(new ConfigurationCatalogResponse([
-    new("practice.identity", "Practice identity and contact", "Local implemented", "Practice administrator", "Required non-blank practice name", "Direct update plus governed change-request activation enabled"),
-    new("practice.default-facility", "Default facility", "Local implemented", "Practice administrator", "Must reference a positive facility identifier", "Direct update plus governed change-request activation enabled"),
-    new("practice.locale-timezone", "Locale and time zone", "Local implemented", "Practice and operations owners", "Supported IANA or Windows time-zone identifier", "Direct update plus governed change-request activation enabled"),
+    new("practice.identity", "Practice identity and contact", "Local implemented", "Practice administrator", "Required non-blank practice name", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),
+    new("practice.default-facility", "Default facility", "Local implemented", "Practice administrator", "Must reference a positive facility identifier", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),
+    new("practice.locale-timezone", "Locale and time zone", "Local implemented", "Practice and operations owners", "Supported IANA or Windows time-zone identifier", "Stale-safe governed change-request activation enabled; direct endpoint retained for compatibility"),
     new("coding.catalogs", "Coding catalogs", "Local implemented", "Practice administrator", "Unique key/order, bounded modifiers, immutable historical key", "Create, edit, and activation state enabled"),
     new("forms.option-lists", "Form option lists", "Local implemented", "Practice administrator", "Ordered option key, label, value, default, and activation metadata", "Create, edit, and activation state enabled"),
     new("scheduling.defaults", "Appointment defaults", "Owner-gated", "Operations owner", "Facility/provider compatibility and bounded values", "No mutable source selected"),
@@ -5259,20 +5259,293 @@ administration.MapGet("/runtime-diagnostics", (RuntimeDiagnostics diagnostics) =
 administration.MapGet("/practice-settings", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");
 administration.MapGet("/practice-settings/{key}/history", async (AdministrationRepository repository, string key, CancellationToken cancellationToken) => { try { return Results.Ok(await repository.GetPracticeSettingHistoryAsync(key, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } }).WithName("GetPracticeSettingHistory");
-administration.MapGet("/practice-setting-change-requests", async (AdministrationRepository repository, string? settingKey, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetPracticeSettingChangeRequestsAsync(settingKey, cancellationToken))).WithName("GetPracticeSettingChangeRequests");
+administration.MapGet("/practice-setting-change-requests", async (
+        AdministrationRepository repository,
+        string? settingKey,
+        string? status,
+        int? offset,
+        int? limit,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetPracticeSettingChangeRequestsAsync(
+                settingKey,
+                status,
+                offset ?? 0,
+                limit ?? 8,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequests"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("GetPracticeSettingChangeRequests");
 administration.MapGet("/practice-setting-change-requests/{requestId:guid}", async (AdministrationRepository repository, Guid requestId, CancellationToken cancellationToken) =>
 { try { return Results.Ok(await repository.GetPracticeSettingChangeRequestAsync(requestId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } }).WithName("GetPracticeSettingChangeRequest");
-administration.MapPost("/practice-settings/{key}/change-requests", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, string key, PracticeSettingChangeRequestCreateRequest request, CancellationToken cancellationToken) =>
-{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var response = await repository.CreatePracticeSettingChangeRequestAsync(key, request, session.Username, cancellationToken); return Results.Created($"/api/administration/practice-setting-change-requests/{response.Request.RequestId}", response); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("CreatePracticeSettingChangeRequest");
-administration.MapPost("/practice-setting-change-requests/{requestId:guid}/submit", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, Guid requestId, PracticeSettingChangeRequestDecisionRequest request, CancellationToken cancellationToken) =>
-{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.SubmitPracticeSettingChangeRequestAsync(requestId, request.Note, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("SubmitPracticeSettingChangeRequest");
-administration.MapPost("/practice-setting-change-requests/{requestId:guid}/approve", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, Guid requestId, PracticeSettingChangeRequestDecisionRequest request, CancellationToken cancellationToken) =>
-{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.ApprovePracticeSettingChangeRequestAsync(requestId, request.Note, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("ApprovePracticeSettingChangeRequest");
-administration.MapPost("/practice-setting-change-requests/{requestId:guid}/reject", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, Guid requestId, PracticeSettingChangeRequestDecisionRequest request, CancellationToken cancellationToken) =>
-{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.RejectPracticeSettingChangeRequestAsync(requestId, request.Note, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("RejectPracticeSettingChangeRequest");
-administration.MapPost("/practice-setting-change-requests/{requestId:guid}/activate", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, Guid requestId, PracticeSettingChangeRequestDecisionRequest request, CancellationToken cancellationToken) =>
-{ try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Ok(await repository.ActivatePracticeSettingChangeRequestAsync(requestId, request.Note, session.Username, cancellationToken)); } catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); } }).WithName("ActivatePracticeSettingChangeRequest");
+administration.MapPost("/practice-settings/{key}/change-requests", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string key,
+        PracticeSettingChangeRequestCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var response = await repository.CreatePracticeSettingChangeRequestAsync(
+                key,
+                request,
+                session.Username,
+                cancellationToken);
+            return Results.Created(
+                $"/api/administration/practice-setting-change-requests/{response.Request.RequestId}",
+                response);
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting change request conflicts with current state",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("CreatePracticeSettingChangeRequest");
+
+administration.MapPost("/practice-setting-change-requests/{requestId:guid}/submit", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.SubmitPracticeSettingChangeRequestAsync(
+                requestId,
+                request.Note,
+                request.ExpectedVersion,
+                session.Username,
+                cancellationToken));
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting change request is stale",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("SubmitPracticeSettingChangeRequest");
+
+administration.MapPost("/practice-setting-change-requests/{requestId:guid}/approve", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.ApprovePracticeSettingChangeRequestAsync(
+                requestId,
+                request.Note,
+                request.ExpectedVersion,
+                session.Username,
+                cancellationToken));
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting change request is stale",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("ApprovePracticeSettingChangeRequest");
+
+administration.MapPost("/practice-setting-change-requests/{requestId:guid}/reject", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.RejectPracticeSettingChangeRequestAsync(
+                requestId,
+                request.Note,
+                request.ExpectedVersion,
+                session.Username,
+                cancellationToken));
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting change request is stale",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("RejectPracticeSettingChangeRequest");
+
+administration.MapPost("/practice-setting-change-requests/{requestId:guid}/activate", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.ActivatePracticeSettingChangeRequestAsync(
+                requestId,
+                request.Note,
+                request.ExpectedVersion,
+                session.Username,
+                cancellationToken));
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting activation is stale",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("ActivatePracticeSettingChangeRequest");
+
+administration.MapPost("/practice-setting-change-requests/{requestId:guid}/cancel", async (
+        AdministrationRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid requestId,
+        PracticeSettingChangeRequestDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.CancelPracticeSettingChangeRequestAsync(
+                requestId,
+                request.Note,
+                request.ExpectedVersion,
+                session.Username,
+                cancellationToken));
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting change request is stale",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("CancelPracticeSettingChangeRequest");
+
+administration.MapDelete("/practice-setting-change-requests/{requestId:guid}/test-fixture", async (
+        AdministrationRepository repository,
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return await repository.DeletePracticeSettingChangeRequestTestFixtureAsync(
+                requestId,
+                cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }
+        catch (PracticeSettingChangeRequestConflictException exception)
+        {
+            return Results.Problem(
+                title: "Practice-setting fixture is still active",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["changeRequest"] = [exception.Message],
+            });
+        }
+    })
+    .WithName("DeletePracticeSettingChangeRequestTestFixture");
 
 administration.MapGet("/coding-catalogs", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetCodingCatalogsAsync(cancellationToken))).WithName("GetCodingCatalogs");

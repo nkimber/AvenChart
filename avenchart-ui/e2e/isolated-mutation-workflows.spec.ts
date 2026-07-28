@@ -162,6 +162,25 @@ function deletePatientAdministrationFixtures(
   );
 }
 
+function cleanupPracticeSettingGovernanceFixtures(
+  marker: string,
+  originalValue: string,
+) {
+  const markerLiteral = marker.replaceAll("'", "''");
+  const originalLiteral = originalValue.replaceAll("'", "''");
+  runProviderAssignmentSql(
+    [
+      "begin;",
+      `update practice_settings set setting_value = '${originalLiteral}', updated_at = now(), updated_by = 'fixture-cleanup' where setting_key = 'practice.name' and setting_value like '${markerLiteral}%';`,
+      `delete from practice_setting_change_request_events where request_id in (select request_id from practice_setting_change_requests where proposed_value like '${markerLiteral}%' or reason like '${markerLiteral}%');`,
+      `delete from practice_setting_change_requests where proposed_value like '${markerLiteral}%' or reason like '${markerLiteral}%';`,
+      `delete from practice_setting_audit_events where setting_key = 'practice.name' and (prior_value like '${markerLiteral}%' or new_value like '${markerLiteral}%');`,
+      `delete from practice_setting_revisions where setting_key = 'practice.name' and (value like '${markerLiteral}%' or prior_value like '${markerLiteral}%');`,
+      "commit;",
+    ].join(" "),
+  );
+}
+
 test.describe("isolated mutation workflows", () => {
   test("staff can claim and reply to a patient message from the inbox", async ({
     page,
@@ -2463,6 +2482,201 @@ test.describe("isolated mutation workflows", () => {
             + (select count(*) from patient_document_versions where file_name like '%${marker}%');`,
         ),
       ).toBe("0");
+    }
+  });
+
+  test("administrators govern practice-setting proposals with version and baseline conflicts", async ({
+    page,
+  }) => {
+    test.setTimeout(45_000);
+    await signInClinician(page);
+    const sessionId = await getClinicianSessionId(page);
+    const apiBaseUrl =
+      process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
+    const marker = `TMP-ADM-SETTING-${Date.now()}`;
+    const staleValue = `${marker}-STALE`;
+    const headers = { "X-Legacy EHR-Session": sessionId };
+    let originalValue = "";
+
+    try {
+      const historyBeforeResponse = await page.request.get(
+        `${apiBaseUrl}/api/administration/practice-settings/practice.name/history`,
+        { headers },
+      );
+      expect(historyBeforeResponse.ok()).toBeTruthy();
+      const historyBefore = (await historyBeforeResponse.json()) as {
+        setting: { value: string };
+        revisions: Array<{ revisionId: number; value: string }>;
+      };
+      originalValue = historyBefore.setting.value;
+      const baselineRevision = historyBefore.revisions.find(
+        (revision) => revision.value === originalValue,
+      );
+      expect(baselineRevision).toBeTruthy();
+
+      await page.goto("/clinician/admin");
+      await page.getByRole("button", { name: "Configuration" }).click();
+      const governance = page.getByLabel("Practice configuration governance");
+      await expect(
+        governance.getByRole("heading", {
+          name: "Practice configuration governance",
+        }),
+      ).toBeVisible();
+      await expect(
+        governance.getByText("Independent approver matrices", {
+          exact: false,
+        }),
+      ).toBeVisible();
+
+      await governance
+        .getByRole("button", { name: "Propose change" })
+        .first()
+        .click();
+      await governance
+        .getByLabel("Proposal practice setting")
+        .selectOption("practice.name");
+      await expect(governance.getByLabel("Active value")).toHaveValue(
+        originalValue,
+      );
+      await governance.getByLabel("Proposed value").fill(marker);
+      await governance.getByLabel("Change reason").fill(marker);
+      await governance
+        .getByRole("button", { name: "Create inactive draft" })
+        .click();
+
+      const detail = governance.getByLabel("Change request detail");
+      await expect(detail).toBeVisible();
+      await expect(detail.getByText("Draft", { exact: true })).toBeVisible();
+      await expect(
+        detail.locator("dd").filter({ hasText: originalValue }),
+      ).toHaveCount(2);
+      await expect(
+        detail.getByRole("definition").filter({ hasText: marker }),
+      ).toBeVisible();
+      await expect(
+        governance.locator(".practice-setting-card").filter({ hasText: marker }),
+      ).toHaveCount(0);
+
+      const listResponse = await page.request.get(
+        `${apiBaseUrl}/api/administration/practice-setting-change-requests?settingKey=practice.name&status=all&offset=0&limit=100`,
+        { headers },
+      );
+      expect(listResponse.ok()).toBeTruthy();
+      const list = (await listResponse.json()) as {
+        requests: Array<{
+          requestId: string;
+          proposedValue: string;
+          baselineValue: string;
+          version: number;
+        }>;
+      };
+      const primary = list.requests.find(
+        (request) => request.proposedValue === marker,
+      );
+      expect(primary).toMatchObject({
+        baselineValue: originalValue,
+        version: 0,
+      });
+
+      const staleCreateResponse = await page.request.post(
+        `${apiBaseUrl}/api/administration/practice-settings/practice.name/change-requests`,
+        {
+          headers,
+          data: { value: staleValue, reason: staleValue },
+        },
+      );
+      expect(staleCreateResponse.status()).toBe(201);
+      const staleCreated = (await staleCreateResponse.json()) as {
+        request: { requestId: string; version: number };
+      };
+      const staleId = staleCreated.request.requestId;
+      const staleSubmittedResponse = await page.request.post(
+        `${apiBaseUrl}/api/administration/practice-setting-change-requests/${staleId}/submit`,
+        {
+          headers,
+          data: { note: "Ready for stale proof", expectedVersion: 0 },
+        },
+      );
+      expect(staleSubmittedResponse.ok()).toBeTruthy();
+      const staleApprovedResponse = await page.request.post(
+        `${apiBaseUrl}/api/administration/practice-setting-change-requests/${staleId}/approve`,
+        {
+          headers,
+          data: { note: "Approved before baseline changes", expectedVersion: 1 },
+        },
+      );
+      expect(staleApprovedResponse.ok()).toBeTruthy();
+
+      await detail
+        .getByRole("button", { name: "Submit for review" })
+        .click();
+      await expect(
+        detail.getByText("Awaiting review", { exact: true }),
+      ).toBeVisible();
+      await detail.getByRole("button", { name: "Approve" }).click();
+      await expect(detail.getByText("Approved", { exact: true })).toBeVisible();
+      await detail
+        .getByRole("button", { name: "Activate current proposal" })
+        .click();
+      await expect(
+        detail.getByText("Activated", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        governance.locator(".practice-setting-card").filter({ hasText: marker }),
+      ).toBeVisible();
+      await expect(detail.locator(".practice-request-history article")).toHaveCount(
+        4,
+      );
+
+      const staleActivationResponse = await page.request.post(
+        `${apiBaseUrl}/api/administration/practice-setting-change-requests/${staleId}/activate`,
+        {
+          headers,
+          data: {
+            note: "This activation must be rejected",
+            expectedVersion: 2,
+          },
+        },
+      );
+      expect(staleActivationResponse.status()).toBe(409);
+      await expect(staleActivationResponse.json()).resolves.toMatchObject({
+        title: "Practice-setting activation is stale",
+      });
+
+      const restored = await page.request.post(
+        `${apiBaseUrl}/api/administration/practice-settings/practice.name/revisions/${baselineRevision!.revisionId}/rollback`,
+        { headers, data: {} },
+      );
+      expect(restored.ok()).toBeTruthy();
+      await expect(restored.json()).resolves.toMatchObject({
+        setting: { value: originalValue },
+      });
+
+      for (const requestId of [primary!.requestId, staleId]) {
+        const deleted = await page.request.delete(
+          `${apiBaseUrl}/api/administration/practice-setting-change-requests/${requestId}/test-fixture`,
+          { headers },
+        );
+        expect(deleted.status()).toBe(204);
+      }
+      cleanupPracticeSettingGovernanceFixtures(marker, originalValue);
+      expect(
+        runProviderAssignmentSql(
+          `select
+            (select count(*) from practice_setting_change_requests where proposed_value like '${marker}%' or reason like '${marker}%')
+            + (select count(*) from practice_setting_change_request_events where note like '${marker}%')
+            + (select count(*) from practice_setting_revisions where setting_key = 'practice.name' and (value like '${marker}%' or prior_value like '${marker}%'))
+            + (select count(*) from practice_setting_audit_events where setting_key = 'practice.name' and (prior_value like '${marker}%' or new_value like '${marker}%'));`,
+        ),
+      ).toBe("0");
+      expect(
+        runProviderAssignmentSql(
+          "select setting_value from practice_settings where setting_key = 'practice.name';",
+        ),
+      ).toBe(originalValue);
+    } finally {
+      if (originalValue)
+        cleanupPracticeSettingGovernanceFixtures(marker, originalValue);
     }
   });
 

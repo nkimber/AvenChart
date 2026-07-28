@@ -38,7 +38,6 @@ import {
   updateAdministrationUser,
   updateModuleCatalogStatus,
   updateCodingCatalog,
-  updatePracticeSetting,
   rollbackPracticeSetting,
   rollbackCodingCatalog,
   rollbackFormOptionList,
@@ -84,6 +83,7 @@ import {
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
+import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -478,6 +478,10 @@ export default function AdminDirectory() {
     } catch {
       showToast("Could not load setting history.", "error");
     }
+  }
+  async function reloadPracticeSettings() {
+    const result = await getPracticeSettings(session.sessionId);
+    setPracticeSettings(result.settings);
   }
   async function rollbackPracticeSettingRevision(revisionId: number) {
     if (
@@ -2306,50 +2310,14 @@ export default function AdminDirectory() {
 
               {tab === "configuration" && (
                 <section className="cl-card">
-                  <h2 className="cl-card-title">Practice settings</h2>
-                  <p className="clinician-page-subtitle">
-                    Non-secret legacy-style globals save only when changed and
-                    retain an authenticated audit event.
-                  </p>
-                  {practiceSettings.map((item) => (
-                    <div className="form-row" key={item.key}>
-                      <div className="field" style={{ flex: 1 }}>
-                        <label className="label">{item.label}</label>
-                        <input
-                          className="input"
-                          defaultValue={item.value}
-                          onBlur={async (event) => {
-                            if (event.target.value === item.value) return;
-                            try {
-                              const result = await updatePracticeSetting(
-                                session.sessionId,
-                                item.key,
-                                event.target.value,
-                              );
-                              setPracticeSettings(result.settings);
-                              showToast(`${item.label} saved.`, "success");
-                            } catch {
-                              event.target.value = item.value;
-                              showToast(
-                                `Could not save ${item.label}.`,
-                                "error",
-                              );
-                            }
-                          }}
-                        />
-                      </div>
-                      <p className="cl-empty-text">{item.updatedBy}</p>
-                      <button
-                        className="cl-btn-secondary"
-                        type="button"
-                        onClick={() =>
-                          void openPracticeSettingHistory(item.key)
-                        }
-                      >
-                        History
-                      </button>
-                    </div>
-                  ))}
+                  <PracticeSettingGovernance
+                    sessionId={session.sessionId}
+                    settings={practiceSettings}
+                    onSettingsChanged={reloadPracticeSettings}
+                    onOpenHistory={(key) =>
+                      void openPracticeSettingHistory(key)
+                    }
+                  />
                   {practiceSettingHistory ? (
                     <div className="cl-card" style={{ marginTop: 12 }}>
                       <h3 className="cl-card-title">

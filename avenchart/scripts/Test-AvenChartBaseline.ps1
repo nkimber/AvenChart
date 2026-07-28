@@ -10054,22 +10054,30 @@ catch {
     Add-Check -Name "practice setting revision and rollback history" -Result "failed" -Details $_.Exception.Message
 }
 
+$changeRequestId = $null
+$changeRequestInvalidId = $null
+$changeRequestBaseline = $null
+$changeRequestValue = $null
 try {
     $changeRequestHeaders = Get-AdministrationHeaders
     $changeRequestHistoryBefore = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/history" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
     $changeRequestBaseline = @($changeRequestHistoryBefore.revisions | Where-Object { $_.value -eq $changeRequestHistoryBefore.setting.value }) | Select-Object -First 1
-    $changeRequestValue = "Governed change $([Guid]::NewGuid().ToString('N').Substring(0, 8))"
-    $changeRequestDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = $changeRequestValue; reason = "Synthetic governance workflow validation" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestMarker = "TMP-ADM-SETTING-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $changeRequestValue = $changeRequestMarker
+    $changeRequestDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = $changeRequestValue; reason = $changeRequestMarker } | ConvertTo-Json) -TimeoutSec 20
     $changeRequestId = $changeRequestDraft.request.requestId
-    $changeRequestSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/submit" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Ready for local approval" } | ConvertTo-Json) -TimeoutSec 20
-    $changeRequestApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/approve" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Approved in local governance test" } | ConvertTo-Json) -TimeoutSec 20
-    $changeRequestActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/activate" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Activate approved change" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestSubmitted = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/submit" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Ready for local approval"; expectedVersion = $changeRequestDraft.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestApproved = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/approve" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Approved in local governance test"; expectedVersion = $changeRequestSubmitted.request.version } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestActivated = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId/activate" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Activate approved change"; expectedVersion = $changeRequestApproved.request.version } | ConvertTo-Json) -TimeoutSec 20
     $changeRequestDetail = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestId" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
     $changeRequestRestored = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/revisions/$($changeRequestBaseline.revisionId)/rollback" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20
-    $changeRequestInvalidDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = "Unsubmitted change"; reason = "Verify invalid transition" } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestInvalidMarker = "TMP-ADM-SETTING-SMOKE-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $changeRequestInvalidDraft = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/change-requests" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ value = $changeRequestInvalidMarker; reason = $changeRequestInvalidMarker } | ConvertTo-Json) -TimeoutSec 20
+    $changeRequestInvalidId = $changeRequestInvalidDraft.request.requestId
+    $changeRequestOpen = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests?settingKey=practice.name&status=open&offset=0&limit=8" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
     $changeRequestInvalidStatus = 0
     try {
-        Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$($changeRequestInvalidDraft.request.requestId)/reject" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Cannot reject a draft" } | ConvertTo-Json) -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$changeRequestInvalidId/reject" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body (@{ note = "Cannot reject a draft"; expectedVersion = $changeRequestInvalidDraft.request.version } | ConvertTo-Json) -TimeoutSec 20 -ErrorAction Stop | Out-Null
     }
     catch {
         if ($_.Exception.Response) { $changeRequestInvalidStatus = [int]$_.Exception.Response.StatusCode } else { throw }
@@ -10085,11 +10093,36 @@ try {
         -and $changeRequestActions -contains "approved" `
         -and $changeRequestActions -contains "activated" `
         -and $changeRequestRestored.setting.value -eq $changeRequestHistoryBefore.setting.value `
-        -and $changeRequestInvalidStatus -eq 400
-    Add-Check -Name "practice setting change-request lifecycle" -Result $(if ($changeRequestPassed) { "passed" } else { "failed" }) -Details @{ requestId = $changeRequestId; actions = $changeRequestActions; invalidDraftStatus = $changeRequestInvalidStatus }
+        -and @($changeRequestOpen.requests | Where-Object { $_.requestId -eq $changeRequestInvalidId }).Count -eq 1 `
+        -and $changeRequestOpen.status -eq "open" `
+        -and $changeRequestInvalidStatus -eq 409
+    Add-Check -Name "practice setting change-request lifecycle" -Result $(if ($changeRequestPassed) { "passed" } else { "failed" }) -Details @{ requestId = $changeRequestId; actions = $changeRequestActions; invalidDraftStatus = $changeRequestInvalidStatus; openCount = $changeRequestOpen.returned }
 }
 catch {
     Add-Check -Name "practice setting change-request lifecycle" -Result "failed" -Details $_.Exception.Message
+}
+finally {
+    if ($changeRequestValue -and $changeRequestBaseline) {
+        try {
+            $changeRequestCurrent = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/history" -Method Get -Headers $changeRequestHeaders -TimeoutSec 20
+            if ($changeRequestCurrent.setting.value -eq $changeRequestValue) {
+                Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/practice-settings/practice.name/revisions/$($changeRequestBaseline.revisionId)/rollback" -Method Post -Headers $changeRequestHeaders -ContentType "application/json" -Body "{}" -TimeoutSec 20 | Out-Null
+            }
+        }
+        catch {
+            # The lifecycle check already records the primary failure. Residue is audited separately.
+        }
+    }
+    foreach ($fixtureId in @($changeRequestId, $changeRequestInvalidId)) {
+        if ($fixtureId) {
+            try {
+                Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/practice-setting-change-requests/$fixtureId/test-fixture" -Method Delete -Headers $changeRequestHeaders -TimeoutSec 20 -ErrorAction Stop | Out-Null
+            }
+            catch {
+                # The guarded endpoint may return 404 after a successful retry; residue is audited separately.
+            }
+        }
+    }
 }
 
 try {

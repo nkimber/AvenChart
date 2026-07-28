@@ -334,6 +334,54 @@ test.describe("accessibility gate", () => {
       );
       expect([204, 404]).toContain(deleted.status());
     }
+    const settingMarker = `TMP-ADM-SETTING-AXE-${testInfo.project.name}-${Date.now()}`;
+    const settingFixtureResponse = await page.request.post(
+      `${apiBaseUrl}/api/administration/practice-settings/practice.name/change-requests`,
+      {
+        headers: { "X-Legacy EHR-Session": sessionId! },
+        data: {
+          value: settingMarker,
+          reason: settingMarker,
+        },
+      },
+    );
+    expect(settingFixtureResponse.status()).toBe(201);
+    const settingFixtureId = (
+      (await settingFixtureResponse.json()) as {
+        request: { requestId: string };
+      }
+    ).request.requestId;
+    try {
+      await navigateWithinApplication(page, "/clinician/admin");
+      await page.getByRole("button", { name: "Configuration" }).click();
+      const governance = page.getByLabel("Practice configuration governance");
+      await expect(
+        governance.getByRole("heading", {
+          name: "Practice configuration governance",
+        }),
+      ).toBeVisible();
+      const fixtureRow = governance
+        .getByLabel("Practice setting change requests")
+        .getByRole("button")
+        .filter({ hasText: settingMarker });
+      await expect(fixtureRow).toBeVisible({ timeout: 15_000 });
+      await fixtureRow.click();
+      await expect(
+        governance.getByLabel("Change request detail"),
+      ).toBeVisible();
+      violations.push(
+        ...(await findSeriousAccessibilityViolations(
+          page,
+          "/clinician/admin#practice-configuration-governance",
+        )),
+      );
+    } finally {
+      const deleted = await page.request.delete(
+        `${apiBaseUrl}/api/administration/practice-setting-change-requests/${settingFixtureId}/test-fixture`,
+        { headers: { "X-Legacy EHR-Session": sessionId! } },
+      );
+      expect([204, 404]).toContain(deleted.status());
+    }
     const ocrMarker = `TMP-OCR-AXE-${testInfo.project.name}-${Date.now()}`;
     const ocrFixtureResponse = await page.request.post(
       `${apiBaseUrl}/api/documents/scanner-captures`,
