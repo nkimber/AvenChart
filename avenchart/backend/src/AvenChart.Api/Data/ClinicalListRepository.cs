@@ -94,6 +94,196 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             pharmacies);
     }
 
+    public async Task<PrescriptionRefillQueueResponse> GetPrescriptionRefillQueueAsync(
+        string? status,
+        string? patient,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        var normalizedStatus = NormalizeOptionalText(status)?.ToLowerInvariant() ?? "open";
+        if (normalizedStatus is not (
+            "open"
+            or "pending"
+            or "clarification-requested"
+            or "approved"
+            or "denied"
+            or "completed"
+            or "all"))
+        {
+            normalizedStatus = "open";
+        }
+        var normalizedPatient = NormalizeOptionalText(patient);
+        var boundedLimit = Math.Clamp(limit, 1, 200);
+        var boundedOffset = Math.Max(0, offset);
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
+
+        PrescriptionRefillQueueCounts counts;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = """
+                with refill_requests as (
+                    select
+                        coalesce(
+                            lifecycle.status,
+                            case when m.message_status = 'Done' then 'approved' else 'pending' end
+                        ) as lifecycle_status
+                    from portal_mailbox_messages m
+                    join patients patient_record on patient_record.legacy_pid = m.pid
+                    join prescriptions prescription
+                      on prescription.pid = m.pid
+                     and prescription.id::text = nullif(
+                        substring(m.body from 'Prescription ID: ([^\r\n]+)'),
+                        ''
+                     )
+                    left join prescription_refill_request_lifecycle lifecycle
+                      on lifecycle.thread_id = m.reply_mail_chain
+                    where m.deleted = 0
+                      and m.owner = m.assigned_to
+                      and m.portal_relation = 'portal:prescription-refill-request'
+                      and (
+                        @patient is null
+                        or patient_record.canonical_id ilike '%' || @patient || '%'
+                        or patient_record.pubpid ilike '%' || @patient || '%'
+                        or trim(concat(patient_record.first_name, ' ', patient_record.last_name))
+                            ilike '%' || @patient || '%'
+                        or patient_record.legacy_pid::text = @patient
+                      )
+                )
+                select
+                    count(*) filter (where lifecycle_status = 'pending')::integer as pending,
+                    count(*) filter (where lifecycle_status = 'clarification-requested')::integer as clarification_requested,
+                    count(*) filter (where lifecycle_status = 'approved')::integer as approved,
+                    count(*) filter (where lifecycle_status = 'denied')::integer as denied,
+                    count(*) filter (where lifecycle_status = 'completed')::integer as completed,
+                    count(*)::integer as total
+                from refill_requests;
+                """;
+            countCommand.Parameters.Add("patient", NpgsqlDbType.Text).Value =
+                NullableText(normalizedPatient);
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            counts = new PrescriptionRefillQueueCounts(
+                Pending: ReadInt(reader, "pending"),
+                ClarificationRequested: ReadInt(reader, "clarification_requested"),
+                Approved: ReadInt(reader, "approved"),
+                Denied: ReadInt(reader, "denied"),
+                Completed: ReadInt(reader, "completed"),
+                Total: ReadInt(reader, "total"));
+        }
+
+        var requests = new List<PrescriptionRefillQueueItem>();
+        var totalMatches = 0;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                with refill_requests as (
+                    select
+                        m.id,
+                        m.reply_mail_chain as thread_id,
+                        patient_record.canonical_id as patient_id,
+                        patient_record.legacy_pid as pid,
+                        patient_record.pubpid,
+                        trim(concat(patient_record.first_name, ' ', patient_record.last_name)) as patient_display_name,
+                        m.sender_id as portal_username,
+                        prescription.id::text as prescription_id,
+                        prescription.drug,
+                        prescription.dosage,
+                        prescription.quantity,
+                        prescription.route,
+                        prescription.refills,
+                        coalesce(lifecycle.request_date, m.message_date) as request_date,
+                        coalesce(
+                            lifecycle.patient_note,
+                            nullif(substring(m.body from 'Patient note: ([^\r\n]+)'), '')
+                        ) as patient_note,
+                        coalesce(
+                            lifecycle.status,
+                            case when m.message_status = 'Done' then 'approved' else 'pending' end
+                        ) as lifecycle_status,
+                        lifecycle.staff_response,
+                        coalesce(lifecycle.updated_at, m.message_date::timestamp) as updated_at,
+                        coalesce(lifecycle.updated_by, m.assigned_to) as updated_by
+                    from portal_mailbox_messages m
+                    join patients patient_record on patient_record.legacy_pid = m.pid
+                    join prescriptions prescription
+                      on prescription.pid = m.pid
+                     and prescription.id::text = nullif(
+                        substring(m.body from 'Prescription ID: ([^\r\n]+)'),
+                        ''
+                     )
+                    left join prescription_refill_request_lifecycle lifecycle
+                      on lifecycle.thread_id = m.reply_mail_chain
+                    where m.deleted = 0
+                      and m.owner = m.assigned_to
+                      and m.portal_relation = 'portal:prescription-refill-request'
+                      and (
+                        @patient is null
+                        or patient_record.canonical_id ilike '%' || @patient || '%'
+                        or patient_record.pubpid ilike '%' || @patient || '%'
+                        or trim(concat(patient_record.first_name, ' ', patient_record.last_name))
+                            ilike '%' || @patient || '%'
+                        or patient_record.legacy_pid::text = @patient
+                      )
+                ),
+                selected as (
+                    select *, count(*) over()::integer as total_matches
+                    from refill_requests
+                    where @status = 'all'
+                       or (@status = 'open' and lifecycle_status in ('pending', 'clarification-requested'))
+                       or lifecycle_status = @status
+                    order by request_date asc, id asc
+                    limit @limit offset @offset
+                )
+                select *
+                from selected;
+                """;
+            command.Parameters.Add("patient", NpgsqlDbType.Text).Value =
+                NullableText(normalizedPatient);
+            command.Parameters.AddWithValue("status", normalizedStatus);
+            command.Parameters.AddWithValue("limit", boundedLimit);
+            command.Parameters.AddWithValue("offset", boundedOffset);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                totalMatches = ReadInt(reader, "total_matches");
+                requests.Add(new PrescriptionRefillQueueItem(
+                    MessageId: ReadInt(reader, "id"),
+                    ThreadId: ReadInt(reader, "thread_id"),
+                    PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+                    LegacyPid: ReadInt(reader, "pid"),
+                    Pubpid: reader.GetString(reader.GetOrdinal("pubpid")),
+                    PatientDisplayName: reader.GetString(reader.GetOrdinal("patient_display_name")),
+                    PortalUsername: reader.GetString(reader.GetOrdinal("portal_username")),
+                    PrescriptionId: reader.GetString(reader.GetOrdinal("prescription_id")),
+                    Drug: reader.GetString(reader.GetOrdinal("drug")),
+                    Dosage: ReadNullableString(reader, "dosage"),
+                    Quantity: ReadNullableString(reader, "quantity"),
+                    Route: ReadNullableString(reader, "route"),
+                    CurrentRefills: ReadInt(reader, "refills"),
+                    RequestDate: ReadNullableDate(reader, "request_date") ?? string.Empty,
+                    Status: reader.GetString(reader.GetOrdinal("lifecycle_status")),
+                    PatientNote: ReadNullableString(reader, "patient_note"),
+                    StaffResponse: ReadNullableString(reader, "staff_response"),
+                    UpdatedAt: reader.GetFieldValue<DateTime>(reader.GetOrdinal("updated_at")).ToString("O"),
+                    UpdatedBy: reader.GetString(reader.GetOrdinal("updated_by"))));
+            }
+        }
+
+        return new PrescriptionRefillQueueResponse(
+            metadata.DatasetId,
+            metadata.DatasetVersion,
+            normalizedStatus,
+            normalizedPatient,
+            totalMatches,
+            requests.Count,
+            counts,
+            requests);
+    }
+
     public async Task<ClinicalListsResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
@@ -838,10 +1028,13 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
     public async Task<ClinicalListMutationResponse?> ApprovePrescriptionRefillRequestAsync(
         int messageId,
         ClinicalPrescriptionRefillApprovalRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (messageId <= 0
             || request.AdditionalRefills <= 0
+            || string.IsNullOrWhiteSpace(request.Note)
+            || request.Note.Length > 500
             || !TryReadDate(request.RefillDate, out var refillDate))
         {
             return null;
@@ -849,14 +1042,20 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
-        var refillRequest = await GetPrescriptionRefillRequestAsync(connection, messageId, cancellationToken);
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var refillRequest = await GetPrescriptionRefillRequestAsync(
+            connection,
+            transaction,
+            messageId,
+            openOnly: true,
+            cancellationToken);
         if (refillRequest is null)
         {
             return null;
         }
 
         string? patientId;
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var updatePrescription = connection.CreateCommand())
         {
             updatePrescription.Transaction = transaction;
@@ -896,7 +1095,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                     pharmacyId: null,
                     pharmacyName: null,
                     failureReason: null,
-                    cancellationToken);
+                    cancellationToken,
+                    actor: username);
             }
             else
             {
@@ -930,10 +1130,129 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             await updateMessages.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await UpsertPrescriptionRefillLifecycleAsync(
+            connection,
+            transaction,
+            refillRequest,
+            status: "approved",
+            staffResponse: request.Note,
+            username,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var lists = await GetForPatientAsync(patientId, cancellationToken);
         return lists is null ? null : new ClinicalListMutationResponse(refillRequest.PrescriptionId, lists);
+    }
+
+    public async Task<ClinicalPrescriptionRefillDecisionResponse?> DecidePrescriptionRefillRequestAsync(
+        int messageId,
+        ClinicalPrescriptionRefillDecisionRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var action = NormalizeOptionalText(request.Action)?.ToLowerInvariant();
+        var response = NormalizeOptionalText(request.Response);
+        if (messageId <= 0
+            || action is not ("deny" or "request-clarification" or "complete")
+            || response is null
+            || response.Length > 500)
+        {
+            throw new ArgumentException(
+                "Refill decisions require deny, request-clarification, or complete plus a response of 500 characters or fewer.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionAuditTableAsync(connection, cancellationToken);
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var anchor = await GetPrescriptionRefillRequestAsync(
+            connection,
+            transaction,
+            messageId,
+            openOnly: false,
+            cancellationToken);
+        if (anchor is null)
+        {
+            return null;
+        }
+
+        var isOpen = anchor.Status is "pending" or "clarification-requested";
+        if ((action is "deny" or "request-clarification") && !isOpen)
+        {
+            throw new ArgumentException(
+                $"A refill request in {anchor.Status} state cannot be denied or sent for clarification.");
+        }
+        if (action == "complete" && anchor.Status != "approved")
+        {
+            throw new ArgumentException(
+                $"Only an approved refill request can be marked locally completed; the current state is {anchor.Status}.");
+        }
+
+        var nextStatus = action switch
+        {
+            "deny" => "denied",
+            "request-clarification" => "clarification-requested",
+            _ => "completed"
+        };
+        await using (var updateMessages = connection.CreateCommand())
+        {
+            updateMessages.Transaction = transaction;
+            updateMessages.CommandText = """
+                update portal_mailbox_messages
+                set message_status = @messageStatus,
+                    activity = 1
+                where deleted = 0
+                  and portal_relation = 'portal:prescription-refill-request'
+                  and (
+                    id = @messageId
+                    or reply_mail_chain = @replyMailChain
+                    or mail_chain = @replyMailChain
+                  );
+                """;
+            updateMessages.Parameters.AddWithValue(
+                "messageStatus",
+                nextStatus == "clarification-requested" ? "New" : "Done");
+            updateMessages.Parameters.Add("messageId", NpgsqlDbType.Integer).Value = messageId;
+            updateMessages.Parameters.Add("replyMailChain", NpgsqlDbType.Integer).Value = anchor.ReplyMailChain;
+            await updateMessages.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await UpsertPrescriptionRefillLifecycleAsync(
+            connection,
+            transaction,
+            anchor,
+            nextStatus,
+            response,
+            username,
+            cancellationToken);
+        await InsertPrescriptionAuditEventAsync(
+            connection,
+            transaction,
+            anchor.PrescriptionId,
+            anchor.PatientId,
+            anchor.LegacyPid,
+            action switch
+            {
+                "deny" => "refill-request-denied",
+                "request-clarification" => "refill-clarification-requested",
+                _ => "refill-request-completed"
+            },
+            DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+            response,
+            beforeRefills: null,
+            afterRefills: null,
+            pharmacyId: null,
+            pharmacyName: null,
+            failureReason: null,
+            cancellationToken,
+            actor: username);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ClinicalPrescriptionRefillDecisionResponse(
+            messageId,
+            anchor.PrescriptionId,
+            nextStatus,
+            response);
     }
 
     public async Task<ClinicalPrescriptionPharmacyRouteResponse?> RoutePrescriptionToPharmacyAsync(
@@ -1543,6 +1862,7 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int legacyPid,
         CancellationToken cancellationToken)
     {
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select
@@ -1550,7 +1870,11 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 m.message_date,
                 m.title,
                 m.body,
-                m.message_status,
+                coalesce(
+                    lifecycle.status,
+                    case when m.message_status = 'Done' then 'approved' else 'pending' end
+                ) as lifecycle_status,
+                lifecycle.staff_response,
                 m.sender_id,
                 m.sender_name,
                 p.id::text as prescription_id,
@@ -1563,11 +1887,16 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             join prescriptions p
               on p.pid = m.pid
              and p.id::text = nullif(substring(m.body from 'Prescription ID: ([^\r\n]+)'), '')
+            left join prescription_refill_request_lifecycle lifecycle
+              on lifecycle.thread_id = m.reply_mail_chain
             where m.pid = @pid
               and m.deleted = 0
               and m.owner = m.assigned_to
               and m.portal_relation = 'portal:prescription-refill-request'
-              and m.message_status = 'New'
+              and coalesce(
+                    lifecycle.status,
+                    case when m.message_status = 'Done' then 'approved' else 'pending' end
+                  ) in ('pending', 'clarification-requested')
               and p.active = 1
               and p.end_date is null
             order by m.message_date asc, m.id asc;
@@ -1591,7 +1920,8 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
                 Quantity: ReadNullableString(reader, "quantity"),
                 Route: ReadNullableString(reader, "route"),
                 CurrentRefills: ReadInt(reader, "refills"),
-                Status: reader.GetString(reader.GetOrdinal("message_status")),
+                Status: reader.GetString(reader.GetOrdinal("lifecycle_status")),
+                StaffResponse: ReadNullableString(reader, "staff_response"),
                 PatientNote: ReadBodyLineValue(body, "Patient note:"),
                 Body: body));
         }
@@ -1601,30 +1931,46 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
 
     private static async Task<PrescriptionRefillRequestApprovalAnchor?> GetPrescriptionRefillRequestAsync(
         NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         int messageId,
+        bool openOnly,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             select
                 m.id,
                 m.pid,
                 m.reply_mail_chain,
-                p.id::text as prescription_id
+                p.patient_id,
+                p.id::text as prescription_id,
+                coalesce(
+                    lifecycle.status,
+                    case when m.message_status = 'Done' then 'approved' else 'pending' end
+                ) as lifecycle_status
             from portal_mailbox_messages m
             join prescriptions p
               on p.pid = m.pid
              and p.id::text = nullif(substring(m.body from 'Prescription ID: ([^\r\n]+)'), '')
+            left join prescription_refill_request_lifecycle lifecycle
+              on lifecycle.thread_id = m.reply_mail_chain
             where m.id = @messageId
               and m.deleted = 0
               and m.owner = m.assigned_to
               and m.portal_relation = 'portal:prescription-refill-request'
-              and m.message_status = 'New'
-              and p.active = 1
-              and p.end_date is null
-            limit 1;
+              and (
+                not @openOnly
+                or coalesce(
+                    lifecycle.status,
+                    case when m.message_status = 'Done' then 'approved' else 'pending' end
+                ) in ('pending', 'clarification-requested')
+              )
+            limit 1
+            for update of m;
             """;
         command.Parameters.Add("messageId", NpgsqlDbType.Integer).Value = messageId;
+        command.Parameters.AddWithValue("openOnly", openOnly);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -1636,7 +1982,50 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
             MessageId: reader.GetInt32(reader.GetOrdinal("id")),
             LegacyPid: reader.GetInt32(reader.GetOrdinal("pid")),
             ReplyMailChain: ReadInt(reader, "reply_mail_chain"),
-            PrescriptionId: reader.GetString(reader.GetOrdinal("prescription_id")));
+            PatientId: reader.GetString(reader.GetOrdinal("patient_id")),
+            PrescriptionId: reader.GetString(reader.GetOrdinal("prescription_id")),
+            Status: reader.GetString(reader.GetOrdinal("lifecycle_status")));
+    }
+
+    private static async Task UpsertPrescriptionRefillLifecycleAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PrescriptionRefillRequestApprovalAnchor anchor,
+        string status,
+        string? staffResponse,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into prescription_refill_request_lifecycle
+                (thread_id, staff_message_id, pid, patient_id, prescription_id, status,
+                 staff_response, updated_at, updated_by)
+            values
+                (@threadId, @messageId, @pid, @patientId, @prescriptionId, @status,
+                 @staffResponse, @updatedAt, @username)
+            on conflict (thread_id) do update
+            set staff_message_id = excluded.staff_message_id,
+                pid = excluded.pid,
+                patient_id = excluded.patient_id,
+                prescription_id = excluded.prescription_id,
+                status = excluded.status,
+                staff_response = excluded.staff_response,
+                updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by;
+            """;
+        command.Parameters.Add("threadId", NpgsqlDbType.Integer).Value = anchor.ReplyMailChain;
+        command.Parameters.Add("messageId", NpgsqlDbType.Integer).Value = anchor.MessageId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = anchor.LegacyPid;
+        command.Parameters.AddWithValue("patientId", anchor.PatientId);
+        command.Parameters.AddWithValue("prescriptionId", anchor.PrescriptionId);
+        command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("staffResponse", NullableText(staffResponse));
+        command.Parameters.Add("updatedAt", NpgsqlDbType.Timestamp).Value =
+            DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        command.Parameters.AddWithValue("username", username);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static IReadOnlyList<MedicationDuplicateSummary> BuildMedicationDuplicates(
@@ -2069,6 +2458,73 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task EnsurePrescriptionRefillLifecycleTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists prescription_refill_request_lifecycle (
+                thread_id integer primary key,
+                staff_message_id integer not null,
+                pid integer not null,
+                patient_id text not null,
+                prescription_id text not null,
+                request_date date,
+                drug text,
+                patient_note text,
+                status text not null check (
+                    status in (
+                        'pending',
+                        'clarification-requested',
+                        'approved',
+                        'denied',
+                        'completed'
+                    )
+                ),
+                staff_response text,
+                updated_at timestamp not null,
+                updated_by text not null
+            );
+            alter table prescription_refill_request_lifecycle
+                add column if not exists request_date date,
+                add column if not exists drug text,
+                add column if not exists patient_note text;
+            create index if not exists idx_prescription_refill_lifecycle_status
+                on prescription_refill_request_lifecycle (status, updated_at desc, thread_id desc);
+            create index if not exists idx_prescription_refill_lifecycle_patient
+                on prescription_refill_request_lifecycle (pid, updated_at desc, thread_id desc);
+            insert into prescription_refill_request_lifecycle
+                (thread_id, staff_message_id, pid, patient_id, prescription_id,
+                 request_date, drug, patient_note, status, staff_response, updated_at, updated_by)
+            select
+                message.reply_mail_chain,
+                message.id,
+                message.pid,
+                prescription.patient_id,
+                prescription.id::text,
+                message.message_date,
+                prescription.drug,
+                nullif(substring(message.body from 'Patient note: ([^\r\n]+)'), ''),
+                case when message.message_status = 'Done' then 'approved' else 'pending' end,
+                null,
+                message.message_date::timestamp,
+                message.assigned_to
+            from portal_mailbox_messages message
+            join prescriptions prescription
+              on prescription.pid = message.pid
+             and prescription.id::text = nullif(
+                substring(message.body from 'Prescription ID: ([^\r\n]+)'),
+                ''
+             )
+            where message.deleted = 0
+              and message.owner = message.assigned_to
+              and message.portal_relation = 'portal:prescription-refill-request'
+            on conflict (thread_id) do nothing;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task InsertPrescriptionAuditEventAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
@@ -2157,7 +2613,9 @@ public sealed class ClinicalListRepository(NpgsqlDataSource dataSource)
         int MessageId,
         int LegacyPid,
         int ReplyMailChain,
-        string PrescriptionId);
+        string PatientId,
+        string PrescriptionId,
+        string Status);
 
     private sealed record PharmacyRouteAnchor(
         string PatientId,

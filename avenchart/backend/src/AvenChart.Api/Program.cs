@@ -611,6 +611,32 @@ patientPortal.MapPost("/messages", async (
     })
     .WithName("ComposePatientPortalMessage");
 
+patientPortal.MapGet("/prescription-refill-requests", async (
+        PatientPortalRepository repository,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var header = httpContext.Request.Headers["X-Legacy EHR-Patient-Portal-Session"].ToString();
+        return Guid.TryParse(header, out var sessionId)
+            ? Results.Ok(await repository.GetPrescriptionRefillHistoryAsync(sessionId, cancellationToken))
+            : Results.Ok(new PatientPortalPrescriptionRefillHistoryResponse(
+                Authenticated: false,
+                SessionId: null,
+                Username: string.Empty,
+                PortalUsername: string.Empty,
+                CanonicalId: string.Empty,
+                LegacyPid: null,
+                Pubpid: string.Empty,
+                DisplayName: string.Empty,
+                DatasetId: "unseeded",
+                DatasetVersion: "unknown",
+                RequestCount: 0,
+                Requests: Array.Empty<PatientPortalPrescriptionRefillHistoryItem>(),
+                FailureReason: "Patient portal session header was not supplied.",
+                SessionSource: "avenchart-portal"));
+    })
+    .WithName("GetPatientPortalPrescriptionRefillHistory");
+
 patientPortal.MapPost("/prescriptions/{prescriptionId}/refill-request", async (
         PatientPortalRepository repository,
         HttpContext httpContext,
@@ -2119,6 +2145,23 @@ clinicalLists.MapGet("/pharmacies", async (
     })
     .WithName("GetClinicalPharmacyDirectory");
 
+clinicalLists.MapGet("/prescription-refill-requests", async (
+        ClinicalListRepository repository,
+        string? status,
+        string? patient,
+        int? limit,
+        int? offset,
+        CancellationToken cancellationToken) =>
+    {
+        return Results.Ok(await repository.GetPrescriptionRefillQueueAsync(
+            status,
+            patient,
+            limit ?? 100,
+            offset ?? 0,
+            cancellationToken));
+    })
+    .WithName("GetClinicalPrescriptionRefillQueue");
+
 clinicalLists.MapGet("/{patientId}", async (
         ClinicalListRepository repository,
         string patientId,
@@ -2323,14 +2366,52 @@ clinicalLists.MapGet("/prescriptions/{prescriptionId}/audit-history", async (
 
 clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/approve", async (
         ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         int messageId,
         ClinicalPrescriptionRefillApprovalRequest request,
         CancellationToken cancellationToken) =>
     {
-        var mutation = await repository.ApprovePrescriptionRefillRequestAsync(messageId, request, cancellationToken);
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        var mutation = await repository.ApprovePrescriptionRefillRequestAsync(
+            messageId,
+            request,
+            session.Username,
+            cancellationToken);
         return mutation is null ? Results.NotFound() : Results.Ok(mutation);
     })
     .WithName("ApproveClinicalPrescriptionRefillRequest");
+
+clinicalLists.MapPut("/prescription-refill-requests/{messageId:int}/decision", async (
+        ClinicalListRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        int messageId,
+        ClinicalPrescriptionRefillDecisionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var decision = await repository.DecidePrescriptionRefillRequestAsync(
+                messageId,
+                request,
+                session.Username,
+                cancellationToken);
+            return decision is null ? Results.NotFound() : Results.Ok(decision);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("DecideClinicalPrescriptionRefillRequest");
 
 clinicalLists.MapDelete("/prescriptions/{prescriptionId}", async (
         ClinicalListRepository repository,

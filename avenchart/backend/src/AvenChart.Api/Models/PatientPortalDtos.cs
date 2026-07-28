@@ -240,6 +240,34 @@ public sealed record PatientPortalPrescriptionRefillRequest(
     string? RequestDate,
     string? Note);
 
+public sealed record PatientPortalPrescriptionRefillHistoryResponse(
+    bool Authenticated,
+    Guid? SessionId,
+    string Username,
+    string PortalUsername,
+    string CanonicalId,
+    int? LegacyPid,
+    string Pubpid,
+    string DisplayName,
+    string DatasetId,
+    string DatasetVersion,
+    int RequestCount,
+    IReadOnlyList<PatientPortalPrescriptionRefillHistoryItem> Requests,
+    string? FailureReason,
+    string SessionSource);
+
+public sealed record PatientPortalPrescriptionRefillHistoryItem(
+    int MessageId,
+    int ThreadId,
+    string PrescriptionId,
+    string Drug,
+    string RequestDate,
+    string Status,
+    string? PatientNote,
+    string? StaffResponse,
+    string UpdatedAt,
+    string UpdatedBy);
+
 public sealed record PatientPortalLabResultsResponse(
     bool Authenticated,
     Guid? SessionId,

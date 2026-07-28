@@ -20,7 +20,7 @@ import {
   getPatientPortalGeneratedMedicalReportAudit,
   getPatientPortalLabResults,
   getPatientPortalMedicalReport,
-  getPatientPortalMessages,
+  getPatientPortalPrescriptionRefillHistory,
   generatePatientPortalMedicalReport,
   requestPatientPortalPrescriptionRefill,
   type PatientPortalClinicalSummaryResponse,
@@ -32,7 +32,7 @@ import {
   type PatientPortalGeneratedMedicalReportResponse,
   type PatientPortalMedicalReportGenerationInput,
   type PatientPortalMedicalReportResponse,
-  type PatientPortalMessagesResponse,
+  type PatientPortalPrescriptionRefillHistoryResponse,
 } from "../../api.ts";
 import type { PortalOutletContext } from "./PortalShell.tsx";
 import { showToast } from "../../components/Toast.tsx";
@@ -81,18 +81,20 @@ function toggleSelection(ids: Set<string>, id: string) {
   return next;
 }
 
-function readMessageBodyLine(body: string, label: string) {
-  const line = body
-    .split(/\r?\n/)
-    .find((value) => value.toLowerCase().startsWith(label.toLowerCase()));
-  return line?.slice(label.length).trim() ?? "";
-}
-
 function refillRequestStatus(status: string) {
-  if (status.toLowerCase() === "done")
+  if (status.toLowerCase() === "approved")
     return { label: "Approved", className: "refill-status-approved" };
-  if (status.toLowerCase() === "new")
+  if (status.toLowerCase() === "pending")
     return { label: "Pending review", className: "refill-status-pending" };
+  if (status.toLowerCase() === "clarification-requested")
+    return {
+      label: "Clarification requested",
+      className: "refill-status-clarification",
+    };
+  if (status.toLowerCase() === "denied")
+    return { label: "Denied", className: "refill-status-denied" };
+  if (status.toLowerCase() === "completed")
+    return { label: "Completed", className: "refill-status-completed" };
   return {
     label: `Submitted · ${status || "status unavailable"}`,
     className: "refill-status-submitted",
@@ -251,7 +253,7 @@ export default function PortalRecords() {
     AsyncState<PatientPortalClinicalSummaryResponse>
   >({ status: "idle" });
   const [refillHistoryState, setRefillHistoryState] = useState<
-    AsyncState<PatientPortalMessagesResponse>
+    AsyncState<PatientPortalPrescriptionRefillHistoryResponse>
   >({ status: "idle" });
 
   const [reportDownloading, setReportDownloading] = useState(false);
@@ -343,7 +345,7 @@ export default function PortalRecords() {
 
   function loadRefillHistory() {
     setRefillHistoryState({ status: "loading" });
-    getPatientPortalMessages(session.sessionId)
+    getPatientPortalPrescriptionRefillHistory(session.sessionId)
       .then((data) => setRefillHistoryState({ status: "ready", data }))
       .catch((error) =>
         setRefillHistoryState({
@@ -836,11 +838,7 @@ export default function PortalRecords() {
               ] as const;
               const refillRequests =
                 refillHistoryState.status === "ready"
-                  ? (refillHistoryState.data.sentMessages ?? []).filter(
-                      (message) =>
-                        message.portalRelation ===
-                        "portal:prescription-refill-request",
-                    )
+                  ? refillHistoryState.data.requests
                   : [];
 
               return (
@@ -889,10 +887,9 @@ export default function PortalRecords() {
                       </button>
                     </div>
                     <div className="hint-banner">
-                      “Approved” means the care team processed the request
-                      against the current local prescription. This target does
-                      not yet publish denial, clarification, completion, or a
-                      staff response to this history.
+                      These states describe your care team&apos;s local review.
+                      “Completed” does not confirm that a pharmacy dispensed or
+                      delivered medication.
                     </div>
                     {refillHistoryState.status === "loading" && (
                       <p className="muted" aria-live="polite">
@@ -923,36 +920,31 @@ export default function PortalRecords() {
                         <ul className="refill-history-list">
                           {refillRequests.map((request) => {
                             const status = refillRequestStatus(request.status);
-                            const drug =
-                              readMessageBodyLine(
-                                request.body,
-                                "Prescription:",
-                              ) || request.title;
-                            const prescriptionId = readMessageBodyLine(
-                              request.body,
-                              "Prescription ID:",
-                            );
-                            const patientNote = readMessageBodyLine(
-                              request.body,
-                              "Patient note:",
-                            );
                             return (
-                              <li key={request.id}>
+                              <li key={request.messageId}>
                                 <div className="refill-history-title">
-                                  <strong>{drug}</strong>
+                                  <strong>{request.drug}</strong>
                                   <span className={status.className}>
                                     {status.label}
                                   </span>
                                 </div>
                                 <p>
-                                  Submitted {request.date}
-                                  {prescriptionId
-                                    ? ` · Prescription ${prescriptionId}`
-                                    : ""}
+                                  Requested {request.requestDate} · Prescription{" "}
+                                  {request.prescriptionId}
                                 </p>
-                                {patientNote && (
-                                  <p>Patient note: {patientNote}</p>
+                                {request.patientNote && (
+                                  <p>Patient note: {request.patientNote}</p>
                                 )}
+                                {request.staffResponse && (
+                                  <p className="refill-history-response">
+                                    Care team response: {request.staffResponse}
+                                  </p>
+                                )}
+                                <p>
+                                  Last updated{" "}
+                                  {new Date(request.updatedAt).toLocaleString()}{" "}
+                                  by {request.updatedBy}
+                                </p>
                               </li>
                             );
                           })}
@@ -960,10 +952,9 @@ export default function PortalRecords() {
                       )}
                     {refillHistoryState.status === "ready" && (
                       <p className="refill-history-source">
-                        Source: portal sent mailbox · dataset{" "}
-                        {refillHistoryState.data.datasetId ?? "unavailable"} ·{" "}
-                        {refillHistoryState.data.datasetVersion ??
-                          "version unavailable"}
+                        Source: refill request lifecycle · dataset{" "}
+                        {refillHistoryState.data.datasetId} ·{" "}
+                        {refillHistoryState.data.datasetVersion}
                       </p>
                     )}
                   </div>

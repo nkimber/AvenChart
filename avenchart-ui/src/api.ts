@@ -716,6 +716,60 @@ export type PatientPortalPrescriptionRefillRequestInput = {
   note?: string | null
 }
 
+export type PatientPortalPrescriptionRefillHistoryItem = {
+  messageId: number
+  threadId: number
+  prescriptionId: string
+  drug: string
+  requestDate: string
+  status:
+    | 'pending'
+    | 'clarification-requested'
+    | 'approved'
+    | 'denied'
+    | 'completed'
+  patientNote?: string | null
+  staffResponse?: string | null
+  updatedAt: string
+  updatedBy: string
+}
+
+export type PatientPortalPrescriptionRefillHistoryResponse = {
+  authenticated: boolean
+  sessionId?: string | null
+  username: string
+  portalUsername: string
+  canonicalId: string
+  legacyPid?: number | null
+  pubpid: string
+  displayName: string
+  datasetId: string
+  datasetVersion: string
+  requestCount: number
+  requests: PatientPortalPrescriptionRefillHistoryItem[]
+  failureReason?: string | null
+  sessionSource: string
+}
+
+export async function getPatientPortalPrescriptionRefillHistory(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalPrescriptionRefillHistoryResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/prescription-refill-requests`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal prescription refill history',
+    'portal',
+  )
+  return response.json()
+}
+
 export async function requestPatientPortalPrescriptionRefill(
   sessionId: string,
   prescriptionId: string,
@@ -3335,8 +3389,51 @@ export type PrescriptionRefillRequestItem = {
   route?: string | null
   currentRefills: number
   status: string
+  staffResponse?: string | null
   patientNote?: string | null
   body: string
+}
+
+export type PrescriptionRefillQueueCounts = {
+  pending: number
+  clarificationRequested: number
+  approved: number
+  denied: number
+  completed: number
+  total: number
+}
+
+export type PrescriptionRefillQueueItem = {
+  messageId: number
+  threadId: number
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  portalUsername: string
+  prescriptionId: string
+  drug: string
+  dosage?: string | null
+  quantity?: string | null
+  route?: string | null
+  currentRefills: number
+  requestDate: string
+  status: string
+  patientNote?: string | null
+  staffResponse?: string | null
+  updatedAt: string
+  updatedBy: string
+}
+
+export type PrescriptionRefillQueueResponse = {
+  datasetId: string
+  datasetVersion: string
+  statusFilter: string
+  patientFilter?: string | null
+  totalMatches: number
+  returnedCount: number
+  counts: PrescriptionRefillQueueCounts
+  requests: PrescriptionRefillQueueItem[]
 }
 
 export type MedicationVocabularyItem = {
@@ -3416,6 +3513,29 @@ export async function getClinicalPharmacyDirectory(
   signal?: AbortSignal,
 ): Promise<ClinicalPharmacyDirectoryResponse> {
   return clinicianGet(sessionId, '/api/clinical-lists/pharmacies', signal)
+}
+
+export async function getPrescriptionRefillQueue(
+  sessionId: string,
+  options: {
+    status?: string
+    patient?: string
+    limit?: number
+    offset?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<PrescriptionRefillQueueResponse> {
+  const params = new URLSearchParams()
+  if (options.status) params.set('status', options.status)
+  if (options.patient?.trim()) params.set('patient', options.patient.trim())
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  const suffix = params.size > 0 ? `?${params}` : ''
+  return clinicianGet(
+    sessionId,
+    `/api/clinical-lists/prescription-refill-requests${suffix}`,
+    signal,
+  )
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -6214,6 +6334,32 @@ export async function approvePrescriptionRefillRequest(
   return clinicianPut(
     sessionId,
     `/api/clinical-lists/prescription-refill-requests/${messageId}/approve`,
+    body,
+    signal,
+  )
+}
+
+export type PrescriptionRefillDecisionInput = {
+  action: 'deny' | 'request-clarification' | 'complete'
+  response: string
+}
+
+export type PrescriptionRefillDecisionResponse = {
+  messageId: number
+  prescriptionId: string
+  status: string
+  staffResponse: string
+}
+
+export async function decidePrescriptionRefillRequest(
+  sessionId: string,
+  messageId: number,
+  body: PrescriptionRefillDecisionInput,
+  signal?: AbortSignal,
+): Promise<PrescriptionRefillDecisionResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescription-refill-requests/${messageId}/decision`,
     body,
     signal,
   )

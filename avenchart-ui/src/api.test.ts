@@ -19,6 +19,7 @@ import {
   deleteImmunization,
   deleteMedication,
   deleteProblem,
+  decidePrescriptionRefillRequest,
   decideInventoryPurchaseRequisition,
   dispenseInventoryPrescription,
   downloadInventoryActivityCsv,
@@ -35,8 +36,10 @@ import {
   getPatientPortalAppointments,
   getPatientPortalHome,
   getPatientPortalMessages,
+  getPatientPortalPrescriptionRefillHistory,
   getPatientProviderAssignmentOptions,
   getPrescriptionAuditHistory,
+  getPrescriptionRefillQueue,
   getProcedureOrderQueue,
   getProcedureReportQueue,
   getStaffMessageInbox,
@@ -144,6 +147,45 @@ describe('authenticated API transport', () => {
     })
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/patient-portal/messages',
+      expect.objectContaining({
+        headers: {
+          'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
+        },
+      }),
+    )
+  })
+
+  it('reads the portal refill lifecycle instead of inferring state from sent mail', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authenticated: true,
+        requestCount: 1,
+        requests: [
+          {
+            messageId: 901,
+            threadId: 900,
+            prescriptionId: 'RX-901',
+            drug: 'Metformin',
+            requestDate: '2026-07-28',
+            status: 'clarification-requested',
+            patientNote: 'Please review',
+            staffResponse: 'Which pharmacy should we use?',
+            updatedAt: '2026-07-28T14:00:00Z',
+            updatedBy: 'clinician',
+          },
+        ],
+      }),
+    )
+
+    const result =
+      await getPatientPortalPrescriptionRefillHistory('portal-session')
+
+    expect(result.requests[0]).toMatchObject({
+      status: 'clarification-requested',
+      staffResponse: 'Which pharmacy should we use?',
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/patient-portal/prescription-refill-requests',
       expect.objectContaining({
         headers: {
           'X-Legacy EHR-Patient-Portal-Session': 'portal-session',
@@ -1206,6 +1248,71 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PUT',
       body: JSON.stringify(requestApproval),
+    })
+  })
+
+  it('filters the global refill queue and sends explicit lifecycle decisions', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          statusFilter: 'clarification-requested',
+          totalMatches: 1,
+          counts: {
+            pending: 0,
+            clarificationRequested: 1,
+            approved: 0,
+            denied: 0,
+            completed: 0,
+            total: 1,
+          },
+          requests: [
+            {
+              messageId: 445,
+              status: 'clarification-requested',
+              staffResponse: 'Please confirm the pharmacy.',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          messageId: 445,
+          prescriptionId: 'RX-445',
+          status: 'denied',
+          staffResponse: 'A visit is required first.',
+        }),
+      )
+
+    const queue = await getPrescriptionRefillQueue('staff-session', {
+      status: 'clarification-requested',
+      patient: 'Ada Lovelace',
+      limit: 25,
+      offset: 50,
+    })
+    const decision = await decidePrescriptionRefillRequest(
+      'staff-session',
+      445,
+      {
+        action: 'deny',
+        response: 'A visit is required first.',
+      },
+    )
+
+    expect(queue.counts.clarificationRequested).toBe(1)
+    expect(decision.status).toBe('denied')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/clinical-lists/prescription-refill-requests?status=clarification-requested&patient=Ada+Lovelace&limit=25&offset=50',
+      'http://localhost:5001/api/clinical-lists/prescription-refill-requests/445/decision',
+    ])
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({
+        action: 'deny',
+        response: 'A visit is required first.',
+      }),
     })
   })
 

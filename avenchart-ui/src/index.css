@@ -6087,6 +6087,14 @@ a {
   color: #78350f;
   font-size: 12px;
 }
+.rx-staff-response {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--teal);
+  background: var(--teal-soft);
+  color: var(--text);
+  font-size: 12px;
+}
 .rx-refill-form {
   width: min(360px, 42vw);
   display: grid;
@@ -7156,8 +7164,15 @@ a {
   font-size: 13px;
   color: var(--text);
 }
+.refill-history-response {
+  color: var(--text) !important;
+  font-weight: 600;
+}
 .refill-status-approved,
 .refill-status-pending,
+.refill-status-clarification,
+.refill-status-denied,
+.refill-status-completed,
 .refill-status-submitted {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -7172,6 +7187,18 @@ a {
 .refill-status-pending {
   background: #fef3c7;
   color: #92400e;
+}
+.refill-status-clarification {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.refill-status-denied {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.refill-status-completed {
+  background: #e0e7ff;
+  color: #3730a3;
 }
 .refill-status-submitted {
   background: var(--bg);

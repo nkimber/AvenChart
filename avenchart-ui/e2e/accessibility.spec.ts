@@ -130,6 +130,10 @@ test.describe("accessibility gate", () => {
       );
     }
     await navigateWithinApplication(page, "/clinician/renewals");
+    await page.getByLabel("Patient name or ID").fill("MOD-PAT-0004");
+    await page
+      .getByRole("button", { name: "Apply patient scope" })
+      .click();
     await page
       .getByRole("button", { name: "All active", exact: true })
       .click();

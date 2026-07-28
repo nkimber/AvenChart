@@ -214,8 +214,48 @@ public sealed record PrescriptionRefillRequestItem(
     string? Route,
     int CurrentRefills,
     string Status,
+    string? StaffResponse,
     string? PatientNote,
     string Body);
+
+public sealed record PrescriptionRefillQueueResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string StatusFilter,
+    string? PatientFilter,
+    int TotalMatches,
+    int ReturnedCount,
+    PrescriptionRefillQueueCounts Counts,
+    IReadOnlyList<PrescriptionRefillQueueItem> Requests);
+
+public sealed record PrescriptionRefillQueueCounts(
+    int Pending,
+    int ClarificationRequested,
+    int Approved,
+    int Denied,
+    int Completed,
+    int Total);
+
+public sealed record PrescriptionRefillQueueItem(
+    int MessageId,
+    int ThreadId,
+    string PatientId,
+    int LegacyPid,
+    string Pubpid,
+    string PatientDisplayName,
+    string PortalUsername,
+    string PrescriptionId,
+    string Drug,
+    string? Dosage,
+    string? Quantity,
+    string? Route,
+    int CurrentRefills,
+    string RequestDate,
+    string Status,
+    string? PatientNote,
+    string? StaffResponse,
+    string UpdatedAt,
+    string UpdatedBy);
 
 public sealed record ImmunizationListItem(
     int Id,
@@ -309,6 +349,16 @@ public sealed record ClinicalPrescriptionRefillApprovalRequest(
     string RefillDate,
     int AdditionalRefills,
     string Note);
+
+public sealed record ClinicalPrescriptionRefillDecisionRequest(
+    string Action,
+    string Response);
+
+public sealed record ClinicalPrescriptionRefillDecisionResponse(
+    int MessageId,
+    string PrescriptionId,
+    string Status,
+    string StaffResponse);
 
 public sealed record ClinicalPrescriptionPharmacyRouteRequest(
     int PharmacyId,

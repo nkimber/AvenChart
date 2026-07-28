@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -1544,6 +1545,7 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
         var prescription = await GetPortalPrescriptionAsync(connection, session.LegacyPid.Value, prescriptionId, cancellationToken);
         if (prescription is null)
         {
@@ -1628,6 +1630,19 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             archivedMessageCount: 0,
             transaction,
             cancellationToken);
+        await InsertPrescriptionRefillLifecycleAsync(
+            connection,
+            transaction,
+            threadId: nextId,
+            staffMessageId: nextId + 1,
+            pid: session.LegacyPid.Value,
+            patientId: session.CanonicalId,
+            prescriptionId: prescription.Id,
+            requestDate: requestDate,
+            drug: prescription.Drug,
+            patientNote: note,
+            updatedBy: session.PortalUsername,
+            cancellationToken: cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -1650,6 +1665,102 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             RecipientMessage: recipientMessage,
             MessageCount: inboxCount,
             SentMessageCount: sentCount,
+            FailureReason: null,
+            SessionSource: session.SessionSource);
+    }
+
+    public async Task<PatientPortalPrescriptionRefillHistoryResponse> GetPrescriptionRefillHistoryAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetCurrentSessionAsync(sessionId, cancellationToken);
+        if (!session.Authenticated || session.LegacyPid is null)
+        {
+            return new PatientPortalPrescriptionRefillHistoryResponse(
+                Authenticated: false,
+                SessionId: session.SessionId,
+                Username: session.Username,
+                PortalUsername: session.PortalUsername,
+                CanonicalId: session.CanonicalId,
+                LegacyPid: session.LegacyPid,
+                Pubpid: session.Pubpid,
+                DisplayName: session.DisplayName,
+                DatasetId: "unseeded",
+                DatasetVersion: "unknown",
+                RequestCount: 0,
+                Requests: Array.Empty<PatientPortalPrescriptionRefillHistoryItem>(),
+                FailureReason: session.FailureReason ?? "Session is not active.",
+                SessionSource: session.SessionSource);
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePrescriptionRefillLifecycleTableAsync(connection, cancellationToken);
+        var metadata = await GetMetadataAsync(connection, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                lifecycle.staff_message_id,
+                lifecycle.thread_id,
+                lifecycle.prescription_id,
+                coalesce(lifecycle.drug, prescription.drug, 'Prescription') as drug,
+                lifecycle.request_date,
+                lifecycle.status,
+                lifecycle.patient_note,
+                lifecycle.staff_response,
+                lifecycle.updated_at,
+                lifecycle.updated_by
+            from prescription_refill_request_lifecycle lifecycle
+            left join prescriptions prescription
+              on prescription.id::text = lifecycle.prescription_id
+             and prescription.pid = lifecycle.pid
+            where lifecycle.pid = @pid
+              and lifecycle.patient_id = @patientId
+            order by lifecycle.request_date desc nulls last,
+                     lifecycle.updated_at desc,
+                     lifecycle.thread_id desc;
+            """;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = session.LegacyPid.Value;
+        command.Parameters.AddWithValue("patientId", session.CanonicalId);
+
+        var requests = new List<PatientPortalPrescriptionRefillHistoryItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var requestDateOrdinal = reader.GetOrdinal("request_date");
+            var updatedBy = reader.GetString(reader.GetOrdinal("updated_by"));
+            requests.Add(new PatientPortalPrescriptionRefillHistoryItem(
+                MessageId: reader.GetInt32(reader.GetOrdinal("staff_message_id")),
+                ThreadId: reader.GetInt32(reader.GetOrdinal("thread_id")),
+                PrescriptionId: reader.GetString(reader.GetOrdinal("prescription_id")),
+                Drug: reader.GetString(reader.GetOrdinal("drug")),
+                RequestDate: reader.IsDBNull(requestDateOrdinal)
+                    ? string.Empty
+                    : reader.GetFieldValue<DateOnly>(requestDateOrdinal).ToString("yyyy-MM-dd"),
+                Status: reader.GetString(reader.GetOrdinal("status")),
+                PatientNote: ReadNullableString(reader, "patient_note"),
+                StaffResponse: ReadNullableString(reader, "staff_response"),
+                UpdatedAt: reader.GetFieldValue<DateTime>(reader.GetOrdinal("updated_at")).ToString("O"),
+                UpdatedBy: string.Equals(
+                    updatedBy,
+                    session.PortalUsername,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? session.DisplayName
+                    : "Care team"));
+        }
+
+        return new PatientPortalPrescriptionRefillHistoryResponse(
+            Authenticated: true,
+            SessionId: session.SessionId,
+            Username: session.Username,
+            PortalUsername: session.PortalUsername,
+            CanonicalId: session.CanonicalId,
+            LegacyPid: session.LegacyPid,
+            Pubpid: session.Pubpid,
+            DisplayName: session.DisplayName,
+            DatasetId: metadata.DatasetId,
+            DatasetVersion: metadata.DatasetVersion,
+            RequestCount: requests.Count,
+            Requests: requests,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -4949,6 +5060,113 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         }
 
         return facilities;
+    }
+
+    private static async Task EnsurePrescriptionRefillLifecycleTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            create table if not exists prescription_refill_request_lifecycle (
+                thread_id integer primary key,
+                staff_message_id integer not null,
+                pid integer not null,
+                patient_id text not null,
+                prescription_id text not null,
+                request_date date,
+                drug text,
+                patient_note text,
+                status text not null check (
+                    status in (
+                        'pending',
+                        'clarification-requested',
+                        'approved',
+                        'denied',
+                        'completed'
+                    )
+                ),
+                staff_response text,
+                updated_at timestamp not null,
+                updated_by text not null
+            );
+            alter table prescription_refill_request_lifecycle
+                add column if not exists request_date date,
+                add column if not exists drug text,
+                add column if not exists patient_note text;
+            create index if not exists idx_prescription_refill_lifecycle_status
+                on prescription_refill_request_lifecycle (status, updated_at desc, thread_id desc);
+            create index if not exists idx_prescription_refill_lifecycle_patient
+                on prescription_refill_request_lifecycle (pid, updated_at desc, thread_id desc);
+            insert into prescription_refill_request_lifecycle
+                (thread_id, staff_message_id, pid, patient_id, prescription_id,
+                 request_date, drug, patient_note, status, staff_response, updated_at, updated_by)
+            select
+                message.reply_mail_chain,
+                message.id,
+                message.pid,
+                prescription.patient_id,
+                prescription.id::text,
+                message.message_date,
+                prescription.drug,
+                nullif(substring(message.body from 'Patient note: ([^\r\n]+)'), ''),
+                case when message.message_status = 'Done' then 'approved' else 'pending' end,
+                null,
+                message.message_date::timestamp,
+                message.assigned_to
+            from portal_mailbox_messages message
+            join prescriptions prescription
+              on prescription.pid = message.pid
+             and prescription.id::text = nullif(
+                substring(message.body from 'Prescription ID: ([^\r\n]+)'),
+                ''
+             )
+            where message.deleted = 0
+              and message.owner = message.assigned_to
+              and message.portal_relation = 'portal:prescription-refill-request'
+            on conflict (thread_id) do nothing;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertPrescriptionRefillLifecycleAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int threadId,
+        int staffMessageId,
+        int pid,
+        string patientId,
+        string prescriptionId,
+        string requestDate,
+        string drug,
+        string? patientNote,
+        string updatedBy,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            insert into prescription_refill_request_lifecycle
+                (thread_id, staff_message_id, pid, patient_id, prescription_id,
+                 request_date, drug, patient_note, status, staff_response, updated_at, updated_by)
+            values
+                (@threadId, @staffMessageId, @pid, @patientId, @prescriptionId,
+                 @requestDate, @drug, @patientNote, 'pending', null, @updatedAt, @updatedBy)
+            on conflict (thread_id) do nothing;
+            """;
+        command.Parameters.Add("threadId", NpgsqlDbType.Integer).Value = threadId;
+        command.Parameters.Add("staffMessageId", NpgsqlDbType.Integer).Value = staffMessageId;
+        command.Parameters.Add("pid", NpgsqlDbType.Integer).Value = pid;
+        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("prescriptionId", prescriptionId);
+        command.Parameters.Add("requestDate", NpgsqlDbType.Date).Value =
+            DateOnly.Parse(requestDate, CultureInfo.InvariantCulture);
+        command.Parameters.AddWithValue("drug", drug);
+        command.Parameters.AddWithValue("patientNote", (object?)patientNote ?? DBNull.Value);
+        command.Parameters.Add("updatedAt", NpgsqlDbType.Timestamp).Value =
+            DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+        command.Parameters.AddWithValue("updatedBy", updatedBy);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<DatasetMetadata> GetMetadataAsync(

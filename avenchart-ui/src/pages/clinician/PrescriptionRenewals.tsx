@@ -16,9 +16,11 @@ import {
   ApiRequestError,
   approvePrescriptionRefillRequest,
   deactivatePrescription,
+  decidePrescriptionRefillRequest,
   getClinicalPharmacyDirectory,
   getClinicalLists,
   getPrescriptionAuditHistory,
+  getPrescriptionRefillQueue,
   refillPrescription,
   routePrescriptionToPharmacy,
   searchPatients,
@@ -27,7 +29,9 @@ import {
   type ClinicalPharmacyDirectoryResponse,
   type PatientListItem,
   type PrescriptionListItem,
-  type PrescriptionRefillRequestItem,
+  type PrescriptionRefillQueueCounts,
+  type PrescriptionRefillQueueItem,
+  type PrescriptionRefillDecisionInput,
   type PrescriptionUpdateInput,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
@@ -40,8 +44,8 @@ type RxEntry = {
 };
 
 type RequestEntry = {
-  patient: PatientListItem;
-  request: PrescriptionRefillRequestItem;
+  patient: Pick<PatientListItem, "canonicalId" | "displayName" | "pubpid">;
+  request: PrescriptionRefillQueueItem;
 };
 
 type ReadyState = {
@@ -53,6 +57,8 @@ type ReadyState = {
   failedPatients: number;
   datasetId?: string;
   datasetVersion?: string;
+  queueCounts: PrescriptionRefillQueueCounts;
+  queueStatusFilter: string;
 };
 
 type AsyncState =
@@ -87,6 +93,7 @@ type PrescriptionEditDraft = {
 };
 
 type QueueView = "requests" | "expiring" | "expired" | "all";
+type RequestStatusView = "open" | "approved" | "denied" | "completed" | "all";
 
 function daysUntil(dateStr?: string | null): number | null {
   if (!dateStr) return null;
@@ -107,6 +114,14 @@ function urgencyLabel(days: number | null): string {
   if (days < 0) return `Ended ${Math.abs(days)}d ago`;
   if (days === 0) return "Ends today";
   return `${days}d remaining`;
+}
+
+function refillStatusClass(status: string) {
+  if (status === "approved" || status === "completed") {
+    return "rx-urgency-ok";
+  }
+  if (status === "denied") return "rx-urgency-expired";
+  return "rx-urgency-soon";
 }
 
 function today() {
@@ -131,6 +146,14 @@ export default function PrescriptionRenewals() {
     requestedView === "all"
       ? requestedView
       : "requests";
+  const requestedRequestStatus = searchParams.get("requestStatus");
+  const requestStatus: RequestStatusView =
+    requestedRequestStatus === "approved" ||
+    requestedRequestStatus === "denied" ||
+    requestedRequestStatus === "completed" ||
+    requestedRequestStatus === "all"
+      ? requestedRequestStatus
+      : "open";
   const [patientInput, setPatientInput] = useState(patientScope);
   const [state, setState] = useState<AsyncState>({ status: "loading" });
   const [workingKey, setWorkingKey] = useState<string | null>(null);
@@ -143,6 +166,10 @@ export default function PrescriptionRenewals() {
   const [editTarget, setEditTarget] = useState<string | null>(null);
   const [editDraft, setEditDraft] =
     useState<PrescriptionEditDraft | null>(null);
+  const [decisionTarget, setDecisionTarget] = useState<string | null>(null);
+  const [decisionAction, setDecisionAction] =
+    useState<PrescriptionRefillDecisionInput["action"]>("deny");
+  const [decisionResponse, setDecisionResponse] = useState("");
   const [pharmacyState, setPharmacyState] = useState<PharmacyState>({
     status: "loading",
   });
@@ -170,10 +197,42 @@ export default function PrescriptionRenewals() {
   const load = useCallback(async () => {
     setState({ status: "loading" });
     try {
-      const patientResult = await searchPatients(session.sessionId, {
-        search: patientScope || undefined,
-        limit: 50,
+      const queuePromise = getPrescriptionRefillQueue(session.sessionId, {
+        status: requestStatus,
+        patient: patientScope || undefined,
+        limit: 200,
       });
+      if (view === "requests") {
+        const queue = await queuePromise;
+        setState({
+          status: "ready",
+          prescriptions: [],
+          requests: queue.requests.map((request) => ({
+            patient: {
+              canonicalId: request.patientId,
+              displayName: request.patientDisplayName,
+              pubpid: request.pubpid,
+            },
+            request,
+          })),
+          patientCount: queue.returnedCount,
+          totalMatches: queue.totalMatches,
+          failedPatients: 0,
+          datasetId: queue.datasetId,
+          datasetVersion: queue.datasetVersion,
+          queueCounts: queue.counts,
+          queueStatusFilter: queue.statusFilter,
+        });
+        return;
+      }
+
+      const [queue, patientResult] = await Promise.all([
+        queuePromise,
+        searchPatients(session.sessionId, {
+          search: patientScope || undefined,
+          limit: 50,
+        }),
+      ]);
       const settled = await Promise.allSettled(
         patientResult.patients.map(async (patient) => ({
           patient,
@@ -184,9 +243,16 @@ export default function PrescriptionRenewals() {
         })),
       );
       const prescriptions: RxEntry[] = [];
-      const requests: RequestEntry[] = [];
-      let datasetId: string | undefined;
-      let datasetVersion: string | undefined;
+      const requests: RequestEntry[] = queue.requests.map((request) => ({
+        patient: {
+          canonicalId: request.patientId,
+          displayName: request.patientDisplayName,
+          pubpid: request.pubpid,
+        },
+        request,
+      }));
+      let datasetId: string | undefined = queue.datasetId;
+      let datasetVersion: string | undefined = queue.datasetVersion;
       let failedPatients = 0;
 
       for (const result of settled) {
@@ -205,9 +271,6 @@ export default function PrescriptionRenewals() {
             daysUntilExpiry: daysUntil(rx.endDate),
           });
         }
-        for (const request of lists.prescriptionRefillRequests) {
-          requests.push({ patient, request });
-        }
       }
 
       prescriptions.sort((left, right) => {
@@ -218,11 +281,6 @@ export default function PrescriptionRenewals() {
           left.patient.displayName.localeCompare(right.patient.displayName)
         );
       });
-      requests.sort(
-        (left, right) =>
-          left.request.requestDate.localeCompare(right.request.requestDate) ||
-          left.patient.displayName.localeCompare(right.patient.displayName),
-      );
       setState({
         status: "ready",
         prescriptions,
@@ -232,6 +290,8 @@ export default function PrescriptionRenewals() {
         failedPatients,
         datasetId,
         datasetVersion,
+        queueCounts: queue.counts,
+        queueStatusFilter: queue.statusFilter,
       });
     } catch (error) {
       setState({
@@ -242,7 +302,7 @@ export default function PrescriptionRenewals() {
             : "The prescription queue could not be loaded.",
       });
     }
-  }, [patientScope, session.sessionId]);
+  }, [patientScope, requestStatus, session.sessionId, view]);
 
   useEffect(() => {
     void load();
@@ -255,6 +315,16 @@ export default function PrescriptionRenewals() {
     setRefillTarget(null);
     setRouteTarget(null);
     setEditTarget(null);
+    setDecisionTarget(null);
+  }
+
+  function changeRequestStatus(nextStatus: RequestStatusView) {
+    const next = new URLSearchParams(searchParams);
+    next.set("view", "requests");
+    next.set("requestStatus", nextStatus);
+    setSearchParams(next);
+    setRefillTarget(null);
+    setDecisionTarget(null);
   }
 
   function submitPatientScope(event: React.FormEvent) {
@@ -269,6 +339,7 @@ export default function PrescriptionRenewals() {
   function beginRefill(key: string) {
     setRouteTarget(null);
     setEditTarget(null);
+    setDecisionTarget(null);
     setRefillTarget(key);
     setRefillCount("1");
     setRefillNote("");
@@ -277,6 +348,7 @@ export default function PrescriptionRenewals() {
   function beginRoute(key: string, pharmacyId?: number | null) {
     setRefillTarget(null);
     setEditTarget(null);
+    setDecisionTarget(null);
     setRouteTarget(key);
     setRoutePharmacyId(pharmacyId ? String(pharmacyId) : "");
     setRouteNote("");
@@ -285,6 +357,7 @@ export default function PrescriptionRenewals() {
   function beginEdit(key: string, prescription: PrescriptionListItem) {
     setRefillTarget(null);
     setRouteTarget(null);
+    setDecisionTarget(null);
     setEditTarget(key);
     setEditDraft({
       expectedVersion: prescription.version,
@@ -309,6 +382,16 @@ export default function PrescriptionRenewals() {
       note: prescription.note ?? "",
       editReason: "",
     });
+  }
+
+  function beginDecision(
+    key: string,
+    action: PrescriptionRefillDecisionInput["action"],
+  ) {
+    setRefillTarget(null);
+    setDecisionTarget(key);
+    setDecisionAction(action);
+    setDecisionResponse("");
   }
 
   function updateEditField(
@@ -441,7 +524,7 @@ export default function PrescriptionRenewals() {
 
   async function handleApprove(entry: RequestEntry) {
     const additionalRefills = readRefillCount();
-    if (additionalRefills === null) return;
+    if (additionalRefills === null || !refillNote.trim()) return;
     const key = `approve-${entry.request.messageId}`;
     setWorkingKey(key);
     try {
@@ -451,9 +534,7 @@ export default function PrescriptionRenewals() {
         {
           refillDate: today(),
           additionalRefills,
-          note:
-            refillNote.trim() ||
-            "Portal refill request approved by prescription review queue",
+          note: refillNote.trim(),
         },
       );
       showToast(
@@ -467,6 +548,41 @@ export default function PrescriptionRenewals() {
     } catch {
       showToast(
         "The request could not be approved. It may already have been processed.",
+        "error",
+      );
+    } finally {
+      setWorkingKey(null);
+    }
+  }
+
+  async function handleDecision(entry: RequestEntry) {
+    if (!decisionResponse.trim()) return;
+    const key = `decision-${entry.request.messageId}`;
+    setWorkingKey(key);
+    try {
+      const result = await decidePrescriptionRefillRequest(
+        session.sessionId,
+        entry.request.messageId,
+        {
+          action: decisionAction,
+          response: decisionResponse.trim(),
+        },
+      );
+      const label =
+        result.status === "clarification-requested"
+          ? "Clarification requested"
+          : result.status === "denied"
+            ? "Refill request denied"
+            : "Refill request marked locally completed";
+      showToast(`${label} for ${entry.request.drug}.`, "success");
+      setDecisionTarget(null);
+      setDecisionResponse("");
+      setAuditTarget(null);
+      setAuditByPrescription({});
+      await load();
+    } catch {
+      showToast(
+        "The refill decision could not be recorded. Reload the queue and retry.",
         "error",
       );
     } finally {
@@ -632,7 +748,11 @@ export default function PrescriptionRenewals() {
       );
     return view === "all";
   });
-  const requestCount = state.status === "ready" ? state.requests.length : 0;
+  const requestCount =
+    state.status === "ready"
+      ? state.queueCounts.pending +
+        state.queueCounts.clarificationRequested
+      : 0;
 
   return (
     <div className="clinician-page">
@@ -688,11 +808,31 @@ export default function PrescriptionRenewals() {
 
       {state.status === "ready" && (
         <div className="rx-scan-evidence" role="status">
-          <span>
-            Reviewed {state.patientCount - state.failedPatients} of{" "}
-            {state.patientCount} returned patient charts
-          </span>
-          <span>{state.totalMatches} matching patients</span>
+          {view === "requests" ? (
+            <>
+              <span>Protected global refill queue</span>
+              <span>
+                {state.requests.length} returned · {state.totalMatches}{" "}
+                matching {state.queueStatusFilter} request
+                {state.totalMatches === 1 ? "" : "s"}
+              </span>
+              <span>
+                {state.queueCounts.pending} pending ·{" "}
+                {state.queueCounts.clarificationRequested} clarification ·{" "}
+                {state.queueCounts.approved} approved ·{" "}
+                {state.queueCounts.denied} denied ·{" "}
+                {state.queueCounts.completed} completed
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                Reviewed {state.patientCount - state.failedPatients} of{" "}
+                {state.patientCount} returned patient charts
+              </span>
+              <span>{state.totalMatches} matching patients</span>
+            </>
+          )}
           {state.datasetId && (
             <span>
               Dataset {state.datasetId} · {state.datasetVersion}
@@ -710,13 +850,14 @@ export default function PrescriptionRenewals() {
               Local pharmacy directory unavailable
             </span>
           )}
-          {state.totalMatches > state.patientCount && (
+          {view !== "requests" &&
+            state.totalMatches > state.patientCount && (
             <span className="rx-warning">
               Results are bounded to the first {state.patientCount} patients.
               Apply a patient scope for complete patient-level review.
             </span>
           )}
-          {state.failedPatients > 0 && (
+          {view !== "requests" && state.failedPatients > 0 && (
             <span className="rx-warning">
               {state.failedPatients} patient chart
               {state.failedPatients === 1 ? "" : "s"} failed to load.
@@ -771,10 +912,38 @@ export default function PrescriptionRenewals() {
 
       {state.status === "ready" && view === "requests" && (
         <>
+          <div
+            className="cl-tab-bar"
+            aria-label="Refill request status filter"
+          >
+            {(
+              [
+                [
+                  "open",
+                  `Open (${state.queueCounts.pending + state.queueCounts.clarificationRequested})`,
+                ],
+                ["approved", `Approved (${state.queueCounts.approved})`],
+                ["denied", `Denied (${state.queueCounts.denied})`],
+                ["completed", `Completed (${state.queueCounts.completed})`],
+                ["all", `All (${state.queueCounts.total})`],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                className={`cl-tab-btn${requestStatus === key ? " cl-tab-btn-active" : ""}`}
+                type="button"
+                aria-pressed={requestStatus === key}
+                onClick={() => changeRequestStatus(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {state.requests.length === 0 ? (
             <div className="cl-card">
               <p className="cl-empty-text">
-                No pending portal refill requests match this patient scope.
+                No {requestStatus} portal refill requests match this patient
+                scope.
               </p>
             </div>
           ) : (
@@ -782,6 +951,10 @@ export default function PrescriptionRenewals() {
               {state.requests.map((entry) => {
                 const formKey = `request-${entry.request.messageId}`;
                 const busyKey = `approve-${entry.request.messageId}`;
+                const decisionBusyKey = `decision-${entry.request.messageId}`;
+                const requestIsOpen =
+                  entry.request.status === "pending" ||
+                  entry.request.status === "clarification-requested";
                 return (
                   <article key={formKey} className="rx-renew-item cl-card">
                     <div className="rx-renew-left">
@@ -819,10 +992,17 @@ export default function PrescriptionRenewals() {
                           Patient note: {entry.request.patientNote}
                         </p>
                       )}
+                      {entry.request.staffResponse && (
+                        <p className="rx-staff-response">
+                          Staff response: {entry.request.staffResponse}
+                        </p>
+                      )}
                       {renderAudit(entry.request.prescriptionId)}
                     </div>
                     <div className="rx-renew-right">
-                      <span className="rx-urgency-badge rx-urgency-soon">
+                      <span
+                        className={`rx-urgency-badge ${refillStatusClass(entry.request.status)}`}
+                      >
                         {entry.request.status}
                       </span>
                       {refillTarget === formKey ? (
@@ -841,7 +1021,7 @@ export default function PrescriptionRenewals() {
                             />
                           </label>
                           <label>
-                            Approval note
+                            Patient-visible approval response
                             <input
                               className="ne-input"
                               value={refillNote}
@@ -849,6 +1029,7 @@ export default function PrescriptionRenewals() {
                                 setRefillNote(event.target.value)
                               }
                               maxLength={250}
+                              required
                             />
                           </label>
                           <div className="rx-renew-actions">
@@ -857,7 +1038,8 @@ export default function PrescriptionRenewals() {
                               type="button"
                               disabled={
                                 workingKey === busyKey ||
-                                readRefillCount() === null
+                                readRefillCount() === null ||
+                                !refillNote.trim()
                               }
                               onClick={() => handleApprove(entry)}
                             >
@@ -873,15 +1055,105 @@ export default function PrescriptionRenewals() {
                             </button>
                           </div>
                         </div>
+                      ) : decisionTarget === formKey ? (
+                        <div className="rx-refill-form">
+                          <label>
+                            {decisionAction === "deny"
+                              ? "Patient-visible denial reason"
+                              : decisionAction === "request-clarification"
+                                ? "Patient-visible clarification question"
+                                : "Patient-visible completion note"}
+                            <textarea
+                              className="ne-input"
+                              rows={3}
+                              value={decisionResponse}
+                              onChange={(event) =>
+                                setDecisionResponse(event.target.value)
+                              }
+                              maxLength={500}
+                              required
+                            />
+                          </label>
+                          <p className="rx-renew-meta">
+                            {decisionAction === "complete"
+                              ? "Completion closes the local review workflow only; it does not prove pharmacy dispensing or delivery."
+                              : "The response is published in the patient refill history."}
+                          </p>
+                          <div className="rx-renew-actions">
+                            <button
+                              className={
+                                decisionAction === "deny"
+                                  ? "cl-btn-danger"
+                                  : "cl-btn-primary"
+                              }
+                              type="button"
+                              disabled={
+                                workingKey === decisionBusyKey ||
+                                !decisionResponse.trim()
+                              }
+                              onClick={() => handleDecision(entry)}
+                            >
+                              {decisionAction === "deny"
+                                ? "Deny request"
+                                : decisionAction === "request-clarification"
+                                  ? "Request clarification"
+                                  : "Mark locally completed"}
+                            </button>
+                            <button
+                              className="cl-btn-secondary"
+                              type="button"
+                              disabled={workingKey === decisionBusyKey}
+                              onClick={() => setDecisionTarget(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <div className="rx-renew-actions">
-                          <button
-                            className="cl-btn-primary"
-                            type="button"
-                            onClick={() => beginRefill(formKey)}
-                          >
-                            <CheckCircle size={13} /> Review and approve
-                          </button>
+                          {requestIsOpen && (
+                            <>
+                              <button
+                                className="cl-btn-primary"
+                                type="button"
+                                onClick={() => beginRefill(formKey)}
+                              >
+                                <CheckCircle size={13} /> Review and approve
+                              </button>
+                              <button
+                                className="cl-btn-secondary"
+                                type="button"
+                                onClick={() =>
+                                  beginDecision(
+                                    formKey,
+                                    "request-clarification",
+                                  )
+                                }
+                              >
+                                Request clarification
+                              </button>
+                              <button
+                                className="cl-btn-secondary"
+                                type="button"
+                                onClick={() =>
+                                  beginDecision(formKey, "deny")
+                                }
+                              >
+                                Deny
+                              </button>
+                            </>
+                          )}
+                          {entry.request.status === "approved" && (
+                            <button
+                              className="cl-btn-primary"
+                              type="button"
+                              onClick={() =>
+                                beginDecision(formKey, "complete")
+                              }
+                            >
+                              <CheckCircle size={13} /> Mark completed
+                            </button>
+                          )}
                           <button
                             className="cl-btn-secondary"
                             type="button"

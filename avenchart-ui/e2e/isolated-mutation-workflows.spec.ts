@@ -64,6 +64,7 @@ function deletePortalMailboxFixtures(messageIds: string[]) {
   const textIds = ids.map((value) => `'${value}'`).join(",");
   const sql = [
     "begin;",
+    `delete from prescription_refill_request_lifecycle where staff_message_id in (${numericIds}) or thread_id in (${numericIds});`,
     `delete from patient_portal_message_audit_events where message_id in (${textIds}) or thread_id in (${numericIds}) or related_message_ids && array[${textIds}]::text[];`,
     `delete from portal_mailbox_messages where id in (${numericIds});`,
     "commit;",
@@ -400,7 +401,7 @@ test.describe("isolated mutation workflows", () => {
     }
   });
 
-  test("staff can reject stale prescription edits, save reviewed changes, route locally, and expose refill history", async ({
+  test("staff can operate the global refill lifecycle, reject stale edits, route locally, and expose patient-visible outcomes", async ({
     page,
     context,
   }) => {
@@ -410,6 +411,13 @@ test.describe("isolated mutation workflows", () => {
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     const prescriptionNote = `Temporary catalog prescription ${Date.now()}`;
     const requestNote = `Temporary refill request ${Date.now()}`;
+    const deniedRequestNote = `Temporary denied refill ${Date.now()}`;
+    const clarificationResponse = "Please confirm the preferred pharmacy.";
+    const approvalResponse = "Browser-verified approval";
+    const completionResponse =
+      "Local staff review is complete; contact the pharmacy for dispensing status.";
+    const denialResponse =
+      "A follow-up visit is required before another refill can be authorized.";
     let prescriptionId: string | null = null;
     let portalSessionId: string | null = null;
     const messageIds: string[] = [];
@@ -522,13 +530,29 @@ test.describe("isolated mutation workflows", () => {
       await expect(requestCard).toBeVisible({ timeout: 30_000 });
       await expect(requestCard).toContainText(requestNote);
       await expect(requestCard).toContainText("0 current refills");
+      await expect(page.locator(".rx-scan-evidence")).toContainText(
+        "Protected global refill queue",
+      );
+      await requestCard
+        .getByRole("button", { name: "Request clarification" })
+        .click();
+      await requestCard
+        .getByLabel("Patient-visible clarification question")
+        .fill(clarificationResponse);
+      await requestCard
+        .getByRole("button", { name: "Request clarification" })
+        .click();
+      await expect(requestCard).toContainText("clarification-requested", {
+        timeout: 30_000,
+      });
+      await expect(requestCard).toContainText(clarificationResponse);
       await requestCard
         .getByRole("button", { name: "Review and approve" })
         .click();
       await requestCard.getByLabel("Additional refills").fill("2");
       await requestCard
-        .getByLabel("Approval note")
-        .fill("Browser-verified approval");
+        .getByLabel("Patient-visible approval response")
+        .fill(approvalResponse);
       await requestCard
         .getByRole("button", { name: "Approve request" })
         .click();
@@ -641,7 +665,7 @@ test.describe("isolated mutation workflows", () => {
         "Refill Request Approved",
       );
       await expect(prescriptionCard).toContainText(
-        "Browser-verified approval",
+        approvalResponse,
       );
       await expect(prescriptionCard).toContainText(
         "Browser-verified prescription edit",
@@ -678,21 +702,117 @@ test.describe("isolated mutation workflows", () => {
         "Browser-verified local route",
       );
 
+      await page
+        .getByRole("button", { name: /^Portal requests/ })
+        .click();
+      await page
+        .getByRole("button", { name: /^Approved \(/ })
+        .click();
+      const approvedRequestCard = page
+        .locator("article.rx-renew-item")
+        .filter({ hasText: requestNote });
+      await expect(approvedRequestCard).toBeVisible({ timeout: 30_000 });
+      await expect(approvedRequestCard).toContainText(approvalResponse);
+      await approvedRequestCard
+        .getByRole("button", { name: "Mark completed" })
+        .click();
+      await approvedRequestCard
+        .getByLabel("Patient-visible completion note")
+        .fill(completionResponse);
+      await approvedRequestCard
+        .getByRole("button", { name: "Mark locally completed" })
+        .click();
+      await expect(approvedRequestCard).toHaveCount(0, {
+        timeout: 30_000,
+      });
+      await page
+        .getByRole("button", { name: /^Completed \(/ })
+        .click();
+      const completedRequestCard = page
+        .locator("article.rx-renew-item")
+        .filter({ hasText: requestNote });
+      await expect(completedRequestCard).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(completedRequestCard).toContainText("completed");
+      await expect(completedRequestCard).toContainText(completionResponse);
+
+      const deniedRequest = await page.request.post(
+        `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId!)}/refill-request`,
+        {
+          headers: {
+            "X-Legacy EHR-Patient-Portal-Session": portalSessionId!,
+          },
+          data: {
+            requestDate: new Date().toISOString().slice(0, 10),
+            note: deniedRequestNote,
+          },
+        },
+      );
+      expect(deniedRequest.ok()).toBeTruthy();
+      const deniedRequestResult = (await deniedRequest.json()) as {
+        sentMessage?: { id?: string };
+        recipientMessage?: { id?: string };
+      };
+      for (const id of [
+        deniedRequestResult.sentMessage?.id,
+        deniedRequestResult.recipientMessage?.id,
+      ]) {
+        if (id) messageIds.push(id);
+      }
+
+      await page
+        .getByRole("button", { name: /^Open \(/ })
+        .click();
+      const deniedRequestCard = page
+        .locator("article.rx-renew-item")
+        .filter({ hasText: deniedRequestNote });
+      await expect(deniedRequestCard).toBeVisible({ timeout: 30_000 });
+      await deniedRequestCard.getByRole("button", { name: "Deny" }).click();
+      await deniedRequestCard
+        .getByLabel("Patient-visible denial reason")
+        .fill(denialResponse);
+      await deniedRequestCard
+        .getByRole("button", { name: "Deny request" })
+        .click();
+      await expect(deniedRequestCard).toHaveCount(0, { timeout: 30_000 });
+      await page
+        .getByRole("button", { name: /^Denied \(/ })
+        .click();
+      const deniedHistoryCard = page
+        .locator("article.rx-renew-item")
+        .filter({ hasText: deniedRequestNote });
+      await expect(deniedHistoryCard).toBeVisible({ timeout: 30_000 });
+      await expect(deniedHistoryCard).toContainText("denied");
+      await expect(deniedHistoryCard).toContainText(denialResponse);
+
       const portalPage = await context.newPage();
       await signInPortal(portalPage);
       await portalPage.goto("/portal/records");
       await portalPage
         .getByRole("button", { name: "Health summary" })
         .click();
-      const refillHistory = portalPage
+      const completedRefillHistory = portalPage
         .locator(".refill-history-list li")
-        .filter({ hasText: prescriptionId! });
-      await expect(refillHistory).toBeVisible({ timeout: 30_000 });
-      await expect(refillHistory).toContainText(
+        .filter({ hasText: requestNote });
+      await expect(completedRefillHistory).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(completedRefillHistory).toContainText(
         createdPrescription?.drug ?? "Metformin",
       );
-      await expect(refillHistory).toContainText("Approved");
-      await expect(refillHistory).toContainText(requestNote);
+      await expect(completedRefillHistory).toContainText("Completed");
+      await expect(completedRefillHistory).toContainText(completionResponse);
+      await expect(completedRefillHistory).toContainText("Care team");
+      const deniedRefillHistory = portalPage
+        .locator(".refill-history-list li")
+        .filter({ hasText: deniedRequestNote });
+      await expect(deniedRefillHistory).toBeVisible({ timeout: 30_000 });
+      await expect(deniedRefillHistory).toContainText("Denied");
+      await expect(deniedRefillHistory).toContainText(denialResponse);
+      await expect(portalPage.locator(".refill-history .hint-banner")).toContainText(
+        "does not confirm that a pharmacy dispensed or delivered medication",
+      );
       await portalPage.close();
     } finally {
       deletePortalMailboxFixtures(messageIds);
