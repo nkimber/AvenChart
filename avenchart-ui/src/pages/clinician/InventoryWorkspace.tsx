@@ -13,6 +13,7 @@ import {
 import type { ClinicianOutletContext } from './ClinicianShell.tsx'
 import InventoryActivityPanel from './InventoryActivityPanel.tsx'
 import InventoryDispensingPanel from './InventoryDispensingPanel.tsx'
+import InventoryMedicationLinksPanel from './InventoryMedicationLinksPanel.tsx'
 import InventoryReceivingPanel from './InventoryReceivingPanel.tsx'
 import InventoryRequisitionsPanel from './InventoryRequisitionsPanel.tsx'
 import InventoryStockActionsPanel from './InventoryStockActionsPanel.tsx'
@@ -195,6 +196,12 @@ export default function InventoryWorkspace() {
 
           <InventoryStockActionsPanel
             facilities={data.facilities}
+            items={data.items}
+            onChanged={handleInventoryWorkflowChanged}
+            sessionId={session.sessionId}
+          />
+
+          <InventoryMedicationLinksPanel
             items={data.items}
             onChanged={handleInventoryWorkflowChanged}
             sessionId={session.sessionId}

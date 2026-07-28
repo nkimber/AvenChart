@@ -2190,6 +2190,33 @@ export type InventoryMedicationLink = {
   linkedBy: string
   linkedAt: string
 }
+export type InventoryMedicationCatalogItem = {
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  form: string
+  strength: string
+  route: string
+}
+export async function getInventoryMedicationCatalog(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryMedicationCatalogItem[]> {
+  return clinicianGet(sessionId, '/api/inventory/medication-catalog', signal)
+}
+export async function updateInventoryMedicationLink(
+  sessionId: string,
+  itemId: number,
+  rxNormCode: string,
+  signal?: AbortSignal,
+): Promise<InventoryMedicationLink> {
+  return clinicianPut(
+    sessionId,
+    `/api/inventory/items/${itemId}/medication-link`,
+    { rxNormCode },
+    signal,
+  )
+}
 export type InventoryItem = {
   itemId: number
   itemCode: string

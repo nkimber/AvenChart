@@ -17,6 +17,7 @@ import {
   endPatientPortalSession,
   getCurrentSession,
   getInventoryActivityReport,
+  getInventoryMedicationCatalog,
   getInventoryLotMetadataHistory,
   getInventoryPurchaseRequisitions,
   getPatientBilling,
@@ -32,6 +33,7 @@ import {
   updatePatientEmployer,
   updatePatientGuardianContact,
   updatePatientProviderAssignment,
+  updateInventoryMedicationLink,
 } from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -712,6 +714,57 @@ describe('authenticated API transport', () => {
     ])
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       headers: { 'X-Legacy EHR-Session': 'staff-session' },
+    })
+  })
+
+  it('loads the local medication catalog and updates an inventory RXCUI link', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            rxNormCode: '860975',
+            drugName: 'Metformin',
+            displayName: 'Metformin 500 MG Oral Tablet',
+            form: 'tablet',
+            strength: '500 mg',
+            route: 'oral',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          itemId: 10004,
+          rxNormCode: '860975',
+          drugName: 'Metformin',
+          displayName: 'Metformin 500 MG Oral Tablet',
+          linkedBy: 'admin',
+          linkedAt: '2026-07-27T22:15:00Z',
+        }),
+      )
+
+    const catalog = await getInventoryMedicationCatalog('staff-session')
+    const link = await updateInventoryMedicationLink(
+      'staff-session',
+      10004,
+      '860975',
+    )
+
+    expect(catalog[0]).toMatchObject({
+      rxNormCode: '860975',
+      strength: '500 mg',
+    })
+    expect(link).toMatchObject({
+      itemId: 10004,
+      rxNormCode: '860975',
+      linkedBy: 'admin',
+    })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/inventory/medication-catalog',
+      'http://localhost:5001/api/inventory/items/10004/medication-link',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PUT',
+      body: JSON.stringify({ rxNormCode: '860975' }),
     })
   })
 

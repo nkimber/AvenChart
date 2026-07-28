@@ -415,6 +415,32 @@ test.describe("material workflows", () => {
     ).toBeDisabled();
   });
 
+  test("inventory medication links expose catalog, current mapping, and unmapped boundaries", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    const links = page
+      .getByRole("heading", { name: "Medication inventory links" })
+      .locator("xpath=ancestor::section");
+    await expect(links.getByText(/\d+ linked \/ \d+ unmapped/)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(links).toContainText(
+      "does not expose link-history review or unlink contracts yet",
+    );
+    await expect(links.getByLabel("Link inventory item")).toBeVisible();
+    await links.getByLabel("Link inventory item").selectOption({ index: 1 });
+    await expect(links.getByLabel("Search local medications")).toBeVisible();
+    await expect(links.getByLabel("Local RXCUI medication")).toBeVisible();
+    await expect(
+      links.getByRole("button", { name: "Save medication link" }),
+    ).toBeDisabled();
+    await expect(links.getByLabel("Search inventory mappings")).toBeVisible();
+    await expect(links.getByRole("table")).toBeVisible();
+  });
+
   test("inventory exposes patient, encounter, FEFO, and prescription dispensing context", async ({
     page,
   }) => {

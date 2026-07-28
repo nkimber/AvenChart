@@ -7263,6 +7263,85 @@ a {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.inventory-medication-links {
+  display: grid;
+  gap: 16px;
+}
+.inventory-medication-link-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.inventory-medication-target,
+.inventory-medication-current,
+.inventory-medication-facts,
+.inventory-medication-link-form > .hint-banner,
+.inventory-medication-link-form > .error-banner,
+.inventory-medication-link-form > .cl-btn-primary {
+  grid-column: 1 / -1;
+}
+.inventory-medication-current {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.inventory-medication-current strong {
+  color: var(--text);
+}
+.inventory-medication-facts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.inventory-medication-facts div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.inventory-medication-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.inventory-medication-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+.inventory-medication-result {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #b8ddd2;
+  border-radius: var(--radius-md);
+  background: var(--teal-soft);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.inventory-medication-list-heading {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.inventory-medication-list-heading > .cl-badge {
+  margin-bottom: 7px;
+}
+.inventory-medication-table {
+  min-width: 880px;
+}
 .inventory-dispensing {
   display: grid;
   gap: 16px;
@@ -7361,12 +7440,24 @@ a {
   .inventory-dispensing-grid,
   .inventory-activity-filters,
   .inventory-activity-facts,
-  .inventory-activity-view-filters {
+  .inventory-activity-view-filters,
+  .inventory-medication-link-form,
+  .inventory-medication-facts,
+  .inventory-medication-list-heading {
     grid-template-columns: 1fr;
   }
-  .inventory-activity-view-filters > .cl-badge {
+  .inventory-activity-view-filters > .cl-badge,
+  .inventory-medication-list-heading > .cl-badge {
     justify-self: start;
     margin-bottom: 0;
+  }
+  .inventory-medication-target,
+  .inventory-medication-current,
+  .inventory-medication-facts,
+  .inventory-medication-link-form > .hint-banner,
+  .inventory-medication-link-form > .error-banner,
+  .inventory-medication-link-form > .cl-btn-primary {
+    grid-column: auto;
   }
 }
 
