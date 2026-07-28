@@ -2211,9 +2211,19 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
             await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "no_open_layer", "No policy-backed receipt cost layer is available for this transfer.", username, now, cancellationToken);
             return;
         }
-        if (layers.Select(layer => layer.PolicyId).Distinct().Skip(1).Any() || layers[0].Method != "fifo")
+        if (layers.Select(layer => layer.PolicyId).Distinct().Skip(1).Any())
         {
-            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility cost-layer reallocation currently supports one FIFO policy revision only.", username, now, cancellationToken);
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility cost-layer reallocation cannot mix policy revisions.", username, now, cancellationToken);
+            return;
+        }
+        if (layers[0].Method == "weighted_average")
+        {
+            await ReallocateWeightedAverageTransferCostLayersAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, sourceLotId, destinationLot, destinationFacilityId, layers, quantity, username, now, cancellationToken);
+            return;
+        }
+        if (layers[0].Method != "fifo")
+        {
+            await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "unsupported_method", "Cross-facility cost-layer reallocation currently supports FIFO and weighted-average policy methods only.", username, now, cancellationToken);
             return;
         }
         var remaining = quantity;
@@ -2221,14 +2231,34 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource)
         {
             if (remaining <= 0) break;
             var moved = Math.Min(remaining, layer.Remaining);
-            var sourceRemaining = layer.Remaining - moved;
-            var sourceApplicationId = Guid.NewGuid();
-            await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_cost_layers set remaining_quantity=@remaining,status=@status where layer_id=@layer;"; update.Parameters.AddWithValue("remaining",sourceRemaining); update.Parameters.AddWithValue("status",sourceRemaining==0 ? "exhausted" : "open"); update.Parameters.AddWithValue("layer",layer.Id); await update.ExecuteNonQueryAsync(cancellationToken); }
-            await using (var application = connection.CreateCommand()) { application.Transaction=transaction; application.CommandText="insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,applied_at,applied_by) values(@id,@layer,@source,'issue',@quantity,@unitCost,@extended,@rounding,@at,@user);"; application.Parameters.AddWithValue("id",sourceApplicationId); application.Parameters.AddWithValue("layer",layer.Id); application.Parameters.AddWithValue("source",sourceTransactionId); application.Parameters.AddWithValue("quantity",-moved); application.Parameters.AddWithValue("unitCost",layer.UnitCost); application.Parameters.AddWithValue("extended",-RoundAccordingToPolicy(moved*layer.UnitCost,4,layer.RoundingRule)); application.Parameters.AddWithValue("rounding",$"FIFO transfer out to lot {destinationLot.LotId}; {layer.RoundingRule} to four decimal places"); application.Parameters.AddWithValue("at",now); application.Parameters.AddWithValue("user",username); await application.ExecuteNonQueryAsync(cancellationToken); }
-            await using (var destination = connection.CreateCommand()) { destination.Transaction=transaction; destination.CommandText="insert into inventory_cost_layers(layer_id,source_transaction_id,receipt_id,lot_id,item_id,facility_id,received_quantity,remaining_quantity,unit_cost,currency,policy_id,policy_revision,method,status,created_at,created_by,transfer_id,origin_application_id) select @id,@source,null,@destinationLot,item_id,@destinationFacility,@quantity,@quantity,@unitCost,currency,policy_id,policy_revision,method,'open',@at,@user,@transfer,@origin from inventory_cost_layers where layer_id=@sourceLayer;"; destination.Parameters.AddWithValue("id",Guid.NewGuid()); destination.Parameters.AddWithValue("source",destinationTransactionId); destination.Parameters.AddWithValue("destinationLot",destinationLot.LotId); destination.Parameters.AddWithValue("destinationFacility",destinationFacilityId); destination.Parameters.AddWithValue("quantity",moved); destination.Parameters.AddWithValue("unitCost",layer.UnitCost); destination.Parameters.AddWithValue("at",now); destination.Parameters.AddWithValue("user",username); destination.Parameters.AddWithValue("transfer",transferId); destination.Parameters.AddWithValue("origin",sourceApplicationId); destination.Parameters.AddWithValue("sourceLayer",layer.Id); await destination.ExecuteNonQueryAsync(cancellationToken); }
+            await MoveTransferCostLayerAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, destinationLot, destinationFacilityId, layer, moved, layer.UnitCost, $"FIFO transfer out to lot {destinationLot.LotId}; {layer.RoundingRule} to four decimal places", username, now, cancellationToken);
             remaining -= moved;
         }
         if (remaining > 0) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete transfer quantity.", username, now, cancellationToken);
+    }
+
+    private static async Task ReallocateWeightedAverageTransferCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid destinationTransactionId, Guid transferId, int sourceLotId, InventoryLot destinationLot, int destinationFacilityId, IReadOnlyList<InventoryCostLayerForApplication> layers, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var totalQuantity = layers.Sum(layer => layer.Remaining); var movedTotal = Math.Min(quantity, totalQuantity); var rounding = layers[0].RoundingRule;
+        var weightedUnitCost = RoundAccordingToPolicy(layers.Sum(layer => layer.Remaining * layer.UnitCost) / totalQuantity, 4, rounding);
+        var availableUnits = decimal.ToInt64(decimal.Truncate(movedTotal * 100m));
+        var provisional = layers.Select(layer => new { Layer = layer, Units = decimal.ToInt64(decimal.Floor(movedTotal * layer.Remaining / totalQuantity * 100m)), Remainder = movedTotal * layer.Remaining / totalQuantity * 100m % 1m }).ToList();
+        var unassignedUnits = availableUnits - provisional.Sum(line => line.Units); var extraUnits = new HashSet<Guid>();
+        foreach (var line in provisional.OrderByDescending(line => line.Remainder).ThenBy(line => line.Layer.Id).Take((int)unassignedUnits)) extraUnits.Add(line.Layer.Id);
+        foreach (var line in provisional)
+        {
+            var moved = (line.Units + (extraUnits.Contains(line.Layer.Id) ? 1 : 0)) / 100m;
+            if (moved > 0) await MoveTransferCostLayerAsync(connection, transaction, sourceTransactionId, destinationTransactionId, transferId, destinationLot, destinationFacilityId, line.Layer, moved, weightedUnitCost, $"weighted_average transfer out to lot {destinationLot.LotId}; {rounding} weighted unit cost to four decimal places", username, now, cancellationToken);
+        }
+        if (quantity > totalQuantity) await RecordCostingExceptionAsync(connection, transaction, sourceTransactionId, sourceLotId, "insufficient_layer", "Policy-backed receipt layers do not cover the complete transfer quantity.", username, now, cancellationToken);
+    }
+
+    private static async Task MoveTransferCostLayerAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, Guid destinationTransactionId, Guid transferId, InventoryLot destinationLot, int destinationFacilityId, InventoryCostLayerForApplication sourceLayer, decimal quantity, decimal applicationUnitCost, string roundingTrace, string username, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var sourceRemaining = sourceLayer.Remaining - quantity; var sourceApplicationId = Guid.NewGuid();
+        await using (var update = connection.CreateCommand()) { update.Transaction=transaction; update.CommandText="update inventory_cost_layers set remaining_quantity=@remaining,status=@status where layer_id=@layer;"; update.Parameters.AddWithValue("remaining",sourceRemaining); update.Parameters.AddWithValue("status",sourceRemaining==0 ? "exhausted" : "open"); update.Parameters.AddWithValue("layer",sourceLayer.Id); await update.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var application = connection.CreateCommand()) { application.Transaction=transaction; application.CommandText="insert into inventory_cost_layer_applications(application_id,layer_id,source_transaction_id,application_type,quantity,unit_cost,extended_cost,rounding_trace,applied_at,applied_by) values(@id,@layer,@source,'issue',@quantity,@unitCost,@extended,@rounding,@at,@user);"; application.Parameters.AddWithValue("id",sourceApplicationId); application.Parameters.AddWithValue("layer",sourceLayer.Id); application.Parameters.AddWithValue("source",sourceTransactionId); application.Parameters.AddWithValue("quantity",-quantity); application.Parameters.AddWithValue("unitCost",applicationUnitCost); application.Parameters.AddWithValue("extended",-RoundAccordingToPolicy(quantity*applicationUnitCost,4,sourceLayer.RoundingRule)); application.Parameters.AddWithValue("rounding",roundingTrace); application.Parameters.AddWithValue("at",now); application.Parameters.AddWithValue("user",username); await application.ExecuteNonQueryAsync(cancellationToken); }
+        await using var destination = connection.CreateCommand(); destination.Transaction=transaction; destination.CommandText="insert into inventory_cost_layers(layer_id,source_transaction_id,receipt_id,lot_id,item_id,facility_id,received_quantity,remaining_quantity,unit_cost,currency,policy_id,policy_revision,method,status,created_at,created_by,transfer_id,origin_application_id) select @id,@source,null,@destinationLot,item_id,@destinationFacility,@quantity,@quantity,@unitCost,currency,policy_id,policy_revision,method,'open',@at,@user,@transfer,@origin from inventory_cost_layers where layer_id=@sourceLayer;"; destination.Parameters.AddWithValue("id",Guid.NewGuid()); destination.Parameters.AddWithValue("source",destinationTransactionId); destination.Parameters.AddWithValue("destinationLot",destinationLot.LotId); destination.Parameters.AddWithValue("destinationFacility",destinationFacilityId); destination.Parameters.AddWithValue("quantity",quantity); destination.Parameters.AddWithValue("unitCost",applicationUnitCost); destination.Parameters.AddWithValue("at",now); destination.Parameters.AddWithValue("user",username); destination.Parameters.AddWithValue("transfer",transferId); destination.Parameters.AddWithValue("origin",sourceApplicationId); destination.Parameters.AddWithValue("sourceLayer",sourceLayer.Id); await destination.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ApplyWeightedAverageCostLayersAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid sourceTransactionId, int lotId, string applicationType, IReadOnlyList<InventoryCostLayerForApplication> layers, decimal quantity, string username, DateTimeOffset now, CancellationToken cancellationToken)
