@@ -1,7 +1,20 @@
 // Compatibility barrel for the existing backend API. Domain modules migrate
 // incrementally while every request shares this governed transport.
-import { ApiRequestError, apiBaseUrl, apiFetch as fetch, requireSuccessfulResponse } from './api/transport.ts'
-export { ApiRequestError, SESSION_INVALID_EVENT, isInvalidSessionError, isRequestCancellation, type ApiErrorKind, type ApiProblemDetails, type SessionScope } from './api/transport.ts'
+import {
+  ApiRequestError,
+  apiBaseUrl,
+  apiFetch as fetch,
+  requireSuccessfulResponse,
+} from './api/transport.ts'
+export {
+  ApiRequestError,
+  SESSION_INVALID_EVENT,
+  isInvalidSessionError,
+  isRequestCancellation,
+  type ApiErrorKind,
+  type ApiProblemDetails,
+  type SessionScope,
+} from './api/transport.ts'
 
 export type AuthLoginInput = {
   username: string
@@ -72,7 +85,10 @@ export type PatientPortalSessionResponse = {
   sessionSource: string
 }
 
-export async function login(input: AuthLoginInput, signal?: AbortSignal): Promise<AuthLoginResponse> {
+export async function login(
+  input: AuthLoginInput,
+  signal?: AbortSignal,
+): Promise<AuthLoginResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -83,7 +99,10 @@ export async function login(input: AuthLoginInput, signal?: AbortSignal): Promis
   return response.json()
 }
 
-export async function getCurrentSession(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
+export async function getCurrentSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AuthSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/session`, {
     headers: { 'X-Legacy EHR-Session': sessionId },
     signal,
@@ -92,7 +111,10 @@ export async function getCurrentSession(sessionId: string, signal?: AbortSignal)
   return response.json()
 }
 
-export async function logout(sessionId: string, signal?: AbortSignal): Promise<AuthSessionResponse> {
+export async function logout(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AuthSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/logout`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -103,7 +125,10 @@ export async function logout(sessionId: string, signal?: AbortSignal): Promise<A
   return response.json()
 }
 
-export async function loginPatientPortal(input: PatientPortalLoginInput, signal?: AbortSignal): Promise<PatientPortalLoginResponse> {
+export async function loginPatientPortal(
+  input: PatientPortalLoginInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalLoginResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -114,22 +139,36 @@ export async function loginPatientPortal(input: PatientPortalLoginInput, signal?
   return response.json()
 }
 
-export async function getPatientPortalSession(sessionId: string, signal?: AbortSignal): Promise<PatientPortalSessionResponse> {
+export async function getPatientPortalSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
-  await requireSuccessfulResponse(response, 'Patient portal session check', 'portal')
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal session check',
+    'portal',
+  )
   return response.json()
 }
 
-export async function endPatientPortalSession(sessionId: string, signal?: AbortSignal): Promise<PatientPortalSessionResponse> {
+export async function endPatientPortalSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalSessionResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/session`, {
     method: 'DELETE',
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
-  await requireSuccessfulResponse(response, 'Patient portal session logout', 'portal')
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal session logout',
+    'portal',
+  )
   return response.json()
 }
 
@@ -170,7 +209,10 @@ export type PatientPortalHomeSummaryResponse = {
   sessionSource: string
 }
 
-export async function getPatientPortalHome(sessionId: string, signal?: AbortSignal): Promise<PatientPortalHomeSummaryResponse> {
+export async function getPatientPortalHome(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalHomeSummaryResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/home`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
@@ -208,13 +250,18 @@ export type PatientPortalMessagesResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalMessages(sessionId: string, signal?: AbortSignal): Promise<PatientPortalMessagesResponse> {
+export async function getPatientPortalMessages(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessagesResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient portal messages check failed with ${response.status}`)
+    throw new Error(
+      `Patient portal messages check failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -245,12 +292,21 @@ export type PatientPortalMessageComposeOptions = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalMessageComposeOptions(sessionId: string, signal?: AbortSignal): Promise<PatientPortalMessageComposeOptions> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/compose-options`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal compose options failed with ${response.status}`)
+export async function getPatientPortalMessageComposeOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageComposeOptions> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/compose-options`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal compose options failed with ${response.status}`,
+    )
   return response.json()
 }
 
@@ -262,7 +318,11 @@ export type PatientPortalComposeMessageResponse = {
   failureReason?: string | null
 }
 
-export async function composePatientPortalMessage(sessionId: string, input: PatientPortalComposeMessageInput, signal?: AbortSignal): Promise<PatientPortalComposeMessageResponse> {
+export async function composePatientPortalMessage(
+  sessionId: string,
+  input: PatientPortalComposeMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalComposeMessageResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages`, {
     method: 'POST',
     headers: {
@@ -273,17 +333,29 @@ export async function composePatientPortalMessage(sessionId: string, input: Pati
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient portal message compose failed with ${response.status}`)
+    throw new Error(
+      `Patient portal message compose failed with ${response.status}`,
+    )
   }
   return response.json()
 }
 
-export async function downloadPatientPortalMessageAttachment(sessionId: string, attachmentId: string, signal?: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/attachments/${encodeURIComponent(attachmentId)}`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal attachment download failed with ${response.status}`)
+export async function downloadPatientPortalMessageAttachment(
+  sessionId: string,
+  attachmentId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/attachments/${encodeURIComponent(attachmentId)}`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal attachment download failed with ${response.status}`,
+    )
   return response.blob()
 }
 
@@ -297,13 +369,22 @@ export type PatientPortalMessageThreadResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalMessageThread(sessionId: string, messageId: string, signal?: AbortSignal): Promise<PatientPortalMessageThreadResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/thread`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
+export async function getPatientPortalMessageThread(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageThreadResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/${messageId}/thread`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
   if (!response.ok) {
-    throw new Error(`Patient portal message thread check failed with ${response.status}`)
+    throw new Error(
+      `Patient portal message thread check failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -326,18 +407,28 @@ export type PatientPortalReplyMessageResponse = {
   failureReason?: string | null
 }
 
-export async function replyToPatientPortalMessage(sessionId: string, messageId: string, input: PatientPortalReplyMessageInput, signal?: AbortSignal): Promise<PatientPortalReplyMessageResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/reply`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function replyToPatientPortalMessage(
+  sessionId: string,
+  messageId: string,
+  input: PatientPortalReplyMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalReplyMessageResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/${messageId}/reply`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
+  )
   if (!response.ok) {
-    throw new Error(`Patient portal message reply failed with ${response.status}`)
+    throw new Error(
+      `Patient portal message reply failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -350,14 +441,23 @@ export type PatientPortalReadMessageResponse = {
   failureReason?: string | null
 }
 
-export async function markPatientPortalMessageRead(sessionId: string, messageId: string, signal?: AbortSignal): Promise<PatientPortalReadMessageResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${messageId}/read`, {
-    method: 'PUT',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
+export async function markPatientPortalMessageRead(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalReadMessageResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/${messageId}/read`,
+    {
+      method: 'PUT',
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
   if (!response.ok) {
-    throw new Error(`Patient portal message read failed with ${response.status}`)
+    throw new Error(
+      `Patient portal message read failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -371,27 +471,43 @@ export type PatientPortalMessageLifecycleResponse = {
   failureReason?: string | null
 }
 
-export async function archivePatientPortalMessages(sessionId: string, messageIds: number[], signal?: AbortSignal): Promise<PatientPortalMessageLifecycleResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/archive`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function archivePatientPortalMessages(
+  sessionId: string,
+  messageIds: number[],
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageLifecycleResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/archive`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify({ messageIds }),
+      signal,
     },
-    body: JSON.stringify({ messageIds }),
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal archive failed with ${response.status}`)
+  )
+  if (!response.ok)
+    throw new Error(`Patient portal archive failed with ${response.status}`)
   return response.json()
 }
 
-export async function deletePatientPortalMessage(sessionId: string, messageId: string, signal?: AbortSignal): Promise<PatientPortalMessageLifecycleResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/messages/${encodeURIComponent(messageId)}`, {
-    method: 'DELETE',
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal delete failed with ${response.status}`)
+export async function deletePatientPortalMessage(
+  sessionId: string,
+  messageId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMessageLifecycleResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: 'DELETE',
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  if (!response.ok)
+    throw new Error(`Patient portal delete failed with ${response.status}`)
   return response.json()
 }
 
@@ -411,13 +527,18 @@ export type PatientPortalDocumentsResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalDocuments(sessionId: string, signal?: AbortSignal): Promise<PatientPortalDocumentsResponse> {
+export async function getPatientPortalDocuments(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalDocumentsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient portal documents check failed with ${response.status}`)
+    throw new Error(
+      `Patient portal documents check failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -426,18 +547,27 @@ export type PatientPortalDocumentsDownloadInput = {
   documentIds: number[]
 }
 
-export async function downloadPatientPortalDocuments(sessionId: string, input: PatientPortalDocumentsDownloadInput, signal?: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/documents/download`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function downloadPatientPortalDocuments(
+  sessionId: string,
+  input: PatientPortalDocumentsDownloadInput,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/documents/download`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
+  )
   if (!response.ok) {
-    throw new Error(`Patient portal document download failed with ${response.status}`)
+    throw new Error(
+      `Patient portal document download failed with ${response.status}`,
+    )
   }
   return response.blob()
 }
@@ -477,13 +607,18 @@ export type PatientPortalLabResultsResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalLabResults(sessionId: string, signal?: AbortSignal): Promise<PatientPortalLabResultsResponse> {
+export async function getPatientPortalLabResults(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalLabResultsResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/lab-results`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Patient portal lab results check failed with ${response.status}`)
+    throw new Error(
+      `Patient portal lab results check failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -540,13 +675,21 @@ export type PatientPortalClinicalSummaryResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalClinicalSummary(sessionId: string, signal?: AbortSignal): Promise<PatientPortalClinicalSummaryResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/clinical-summary`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
+export async function getPatientPortalClinicalSummary(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalClinicalSummaryResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/clinical-summary`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
   if (!response.ok) {
-    throw new Error(`Patient portal clinical summary check failed with ${response.status}`)
+    throw new Error(
+      `Patient portal clinical summary check failed with ${response.status}`,
+    )
   }
   return response.json()
 }
@@ -556,17 +699,28 @@ export type PatientPortalPrescriptionRefillRequestInput = {
   note?: string | null
 }
 
-export async function requestPatientPortalPrescriptionRefill(sessionId: string, prescriptionId: string, input: PatientPortalPrescriptionRefillRequestInput, signal?: AbortSignal): Promise<PatientPortalComposeMessageResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId)}/refill-request`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function requestPatientPortalPrescriptionRefill(
+  sessionId: string,
+  prescriptionId: string,
+  input: PatientPortalPrescriptionRefillRequestInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalComposeMessageResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/prescriptions/${encodeURIComponent(prescriptionId)}/refill-request`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal refill request failed with ${response.status}`)
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal refill request failed with ${response.status}`,
+    )
   return response.json()
 }
 
@@ -618,20 +772,37 @@ export async function getPatientPortalAppointments(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<PatientPortalAppointmentsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  await requireSuccessfulResponse(response, 'Patient portal appointments', 'portal')
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/appointments`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal appointments',
+    'portal',
+  )
   return response.json()
 }
 
-export async function getPatientPortalAppointmentRequestOptions(sessionId: string, signal?: AbortSignal): Promise<PatientPortalAppointmentRequestOptionsResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/request-options`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  await requireSuccessfulResponse(response, 'Patient portal appointment request options', 'portal')
+export async function getPatientPortalAppointmentRequestOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentRequestOptionsResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/appointments/request-options`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal appointment request options',
+    'portal',
+  )
   return response.json()
 }
 
@@ -658,33 +829,54 @@ export type PatientPortalAppointmentRequestResponse = {
   failureReason?: string | null
 }
 
-export async function requestPatientPortalAppointment(sessionId: string, input: PatientPortalAppointmentRequestInput, signal?: AbortSignal): Promise<PatientPortalAppointmentRequestResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/appointments/requests`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function requestPatientPortalAppointment(
+  sessionId: string,
+  input: PatientPortalAppointmentRequestInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalAppointmentRequestResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/appointments/requests`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
-  await requireSuccessfulResponse(response, 'Patient portal appointment request', 'portal')
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal appointment request',
+    'portal',
+  )
   return response.json()
 }
 
-export async function downloadPatientPortalGeneratedMedicalReportPdf(sessionId: string, input: PatientPortalMedicalReportGenerationInput = {}, signal?: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/pdf`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function downloadPatientPortalGeneratedMedicalReportPdf(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput = {},
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report/pdf`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
+  )
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(errorText || `Patient portal medical report PDF download failed with ${response.status}`)
+    throw new Error(
+      errorText ||
+        `Patient portal medical report PDF download failed with ${response.status}`,
+    )
   }
   return response.blob()
 }
@@ -769,49 +961,88 @@ export type PatientPortalGeneratedMedicalReportAuditResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalMedicalReport(sessionId: string, signal?: AbortSignal): Promise<PatientPortalMedicalReportResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal medical report failed with ${response.status}`)
-  return response.json()
-}
-
-export async function generatePatientPortalMedicalReport(sessionId: string, input: PatientPortalMedicalReportGenerationInput, signal?: AbortSignal): Promise<PatientPortalGeneratedMedicalReportResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/generate`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function getPatientPortalMedicalReport(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalMedicalReportResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal medical report generation failed with ${response.status}`)
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal medical report failed with ${response.status}`,
+    )
   return response.json()
 }
 
-export async function getPatientPortalGeneratedMedicalReportAudit(sessionId: string, signal?: AbortSignal): Promise<PatientPortalGeneratedMedicalReportAuditResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/audit`, {
-    headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
-    signal,
-  })
-  await requireSuccessfulResponse(response, 'Patient portal medical report history', 'portal')
-  return response.json()
-}
-
-export async function downloadPatientPortalGeneratedMedicalReportPackage(sessionId: string, input: PatientPortalMedicalReportGenerationInput, signal?: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/medical-report/package`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function generatePatientPortalMedicalReport(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalGeneratedMedicalReportResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report/generate`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
     },
-    body: JSON.stringify(input),
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal medical report package failed with ${response.status}`)
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal medical report generation failed with ${response.status}`,
+    )
+  return response.json()
+}
+
+export async function getPatientPortalGeneratedMedicalReportAudit(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalGeneratedMedicalReportAuditResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report/audit`,
+    {
+      headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
+      signal,
+    },
+  )
+  await requireSuccessfulResponse(
+    response,
+    'Patient portal medical report history',
+    'portal',
+  )
+  return response.json()
+}
+
+export async function downloadPatientPortalGeneratedMedicalReportPackage(
+  sessionId: string,
+  input: PatientPortalMedicalReportGenerationInput,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/medical-report/package`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(input),
+      signal,
+    },
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal medical report package failed with ${response.status}`,
+    )
   return response.blob()
 }
 
@@ -821,7 +1052,11 @@ function clinicianHeaders(sessionId: string): Record<string, string> {
   return { 'X-Legacy EHR-Session': sessionId, 'content-type': 'application/json' }
 }
 
-async function clinicianGet<T>(sessionId: string, path: string, signal?: AbortSignal): Promise<T> {
+async function clinicianGet<T>(
+  sessionId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: { 'X-Legacy EHR-Session': sessionId },
     signal,
@@ -830,7 +1065,12 @@ async function clinicianGet<T>(sessionId: string, path: string, signal?: AbortSi
   return response.json()
 }
 
-async function clinicianPost<T>(sessionId: string, path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+async function clinicianPost<T>(
+  sessionId: string,
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'POST',
     headers: clinicianHeaders(sessionId),
@@ -841,7 +1081,12 @@ async function clinicianPost<T>(sessionId: string, path: string, body: unknown, 
   return response.json()
 }
 
-async function clinicianPut<T>(sessionId: string, path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+async function clinicianPut<T>(
+  sessionId: string,
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'PUT',
     headers: clinicianHeaders(sessionId),
@@ -1075,14 +1320,22 @@ export type PatientSearchResponse = {
   patients: PatientListItem[]
 }
 
-export async function searchPatients(sessionId: string, params: { search?: string; limit?: number }, signal?: AbortSignal): Promise<PatientSearchResponse> {
+export async function searchPatients(
+  sessionId: string,
+  params: { search?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<PatientSearchResponse> {
   const q = new URLSearchParams()
   if (params.search) q.set('search', params.search)
   if (params.limit) q.set('limit', String(params.limit))
   return clinicianGet(sessionId, `/api/patients/?${q}`, signal)
 }
 
-export async function getPatientChartSummary(sessionId: string, canonicalId: string, signal?: AbortSignal): Promise<PatientChartSummary> {
+export async function getPatientChartSummary(
+  sessionId: string,
+  canonicalId: string,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
   return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
 }
 
@@ -1158,28 +1411,79 @@ export type PatientCareTeamUpdate = {
   members: PatientCareTeamMemberUpdate[]
 }
 
-export async function getPatientProviderAssignmentOptions(sessionId: string, signal?: AbortSignal): Promise<PatientProviderAssignmentOptionsResponse> {
+export async function getPatientProviderAssignmentOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientProviderAssignmentOptionsResponse> {
   return clinicianGet(sessionId, '/api/patients/provider-options', signal)
 }
 
-export async function getPatientCareTeamOptions(sessionId: string, patientId: string, signal?: AbortSignal): Promise<PatientCareTeamOptionsResponse> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/care-team-options`, signal)
+export async function getPatientCareTeamOptions(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientCareTeamOptionsResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/care-team-options`,
+    signal,
+  )
 }
 
-export async function updatePatientGuardianContact(sessionId: string, patientId: string, guardianContact: PatientGuardianContactUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/guardian-contact`, guardianContact, signal)
+export async function updatePatientGuardianContact(
+  sessionId: string,
+  patientId: string,
+  guardianContact: PatientGuardianContactUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/guardian-contact`,
+    guardianContact,
+    signal,
+  )
 }
 
-export async function updatePatientEmployer(sessionId: string, patientId: string, employer: PatientEmployerUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/employer`, employer, signal)
+export async function updatePatientEmployer(
+  sessionId: string,
+  patientId: string,
+  employer: PatientEmployerUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/employer`,
+    employer,
+    signal,
+  )
 }
 
-export async function updatePatientProviderAssignment(sessionId: string, patientId: string, assignment: PatientProviderAssignmentUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/provider-assignment`, assignment, signal)
+export async function updatePatientProviderAssignment(
+  sessionId: string,
+  patientId: string,
+  assignment: PatientProviderAssignmentUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/provider-assignment`,
+    assignment,
+    signal,
+  )
 }
 
-export async function updatePatientCareTeam(sessionId: string, patientId: string, careTeam: PatientCareTeamUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/care-team`, careTeam, signal)
+export async function updatePatientCareTeam(
+  sessionId: string,
+  patientId: string,
+  careTeam: PatientCareTeamUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/care-team`,
+    careTeam,
+    signal,
+  )
 }
 
 export type PatientReferral = {
@@ -1195,8 +1499,14 @@ export type PatientReferral = {
   createdAt: string
   updatedAt: string
 }
-export async function getPatientReferrals(sessionId: string, patientId: string): Promise<PatientReferral[]> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals`)
+export async function getPatientReferrals(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientReferral[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/referrals`,
+  )
 }
 export async function createPatientReferral(
   sessionId: string,
@@ -1210,17 +1520,35 @@ export async function createPatientReferral(
     requestedAt?: string
   },
 ): Promise<PatientReferral> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals`, body)
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/referrals`,
+    body,
+  )
 }
-export async function updatePatientReferralStatus(sessionId: string, patientId: string, referralId: string, status: 'sent' | 'received' | 'closed' | 'cancelled'): Promise<PatientReferral> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/status`, {
-    status,
-  })
+export async function updatePatientReferralStatus(
+  sessionId: string,
+  patientId: string,
+  referralId: string,
+  status: 'sent' | 'received' | 'closed' | 'cancelled',
+): Promise<PatientReferral> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/referrals/${referralId}/status`,
+    {
+      status,
+    },
+  )
 }
 export async function getPatientPrintableOutput(
   sessionId: string,
   patientId: string,
-  output: 'demographics' | 'chart-labels' | 'address-label' | 'referral' | 'fee-sheet',
+  output:
+    | 'demographics'
+    | 'chart-labels'
+    | 'address-label'
+    | 'referral'
+    | 'fee-sheet',
   options: {
     referralId?: string
     encounterId?: number
@@ -1231,10 +1559,14 @@ export async function getPatientPrintableOutput(
   if (options.referralId) query.set('referralId', options.referralId)
   if (options.encounterId) query.set('encounterId', String(options.encounterId))
   if (options.labelCount) query.set('labelCount', String(options.labelCount))
-  const response = await fetch(`${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/print/${output}?${query}`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-  })
-  if (!response.ok) throw new Error(`Printable output failed with ${response.status}`)
+  const response = await fetch(
+    `${apiBaseUrl}/api/patients/${encodeURIComponent(patientId)}/print/${output}?${query}`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+    },
+  )
+  if (!response.ok)
+    throw new Error(`Printable output failed with ${response.status}`)
   return response.text()
 }
 export type PatientAuthorization = {
@@ -1250,14 +1582,38 @@ export type PatientAuthorization = {
   createdAt: string
   updatedAt: string
 }
-export async function getPatientAuthorizations(sessionId: string, patientId: string): Promise<PatientAuthorization[]> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/authorizations`)
+export async function getPatientAuthorizations(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientAuthorization[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations`,
+  )
 }
-export async function createPatientAuthorization(sessionId: string, patientId: string, body: { payer: string; service: string; expiresAt?: string }): Promise<PatientAuthorization> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/authorizations`, body)
+export async function createPatientAuthorization(
+  sessionId: string,
+  patientId: string,
+  body: { payer: string; service: string; expiresAt?: string },
+): Promise<PatientAuthorization> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations`,
+    body,
+  )
 }
-export async function updatePatientAuthorizationStatus(sessionId: string, patientId: string, authorizationId: string, status: 'submitted' | 'approved' | 'denied' | 'expired' | 'cancelled', authorizationNumber?: string): Promise<PatientAuthorization> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/status`, { status, authorizationNumber })
+export async function updatePatientAuthorizationStatus(
+  sessionId: string,
+  patientId: string,
+  authorizationId: string,
+  status: 'submitted' | 'approved' | 'denied' | 'expired' | 'cancelled',
+  authorizationNumber?: string,
+): Promise<PatientAuthorization> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/authorizations/${authorizationId}/status`,
+    { status, authorizationNumber },
+  )
 }
 
 export type PatientRecordRequest = {
@@ -1270,14 +1626,35 @@ export type PatientRecordRequest = {
   completedAt?: string | null
   completedBy?: string | null
 }
-export async function getPatientRecordRequests(sessionId: string, patientId: string): Promise<PatientRecordRequest[]> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests`)
+export async function getPatientRecordRequests(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientRecordRequest[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/record-requests`,
+  )
 }
-export async function createPatientRecordRequest(sessionId: string, patientId: string): Promise<PatientRecordRequest> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests`, {})
+export async function createPatientRecordRequest(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientRecordRequest> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/record-requests`,
+    {},
+  )
 }
-export async function completePatientRecordRequest(sessionId: string, patientId: string, requestId: string): Promise<PatientRecordRequest> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/record-requests/${encodeURIComponent(requestId)}/complete`, {})
+export async function completePatientRecordRequest(
+  sessionId: string,
+  patientId: string,
+  requestId: string,
+): Promise<PatientRecordRequest> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/record-requests/${encodeURIComponent(requestId)}/complete`,
+    {},
+  )
 }
 
 export type PatientSdohDomainValue = { status: string; notes?: string | null }
@@ -1336,17 +1713,45 @@ export type PatientSdohAssessmentInput = {
   disabilityScale?: Record<string, string>
   interventions?: string
 }
-export async function getPatientSdohAssessments(sessionId: string, patientId: string): Promise<PatientSdohAssessment[]> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`)
+export async function getPatientSdohAssessments(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientSdohAssessment[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`,
+  )
 }
-export async function createPatientSdohAssessment(sessionId: string, patientId: string, body: PatientSdohAssessmentInput): Promise<PatientSdohAssessment> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`, body)
+export async function createPatientSdohAssessment(
+  sessionId: string,
+  patientId: string,
+  body: PatientSdohAssessmentInput,
+): Promise<PatientSdohAssessment> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments`,
+    body,
+  )
 }
-export async function updatePatientSdohAssessment(sessionId: string, patientId: string, assessmentId: string, body: PatientSdohAssessmentInput): Promise<PatientSdohAssessment> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments/${encodeURIComponent(assessmentId)}`, body)
+export async function updatePatientSdohAssessment(
+  sessionId: string,
+  patientId: string,
+  assessmentId: string,
+  body: PatientSdohAssessmentInput,
+): Promise<PatientSdohAssessment> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/sdoh-assessments/${encodeURIComponent(assessmentId)}`,
+    body,
+  )
 }
 
-export async function getPatientMergePreview(sessionId: string, targetPatientId: string, sourcePatientId: string, signal?: AbortSignal): Promise<PatientMergePreview> {
+export async function getPatientMergePreview(
+  sessionId: string,
+  targetPatientId: string,
+  sourcePatientId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergePreview> {
   const query = new URLSearchParams({ targetPatientId, sourcePatientId })
   return clinicianGet(sessionId, `/api/patients/merge-preview?${query}`, signal)
 }
@@ -1363,20 +1768,58 @@ export async function createPatientMergeAuditPlan(
   return clinicianPost(sessionId, '/api/patients/merge-audits', body, signal)
 }
 
-export async function executePatientMerge(sessionId: string, auditId: string, signal?: AbortSignal): Promise<PatientMergeExecution> {
-  return clinicianPost(sessionId, '/api/patients/merge-executions', { auditId }, signal)
+export async function executePatientMerge(
+  sessionId: string,
+  auditId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergeExecution> {
+  return clinicianPost(
+    sessionId,
+    '/api/patients/merge-executions',
+    { auditId },
+    signal,
+  )
 }
 
-export async function rollbackPatientMerge(sessionId: string, executionId: string, signal?: AbortSignal): Promise<PatientMergeExecution> {
-  return clinicianPost(sessionId, '/api/patients/merge-executions/rollback', { executionId }, signal)
+export async function rollbackPatientMerge(
+  sessionId: string,
+  executionId: string,
+  signal?: AbortSignal,
+): Promise<PatientMergeExecution> {
+  return clinicianPost(
+    sessionId,
+    '/api/patients/merge-executions/rollback',
+    { executionId },
+    signal,
+  )
 }
 
-export async function updatePatientPortalAccountAccess(sessionId: string, patientId: string, portalEnabled: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/portal-account/access`, { portalEnabled }, signal)
+export async function updatePatientPortalAccountAccess(
+  sessionId: string,
+  patientId: string,
+  portalEnabled: boolean,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/portal-account/access`,
+    { portalEnabled },
+    signal,
+  )
 }
 
-export async function updatePatientPortalAccountReset(sessionId: string, patientId: string, oneTimeLinkPending: boolean, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/portal-account/reset`, { oneTimeLinkPending }, signal)
+export async function updatePatientPortalAccountReset(
+  sessionId: string,
+  patientId: string,
+  oneTimeLinkPending: boolean,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/portal-account/reset`,
+    { oneTimeLinkPending },
+    signal,
+  )
 }
 
 // ── Appointments ──────────────────────────────────────────────────────────────
@@ -1464,7 +1907,10 @@ export async function searchAppointments(
   return clinicianGet(sessionId, `/api/appointments/?${q}`, signal)
 }
 
-export async function getAppointmentSchedulingOptions(sessionId: string, signal?: AbortSignal): Promise<AppointmentSchedulingOptionsResponse> {
+export async function getAppointmentSchedulingOptions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentSchedulingOptionsResponse> {
   return clinicianGet(sessionId, '/api/appointments/scheduling-options', signal)
 }
 
@@ -1532,29 +1978,78 @@ export type AppointmentReminderDispatchHistoryResponse = {
   entries: AppointmentReminderDispatchResponse[]
 }
 
-export async function getAppointmentWaitlist(sessionId: string, signal?: AbortSignal): Promise<AppointmentWaitlistResponse> {
+export async function getAppointmentWaitlist(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentWaitlistResponse> {
   return clinicianGet(sessionId, '/api/appointments/waitlist', signal)
 }
 
-export async function getAppointmentReminderTemplates(sessionId: string, signal?: AbortSignal): Promise<AppointmentReminderTemplateCatalogResponse> {
-  return clinicianGet(sessionId, '/api/appointments/reminders/templates', signal)
+export async function getAppointmentReminderTemplates(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderTemplateCatalogResponse> {
+  return clinicianGet(
+    sessionId,
+    '/api/appointments/reminders/templates',
+    signal,
+  )
 }
 
-export async function dispatchAppointmentReminder(sessionId: string, appointmentId: string, templateId?: string | null, signal?: AbortSignal): Promise<AppointmentReminderDispatchResponse> {
-  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`, { templateId: templateId || null }, signal)
+export async function dispatchAppointmentReminder(
+  sessionId: string,
+  appointmentId: string,
+  templateId?: string | null,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch`,
+    { templateId: templateId || null },
+    signal,
+  )
 }
 
-export async function retryAppointmentReminderDispatch(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<AppointmentReminderDispatchResponse> {
-  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch/retry`, {}, signal)
+export async function retryAppointmentReminderDispatch(
+  sessionId: string,
+  appointmentId: string,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/reminders/dispatch/retry`,
+    {},
+    signal,
+  )
 }
 
-export async function getAppointmentReminderDispatchHistory(sessionId: string, appointmentId?: string, signal?: AbortSignal): Promise<AppointmentReminderDispatchHistoryResponse> {
-  const suffix = appointmentId ? `?appointmentId=${encodeURIComponent(appointmentId)}` : ''
-  return clinicianGet(sessionId, `/api/appointments/reminders/dispatch-history${suffix}`, signal)
+export async function getAppointmentReminderDispatchHistory(
+  sessionId: string,
+  appointmentId?: string,
+  signal?: AbortSignal,
+): Promise<AppointmentReminderDispatchHistoryResponse> {
+  const suffix = appointmentId
+    ? `?appointmentId=${encodeURIComponent(appointmentId)}`
+    : ''
+  return clinicianGet(
+    sessionId,
+    `/api/appointments/reminders/dispatch-history${suffix}`,
+    signal,
+  )
 }
 
-export async function updateAppointmentStatus(sessionId: string, appointmentId: string, status: string, signal?: AbortSignal): Promise<void> {
-  await clinicianPut(sessionId, `/api/appointments/${appointmentId}/status`, { status }, signal)
+export async function updateAppointmentStatus(
+  sessionId: string,
+  appointmentId: string,
+  status: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianPut(
+    sessionId,
+    `/api/appointments/${appointmentId}/status`,
+    { status },
+    signal,
+  )
 }
 
 export type AppointmentUpdateInput = {
@@ -1580,8 +2075,18 @@ export type AppointmentUpdateInput = {
   recurrenceExdates?: string[] | null
 }
 
-export async function updateAppointment(sessionId: string, appointmentId: string, body: AppointmentUpdateInput, signal?: AbortSignal): Promise<AppointmentListItem> {
-  return clinicianPut(sessionId, `/api/appointments/${appointmentId}`, body, signal)
+export async function updateAppointment(
+  sessionId: string,
+  appointmentId: string,
+  body: AppointmentUpdateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPut(
+    sessionId,
+    `/api/appointments/${appointmentId}`,
+    body,
+    signal,
+  )
 }
 
 export type AppointmentOccurrenceRescheduleInput = {
@@ -1598,15 +2103,40 @@ export type AppointmentOccurrenceRescheduleInput = {
   comments?: string | null
 }
 
-export async function rescheduleAppointmentOccurrence(sessionId: string, appointmentId: string, occurrenceDate: string, body: AppointmentOccurrenceRescheduleInput, signal?: AbortSignal): Promise<AppointmentListItem> {
-  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`, body, signal)
+export async function rescheduleAppointmentOccurrence(
+  sessionId: string,
+  appointmentId: string,
+  occurrenceDate: string,
+  body: AppointmentOccurrenceRescheduleInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/occurrences/${encodeURIComponent(occurrenceDate)}/reschedule`,
+    body,
+    signal,
+  )
 }
 
-export async function restoreAppointmentOccurrence(sessionId: string, appointmentId: string, occurrenceDate: string, signal?: AbortSignal): Promise<AppointmentListItem> {
-  return clinicianPost(sessionId, `/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`, undefined, signal)
+export async function restoreAppointmentOccurrence(
+  sessionId: string,
+  appointmentId: string,
+  occurrenceDate: string,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
+  return clinicianPost(
+    sessionId,
+    `/api/appointments/${encodeURIComponent(appointmentId)}/recurrence-exceptions/${encodeURIComponent(occurrenceDate)}/restore`,
+    undefined,
+    signal,
+  )
 }
 
-export async function deleteAppointment(sessionId: string, appointmentId: string, signal?: AbortSignal): Promise<void> {
+export async function deleteAppointment(
+  sessionId: string,
+  appointmentId: string,
+  signal?: AbortSignal,
+): Promise<void> {
   await clinicianDelete(sessionId, `/api/appointments/${appointmentId}`, signal)
 }
 
@@ -1628,9 +2158,17 @@ export type FlowBoardLane = {
   items: FlowBoardItem[]
 }
 export type FlowBoardResponse = { date: string; lanes: FlowBoardLane[] }
-export async function getAppointmentFlowBoard(sessionId: string, date?: string, signal?: AbortSignal): Promise<FlowBoardResponse> {
+export async function getAppointmentFlowBoard(
+  sessionId: string,
+  date?: string,
+  signal?: AbortSignal,
+): Promise<FlowBoardResponse> {
   const suffix = date ? `?date=${encodeURIComponent(date)}` : ''
-  return clinicianGet(sessionId, `/api/appointments/flow-board${suffix}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/appointments/flow-board${suffix}`,
+    signal,
+  )
 }
 
 export type InventoryLot = {
@@ -1640,7 +2178,17 @@ export type InventoryLot = {
   lotNumber: string
   expirationDate?: string | null
   quantityOnHand: number
+  unitCost: number
   status: string
+  expiryStatus?: string | null
+}
+export type InventoryMedicationLink = {
+  itemId: number
+  rxNormCode: string
+  drugName: string
+  displayName: string
+  linkedBy: string
+  linkedAt: string
 }
 export type InventoryItem = {
   itemId: number
@@ -1649,20 +2197,29 @@ export type InventoryItem = {
   category: string
   unit: string
   reorderPoint: number
+  preferredQuantity: number
   quantityOnHand: number
+  inventoryValue: number
   belowReorderPoint: boolean
+  medicationLink?: InventoryMedicationLink | null
   lots: InventoryLot[]
 }
 export type InventoryTransactionItem = {
   transactionId: string
+  lotId: number
   itemCode: string
   itemName: string
   facilityCode: string
   transactionType: string
   quantityDelta: number
   reason?: string | null
+  performedBy: string
   occurredAt: string
+  transferId?: string | null
   counterpartyFacilityCode?: string | null
+  receiptId?: string | null
+  receiptReference?: string | null
+  reconciliationId?: string | null
 }
 export type InventoryFacility = {
   facilityId: number
@@ -1670,11 +2227,14 @@ export type InventoryFacility = {
   name: string
 }
 export type InventoryResponse = {
+  datasetId: string
+  datasetVersion: string
   asOfDate: string
   summary: {
     activeItems: number
     activeLots: number
     belowReorderPoint: number
+    expiredLots: number
     expiringWithin90Days: number
     inventoryValue: number
   }
@@ -1682,8 +2242,31 @@ export type InventoryResponse = {
   items: InventoryItem[]
   recentTransactions: InventoryTransactionItem[]
 }
-export async function getInventory(sessionId: string, signal?: AbortSignal): Promise<InventoryResponse> {
+export async function getInventory(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<InventoryResponse> {
   return clinicianGet(sessionId, '/api/inventory/', signal)
+}
+export type InventoryLotMetadataAuditItem = {
+  auditId: string
+  priorLotNumber: string
+  newLotNumber: string
+  priorExpirationDate?: string | null
+  newExpirationDate?: string | null
+  changedBy: string
+  changedAt: string
+}
+export async function getInventoryLotMetadataHistory(
+  sessionId: string,
+  lotId: number,
+  signal?: AbortSignal,
+): Promise<InventoryLotMetadataAuditItem[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/inventory/lots/${lotId}/metadata-history`,
+    signal,
+  )
 }
 export async function createInventoryTransaction(
   sessionId: string,
@@ -1714,22 +2297,32 @@ export type InventoryActivityReport = {
   totalEntries: number
   entries: InventoryTransactionItem[]
 }
-export async function getInventoryActivityReport(sessionId: string, filters: { from?: string; to?: string; facilityId?: number }): Promise<InventoryActivityReport> {
+export async function getInventoryActivityReport(
+  sessionId: string,
+  filters: { from?: string; to?: string; facilityId?: number },
+): Promise<InventoryActivityReport> {
   const query = new URLSearchParams()
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
   if (filters.facilityId) query.set('facilityId', String(filters.facilityId))
   return clinicianGet(sessionId, `/api/inventory/activity?${query}`)
 }
-export async function downloadInventoryActivityCsv(sessionId: string, filters: { from?: string; to?: string; facilityId?: number }): Promise<Blob> {
+export async function downloadInventoryActivityCsv(
+  sessionId: string,
+  filters: { from?: string; to?: string; facilityId?: number },
+): Promise<Blob> {
   const query = new URLSearchParams()
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
   if (filters.facilityId) query.set('facilityId', String(filters.facilityId))
-  const response = await fetch(`${apiBaseUrl}/api/inventory/activity/export?${query}`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-  })
-  if (!response.ok) throw new Error(`Inventory export failed with ${response.status}`)
+  const response = await fetch(
+    `${apiBaseUrl}/api/inventory/activity/export?${query}`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+    },
+  )
+  if (!response.ok)
+    throw new Error(`Inventory export failed with ${response.status}`)
   return response.blob()
 }
 
@@ -1889,8 +2482,17 @@ export async function searchEncounters(
   return clinicianGet(sessionId, `/api/encounters/?${q}`, signal)
 }
 
-export async function getEncounterDetail(sessionId: string, encounterId: number, signal?: AbortSignal, includeArchivedDocuments = false): Promise<EncounterDetail> {
-  return clinicianGet(sessionId, `/api/encounters/${encounterId}${includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''}`, signal)
+export async function getEncounterDetail(
+  sessionId: string,
+  encounterId: number,
+  signal?: AbortSignal,
+  includeArchivedDocuments = false,
+): Promise<EncounterDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/encounters/${encounterId}${includeArchivedDocuments ? '?includeArchivedDocuments=true' : ''}`,
+    signal,
+  )
 }
 
 export type EncounterUpdateInput = {
@@ -1901,7 +2503,12 @@ export type EncounterUpdateInput = {
   posCode?: number | null
   billingNote?: string | null
 }
-export async function updateEncounter(sessionId: string, encounterId: number, body: EncounterUpdateInput, signal?: AbortSignal): Promise<EncounterDetail> {
+export async function updateEncounter(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterUpdateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
   return clinicianPut(sessionId, `/api/encounters/${encounterId}`, body, signal)
 }
 export type EncounterAuditEvent = {
@@ -1916,7 +2523,11 @@ export type EncounterAuditHistory = {
   eventCount: number
   events: EncounterAuditEvent[]
 }
-export async function getEncounterAuditHistory(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<EncounterAuditHistory> {
+export async function getEncounterAuditHistory(
+  sessionId: string,
+  encounterId: number,
+  signal?: AbortSignal,
+): Promise<EncounterAuditHistory> {
   return clinicianGet(sessionId, `/api/encounters/${encounterId}/audit`, signal)
 }
 export type EncounterLayoutFormOption = {
@@ -1958,14 +2569,30 @@ export type EncounterLayoutFormCatalog = {
   encounter: number
   forms: { key: string; title: string }[]
 }
-export async function getEncounterLayoutForms(sessionId: string, encounterId: number): Promise<EncounterLayoutFormCatalog> {
+export async function getEncounterLayoutForms(
+  sessionId: string,
+  encounterId: number,
+): Promise<EncounterLayoutFormCatalog> {
   return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms`)
 }
-export async function getEncounterLayoutForm(sessionId: string, encounterId: number, key: string): Promise<EncounterLayoutForm> {
+export async function getEncounterLayoutForm(
+  sessionId: string,
+  encounterId: number,
+  key: string,
+): Promise<EncounterLayoutForm> {
   return clinicianGet(sessionId, `/api/encounters/${encounterId}/forms/${key}`)
 }
-export async function saveEncounterLayoutForm(sessionId: string, encounterId: number, key: string, values: Record<string, string>): Promise<EncounterLayoutForm> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/forms/${key}`, { values })
+export async function saveEncounterLayoutForm(
+  sessionId: string,
+  encounterId: number,
+  key: string,
+  values: Record<string, string>,
+): Promise<EncounterLayoutForm> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/forms/${key}`,
+    { values },
+  )
 }
 export type EncounterClinicalAlert = {
   key: string
@@ -1978,7 +2605,10 @@ export type EncounterClinicalAlerts = {
   encounter: number
   alerts: EncounterClinicalAlert[]
 }
-export async function getEncounterClinicalAlerts(sessionId: string, encounterId: number): Promise<EncounterClinicalAlerts> {
+export async function getEncounterClinicalAlerts(
+  sessionId: string,
+  encounterId: number,
+): Promise<EncounterClinicalAlerts> {
   return clinicianGet(sessionId, `/api/encounters/${encounterId}/alerts`)
 }
 export type EncounterClinicalAlertAcknowledgement = {
@@ -1993,20 +2623,60 @@ export type EncounterClinicalAlertHistory = {
   encounter: number
   acknowledgements: EncounterClinicalAlertAcknowledgement[]
 }
-export async function getEncounterClinicalAlertHistory(sessionId: string, encounterId: number): Promise<EncounterClinicalAlertHistory> {
-  return clinicianGet(sessionId, `/api/encounters/${encounterId}/alerts/history`)
+export async function getEncounterClinicalAlertHistory(
+  sessionId: string,
+  encounterId: number,
+): Promise<EncounterClinicalAlertHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/encounters/${encounterId}/alerts/history`,
+  )
 }
-export async function acknowledgeEncounterClinicalAlert(sessionId: string, encounterId: number, key: string): Promise<EncounterClinicalAlerts> {
-  return clinicianPost(sessionId, `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/acknowledge`, {})
+export async function acknowledgeEncounterClinicalAlert(
+  sessionId: string,
+  encounterId: number,
+  key: string,
+): Promise<EncounterClinicalAlerts> {
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/acknowledge`,
+    {},
+  )
 }
-export async function reopenEncounterClinicalAlert(sessionId: string, encounterId: number, key: string): Promise<EncounterClinicalAlerts> {
-  return clinicianPost(sessionId, `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/reopen`, {})
+export async function reopenEncounterClinicalAlert(
+  sessionId: string,
+  encounterId: number,
+  key: string,
+): Promise<EncounterClinicalAlerts> {
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounterId}/alerts/${encodeURIComponent(key)}/reopen`,
+    {},
+  )
 }
-export async function archiveEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> {
-  await clinicianPut(sessionId, `/api/encounters/${encounterId}/archive`, {}, signal)
+export async function archiveEncounter(
+  sessionId: string,
+  encounterId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/archive`,
+    {},
+    signal,
+  )
 }
-export async function restoreEncounter(sessionId: string, encounterId: number, signal?: AbortSignal): Promise<void> {
-  await clinicianPut(sessionId, `/api/encounters/${encounterId}/restore`, {}, signal)
+export async function restoreEncounter(
+  sessionId: string,
+  encounterId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/restore`,
+    {},
+    signal,
+  )
 }
 
 export type EncounterDocumentMutationResponse = {
@@ -2021,8 +2691,18 @@ export type EncounterDocumentCreateInput = {
   content: string
   notes?: string | null
 }
-export async function createEncounterDocument(sessionId: string, encounterId: number, body: EncounterDocumentCreateInput, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPost(sessionId, `/api/encounters/${encounterId}/documents`, body, signal)
+export async function createEncounterDocument(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterDocumentCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounterId}/documents`,
+    body,
+    signal,
+  )
 }
 
 export type EncounterDocumentMetadataInput = {
@@ -2031,24 +2711,77 @@ export type EncounterDocumentMetadataInput = {
   docDate: string
   notes?: string | null
 }
-export async function updateEncounterDocumentMetadata(sessionId: string, encounterId: number, documentId: number, body: EncounterDocumentMetadataInput, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/metadata`, body, signal)
+export async function updateEncounterDocumentMetadata(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  body: EncounterDocumentMetadataInput,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/metadata`,
+    body,
+    signal,
+  )
 }
 
-export async function archiveEncounterDocument(sessionId: string, encounterId: number, documentId: number, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/soft-delete`, {}, signal)
+export async function archiveEncounterDocument(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/soft-delete`,
+    {},
+    signal,
+  )
 }
 
-export async function restoreEncounterDocument(sessionId: string, encounterId: number, documentId: number, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/restore`, {}, signal)
+export async function restoreEncounterDocument(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/restore`,
+    {},
+    signal,
+  )
 }
 
-export async function signEncounterDocument(sessionId: string, encounterId: number, documentId: number, body: { reviewStatus: string; reviewedBy: string }, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/sign`, body, signal)
+export async function signEncounterDocument(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  body: { reviewStatus: string; reviewedBy: string },
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/sign`,
+    body,
+    signal,
+  )
 }
 
-export async function replaceEncounterDocumentContent(sessionId: string, encounterId: number, documentId: number, body: { fileName: string; content: string }, signal?: AbortSignal): Promise<EncounterDocumentMutationResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/content`, body, signal)
+export async function replaceEncounterDocumentContent(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  body: { fileName: string; content: string },
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/content`,
+    body,
+    signal,
+  )
 }
 
 export type EncounterDocumentMoveResponse = {
@@ -2056,8 +2789,19 @@ export type EncounterDocumentMoveResponse = {
   sourceDetail: EncounterDetail
   targetDetail: EncounterDetail
 }
-export async function moveEncounterDocument(sessionId: string, encounterId: number, documentId: number, targetEncounter: number, signal?: AbortSignal): Promise<EncounterDocumentMoveResponse> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/documents/${documentId}/move`, { targetEncounter }, signal)
+export async function moveEncounterDocument(
+  sessionId: string,
+  encounterId: number,
+  documentId: number,
+  targetEncounter: number,
+  signal?: AbortSignal,
+): Promise<EncounterDocumentMoveResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/documents/${documentId}/move`,
+    { targetEncounter },
+    signal,
+  )
 }
 
 // ── Clinical Lists ────────────────────────────────────────────────────────────
@@ -2155,7 +2899,11 @@ export type ClinicalListsResponse = {
   prescriptionRefillRequests: unknown[]
 }
 
-export async function getClinicalLists(sessionId: string, patientId: string, signal?: AbortSignal): Promise<ClinicalListsResponse> {
+export async function getClinicalLists(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListsResponse> {
   return clinicianGet(sessionId, `/api/clinical-lists/${patientId}`, signal)
 }
 
@@ -2226,7 +2974,11 @@ export type StaffMessageInboxQuery = {
   limit?: number
 }
 
-export async function getStaffMessageInbox(sessionId: string, query: StaffMessageInboxQuery = {}, signal?: AbortSignal): Promise<StaffMessageInboxResponse> {
+export async function getStaffMessageInbox(
+  sessionId: string,
+  query: StaffMessageInboxQuery = {},
+  signal?: AbortSignal,
+): Promise<StaffMessageInboxResponse> {
   const params = new URLSearchParams()
   Object.entries(query).forEach(([key, value]) => {
     if (value === undefined || value === '' || value === 'all') return
@@ -2236,16 +2988,40 @@ export async function getStaffMessageInbox(sessionId: string, query: StaffMessag
   return clinicianGet(sessionId, `/api/messages/inbox${suffix}`, signal)
 }
 
-export async function getPatientMessages(sessionId: string, patientId: string, signal?: AbortSignal): Promise<PatientMessagesResponse> {
+export async function getPatientMessages(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
   return clinicianGet(sessionId, `/api/messages/${patientId}`, signal)
 }
 
-export async function replyToPatientMessage(sessionId: string, messageId: string, body: { body: string; assignedTo: string }, signal?: AbortSignal): Promise<PatientMessagesResponse> {
-  return clinicianPost(sessionId, `/api/messages/${messageId}/reply`, body, signal)
+export async function replyToPatientMessage(
+  sessionId: string,
+  messageId: string,
+  body: { body: string; assignedTo: string },
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/messages/${messageId}/reply`,
+    body,
+    signal,
+  )
 }
 
-export async function updatePatientMessageStatus(sessionId: string, messageId: string, body: { status: string; body: string }, signal?: AbortSignal): Promise<PatientMessagesResponse> {
-  return clinicianPut(sessionId, `/api/messages/${messageId}/status`, body, signal)
+export async function updatePatientMessageStatus(
+  sessionId: string,
+  messageId: string,
+  body: { status: string; body: string },
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/messages/${messageId}/status`,
+    body,
+    signal,
+  )
 }
 
 export type OfficeNoteItem = {
@@ -2258,21 +3034,38 @@ export type OfficeNoteItem = {
   updatedAt: string
 }
 export type OfficeNotesResponse = { notes: OfficeNoteItem[]; total: number }
-export async function getOfficeNotes(sessionId: string, activity: 'active' | 'inactive' | 'all' = 'active'): Promise<OfficeNotesResponse> {
+export async function getOfficeNotes(
+  sessionId: string,
+  activity: 'active' | 'inactive' | 'all' = 'active',
+): Promise<OfficeNotesResponse> {
   return clinicianGet(sessionId, `/api/office-notes/?activity=${activity}`)
 }
-export async function createOfficeNote(sessionId: string, body: string): Promise<OfficeNoteItem> {
+export async function createOfficeNote(
+  sessionId: string,
+  body: string,
+): Promise<OfficeNoteItem> {
   return clinicianPost(sessionId, '/api/office-notes/', { body })
 }
-export async function updateOfficeNote(sessionId: string, id: string, body: string): Promise<OfficeNoteItem> {
+export async function updateOfficeNote(
+  sessionId: string,
+  id: string,
+  body: string,
+): Promise<OfficeNoteItem> {
   return clinicianPut(sessionId, `/api/office-notes/${id}`, { body })
 }
-export async function setOfficeNoteActivity(sessionId: string, id: string, active: boolean): Promise<OfficeNoteItem> {
+export async function setOfficeNoteActivity(
+  sessionId: string,
+  id: string,
+  active: boolean,
+): Promise<OfficeNoteItem> {
   return clinicianPut(sessionId, `/api/office-notes/${id}/activity`, {
     active,
   })
 }
-export async function deleteOfficeNote(sessionId: string, id: string): Promise<void> {
+export async function deleteOfficeNote(
+  sessionId: string,
+  id: string,
+): Promise<void> {
   await clinicianDelete(sessionId, `/api/office-notes/${id}`)
 }
 export type AddressBookEntry = {
@@ -2295,13 +3088,28 @@ export type AddressBookEntry = {
   postalCode?: string | null
   active: boolean
 }
-export async function getAddressBook(sessionId: string, q = ''): Promise<{ entries: AddressBookEntry[]; total: number }> {
-  return clinicianGet(sessionId, `/api/administration/address-book/?organization=${encodeURIComponent(q)}&lastName=${encodeURIComponent(q)}`)
+export async function getAddressBook(
+  sessionId: string,
+  q = '',
+): Promise<{ entries: AddressBookEntry[]; total: number }> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/address-book/?organization=${encodeURIComponent(q)}&lastName=${encodeURIComponent(q)}`,
+  )
 }
-export async function saveAddressBookContact(sessionId: string, input: Omit<AddressBookEntry, 'id' | 'isInternal' | 'username'>, id?: number): Promise<AddressBookEntry> {
-  return id ? clinicianPut(sessionId, `/api/administration/address-book/${id}`, input) : clinicianPost(sessionId, '/api/administration/address-book/', input)
+export async function saveAddressBookContact(
+  sessionId: string,
+  input: Omit<AddressBookEntry, 'id' | 'isInternal' | 'username'>,
+  id?: number,
+): Promise<AddressBookEntry> {
+  return id
+    ? clinicianPut(sessionId, `/api/administration/address-book/${id}`, input)
+    : clinicianPost(sessionId, '/api/administration/address-book/', input)
 }
-export async function deleteAddressBookContact(sessionId: string, id: number): Promise<void> {
+export async function deleteAddressBookContact(
+  sessionId: string,
+  id: number,
+): Promise<void> {
   await clinicianDelete(sessionId, `/api/administration/address-book/${id}`)
 }
 export type TrackAnythingItem = {
@@ -2312,13 +3120,24 @@ export type TrackAnythingItem = {
   position: number
   active: boolean
 }
-export async function getTrackAnything(sessionId: string): Promise<{ items: TrackAnythingItem[] }> {
+export async function getTrackAnything(
+  sessionId: string,
+): Promise<{ items: TrackAnythingItem[] }> {
   return clinicianGet(sessionId, '/api/administration/tracks/')
 }
-export async function saveTrackAnything(sessionId: string, input: Omit<TrackAnythingItem, 'id'>, id?: number): Promise<TrackAnythingItem> {
-  return id ? clinicianPut(sessionId, `/api/administration/tracks/${id}`, input) : clinicianPost(sessionId, '/api/administration/tracks/', input)
+export async function saveTrackAnything(
+  sessionId: string,
+  input: Omit<TrackAnythingItem, 'id'>,
+  id?: number,
+): Promise<TrackAnythingItem> {
+  return id
+    ? clinicianPut(sessionId, `/api/administration/tracks/${id}`, input)
+    : clinicianPost(sessionId, '/api/administration/tracks/', input)
 }
-export async function deleteTrackAnything(sessionId: string, id: number): Promise<void> {
+export async function deleteTrackAnything(
+  sessionId: string,
+  id: number,
+): Promise<void> {
   await clinicianDelete(sessionId, `/api/administration/tracks/${id}`)
 }
 export type EncounterTrackDefinition = {
@@ -2358,16 +3177,30 @@ export type EncounterTrackRecordDetail = {
   items: TrackAnythingItem[]
   readings: EncounterTrackReading[]
 }
-export async function getEncounterTracks(sessionId: string, encounter: number): Promise<EncounterTrackCatalog> {
+export async function getEncounterTracks(
+  sessionId: string,
+  encounter: number,
+): Promise<EncounterTrackCatalog> {
   return clinicianGet(sessionId, `/api/encounters/${encounter}/tracks`)
 }
-export async function createEncounterTrack(sessionId: string, encounter: number, trackTypeId: number): Promise<EncounterTrackRecord> {
+export async function createEncounterTrack(
+  sessionId: string,
+  encounter: number,
+  trackTypeId: number,
+): Promise<EncounterTrackRecord> {
   return clinicianPost(sessionId, `/api/encounters/${encounter}/tracks`, {
     trackTypeId,
   })
 }
-export async function getEncounterTrack(sessionId: string, encounter: number, recordId: string): Promise<EncounterTrackRecordDetail> {
-  return clinicianGet(sessionId, `/api/encounters/${encounter}/tracks/${recordId}`)
+export async function getEncounterTrack(
+  sessionId: string,
+  encounter: number,
+  recordId: string,
+): Promise<EncounterTrackRecordDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/encounters/${encounter}/tracks/${recordId}`,
+  )
 }
 export async function addEncounterTrackReading(
   sessionId: string,
@@ -2378,7 +3211,11 @@ export async function addEncounterTrackReading(
     values: { itemTypeId: number; value: string }[]
   },
 ): Promise<EncounterTrackReading> {
-  return clinicianPost(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings`, input)
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounter}/tracks/${recordId}/readings`,
+    input,
+  )
 }
 export async function updateEncounterTrackReading(
   sessionId: string,
@@ -2390,7 +3227,11 @@ export async function updateEncounterTrackReading(
     values: { itemTypeId: number; value: string }[]
   },
 ): Promise<EncounterTrackReading> {
-  return clinicianPut(sessionId, `/api/encounters/${encounter}/tracks/${recordId}/readings/${readingId}`, input)
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounter}/tracks/${recordId}/readings/${readingId}`,
+    input,
+  )
 }
 export type PatientTrackHistoryReading = EncounterTrackReading
 export type PatientTrackHistoryEncounter = {
@@ -2409,8 +3250,14 @@ export type PatientTrackHistory = {
   patientId: string
   tracks: PatientTrackHistoryTrack[]
 }
-export async function getPatientTrackHistory(sessionId: string, patientId: string): Promise<PatientTrackHistory> {
-  return clinicianGet(sessionId, `/api/patients/${encodeURIComponent(patientId)}/track-history`)
+export async function getPatientTrackHistory(
+  sessionId: string,
+  patientId: string,
+): Promise<PatientTrackHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/track-history`,
+  )
 }
 export type PatientEducationResource = {
   key: string
@@ -2418,10 +3265,16 @@ export type PatientEducationResource = {
   searchTemplate: string
   active: boolean
 }
-export async function getPatientEducationResources(sessionId: string): Promise<{ resources: PatientEducationResource[] }> {
+export async function getPatientEducationResources(
+  sessionId: string,
+): Promise<{ resources: PatientEducationResource[] }> {
   return clinicianGet(sessionId, '/api/patient-education/resources')
 }
-export async function searchPatientEducation(sessionId: string, resourceKey: string, searchText: string): Promise<{ url: string }> {
+export async function searchPatientEducation(
+  sessionId: string,
+  resourceKey: string,
+  searchText: string,
+): Promise<{ url: string }> {
   return clinicianPost(sessionId, '/api/patient-education/search', {
     resourceKey,
     searchText,
@@ -2453,7 +3306,10 @@ export async function createRecall(
 ): Promise<RecallItem> {
   return clinicianPost(sessionId, '/api/recalls/', input)
 }
-export async function deleteRecall(sessionId: string, id: string): Promise<void> {
+export async function deleteRecall(
+  sessionId: string,
+  id: string,
+): Promise<void> {
   await clinicianDelete(sessionId, `/api/recalls/${id}`)
 }
 export type RecallActivityItem = {
@@ -2462,10 +3318,17 @@ export type RecallActivityItem = {
   note?: string | null
   recordedAt: string
 }
-export async function getRecallActivity(sessionId: string, id: string): Promise<RecallActivityItem[]> {
+export async function getRecallActivity(
+  sessionId: string,
+  id: string,
+): Promise<RecallActivityItem[]> {
   return clinicianGet(sessionId, `/api/recalls/${id}/activity`)
 }
-export async function addRecallActivity(sessionId: string, id: string, input: { activityType: 'phone' | 'postcard' | 'label'; note?: string | null }): Promise<RecallActivityItem> {
+export async function addRecallActivity(
+  sessionId: string,
+  id: string,
+  input: { activityType: 'phone' | 'postcard' | 'label'; note?: string | null },
+): Promise<RecallActivityItem> {
   return clinicianPost(sessionId, `/api/recalls/${id}/activity`, input)
 }
 export type BatchCommunicationFilter = {
@@ -2529,14 +3392,25 @@ export async function createBatchCommunicationCampaign(
 ): Promise<BatchCommunicationDetail> {
   return clinicianPost(sessionId, '/api/batch-communication/campaigns', input)
 }
-export async function getBatchCommunicationCampaigns(sessionId: string): Promise<BatchCommunicationCampaign[]> {
+export async function getBatchCommunicationCampaigns(
+  sessionId: string,
+): Promise<BatchCommunicationCampaign[]> {
   return clinicianGet(sessionId, '/api/batch-communication/campaigns')
 }
-export async function downloadBatchCommunicationCampaign(sessionId: string, id: string): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}/api/batch-communication/campaigns/${id}/output`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-  })
-  if (!response.ok) throw new Error(`Batch communication download failed with ${response.status}`)
+export async function downloadBatchCommunicationCampaign(
+  sessionId: string,
+  id: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/batch-communication/campaigns/${id}/output`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+    },
+  )
+  if (!response.ok)
+    throw new Error(
+      `Batch communication download failed with ${response.status}`,
+    )
   return response.blob()
 }
 export type ChartTrackerEvent = {
@@ -2557,17 +3431,39 @@ export type ChartTrackerOptions = {
   locations: string[]
   users: { id: number; displayName: string }[]
 }
-export async function getChartTrackerOptions(sessionId: string): Promise<ChartTrackerOptions> {
+export async function getChartTrackerOptions(
+  sessionId: string,
+): Promise<ChartTrackerOptions> {
   return clinicianGet(sessionId, '/api/chart-tracker/options')
 }
-export async function lookupChartTrackerPatient(sessionId: string, identifier: string): Promise<ChartTrackerPatient> {
-  return clinicianGet(sessionId, `/api/chart-tracker/lookup/${encodeURIComponent(identifier)}`)
+export async function lookupChartTrackerPatient(
+  sessionId: string,
+  identifier: string,
+): Promise<ChartTrackerPatient> {
+  return clinicianGet(
+    sessionId,
+    `/api/chart-tracker/lookup/${encodeURIComponent(identifier)}`,
+  )
 }
-export async function getChartTrackerHistory(sessionId: string, patientId: string): Promise<ChartTrackerEvent[]> {
-  return clinicianGet(sessionId, `/api/chart-tracker/patients/${encodeURIComponent(patientId)}/history`)
+export async function getChartTrackerHistory(
+  sessionId: string,
+  patientId: string,
+): Promise<ChartTrackerEvent[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/chart-tracker/patients/${encodeURIComponent(patientId)}/history`,
+  )
 }
-export async function recordChartTrackerEvent(sessionId: string, patientId: string, input: { location?: string; userId?: number }): Promise<ChartTrackerEvent> {
-  return clinicianPost(sessionId, `/api/chart-tracker/patients/${encodeURIComponent(patientId)}/events`, input)
+export async function recordChartTrackerEvent(
+  sessionId: string,
+  patientId: string,
+  input: { location?: string; userId?: number },
+): Promise<ChartTrackerEvent> {
+  return clinicianPost(
+    sessionId,
+    `/api/chart-tracker/patients/${encodeURIComponent(patientId)}/events`,
+    input,
+  )
 }
 export type DocumentTemplateItem = {
   id: string
@@ -2577,17 +3473,46 @@ export type DocumentTemplateItem = {
   createdAt: string
   updatedAt: string
 }
-export async function getDocumentTemplates(sessionId: string, includeInactive = true): Promise<DocumentTemplateItem[]> {
-  return clinicianGet(sessionId, `/api/administration/document-templates/?includeInactive=${includeInactive}`)
+export async function getDocumentTemplates(
+  sessionId: string,
+  includeInactive = true,
+): Promise<DocumentTemplateItem[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/document-templates/?includeInactive=${includeInactive}`,
+  )
 }
-export async function createDocumentTemplate(sessionId: string, input: { name: string; content: string; active: boolean }): Promise<DocumentTemplateItem> {
-  return clinicianPost(sessionId, '/api/administration/document-templates/', input)
+export async function createDocumentTemplate(
+  sessionId: string,
+  input: { name: string; content: string; active: boolean },
+): Promise<DocumentTemplateItem> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/document-templates/',
+    input,
+  )
 }
-export async function updateDocumentTemplate(sessionId: string, id: string, input: { name: string; content: string; active: boolean }): Promise<DocumentTemplateItem> {
-  return clinicianPut(sessionId, `/api/administration/document-templates/${id}`, input)
+export async function updateDocumentTemplate(
+  sessionId: string,
+  id: string,
+  input: { name: string; content: string; active: boolean },
+): Promise<DocumentTemplateItem> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/document-templates/${id}`,
+    input,
+  )
 }
-export async function renderDocumentTemplate(sessionId: string, id: string, patientId: string): Promise<{ content: string }> {
-  return clinicianPost(sessionId, `/api/administration/document-templates/${id}/render`, { patientId })
+export async function renderDocumentTemplate(
+  sessionId: string,
+  id: string,
+  patientId: string,
+): Promise<{ content: string }> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/document-templates/${id}/render`,
+    { patientId },
+  )
 }
 export type DocumentTemplateBinaryVersion = {
   id: string
@@ -2599,11 +3524,25 @@ export type DocumentTemplateBinaryVersion = {
   sha256: string
   createdAt: string
 }
-export async function getDocumentTemplateBinaryVersions(sessionId: string, id: string): Promise<DocumentTemplateBinaryVersion[]> {
-  return clinicianGet(sessionId, `/api/administration/document-templates/${id}/binary-versions`)
+export async function getDocumentTemplateBinaryVersions(
+  sessionId: string,
+  id: string,
+): Promise<DocumentTemplateBinaryVersion[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/document-templates/${id}/binary-versions`,
+  )
 }
-export async function uploadDocumentTemplateBinaryVersion(sessionId: string, id: string, input: { fileName: string; mimetype: string; contentBase64: string }): Promise<DocumentTemplateBinaryVersion> {
-  return clinicianPost(sessionId, `/api/administration/document-templates/${id}/binary-versions`, input)
+export async function uploadDocumentTemplateBinaryVersion(
+  sessionId: string,
+  id: string,
+  input: { fileName: string; mimetype: string; contentBase64: string },
+): Promise<DocumentTemplateBinaryVersion> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/document-templates/${id}/binary-versions`,
+    input,
+  )
 }
 export async function generateDocumentTemplateAttachment(
   sessionId: string,
@@ -2615,10 +3554,21 @@ export async function generateDocumentTemplateAttachment(
     binaryVersionId?: string | null
   },
 ): Promise<{ id: number }> {
-  return clinicianPost(sessionId, `/api/administration/document-templates/${id}/generate-attachment`, input)
+  return clinicianPost(
+    sessionId,
+    `/api/administration/document-templates/${id}/generate-attachment`,
+    input,
+  )
 }
-export async function downloadDocumentTemplateBinaryVersion(sessionId: string, id: string, versionId: string): Promise<Blob> {
-  const r = await fetch(`${apiBaseUrl}/api/administration/document-templates/${id}/binary-versions/${versionId}/download`, { headers: { 'X-Legacy EHR-Session': sessionId } })
+export async function downloadDocumentTemplateBinaryVersion(
+  sessionId: string,
+  id: string,
+  versionId: string,
+): Promise<Blob> {
+  const r = await fetch(
+    `${apiBaseUrl}/api/administration/document-templates/${id}/binary-versions/${versionId}/download`,
+    { headers: { 'X-Legacy EHR-Session': sessionId } },
+  )
   if (!r.ok) throw new Error(`Template download failed with ${r.status}`)
   return r.blob()
 }
@@ -2632,7 +3582,9 @@ export type DuplicateReviewItem = {
   matchReasons: string[]
   status: string
 }
-export async function getDuplicateReviewQueue(sessionId: string): Promise<{ items: DuplicateReviewItem[] }> {
+export async function getDuplicateReviewQueue(
+  sessionId: string,
+): Promise<{ items: DuplicateReviewItem[] }> {
   return clinicianGet(sessionId, '/api/patients/duplicates/review-queue')
 }
 export async function setDuplicateReviewDisposition(
@@ -2644,7 +3596,11 @@ export async function setDuplicateReviewDisposition(
     note?: string
   },
 ): Promise<DuplicateReviewItem> {
-  return clinicianPut(sessionId, '/api/patients/duplicates/review-disposition', input)
+  return clinicianPut(
+    sessionId,
+    '/api/patients/duplicates/review-disposition',
+    input,
+  )
 }
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -2665,7 +3621,11 @@ export type PatientDocumentsResponse = {
   documents: PatientDocumentItem[]
 }
 
-export async function getPatientDocuments(sessionId: string, patientId: string, signal?: AbortSignal): Promise<PatientDocumentsResponse> {
+export async function getPatientDocuments(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientDocumentsResponse> {
   return clinicianGet(sessionId, `/api/documents/${patientId}`, signal)
 }
 
@@ -2686,19 +3646,36 @@ function getDownloadFileName(response: Response, fallbackName: string): string {
     }
   }
 
-  return disposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim() || fallbackName
+  return (
+    disposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim() || fallbackName
+  )
 }
 
-export async function downloadPatientDocument(sessionId: string, documentId: number, fallbackName: string, signal?: AbortSignal): Promise<DownloadedFile> {
-  const response = await fetch(`${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-    signal,
-  })
+export async function downloadPatientDocument(
+  sessionId: string,
+  documentId: number,
+  fallbackName: string,
+  signal?: AbortSignal,
+): Promise<DownloadedFile> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/documents/${encodeURIComponent(String(documentId))}/download`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+      signal,
+    },
+  )
   await requireSuccessfulResponse(response, 'Document download', 'clinician')
 
-  const contentType = response.headers.get('content-type') ?? 'application/octet-stream'
-  if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
-    throw new ApiRequestError('The document service returned a web page instead of the requested file.', response.status)
+  const contentType =
+    response.headers.get('content-type') ?? 'application/octet-stream'
+  if (
+    contentType.includes('text/html') ||
+    contentType.includes('application/xhtml+xml')
+  ) {
+    throw new ApiRequestError(
+      'The document service returned a web page instead of the requested file.',
+      response.status,
+    )
   }
 
   return {
@@ -2767,8 +3744,16 @@ export type ProcedureResultsResponse = {
   orders: ProcedureOrderItem[]
 }
 
-export function getProcedureResults(sessionId: string, patientId: string, signal?: AbortSignal): Promise<ProcedureResultsResponse> {
-  return clinicianGet(sessionId, `/api/procedures/${encodeURIComponent(patientId.trim())}`, signal)
+export function getProcedureResults(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<ProcedureResultsResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/${encodeURIComponent(patientId.trim())}`,
+    signal,
+  )
 }
 
 export type ProcedureReportQueueItem = {
@@ -2795,11 +3780,19 @@ export type ProcedureReportQueueResponse = {
   reports: ProcedureReportQueueItem[]
 }
 
-export async function getProcedureReportQueue(sessionId: string, params?: { status?: string; limit?: number }, signal?: AbortSignal): Promise<ProcedureReportQueueResponse> {
+export async function getProcedureReportQueue(
+  sessionId: string,
+  params?: { status?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<ProcedureReportQueueResponse> {
   const q = new URLSearchParams()
   if (params?.status) q.set('status', params.status)
   if (params?.limit) q.set('limit', String(params.limit))
-  return clinicianGet(sessionId, `/api/procedures/report-review-queue?${q}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/procedures/report-review-queue?${q}`,
+    signal,
+  )
 }
 
 export type ProcedureOrderQueueItem = {
@@ -2821,7 +3814,11 @@ export type ProcedureOrderQueueResponse = {
   reports: ProcedureOrderQueueItem[]
 }
 
-export async function getProcedureOrderQueue(sessionId: string, params?: { status?: string; limit?: number }, signal?: AbortSignal): Promise<ProcedureOrderQueueResponse> {
+export async function getProcedureOrderQueue(
+  sessionId: string,
+  params?: { status?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<ProcedureOrderQueueResponse> {
   const q = new URLSearchParams()
   if (params?.status) q.set('status', params.status)
   if (params?.limit) q.set('limit', String(params.limit))
@@ -2879,7 +3876,10 @@ export type OperationalReportsResponse = {
   clinicalConditions: ClinicalConditionReportItem[]
 }
 
-export async function getOperationalReports(sessionId: string, signal?: AbortSignal): Promise<OperationalReportsResponse> {
+export async function getOperationalReports(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<OperationalReportsResponse> {
   return clinicianGet(sessionId, '/api/reports/operational', signal)
 }
 
@@ -2894,7 +3894,10 @@ export type SavedReportDefinition = {
   lastRunAt?: string | null
   runCount: number
 }
-export async function getSavedReportDefinitions(sessionId: string, signal?: AbortSignal): Promise<{ definitions: SavedReportDefinition[] }> {
+export async function getSavedReportDefinitions(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<{ definitions: SavedReportDefinition[] }> {
   return clinicianGet(sessionId, '/api/reports/definitions', signal)
 }
 export type ReportFamily = {
@@ -2903,16 +3906,26 @@ export type ReportFamily = {
   description: string
   supportsDateRange: boolean
 }
-export async function getReportFamilies(sessionId: string): Promise<ReportFamily[]> {
+export async function getReportFamilies(
+  sessionId: string,
+): Promise<ReportFamily[]> {
   return clinicianGet(sessionId, '/api/reports/families')
 }
-export async function downloadReportFamilyCsv(sessionId: string, family: string, from?: string, to?: string): Promise<Blob> {
+export async function downloadReportFamilyCsv(
+  sessionId: string,
+  family: string,
+  from?: string,
+  to?: string,
+): Promise<Blob> {
   const q = new URLSearchParams()
   if (from) q.set('from', from)
   if (to) q.set('to', to)
-  const r = await fetch(`${apiBaseUrl}/api/reports/families/${encodeURIComponent(family)}/export?${q}`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-  })
+  const r = await fetch(
+    `${apiBaseUrl}/api/reports/families/${encodeURIComponent(family)}/export?${q}`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+    },
+  )
   if (!r.ok) throw new Error(`Report export failed with ${r.status}`)
   return r.blob()
 }
@@ -2928,8 +3941,17 @@ export async function createSavedReportDefinition(
 ): Promise<SavedReportDefinition> {
   return clinicianPost(sessionId, '/api/reports/definitions', body, signal)
 }
-export async function runSavedReportDefinition(sessionId: string, id: string, signal?: AbortSignal): Promise<unknown> {
-  return clinicianPost(sessionId, `/api/reports/definitions/${id}/run`, {}, signal)
+export async function runSavedReportDefinition(
+  sessionId: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return clinicianPost(
+    sessionId,
+    `/api/reports/definitions/${id}/run`,
+    {},
+    signal,
+  )
 }
 
 export type TherapyGroup = {
@@ -2969,7 +3991,9 @@ export type TherapyGroupSessionEncounterResponse = {
   sessionId: string
   encounters: TherapyGroupSessionEncounter[]
 }
-export async function getTherapyGroups(sessionId: string): Promise<{ groups: TherapyGroup[] }> {
+export async function getTherapyGroups(
+  sessionId: string,
+): Promise<{ groups: TherapyGroup[] }> {
   return clinicianGet(sessionId, '/api/therapy-groups/')
 }
 export async function createTherapyGroup(
@@ -2983,28 +4007,70 @@ export async function createTherapyGroup(
 ): Promise<TherapyGroup> {
   return clinicianPost(sessionId, '/api/therapy-groups/', body)
 }
-export async function getTherapyGroupMembers(sessionId: string, groupId: string): Promise<TherapyGroupMember[]> {
+export async function getTherapyGroupMembers(
+  sessionId: string,
+  groupId: string,
+): Promise<TherapyGroupMember[]> {
   return clinicianGet(sessionId, `/api/therapy-groups/${groupId}/members`)
 }
-export async function addTherapyGroupMember(sessionId: string, groupId: string, patientId: string): Promise<TherapyGroupMember> {
+export async function addTherapyGroupMember(
+  sessionId: string,
+  groupId: string,
+  patientId: string,
+): Promise<TherapyGroupMember> {
   return clinicianPost(sessionId, `/api/therapy-groups/${groupId}/members`, {
     patientId,
   })
 }
-export async function getTherapyGroupSessions(sessionId: string, groupId: string): Promise<TherapyGroupSession[]> {
+export async function getTherapyGroupSessions(
+  sessionId: string,
+  groupId: string,
+): Promise<TherapyGroupSession[]> {
   return clinicianGet(sessionId, `/api/therapy-groups/${groupId}/sessions`)
 }
-export async function createTherapyGroupSession(sessionId: string, groupId: string, body: { startsAt: string; durationMinutes: number; topic?: string }): Promise<TherapyGroupSession> {
-  return clinicianPost(sessionId, `/api/therapy-groups/${groupId}/sessions`, body)
+export async function createTherapyGroupSession(
+  sessionId: string,
+  groupId: string,
+  body: { startsAt: string; durationMinutes: number; topic?: string },
+): Promise<TherapyGroupSession> {
+  return clinicianPost(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions`,
+    body,
+  )
 }
-export async function updateTherapyGroupSessionStatus(sessionId: string, groupId: string, groupSessionId: string, status: 'completed' | 'cancelled'): Promise<TherapyGroupSession> {
-  return clinicianPut(sessionId, `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/status`, { status })
+export async function updateTherapyGroupSessionStatus(
+  sessionId: string,
+  groupId: string,
+  groupSessionId: string,
+  status: 'completed' | 'cancelled',
+): Promise<TherapyGroupSession> {
+  return clinicianPut(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/status`,
+    { status },
+  )
 }
-export async function getTherapyGroupSessionEncounters(sessionId: string, groupId: string, groupSessionId: string): Promise<TherapyGroupSessionEncounter[]> {
-  return clinicianGet(sessionId, `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/encounters`)
+export async function getTherapyGroupSessionEncounters(
+  sessionId: string,
+  groupId: string,
+  groupSessionId: string,
+): Promise<TherapyGroupSessionEncounter[]> {
+  return clinicianGet(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/encounters`,
+  )
 }
-export async function createTherapyGroupSessionEncounters(sessionId: string, groupId: string, groupSessionId: string): Promise<TherapyGroupSessionEncounterResponse> {
-  return clinicianPost(sessionId, `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/encounters`, {})
+export async function createTherapyGroupSessionEncounters(
+  sessionId: string,
+  groupId: string,
+  groupSessionId: string,
+): Promise<TherapyGroupSessionEncounterResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/therapy-groups/${groupId}/sessions/${groupSessionId}/encounters`,
+    {},
+  )
 }
 
 export type BillingAccountSummary = {
@@ -3096,7 +4162,11 @@ export async function getPatientBilling(
   patientId: string,
   signal?: AbortSignal,
 ): Promise<PatientBillingResponse> {
-  return clinicianGet(sessionId, `/api/billing/${encodeURIComponent(patientId.trim())}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/billing/${encodeURIComponent(patientId.trim())}`,
+    signal,
+  )
 }
 
 export type StatementBatchCandidate = {
@@ -3132,12 +4202,29 @@ export type StatementBatchDispatchResponse = {
   totalBalanceAmount: number
 }
 
-export async function getBillingStatementBatch(sessionId: string, limit = 10, signal?: AbortSignal): Promise<StatementBatchResponse> {
-  return clinicianGet(sessionId, `/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`, signal)
+export async function getBillingStatementBatch(
+  sessionId: string,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<StatementBatchResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/billing/statements/batch?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  )
 }
 
-export async function dispatchBillingStatementBatch(sessionId: string, limit = 10, signal?: AbortSignal): Promise<StatementBatchDispatchResponse> {
-  return clinicianPost(sessionId, `/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`, {}, signal)
+export async function dispatchBillingStatementBatch(
+  sessionId: string,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<StatementBatchDispatchResponse> {
+  return clinicianPost(
+    sessionId,
+    `/api/billing/statements/batch/dispatch?limit=${encodeURIComponent(String(limit))}`,
+    {},
+    signal,
+  )
 }
 
 export type CollectionsWorkQueueItem = {
@@ -3162,8 +4249,16 @@ export type CollectionsWorkQueueResponse = {
   totalOver90Amount: number
   items: CollectionsWorkQueueItem[]
 }
-export async function getBillingCollectionsWorkQueue(sessionId: string, limit = 10, signal?: AbortSignal): Promise<CollectionsWorkQueueResponse> {
-  return clinicianGet(sessionId, `/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`, signal)
+export async function getBillingCollectionsWorkQueue(
+  sessionId: string,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<CollectionsWorkQueueResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/billing/collections/work-queue?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  )
 }
 export async function createBillingCollectionsFollowUp(
   sessionId: string,
@@ -3175,7 +4270,12 @@ export async function createBillingCollectionsFollowUp(
   },
   signal?: AbortSignal,
 ): Promise<unknown> {
-  return clinicianPost(sessionId, '/api/billing/collections/follow-ups', body, signal)
+  return clinicianPost(
+    sessionId,
+    '/api/billing/collections/follow-ups',
+    body,
+    signal,
+  )
 }
 
 // ── Administration ────────────────────────────────────────────────────────────
@@ -3289,7 +4389,10 @@ export type AdministrationDirectoryResponse = {
   }
 }
 
-export async function getAdministrationDirectory(sessionId: string, signal?: AbortSignal): Promise<AdministrationDirectoryResponse> {
+export async function getAdministrationDirectory(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<AdministrationDirectoryResponse> {
   return clinicianGet(sessionId, '/api/administration/directory', signal)
 }
 export type ConfigurationCatalogItem = {
@@ -3300,7 +4403,9 @@ export type ConfigurationCatalogItem = {
   validation: string
   mutationState: string
 }
-export async function getConfigurationCatalog(sessionId: string): Promise<{ settings: ConfigurationCatalogItem[] }> {
+export async function getConfigurationCatalog(
+  sessionId: string,
+): Promise<{ settings: ConfigurationCatalogItem[] }> {
   return clinicianGet(sessionId, '/api/administration/configuration-catalog')
 }
 export type PracticeSettingItem = {
@@ -3311,11 +4416,21 @@ export type PracticeSettingItem = {
   updatedAt: string
   updatedBy: string
 }
-export async function getPracticeSettings(sessionId: string): Promise<{ settings: PracticeSettingItem[] }> {
+export async function getPracticeSettings(
+  sessionId: string,
+): Promise<{ settings: PracticeSettingItem[] }> {
   return clinicianGet(sessionId, '/api/administration/practice-settings')
 }
-export async function updatePracticeSetting(sessionId: string, key: string, value: string): Promise<{ settings: PracticeSettingItem[] }> {
-  return clinicianPut(sessionId, `/api/administration/practice-settings/${key}`, { value })
+export async function updatePracticeSetting(
+  sessionId: string,
+  key: string,
+  value: string,
+): Promise<{ settings: PracticeSettingItem[] }> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/practice-settings/${key}`,
+    { value },
+  )
 }
 export type PracticeSettingRevision = {
   revisionId: number
@@ -3330,11 +4445,25 @@ export type PracticeSettingHistory = {
   setting: PracticeSettingItem
   revisions: PracticeSettingRevision[]
 }
-export async function getPracticeSettingHistory(sessionId: string, key: string): Promise<PracticeSettingHistory> {
-  return clinicianGet(sessionId, `/api/administration/practice-settings/${key}/history`)
+export async function getPracticeSettingHistory(
+  sessionId: string,
+  key: string,
+): Promise<PracticeSettingHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/practice-settings/${key}/history`,
+  )
 }
-export async function rollbackPracticeSetting(sessionId: string, key: string, revisionId: number): Promise<PracticeSettingHistory> {
-  return clinicianPost(sessionId, `/api/administration/practice-settings/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackPracticeSetting(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<PracticeSettingHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/practice-settings/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
 export type CodingCatalogItem = {
   key: string
@@ -3345,7 +4474,9 @@ export type CodingCatalogItem = {
   feeEnabled: boolean
   modifierLength: number
 }
-export async function getCodingCatalogs(sessionId: string): Promise<{ catalogs: CodingCatalogItem[] }> {
+export async function getCodingCatalogs(
+  sessionId: string,
+): Promise<{ catalogs: CodingCatalogItem[] }> {
   return clinicianGet(sessionId, '/api/administration/coding-catalogs')
 }
 export type CodingCatalogMutationInput = {
@@ -3356,14 +4487,26 @@ export type CodingCatalogMutationInput = {
   feeEnabled: boolean
   modifierLength: number
 }
-export async function createCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> {
+export async function createCodingCatalog(
+  sessionId: string,
+  key: string,
+  input: CodingCatalogMutationInput,
+): Promise<{ catalogs: CodingCatalogItem[] }> {
   return clinicianPost(sessionId, '/api/administration/coding-catalogs', {
     key,
     ...input,
   })
 }
-export async function updateCodingCatalog(sessionId: string, key: string, input: CodingCatalogMutationInput): Promise<{ catalogs: CodingCatalogItem[] }> {
-  return clinicianPut(sessionId, `/api/administration/coding-catalogs/${key}`, input)
+export async function updateCodingCatalog(
+  sessionId: string,
+  key: string,
+  input: CodingCatalogMutationInput,
+): Promise<{ catalogs: CodingCatalogItem[] }> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/coding-catalogs/${key}`,
+    input,
+  )
 }
 export type CodingCatalogRevision = {
   revisionId: number
@@ -3382,11 +4525,25 @@ export type CodingCatalogHistory = {
   catalog: CodingCatalogItem
   revisions: CodingCatalogRevision[]
 }
-export async function getCodingCatalogHistory(sessionId: string, key: string): Promise<CodingCatalogHistory> {
-  return clinicianGet(sessionId, `/api/administration/coding-catalogs/${key}/history`)
+export async function getCodingCatalogHistory(
+  sessionId: string,
+  key: string,
+): Promise<CodingCatalogHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/coding-catalogs/${key}/history`,
+  )
 }
-export async function rollbackCodingCatalog(sessionId: string, key: string, revisionId: number): Promise<CodingCatalogHistory> {
-  return clinicianPost(sessionId, `/api/administration/coding-catalogs/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackCodingCatalog(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<CodingCatalogHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/coding-catalogs/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
 export type FormLayoutItem = {
   key: string
@@ -3418,10 +4575,15 @@ export type FormLayoutDetail = {
   groups: FormLayoutGroupItem[]
   fields: FormLayoutFieldItem[]
 }
-export async function getFormLayouts(sessionId: string): Promise<{ layouts: FormLayoutItem[] }> {
+export async function getFormLayouts(
+  sessionId: string,
+): Promise<{ layouts: FormLayoutItem[] }> {
   return clinicianGet(sessionId, '/api/administration/form-layouts')
 }
-export async function getFormLayout(sessionId: string, key: string): Promise<FormLayoutDetail> {
+export async function getFormLayout(
+  sessionId: string,
+  key: string,
+): Promise<FormLayoutDetail> {
   return clinicianGet(sessionId, `/api/administration/form-layouts/${key}`)
 }
 export type FormLayoutRevision = {
@@ -3441,20 +4603,60 @@ export type FormLayoutHistory = {
   detail: FormLayoutDetail
   revisions: FormLayoutRevision[]
 }
-export async function getFormLayoutHistory(sessionId: string, key: string): Promise<FormLayoutHistory> {
-  return clinicianGet(sessionId, `/api/administration/form-layouts/${key}/history`)
+export async function getFormLayoutHistory(
+  sessionId: string,
+  key: string,
+): Promise<FormLayoutHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-layouts/${key}/history`,
+  )
 }
-export async function rollbackFormLayout(sessionId: string, key: string, revisionId: number): Promise<FormLayoutHistory> {
-  return clinicianPost(sessionId, `/api/administration/form-layouts/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackFormLayout(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<FormLayoutHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/form-layouts/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
-export async function saveFormLayout(sessionId: string, key: string, input: Omit<FormLayoutItem, 'key'>): Promise<FormLayoutDetail> {
-  return clinicianPut(sessionId, `/api/administration/form-layouts/${key}`, input)
+export async function saveFormLayout(
+  sessionId: string,
+  key: string,
+  input: Omit<FormLayoutItem, 'key'>,
+): Promise<FormLayoutDetail> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/form-layouts/${key}`,
+    input,
+  )
 }
-export async function saveFormLayoutGroup(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutGroupItem, 'key'>): Promise<FormLayoutDetail> {
-  return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/groups/${key}`, input)
+export async function saveFormLayoutGroup(
+  sessionId: string,
+  layoutKey: string,
+  key: string,
+  input: Omit<FormLayoutGroupItem, 'key'>,
+): Promise<FormLayoutDetail> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/form-layouts/${layoutKey}/groups/${key}`,
+    input,
+  )
 }
-export async function saveFormLayoutField(sessionId: string, layoutKey: string, key: string, input: Omit<FormLayoutFieldItem, 'key'>): Promise<FormLayoutDetail> {
-  return clinicianPut(sessionId, `/api/administration/form-layouts/${layoutKey}/fields/${key}`, input)
+export async function saveFormLayoutField(
+  sessionId: string,
+  layoutKey: string,
+  key: string,
+  input: Omit<FormLayoutFieldItem, 'key'>,
+): Promise<FormLayoutDetail> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/form-layouts/${layoutKey}/fields/${key}`,
+    input,
+  )
 }
 export type FormOptionListItem = {
   key: string
@@ -3474,10 +4676,15 @@ export type FormOptionListDetail = {
   list: FormOptionListItem
   options: FormOptionValueItem[]
 }
-export async function getFormOptionLists(sessionId: string): Promise<{ lists: FormOptionListItem[] }> {
+export async function getFormOptionLists(
+  sessionId: string,
+): Promise<{ lists: FormOptionListItem[] }> {
   return clinicianGet(sessionId, '/api/administration/form-option-lists')
 }
-export async function getFormOptionList(sessionId: string, key: string): Promise<FormOptionListDetail> {
+export async function getFormOptionList(
+  sessionId: string,
+  key: string,
+): Promise<FormOptionListDetail> {
   return clinicianGet(sessionId, `/api/administration/form-option-lists/${key}`)
 }
 export type FormOptionListRevision = {
@@ -3494,17 +4701,48 @@ export type FormOptionListHistory = {
   detail: FormOptionListDetail
   revisions: FormOptionListRevision[]
 }
-export async function getFormOptionListHistory(sessionId: string, key: string): Promise<FormOptionListHistory> {
-  return clinicianGet(sessionId, `/api/administration/form-option-lists/${key}/history`)
+export async function getFormOptionListHistory(
+  sessionId: string,
+  key: string,
+): Promise<FormOptionListHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/form-option-lists/${key}/history`,
+  )
 }
-export async function rollbackFormOptionList(sessionId: string, key: string, revisionId: number): Promise<FormOptionListHistory> {
-  return clinicianPost(sessionId, `/api/administration/form-option-lists/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackFormOptionList(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<FormOptionListHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/form-option-lists/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
-export async function saveFormOptionList(sessionId: string, key: string, input: Omit<FormOptionListItem, 'key' | 'optionCount'>): Promise<FormOptionListDetail> {
-  return clinicianPut(sessionId, `/api/administration/form-option-lists/${key}`, input)
+export async function saveFormOptionList(
+  sessionId: string,
+  key: string,
+  input: Omit<FormOptionListItem, 'key' | 'optionCount'>,
+): Promise<FormOptionListDetail> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/form-option-lists/${key}`,
+    input,
+  )
 }
-export async function saveFormOptionValue(sessionId: string, listKey: string, key: string, input: Omit<FormOptionValueItem, 'key'>): Promise<FormOptionListDetail> {
-  return clinicianPut(sessionId, `/api/administration/form-option-lists/${listKey}/options/${key}`, input)
+export async function saveFormOptionValue(
+  sessionId: string,
+  listKey: string,
+  key: string,
+  input: Omit<FormOptionValueItem, 'key'>,
+): Promise<FormOptionListDetail> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/form-option-lists/${listKey}/options/${key}`,
+    input,
+  )
 }
 export type ClinicalAlertRuleItem = {
   key: string
@@ -3516,11 +4754,21 @@ export type ClinicalAlertRuleItem = {
   sequence: number
   active: boolean
 }
-export async function getClinicalAlertRules(sessionId: string): Promise<{ rules: ClinicalAlertRuleItem[] }> {
+export async function getClinicalAlertRules(
+  sessionId: string,
+): Promise<{ rules: ClinicalAlertRuleItem[] }> {
   return clinicianGet(sessionId, '/api/administration/clinical-alert-rules')
 }
-export async function saveClinicalAlertRule(sessionId: string, key: string, input: Omit<ClinicalAlertRuleItem, 'key'>): Promise<{ rules: ClinicalAlertRuleItem[] }> {
-  return clinicianPut(sessionId, `/api/administration/clinical-alert-rules/${key}`, input)
+export async function saveClinicalAlertRule(
+  sessionId: string,
+  key: string,
+  input: Omit<ClinicalAlertRuleItem, 'key'>,
+): Promise<{ rules: ClinicalAlertRuleItem[] }> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/clinical-alert-rules/${key}`,
+    input,
+  )
 }
 export type ClinicalAlertRuleRevision = {
   revisionId: number
@@ -3540,11 +4788,25 @@ export type ClinicalAlertRuleHistory = {
   rule: ClinicalAlertRuleItem
   revisions: ClinicalAlertRuleRevision[]
 }
-export async function getClinicalAlertRuleHistory(sessionId: string, key: string): Promise<ClinicalAlertRuleHistory> {
-  return clinicianGet(sessionId, `/api/administration/clinical-alert-rules/${key}/history`)
+export async function getClinicalAlertRuleHistory(
+  sessionId: string,
+  key: string,
+): Promise<ClinicalAlertRuleHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/clinical-alert-rules/${key}/history`,
+  )
 }
-export async function rollbackClinicalAlertRule(sessionId: string, key: string, revisionId: number): Promise<ClinicalAlertRuleHistory> {
-  return clinicianPost(sessionId, `/api/administration/clinical-alert-rules/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackClinicalAlertRule(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<ClinicalAlertRuleHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/clinical-alert-rules/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
 export type ModuleCatalogItem = {
   key: string
@@ -3554,7 +4816,9 @@ export type ModuleCatalogItem = {
   description: string
   canChangeStatus: boolean
 }
-export async function getModuleCatalog(sessionId: string): Promise<{ modules: ModuleCatalogItem[] }> {
+export async function getModuleCatalog(
+  sessionId: string,
+): Promise<{ modules: ModuleCatalogItem[] }> {
   return clinicianGet(sessionId, '/api/administration/modules')
 }
 export type ModuleCatalogRevision = {
@@ -3572,16 +4836,31 @@ export type ModuleCatalogHistory = {
   module: ModuleCatalogItem
   revisions: ModuleCatalogRevision[]
 }
-export async function getModuleCatalogHistory(sessionId: string, key: string): Promise<ModuleCatalogHistory> {
+export async function getModuleCatalogHistory(
+  sessionId: string,
+  key: string,
+): Promise<ModuleCatalogHistory> {
   return clinicianGet(sessionId, `/api/administration/modules/${key}/history`)
 }
-export async function updateModuleCatalogStatus(sessionId: string, key: string, status: 'enabled' | 'disabled'): Promise<ModuleCatalogHistory> {
+export async function updateModuleCatalogStatus(
+  sessionId: string,
+  key: string,
+  status: 'enabled' | 'disabled',
+): Promise<ModuleCatalogHistory> {
   return clinicianPut(sessionId, `/api/administration/modules/${key}/status`, {
     status,
   })
 }
-export async function rollbackModuleCatalog(sessionId: string, key: string, revisionId: number): Promise<ModuleCatalogHistory> {
-  return clinicianPost(sessionId, `/api/administration/modules/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackModuleCatalog(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<ModuleCatalogHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/modules/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
 export type ApiClientRegistryItem = {
   key: string
@@ -3590,11 +4869,21 @@ export type ApiClientRegistryItem = {
   scopes: string
   active: boolean
 }
-export async function getApiClients(sessionId: string): Promise<{ clients: ApiClientRegistryItem[] }> {
+export async function getApiClients(
+  sessionId: string,
+): Promise<{ clients: ApiClientRegistryItem[] }> {
   return clinicianGet(sessionId, '/api/administration/api-clients')
 }
-export async function saveApiClient(sessionId: string, key: string, input: Omit<ApiClientRegistryItem, 'key'>): Promise<{ clients: ApiClientRegistryItem[] }> {
-  return clinicianPut(sessionId, `/api/administration/api-clients/${key}`, input)
+export async function saveApiClient(
+  sessionId: string,
+  key: string,
+  input: Omit<ApiClientRegistryItem, 'key'>,
+): Promise<{ clients: ApiClientRegistryItem[] }> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/api-clients/${key}`,
+    input,
+  )
 }
 export type ApiClientRegistryRevision = {
   revisionId: number
@@ -3611,11 +4900,25 @@ export type ApiClientRegistryHistory = {
   client: ApiClientRegistryItem
   revisions: ApiClientRegistryRevision[]
 }
-export async function getApiClientRegistryHistory(sessionId: string, key: string): Promise<ApiClientRegistryHistory> {
-  return clinicianGet(sessionId, `/api/administration/api-clients/${key}/history`)
+export async function getApiClientRegistryHistory(
+  sessionId: string,
+  key: string,
+): Promise<ApiClientRegistryHistory> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/api-clients/${key}/history`,
+  )
 }
-export async function rollbackApiClientRegistry(sessionId: string, key: string, revisionId: number): Promise<ApiClientRegistryHistory> {
-  return clinicianPost(sessionId, `/api/administration/api-clients/${key}/revisions/${revisionId}/rollback`, {})
+export async function rollbackApiClientRegistry(
+  sessionId: string,
+  key: string,
+  revisionId: number,
+): Promise<ApiClientRegistryHistory> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/api-clients/${key}/revisions/${revisionId}/rollback`,
+    {},
+  )
 }
 
 export type PhiAccessAuditEvent = {
@@ -3642,22 +4945,37 @@ export type PhiAccessAuditFilters = {
   from?: string
   to?: string
 }
-export async function getPhiAccessAudit(sessionId: string, filters: PhiAccessAuditFilters = {}, signal?: AbortSignal): Promise<PhiAccessAuditResponse> {
+export async function getPhiAccessAudit(
+  sessionId: string,
+  filters: PhiAccessAuditFilters = {},
+  signal?: AbortSignal,
+): Promise<PhiAccessAuditResponse> {
   const query = new URLSearchParams({ limit: String(filters.limit ?? 50) })
   if (filters.username) query.set('username', filters.username)
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
-  return clinicianGet(sessionId, `/api/administration/audit/phi?${query}`, signal)
+  return clinicianGet(
+    sessionId,
+    `/api/administration/audit/phi?${query}`,
+    signal,
+  )
 }
-export async function downloadPhiAccessAuditCsv(sessionId: string, filters: PhiAccessAuditFilters = {}): Promise<Blob> {
+export async function downloadPhiAccessAuditCsv(
+  sessionId: string,
+  filters: PhiAccessAuditFilters = {},
+): Promise<Blob> {
   const query = new URLSearchParams({ limit: String(filters.limit ?? 200) })
   if (filters.username) query.set('username', filters.username)
   if (filters.from) query.set('from', filters.from)
   if (filters.to) query.set('to', filters.to)
-  const response = await fetch(`${apiBaseUrl}/api/administration/audit/phi/export?${query}`, {
-    headers: { 'X-Legacy EHR-Session': sessionId },
-  })
-  if (!response.ok) throw new Error(`PHI access audit export failed with ${response.status}`)
+  const response = await fetch(
+    `${apiBaseUrl}/api/administration/audit/phi/export?${query}`,
+    {
+      headers: { 'X-Legacy EHR-Session': sessionId },
+    },
+  )
+  if (!response.ok)
+    throw new Error(`PHI access audit export failed with ${response.status}`)
   return response.blob()
 }
 
@@ -3678,16 +4996,43 @@ export type AdministrationFacilityMutationResponse = {
   detail: AdministrationDirectoryResponse
 }
 
-export async function createAdministrationFacility(sessionId: string, body: AdministrationFacilityMutationInput, signal?: AbortSignal): Promise<AdministrationFacilityMutationResponse> {
-  return clinicianPost(sessionId, '/api/administration/facilities', body, signal)
+export async function createAdministrationFacility(
+  sessionId: string,
+  body: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/administration/facilities',
+    body,
+    signal,
+  )
 }
 
-export async function updateAdministrationFacility(sessionId: string, facilityId: number, body: AdministrationFacilityMutationInput, signal?: AbortSignal): Promise<AdministrationFacilityMutationResponse> {
-  return clinicianPut(sessionId, `/api/administration/facilities/${facilityId}`, body, signal)
+export async function updateAdministrationFacility(
+  sessionId: string,
+  facilityId: number,
+  body: AdministrationFacilityMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationFacilityMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/facilities/${facilityId}`,
+    body,
+    signal,
+  )
 }
 
-export async function deleteAdministrationFacility(sessionId: string, facilityId: number, signal?: AbortSignal): Promise<void> {
-  return clinicianDelete(sessionId, `/api/administration/facilities/${facilityId}`, signal)
+export async function deleteAdministrationFacility(
+  sessionId: string,
+  facilityId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/administration/facilities/${facilityId}`,
+    signal,
+  )
 }
 
 export type AdministrationUserMutationInput = {
@@ -3707,16 +5052,38 @@ export type AdministrationUserMutationResponse = {
   detail: AdministrationDirectoryResponse
 }
 
-export async function createAdministrationUser(sessionId: string, body: AdministrationUserMutationInput, signal?: AbortSignal): Promise<AdministrationUserMutationResponse> {
+export async function createAdministrationUser(
+  sessionId: string,
+  body: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
   return clinicianPost(sessionId, '/api/administration/users', body, signal)
 }
 
-export async function updateAdministrationUser(sessionId: string, userId: number, body: AdministrationUserMutationInput, signal?: AbortSignal): Promise<AdministrationUserMutationResponse> {
-  return clinicianPut(sessionId, `/api/administration/users/${userId}`, body, signal)
+export async function updateAdministrationUser(
+  sessionId: string,
+  userId: number,
+  body: AdministrationUserMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationUserMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/users/${userId}`,
+    body,
+    signal,
+  )
 }
 
-export async function deleteAdministrationUser(sessionId: string, userId: number, signal?: AbortSignal): Promise<void> {
-  return clinicianDelete(sessionId, `/api/administration/users/${userId}`, signal)
+export async function deleteAdministrationUser(
+  sessionId: string,
+  userId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/administration/users/${userId}`,
+    signal,
+  )
 }
 
 export type AdministrationAccessPermissionMutationInput = {
@@ -3745,35 +5112,94 @@ export type AdministrationAccessUserMembershipMutationResponse = {
   detail: AdministrationDirectoryResponse
 }
 
-export async function grantAdministrationAccessPermission(sessionId: string, body: AdministrationAccessPermissionMutationInput, signal?: AbortSignal): Promise<AdministrationAccessPermissionMutationResponse> {
-  return clinicianPut(sessionId, '/api/administration/access-control/group-permissions', body, signal)
+export async function grantAdministrationAccessPermission(
+  sessionId: string,
+  body: AdministrationAccessPermissionMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    '/api/administration/access-control/group-permissions',
+    body,
+    signal,
+  )
 }
 
-export async function revokeAdministrationAccessPermission(sessionId: string, groupValue: string, sectionValue: string, permissionValue: string, signal?: AbortSignal): Promise<AdministrationAccessPermissionMutationResponse> {
-  return clinicianDeleteJson(sessionId, `/api/administration/access-control/group-permissions/${encodeURIComponent(groupValue)}/${encodeURIComponent(sectionValue)}/${encodeURIComponent(permissionValue)}`, signal)
+export async function revokeAdministrationAccessPermission(
+  sessionId: string,
+  groupValue: string,
+  sectionValue: string,
+  permissionValue: string,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessPermissionMutationResponse> {
+  return clinicianDeleteJson(
+    sessionId,
+    `/api/administration/access-control/group-permissions/${encodeURIComponent(groupValue)}/${encodeURIComponent(sectionValue)}/${encodeURIComponent(permissionValue)}`,
+    signal,
+  )
 }
 
-export async function grantAdministrationAccessMembership(sessionId: string, body: AdministrationAccessUserMembershipMutationInput, signal?: AbortSignal): Promise<AdministrationAccessUserMembershipMutationResponse> {
-  return clinicianPut(sessionId, '/api/administration/access-control/user-memberships', body, signal)
+export async function grantAdministrationAccessMembership(
+  sessionId: string,
+  body: AdministrationAccessUserMembershipMutationInput,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    '/api/administration/access-control/user-memberships',
+    body,
+    signal,
+  )
 }
 
-export async function revokeAdministrationAccessMembership(sessionId: string, userValue: string, groupValue: string, signal?: AbortSignal): Promise<AdministrationAccessUserMembershipMutationResponse> {
-  return clinicianDeleteJson(sessionId, `/api/administration/access-control/user-memberships/${encodeURIComponent(userValue)}/${encodeURIComponent(groupValue)}`, signal)
+export async function revokeAdministrationAccessMembership(
+  sessionId: string,
+  userValue: string,
+  groupValue: string,
+  signal?: AbortSignal,
+): Promise<AdministrationAccessUserMembershipMutationResponse> {
+  return clinicianDeleteJson(
+    sessionId,
+    `/api/administration/access-control/user-memberships/${encodeURIComponent(userValue)}/${encodeURIComponent(groupValue)}`,
+    signal,
+  )
 }
 
 export type AdministrationPortalProfileReviewMutationResponse = {
   detail: AdministrationDirectoryResponse
 }
 
-export async function acceptAdministrationPortalProfileReview(sessionId: string, requestId: string, signal?: AbortSignal): Promise<AdministrationPortalProfileReviewMutationResponse> {
-  return clinicianPut(sessionId, `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/accept`, {}, signal)
+export async function acceptAdministrationPortalProfileReview(
+  sessionId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/accept`,
+    {},
+    signal,
+  )
 }
 
-export async function revertAdministrationPortalProfileReview(sessionId: string, requestId: string, signal?: AbortSignal): Promise<AdministrationPortalProfileReviewMutationResponse> {
-  return clinicianPut(sessionId, `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/revert`, {}, signal)
+export async function revertAdministrationPortalProfileReview(
+  sessionId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<AdministrationPortalProfileReviewMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/administration/portal-activity/profile-reviews/${encodeURIComponent(requestId)}/revert`,
+    {},
+    signal,
+  )
 }
 
-export async function getLoginAudit(sessionId: string, limit?: number, signal?: AbortSignal): Promise<AuthenticationAuditLoginSummary> {
+export async function getLoginAudit(
+  sessionId: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<AuthenticationAuditLoginSummary> {
   const q = limit ? `?limit=${limit}` : ''
   return clinicianGet(sessionId, `/api/auth/login-audit${q}`, signal)
 }
@@ -3808,19 +5234,32 @@ export type AuthenticationSessionAuditItem = {
   sessionSource: string
 }
 
-export type AuthenticationActivityAuditResponse = AuthenticationAuditLoginSummary & {
-  activeSessions: number
-  endedSessions: number
-  sessions: AuthenticationSessionAuditItem[]
-}
+export type AuthenticationActivityAuditResponse =
+  AuthenticationAuditLoginSummary & {
+    activeSessions: number
+    endedSessions: number
+    sessions: AuthenticationSessionAuditItem[]
+  }
 
-export async function getAuthenticationActivityAudit(sessionId: string, limit = 25, signal?: AbortSignal): Promise<AuthenticationActivityAuditResponse> {
-  return clinicianGet(sessionId, `/api/auth/activity-audit?limit=${encodeURIComponent(String(limit))}`, signal)
+export async function getAuthenticationActivityAudit(
+  sessionId: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<AuthenticationActivityAuditResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/auth/activity-audit?limit=${encodeURIComponent(String(limit))}`,
+    signal,
+  )
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
-async function clinicianDelete(sessionId: string, path: string, signal?: AbortSignal): Promise<void> {
+async function clinicianDelete(
+  sessionId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'DELETE',
     headers: clinicianHeaders(sessionId),
@@ -3829,7 +5268,11 @@ async function clinicianDelete(sessionId: string, path: string, signal?: AbortSi
   await requireSuccessfulResponse(response, `DELETE ${path}`, 'clinician')
 }
 
-async function clinicianDeleteJson<T>(sessionId: string, path: string, signal?: AbortSignal): Promise<T> {
+async function clinicianDeleteJson<T>(
+  sessionId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'DELETE',
     headers: clinicianHeaders(sessionId),
@@ -3850,7 +5293,11 @@ export type EncounterCreateInput = {
   sensitivity?: string | null
 }
 
-export async function createEncounter(sessionId: string, body: EncounterCreateInput, signal?: AbortSignal): Promise<EncounterDetail> {
+export async function createEncounter(
+  sessionId: string,
+  body: EncounterCreateInput,
+  signal?: AbortSignal,
+): Promise<EncounterDetail> {
   return clinicianPost(sessionId, '/api/encounters', body, signal)
 }
 
@@ -3867,8 +5314,18 @@ export type EncounterVitalsCreateInput = {
   note?: string | null
 }
 
-export async function createEncounterVitals(sessionId: string, encounterId: number, body: EncounterVitalsCreateInput, signal?: AbortSignal): Promise<{ id: number; detail: EncounterDetail }> {
-  return clinicianPost(sessionId, `/api/encounters/${encounterId}/vitals`, body, signal)
+export async function createEncounterVitals(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterVitalsCreateInput,
+  signal?: AbortSignal,
+): Promise<{ id: number; detail: EncounterDetail }> {
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounterId}/vitals`,
+    body,
+    signal,
+  )
 }
 
 export type EncounterSoapNoteCreateInput = {
@@ -3879,11 +5336,24 @@ export type EncounterSoapNoteCreateInput = {
   plan?: string | null
 }
 
-export async function createEncounterSoapNote(sessionId: string, encounterId: number, body: EncounterSoapNoteCreateInput, signal?: AbortSignal): Promise<{ id: number; detail: EncounterDetail }> {
-  return clinicianPost(sessionId, `/api/encounters/${encounterId}/soap-notes`, body, signal)
+export async function createEncounterSoapNote(
+  sessionId: string,
+  encounterId: number,
+  body: EncounterSoapNoteCreateInput,
+  signal?: AbortSignal,
+): Promise<{ id: number; detail: EncounterDetail }> {
+  return clinicianPost(
+    sessionId,
+    `/api/encounters/${encounterId}/soap-notes`,
+    body,
+    signal,
+  )
 }
 
-export async function getEncounterSoapNoteTemplates(sessionId: string, signal?: AbortSignal): Promise<EncounterSoapNoteTemplateCatalog> {
+export async function getEncounterSoapNoteTemplates(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<EncounterSoapNoteTemplateCatalog> {
   return clinicianGet(sessionId, '/api/encounters/soap-note-templates', signal)
 }
 
@@ -3898,7 +5368,12 @@ export async function signEncounter(
   },
   signal?: AbortSignal,
 ): Promise<{ id: number; detail: EncounterDetail }> {
-  return clinicianPut(sessionId, `/api/encounters/${encounterId}/sign`, body, signal)
+  return clinicianPut(
+    sessionId,
+    `/api/encounters/${encounterId}/sign`,
+    body,
+    signal,
+  )
 }
 
 // ── Clinical list mutations ───────────────────────────────────────────────────
@@ -3916,16 +5391,38 @@ export type CreateProblemInput = {
   comments: string
 }
 
-export async function createProblem(sessionId: string, body: CreateProblemInput, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
+export async function createProblem(
+  sessionId: string,
+  body: CreateProblemInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
   return clinicianPost(sessionId, '/api/clinical-lists/problems', body, signal)
 }
 
-export async function deactivateProblem(sessionId: string, problemId: string, comments: string, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPut(sessionId, `/api/clinical-lists/problems/${problemId}/deactivate`, { comments }, signal)
+export async function deactivateProblem(
+  sessionId: string,
+  problemId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/problems/${problemId}/deactivate`,
+    { comments },
+    signal,
+  )
 }
 
-export async function deleteProblem(sessionId: string, problemId: string, signal?: AbortSignal): Promise<void> {
-  return clinicianDelete(sessionId, `/api/clinical-lists/problems/${problemId}`, signal)
+export async function deleteProblem(
+  sessionId: string,
+  problemId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return clinicianDelete(
+    sessionId,
+    `/api/clinical-lists/problems/${problemId}`,
+    signal,
+  )
 }
 
 export type CreateAllergyInput = {
@@ -3938,12 +5435,26 @@ export type CreateAllergyInput = {
   listOptionId?: string | null
 }
 
-export async function createAllergy(sessionId: string, body: CreateAllergyInput, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
+export async function createAllergy(
+  sessionId: string,
+  body: CreateAllergyInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
   return clinicianPost(sessionId, '/api/clinical-lists/allergies', body, signal)
 }
 
-export async function deactivateAllergy(sessionId: string, allergyId: string, comments: string, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPut(sessionId, `/api/clinical-lists/allergies/${allergyId}/deactivate`, { comments }, signal)
+export async function deactivateAllergy(
+  sessionId: string,
+  allergyId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/allergies/${allergyId}/deactivate`,
+    { comments },
+    signal,
+  )
 }
 
 export type CreateMedicationInput = {
@@ -3954,12 +5465,31 @@ export type CreateMedicationInput = {
   comments: string
 }
 
-export async function createMedication(sessionId: string, body: CreateMedicationInput, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPost(sessionId, '/api/clinical-lists/medications', body, signal)
+export async function createMedication(
+  sessionId: string,
+  body: CreateMedicationInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/clinical-lists/medications',
+    body,
+    signal,
+  )
 }
 
-export async function deactivateMedication(sessionId: string, medicationId: string, comments: string, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPut(sessionId, `/api/clinical-lists/medications/${medicationId}/deactivate`, { comments }, signal)
+export async function deactivateMedication(
+  sessionId: string,
+  medicationId: string,
+  comments: string,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/medications/${medicationId}/deactivate`,
+    { comments },
+    signal,
+  )
 }
 
 export type CreatePrescriptionInput = {
@@ -3976,18 +5506,47 @@ export type CreatePrescriptionInput = {
   diagnosis: string
 }
 
-export async function createPrescription(sessionId: string, body: CreatePrescriptionInput, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPost(sessionId, '/api/clinical-lists/prescriptions', body, signal)
+export async function createPrescription(
+  sessionId: string,
+  body: CreatePrescriptionInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/clinical-lists/prescriptions',
+    body,
+    signal,
+  )
 }
 
-export async function deactivatePrescription(sessionId: string, prescriptionId: string, body: { endDate: string; note: string }, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPut(sessionId, `/api/clinical-lists/prescriptions/${prescriptionId}/deactivate`, body, signal)
+export async function deactivatePrescription(
+  sessionId: string,
+  prescriptionId: string,
+  body: { endDate: string; note: string },
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/prescriptions/${prescriptionId}/deactivate`,
+    body,
+    signal,
+  )
 }
 
 // ── Lab report sign ───────────────────────────────────────────────────────────
 
-export async function signLabReport(sessionId: string, reportId: number, body: { reviewedBy: string; reviewedAt: string }, signal?: AbortSignal): Promise<unknown> {
-  return clinicianPut(sessionId, `/api/procedures/reports/${reportId}/sign`, body, signal)
+export async function signLabReport(
+  sessionId: string,
+  reportId: number,
+  body: { reviewedBy: string; reviewedAt: string },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return clinicianPut(
+    sessionId,
+    `/api/procedures/reports/${reportId}/sign`,
+    body,
+    signal,
+  )
 }
 
 // ── Message creation ──────────────────────────────────────────────────────────
@@ -3999,7 +5558,11 @@ export type CreatePatientMessageInput = {
   assignedTo?: string | null
 }
 
-export async function createPatientMessage(sessionId: string, input: CreatePatientMessageInput, signal?: AbortSignal): Promise<PatientMessageItem> {
+export async function createPatientMessage(
+  sessionId: string,
+  input: CreatePatientMessageInput,
+  signal?: AbortSignal,
+): Promise<PatientMessageItem> {
   return clinicianPost(sessionId, '/api/messages', input, signal)
 }
 
@@ -4034,12 +5597,32 @@ export type PatientDemographicsUpdate = {
   financialReviewDate: string
 }
 
-export async function updatePatientContact(sessionId: string, patientId: string, body: PatientContactUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/contact`, body, signal)
+export async function updatePatientContact(
+  sessionId: string,
+  patientId: string,
+  body: PatientContactUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/contact`,
+    body,
+    signal,
+  )
 }
 
-export async function updatePatientDemographics(sessionId: string, patientId: string, body: PatientDemographicsUpdate, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/${encodeURIComponent(patientId)}/demographics`, body, signal)
+export async function updatePatientDemographics(
+  sessionId: string,
+  patientId: string,
+  body: PatientDemographicsUpdate,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/demographics`,
+    body,
+    signal,
+  )
 }
 
 export type PatientInsuranceMutationInput = {
@@ -4055,16 +5638,44 @@ export type PatientInsuranceMutationInput = {
   subscriberSex: string
 }
 
-export async function createPatientInsurance(sessionId: string, patientId: string, body: PatientInsuranceMutationInput, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPost(sessionId, `/api/patients/${encodeURIComponent(patientId)}/insurance`, body, signal)
+export async function createPatientInsurance(
+  sessionId: string,
+  patientId: string,
+  body: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/insurance`,
+    body,
+    signal,
+  )
 }
 
-export async function updatePatientInsurance(sessionId: string, insuranceId: string, body: PatientInsuranceMutationInput, signal?: AbortSignal): Promise<PatientChartSummary> {
-  return clinicianPut(sessionId, `/api/patients/insurance/${encodeURIComponent(insuranceId)}`, body, signal)
+export async function updatePatientInsurance(
+  sessionId: string,
+  insuranceId: string,
+  body: PatientInsuranceMutationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/insurance/${encodeURIComponent(insuranceId)}`,
+    body,
+    signal,
+  )
 }
 
-export async function deletePatientInsurance(sessionId: string, insuranceId: string, signal?: AbortSignal): Promise<void> {
-  await clinicianDelete(sessionId, `/api/patients/insurance/${encodeURIComponent(insuranceId)}`, signal)
+export async function deletePatientInsurance(
+  sessionId: string,
+  insuranceId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clinicianDelete(
+    sessionId,
+    `/api/patients/insurance/${encodeURIComponent(insuranceId)}`,
+    signal,
+  )
 }
 
 export type PatientRegistrationInput = {
@@ -4089,7 +5700,11 @@ export type PatientRegistrationInput = {
   hipaaAllowEmail: string
 }
 
-export async function createPatient(sessionId: string, body: PatientRegistrationInput, signal?: AbortSignal): Promise<PatientChartSummary> {
+export async function createPatient(
+  sessionId: string,
+  body: PatientRegistrationInput,
+  signal?: AbortSignal,
+): Promise<PatientChartSummary> {
   return clinicianPost(sessionId, '/api/patients', body, signal)
 }
 
@@ -4151,12 +5766,25 @@ export type AppointmentAvailabilityValidationResponse = {
   messages: string[]
 }
 
-export async function createAppointment(sessionId: string, body: AppointmentCreateInput, signal?: AbortSignal): Promise<AppointmentListItem> {
+export async function createAppointment(
+  sessionId: string,
+  body: AppointmentCreateInput,
+  signal?: AbortSignal,
+): Promise<AppointmentListItem> {
   return clinicianPost(sessionId, '/api/appointments', body, signal)
 }
 
-export async function validateAppointmentAvailability(sessionId: string, body: AppointmentAvailabilityValidationInput, signal?: AbortSignal): Promise<AppointmentAvailabilityValidationResponse> {
-  return clinicianPost(sessionId, '/api/appointments/availability/validate', body, signal)
+export async function validateAppointmentAvailability(
+  sessionId: string,
+  body: AppointmentAvailabilityValidationInput,
+  signal?: AbortSignal,
+): Promise<AppointmentAvailabilityValidationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/appointments/availability/validate',
+    body,
+    signal,
+  )
 }
 
 // ── Immunization mutations ────────────────────────────────────────────────────
@@ -4169,12 +5797,30 @@ export type ImmunizationCreateInput = {
   lotNumber?: string | null
 }
 
-export async function createImmunization(sessionId: string, body: ImmunizationCreateInput, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPost(sessionId, '/api/clinical-lists/immunizations', body, signal)
+export async function createImmunization(
+  sessionId: string,
+  body: ImmunizationCreateInput,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPost(
+    sessionId,
+    '/api/clinical-lists/immunizations',
+    body,
+    signal,
+  )
 }
 
-export async function markImmunizationEnteredInError(sessionId: string, immunizationId: number, signal?: AbortSignal): Promise<ClinicalListMutationResponse> {
-  return clinicianPut(sessionId, `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`, {}, signal)
+export async function markImmunizationEnteredInError(
+  sessionId: string,
+  immunizationId: number,
+  signal?: AbortSignal,
+): Promise<ClinicalListMutationResponse> {
+  return clinicianPut(
+    sessionId,
+    `/api/clinical-lists/immunizations/${immunizationId}/entered-in-error`,
+    {},
+    signal,
+  )
 }
 
 // ── Portal profile mutations ──────────────────────────────────────────────────
@@ -4216,12 +5862,16 @@ export type PatientPortalProfileResponse = {
   failureReason?: string | null
 }
 
-export async function getPatientPortalProfile(sessionId: string, signal?: AbortSignal): Promise<PatientPortalProfileResponse> {
+export async function getPatientPortalProfile(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
   const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile`, {
     headers: { 'X-Legacy EHR-Patient-Portal-Session': sessionId },
     signal,
   })
-  if (!response.ok) throw new Error(`Patient portal profile failed with ${response.status}`)
+  if (!response.ok)
+    throw new Error(`Patient portal profile failed with ${response.status}`)
   return response.json()
 }
 
@@ -4237,16 +5887,26 @@ export type PatientPortalProfileChangeInput = {
   postalCode?: string | null
 }
 
-export async function submitPatientPortalProfileChange(sessionId: string, body: PatientPortalProfileChangeInput, signal?: AbortSignal): Promise<PatientPortalProfileResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/patient-portal/profile/changes`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'X-Legacy EHR-Patient-Portal-Session': sessionId,
+export async function submitPatientPortalProfileChange(
+  sessionId: string,
+  body: PatientPortalProfileChangeInput,
+  signal?: AbortSignal,
+): Promise<PatientPortalProfileResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/api/patient-portal/profile/changes`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'X-Legacy EHR-Patient-Portal-Session': sessionId,
+      },
+      body: JSON.stringify(body),
+      signal,
     },
-    body: JSON.stringify(body),
-    signal,
-  })
-  if (!response.ok) throw new Error(`Patient portal profile request failed with ${response.status}`)
+  )
+  if (!response.ok)
+    throw new Error(
+      `Patient portal profile request failed with ${response.status}`,
+    )
   return response.json()
 }

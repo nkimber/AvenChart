@@ -252,6 +252,45 @@ test.describe("material workflows", () => {
     ).toBeVisible();
   });
 
+  test("inventory lots expose searchable units, costs, metadata, and immutable ledger evidence", async ({
+    page,
+  }) => {
+    await signInClinician(page);
+    await page.goto("/clinician/inventory");
+
+    await page.getByLabel("Search lots").fill("GLV-2026-01-A");
+    await expect(page.getByText(/1 of \d+ lots/)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      page.getByText("$8.75 per box", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Open lot GLV-2026-01-A" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Lot GLV-2026-01-A" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Metadata history" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByText("No metadata changes recorded.", { exact: true }),
+    ).toBeVisible();
+    const ledger = page
+      .getByRole("heading", { name: "Immutable transaction ledger" })
+      .locator("xpath=ancestor::section");
+    await expect(
+      ledger.getByText("consumption", { exact: true }),
+    ).toBeVisible();
+    await expect(ledger.getByText("-24 box", { exact: true })).toBeVisible();
+    await expect(
+      ledger.getByText("gold-frontdesk-01", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      ledger.getByText("00000000-0000-0000-0000-000000010002", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("portal appointments retain past appointment status history", async ({
     page,
   }) => {

@@ -2825,6 +2825,12 @@ a {
   align-items: center;
   gap: 6px;
 }
+.cl-card-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 .cl-card-wide {
   grid-column: 1 / -1;
@@ -6902,10 +6908,88 @@ a {
 .inventory-modern-out {
   color: #993c1d !important;
 }
+.inventory-lot-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(190px, 1fr) minmax(
+      190px,
+      1fr
+    );
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.inventory-lot-table {
+  min-width: 1080px;
+}
+.inventory-table-secondary {
+  display: block;
+  max-width: 240px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.inventory-lot-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.inventory-lot-pagination .cl-btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.inventory-lot-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.inventory-lot-facts div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.inventory-lot-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.inventory-lot-facts dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.inventory-lot-history-grid {
+  display: grid;
+  gap: 22px;
+}
+.inventory-detail-heading {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+.inventory-lot-history-grid code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 700px) {
   .inventory-modern-item {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+  .inventory-lot-filters,
+  .inventory-lot-facts {
+    grid-template-columns: 1fr;
+  }
+  .inventory-lot-pagination {
+    justify-content: space-between;
   }
 }
 

@@ -1,5 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiRequestError, downloadPatientDocument, endPatientPortalSession, getCurrentSession, getPatientBilling, getPatientCareTeamOptions, getPatientPortalAppointments, getPatientPortalHome, getPatientProviderAssignmentOptions, getStaffMessageInbox, logout, SESSION_INVALID_EVENT, updatePatientCareTeam, updatePatientEmployer, updatePatientGuardianContact, updatePatientProviderAssignment } from './api.ts'
+import {
+  ApiRequestError,
+  downloadPatientDocument,
+  endPatientPortalSession,
+  getCurrentSession,
+  getInventoryLotMetadataHistory,
+  getPatientBilling,
+  getPatientCareTeamOptions,
+  getPatientPortalAppointments,
+  getPatientPortalHome,
+  getPatientProviderAssignmentOptions,
+  getStaffMessageInbox,
+  logout,
+  SESSION_INVALID_EVENT,
+  updatePatientCareTeam,
+  updatePatientEmployer,
+  updatePatientGuardianContact,
+  updatePatientProviderAssignment,
+} from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -55,12 +73,17 @@ describe('authenticated API transport', () => {
         status: 200,
         headers: {
           'content-type': 'application/pdf',
-          'content-disposition': "attachment; filename*=UTF-8''visit%20summary.pdf",
+          'content-disposition':
+            "attachment; filename*=UTF-8''visit%20summary.pdf",
         },
       }),
     )
 
-    const result = await downloadPatientDocument('staff-session', 42, 'fallback.pdf')
+    const result = await downloadPatientDocument(
+      'staff-session',
+      42,
+      'fallback.pdf',
+    )
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:5001/api/documents/42/download',
@@ -81,7 +104,9 @@ describe('authenticated API transport', () => {
       }),
     )
 
-    await expect(downloadPatientDocument('staff-session', 42, 'fallback.pdf')).rejects.toThrow('returned a web page')
+    await expect(
+      downloadPatientDocument('staff-session', 42, 'fallback.pdf'),
+    ).rejects.toThrow('returned a web page')
   })
 
   it('announces a rejected clinician session and preserves Problem Details', async () => {
@@ -99,7 +124,9 @@ describe('authenticated API transport', () => {
       ),
     )
 
-    const error = await getCurrentSession('expired-session').catch((caught) => caught)
+    const error = await getCurrentSession('expired-session').catch(
+      (caught) => caught,
+    )
 
     expect(error).toBeInstanceOf(ApiRequestError)
     expect(error).toMatchObject({
@@ -194,7 +221,14 @@ describe('authenticated API transport', () => {
       ],
     })
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/patients/provider-options', 'http://localhost:5001/api/patients/MOD-PAT-0004/care-team-options', 'http://localhost:5001/api/patients/MOD-PAT-0004/guardian-contact', 'http://localhost:5001/api/patients/MOD-PAT-0004/employer', 'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment', 'http://localhost:5001/api/patients/MOD-PAT-0004/care-team'])
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/patients/provider-options',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/care-team-options',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/guardian-contact',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/employer',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/provider-assignment',
+      'http://localhost:5001/api/patients/MOD-PAT-0004/care-team',
+    ])
     for (const call of fetchMock.mock.calls.slice(2)) {
       expect(call[1]).toEqual(
         expect.objectContaining({
@@ -255,12 +289,38 @@ describe('authenticated API transport', () => {
     )
   })
 
+  it('loads immutable inventory lot metadata history through the protected route', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          auditId: 'audit-1',
+          priorLotNumber: 'LOT-A',
+          newLotNumber: 'LOT-B',
+          changedBy: 'admin',
+          changedAt: '2026-07-27T12:00:00Z',
+        },
+      ]),
+    )
+
+    const result = await getInventoryLotMetadataHistory('staff-session', 20001)
+
+    expect(result[0]?.newLotNumber).toBe('LOT-B')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/inventory/lots/20001/metadata-history',
+      expect.objectContaining({
+        headers: { 'X-Legacy EHR-Session': 'staff-session' },
+      }),
+    )
+  })
+
   it('normalizes network failures without treating the session as invalid', async () => {
     const invalidSession = vi.fn()
     window.addEventListener(SESSION_INVALID_EVENT, invalidSession)
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'))
 
-    const error = await getCurrentSession('staff-session').catch((caught) => caught)
+    const error = await getCurrentSession('staff-session').catch(
+      (caught) => caught,
+    )
 
     expect(error).toBeInstanceOf(ApiRequestError)
     expect(error).toMatchObject({ kind: 'network' })
@@ -272,7 +332,12 @@ describe('authenticated API transport', () => {
   it('invalidates the portal once when any protected portal call returns 401', async () => {
     const invalidSession = vi.fn()
     window.addEventListener(SESSION_INVALID_EVENT, invalidSession)
-    fetchMock.mockResolvedValueOnce(jsonResponse({ title: 'Unauthorized', detail: 'Portal session expired.' }, 401))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { title: 'Unauthorized', detail: 'Portal session expired.' },
+        401,
+      ),
+    )
 
     await expect(getPatientPortalHome('portal-session')).rejects.toMatchObject({
       kind: 'http',
