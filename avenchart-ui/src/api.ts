@@ -6594,6 +6594,125 @@ export async function rollbackCodingCatalog(
     {},
   )
 }
+export type CodingCatalogChangeRequestStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'activated'
+  | 'cancelled'
+export type CodingCatalogChangeRequestItem = {
+  requestId: string
+  catalogKey: string
+  changeKind: 'create' | 'update'
+  proposedDisplayName: string
+  proposedSequence: number
+  proposedActive: boolean
+  proposedClaimEnabled: boolean
+  proposedFeeEnabled: boolean
+  proposedModifierLength: number
+  baselineDisplayName?: string | null
+  baselineSequence?: number | null
+  baselineActive?: boolean | null
+  baselineClaimEnabled?: boolean | null
+  baselineFeeEnabled?: boolean | null
+  baselineModifierLength?: number | null
+  baselineUpdatedAt?: string | null
+  reason: string
+  status: CodingCatalogChangeRequestStatus
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type CodingCatalogChangeRequestEvent = {
+  eventId: number
+  action: string
+  note?: string | null
+  occurredAt: string
+  username: string
+}
+export type CodingCatalogChangeRequestCounts = Record<
+  CodingCatalogChangeRequestStatus,
+  number
+>
+export type CodingCatalogChangeRequestsResponse = {
+  requests: CodingCatalogChangeRequestItem[]
+  total: number
+  returned: number
+  offset: number
+  limit: number
+  status: 'all' | 'open' | CodingCatalogChangeRequestStatus
+  counts: CodingCatalogChangeRequestCounts
+}
+export type CodingCatalogChangeRequestDetail = {
+  request: CodingCatalogChangeRequestItem
+  activeCatalog?: CodingCatalogItem | null
+  events: CodingCatalogChangeRequestEvent[]
+}
+export type CodingCatalogChangeRequestAction =
+  | 'submit'
+  | 'approve'
+  | 'reject'
+  | 'activate'
+  | 'cancel'
+export type CodingCatalogChangeRequestInput = {
+  key: string
+  displayName: string
+  sequence: number
+  active: boolean
+  claimEnabled: boolean
+  feeEnabled: boolean
+  modifierLength: number
+  reason: string
+}
+export async function getCodingCatalogChangeRequests(
+  sessionId: string,
+  params: {
+    status?: 'all' | 'open' | CodingCatalogChangeRequestStatus
+    offset?: number
+    limit?: number
+  } = {},
+  signal?: AbortSignal,
+): Promise<CodingCatalogChangeRequestsResponse> {
+  const query = new URLSearchParams()
+  if (params.status) query.set('status', params.status)
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  return clinicianGet(
+    sessionId,
+    `/api/administration/coding-catalog-change-requests${query.size > 0 ? `?${query.toString()}` : ''}`,
+    signal,
+  )
+}
+export async function getCodingCatalogChangeRequest(
+  sessionId: string,
+  requestId: string,
+): Promise<CodingCatalogChangeRequestDetail> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/coding-catalog-change-requests/${encodeURIComponent(requestId)}`,
+  )
+}
+export async function createCodingCatalogChangeRequest(
+  sessionId: string,
+  input: CodingCatalogChangeRequestInput,
+): Promise<CodingCatalogChangeRequestDetail> {
+  return clinicianPost(sessionId, '/api/administration/coding-catalog-change-requests', input)
+}
+export async function transitionCodingCatalogChangeRequest(
+  sessionId: string,
+  requestId: string,
+  action: CodingCatalogChangeRequestAction,
+  input: { note?: string | null; expectedVersion: number },
+): Promise<CodingCatalogChangeRequestDetail> {
+  return clinicianPost(
+    sessionId,
+    `/api/administration/coding-catalog-change-requests/${encodeURIComponent(requestId)}/${action}`,
+    input,
+  )
+}
 export type FormLayoutItem = {
   key: string
   title: string

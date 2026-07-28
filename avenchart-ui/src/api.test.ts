@@ -102,6 +102,12 @@ import {
   updatePrescription,
   updateInventoryMedicationLink,
 } from './api.ts'
+import {
+  createCodingCatalogChangeRequest,
+  getCodingCatalogChangeRequest,
+  getCodingCatalogChangeRequests,
+  transitionCodingCatalogChangeRequest,
+} from './api.ts'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -878,6 +884,54 @@ describe('authenticated API transport', () => {
         expectedVersion: 1,
       }),
     })
+  })
+
+  it('creates and advances coding catalog governance requests', async () => {
+    const request = {
+      requestId: 'catalog-request-id',
+      catalogKey: 'SNOMED',
+      changeKind: 'update',
+      proposedDisplayName: 'SNOMED CT next',
+      proposedSequence: 30,
+      proposedActive: true,
+      proposedClaimEnabled: false,
+      proposedFeeEnabled: false,
+      proposedModifierLength: 0,
+      baselineDisplayName: 'SNOMED CT',
+      baselineSequence: 30,
+      baselineActive: true,
+      baselineClaimEnabled: false,
+      baselineFeeEnabled: false,
+      baselineModifierLength: 0,
+      baselineUpdatedAt: '2026-07-28T12:00:00Z',
+      reason: 'Clarify the active catalog label.',
+      status: 'submitted',
+      version: 1,
+      createdAt: '2026-07-28T12:01:00Z',
+      createdBy: 'admin',
+      updatedAt: '2026-07-28T12:02:00Z',
+      updatedBy: 'admin',
+    }
+    const detail = { request, activeCatalog: { key: 'SNOMED', displayName: 'SNOMED CT', sequence: 30, active: true, claimEnabled: false, feeEnabled: false, modifierLength: 0 }, events: [] }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ requests: [request], total: 1, returned: 1, offset: 0, limit: 8, status: 'open', counts: { draft: 0, submitted: 1, approved: 0, rejected: 0, activated: 0, cancelled: 0 } }))
+      .mockResolvedValueOnce(jsonResponse(detail))
+      .mockResolvedValueOnce(jsonResponse(detail, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...detail, request: { ...request, status: 'approved', version: 2 } }))
+
+    const list = await getCodingCatalogChangeRequests('staff-session', { status: 'open', offset: 0, limit: 8 })
+    await getCodingCatalogChangeRequest('staff-session', 'catalog-request-id')
+    await createCodingCatalogChangeRequest('staff-session', { key: 'SNOMED', displayName: 'SNOMED CT next', sequence: 30, active: true, claimEnabled: false, feeEnabled: false, modifierLength: 0, reason: 'Clarify the active catalog label.' })
+    await transitionCodingCatalogChangeRequest('staff-session', 'catalog-request-id', 'approve', { note: 'Approved locally.', expectedVersion: 1 })
+
+    expect(list).toMatchObject({ total: 1, status: 'open', counts: { submitted: 1 } })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/administration/coding-catalog-change-requests?status=open&offset=0&limit=8',
+      'http://localhost:5001/api/administration/coding-catalog-change-requests/catalog-request-id',
+      'http://localhost:5001/api/administration/coding-catalog-change-requests',
+      'http://localhost:5001/api/administration/coding-catalog-change-requests/catalog-request-id/approve',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ key: 'SNOMED', displayName: 'SNOMED CT next', sequence: 30, active: true, claimEnabled: false, feeEnabled: false, modifierLength: 0, reason: 'Clarify the active catalog label.' }) })
   })
 
   it('loads the versioned authorization policy gap registry with server paging', async () => {

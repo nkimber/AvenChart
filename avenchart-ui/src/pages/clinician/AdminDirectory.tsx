@@ -84,6 +84,7 @@ import {
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 import AuthorizationPolicyRegistry from "./AuthorizationPolicyRegistry.tsx";
+import CodingCatalogGovernance from "./CodingCatalogGovernance.tsx";
 import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
 
 type AsyncState<T> =
@@ -2367,6 +2368,17 @@ export default function AdminDirectory() {
                     </div>
                   ) : null}
 
+                  <CodingCatalogGovernance
+                    sessionId={session.sessionId}
+                    catalogs={codingCatalogs}
+                    onCatalogsChanged={async () => {
+                      setCodingCatalogs(
+                        (await getCodingCatalogs(session.sessionId)).catalogs,
+                      );
+                    }}
+                    onOpenHistory={(key) => void openCodingCatalogHistory(key)}
+                  />
+                  <div hidden aria-hidden="true">
                   <h2 className="cl-card-title">Coding catalogs</h2>
                   <p className="clinician-page-subtitle">
                     Legacy code types are ordered, active or inactive, and carry
@@ -2689,6 +2701,7 @@ export default function AdminDirectory() {
                       </table>
                     </div>
                   ) : null}
+                  </div>
 
                   <h2 className="cl-card-title">Configuration catalog</h2>
                   <table className="cl-table">
