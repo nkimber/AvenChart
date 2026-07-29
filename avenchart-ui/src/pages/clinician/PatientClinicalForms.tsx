@@ -84,11 +84,20 @@ type FieldInputProps = {
   required: boolean;
   disabled: boolean;
   issue?: string;
+  idPrefix?: string;
   onChange: (value: unknown) => void;
 };
 
-function FieldInput({ field, value, required, disabled, issue, onChange }: FieldInputProps) {
-  const inputId = `clinical-form-${field.key}`;
+export function FieldInput({
+  field,
+  value,
+  required,
+  disabled,
+  issue,
+  idPrefix,
+  onChange,
+}: FieldInputProps) {
+  const inputId = `clinical-form-${idPrefix ? `${idPrefix}-` : ""}${field.key}`;
   const helpId = `${inputId}-help`;
   const common = {
     id: inputId,
@@ -102,6 +111,7 @@ function FieldInput({ field, value, required, disabled, issue, onChange }: Field
     const rows = Array.isArray(value)
       ? value.filter((row): row is RecordValue => row !== null && typeof row === "object" && !Array.isArray(row))
       : [];
+    const minimum = field.repeatMinimum ?? 0;
     const maximum = field.repeatMaximum ?? 10;
     return (
       <fieldset className="cl-fieldset" disabled={disabled}>
@@ -114,6 +124,7 @@ function FieldInput({ field, value, required, disabled, issue, onChange }: Field
               <button
                 className="cl-btn-secondary"
                 type="button"
+                disabled={disabled || rows.length <= minimum}
                 onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))}
               >
                 Remove entry
@@ -126,6 +137,7 @@ function FieldInput({ field, value, required, disabled, issue, onChange }: Field
                   value={row[child.key]}
                   required={child.required}
                   disabled={disabled}
+                  idPrefix={`${field.key}-${index}`}
                   onChange={(next) => {
                     const nextRows = rows.map((current, rowIndex) =>
                       rowIndex === index ? { ...current, [child.key]: next } : current,
@@ -145,7 +157,9 @@ function FieldInput({ field, value, required, disabled, issue, onChange }: Field
         >
           Add entry
         </button>
-        <p className="cl-field-help">{rows.length} of {maximum} permitted entries.</p>
+        <p className="cl-field-help">
+          {rows.length} entries; {minimum} to {maximum} permitted.
+        </p>
         {issue ? <p className="form-error" role="alert">{issue}</p> : null}
       </fieldset>
     );

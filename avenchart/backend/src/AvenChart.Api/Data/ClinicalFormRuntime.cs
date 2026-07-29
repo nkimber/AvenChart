@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v3";
+    public const string PolicyRevision = "local-clinical-form-v4";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -205,8 +205,7 @@ public static partial class ClinicalFormRuntime
                 $"Field sequences must be unique in section {sectionGroup.Key}.");
         }
 
-        var fieldMap = FlattenFields(fields)
-            .ToDictionary(field => field.Key, StringComparer.Ordinal);
+        var fieldMap = fields.ToDictionary(field => field.Key, StringComparer.Ordinal);
         var ruleSource = definition.Rules ?? [];
         if (ruleSource.Count > 50)
         {
@@ -238,7 +237,7 @@ public static partial class ClinicalFormRuntime
         IReadOnlyDictionary<string, JsonElement>? rawValues)
     {
         var definition = Normalize(rawDefinition);
-        var fields = FlattenFields(definition.Fields)
+        var fields = definition.Fields
             .ToDictionary(field => field.Key, StringComparer.Ordinal);
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var pair in rawValues ?? new Dictionary<string, JsonElement>())
@@ -336,6 +335,17 @@ public static partial class ClinicalFormRuntime
 
             if (!hasValue)
             {
+                if (visible[field.Key]
+                    && field.Type == "repeat"
+                    && field.RepeatMinimum is > 0)
+                {
+                    issues.Add(new(
+                        field.Key,
+                        "error",
+                        $"{field.Label} must contain {field.RepeatMinimum} to {field.RepeatMaximum} rows.",
+                        null));
+                }
+
                 continue;
             }
 

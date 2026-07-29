@@ -36,31 +36,17 @@ import {
   retargetCalculation,
 } from "../../domain/clinicalFormCalculationAuthoring.ts";
 import { describeClinicalFormChangeImpact } from "../../domain/clinicalFormChangeImpact.ts";
+import {
+  appendClinicalFormRepeatChild,
+  clinicalFormRepeatChildLimit,
+  clinicalFormRepeatChildTypes,
+  createSafeClinicalFormField,
+  normalizeClinicalFormFieldType,
+  parseClinicalFormOptionLines,
+  removeClinicalFormRepeatChild,
+} from "../../domain/clinicalFormRepeatAuthoring.ts";
 
 type Props = { sessionId: string };
-
-const safeField = (index = 1, sectionKey = "clinical"): ClinicalFormField => ({
-  key: `field_${index}`,
-  sectionKey,
-  label: `Field ${index}`,
-  type: "text",
-  sequence: index * 10,
-  required: false,
-  accessibilityLabel: `Field ${index}`,
-  helpText: null,
-  maxLength: 240,
-  minimum: null,
-  maximum: null,
-  precision: null,
-  unit: null,
-  codeSystem: null,
-  options: [],
-  optionListReference: null,
-  repeatMinimum: null,
-  repeatMaximum: null,
-  children: [],
-  readOnly: false,
-});
 
 const emptySchema = (): ClinicalFormSchema => ({
   stableKey: "tmp.form.",
@@ -78,7 +64,7 @@ const emptySchema = (): ClinicalFormSchema => ({
       description: "Bounded clinical facts.",
     },
   ],
-  fields: [safeField()],
+  fields: [createSafeClinicalFormField()],
   rules: [],
 });
 
@@ -101,61 +87,6 @@ function parseConditionValue(
     return Number.isFinite(numericValue) ? numericValue : rawValue;
   }
   return rawValue;
-}
-
-function normalizeFieldForType(
-  field: ClinicalFormField,
-  type: string,
-): ClinicalFormField {
-  const numeric = ["integer", "decimal", "measurement", "computed"].includes(
-    type,
-  );
-  const option = ["select", "multiselect", "coded"].includes(type);
-  const repeat = type === "repeat";
-  return {
-    ...field,
-    type,
-    maxLength:
-      type === "text" ? 240 : type === "multiline" ? 4000 : null,
-    minimum: numeric ? (field.minimum ?? 0) : null,
-    maximum: numeric ? (field.maximum ?? 100) : null,
-    precision:
-      type === "integer" ? 0 : numeric ? (field.precision ?? 2) : null,
-    unit: type === "measurement" ? (field.unit ?? "unit") : null,
-    codeSystem:
-      type === "coded"
-        ? (field.codeSystem ?? "local-code-system-v1")
-        : option
-          ? field.codeSystem
-          : null,
-    options: option
-      ? field.options.length > 0
-        ? field.options
-        : [
-            { code: "option_a", display: "Option A" },
-            { code: "option_b", display: "Option B" },
-          ]
-      : [],
-    optionListReference: option
-      ? (field.optionListReference ?? null)
-      : null,
-    repeatMinimum: repeat ? 0 : null,
-    repeatMaximum: repeat ? 5 : null,
-    children: repeat
-      ? field.children.length > 0
-        ? field.children
-        : [
-            {
-              ...safeField(1, ""),
-              key: `${field.key}_detail`,
-              label: "Detail",
-              accessibilityLabel: "Repeating row detail",
-            },
-          ]
-      : [],
-    readOnly: type === "computed",
-    required: type === "computed" ? false : field.required,
-  };
 }
 
 function actionsFor(status: string) {
@@ -282,6 +213,68 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
     );
   }
 
+  function updateRepeatChild(
+    fieldIndex: number,
+    childIndex: number,
+    patch: Partial<ClinicalFormField>,
+  ) {
+    setSchema((current) => ({
+      ...current,
+      fields: current.fields.map((field, index) =>
+        index === fieldIndex
+          ? {
+              ...field,
+              children: field.children.map((child, index) =>
+                index === childIndex ? { ...child, ...patch } : child,
+              ),
+            }
+          : field,
+      ),
+    }));
+  }
+
+  function setRepeatChildOptionSource(
+    fieldIndex: number,
+    childIndex: number,
+    source: ClinicalFormOptionListCatalogItem | null,
+  ) {
+    updateRepeatChild(
+      fieldIndex,
+      childIndex,
+      source
+        ? {
+            options: source.options.map((option) => ({ ...option })),
+            optionListReference: {
+              listKey: source.listKey,
+              revisionId: source.revisionId,
+            },
+          }
+        : { optionListReference: null },
+    );
+  }
+
+  function appendRepeatChild(fieldIndex: number) {
+    setSchema((current) => ({
+      ...current,
+      fields: current.fields.map((field, index) =>
+        index === fieldIndex
+          ? appendClinicalFormRepeatChild(field)
+          : field,
+      ),
+    }));
+  }
+
+  function removeRepeatChild(fieldIndex: number, childIndex: number) {
+    setSchema((current) => ({
+      ...current,
+      fields: current.fields.map((field, index) =>
+        index === fieldIndex
+          ? removeClinicalFormRepeatChild(field, childIndex)
+          : field,
+      ),
+    }));
+  }
+
   function updateRule(index: number, patch: Partial<ClinicalFormRule>) {
     setSchema((current) => ({
       ...current,
@@ -391,7 +384,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
       ...current,
       fields: [
         ...current.fields,
-        safeField(
+        createSafeClinicalFormField(
           current.fields.length + 1,
           current.sections[0]?.key ?? "clinical",
         ),
@@ -902,7 +895,10 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                       onChange={(event) =>
                         updateField(
                           index,
-                          normalizeFieldForType(field, event.target.value),
+                          normalizeClinicalFormFieldType(
+                            field,
+                            event.target.value,
+                          ),
                         )
                       }
                     >
@@ -1131,17 +1127,9 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                           onChange={(event) =>
                             updateField(index, {
                               optionListReference: null,
-                              options: event.target.value
-                                .split("\n")
-                                .map((line) => line.trim())
-                                .filter(Boolean)
-                                .map((line) => {
-                                  const [code, ...display] = line.split("|");
-                                  return {
-                                    code,
-                                    display: display.join("|") || code,
-                                  };
-                                }),
+                              options: parseClinicalFormOptionLines(
+                                event.target.value,
+                              ),
                             })
                           }
                         />
@@ -1180,11 +1168,407 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                           }
                         />
                       </label>
-                      <p className="cl-empty-text clinical-form-author-wide">
-                        The guided baseline creates one bounded text child. The
-                        server validates every child type and rejects nested
-                        repeats.
-                      </p>
+                      <div className="clinical-form-repeat-designer clinical-form-author-wide">
+                        <div className="clinical-form-author-heading">
+                          <div>
+                            <h5>Repeat child fields</h5>
+                            <p className="cl-empty-text">
+                              Author 1 to {clinicalFormRepeatChildLimit} typed
+                              children. Nested repeats and row-scoped
+                              calculations remain blocked.
+                            </p>
+                          </div>
+                          <button
+                            className="cl-btn-secondary"
+                            type="button"
+                            disabled={
+                              field.children.length >=
+                              clinicalFormRepeatChildLimit
+                            }
+                            onClick={() => appendRepeatChild(index)}
+                          >
+                            <Plus size={14} aria-hidden="true" />
+                            Add child
+                          </button>
+                        </div>
+                        <div className="clinical-form-repeat-child-list">
+                          {field.children.map((child, childIndex) => (
+                            <article
+                              className="clinical-form-repeat-child-editor"
+                              key={`${childIndex}-${child.key}`}
+                            >
+                              <div className="clinical-form-field-editor-title">
+                                <strong>
+                                  {child.label ||
+                                    child.key ||
+                                    `Child ${childIndex + 1}`}
+                                </strong>
+                                <button
+                                  className="cl-btn-secondary"
+                                  type="button"
+                                  disabled={field.children.length <= 1}
+                                  onClick={() =>
+                                    removeRepeatChild(index, childIndex)
+                                  }
+                                >
+                                  Remove child
+                                </button>
+                              </div>
+                              <div className="clinical-form-field-editor-grid">
+                                <label className="cl-admin-field">
+                                  <span>Child key</span>
+                                  <input
+                                    className="ne-input"
+                                    value={child.key}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        key: event.target.value,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="cl-admin-field">
+                                  <span>Child label</span>
+                                  <input
+                                    className="ne-input"
+                                    value={child.label}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        label: event.target.value,
+                                        accessibilityLabel:
+                                          child.accessibilityLabel ===
+                                          child.label
+                                            ? event.target.value
+                                            : child.accessibilityLabel,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="cl-admin-field">
+                                  <span>Child accessibility label</span>
+                                  <input
+                                    className="ne-input"
+                                    value={child.accessibilityLabel}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        accessibilityLabel:
+                                          event.target.value,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="cl-admin-field">
+                                  <span>Child type</span>
+                                  <select
+                                    className="ne-input"
+                                    value={child.type}
+                                    onChange={(event) =>
+                                      updateRepeatChild(
+                                        index,
+                                        childIndex,
+                                        normalizeClinicalFormFieldType(
+                                          child,
+                                          event.target.value,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {clinicalFormRepeatChildTypes(
+                                      policy?.supportedFieldTypes ?? [],
+                                    ).map((type) => (
+                                      <option key={type} value={type}>
+                                        {type}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="cl-admin-field">
+                                  <span>Child sequence</span>
+                                  <input
+                                    className="ne-input"
+                                    type="number"
+                                    value={child.sequence}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        sequence: Number(event.target.value),
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="cl-admin-active-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={child.required}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        required: event.target.checked,
+                                      })
+                                    }
+                                  />
+                                  <span>Child required</span>
+                                </label>
+                                <label className="cl-admin-field">
+                                  <span>Child help text</span>
+                                  <input
+                                    className="ne-input"
+                                    value={child.helpText ?? ""}
+                                    onChange={(event) =>
+                                      updateRepeatChild(index, childIndex, {
+                                        helpText:
+                                          event.target.value || null,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                {(child.type === "text" ||
+                                  child.type === "multiline") && (
+                                  <label className="cl-admin-field">
+                                    <span>Child maximum length</span>
+                                    <input
+                                      className="ne-input"
+                                      type="number"
+                                      value={child.maxLength ?? ""}
+                                      onChange={(event) =>
+                                        updateRepeatChild(index, childIndex, {
+                                          maxLength: event.target.value
+                                            ? Number(event.target.value)
+                                            : null,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                )}
+                                {[
+                                  "integer",
+                                  "decimal",
+                                  "measurement",
+                                ].includes(child.type) && (
+                                  <>
+                                    <label className="cl-admin-field">
+                                      <span>Child minimum</span>
+                                      <input
+                                        className="ne-input"
+                                        type="number"
+                                        value={child.minimum ?? ""}
+                                        onChange={(event) =>
+                                          updateRepeatChild(
+                                            index,
+                                            childIndex,
+                                            {
+                                              minimum: event.target.value
+                                                ? Number(event.target.value)
+                                                : null,
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="cl-admin-field">
+                                      <span>Child maximum</span>
+                                      <input
+                                        className="ne-input"
+                                        type="number"
+                                        value={child.maximum ?? ""}
+                                        onChange={(event) =>
+                                          updateRepeatChild(
+                                            index,
+                                            childIndex,
+                                            {
+                                              maximum: event.target.value
+                                                ? Number(event.target.value)
+                                                : null,
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="cl-admin-field">
+                                      <span>Child precision</span>
+                                      <input
+                                        className="ne-input"
+                                        type="number"
+                                        min="0"
+                                        max="8"
+                                        value={child.precision ?? ""}
+                                        onChange={(event) =>
+                                          updateRepeatChild(
+                                            index,
+                                            childIndex,
+                                            {
+                                              precision: event.target.value
+                                                ? Number(event.target.value)
+                                                : null,
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                  </>
+                                )}
+                                {child.type === "measurement" && (
+                                  <label className="cl-admin-field">
+                                    <span>Child unit</span>
+                                    <input
+                                      className="ne-input"
+                                      value={child.unit ?? ""}
+                                      onChange={(event) =>
+                                        updateRepeatChild(index, childIndex, {
+                                          unit: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                )}
+                                {[
+                                  "select",
+                                  "multiselect",
+                                  "coded",
+                                ].includes(child.type) && (
+                                  <>
+                                    {child.type === "coded" && (
+                                      <label className="cl-admin-field">
+                                        <span>Child code system</span>
+                                        <input
+                                          className="ne-input"
+                                          value={child.codeSystem ?? ""}
+                                          onChange={(event) =>
+                                            updateRepeatChild(
+                                              index,
+                                              childIndex,
+                                              {
+                                                codeSystem:
+                                                  event.target.value,
+                                              },
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                    )}
+                                    <label className="cl-admin-field clinical-form-author-wide">
+                                      <span>Child option source</span>
+                                      <select
+                                        className="ne-input"
+                                        value={
+                                          child.optionListReference
+                                            ? `${child.optionListReference.listKey}:${child.optionListReference.revisionId}`
+                                            : "custom"
+                                        }
+                                        onChange={(event) => {
+                                          const source =
+                                            event.target.value === "custom"
+                                              ? null
+                                              : (optionLists.find(
+                                                  (optionList) =>
+                                                    `${optionList.listKey}:${optionList.revisionId}` ===
+                                                    event.target.value,
+                                                ) ?? null);
+                                          setRepeatChildOptionSource(
+                                            index,
+                                            childIndex,
+                                            source,
+                                          );
+                                        }}
+                                      >
+                                        <option value="custom">
+                                          Custom inline options
+                                        </option>
+                                        {child.optionListReference &&
+                                          !optionLists.some(
+                                            (optionList) =>
+                                              optionList.listKey ===
+                                                child.optionListReference
+                                                  ?.listKey &&
+                                              optionList.revisionId ===
+                                                child.optionListReference
+                                                  .revisionId,
+                                          ) && (
+                                            <option
+                                              value={`${child.optionListReference.listKey}:${child.optionListReference.revisionId}`}
+                                            >
+                                              {
+                                                child.optionListReference
+                                                  .listKey
+                                              }{" "}
+                                              · revision{" "}
+                                              {
+                                                child.optionListReference
+                                                  .revisionId
+                                              }{" "}
+                                              (historical pin)
+                                            </option>
+                                          )}
+                                        {optionLists.map((optionList) => (
+                                          <option
+                                            disabled={!optionList.eligible}
+                                            key={`${optionList.listKey}:${optionList.revisionId}`}
+                                            value={`${optionList.listKey}:${optionList.revisionId}`}
+                                          >
+                                            {optionList.title} · revision{" "}
+                                            {optionList.revisionId} ·{" "}
+                                            {optionList.eligible
+                                              ? `${optionList.options.length} options`
+                                              : optionList.blocker}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    {child.optionListReference && (
+                                      <p className="clinical-form-option-source clinical-form-author-wide">
+                                        Pinned child values from{" "}
+                                        <strong>
+                                          {
+                                            child.optionListReference
+                                              .listKey
+                                          }
+                                        </strong>{" "}
+                                        revision{" "}
+                                        <strong>
+                                          {
+                                            child.optionListReference
+                                              .revisionId
+                                          }
+                                        </strong>
+                                        .
+                                      </p>
+                                    )}
+                                    <label className="cl-admin-field clinical-form-author-wide">
+                                      <span>
+                                        Child options (one code|display per
+                                        line)
+                                      </span>
+                                      <textarea
+                                        className="ne-input"
+                                        readOnly={Boolean(
+                                          child.optionListReference,
+                                        )}
+                                        value={child.options
+                                          .map(
+                                            (option) =>
+                                              `${option.code}|${option.display}`,
+                                          )
+                                          .join("\n")}
+                                        onChange={(event) =>
+                                          updateRepeatChild(
+                                            index,
+                                            childIndex,
+                                            {
+                                              optionListReference: null,
+                                              options:
+                                                parseClinicalFormOptionLines(
+                                                  event.target.value,
+                                                ),
+                                            },
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                  </>
+                                )}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
                     </>
                   )}
                 </div>

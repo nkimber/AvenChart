@@ -10122,6 +10122,39 @@ h4 {
   margin: 0 0 0.7rem;
 }
 
+.clinical-form-repeat-designer {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #c8ddd7;
+}
+
+.clinical-form-repeat-designer .clinical-form-author-heading {
+  margin: 0;
+}
+
+.clinical-form-repeat-designer h5 {
+  margin: 0 0 0.2rem;
+  color: #213f38;
+  font-size: 0.95rem;
+}
+
+.clinical-form-repeat-designer .cl-empty-text {
+  margin: 0;
+}
+
+.clinical-form-repeat-child-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.clinical-form-repeat-child-editor {
+  padding: 0.75rem;
+  border: 1px solid #bcd5ce;
+  border-radius: 0.65rem;
+  background: #f8fcfb;
+}
+
 .clinical-form-governance-filters {
   grid-template-columns: 1fr;
 }
@@ -10178,6 +10211,11 @@ h4 {
     flex-direction: column;
   }
 
+  .clinical-form-repeat-designer .clinical-form-author-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .clinical-form-impact-counts {
     justify-content: flex-start;
   }
@@ -10212,7 +10250,9 @@ h4 {
   .clinical-form-field-editor,
   .clinical-form-calculation-editor,
   .clinical-form-change-impact,
-  .clinical-form-impact-list li {
+  .clinical-form-impact-list li,
+  .clinical-form-repeat-designer,
+  .clinical-form-repeat-child-editor {
     border: 1px solid CanvasText;
   }
 

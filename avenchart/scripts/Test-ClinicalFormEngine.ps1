@@ -330,7 +330,7 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v3" `
+        $policy.revision -eq "local-clinical-form-v4" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
@@ -853,6 +853,110 @@ try {
                 $_.severity -eq "warning" -and $_.ruleKey -eq "warn_high_pain"
             }).Count -eq 1) `
         $preview
+
+    $repeatSchema = New-TestSchema `
+        -Key "tmp.form.repeat.$marker" `
+        -Name "Bounded repeat $marker"
+    $repeatSchema.rules = @()
+    $repeatSchema.fields = @(
+        New-Field `
+            -Key "observations" `
+            -Label "Observations" `
+            -Type "repeat" `
+            -Sequence 10 `
+            -RepeatMinimum 1 `
+            -RepeatMaximum 3 `
+            -Children @(
+                New-Field `
+                    -Key "score" `
+                    -Label "Score" `
+                    -Type "integer" `
+                    -Sequence 10 `
+                    -Required $true `
+                    -Minimum 0 `
+                    -Maximum 10 `
+                    -Precision 0
+                New-Field `
+                    -Key "decision" `
+                    -Label "Decision" `
+                    -Type "select" `
+                    -Sequence 20 `
+                    -Options @(
+                        [ordered]@{ code = "yes"; display = "Yes" },
+                        [ordered]@{ code = "no"; display = "No" }
+                    )
+                New-Field `
+                    -Key "note" `
+                    -Label "Note" `
+                    -Type "multiline" `
+                    -Sequence 30 `
+                    -MaxLength 200
+            )
+    )
+    $missingRepeatPreview = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/form-engine/preview" `
+        -Method "POST" `
+        -RequestHeaders $adminHeaders `
+        -Body @{ definition = $repeatSchema; values = @{} }
+    $completeRepeatPreview = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/form-engine/preview" `
+        -Method "POST" `
+        -RequestHeaders $adminHeaders `
+        -Body @{
+            definition = $repeatSchema
+            values = @{
+                observations = @(
+                    @{
+                        score = 7
+                        decision = "yes"
+                        note = "Bounded row."
+                    }
+                )
+            }
+        }
+    Add-Check `
+        "Bounded repeats enforce positive minimums and validate typed child rows" `
+        (-not $missingRepeatPreview.valid `
+            -and @($missingRepeatPreview.issues | Where-Object {
+                $_.fieldKey -eq "observations" `
+                    -and $_.message -match "must contain 1 to 3 rows"
+            }).Count -eq 1 `
+            -and $completeRepeatPreview.valid) `
+        @{
+            missingIssues = $missingRepeatPreview.issues
+            completeIssues = $completeRepeatPreview.issues
+        }
+
+    $rowRuleSchema = $repeatSchema |
+        ConvertTo-Json -Depth 30 |
+        ConvertFrom-Json
+    $rowRuleSchema.rules = @(
+        [ordered]@{
+            key = "unsafe_row_rule"
+            condition = [ordered]@{
+                fieldKey = "score"
+                operator = "greater-than"
+                value = 5
+            }
+            action = "warning"
+            targetFieldKey = "observations"
+            message = "A row-scoped rule must not escape its repeat."
+            calculation = $null
+        }
+    )
+    $rowRulePreview = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/form-engine/preview" `
+        -Method "POST" `
+        -RequestHeaders $adminHeaders `
+        -Body @{ definition = $rowRuleSchema; values = @{} }
+    Add-Check `
+        "Repeat children cannot be addressed by non-row-scoped form rules" `
+        ($rowRulePreview.Status -eq 400 `
+            -and $rowRulePreview.Content -match "unknown condition field") `
+        @{
+            status = $rowRulePreview.Status
+            body = $rowRulePreview.Json
+        }
 
     $unsafeSchema = New-TestSchema `
         -Key "tmp.form.unsafe.$marker" `

@@ -122,6 +122,63 @@ test.describe("FORM-02 calculation authoring", () => {
       await expect(sourcedOptions).toHaveValue("yes|Yes\nno|No");
       await expect(sourcedOptions).toHaveAttribute("readonly", "");
 
+      await governance.getByRole("button", { name: "Add field" }).click();
+      const repeatField = fields.nth(4);
+      await repeatField
+        .getByLabel("Key", { exact: true })
+        .fill("observations");
+      await repeatField
+        .getByLabel("Label", { exact: true })
+        .fill("Bounded observations");
+      await repeatField
+        .getByRole("combobox", { name: "Type", exact: true })
+        .selectOption("repeat");
+      await repeatField.getByLabel("Minimum rows").fill("0");
+      await repeatField.getByLabel("Maximum rows").fill("3");
+
+      const repeatChildren = repeatField.locator(
+        ".clinical-form-repeat-child-editor",
+      );
+      const scoreChild = repeatChildren.nth(0);
+      await scoreChild.getByLabel("Child key").fill("score");
+      await scoreChild.getByLabel("Child label").fill("Score");
+      await scoreChild.getByLabel("Child type").selectOption("integer");
+      await expect(
+        scoreChild.getByLabel("Child type").locator('option[value="repeat"]'),
+      ).toHaveCount(0);
+      await expect(
+        scoreChild
+          .getByLabel("Child type")
+          .locator('option[value="computed"]'),
+      ).toHaveCount(0);
+      await scoreChild.getByLabel("Child minimum").fill("0");
+      await scoreChild.getByLabel("Child maximum").fill("10");
+      await scoreChild.getByLabel("Child required").check();
+
+      await repeatField.getByRole("button", { name: "Add child" }).click();
+      const noteChild = repeatChildren.nth(1);
+      await noteChild.getByLabel("Child key").fill("note");
+      await noteChild.getByLabel("Child label").fill("Observation note");
+      await noteChild.getByLabel("Child type").selectOption("multiline");
+      await noteChild.getByLabel("Child maximum length").fill("200");
+
+      await repeatField.getByRole("button", { name: "Add child" }).click();
+      const decisionChild = repeatChildren.nth(2);
+      await decisionChild.getByLabel("Child key").fill("row_decision");
+      await decisionChild.getByLabel("Child label").fill("Row decision");
+      await decisionChild.getByLabel("Child type").selectOption("select");
+      await decisionChild
+        .getByLabel("Child option source")
+        .selectOption("yesno:2");
+      await expect(
+        decisionChild.getByText(/Pinned child values from yesno revision 2/),
+      ).toBeVisible();
+      await expect(
+        decisionChild.getByLabel(
+          "Child options (one code|display per line)",
+        ),
+      ).toHaveValue("yes|Yes\nno|No");
+
       await governance.getByRole("button", { name: "Add rule" }).click();
       const rule = governance.locator(".clinical-form-rule-editor").last();
       await rule
@@ -228,6 +285,19 @@ test.describe("FORM-02 calculation authoring", () => {
                 listKey: string;
                 revisionId: number;
               } | null;
+              repeatMinimum: number | null;
+              repeatMaximum: number | null;
+              children: Array<{
+                key: string;
+                type: string;
+                required: boolean;
+                maxLength: number | null;
+                options: Array<{ code: string; display: string }>;
+                optionListReference?: {
+                  listKey: string;
+                  revisionId: number;
+                } | null;
+              }>;
             }>;
           };
         };
@@ -255,6 +325,40 @@ test.describe("FORM-02 calculation authoring", () => {
             listKey: "yesno",
             revisionId: 2,
           },
+        }),
+      );
+      expect(
+        created.currentRevision.definition.fields.find(
+          (field) => field.key === "observations",
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          repeatMinimum: 0,
+          repeatMaximum: 3,
+          children: [
+            expect.objectContaining({
+              key: "score",
+              type: "integer",
+              required: true,
+            }),
+            expect.objectContaining({
+              key: "note",
+              type: "multiline",
+              maxLength: 200,
+            }),
+            expect.objectContaining({
+              key: "row_decision",
+              type: "select",
+              options: [
+                { code: "yes", display: "Yes" },
+                { code: "no", display: "No" },
+              ],
+              optionListReference: {
+                listKey: "yesno",
+                revisionId: 2,
+              },
+            }),
+          ],
         }),
       );
 
