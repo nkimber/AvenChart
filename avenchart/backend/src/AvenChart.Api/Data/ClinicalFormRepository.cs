@@ -615,6 +615,45 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
                 cancellationToken);
         }
 
+        var existing = await GetIdempotentInstanceAsync(
+            connection,
+            transaction,
+            actor,
+            idempotencyKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.DefinitionId != request.DefinitionId
+                || existing.PatientId != canonicalPatientId
+                || existing.EncounterId != request.EncounterId
+                || (request.Revision is not null
+                    && existing.DefinitionRevision != request.Revision))
+            {
+                throw new ClinicalFormConflictException(
+                    "The idempotency key was already used for a different form context.");
+            }
+
+            var replayDefinition =
+                ClinicalFormRuntime.DeserializeSchema(existing.SchemaJson);
+            var replayEvaluation = ClinicalFormRuntime.Evaluate(
+                replayDefinition,
+                request.Values ?? new Dictionary<string, JsonElement>());
+            var replayValues = CanonicalizeValues(replayEvaluation.Values);
+            var existingValues = CanonicalizeValues(
+                ClinicalFormRuntime.DeserializeValues(existing.ValuesJson));
+            if (!string.Equals(
+                    replayValues,
+                    existingValues,
+                    StringComparison.Ordinal))
+            {
+                throw new ClinicalFormConflictException(
+                    "The idempotency key was already used with different form values.");
+            }
+
+            await transaction.RollbackAsync(cancellationToken);
+            return await GetInstanceAsync(existing.InstanceId, cancellationToken);
+        }
+
         var revision = await ResolveEffectiveRevisionAsync(
             connection,
             transaction,
@@ -630,27 +669,6 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         if (definition.ContextScope == "patient" && request.EncounterId is not null)
         {
             throw new ArgumentException("This patient-scoped form cannot be pinned to an encounter.");
-        }
-
-        var existing = await GetIdempotentInstanceAsync(
-            connection,
-            transaction,
-            actor,
-            idempotencyKey,
-            cancellationToken);
-        if (existing is not null)
-        {
-            if (existing.DefinitionId != request.DefinitionId
-                || existing.DefinitionRevision != revision.Revision
-                || existing.PatientId != canonicalPatientId
-                || existing.EncounterId != request.EncounterId)
-            {
-                throw new ClinicalFormConflictException(
-                    "The idempotency key was already used for a different form context.");
-            }
-
-            await transaction.RollbackAsync(cancellationToken);
-            return await GetInstanceAsync(existing.InstanceId, cancellationToken);
         }
 
         var values = request.Values ?? new Dictionary<string, JsonElement>();
@@ -881,6 +899,24 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var existing = await GetIdempotentInstanceAsync(
+            connection,
+            transaction,
+            actor,
+            idempotencyKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.PredecessorInstanceId != instanceId)
+            {
+                throw new ClinicalFormConflictException(
+                    "The amendment idempotency key was already used for a different form.");
+            }
+
+            await transaction.RollbackAsync(cancellationToken);
+            return await GetInstanceAsync(existing.InstanceId, cancellationToken);
+        }
+
         var current = await LockInstanceAsync(
             connection,
             transaction,
@@ -901,24 +937,6 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
                 "This signed form already has a successor amendment.",
                 current.Version,
                 current.State);
-        }
-
-        var existing = await GetIdempotentInstanceAsync(
-            connection,
-            transaction,
-            actor,
-            idempotencyKey,
-            cancellationToken);
-        if (existing is not null)
-        {
-            if (existing.PredecessorInstanceId != instanceId)
-            {
-                throw new ClinicalFormConflictException(
-                    "The amendment idempotency key was already used for a different form.");
-            }
-
-            await transaction.RollbackAsync(cancellationToken);
-            return await GetInstanceAsync(existing.InstanceId, cancellationToken);
         }
 
         var successorId = Guid.NewGuid();
@@ -1036,6 +1054,40 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
             contentHash,
             Iso(DateTimeOffset.UtcNow),
             ClinicalFormRuntime.RendererVersion);
+    }
+
+    public async Task<ClinicalFormFieldDictionaryResponse> GetInstanceFieldDictionaryAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken)
+    {
+        var detail = await GetInstanceAsync(instanceId, cancellationToken);
+        var schemaHash = await GetRevisionSchemaHashAsync(
+            detail.Instance.DefinitionId,
+            detail.Instance.DefinitionRevision,
+            cancellationToken);
+        return BuildFieldDictionary(detail.Instance, detail.Definition, schemaHash);
+    }
+
+    public async Task<ClinicalFormStructuredExportResponse> ExportInstanceStructuredAsync(
+        Guid instanceId,
+        CancellationToken cancellationToken)
+    {
+        var render = await RenderInstanceAsync(instanceId, cancellationToken);
+        var schemaHash = await GetRevisionSchemaHashAsync(
+            render.Instance.DefinitionId,
+            render.Instance.DefinitionRevision,
+            cancellationToken);
+        return new(
+            "application/vnd.legacy-ehr.clinical-form+json;version=1",
+            Iso(DateTimeOffset.UtcNow),
+            render.Instance,
+            render.Definition,
+            schemaHash,
+            render.RendererVersion,
+            render.ContentHash,
+            BuildFieldDictionary(render.Instance, render.Definition, schemaHash),
+            render.Values,
+            render.Signatures);
     }
 
     public async Task<string> ExportInstanceHtmlAsync(
@@ -1713,6 +1765,101 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task<string> GetRevisionSchemaHashAsync(
+        Guid definitionId,
+        int revision,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select schema_hash
+            from clinical_form_revisions
+            where definition_id = @definitionId
+              and revision = @revision;
+            """;
+        command.Parameters.AddWithValue("definitionId", definitionId);
+        command.Parameters.AddWithValue("revision", revision);
+        var schemaHash = await command.ExecuteScalarAsync(cancellationToken) as string;
+        return schemaHash ?? throw new ArgumentException("Clinical form revision was not found.");
+    }
+
+    private static ClinicalFormFieldDictionaryResponse BuildFieldDictionary(
+        ClinicalFormInstanceSummary instance,
+        ClinicalFormSchemaDefinition definition,
+        string schemaHash)
+    {
+        var sections = definition.Sections.ToDictionary(
+            section => section.Key,
+            section => section.Title,
+            StringComparer.Ordinal);
+        var fields = new List<ClinicalFormFieldDictionaryItem>();
+        foreach (var field in definition.Fields
+                     .OrderBy(field => field.SectionKey, StringComparer.Ordinal)
+                     .ThenBy(field => field.Sequence)
+                     .ThenBy(field => field.Key, StringComparer.Ordinal))
+        {
+            AddFieldDictionaryItems(
+                fields,
+                definition.StableKey,
+                instance.DefinitionRevision,
+                sections,
+                field,
+                parentFieldKey: null,
+                parentPath: null,
+                repeating: false);
+        }
+
+        return new(
+            instance.DefinitionId,
+            definition.StableKey,
+            instance.DefinitionRevision,
+            schemaHash,
+            ClinicalFormRuntime.RendererVersion,
+            fields);
+    }
+
+    private static void AddFieldDictionaryItems(
+        ICollection<ClinicalFormFieldDictionaryItem> destination,
+        string stableKey,
+        int revision,
+        IReadOnlyDictionary<string, string> sections,
+        ClinicalFormFieldDefinition field,
+        string? parentFieldKey,
+        string? parentPath,
+        bool repeating)
+    {
+        var path = parentPath is null ? field.Key : $"{parentPath}.{field.Key}";
+        var isRepeating = repeating || field.Type == "repeat";
+        destination.Add(new(
+            field.Key,
+            path,
+            parentFieldKey,
+            field.SectionKey,
+            sections.GetValueOrDefault(field.SectionKey, field.SectionKey),
+            field.Label,
+            field.Type,
+            field.Required,
+            isRepeating,
+            field.CodeSystem,
+            field.Unit,
+            $"clinical_form.{stableKey}.r{revision}.{path}"));
+        foreach (var child in field.Children
+                     .OrderBy(child => child.Sequence)
+                     .ThenBy(child => child.Key, StringComparer.Ordinal))
+        {
+            AddFieldDictionaryItems(
+                destination,
+                stableKey,
+                revision,
+                sections,
+                child,
+                field.Key,
+                path,
+                isRepeating);
+        }
+    }
+
     private static async Task<ClinicalFormInstanceDetailResponse?> GetInstanceAsync(
         NpgsqlConnection connection,
         Guid instanceId,
@@ -1961,10 +2108,13 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         command.Transaction = transaction;
         command.CommandText = """
             select
-              instance_id, definition_id, definition_revision, patient_id,
-              encounter_id, predecessor_instance_id
-            from clinical_form_instances
-            where author = @actor and idempotency_key = @key;
+              i.instance_id, i.definition_id, i.definition_revision, i.patient_id,
+              i.encounter_id, i.predecessor_instance_id, i.values_json, r.schema_json
+            from clinical_form_instances i
+            join clinical_form_revisions r
+              on r.definition_id = i.definition_id
+             and r.revision = i.definition_revision
+            where i.author = @actor and i.idempotency_key = @key;
             """;
         command.Parameters.AddWithValue("actor", actor);
         command.Parameters.AddWithValue("key", idempotencyKey);
@@ -1976,7 +2126,9 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
                 reader.GetInt32(2),
                 reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                reader.IsDBNull(5) ? null : reader.GetGuid(5))
+                reader.IsDBNull(5) ? null : reader.GetGuid(5),
+                reader.GetString(6),
+                reader.GetString(7))
             : null;
     }
 
@@ -2139,6 +2291,31 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         return value;
     }
 
+    private static string CanonicalizeValues(
+        IReadOnlyDictionary<string, JsonElement> values) =>
+        $"{{{string.Join(",", values
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"{JsonSerializer.Serialize(pair.Key)}:{CanonicalizeJson(pair.Value)}"))}}}";
+
+    private static string CanonicalizeJson(JsonElement value) =>
+        value.ValueKind switch
+        {
+            JsonValueKind.Object =>
+                $"{{{string.Join(",", value.EnumerateObject()
+                    .OrderBy(property => property.Name, StringComparer.Ordinal)
+                    .Select(property => $"{JsonSerializer.Serialize(property.Name)}:{CanonicalizeJson(property.Value)}"))}}}",
+            JsonValueKind.Array =>
+                $"[{string.Join(",", value.EnumerateArray().Select(CanonicalizeJson))}]",
+            JsonValueKind.String => JsonSerializer.Serialize(value.GetString()),
+            JsonValueKind.Number when value.TryGetDecimal(out var decimalValue) =>
+                decimalValue.ToString(CultureInfo.InvariantCulture),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "null",
+            _ => throw new ArgumentException("Clinical form values contain an unsupported JSON token.")
+        };
+
     private static string NormalizeIdempotencyKey(string? key)
     {
         var value = key?.Trim();
@@ -2231,7 +2408,9 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         int DefinitionRevision,
         string PatientId,
         int? EncounterId,
-        Guid? PredecessorInstanceId);
+        Guid? PredecessorInstanceId,
+        string ValuesJson,
+        string SchemaJson);
 
     private sealed record InstanceState(
         Guid InstanceId,

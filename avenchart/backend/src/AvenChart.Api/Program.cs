@@ -7074,6 +7074,42 @@ formEngine.MapGet("/instances/{instanceId:guid}/render", async (
     })
     .WithName("RenderClinicalFormInstance");
 
+formEngine.MapGet("/instances/{instanceId:guid}/field-dictionary", async (
+        ClinicalFormRepository repository,
+        Guid instanceId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.GetInstanceFieldDictionaryAsync(
+                instanceId,
+                cancellationToken));
+        }
+        catch (ArgumentException)
+        {
+            return Results.NotFound();
+        }
+    })
+    .WithName("GetClinicalFormInstanceFieldDictionary");
+
+formEngine.MapGet("/instances/{instanceId:guid}/structured-export", async (
+        ClinicalFormRepository repository,
+        Guid instanceId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.ExportInstanceStructuredAsync(
+                instanceId,
+                cancellationToken));
+        }
+        catch (ArgumentException)
+        {
+            return Results.NotFound();
+        }
+    })
+    .WithName("ExportClinicalFormInstanceStructured");
+
 formEngine.MapGet("/instances/{instanceId:guid}/export", async (
         ClinicalFormRepository repository,
         Guid instanceId,

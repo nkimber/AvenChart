@@ -238,6 +238,43 @@ export type ClinicalFormRender = {
   rendererVersion: string;
 };
 
+export type ClinicalFormFieldDictionaryItem = {
+  fieldKey: string;
+  path: string;
+  parentFieldKey: string | null;
+  sectionKey: string;
+  sectionTitle: string;
+  label: string;
+  type: string;
+  required: boolean;
+  repeating: boolean;
+  codeSystem: string | null;
+  unit: string | null;
+  reportColumn: string;
+};
+
+export type ClinicalFormFieldDictionary = {
+  definitionId: string;
+  stableKey: string;
+  revision: number;
+  schemaHash: string;
+  rendererVersion: string;
+  fields: ClinicalFormFieldDictionaryItem[];
+};
+
+export type ClinicalFormStructuredExport = {
+  exportFormat: string;
+  exportedAt: string;
+  instance: ClinicalFormInstanceSummary;
+  definition: ClinicalFormSchema;
+  schemaHash: string;
+  rendererVersion: string;
+  contentHash: string;
+  fieldDictionary: ClinicalFormFieldDictionary;
+  values: Record<string, unknown>;
+  signatures: ClinicalFormSignature[];
+};
+
 function headers(sessionId: string, json = false) {
   return {
     "X-Legacy EHR-Session": sessionId,
@@ -497,6 +534,28 @@ export async function renderClinicalFormInstance(
     { headers: headers(sessionId) },
   );
   return (await response.json()) as ClinicalFormRender;
+}
+
+export async function getClinicalFormInstanceFieldDictionary(
+  sessionId: string,
+  instanceId: string,
+): Promise<ClinicalFormFieldDictionary> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/instances/${encodeURIComponent(instanceId)}/field-dictionary`,
+    { headers: headers(sessionId) },
+  );
+  return (await response.json()) as ClinicalFormFieldDictionary;
+}
+
+export async function exportClinicalFormInstanceStructured(
+  sessionId: string,
+  instanceId: string,
+): Promise<ClinicalFormStructuredExport> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/instances/${encodeURIComponent(instanceId)}/structured-export`,
+    { headers: headers(sessionId) },
+  );
+  return (await response.json()) as ClinicalFormStructuredExport;
 }
 
 export async function exportClinicalFormInstanceHtml(

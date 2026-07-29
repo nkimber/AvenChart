@@ -305,6 +305,40 @@ public sealed record ClinicalFormRenderResponse(
     string RenderedAt,
     string RendererVersion);
 
+public sealed record ClinicalFormFieldDictionaryItem(
+    string FieldKey,
+    string Path,
+    string? ParentFieldKey,
+    string SectionKey,
+    string SectionTitle,
+    string Label,
+    string Type,
+    bool Required,
+    bool Repeating,
+    string? CodeSystem,
+    string? Unit,
+    string ReportColumn);
+
+public sealed record ClinicalFormFieldDictionaryResponse(
+    Guid DefinitionId,
+    string StableKey,
+    int Revision,
+    string SchemaHash,
+    string RendererVersion,
+    IReadOnlyList<ClinicalFormFieldDictionaryItem> Fields);
+
+public sealed record ClinicalFormStructuredExportResponse(
+    string ExportFormat,
+    string ExportedAt,
+    ClinicalFormInstanceSummary Instance,
+    ClinicalFormSchemaDefinition Definition,
+    string SchemaHash,
+    string RendererVersion,
+    string ContentHash,
+    ClinicalFormFieldDictionaryResponse FieldDictionary,
+    IReadOnlyDictionary<string, JsonElement> Values,
+    IReadOnlyList<ClinicalFormSignatureItem> Signatures);
+
 public sealed class ClinicalFormConflictException(
     string message,
     int? currentVersion = null,

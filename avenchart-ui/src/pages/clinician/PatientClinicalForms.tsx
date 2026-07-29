@@ -3,6 +3,8 @@ import { useOutletContext } from "react-router-dom";
 import {
   amendClinicalFormInstance,
   createPatientClinicalFormInstance,
+  exportClinicalFormInstanceHtml,
+  exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstance,
   getPatientClinicalFormInstances,
@@ -44,6 +46,19 @@ function objectValue(value: unknown): RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as RecordValue)
     : {};
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 type FieldInputProps = {
@@ -359,6 +374,46 @@ export default function PatientClinicalForms() {
     }
   }
 
+  async function downloadStructuredRecord() {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const exported = await exportClinicalFormInstanceStructured(
+        session.sessionId,
+        selected.instance.instanceId,
+      );
+      downloadJson(
+        `${exported.instance.stableKey}-r${exported.instance.definitionRevision}-${exported.instance.instanceId}.json`,
+        exported,
+      );
+      showToast("Revision-labeled structured clinical record downloaded.", "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not export the structured clinical record.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openPrintableRecord() {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const html = await exportClinicalFormInstanceHtml(
+        session.sessionId,
+        selected.instance.instanceId,
+      );
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open the printable clinical record.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const issueByField = new Map((selected?.validation.issues ?? []).map((issue) => [issue.fieldKey, issue.message]));
   const draft = selected?.instance.state === "draft";
 
@@ -424,6 +479,8 @@ export default function PatientClinicalForms() {
           {selected.definition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{selected.definition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
           <div className="cl-form-field"><label htmlFor="clinical-form-mutation-reason">Draft save reason / transition reason</label><input id="clinical-form-mutation-reason" value={draft ? reason : actionReason} maxLength={500} disabled={saving} onChange={(event) => draft ? setReason(event.target.value) : setActionReason(event.target.value)} /></div>
           <div className="page-actions">
+            <button className="cl-btn-secondary" type="button" onClick={() => void openPrintableRecord()} disabled={saving}>Open printable record</button>
+            <button className="cl-btn-secondary" type="button" onClick={() => void downloadStructuredRecord()} disabled={saving}>Download structured record</button>
             {draft ? <><button className="cl-btn-secondary" type="button" onClick={() => void validateDraft()} disabled={saving}>Validate</button><button className="cl-btn-primary" type="button" onClick={() => void saveDraft()} disabled={saving}>Save draft</button><button className="cl-btn-primary" type="button" onClick={() => void transition("finalize")} disabled={saving}>Finalize</button></> : null}
             {selected.instance.state === "ready-for-signature" ? <button className="cl-btn-primary" type="button" onClick={() => void transition("sign")} disabled={saving}>Sign</button> : null}
             {selected.instance.state === "awaiting-co-sign" ? <button className="cl-btn-primary" type="button" onClick={() => void transition("cosign")} disabled={saving}>Co-sign</button> : null}
