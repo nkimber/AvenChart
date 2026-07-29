@@ -759,6 +759,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             select
               request_id,
               setting_key,
+              facility_id,
               proposed_value,
               baseline_value,
               baseline_updated_at,
@@ -815,29 +816,15 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         var requestId = Guid.NewGuid();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        string baselineValue;
-        DateTimeOffset baselineUpdatedAt;
-
-        await using (var setting = connection.CreateCommand())
-        {
-            setting.Transaction = transaction;
-            setting.CommandText =
-                """
-                select setting_value, updated_at
-                from practice_settings
-                where setting_key = @key
-                for share;
-                """;
-            setting.Parameters.AddWithValue("key", key);
-            await using var reader = await setting.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                throw new ArgumentException("The requested practice setting was not found.");
-            }
-
-            baselineValue = reader.GetString(0);
-            baselineUpdatedAt = reader.GetFieldValue<DateTimeOffset>(1);
-        }
+        var facilityId = request.FacilityId;
+        var baseline = await GetPracticeSettingScopeValueAsync(
+            connection,
+            transaction,
+            key,
+            facilityId,
+            cancellationToken);
+        var baselineValue = baseline.Value;
+        var baselineUpdatedAt = baseline.UpdatedAt;
 
         if (string.Equals(baselineValue, proposedValue, StringComparison.Ordinal))
         {
@@ -853,11 +840,13 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                   select 1
                   from practice_setting_change_requests
                   where setting_key = @key
+                    and facility_id is not distinct from @facilityId
                     and proposed_value = @value
                     and status in ('draft', 'submitted', 'approved')
                 );
                 """;
             duplicate.Parameters.AddWithValue("key", key);
+            duplicate.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = (object?)facilityId ?? DBNull.Value;
             duplicate.Parameters.AddWithValue("value", proposedValue);
             if ((bool)(await duplicate.ExecuteScalarAsync(cancellationToken) ?? false))
             {
@@ -874,6 +863,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 insert into practice_setting_change_requests(
                   request_id,
                   setting_key,
+                  facility_id,
                   proposed_value,
                   baseline_value,
                   baseline_updated_at,
@@ -887,6 +877,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 values(
                   @id,
                   @key,
+                  @facilityId,
                   @value,
                   @baselineValue,
                   @baselineUpdatedAt,
@@ -900,6 +891,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 """;
             create.Parameters.AddWithValue("id", requestId);
             create.Parameters.AddWithValue("key", key);
+            create.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = (object?)facilityId ?? DBNull.Value;
             create.Parameters.AddWithValue("value", proposedValue);
             create.Parameters.AddWithValue("baselineValue", baselineValue);
             create.Parameters.AddWithValue("baselineUpdatedAt", baselineUpdatedAt);
@@ -1056,6 +1048,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         string settingKey;
+        int? facilityId;
         string proposedValue;
         string baselineValue;
         DateTimeOffset baselineUpdatedAt;
@@ -1068,6 +1061,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                 """
                 select
                   setting_key,
+                  facility_id,
                   proposed_value,
                   baseline_value,
                   baseline_updated_at,
@@ -1086,11 +1080,12 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             }
 
             settingKey = reader.GetString(0);
-            proposedValue = reader.GetString(1);
-            baselineValue = reader.GetString(2);
-            baselineUpdatedAt = reader.GetFieldValue<DateTimeOffset>(3);
-            var currentStatus = reader.GetString(4);
-            currentVersion = reader.GetInt32(5);
+            facilityId = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+            proposedValue = reader.GetString(2);
+            baselineValue = reader.GetString(3);
+            baselineUpdatedAt = reader.GetFieldValue<DateTimeOffset>(4);
+            var currentStatus = reader.GetString(5);
+            currentVersion = reader.GetInt32(6);
             if (!expectedStatuses.Contains(currentStatus, StringComparer.Ordinal))
             {
                 throw new PracticeSettingChangeRequestConflictException(
@@ -1107,29 +1102,14 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         ValidatePracticeSettingValue(settingKey, proposedValue);
         if (nextStatus == "activated")
         {
-            string currentValue;
-            DateTimeOffset currentUpdatedAt;
-            await using (var setting = connection.CreateCommand())
-            {
-                setting.Transaction = transaction;
-                setting.CommandText =
-                    """
-                    select setting_value, updated_at
-                    from practice_settings
-                    where setting_key = @key
-                    for update;
-                    """;
-                setting.Parameters.AddWithValue("key", settingKey);
-                await using var reader = await setting.ExecuteReaderAsync(cancellationToken);
-                if (!await reader.ReadAsync(cancellationToken))
-                {
-                    throw new ArgumentException(
-                        "The requested practice setting was not found.");
-                }
-
-                currentValue = reader.GetString(0);
-                currentUpdatedAt = reader.GetFieldValue<DateTimeOffset>(1);
-            }
+            var current = await GetPracticeSettingScopeValueAsync(
+                connection,
+                transaction,
+                settingKey,
+                facilityId,
+                cancellationToken);
+            var currentValue = current.Value;
+            var currentUpdatedAt = current.UpdatedAt;
 
             if (!string.Equals(currentValue, baselineValue, StringComparison.Ordinal)
                 || currentUpdatedAt.ToUniversalTime() != baselineUpdatedAt.ToUniversalTime())
@@ -1138,16 +1118,31 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                     "The active practice setting changed after this request was created. Cancel this stale request and create a new proposal.");
             }
 
-            await WritePracticeSettingRevisionAsync(
-                connection,
-                transaction,
-                settingKey,
-                currentValue,
-                proposedValue,
-                username,
-                "activated",
-                null,
-                cancellationToken);
+            if (facilityId is null)
+            {
+                await WritePracticeSettingRevisionAsync(
+                    connection,
+                    transaction,
+                    settingKey,
+                    currentValue,
+                    proposedValue,
+                    username,
+                    "activated",
+                    null,
+                    cancellationToken);
+            }
+            else
+            {
+                await WritePracticeSettingFacilityOverrideRevisionAsync(
+                    connection,
+                    transaction,
+                    settingKey,
+                    facilityId.Value,
+                    currentValue,
+                    proposedValue,
+                    username,
+                    cancellationToken);
+            }
         }
 
         await using (var update = connection.CreateCommand())
@@ -1256,26 +1251,80 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return await reader.ReadAsync(cancellationToken) ? ReadPracticeSetting(reader) : null;
     }
 
+    private static async Task<(string Value, DateTimeOffset UpdatedAt)> GetPracticeSettingScopeValueAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string key,
+        int? facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (facilityId is not null)
+        {
+            await using var facility = connection.CreateCommand();
+            facility.Transaction = transaction;
+            facility.CommandText = "select exists(select 1 from facilities where id = @facilityId and inactive = false);";
+            facility.Parameters.AddWithValue("facilityId", facilityId.Value);
+            if (!(bool)(await facility.ExecuteScalarAsync(cancellationToken) ?? false))
+            {
+                throw new ArgumentException("The requested active facility was not found.");
+            }
+        }
+
+        string systemValue;
+        DateTimeOffset systemUpdatedAt;
+        await using (var setting = connection.CreateCommand())
+        {
+            setting.Transaction = transaction;
+            setting.CommandText = "select setting_value, updated_at from practice_settings where setting_key = @key for update;";
+            setting.Parameters.AddWithValue("key", key);
+            await using var reader = await setting.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new ArgumentException("The requested practice setting was not found.");
+            }
+            systemValue = reader.GetString(0);
+            systemUpdatedAt = reader.GetFieldValue<DateTimeOffset>(1);
+        }
+
+        if (facilityId is null)
+        {
+            return (systemValue, systemUpdatedAt);
+        }
+
+        await using var overrideCommand = connection.CreateCommand();
+        overrideCommand.Transaction = transaction;
+        overrideCommand.CommandText = "select setting_value, updated_at from practice_setting_facility_overrides where setting_key = @key and facility_id = @facilityId for update;";
+        overrideCommand.Parameters.AddWithValue("key", key);
+        overrideCommand.Parameters.AddWithValue("facilityId", facilityId.Value);
+        await using var overrideReader = await overrideCommand.ExecuteReaderAsync(cancellationToken);
+        return await overrideReader.ReadAsync(cancellationToken)
+            ? (overrideReader.GetString(0), overrideReader.GetFieldValue<DateTimeOffset>(1))
+            : (systemValue, systemUpdatedAt);
+    }
+
     private static async Task<string?> GetPracticeSettingValueForUpdateAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, CancellationToken cancellationToken)
     { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "select setting_value from practice_settings where setting_key=@key for update;"; command.Parameters.AddWithValue("key", key); return await command.ExecuteScalarAsync(cancellationToken) as string; }
     private static async Task<string?> GetPracticeSettingRevisionValueAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, long revisionId, CancellationToken cancellationToken)
     { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "select value from practice_setting_revisions where setting_key=@key and revision_id=@revision;"; command.Parameters.AddWithValue("key", key); command.Parameters.AddWithValue("revision", revisionId); return await command.ExecuteScalarAsync(cancellationToken) as string; }
     private static async Task WritePracticeSettingRevisionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, string prior, string value, string username, string action, long? restoredFromRevisionId, CancellationToken cancellationToken)
     { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "update practice_settings set setting_value=@value,updated_at=now(),updated_by=@username where setting_key=@key; insert into practice_setting_audit_events(event_id,setting_key,prior_value,new_value,occurred_at,username) values(@eventId,@key,@prior,@value,now(),@username); insert into practice_setting_revisions(setting_key,value,prior_value,action,restored_from_revision_id,occurred_at,username) values(@key,@value,@prior,@action,@restored,now(),@username);"; command.Parameters.AddWithValue("key", key); command.Parameters.AddWithValue("value", value); command.Parameters.AddWithValue("prior", prior); command.Parameters.AddWithValue("username", username); command.Parameters.AddWithValue("eventId", Guid.NewGuid()); command.Parameters.AddWithValue("action", action); command.Parameters.AddWithValue("restored", (object?)restoredFromRevisionId ?? DBNull.Value); await command.ExecuteNonQueryAsync(cancellationToken); }
+    private static async Task WritePracticeSettingFacilityOverrideRevisionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string key, int facilityId, string priorEffectiveValue, string value, string username, CancellationToken cancellationToken)
+    { await using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "insert into practice_setting_facility_overrides(setting_key,facility_id,setting_value,updated_at,updated_by) values(@key,@facilityId,@value,now(),@username) on conflict(setting_key,facility_id) do update set setting_value=excluded.setting_value,updated_at=excluded.updated_at,updated_by=excluded.updated_by; insert into practice_setting_facility_override_revisions(setting_key,facility_id,value,prior_effective_value,action,occurred_at,username) values(@key,@facilityId,@value,@prior,'activated',now(),@username);"; command.Parameters.AddWithValue("key", key); command.Parameters.AddWithValue("facilityId", facilityId); command.Parameters.AddWithValue("value", value); command.Parameters.AddWithValue("prior", priorEffectiveValue); command.Parameters.AddWithValue("username", username); await command.ExecuteNonQueryAsync(cancellationToken); }
     private static PracticeSettingChangeRequestItem ReadPracticeSettingChangeRequest(
         NpgsqlDataReader reader) => new(
             reader.GetGuid(0),
             reader.GetString(1),
-            reader.GetString(2),
+            reader.IsDBNull(2) ? null : reader.GetInt32(2),
             reader.GetString(3),
-            reader.GetFieldValue<DateTimeOffset>(4).ToString("O"),
-            reader.GetString(5),
+            reader.GetString(4),
+            reader.GetFieldValue<DateTimeOffset>(5).ToString("O"),
             reader.GetString(6),
-            reader.GetInt32(7),
-            reader.GetFieldValue<DateTimeOffset>(8).ToString("O"),
-            reader.GetString(9),
-            reader.GetFieldValue<DateTimeOffset>(10).ToString("O"),
-            reader.GetString(11));
+            reader.GetString(7),
+            reader.GetInt32(8),
+            reader.GetFieldValue<DateTimeOffset>(9).ToString("O"),
+            reader.GetString(10),
+            reader.GetFieldValue<DateTimeOffset>(11).ToString("O"),
+            reader.GetString(12));
 
     private static async Task<PracticeSettingChangeRequestItem?> GetPracticeSettingChangeRequestAsync(NpgsqlConnection connection, Guid requestId, CancellationToken cancellationToken)
     {
@@ -1285,6 +1334,7 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             select
               request_id,
               setting_key,
+              facility_id,
               proposed_value,
               baseline_value,
               baseline_updated_at,

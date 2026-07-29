@@ -80,6 +80,7 @@ export default function PracticeSettingGovernance({
     settingKey: "",
     value: "",
     reason: "",
+    facilityId: null as number | null,
   });
   const [savingProposal, setSavingProposal] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
@@ -164,6 +165,7 @@ export default function PracticeSettingGovernance({
       settingKey: first.key,
       value: first.value,
       reason: "",
+      facilityId: null,
     });
   }, [proposal.settingKey, settings]);
 
@@ -172,6 +174,7 @@ export default function PracticeSettingGovernance({
       settingKey: setting.key,
       value: setting.value,
       reason: "",
+      facilityId: null,
     });
     setProposalError(null);
     setShowProposal(true);
@@ -181,8 +184,12 @@ export default function PracticeSettingGovernance({
     const setting = settingByKey.get(key);
     setProposal({
       settingKey: key,
-      value: setting?.value ?? "",
+      value:
+        proposal.facilityId && effectiveSettings.get(key)?.value
+          ? effectiveSettings.get(key)!.value
+          : setting?.value ?? "",
       reason: "",
+      facilityId: proposal.facilityId,
     });
     setProposalError(null);
   }
@@ -194,7 +201,10 @@ export default function PracticeSettingGovernance({
       setProposalError("Select an available practice setting.");
       return;
     }
-    if (proposal.value.trim() === active.value) {
+    const scopeBaseline = proposal.facilityId
+      ? effectiveSettings.get(proposal.settingKey)?.value ?? active.value
+      : active.value;
+    if (proposal.value.trim() === scopeBaseline) {
       setProposalError("The proposed value must differ from the active value.");
       return;
     }
@@ -212,6 +222,7 @@ export default function PracticeSettingGovernance({
         {
           value: proposal.value,
           reason: proposal.reason,
+          facilityId: proposal.facilityId,
         },
       );
       setDetailState({ status: "ready", data: detail });
@@ -273,7 +284,16 @@ export default function PracticeSettingGovernance({
       setDetailState({ status: "ready", data: next });
       setTransitionNote("");
       setRefreshVersion((version) => version + 1);
-      if (action === "activate") await onSettingsChanged();
+      if (action === "activate") {
+        await onSettingsChanged();
+        const effective = await getEffectivePracticeSettings(
+          sessionId,
+          Number.isInteger(defaultFacilityId) && defaultFacilityId > 0
+            ? defaultFacilityId
+            : undefined,
+        );
+        setEffectiveSettings(new Map(effective.settings.map((setting) => [setting.key, setting])));
+      }
     } catch (error) {
       setTransitionError(
         errorMessage(error, `Could not ${action} the change request.`),
@@ -328,7 +348,7 @@ export default function PracticeSettingGovernance({
       <div className="practice-governance-boundary" role="note">
         <strong>Current local boundary:</strong> the same authorized
         administrator may submit, approve, and activate. Independent approver
-        matrices, effective dates, scoped mutation, delegated administration,
+        matrices, effective dates, delegated administration,
         and impact preview remain owner-governed ADM-01/ADM-02 work. Effective
         values below now disclose their system or default-facility source. The
         older direct-update API remains compatibility-only and is not used by
@@ -378,7 +398,8 @@ export default function PracticeSettingGovernance({
             <div>
               <p className="cl-form-section-label">New inactive proposal</p>
               <p className="cl-admin-form-copy">
-                Creating a draft does not change the active setting.
+                Creating a draft does not change the active setting. A facility
+                proposal activates only a local override for the selected scope.
               </p>
             </div>
             <button
@@ -410,10 +431,47 @@ export default function PracticeSettingGovernance({
             </select>
           </label>
           <label className="cl-admin-field">
+            <span>Configuration scope</span>
+            <select
+              className="ne-input"
+              aria-label="Proposal configuration scope"
+              value={proposal.facilityId ?? "system"}
+              onChange={(event) => {
+                const facilityId =
+                  event.target.value === "system"
+                    ? null
+                    : Number(event.target.value);
+                const active = settingByKey.get(proposal.settingKey);
+                setProposal((current) => ({
+                  ...current,
+                  facilityId,
+                  value:
+                    facilityId &&
+                    effectiveSettings.get(current.settingKey)?.value
+                      ? effectiveSettings.get(current.settingKey)!.value
+                      : active?.value ?? "",
+                }));
+              }}
+            >
+              <option value="system">System default</option>
+              {Number.isInteger(defaultFacilityId) && defaultFacilityId > 0 && (
+                <option value={defaultFacilityId}>
+                  Default facility ({defaultFacilityId})
+                </option>
+              )}
+            </select>
+          </label>
+          <label className="cl-admin-field">
             <span>Active value</span>
             <input
               className="ne-input"
-              value={settingByKey.get(proposal.settingKey)?.value ?? ""}
+              value={
+                proposal.facilityId
+                  ? effectiveSettings.get(proposal.settingKey)?.value ??
+                    settingByKey.get(proposal.settingKey)?.value ??
+                    ""
+                  : settingByKey.get(proposal.settingKey)?.value ?? ""
+              }
               readOnly
             />
           </label>
@@ -583,6 +641,9 @@ export default function PracticeSettingGovernance({
                   </strong>
                   <small>
                     {request.baselineValue} → {request.proposedValue}
+                    {request.facilityId
+                      ? ` · facility ${request.facilityId}`
+                      : " · system default"}
                   </small>
                 </span>
                 <span
@@ -660,6 +721,14 @@ export default function PracticeSettingGovernance({
           </div>
 
           <dl className="practice-request-facts">
+            <div>
+              <dt>Scope</dt>
+              <dd>
+                {detailState.data.request.facilityId
+                  ? `Facility ${detailState.data.request.facilityId}`
+                  : "System default"}
+              </dd>
+            </div>
             <div>
               <dt>Baseline at creation</dt>
               <dd>

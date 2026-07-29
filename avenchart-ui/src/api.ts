@@ -6951,6 +6951,7 @@ export type PracticeSettingChangeRequestStatus =
 export type PracticeSettingChangeRequestItem = {
   requestId: string
   settingKey: string
+  facilityId: number | null
   proposedValue: string
   baselineValue: string
   baselineUpdatedAt: string
@@ -7032,7 +7033,7 @@ export async function getPracticeSettingChangeRequest(
 export async function createPracticeSettingChangeRequest(
   sessionId: string,
   settingKey: string,
-  input: { value: string; reason: string },
+  input: { value: string; reason: string; facilityId?: number | null },
 ): Promise<PracticeSettingChangeRequestDetail> {
   return clinicianPost(
     sessionId,

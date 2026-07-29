@@ -202,11 +202,12 @@ public sealed record EffectivePracticeSettingsResponse(
 public sealed record PracticeSettingUpdateRequest(string Value);
 public sealed record PracticeSettingRevision(long RevisionId, string Value, string? PriorValue, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
 public sealed record PracticeSettingHistoryResponse(PracticeSettingItem Setting, IReadOnlyList<PracticeSettingRevision> Revisions);
-public sealed record PracticeSettingChangeRequestCreateRequest(string Value, string Reason);
+public sealed record PracticeSettingChangeRequestCreateRequest(string Value, string Reason, int? FacilityId = null);
 public sealed record PracticeSettingChangeRequestDecisionRequest(string? Note, int? ExpectedVersion = null);
 public sealed record PracticeSettingChangeRequestItem(
     Guid RequestId,
     string SettingKey,
+    int? FacilityId,
     string ProposedValue,
     string BaselineValue,
     string BaselineUpdatedAt,
