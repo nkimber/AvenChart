@@ -7741,9 +7741,15 @@ export type ModuleChangeRequest = {
   reason: string
   status: GovernanceStatus
   version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
 }
 export type ModuleChangeRequestsResponse = { requests: ModuleChangeRequest[]; total: number; status: GovernanceStatus | 'all' | 'open' }
 export async function getModuleChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ModuleChangeRequestsResponse> { return clinicianGet(sessionId, `/api/administration/module-change-requests?status=${encodeURIComponent(status)}`) }
+export type ModuleChangeRequestDetail = { request: ModuleChangeRequest; module: ModuleCatalogItem; events: GovernanceEvent[] }
+export async function getModuleChangeRequest(sessionId: string, requestId: string): Promise<ModuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/module-change-requests/${encodeURIComponent(requestId)}`) }
 export async function createModuleChangeRequest(sessionId: string, input: { moduleKey: string; status: 'enabled' | 'disabled'; reason: string }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, '/api/administration/module-change-requests', input) }
 export async function transitionModuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<{ request: ModuleChangeRequest }> { return clinicianPost(sessionId, `/api/administration/module-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
 export type ModuleCatalogRevision = {
