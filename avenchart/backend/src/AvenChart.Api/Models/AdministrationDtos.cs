@@ -272,6 +272,7 @@ public sealed record ConfigurationPackageImportRequestDetailResponse(
     ConfigurationPackageImportRequestItem Request,
     IReadOnlyList<ConfigurationPackageConflict> CurrentConflicts,
     IReadOnlyList<ConfigurationPackageImportRequestEvent> Events);
+public sealed record ConfigurationPackageImportRequestsResponse(IReadOnlyList<ConfigurationPackageImportRequestItem> Requests, int Total, int Offset, int Limit, string? Status, string? Kind);
 
 public sealed class ConfigurationPackageImportRequestConflictException(string message) : Exception(message);
 

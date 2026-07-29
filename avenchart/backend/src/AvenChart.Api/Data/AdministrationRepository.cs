@@ -1963,6 +1963,21 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new(request.Item, conflicts, events);
     }
 
+    public async Task<ConfigurationPackageImportRequestsResponse> GetConfigurationPackageImportRequestsAsync(string? status, string? kind, int offset, int limit, CancellationToken cancellationToken)
+    {
+        if (offset < 0 || limit is < 1 or > 50) throw new ArgumentException("Offset must be nonnegative and limit must be from 1 to 50.");
+        if (status is not null && status is not ("draft" or "submitted" or "approved" or "rejected" or "activated" or "cancelled")) throw new ArgumentException("The request status filter is not supported.");
+        if (kind is not null && kind is not ("import" or "rollback")) throw new ArgumentException("The request kind filter is not supported.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select request_id,package_sha256,kind,source_request_id,reason,status,version,created_at,created_by,updated_at,updated_by,count(*) over() from configuration_package_import_requests where (@status is null or status=@status) and (@kind is null or kind=@kind) order by updated_at desc,request_id desc offset @offset limit @limit;";
+        command.Parameters.Add("status", NpgsqlDbType.Text).Value = (object?)status ?? DBNull.Value; command.Parameters.Add("kind", NpgsqlDbType.Text).Value = (object?)kind ?? DBNull.Value; command.Parameters.AddWithValue("offset", offset); command.Parameters.AddWithValue("limit", limit);
+        var requests = new List<ConfigurationPackageImportRequestItem>(); var total = 0;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) { total = reader.GetInt32(11); requests.Add(new(reader.GetGuid(0),reader.GetString(1),reader.GetString(2),reader.IsDBNull(3)?null:reader.GetGuid(3),reader.GetString(4),reader.GetString(5),reader.GetInt32(6),reader.GetFieldValue<DateTimeOffset>(7).ToString("O"),reader.GetString(8),reader.GetFieldValue<DateTimeOffset>(9).ToString("O"),reader.GetString(10))); }
+        return new(requests,total,offset,limit,status,kind);
+    }
+
     private async Task<ConfigurationPackageImportRequestDetailResponse> TransitionConfigurationPackageImportRequestAsync(
         Guid requestId,
         string[] expectedStatuses,

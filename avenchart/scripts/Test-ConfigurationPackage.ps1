@@ -36,6 +36,11 @@ try {
     $adminHeaders = @{ "X-Legacy EHR-Session" = $admin.sessionId }
     $frontdeskHeaders = @{ "X-Legacy EHR-Session" = $frontdesk.sessionId }
 
+    $historyForbidden = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/configuration-package-import-requests" -Headers $frontdeskHeaders -UseBasicParsing }
+    $historyInvalid = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/configuration-package-import-requests?kind=unsupported" -Headers $adminHeaders -UseBasicParsing }
+    $history = Invoke-RestMethod -Uri "$ApiBaseUrl/api/administration/configuration-package-import-requests?kind=import&limit=1" -Headers $adminHeaders
+    Add-Check "Configuration package request history is administrator-protected, filtered, and bounded" (($historyForbidden -eq 403) -and ($historyInvalid -eq 400) -and ($history.limit -eq 1) -and ($history.total -ge @($history.requests).Count)) @{ forbidden=$historyForbidden; invalid=$historyInvalid; limit=$history.limit; total=$history.total }
+
     $forbidden = Get-HttpStatus { Invoke-WebRequest -Uri "$ApiBaseUrl/api/administration/configuration-packages/export" -Method Post -Headers $frontdeskHeaders -ContentType "application/json" -Body '{}' -UseBasicParsing }
     Add-Check "Configuration packages remain administrator protected" ($forbidden -eq 403) @{ status=$forbidden }
 

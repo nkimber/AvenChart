@@ -8143,3 +8143,8 @@ administration.MapPost("/configuration-package-import-requests/{requestId:guid}/
     catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("TransitionConfigurationPackageImportRequest");
+administration.MapGet("/configuration-package-import-requests", async (string? status, string? kind, int? offset, int? limit, AdministrationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestsAsync(status, kind, offset ?? 0, limit ?? 12, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("GetConfigurationPackageImportRequests");
