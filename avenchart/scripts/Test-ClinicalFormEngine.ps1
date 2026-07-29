@@ -392,6 +392,38 @@ try {
             followUpCodes = $clinicNoteFollowUp.options.code
         }
 
+    $clinicalInstructionsDefinition = @(
+        $catalog.definitions |
+            Where-Object { $_.stableKey -eq "legacy.clinicalinstructions" }
+    ) | Select-Object -First 1
+    $clinicalInstructionsDetail = if ($null -ne $clinicalInstructionsDefinition) {
+        Invoke-Json `
+            -Uri "$ApiBaseUrl/api/form-engine/definitions/$($clinicalInstructionsDefinition.definitionId)" `
+            -RequestHeaders $adminHeaders
+    }
+    else {
+        $null
+    }
+    $clinicalInstructionsFields = @($clinicalInstructionsDetail.currentRevision.definition.fields)
+    Add-Check `
+        "Legacy Clinical Instructions adoption maps its single encounter instruction without PHP execution" `
+        ($null -ne $clinicalInstructionsDefinition `
+            -and $clinicalInstructionsDefinition.contextScope -eq "encounter" `
+            -and $clinicalInstructionsDefinition.signaturePolicy -eq "author-only" `
+            -and $clinicalInstructionsDetail.currentRevision.status -eq "effective" `
+            -and $clinicalInstructionsDetail.currentRevision.schemaHash.Length -eq 64 `
+            -and $clinicalInstructionsFields.Count -eq 1 `
+            -and $clinicalInstructionsFields[0].key -eq "instruction" `
+            -and $clinicalInstructionsFields[0].type -eq "multiline" `
+            -and $clinicalInstructionsFields[0].maxLength -eq 4000) `
+        @{
+            definitionId = $clinicalInstructionsDefinition.definitionId
+            revision = $clinicalInstructionsDetail.currentRevision.revision
+            schemaHash = $clinicalInstructionsDetail.currentRevision.schemaHash
+            fields = $clinicalInstructionsFields.key
+            maxLength = $clinicalInstructionsFields[0].maxLength
+        }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
