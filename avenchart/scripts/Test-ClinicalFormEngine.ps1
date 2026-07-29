@@ -516,6 +516,15 @@ try {
             previewValid = $carePlanPreview.valid
         }
 
+    $clinicalNotesDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.clinicalnotes" }) | Select-Object -First 1
+    $clinicalNotesDetail = if ($null -ne $clinicalNotesDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($clinicalNotesDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $clinicalNotesItems = @($clinicalNotesDetail.currentRevision.definition.fields | Where-Object { $_.key -eq "items" }) | Select-Object -First 1
+    $clinicalNotesPreview = if ($null -ne $clinicalNotesItems) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$clinicalNotesDetail.currentRevision.definition; values=@{ items=@(@{ note_date="2026-07-28"; code="SNOMED-CT:123456"; note_type="Progress"; note_category="Clinical"; narrative="Synthetic bounded Clinical Notes verification." }) } } } else { $null }
+    Add-Check `
+        "Legacy Clinical Notes adoption maps bounded repeating encounter entries without PHP execution" `
+        ($null -ne $clinicalNotesDefinition -and $clinicalNotesDefinition.contextScope -eq "encounter" -and $clinicalNotesDefinition.signaturePolicy -eq "author-only" -and $clinicalNotesDetail.currentRevision.status -eq "effective" -and $clinicalNotesDetail.currentRevision.schemaHash -eq "3dee3d5d24d1e564b14e3e3e0f6c1a618895ffe2cff8cfef8431eec32066299f" -and $clinicalNotesItems.type -eq "repeat" -and $clinicalNotesItems.repeatMaximum -eq 20 -and (($clinicalNotesItems.children.key -join "|") -eq "note_date|code|code_text|note_type|note_category|narrative") -and $clinicalNotesPreview.valid) `
+        @{ definitionId=$clinicalNotesDefinition.definitionId; schemaHash=$clinicalNotesDetail.currentRevision.schemaHash; childFields=$clinicalNotesItems.children.key; previewValid=$clinicalNotesPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
