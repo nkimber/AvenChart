@@ -126,8 +126,6 @@ builder.Services.AddScoped<PatientDisclosureRepository>();
 builder.Services.AddScoped<PatientSdohRepository>();
 builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<InventoryCostPolicyRepository>();
-builder.Services.AddScoped<InventoryAccountingIntegrationRepository>();
-builder.Services.AddScoped<InventoryReplenishmentPolicyRepository>();
 builder.Services.AddScoped<InventoryValuationRepository>();
 builder.Services.AddScoped<FlowBoardRepository>();
 builder.Services.AddScoped<FhirRepository>();
