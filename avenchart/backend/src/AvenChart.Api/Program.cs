@@ -3342,6 +3342,24 @@ messages.MapGet("/{messageId}/retention-history", async (MessageRepository repos
 
 messages.MapPost("/{messageId}/archive", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageArchiveRequest request, CancellationToken cancellationToken) =>
 {
+messages.MapGet("/{messageId}/escalation-history", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
+{
+    var history = await repository.GetEscalationHistoryAsync(messageId, cancellationToken);
+    return history is null ? Results.NotFound() : Results.Ok(history);
+}).WithName("GetStaffMessageEscalationHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
+messages.MapPost("/{messageId}/escalate", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageEscalationRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetEscalationAsync(messageId, true, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("EscalateStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
+messages.MapPost("/{messageId}/resolve-escalation", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageEscalationRequest request, CancellationToken cancellationToken) =>
+{
+    try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetEscalationAsync(messageId, false, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("ResolveStaffMessageEscalation").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
     try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); var result = await repository.SetArchiveAsync(messageId, true, request, session.Username, cancellationToken); return result is null ? Results.NotFound() : Results.Ok(result); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
 }).WithName("ArchiveStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));

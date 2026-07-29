@@ -4256,6 +4256,11 @@ export type PatientMessageRetentionHistoryResponse = {
   events: Array<{ eventId: number; action: 'archived' | 'restored'; reason: string; actor: string; occurredAt: string }>
 }
 
+export type PatientMessageEscalationHistoryResponse = {
+  messageId: string
+  events: Array<{ eventId: number; action: 'escalated' | 'resolved'; reason: string; actor: string; occurredAt: string }>
+}
+
 export type StaffMessageAttachmentItem = {
   id: string
   fileName: string
@@ -4444,6 +4449,14 @@ export async function correctStaffMessage(
 
 export async function getStaffMessageRetentionHistory(sessionId: string, messageId: string): Promise<PatientMessageRetentionHistoryResponse> {
   return clinicianGet(sessionId, `/api/messages/${messageId}/retention-history`)
+}
+
+export async function getStaffMessageEscalationHistory(sessionId: string, messageId: string): Promise<PatientMessageEscalationHistoryResponse> {
+  return clinicianGet(sessionId, `/api/messages/${messageId}/escalation-history`)
+}
+
+export async function setStaffMessageEscalation(sessionId: string, messageId: string, escalated: boolean, reason: string): Promise<PatientMessageEscalationHistoryResponse> {
+  return clinicianPost(sessionId, `/api/messages/${messageId}/${escalated ? 'escalate' : 'resolve-escalation'}`, { reason })
 }
 
 export async function archiveStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {

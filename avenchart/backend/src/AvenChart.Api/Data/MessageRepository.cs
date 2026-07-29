@@ -867,6 +867,27 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return events.Count == 0 && !await MessageExistsAsync(connection, messageId, cancellationToken) ? null : new PatientMessageRetentionHistoryResponse(messageId, events);
     }
 
+    public async Task<PatientMessageEscalationHistoryResponse?> SetEscalationAsync(string messageId, bool escalated, PatientMessageEscalationRequest request, string actor, CancellationToken cancellationToken)
+    {
+        var reason = NormalizeOptionalText(request.Reason);
+        if (string.IsNullOrWhiteSpace(messageId)) return null;
+        if (reason is null || reason.Length > 500) throw new ArgumentException("An escalation or resolution reason of 1 to 500 characters is required.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = """select patient_id from messages where id=@id and deleted=0 and activity=1 for update;"""; command.Parameters.AddWithValue("id", messageId);
+        var patientId = (string?)await command.ExecuteScalarAsync(cancellationToken); if (patientId is null) return null;
+        await using var previous = connection.CreateCommand(); previous.Transaction = transaction; previous.CommandText = """select action from message_escalation_events where message_id=@id order by occurred_at desc,event_id desc limit 1;"""; previous.Parameters.AddWithValue("id", messageId);
+        var lastAction = (string?)await previous.ExecuteScalarAsync(cancellationToken);
+        if (escalated == (lastAction == "escalated")) throw new ArgumentException(escalated ? "This message is already escalated." : "Only an escalated message can be resolved.");
+        await using var write = connection.CreateCommand(); write.Transaction = transaction; write.CommandText = """insert into message_escalation_events(message_id,patient_id,action,reason,actor) values(@id,@patientId,@action,@reason,@actor);"""; write.Parameters.AddWithValue("id",messageId);write.Parameters.AddWithValue("patientId",patientId);write.Parameters.AddWithValue("action",escalated?"escalated":"resolved");write.Parameters.AddWithValue("reason",reason);write.Parameters.AddWithValue("actor",actor);await write.ExecuteNonQueryAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
+        return await GetEscalationHistoryAsync(messageId, cancellationToken);
+    }
+
+    public async Task<PatientMessageEscalationHistoryResponse?> GetEscalationHistoryAsync(string messageId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand(); command.CommandText="""select event_id,action,reason,actor,occurred_at from message_escalation_events where message_id=@id order by occurred_at desc,event_id desc;""";command.Parameters.AddWithValue("id",messageId);var events=new List<PatientMessageEscalationEvent>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))events.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));return events.Count==0&&!await MessageExistsAsync(connection,messageId,cancellationToken)?null:new(messageId,events);
+    }
+
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

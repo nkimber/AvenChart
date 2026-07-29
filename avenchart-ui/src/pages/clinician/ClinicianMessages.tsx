@@ -12,6 +12,8 @@ import {
   getPatientMessageAssignees,
   getPatientMessages,
   getStaffMessageRetentionHistory,
+  getStaffMessageEscalationHistory,
+  setStaffMessageEscalation,
   getStaffMessageCorrectionHistory,
   getStaffMessageAttachments,
   getStaffMessageInbox,
@@ -23,6 +25,7 @@ import {
   type PatientMessageAssignmentHistoryResponse,
   type PatientMessageCorrectionHistoryResponse,
   type PatientMessageRetentionHistoryResponse,
+  type PatientMessageEscalationHistoryResponse,
   type PatientMessageItem,
   type StaffMessageAttachmentItem,
   type StaffMessageInboxQuery,
@@ -143,6 +146,10 @@ export default function ClinicianMessages() {
   const [archiveBusyId, setArchiveBusyId] = useState<string | null>(null)
   const [includeArchived, setIncludeArchived] = useState(false)
   const [retentionHistory, setRetentionHistory] = useState<Record<string, PatientMessageRetentionHistoryResponse>>({})
+  const [escalationOpenId, setEscalationOpenId] = useState<string | null>(null)
+  const [escalationReason, setEscalationReason] = useState<Record<string, string>>({})
+  const [escalationBusyId, setEscalationBusyId] = useState<string | null>(null)
+  const [escalationHistory, setEscalationHistory] = useState<Record<string, PatientMessageEscalationHistoryResponse>>({})
 
   useEffect(() => {
     const controller = new AbortController()
@@ -311,6 +318,20 @@ export default function ClinicianMessages() {
     if (retentionHistory[messageId]) { setRetentionHistory((current) => { const next = { ...current }; delete next[messageId]; return next }); return }
     try { const history = await getStaffMessageRetentionHistory(session.sessionId, messageId); setRetentionHistory((current) => ({ ...current, [messageId]: history })) }
     catch (error) { showToast(error instanceof Error ? error.message : 'Could not load archive history.', 'error') }
+  }
+
+  async function handleEscalation(message: PatientMessageItem, escalated: boolean) {
+    const reason = escalationReason[message.id]?.trim()
+    if (!reason) return
+    setEscalationBusyId(message.id)
+    try { const history = await setStaffMessageEscalation(session.sessionId, message.id, escalated, reason); setEscalationHistory((current) => ({ ...current, [message.id]: history })); setEscalationOpenId(null); setEscalationReason((current) => ({ ...current, [message.id]: '' })); showToast(escalated ? 'Message escalation recorded.' : 'Message escalation resolved.', 'success') }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not record escalation.', 'error') } finally { setEscalationBusyId(null) }
+  }
+
+  async function toggleEscalationHistory(messageId: string) {
+    if (escalationHistory[messageId]) { setEscalationHistory((current) => { const next = { ...current }; delete next[messageId]; return next }); return }
+    try { const history = await getStaffMessageEscalationHistory(session.sessionId, messageId); setEscalationHistory((current) => ({ ...current, [messageId]: history })) }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not load escalation history.', 'error') }
   }
 
   async function handleReply(messageId: string) {
@@ -838,6 +859,9 @@ export default function ClinicianMessages() {
                         <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => setArchiveOpenId((current) => current === message.id ? null : message.id)}>
                           Archive
                         </button>
+                        <button className="cl-btn-secondary" type="button" disabled={escalationBusyId !== null} onClick={() => setEscalationOpenId((current) => current === message.id ? null : message.id)}>
+                          Escalation
+                        </button>
                       </div>
                       {forwardingOpenId === message.id && (
                         <div className="msg-reply-form">
@@ -881,6 +905,19 @@ export default function ClinicianMessages() {
                               {forwardingId === message.id ? 'Forwarding…' : 'Forward message'}
                             </button>
                           </div>
+                        </div>
+                      )}
+                      {escalationOpenId === message.id && (
+                        <div className="msg-reply-form">
+                          <p className="msg-item-meta">Escalation records a local urgency decision and its resolution. It does not send a page, create an SLA, or deliver an external notification.</p>
+                          <label className="ne-field"><span className="ne-label">Reason</span><input className="ne-input" maxLength={500} value={escalationReason[message.id] ?? ''} disabled={escalationBusyId !== null} onChange={(event) => setEscalationReason((current) => ({ ...current, [message.id]: event.target.value }))} /></label>
+                          <div className="ne-actions">
+                            <button className="cl-btn-secondary" type="button" disabled={escalationBusyId !== null} onClick={() => setEscalationOpenId(null)}>Cancel</button>
+                            <button className="cl-btn-primary" type="button" disabled={escalationBusyId !== null || !escalationReason[message.id]?.trim()} onClick={() => void handleEscalation(message, true)}>{escalationBusyId === message.id ? 'Recording…' : 'Escalate'}</button>
+                            <button className="cl-btn-secondary" type="button" disabled={escalationBusyId !== null || !escalationReason[message.id]?.trim()} onClick={() => void handleEscalation(message, false)}>Resolve escalation</button>
+                            <button className="cl-btn-secondary" type="button" disabled={escalationBusyId !== null} onClick={() => void toggleEscalationHistory(message.id)}>{escalationHistory[message.id] ? 'Hide escalation history' : 'Escalation history'}</button>
+                          </div>
+                          {escalationHistory[message.id] && <ul className="message-inbox-list" aria-label="Escalation history">{escalationHistory[message.id].events.length === 0 ? <li>No escalation events have been recorded.</li> : escalationHistory[message.id].events.map((event) => <li key={event.eventId}><strong>{event.action}</strong>{' · '}{event.actor}{' · '}{new Date(event.occurredAt).toLocaleString()}{' · Reason: '}{event.reason}</li>)}</ul>}
                         </div>
                       )}
                       {correctionOpenId === message.id && (

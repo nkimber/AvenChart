@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   allocateInventoryPatientSale,
   archiveStaffMessage,
+  setStaffMessageEscalation,
   ApiRequestError,
   approvePrescriptionRefillRequest,
   archivePatientDocument,
@@ -45,6 +46,7 @@ import {
   getStaffMessageAttachments,
   getStaffMessageCorrectionHistory,
   getStaffMessageRetentionHistory,
+  getStaffMessageEscalationHistory,
   failPatientDocumentOcr,
   getCurrentSession,
   getAuthorizationPolicyCatalog,
@@ -1733,6 +1735,15 @@ describe('authenticated API transport', () => {
     await expect(getStaffMessageRetentionHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/archive', expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: 'Duplicate' }) }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/retention-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
+  })
+
+  it('uses reasoned staff-message escalation and history contracts', async () => {
+    const history = { messageId: 'MSG-1', events: [{ eventId: 1, action: 'escalated' as const, reason: 'Clinical urgency', actor: 'admin', occurredAt: '2026-07-29T20:00:00Z' }] }
+    fetchMock.mockResolvedValueOnce(jsonResponse(history)).mockResolvedValueOnce(jsonResponse(history))
+    await expect(setStaffMessageEscalation('staff-session', 'MSG-1', true, 'Clinical urgency')).resolves.toEqual(history)
+    await expect(getStaffMessageEscalationHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/escalate', expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: 'Clinical urgency' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/escalation-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
   })
 
   it('unwraps create and status mutation envelopes consistently', async () => {

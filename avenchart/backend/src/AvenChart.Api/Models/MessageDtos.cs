@@ -67,6 +67,12 @@ public sealed record PatientMessageCorrectionHistoryResponse(
 
 public sealed record PatientMessageArchiveRequest(string Reason);
 
+public sealed record PatientMessageEscalationRequest(string Reason);
+
+public sealed record PatientMessageEscalationEvent(long EventId, string Action, string Reason, string Actor, string OccurredAt);
+
+public sealed record PatientMessageEscalationHistoryResponse(string MessageId, IReadOnlyList<PatientMessageEscalationEvent> Events);
+
 public sealed record PatientMessageRetentionEvent(long EventId, string Action, string Reason, string Actor, string OccurredAt);
 
 public sealed record PatientMessageRetentionHistoryResponse(string MessageId, IReadOnlyList<PatientMessageRetentionEvent> Events);
