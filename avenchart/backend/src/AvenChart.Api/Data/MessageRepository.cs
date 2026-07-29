@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using System.Security.Cryptography;
 using Npgsql;
 using AvenChart.Api.Models;
 
@@ -7,6 +8,7 @@ namespace AvenChart.Api.Data;
 
 public sealed class MessageRepository(NpgsqlDataSource dataSource)
 {
+    private const int MaximumStaffMessageAttachmentBytes = 4 * 1024 * 1024;
     public async Task<StaffMessageInboxResponse> GetInboxAsync(
         string currentUsername,
         StaffMessageInboxQuery query,
@@ -656,6 +658,63 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
 
         var detail = await GetForPatientAsync(patientId, cancellationToken);
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<StaffMessageAttachmentItem?> AddAttachmentAsync(string messageId, StaffMessageAttachmentSubmission submission, string actor, CancellationToken cancellationToken)
+    {
+        var fileName = Path.GetFileName(NormalizeOptionalText(submission.FileName) ?? string.Empty);
+        var contentType = NormalizeOptionalText(submission.ContentType)?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(fileName) || fileName.Length > 180
+            || contentType is not ("application/pdf" or "image/png" or "image/jpeg" or "text/plain")
+            || string.IsNullOrWhiteSpace(submission.ContentBase64))
+        {
+            throw new ArgumentException("Attachments require a safe PDF, PNG, JPEG, or plain-text file name, content type, and content.");
+        }
+        byte[] content;
+        try { content = Convert.FromBase64String(submission.ContentBase64); }
+        catch (FormatException) { throw new ArgumentException("Attachment content is not valid base64 data."); }
+        if (content.Length is 0 or > MaximumStaffMessageAttachmentBytes)
+            throw new ArgumentException("Each attachment must be between 1 byte and 4 MiB.");
+
+        var id = Guid.NewGuid();
+        var sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            insert into staff_message_attachments (id, message_id, patient_id, file_name, content_type, size_bytes, sha256, content, uploaded_by)
+            select @id, m.id, m.patient_id, @fileName, @contentType, @sizeBytes, @sha256, @content, @actor
+            from messages m where m.id = @messageId and m.deleted = 0
+            returning uploaded_at;
+            """;
+        command.Parameters.AddWithValue("id", id); command.Parameters.AddWithValue("messageId", messageId);
+        command.Parameters.AddWithValue("fileName", fileName); command.Parameters.AddWithValue("contentType", contentType);
+        command.Parameters.AddWithValue("sizeBytes", content.Length); command.Parameters.AddWithValue("sha256", sha256);
+        command.Parameters.AddWithValue("content", content); command.Parameters.AddWithValue("actor", actor);
+        var uploadedAt = await command.ExecuteScalarAsync(cancellationToken);
+        return uploadedAt is DateTime timestamp
+            ? new StaffMessageAttachmentItem(id.ToString(), fileName, contentType, content.Length, sha256, actor, timestamp.ToString("O"))
+            : null;
+    }
+
+    public async Task<IReadOnlyList<StaffMessageAttachmentItem>?> GetAttachmentsAsync(string messageId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """select id, file_name, content_type, size_bytes, sha256, uploaded_by, uploaded_at from staff_message_attachments where message_id=@messageId order by uploaded_at, id;""";
+        command.Parameters.AddWithValue("messageId", messageId);
+        var result = new List<StaffMessageAttachmentItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0).ToString(), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4), reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6).ToString("O")));
+        return result;
+    }
+
+    public async Task<StaffMessageAttachmentDownload> DownloadAttachmentAsync(string messageId, Guid attachmentId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        command.CommandText = """select file_name, content_type, content from staff_message_attachments where id=@id and message_id=@messageId;""";
+        command.Parameters.AddWithValue("id", attachmentId); command.Parameters.AddWithValue("messageId", messageId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? new(true, reader.GetString(0), reader.GetString(1), reader.GetFieldValue<byte[]>(2), null) : new(false, "", "application/octet-stream", [], "Attachment was not found for this message.");
     }
 
     public async Task<PatientMessageMutationResponse?> SoftDeleteAsync(string messageId, CancellationToken cancellationToken)

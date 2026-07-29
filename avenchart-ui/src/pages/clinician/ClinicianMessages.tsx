@@ -1,19 +1,23 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Forward, Mail, RefreshCw, Send } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Forward, Mail, Paperclip, RefreshCw, Send } from 'lucide-react'
 import {
   createPatientMessage,
+  downloadStaffMessageAttachment,
   forwardPatientMessage,
   getPatientMessageAssignmentHistory,
   getPatientMessageAssignees,
   getPatientMessages,
+  getStaffMessageAttachments,
   getStaffMessageInbox,
   isRequestCancellation,
   replyToPatientMessage,
+  uploadStaffMessageAttachment,
   updatePatientMessageAssignment,
   type ClinicalWorkflowAssignee,
   type PatientMessageAssignmentHistoryResponse,
   type PatientMessageItem,
+  type StaffMessageAttachmentItem,
   type StaffMessageInboxQuery,
   type StaffMessageInboxResponse,
 } from '../../api.ts'
@@ -119,6 +123,9 @@ export default function ClinicianMessages() {
   const [forwardError, setForwardError] = useState<{ id: string; message: string } | null>(null)
   const [forwardDrafts, setForwardDrafts] = useState<Record<string, { assignedTo: string; note: string }>>({})
   const [forwardingOpenId, setForwardingOpenId] = useState<string | null>(null)
+  const [attachments, setAttachments] = useState<Record<string, StaffMessageAttachmentItem[]>>({})
+  const [attachmentFiles, setAttachmentFiles] = useState<Record<string, File | null>>({})
+  const [attachmentBusyId, setAttachmentBusyId] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -198,6 +205,33 @@ export default function ClinicianMessages() {
         patient,
         message: error instanceof Error ? error.message : 'Could not load messages.',
       }))
+  }
+
+  async function loadAttachments(messageId: string) {
+    const result = await getStaffMessageAttachments(session.sessionId, messageId)
+    setAttachments((current) => ({ ...current, [messageId]: result }))
+  }
+
+  async function uploadAttachment(messageId: string) {
+    const file = attachmentFiles[messageId]
+    if (!file) return
+    const allowed = new Set(['application/pdf', 'image/png', 'image/jpeg', 'text/plain'])
+    if (!allowed.has(file.type) || file.size === 0 || file.size > 4 * 1024 * 1024) {
+      showToast('Choose a PDF, PNG, JPEG, or text file from 1 byte to 4 MiB.', 'error'); return
+    }
+    setAttachmentBusyId(messageId)
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = reject; reader.readAsDataURL(file) })
+      await uploadStaffMessageAttachment(session.sessionId, messageId, { fileName: file.name, contentType: file.type, contentBase64: base64 })
+      setAttachmentFiles((current) => ({ ...current, [messageId]: null }))
+      await loadAttachments(messageId)
+      showToast('Attachment added.', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Could not add attachment.', 'error') } finally { setAttachmentBusyId(null) }
+  }
+
+  async function downloadAttachment(messageId: string, attachment: StaffMessageAttachmentItem) {
+    try { const blob = await downloadStaffMessageAttachment(session.sessionId, messageId, attachment.id); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = attachment.fileName; link.click(); URL.revokeObjectURL(url) }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not download attachment.', 'error') }
   }
 
   async function handleReply(messageId: string) {
@@ -686,6 +720,11 @@ export default function ClinicianMessages() {
                         </span>
                       </div>
                       {message.body && <p className="msg-item-body">{message.body}</p>}
+                      <div className="msg-reply-form">
+                        <label className="ne-field"><span className="ne-label">Attach file</span><input className="ne-input" type="file" accept="application/pdf,image/png,image/jpeg,text/plain" onChange={(event) => setAttachmentFiles((current) => ({ ...current, [message.id]: event.target.files?.[0] ?? null }))} /></label>
+                        <div className="ne-actions"><button className="cl-btn-secondary" type="button" disabled={!attachmentFiles[message.id] || attachmentBusyId !== null} onClick={() => void uploadAttachment(message.id)}><Paperclip size={14} />{attachmentBusyId === message.id ? 'Uploading…' : 'Add attachment'}</button><button className="cl-btn-secondary" type="button" onClick={() => void loadAttachments(message.id)}>Show attachments</button></div>
+                        {attachments[message.id]?.map((attachment) => <div key={attachment.id} className="msg-item-meta">{attachment.fileName} · {Math.ceil(attachment.sizeBytes / 1024)} KiB · {attachment.uploadedBy} <button className="cl-link" type="button" onClick={() => void downloadAttachment(message.id, attachment)}><Download size={13} /> Download</button></div>)}
+                      </div>
                       <div className="ne-actions">
                         {message.assignedTo === session.username ? (
                           <span className="cl-badge cl-badge-green">Assigned to you</span>

@@ -50,6 +50,12 @@ public sealed record PatientMessageForwardRequest(
     int ExpectedVersion,
     string? Note);
 
+public sealed record StaffMessageAttachmentSubmission(string? FileName, string? ContentType, string? ContentBase64);
+
+public sealed record StaffMessageAttachmentItem(string Id, string FileName, string ContentType, int SizeBytes, string Sha256, string UploadedBy, string UploadedAt);
+
+public sealed record StaffMessageAttachmentDownload(bool Downloadable, string FileName, string ContentType, byte[] Content, string? FailureReason);
+
 public sealed record PatientMessageAssignmentEvent(
     long EventId,
     string Action,
