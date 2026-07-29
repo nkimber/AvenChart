@@ -3,11 +3,13 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Download, Forward, Mail, Paperclip, RefreshCw, Send } from 'lucide-react'
 import {
   createPatientMessage,
+  correctStaffMessage,
   downloadStaffMessageAttachment,
   forwardPatientMessage,
   getPatientMessageAssignmentHistory,
   getPatientMessageAssignees,
   getPatientMessages,
+  getStaffMessageCorrectionHistory,
   getStaffMessageAttachments,
   getStaffMessageInbox,
   isRequestCancellation,
@@ -16,6 +18,7 @@ import {
   updatePatientMessageAssignment,
   type ClinicalWorkflowAssignee,
   type PatientMessageAssignmentHistoryResponse,
+  type PatientMessageCorrectionHistoryResponse,
   type PatientMessageItem,
   type StaffMessageAttachmentItem,
   type StaffMessageInboxQuery,
@@ -126,6 +129,11 @@ export default function ClinicianMessages() {
   const [attachments, setAttachments] = useState<Record<string, StaffMessageAttachmentItem[]>>({})
   const [attachmentFiles, setAttachmentFiles] = useState<Record<string, File | null>>({})
   const [attachmentBusyId, setAttachmentBusyId] = useState<string | null>(null)
+  const [correctionOpenId, setCorrectionOpenId] = useState<string | null>(null)
+  const [correctionBusyId, setCorrectionBusyId] = useState<string | null>(null)
+  const [correctionError, setCorrectionError] = useState<{ id: string; message: string } | null>(null)
+  const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, { correction: string; reason: string }>>({})
+  const [correctionHistory, setCorrectionHistory] = useState<Record<string, PatientMessageCorrectionHistoryResponse>>({})
 
   useEffect(() => {
     const controller = new AbortController()
@@ -232,6 +240,36 @@ export default function ClinicianMessages() {
   async function downloadAttachment(messageId: string, attachment: StaffMessageAttachmentItem) {
     try { const blob = await downloadStaffMessageAttachment(session.sessionId, messageId, attachment.id); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = attachment.fileName; link.click(); URL.revokeObjectURL(url) }
     catch (error) { showToast(error instanceof Error ? error.message : 'Could not download attachment.', 'error') }
+  }
+
+  function updateCorrectionDraft(messageId: string, field: 'correction' | 'reason', value: string) {
+    setCorrectionDrafts((current) => ({ ...current, [messageId]: { correction: current[messageId]?.correction ?? '', reason: current[messageId]?.reason ?? '', [field]: value } }))
+  }
+
+  async function handleCorrection(message: PatientMessageItem) {
+    const draft = correctionDrafts[message.id]
+    if (!draft?.correction.trim() || !draft.reason.trim()) return
+    setCorrectionBusyId(message.id)
+    setCorrectionError(null)
+    try {
+      const updated = await correctStaffMessage(session.sessionId, message.id, { correction: draft.correction.trim(), reason: draft.reason.trim() })
+      setThreadState((previous) => previous.status === 'ready' ? { ...previous, thread: { ...previous.thread, messages: updated.messages.filter((item) => !item.deleted) } } : previous)
+      setCorrectionDrafts((current) => { const next = { ...current }; delete next[message.id]; return next })
+      setCorrectionOpenId(null)
+      setCorrectionHistory((current) => { const next = { ...current }; delete next[message.id]; return next })
+      setReload((value) => value + 1)
+      showToast('Correction appended and recorded.', 'success')
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : 'Could not append the correction.'
+      setCorrectionError({ id: message.id, message: messageText })
+      showToast(messageText, 'error')
+    } finally { setCorrectionBusyId(null) }
+  }
+
+  async function toggleCorrectionHistory(messageId: string) {
+    if (correctionHistory[messageId]) { setCorrectionHistory((current) => { const next = { ...current }; delete next[messageId]; return next }); return }
+    try { setCorrectionHistory((current) => current); const history = await getStaffMessageCorrectionHistory(session.sessionId, messageId); setCorrectionHistory((current) => ({ ...current, [messageId]: history })) }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not load correction history.', 'error') }
   }
 
   async function handleReply(messageId: string) {
@@ -751,6 +789,9 @@ export default function ClinicianMessages() {
                           <Forward size={14} aria-hidden="true" />
                           Forward
                         </button>
+                        <button className="cl-btn-secondary" type="button" disabled={correctionBusyId !== null} onClick={() => setCorrectionOpenId((current) => current === message.id ? null : message.id)}>
+                          Append correction
+                        </button>
                       </div>
                       {forwardingOpenId === message.id && (
                         <div className="msg-reply-form">
@@ -794,6 +835,29 @@ export default function ClinicianMessages() {
                               {forwardingId === message.id ? 'Forwarding…' : 'Forward message'}
                             </button>
                           </div>
+                        </div>
+                      )}
+                      {correctionOpenId === message.id && (
+                        <div className="msg-reply-form">
+                          <p className="msg-item-meta">A correction preserves the prior message text, appends a timestamped staff entry, and records its reason and actor.</p>
+                          <label className="ne-field">
+                            <span className="ne-label">Correction</span>
+                            <textarea className="ne-soap-textarea" rows={3} maxLength={2000} value={correctionDrafts[message.id]?.correction ?? ''} disabled={correctionBusyId !== null} onChange={(event) => updateCorrectionDraft(message.id, 'correction', event.target.value)} />
+                          </label>
+                          <label className="ne-field">
+                            <span className="ne-label">Reason</span>
+                            <input className="ne-input" maxLength={500} value={correctionDrafts[message.id]?.reason ?? ''} disabled={correctionBusyId !== null} onChange={(event) => updateCorrectionDraft(message.id, 'reason', event.target.value)} />
+                          </label>
+                          <div className="ne-actions">
+                            <button className="cl-btn-secondary" type="button" disabled={correctionBusyId !== null} onClick={() => setCorrectionOpenId(null)}>Cancel</button>
+                            <button className="cl-btn-primary" type="button" disabled={correctionBusyId !== null || !correctionDrafts[message.id]?.correction.trim() || !correctionDrafts[message.id]?.reason.trim()} onClick={() => void handleCorrection(message)}>{correctionBusyId === message.id ? 'Recording…' : 'Record correction'}</button>
+                            <button className="cl-btn-secondary" type="button" disabled={correctionBusyId !== null} onClick={() => void toggleCorrectionHistory(message.id)}>{correctionHistory[message.id] ? 'Hide correction history' : 'Correction history'}</button>
+                          </div>
+                          {correctionHistory[message.id] && (
+                            <ul className="message-inbox-list" aria-label="Correction history">
+                              {correctionHistory[message.id].events.length === 0 ? <li>No corrections have been recorded.</li> : correctionHistory[message.id].events.map((event) => <li key={event.eventId}><strong>{event.actor}</strong>{' · '}{new Date(event.occurredAt).toLocaleString()}{' · '}{event.correction}{' · Reason: '}{event.reason}</li>)}
+                            </ul>
+                          )}
                         </div>
                       )}
                       <div className="msg-reply-form">
@@ -876,6 +940,9 @@ export default function ClinicianMessages() {
                       )}
                       {forwardError?.id === message.id && (
                         <p className="field-error" role="alert">{forwardError.message}</p>
+                      )}
+                      {correctionError?.id === message.id && (
+                        <p className="field-error" role="alert">{correctionError.message}</p>
                       )}
                       {activeMessageId === message.id ? (
                         <div className="msg-reply-form">

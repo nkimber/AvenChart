@@ -3312,6 +3312,27 @@ messages.MapGet("/{messageId}/attachments/{attachmentId:guid}", async (MessageRe
     return attachment.Downloadable ? Results.File(attachment.Content, attachment.ContentType, attachment.FileName) : Results.NotFound(new { error = attachment.FailureReason });
 }).WithName("DownloadStaffMessageAttachment").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
 
+messages.MapGet("/{messageId}/correction-history", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
+{
+    var history = await repository.GetCorrectionHistoryAsync(messageId, cancellationToken);
+    return history is null ? Results.NotFound() : Results.Ok(history);
+}).WithName("GetStaffMessageCorrectionHistory").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
+messages.MapPost("/{messageId}/correct", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, PatientMessageCorrectionRequest request, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(request.Correction) || string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Results.BadRequest(new { error = "A correction and its reason are required." });
+        }
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var correction = await repository.CorrectAsync(messageId, request, session.Username, cancellationToken);
+        return correction is null ? Results.NotFound() : Results.Ok(correction);
+    }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("CorrectStaffMessage").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
         string messageId,

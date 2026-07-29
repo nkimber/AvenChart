@@ -50,6 +50,21 @@ public sealed record PatientMessageForwardRequest(
     int ExpectedVersion,
     string? Note);
 
+public sealed record PatientMessageCorrectionRequest(
+    string Correction,
+    string Reason);
+
+public sealed record PatientMessageCorrectionEvent(
+    long EventId,
+    string Correction,
+    string Reason,
+    string Actor,
+    string OccurredAt);
+
+public sealed record PatientMessageCorrectionHistoryResponse(
+    string MessageId,
+    IReadOnlyList<PatientMessageCorrectionEvent> Events);
+
 public sealed record StaffMessageAttachmentSubmission(string? FileName, string? ContentType, string? ContentBase64);
 
 public sealed record StaffMessageAttachmentItem(string Id, string FileName, string ContentType, int SizeBytes, string Sha256, string UploadedBy, string UploadedAt);

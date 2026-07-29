@@ -4246,6 +4246,11 @@ export type PatientMessageForwardRequest = {
   note?: string | null
 }
 
+export type PatientMessageCorrectionHistoryResponse = {
+  messageId: string
+  events: Array<{ eventId: number; correction: string; reason: string; actor: string; occurredAt: string }>
+}
+
 export type StaffMessageAttachmentItem = {
   id: string
   fileName: string
@@ -4416,6 +4421,19 @@ export async function downloadStaffMessageAttachment(sessionId: string, messageI
   const response = await fetch(`${apiBaseUrl}/api/messages/${messageId}/attachments/${attachmentId}`, { headers: { 'X-Legacy EHR-Session': sessionId } })
   await requireSuccessfulResponse(response, `GET /api/messages/${messageId}/attachments/${attachmentId}`, 'clinician')
   return response.blob()
+}
+
+export async function getStaffMessageCorrectionHistory(sessionId: string, messageId: string): Promise<PatientMessageCorrectionHistoryResponse> {
+  return clinicianGet(sessionId, `/api/messages/${messageId}/correction-history`)
+}
+
+export async function correctStaffMessage(
+  sessionId: string,
+  messageId: string,
+  input: { correction: string; reason: string },
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/correct`, input)
+  return result.detail
 }
 
 export type OfficeNoteItem = {

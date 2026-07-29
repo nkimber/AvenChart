@@ -8,6 +8,7 @@ import {
   bulkSignLabReports,
   completePatientDocumentOcr,
   completePatientDocumentRouting,
+  correctStaffMessage,
   correctPatientDocumentOcr,
   createInventoryPatientSale,
   createInventoryCountReconciliation,
@@ -41,6 +42,7 @@ import {
   findPatientDuplicateCandidates,
   forwardPatientMessage,
   getStaffMessageAttachments,
+  getStaffMessageCorrectionHistory,
   failPatientDocumentOcr,
   getCurrentSession,
   getAuthorizationPolicyCatalog,
@@ -1705,6 +1707,20 @@ describe('authenticated API transport', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/attachments', expect.objectContaining({ method: 'POST', body: JSON.stringify({ fileName: 'verification.txt', contentType: 'text/plain', contentBase64: 'YXR0YWNobWVudCBldmlkZW5jZQ==' }) }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, `http://localhost:5001/api/messages/MSG-1/attachments/${attachment.id}`, expect.objectContaining({ headers: { 'X-Legacy EHR-Session': 'staff-session' } }))
+  })
+
+  it('uses append-only staff message correction and history contracts', async () => {
+    const detail = { patientId: 'MOD-PAT-0001', patientDisplayName: 'Avery Morgan', portalEnabled: true, messages: [] }
+    const history = { messageId: 'MSG-1', events: [{ eventId: 1, correction: 'Clarified statement', reason: 'Correct transcription', actor: 'admin', occurredAt: '2026-07-29T20:00:00Z' }] }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'MSG-1', detail }))
+      .mockResolvedValueOnce(jsonResponse(history))
+
+    await expect(correctStaffMessage('staff-session', 'MSG-1', { correction: 'Clarified statement', reason: 'Correct transcription' })).resolves.toEqual(detail)
+    await expect(getStaffMessageCorrectionHistory('staff-session', 'MSG-1')).resolves.toEqual(history)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:5001/api/messages/MSG-1/correct', expect.objectContaining({ method: 'POST', body: JSON.stringify({ correction: 'Clarified statement', reason: 'Correct transcription' }) }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:5001/api/messages/MSG-1/correction-history', expect.objectContaining({ headers: expect.objectContaining({ 'X-Legacy EHR-Session': 'staff-session' }) }))
   })
 
   it('unwraps create and status mutation envelopes consistently', async () => {

@@ -618,6 +618,118 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
     }
 
+    public async Task<PatientMessageMutationResponse?> CorrectAsync(
+        string messageId,
+        PatientMessageCorrectionRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var correction = NormalizeOptionalText(request.Correction);
+        var reason = NormalizeOptionalText(request.Reason);
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return null;
+        }
+
+        if (correction is null || reason is null)
+        {
+            throw new ArgumentException("A correction and its reason are required.");
+        }
+
+        if (correction.Length > 2_000 || reason.Length > 500)
+        {
+            throw new ArgumentException("A correction must be 2,000 characters or fewer and its reason 500 characters or fewer.");
+        }
+
+        string? patientId;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await using var read = connection.CreateCommand();
+            read.Transaction = transaction;
+            read.CommandText = """
+                select patient_id
+                from messages
+                where id = @id and deleted = 0
+                for update;
+                """;
+            read.Parameters.AddWithValue("id", messageId);
+            patientId = (string?)await read.ExecuteScalarAsync(cancellationToken);
+            if (patientId is null)
+            {
+                return null;
+            }
+
+            var actorStaffId = await GetActiveStaffIdAsync(connection, transaction, actor, cancellationToken);
+            var correctionLine = $"{DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} ({actor} correction) {correction}";
+            await using (var update = connection.CreateCommand())
+            {
+                update.Transaction = transaction;
+                update.CommandText = """
+                    update messages
+                    set body = concat(coalesce(body, ''), case when coalesce(body, '') = '' then '' else E'\n' end, @correctionLine),
+                        updated_by = @updatedBy,
+                        updated_at = now()
+                    where id = @id and deleted = 0;
+                    """;
+                update.Parameters.AddWithValue("id", messageId);
+                update.Parameters.AddWithValue("correctionLine", correctionLine);
+                update.Parameters.AddWithValue("updatedBy", (object?)actorStaffId ?? DBNull.Value);
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var writeEvent = connection.CreateCommand())
+            {
+                writeEvent.Transaction = transaction;
+                writeEvent.CommandText = """
+                    insert into message_correction_events (message_id, patient_id, correction, reason, actor, occurred_at)
+                    values (@messageId, @patientId, @correction, @reason, @actor, now());
+                    """;
+                writeEvent.Parameters.AddWithValue("messageId", messageId);
+                writeEvent.Parameters.AddWithValue("patientId", patientId);
+                writeEvent.Parameters.AddWithValue("correction", correction);
+                writeEvent.Parameters.AddWithValue("reason", reason);
+                writeEvent.Parameters.AddWithValue("actor", actor);
+                await writeEvent.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var detail = await GetForPatientAsync(patientId, cancellationToken);
+        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
+    }
+
+    public async Task<PatientMessageCorrectionHistoryResponse?> GetCorrectionHistoryAsync(string messageId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select event_id, correction, reason, actor, occurred_at
+            from message_correction_events
+            where message_id = @messageId
+            order by occurred_at desc, event_id desc;
+            """;
+        command.Parameters.AddWithValue("messageId", messageId);
+        var events = new List<PatientMessageCorrectionEvent>();
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                events.Add(new PatientMessageCorrectionEvent(
+                    reader.GetInt64(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));
+            }
+        }
+
+        return events.Count == 0 && !await MessageExistsAsync(connection, messageId, cancellationToken)
+            ? null
+            : new PatientMessageCorrectionHistoryResponse(messageId, events);
+    }
+
     public async Task<PatientMessageMutationResponse?> ReplyAsync(
         string messageId,
         PatientMessageReplyRequest request,
@@ -900,6 +1012,14 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
 
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static async Task<bool> MessageExistsAsync(NpgsqlConnection connection, string messageId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select exists(select 1 from messages where id = @id and deleted = 0);";
+        command.Parameters.AddWithValue("id", messageId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
 
     private sealed record DatasetMetadata(string DatasetId, string DatasetVersion, DateOnly BaseDate);
 
