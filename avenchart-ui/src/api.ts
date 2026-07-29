@@ -6298,6 +6298,16 @@ export type ProcedureOrderItem = {
   diagnosis?: string | null
   instructions?: string | null
   orderStatus?: string | null
+  specimens: Array<{
+    id: number
+    specimenIdentifier?: string | null
+    accessionIdentifier?: string | null
+    specimenType?: string | null
+    collectionMethod?: string | null
+    specimenLocation?: string | null
+    collectedDate: string
+    specimenCondition?: string | null
+  }>
   reports: ProcedureReportItem[]
 }
 
@@ -6336,6 +6346,49 @@ export type ProcedureReportQueueItem = {
   orderDate: string
   providerId?: number | null
   providerName?: string | null
+export type ProcedureOrderCreateInput = {
+  patientId: string
+  providerId?: number | null
+  labId?: number | null
+  encounterId: number
+  dateOrdered: string
+  priority: string
+  status: string
+  procedureCode: string
+  procedureName: string
+  procedureType: string
+  diagnosis: string
+  instructions: string
+}
+
+export async function createProcedureOrder(sessionId: string, input: ProcedureOrderCreateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/orders', input)
+  return result.detail
+}
+
+export type ProcedureSpecimenCreateInput = {
+  orderId: number
+  specimenIdentifier: string
+  accessionIdentifier: string
+  specimenTypeCode: string
+  specimenType: string
+  collectionMethodCode: string
+  collectionMethod: string
+  specimenLocationCode: string
+  specimenLocation: string
+  collectedDate: string
+  volumeValue?: number | null
+  volumeUnit: string
+  conditionCode: string
+  specimenCondition: string
+  comments: string
+}
+
+export async function createProcedureSpecimen(sessionId: string, input: ProcedureSpecimenCreateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/specimens', input)
+  return result.detail
+}
+
   labId?: number | null
   labName?: string | null
   procedureCode?: string | null
