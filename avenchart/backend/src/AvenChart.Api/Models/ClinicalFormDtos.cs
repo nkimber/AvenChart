@@ -339,6 +339,60 @@ public sealed record ClinicalFormStructuredExportResponse(
     IReadOnlyDictionary<string, JsonElement> Values,
     IReadOnlyList<ClinicalFormSignatureItem> Signatures);
 
+public sealed record LegacyClinicalFormSnapshotSummary(
+    Guid SnapshotId,
+    string SourceSystem,
+    string SourceBaselineVersion,
+    string ExtractionRevision,
+    string SourceTable,
+    string SourceRowId,
+    string SourceRevision,
+    string StableKey,
+    string Name,
+    string PatientId,
+    int EncounterId,
+    bool SourceActive,
+    string? SourceRecordedAt,
+    string CapturedAt,
+    string RawSha256,
+    string AdapterRevision,
+    int TargetDefinitionRevision,
+    string TargetSchemaHash,
+    int UnmappedCount,
+    bool ReadOnly,
+    bool Converted);
+
+public sealed record LegacyClinicalFormSnapshotListResponse(
+    IReadOnlyList<LegacyClinicalFormSnapshotSummary> Snapshots,
+    int Total,
+    int Returned,
+    int Limit);
+
+public sealed record LegacyClinicalFormDisplayField(
+    string SourceField,
+    string? TargetField,
+    string Label,
+    JsonElement SourceValue,
+    string DisplayValue,
+    string MappingState,
+    string? MappingNote);
+
+public sealed record LegacyClinicalFormUnmappedFact(
+    string SourceField,
+    JsonElement SourceValue,
+    string Reason);
+
+public sealed record LegacyClinicalFormSnapshotDetailResponse(
+    LegacyClinicalFormSnapshotSummary Snapshot,
+    string SourceSchema,
+    Guid TargetDefinitionId,
+    string TargetRendererRevision,
+    IReadOnlyDictionary<string, JsonElement> RawValues,
+    IReadOnlyList<LegacyClinicalFormDisplayField> Fields,
+    IReadOnlyList<LegacyClinicalFormUnmappedFact> UnmappedFacts,
+    bool MigrationApproved,
+    Guid? GovernedInstanceId);
+
 public sealed class ClinicalFormConflictException(
     string message,
     int? currentVersion = null,

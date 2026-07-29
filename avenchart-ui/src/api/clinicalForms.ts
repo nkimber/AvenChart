@@ -228,6 +228,65 @@ export type ClinicalFormInstanceList = {
   total: number;
 };
 
+export type LegacyClinicalFormSnapshotSummary = {
+  snapshotId: string;
+  sourceSystem: string;
+  sourceBaselineVersion: string;
+  extractionRevision: string;
+  sourceTable: string;
+  sourceRowId: string;
+  sourceRevision: string;
+  stableKey: string;
+  name: string;
+  patientId: string;
+  encounterId: number;
+  sourceActive: boolean;
+  sourceRecordedAt: string | null;
+  capturedAt: string;
+  rawSha256: string;
+  adapterRevision: string;
+  targetDefinitionRevision: number;
+  targetSchemaHash: string;
+  unmappedCount: number;
+  readOnly: boolean;
+  converted: boolean;
+};
+
+export type LegacyClinicalFormSnapshotList = {
+  snapshots: LegacyClinicalFormSnapshotSummary[];
+  total: number;
+  returned: number;
+  limit: number;
+};
+
+export type LegacyClinicalFormDisplayField = {
+  sourceField: string;
+  targetField: string | null;
+  label: string;
+  sourceValue: unknown;
+  displayValue: string;
+  mappingState: "exact" | "normalized" | "unmapped";
+  mappingNote: string | null;
+};
+
+export type LegacyClinicalFormUnmappedFact = {
+  sourceField: string;
+  sourceValue: unknown;
+  reason: string;
+};
+
+export type LegacyClinicalFormSnapshotDetail = {
+  snapshot: LegacyClinicalFormSnapshotSummary;
+  sourceSchema: string;
+  targetDefinitionId: string;
+  targetRendererRevision: string;
+  rawValues: Record<string, unknown>;
+  fields: LegacyClinicalFormDisplayField[];
+  unmappedFacts: LegacyClinicalFormUnmappedFact[];
+  migrationApproved: boolean;
+  governedInstanceId: string | null;
+};
+
 export type ClinicalFormRender = {
   instance: ClinicalFormInstanceSummary;
   definition: ClinicalFormSchema;
@@ -436,6 +495,30 @@ export async function getPatientClinicalFormInstances(
     { headers: headers(sessionId), signal },
   );
   return (await response.json()) as ClinicalFormInstanceList;
+}
+
+export async function getPatientLegacyClinicalFormSnapshots(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<LegacyClinicalFormSnapshotList> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/patients/${encodeURIComponent(patientId)}/legacy-snapshots`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as LegacyClinicalFormSnapshotList;
+}
+
+export async function getLegacyClinicalFormSnapshot(
+  sessionId: string,
+  snapshotId: string,
+  signal?: AbortSignal,
+): Promise<LegacyClinicalFormSnapshotDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/legacy-snapshots/${encodeURIComponent(snapshotId)}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as LegacyClinicalFormSnapshotDetail;
 }
 
 export async function createPatientClinicalFormInstance(

@@ -6,6 +6,8 @@ import {
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstanceFieldDictionary,
+  getLegacyClinicalFormSnapshot,
+  getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
   transitionClinicalFormDefinition,
   transitionClinicalFormInstance,
@@ -143,6 +145,41 @@ describe("governed clinical-form transport", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       definition: schema,
       values: { chief_concern: "Live draft" },
+    });
+  });
+
+  it("encodes read-only legacy snapshot list and detail paths", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ snapshots: [], total: 0, returned: 0, limit: 100 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          snapshot: { snapshotId: "90f00000-0000-4000-9000-000000000001" },
+          fields: [],
+          unmappedFacts: [],
+          readOnly: true,
+          converted: false,
+        }),
+      );
+
+    await getPatientLegacyClinicalFormSnapshots(
+      "staff-session",
+      "MOD PAT/1",
+    );
+    await getLegacyClinicalFormSnapshot(
+      "staff-session",
+      "90f00000-0000-4000-9000-000000000001",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/patients/MOD%20PAT%2F1/legacy-snapshots",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000001",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "X-Legacy EHR-Session": "staff-session",
     });
   });
 

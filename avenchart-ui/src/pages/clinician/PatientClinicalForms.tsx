@@ -13,7 +13,9 @@ import {
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstance,
+  getLegacyClinicalFormSnapshot,
   getPatientClinicalFormInstances,
+  getPatientLegacyClinicalFormSnapshots,
   previewClinicalForm,
   transitionClinicalFormInstance,
   updateClinicalFormInstance,
@@ -21,6 +23,8 @@ import {
   type ClinicalFormField,
   type ClinicalFormInstanceDetail,
   type ClinicalFormInstanceSummary,
+  type LegacyClinicalFormSnapshotDetail,
+  type LegacyClinicalFormSnapshotSummary,
 } from "../../api/clinicalForms.ts";
 import { isRequestCancellation } from "../../api/transport.ts";
 import { searchEncounters, type EncounterListItem } from "../../api.ts";
@@ -230,7 +234,12 @@ export default function PatientClinicalForms() {
   const [encounters, setEncounters] = useState<EncounterListItem[]>([]);
   const [encounterId, setEncounterId] = useState("");
   const [instances, setInstances] = useState<ClinicalFormInstanceSummary[]>([]);
+  const [legacySnapshots, setLegacySnapshots] = useState<
+    LegacyClinicalFormSnapshotSummary[]
+  >([]);
   const [selected, setSelected] = useState<ClinicalFormInstanceDetail | null>(null);
+  const [selectedLegacy, setSelectedLegacy] =
+    useState<LegacyClinicalFormSnapshotDetail | null>(null);
   const [values, setValues] = useState<RecordValue>({});
   const valuesRef = useRef<RecordValue>({});
   const [reason, setReason] = useState("Clinical form entry");
@@ -242,17 +251,24 @@ export default function PatientClinicalForms() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function refresh(selectId?: string) {
+  async function refresh(selectId?: string, selectLegacyId?: string) {
     setLoading(true);
     setError("");
     try {
-      const [loadedCatalog, loadedInstances, loadedEncounters] = await Promise.all([
+      const [
+        loadedCatalog,
+        loadedInstances,
+        loadedLegacySnapshots,
+        loadedEncounters,
+      ] = await Promise.all([
         getClinicalFormCatalog(session.sessionId),
         getPatientClinicalFormInstances(session.sessionId, patientId),
+        getPatientLegacyClinicalFormSnapshots(session.sessionId, patientId),
         searchEncounters(session.sessionId, { patientId, limit: 100 }),
       ]);
       setCatalog(loadedCatalog.definitions);
       setInstances(loadedInstances.instances);
+      setLegacySnapshots(loadedLegacySnapshots.snapshots);
       setEncounters(loadedEncounters.encounters);
       setEncounterId((current) =>
         current ||
@@ -260,14 +276,27 @@ export default function PatientClinicalForms() {
           ? String(loadedEncounters.encounters[0].encounter)
           : ""),
       );
-      const instanceId = selectId ?? selected?.instance.instanceId;
+      const instanceId =
+        selectId ??
+        (selectLegacyId ? undefined : selected?.instance.instanceId);
+      const legacySnapshotId =
+        selectLegacyId ??
+        (selectId ? undefined : selectedLegacy?.snapshot.snapshotId);
       if (instanceId) {
         const detail = await getClinicalFormInstance(session.sessionId, instanceId);
         setSelected(detail);
+        setSelectedLegacy(null);
         valuesRef.current = detail.values;
         setValues(detail.values);
         setLiveFeedbackState("idle");
         setLiveFeedbackError("");
+      } else if (legacySnapshotId) {
+        const detail = await getLegacyClinicalFormSnapshot(
+          session.sessionId,
+          legacySnapshotId,
+        );
+        setSelected(null);
+        setSelectedLegacy(detail);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load clinical forms.");
@@ -590,6 +619,199 @@ export default function PatientClinicalForms() {
           </tbody></table></div>
         )}
       </section>
+
+      <section className="cl-card" aria-labelledby="legacy-clinical-form-history-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Read-only source evidence</p>
+            <h2 id="legacy-clinical-form-history-heading">
+              Legacy form snapshots
+            </h2>
+          </div>
+          <p>{legacySnapshots.length} of at most 100 returned</p>
+        </div>
+        <p>
+          These source-labeled snapshots are displayed through a versioned
+          adapter. They are not governed form instances and have not been
+          converted or approved for migration.
+        </p>
+        {loading ? (
+          <p>Loading legacy form snapshots…</p>
+        ) : legacySnapshots.length === 0 ? (
+          <p className="cl-empty-text">
+            No captured legacy form snapshots are available for this patient.
+          </p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Form and source row</th>
+                  <th>Source state</th>
+                  <th>Encounter</th>
+                  <th>Recorded</th>
+                  <th>Mapping</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {legacySnapshots.map((snapshot) => (
+                  <tr key={snapshot.snapshotId}>
+                    <td>
+                      <strong>{snapshot.name}</strong>
+                      <p className="cl-table-sub">
+                        {snapshot.sourceTable} · row {snapshot.sourceRowId}
+                      </p>
+                    </td>
+                    <td>{snapshot.sourceActive ? "Active" : "Inactive"}</td>
+                    <td>{snapshot.encounterId}</td>
+                    <td>{formatInstant(snapshot.sourceRecordedAt)}</td>
+                    <td>
+                      {snapshot.unmappedCount === 0
+                        ? "All source fields mapped"
+                        : `${snapshot.unmappedCount} unmapped fact${snapshot.unmappedCount === 1 ? "" : "s"}`}
+                    </td>
+                    <td>
+                      <button
+                        className="cl-btn-secondary"
+                        type="button"
+                        disabled={loading || saving}
+                        onClick={() =>
+                          void refresh(undefined, snapshot.snapshotId)
+                        }
+                      >
+                        Open snapshot
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {selectedLegacy ? (
+        <section
+          className="cl-card"
+          aria-labelledby="selected-legacy-clinical-form-heading"
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">
+                Legacy source snapshot ·{" "}
+                {selectedLegacy.snapshot.sourceActive ? "active" : "inactive"}
+              </p>
+              <h2 id="selected-legacy-clinical-form-heading">
+                {selectedLegacy.snapshot.name}{" "}
+                <span className="muted">
+                  source row {selectedLegacy.snapshot.sourceRowId}
+                </span>
+              </h2>
+            </div>
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              onClick={() => setSelectedLegacy(null)}
+            >
+              Close snapshot
+            </button>
+          </div>
+          <div className="hint-banner" role="note">
+            <strong>Display only.</strong> This record remains a captured{" "}
+            {selectedLegacy.sourceSchema}.{selectedLegacy.snapshot.sourceTable}{" "}
+            row. It has no governed instance ID, and migration approval is{" "}
+            {selectedLegacy.migrationApproved ? "recorded" : "not recorded"}.
+          </div>
+          <dl className="facts-list">
+            <div>
+              <dt>Legacy baseline</dt>
+              <dd>{selectedLegacy.snapshot.sourceBaselineVersion}</dd>
+            </div>
+            <div>
+              <dt>Source revision</dt>
+              <dd>{selectedLegacy.snapshot.sourceRevision}</dd>
+            </div>
+            <div>
+              <dt>Extraction revision</dt>
+              <dd>{selectedLegacy.snapshot.extractionRevision}</dd>
+            </div>
+            <div>
+              <dt>Display adapter</dt>
+              <dd>{selectedLegacy.snapshot.adapterRevision}</dd>
+            </div>
+            <div>
+              <dt>Target definition evidence</dt>
+              <dd>
+                Revision {selectedLegacy.snapshot.targetDefinitionRevision} ·{" "}
+                {selectedLegacy.targetRendererRevision}
+              </dd>
+            </div>
+            <div>
+              <dt>Source SHA-256</dt>
+              <dd>{selectedLegacy.snapshot.rawSha256}</dd>
+            </div>
+            <div>
+              <dt>Target schema SHA-256</dt>
+              <dd>{selectedLegacy.snapshot.targetSchemaHash}</dd>
+            </div>
+            <div>
+              <dt>Captured</dt>
+              <dd>{formatInstant(selectedLegacy.snapshot.capturedAt)}</dd>
+            </div>
+          </dl>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source field</th>
+                  <th>Target field</th>
+                  <th>Displayed value</th>
+                  <th>Mapping evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedLegacy.fields.map((field) => (
+                  <tr key={field.sourceField}>
+                    <td>
+                      <code>{field.sourceField}</code>
+                    </td>
+                    <td>
+                      {field.targetField ? (
+                        <code>{field.targetField}</code>
+                      ) : (
+                        "No target"
+                      )}
+                    </td>
+                    <td>
+                      <strong>{field.label}</strong>
+                      <p className="cl-table-sub">{field.displayValue}</p>
+                    </td>
+                    <td>
+                      <strong>{field.mappingState}</strong>
+                      {field.mappingNote ? (
+                        <p className="cl-table-sub">{field.mappingNote}</p>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <h3>Unmapped source facts</h3>
+          {selectedLegacy.unmappedFacts.length === 0 ? (
+            <p>No unmapped source fields or values were found.</p>
+          ) : (
+            <ul className="history-list">
+              {selectedLegacy.unmappedFacts.map((fact) => (
+                <li key={fact.sourceField}>
+                  <strong>{fact.sourceField}</strong>: {fact.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {selected ? (
         <section className="cl-card" aria-labelledby="selected-clinical-form-heading">

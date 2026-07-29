@@ -110,6 +110,7 @@ builder.Services.AddScoped<ReportExecutionRepository>();
 builder.Services.AddScoped<ReportExecutionQueueRepository>();
 builder.Services.AddHostedService<ReportExecutionWorker>();
 builder.Services.AddScoped<ClinicalFormRepository>();
+builder.Services.AddScoped<LegacyClinicalFormDisplayRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
@@ -6650,6 +6651,7 @@ administration.MapDelete("/access-control/user-memberships/{userValue}/{groupVal
 
 var formEngine = app.MapGroup("/api/form-engine").WithTags("Clinical Form Engine");
 RequireAccessPermission(formEngine, "patients", "demo", "view");
+formEngine.MapLegacyClinicalFormDisplayEndpoints();
 
 formEngine.MapGet("/policy", (ClinicalFormRepository repository) =>
         Results.Ok(repository.GetPolicy()))
