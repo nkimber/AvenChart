@@ -6,6 +6,7 @@ import {
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstanceFieldDictionary,
+  previewClinicalForm,
   transitionClinicalFormDefinition,
   transitionClinicalFormInstance,
   updateClinicalFormInstance,
@@ -110,6 +111,39 @@ describe("governed clinical-form transport", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("forwards caller cancellation to non-persisting form previews", async () => {
+    const controller = new AbortController();
+    fetchMock.mockImplementationOnce((_input, init) => {
+      const transportSignal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        transportSignal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+
+    const preview = previewClinicalForm(
+      "staff-session",
+      schema,
+      { chief_concern: "Live draft" },
+      controller.signal,
+    );
+    const cancelled = expect(preview).rejects.toMatchObject({
+      kind: "cancelled",
+    });
+    controller.abort();
+    await cancelled;
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      definition: schema,
+      values: { chief_concern: "Live draft" },
+    });
   });
 
   it("sends loaded revision and instance versions for governed transitions", async () => {

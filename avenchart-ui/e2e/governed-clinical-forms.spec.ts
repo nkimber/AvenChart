@@ -140,6 +140,27 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
           children: [],
           readOnly: false,
         },
+        {
+          key: "escalation_note",
+          sectionKey: "observation",
+          label: "Escalation note",
+          type: "multiline",
+          sequence: 40,
+          required: false,
+          accessibilityLabel: "Escalation note",
+          helpText: "Explain the urgent follow-up plan.",
+          maxLength: 500,
+          minimum: null,
+          maximum: null,
+          precision: null,
+          unit: null,
+          codeSystem: null,
+          options: [],
+          repeatMinimum: null,
+          repeatMaximum: null,
+          children: [],
+          readOnly: false,
+        },
       ],
       rules: [
         {
@@ -152,6 +173,42 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
           action: "warning",
           targetFieldKey: "disposition",
           message: "High pain score requires clinical attention.",
+          calculation: null,
+        },
+        {
+          key: "hide_escalation_note",
+          condition: {
+            fieldKey: "disposition",
+            operator: "not-equals",
+            value: "urgent",
+          },
+          action: "hide",
+          targetFieldKey: "escalation_note",
+          message: null,
+          calculation: null,
+        },
+        {
+          key: "show_escalation_note",
+          condition: {
+            fieldKey: "disposition",
+            operator: "equals",
+            value: "urgent",
+          },
+          action: "show",
+          targetFieldKey: "escalation_note",
+          message: null,
+          calculation: null,
+        },
+        {
+          key: "require_escalation_note",
+          condition: {
+            fieldKey: "disposition",
+            operator: "equals",
+            value: "urgent",
+          },
+          action: "require",
+          targetFieldKey: "escalation_note",
+          message: null,
           calculation: null,
         },
       ],
@@ -228,7 +285,52 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
         .getByLabel("Chief concern")
         .fill("Focused browser observation");
       await selected.getByLabel("Pain score").fill("8");
-      await selected.getByLabel("Disposition").selectOption("routine");
+      const liveGuidance = selected.getByRole("region", {
+        name: "Live rule guidance",
+      });
+      await expect(liveGuidance).toContainText(
+        "High pain score requires clinical attention.",
+        { timeout: 20_000 },
+      );
+      await expect(liveGuidance).toContainText("Rule warn_high_pain");
+      await expect(selected.getByLabel("Escalation note")).toHaveCount(0);
+
+      await selected.getByLabel("Disposition").selectOption("urgent");
+      await expect(selected.getByLabel("Escalation note")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(selected.getByLabel("Escalation note")).toHaveAttribute(
+        "required",
+        "",
+      );
+      await expect(liveGuidance).toContainText("Rule show_escalation_note");
+      await expect(liveGuidance).toContainText("Rule require_escalation_note");
+      await selected
+        .getByLabel("Escalation note")
+        .fill("Arrange urgent clinical reassessment.");
+
+      const instanceListResponse = await page.request.get(
+        `${apiBaseUrl}/api/form-engine/patients/MOD-PAT-0001/instances`,
+        { headers },
+      );
+      expect(instanceListResponse.ok()).toBeTruthy();
+      const instanceList = (await instanceListResponse.json()) as {
+        instances: { instanceId: string; stableKey: string }[];
+      };
+      const currentInstance = instanceList.instances.find(
+        (instance) => instance.stableKey === stableKey,
+      );
+      expect(currentInstance).toBeTruthy();
+      const persistedDraftResponse = await page.request.get(
+        `${apiBaseUrl}/api/form-engine/instances/${currentInstance?.instanceId}`,
+        { headers },
+      );
+      expect(persistedDraftResponse.ok()).toBeTruthy();
+      const persistedDraft = (await persistedDraftResponse.json()) as {
+        values: Record<string, unknown>;
+      };
+      expect(persistedDraft.values).toEqual({});
+
       await selected.getByRole("button", { name: "Validate" }).click();
       await expect(selected).toContainText(
         "High pain score requires clinical attention.",
@@ -279,7 +381,7 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
       expect(exported.instance.definitionRevision).toBe(1);
       expect(exported.schemaHash).toHaveLength(64);
       expect(exported.contentHash).toHaveLength(64);
-      expect(exported.fieldDictionary.fields).toHaveLength(3);
+      expect(exported.fieldDictionary.fields).toHaveLength(4);
       expect(
         exported.fieldDictionary.fields[0]?.reportColumn,
       ).toContain(`${stableKey}.r1.`);

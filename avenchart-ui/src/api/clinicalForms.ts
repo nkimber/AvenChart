@@ -297,11 +297,13 @@ export async function previewClinicalForm(
   sessionId: string,
   definition: ClinicalFormSchema,
   values: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<ClinicalFormEvaluation> {
   const response = await apiFetch(`${apiBaseUrl}/api/form-engine/preview`, {
     method: "POST",
     headers: headers(sessionId, true),
     body: JSON.stringify({ definition, values }),
+    signal,
   });
   return (await response.json()) as ClinicalFormEvaluation;
 }

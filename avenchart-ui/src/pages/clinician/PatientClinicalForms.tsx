@@ -1,4 +1,10 @@
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   amendClinicalFormInstance,
@@ -16,11 +22,15 @@ import {
   type ClinicalFormInstanceDetail,
   type ClinicalFormInstanceSummary,
 } from "../../api/clinicalForms.ts";
+import { isRequestCancellation } from "../../api/transport.ts";
 import { searchEncounters, type EncounterListItem } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 
 type RecordValue = Record<string, unknown>;
+type LiveFeedbackState = "idle" | "waiting" | "updating" | "ready" | "failed";
+
+const liveFeedbackDelayMilliseconds = 400;
 
 function newIdempotencyKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -222,8 +232,12 @@ export default function PatientClinicalForms() {
   const [instances, setInstances] = useState<ClinicalFormInstanceSummary[]>([]);
   const [selected, setSelected] = useState<ClinicalFormInstanceDetail | null>(null);
   const [values, setValues] = useState<RecordValue>({});
+  const valuesRef = useRef<RecordValue>({});
   const [reason, setReason] = useState("Clinical form entry");
   const [actionReason, setActionReason] = useState("");
+  const [liveFeedbackState, setLiveFeedbackState] =
+    useState<LiveFeedbackState>("idle");
+  const [liveFeedbackError, setLiveFeedbackError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -250,7 +264,10 @@ export default function PatientClinicalForms() {
       if (instanceId) {
         const detail = await getClinicalFormInstance(session.sessionId, instanceId);
         setSelected(detail);
+        valuesRef.current = detail.values;
         setValues(detail.values);
+        setLiveFeedbackState("idle");
+        setLiveFeedbackError("");
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load clinical forms.");
@@ -265,8 +282,92 @@ export default function PatientClinicalForms() {
   }, [patientId, session.sessionId]);
 
   function setFieldValue(key: string, value: unknown) {
-    setValues((current) => ({ ...current, [key]: value }));
+    setValues((current) => {
+      const next = { ...current, [key]: value };
+      valuesRef.current = next;
+      return next;
+    });
+    setLiveFeedbackState("waiting");
+    setLiveFeedbackError("");
   }
+
+  const selectedInstanceId = selected?.instance.instanceId;
+  const selectedPatientId = selected?.instance.patientId;
+  const selectedInstanceState = selected?.instance.state;
+  const selectedDefinition = selected?.definition;
+  const valuesFingerprint = JSON.stringify(values);
+
+  useEffect(() => {
+    if (
+      !selectedInstanceId ||
+      selectedPatientId !== patientId ||
+      selectedInstanceState !== "draft" ||
+      !selectedDefinition ||
+      saving
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const snapshotFingerprint = valuesFingerprint;
+    const snapshotValues = JSON.parse(valuesFingerprint) as RecordValue;
+    setLiveFeedbackState("waiting");
+    setLiveFeedbackError("");
+
+    const timer = window.setTimeout(() => {
+      setLiveFeedbackState("updating");
+      void previewClinicalForm(
+        session.sessionId,
+        selectedDefinition,
+        snapshotValues,
+        controller.signal,
+      )
+        .then((evaluation) => {
+          if (
+            controller.signal.aborted ||
+            JSON.stringify(valuesRef.current) !== snapshotFingerprint
+          ) {
+            return;
+          }
+
+          setSelected((current) =>
+            current?.instance.instanceId === selectedInstanceId
+              ? { ...current, validation: evaluation }
+              : current,
+          );
+
+          const evaluatedFingerprint = JSON.stringify(evaluation.values);
+          if (evaluatedFingerprint !== snapshotFingerprint) {
+            valuesRef.current = evaluation.values;
+            setValues(evaluation.values);
+          }
+          setLiveFeedbackState("ready");
+        })
+        .catch((cause: unknown) => {
+          if (controller.signal.aborted || isRequestCancellation(cause)) return;
+          setLiveFeedbackState("failed");
+          setLiveFeedbackError(
+            cause instanceof Error
+              ? cause.message
+              : "Live rule guidance could not be updated.",
+          );
+        });
+    }, liveFeedbackDelayMilliseconds);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    saving,
+    selectedDefinition,
+    selectedInstanceId,
+    selectedInstanceState,
+    selectedPatientId,
+    patientId,
+    session.sessionId,
+    valuesFingerprint,
+  ]);
 
   async function startForm(definition: ClinicalFormDefinitionSummary) {
     if (reason.trim().length < 3) {
@@ -304,7 +405,10 @@ export default function PatientClinicalForms() {
     try {
       const evaluation = await previewClinicalForm(session.sessionId, selected.definition, values);
       setSelected((current) => current ? { ...current, validation: evaluation } : current);
+      valuesRef.current = evaluation.values;
       setValues(evaluation.values);
+      setLiveFeedbackState("ready");
+      setLiveFeedbackError("");
       showToast(evaluation.valid ? "The form is valid." : "Review the form validation messages.", evaluation.valid ? "success" : "error");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not validate the clinical form.");
@@ -423,6 +527,14 @@ export default function PatientClinicalForms() {
   }
 
   const issueByField = new Map((selected?.validation.issues ?? []).map((issue) => [issue.fieldKey, issue.message]));
+  const issueByRule = new Map(
+    (selected?.validation.issues ?? [])
+      .filter((issue) => issue.ruleKey)
+      .map((issue) => [issue.ruleKey, issue.message]),
+  );
+  const triggeredRules = (selected?.validation.ruleEvaluations ?? []).filter(
+    (evaluation) => evaluation.triggered,
+  );
   const draft = selected?.instance.state === "draft";
 
   return (
@@ -484,6 +596,49 @@ export default function PatientClinicalForms() {
           <div className="section-heading"><div><p className="eyebrow">{selected.instance.state}</p><h2 id="selected-clinical-form-heading">{selected.instance.name} <span className="muted">revision {selected.instance.definitionRevision}</span></h2></div><p>Author: {selected.instance.author}</p></div>
           <p>{selected.definition.purpose}</p>
           {selected.validation.issues.length > 0 ? <div className="hint-banner" role="status"><strong>Validation</strong><ul>{selected.validation.issues.map((issue) => <li key={`${issue.fieldKey}-${issue.message}`}>{issue.message}</li>)}</ul></div> : null}
+          {draft ? (
+            <section
+              className="hint-banner"
+              aria-labelledby="clinical-form-live-guidance-heading"
+            >
+              <strong id="clinical-form-live-guidance-heading">
+                Live rule guidance
+              </strong>
+              <p aria-live="polite" role="status">
+                {liveFeedbackState === "waiting"
+                  ? "Guidance will update after a brief pause."
+                  : liveFeedbackState === "updating"
+                    ? "Updating rule guidance…"
+                    : liveFeedbackState === "failed"
+                      ? "Live guidance is unavailable. Your unsaved input is unchanged."
+                      : "Guidance reflects the current unsaved draft."}
+              </p>
+              <p className="cl-field-help">
+                This server preview does not save or finalize the form.
+              </p>
+              {liveFeedbackError ? (
+                <p className="form-error" role="alert">{liveFeedbackError}</p>
+              ) : null}
+              {liveFeedbackState === "ready" && triggeredRules.length === 0 ? (
+                <p>No configured rules are triggered by the current values.</p>
+              ) : null}
+              {triggeredRules.length > 0 ? (
+                <ul>
+                  {triggeredRules.map((evaluation) => (
+                    <li key={evaluation.ruleKey}>
+                      <strong>{evaluation.action}</strong>{" "}
+                      <code>{evaluation.targetFieldKey}</code>:{" "}
+                      {evaluation.explanation}
+                      {issueByRule.get(evaluation.ruleKey)
+                        ? ` ${issueByRule.get(evaluation.ruleKey)}`
+                        : ""}{" "}
+                      <span className="muted">Rule {evaluation.ruleKey}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
           {selected.definition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{selected.definition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
           <div className="cl-form-field"><label htmlFor="clinical-form-mutation-reason">Draft save reason / transition reason</label><input id="clinical-form-mutation-reason" value={draft ? reason : actionReason} maxLength={500} disabled={saving} onChange={(event) => draft ? setReason(event.target.value) : setActionReason(event.target.value)} /></div>
           <div className="page-actions">
