@@ -629,6 +629,15 @@ try {
         ($null -ne $ankleDefinition -and $ankleDefinition.contextScope -eq "encounter" -and $ankleDefinition.signaturePolicy -eq "author-only" -and $ankleDetail.currentRevision.status -eq "effective" -and $ankleFields.Count -eq 11 -and (($ankleFields.key -join "|") -eq "ankle_date_of_injuary|ankle_work_related|ankle_foot|ankle_severity_of_pain|ankle_significant_swelling|ankle_onset_of_swelling|ankle_how_did_injury_occur|ankle_ottawa_bone_tenderness|ankle_able_to_bear_weight_steps|ankle_x_ray_interpretation|ankle_additional_x_ray_notes") -and (($ankleFields | Where-Object { $_.key -eq "ankle_foot" }).options.code -join "|") -eq "left|right" -and ($ankleFields | Where-Object { $_.key -eq "ankle_x_ray_interpretation" }).options.Count -eq 9 -and $anklePreview.valid) `
         @{ definitionId=$ankleDefinition.definitionId; schemaHash=$ankleDetail.currentRevision.schemaHash; fields=$ankleFields.key; previewValid=$anklePreview.valid }
 
+    $anklePlanDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.anklediagnosisplan" }) | Select-Object -First 1
+    $anklePlanDetail = if ($null -ne $anklePlanDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($anklePlanDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $anklePlanFields = @($anklePlanDetail.currentRevision.definition.fields)
+    $anklePlanPreview = if ($null -ne $anklePlanDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$anklePlanDetail.currentRevision.definition; values=@{ ankle_diagnosis1="icd9_845_00"; ankle_diagnosis2="icd9_824_2"; ankle_additional_diagnisis="Synthetic additional diagnosis."; ankle_plan="Synthetic treatment plan." } } } else { $null }
+    Add-Check `
+        "Legacy Ankle Diagnosis Plan adoption maps fixed diagnosis and treatment fields without PHP execution" `
+        ($null -ne $anklePlanDefinition -and $anklePlanDefinition.contextScope -eq "encounter" -and $anklePlanDefinition.signaturePolicy -eq "author-only" -and $anklePlanDetail.currentRevision.status -eq "effective" -and (($anklePlanFields.key -join "|") -eq "ankle_diagnosis1|ankle_diagnosis2|ankle_diagnosis3|ankle_diagnosis4|ankle_additional_diagnisis|ankle_plan") -and @($anklePlanFields | Where-Object { $_.key -like "ankle_diagnosis[1-4]" -and $_.options.Count -ne 9 }).Count -eq 0 -and @($anklePlanFields | Where-Object { $_.key -in @("ankle_additional_diagnisis", "ankle_plan") -and ($_.type -ne "multiline" -or $_.maxLength -ne 4000) }).Count -eq 0 -and $anklePlanPreview.valid) `
+        @{ definitionId=$anklePlanDefinition.definitionId; schemaHash=$anklePlanDetail.currentRevision.schemaHash; fields=$anklePlanFields.key; previewValid=$anklePlanPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
