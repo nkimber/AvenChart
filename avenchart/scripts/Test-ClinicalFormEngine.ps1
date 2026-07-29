@@ -592,6 +592,15 @@ try {
         ($null -ne $workSchoolNoteDefinition -and $workSchoolNoteDefinition.contextScope -eq "encounter" -and $workSchoolNoteDefinition.signaturePolicy -eq "author-only" -and $workSchoolNoteDetail.currentRevision.status -eq "effective" -and (($workSchoolNoteFields.key -join "|") -eq "note_type|message|doctor|date_of_signature") -and (($workSchoolNoteFields | Where-Object { $_.key -eq "note_type" }).options.code -join "|") -eq "work_note|school_note" -and ($workSchoolNoteFields | Where-Object { $_.key -eq "message" }).type -eq "multiline" -and ($workSchoolNoteFields | Where-Object { $_.key -eq "message" }).maxLength -eq 4000 -and ($workSchoolNoteFields | Where-Object { $_.key -eq "doctor" }).maxLength -eq 255 -and ($workSchoolNoteFields | Where-Object { $_.key -eq "date_of_signature" }).type -eq "date" -and $workSchoolNotePreview.valid) `
         @{ definitionId=$workSchoolNoteDefinition.definitionId; schemaHash=$workSchoolNoteDetail.currentRevision.schemaHash; fields=$workSchoolNoteFields.key; previewValid=$workSchoolNotePreview.valid }
 
+    $priorAuthorizationDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.priorauthorization" }) | Select-Object -First 1
+    $priorAuthorizationDetail = if ($null -ne $priorAuthorizationDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($priorAuthorizationDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $priorAuthorizationFields = @($priorAuthorizationDetail.currentRevision.definition.fields)
+    $priorAuthorizationPreview = if ($null -ne $priorAuthorizationDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$priorAuthorizationDetail.currentRevision.definition; values=@{ prior_auth_number="AUTH-12345"; date_from="2026-07-29"; date_to="2026-08-29"; comments="Synthetic prior authorization comments." } } } else { $null }
+    Add-Check `
+        "Legacy Prior Authorization adoption maps fixed encounter authorization fields without PHP execution" `
+        ($null -ne $priorAuthorizationDefinition -and $priorAuthorizationDefinition.contextScope -eq "encounter" -and $priorAuthorizationDefinition.signaturePolicy -eq "author-only" -and $priorAuthorizationDetail.currentRevision.status -eq "effective" -and (($priorAuthorizationFields.key -join "|") -eq "prior_auth_number|date_from|date_to|comments") -and ($priorAuthorizationFields | Where-Object { $_.key -eq "prior_auth_number" }).maxLength -eq 35 -and @($priorAuthorizationFields | Where-Object { $_.key -in @("date_from", "date_to") -and $_.type -ne "date" }).Count -eq 0 -and ($priorAuthorizationFields | Where-Object { $_.key -eq "comments" }).maxLength -eq 4000 -and $priorAuthorizationPreview.valid) `
+        @{ definitionId=$priorAuthorizationDefinition.definitionId; schemaHash=$priorAuthorizationDetail.currentRevision.schemaHash; fields=$priorAuthorizationFields.key; previewValid=$priorAuthorizationPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
