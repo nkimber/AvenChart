@@ -6883,6 +6883,20 @@ export async function getPracticeSettings(
 ): Promise<{ settings: PracticeSettingItem[] }> {
   return clinicianGet(sessionId, '/api/administration/practice-settings')
 }
+export type EffectivePracticeSettingItem = PracticeSettingItem & {
+  sourceScope: 'system' | 'facility'
+  sourceFacilityId: number | null
+  facilityOverrideAvailable: boolean
+}
+export async function getEffectivePracticeSettings(
+  sessionId: string,
+  facilityId?: number,
+): Promise<{ requestedFacilityId: number | null; settings: EffectivePracticeSettingItem[] }> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/practice-settings/effective${facilityId ? `?facilityId=${encodeURIComponent(facilityId)}` : ''}`,
+  )
+}
 export async function updatePracticeSetting(
   sessionId: string,
   key: string,

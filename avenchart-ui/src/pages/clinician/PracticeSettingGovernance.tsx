@@ -7,9 +7,11 @@ import {
 } from "react";
 import {
   createPracticeSettingChangeRequest,
+  getEffectivePracticeSettings,
   getPracticeSettingChangeRequest,
   getPracticeSettingChangeRequests,
   transitionPracticeSettingChangeRequest,
+  type EffectivePracticeSettingItem,
   type PracticeSettingChangeRequestAction,
   type PracticeSettingChangeRequestDetail,
   type PracticeSettingChangeRequestsResponse,
@@ -87,6 +89,9 @@ export default function PracticeSettingGovernance({
   const [transitioning, setTransitioning] =
     useState<PracticeSettingChangeRequestAction | null>(null);
   const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [effectiveSettings, setEffectiveSettings] = useState<
+    Map<string, EffectivePracticeSettingItem>
+  >(new Map());
 
   const settingByKey = useMemo(
     () => new Map(settings.map((setting) => [setting.key, setting])),
@@ -126,6 +131,31 @@ export default function PracticeSettingGovernance({
     void loadRequests(controller.signal);
     return () => controller.abort();
   }, [sessionId, settingFilter, statusFilter, offset, refreshVersion]);
+
+  const defaultFacilityId = Number(
+    settings.find((setting) => setting.key === "practice.default-facility-id")
+      ?.value,
+  );
+
+  useEffect(() => {
+    let active = true;
+    void getEffectivePracticeSettings(
+      sessionId,
+      Number.isInteger(defaultFacilityId) && defaultFacilityId > 0
+        ? defaultFacilityId
+        : undefined,
+    )
+      .then((result) => {
+        if (!active) return;
+        setEffectiveSettings(new Map(result.settings.map((setting) => [setting.key, setting])));
+      })
+      .catch(() => {
+        if (active) setEffectiveSettings(new Map());
+      });
+    return () => {
+      active = false;
+    };
+  }, [defaultFacilityId, sessionId, settings]);
 
   useEffect(() => {
     if (proposal.settingKey || settings.length === 0) return;
@@ -298,14 +328,24 @@ export default function PracticeSettingGovernance({
       <div className="practice-governance-boundary" role="note">
         <strong>Current local boundary:</strong> the same authorized
         administrator may submit, approve, and activate. Independent approver
-        matrices, effective dates, facility scope, and impact preview remain
-        owner-governed ADM-01/ADM-02 work. The older direct-update API remains
-        compatibility-only and is not used by this screen.
+        matrices, effective dates, scoped mutation, delegated administration,
+        and impact preview remain owner-governed ADM-01/ADM-02 work. Effective
+        values below now disclose their system or default-facility source. The
+        older direct-update API remains compatibility-only and is not used by
+        this screen.
       </div>
 
       <div className="practice-setting-grid" aria-label="Active practice settings">
         {settings.map((setting) => (
           <article className="practice-setting-card" key={setting.key}>
+            {effectiveSettings.get(setting.key) && (
+              <p className="cl-empty-text">
+                Effective source: {effectiveSettings.get(setting.key)?.sourceScope}
+                {effectiveSettings.get(setting.key)?.sourceFacilityId
+                  ? ` facility ${effectiveSettings.get(setting.key)?.sourceFacilityId}`
+                  : " default"}
+              </p>
+            )}
             <p className="cl-form-section-label">{setting.label}</p>
             <p className="practice-setting-value">{setting.value}</p>
             <p className="cl-empty-text">

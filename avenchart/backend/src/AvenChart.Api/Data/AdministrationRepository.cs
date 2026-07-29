@@ -30,6 +30,47 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new PracticeSettingsResponse(settings);
     }
 
+    public async Task<EffectivePracticeSettingsResponse> GetEffectivePracticeSettingsAsync(int? facilityId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (facilityId is not null)
+        {
+            await using var facility = connection.CreateCommand();
+            facility.CommandText = "select exists(select 1 from facilities where id=@facilityId and inactive=false);";
+            facility.Parameters.AddWithValue("facilityId", facilityId.Value);
+            if (!(bool)(await facility.ExecuteScalarAsync(cancellationToken) ?? false)) throw new ArgumentException("The requested active facility was not found.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select setting.setting_key, setting.setting_value, setting.value_type, setting.updated_at, setting.updated_by,
+                   facility_override.setting_value, facility_override.updated_at, facility_override.updated_by
+            from practice_settings setting
+            left join practice_setting_facility_overrides facility_override
+              on facility_override.setting_key=setting.setting_key and facility_override.facility_id=@facilityId
+            order by setting.setting_key;
+            """;
+        command.Parameters.AddWithValue("facilityId", (object?)facilityId ?? DBNull.Value);
+        var settings = new List<EffectivePracticeSettingItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var overridden = !reader.IsDBNull(5);
+            var key = reader.GetString(0);
+            settings.Add(new(
+                key,
+                key switch { "practice.name" => "Practice name", "practice.default-facility-id" => "Default facility", _ => "Time zone" },
+                overridden ? reader.GetString(5) : reader.GetString(1),
+                reader.GetString(2),
+                overridden ? "facility" : "system",
+                overridden ? facilityId : null,
+                (overridden ? reader.GetFieldValue<DateTimeOffset>(6) : reader.GetFieldValue<DateTimeOffset>(3)).ToString("O"),
+                overridden ? reader.GetString(7) : reader.GetString(4),
+                facilityId is not null));
+        }
+        return new(facilityId, settings);
+    }
+
     public async Task<CodingCatalogResponse> GetCodingCatalogsAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

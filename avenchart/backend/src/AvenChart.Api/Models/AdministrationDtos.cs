@@ -184,6 +184,21 @@ public sealed record PracticeSettingItem(
 public sealed record PracticeSettingsResponse(
     IReadOnlyList<PracticeSettingItem> Settings);
 
+public sealed record EffectivePracticeSettingItem(
+    string Key,
+    string Label,
+    string Value,
+    string ValueType,
+    string SourceScope,
+    int? SourceFacilityId,
+    string UpdatedAt,
+    string UpdatedBy,
+    bool FacilityOverrideAvailable);
+
+public sealed record EffectivePracticeSettingsResponse(
+    int? RequestedFacilityId,
+    IReadOnlyList<EffectivePracticeSettingItem> Settings);
+
 public sealed record PracticeSettingUpdateRequest(string Value);
 public sealed record PracticeSettingRevision(long RevisionId, string Value, string? PriorValue, string Action, long? RestoredFromRevisionId, string OccurredAt, string Username);
 public sealed record PracticeSettingHistoryResponse(PracticeSettingItem Setting, IReadOnlyList<PracticeSettingRevision> Revisions);
