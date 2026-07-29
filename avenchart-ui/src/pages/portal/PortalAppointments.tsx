@@ -8,13 +8,16 @@ import {
 import { useLocation, useOutletContext } from "react-router-dom";
 import { CalendarClock, CalendarPlus } from "lucide-react";
 import {
-  getPatientPortalAppointments,
   getPatientPortalAppointmentRequestOptions,
   requestPatientPortalAppointment,
   type PatientPortalAppointmentRequestOptionsResponse,
-  type PatientPortalAppointmentsResponse,
   type PatientPortalHomeAppointmentSummary,
 } from "../../api.ts";
+import {
+  getPatientPortalAppointmentsWithRequestHistory,
+  type PatientPortalAppointmentRequestHistoryItem,
+  type PatientPortalAppointmentsWithRequestHistoryResponse,
+} from "../../api/portalAppointments.ts";
 import type { PortalOutletContext } from "./PortalShell.tsx";
 import { showToast } from "../../components/Toast.tsx";
 import { AppointmentStatusBadge } from "../../components/AppointmentStatusBadge.tsx";
@@ -44,6 +47,25 @@ function formatApptDate(dateStr: string) {
 function formatTime(value?: string | null) {
   if (!value) return "";
   return value.length >= 5 ? value.slice(0, 5) : value;
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+}
+
+function requestStateClass(
+  state: PatientPortalAppointmentRequestHistoryItem["state"],
+) {
+  if (state === "accepted") return "cl-badge-green";
+  if (state === "pending") return "cl-badge-amber";
+  if (state === "expired") return "cl-badge-muted";
+  return "cl-badge-red";
 }
 
 function buildIcsContent(appt: PatientPortalHomeAppointmentSummary): string {
@@ -131,7 +153,7 @@ export default function PortalAppointments() {
     () => location.state?.openRequest === true,
   );
   const [appointmentsState, setAppointmentsState] = useState<
-    AsyncState<PatientPortalAppointmentsResponse>
+    AsyncState<PatientPortalAppointmentsWithRequestHistoryResponse>
   >({ status: "loading" });
   const [optionsState, setOptionsState] = useState<
     AsyncState<PatientPortalAppointmentRequestOptionsResponse>
@@ -152,7 +174,9 @@ export default function PortalAppointments() {
   const loadAppointments = useCallback(async () => {
     setAppointmentsState({ status: "loading" });
     try {
-      const data = await getPatientPortalAppointments(session.sessionId);
+      const data = await getPatientPortalAppointmentsWithRequestHistory(
+        session.sessionId,
+      );
       setAppointmentsState({ status: "ready", data });
     } catch (caught) {
       setAppointmentsState({
@@ -319,6 +343,10 @@ export default function PortalAppointments() {
   const pastAppointments =
     appointmentsState.status === "ready"
       ? appointmentsState.data.pastAppointments
+      : [];
+  const appointmentRequests =
+    appointmentsState.status === "ready"
+      ? appointmentsState.data.appointmentRequests
       : [];
   const selectedProvider =
     optionsState.status === "ready"
@@ -608,6 +636,149 @@ export default function PortalAppointments() {
               />
             ))}
           </ul>
+        )}
+      </section>
+
+      <section
+        className="portal-section"
+        aria-labelledby="appointment-request-history-title"
+      >
+        <div className="portal-section-header">
+          <div>
+            <h2
+              className="portal-section-title"
+              id="appointment-request-history-title"
+            >
+              Appointment request history
+            </h2>
+            <p className="portal-section-subtitle">
+              Durable request state, timing, and the next available action.
+            </p>
+          </div>
+          {appointmentsState.status === "ready" && (
+            <span className="cl-badge cl-badge-muted">
+              {appointmentRequests.length} of{" "}
+              {appointmentsState.data.appointmentRequestCount}
+            </span>
+          )}
+        </div>
+
+        {appointmentsState.status === "loading" ? (
+          <div className="skeleton-list">
+            {[0, 1].map((item) => (
+              <div className="skeleton-row" key={item} style={{ height: 120 }} />
+            ))}
+          </div>
+        ) : appointmentsState.status === "error" ? (
+          <div className="empty-state">
+            <div className="empty-state-icon-wrap">
+              <CalendarClock size={28} />
+            </div>
+            <p className="empty-state-text">
+              Appointment request history is temporarily unavailable.
+            </p>
+            <button
+              className="toggle-button"
+              type="button"
+              onClick={() => void loadAppointments()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : appointmentRequests.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon-wrap">
+              <CalendarClock size={28} />
+            </div>
+            <p className="empty-state-text">
+              No appointment requests are on file.
+            </p>
+          </div>
+        ) : (
+          <ol className="portal-appointment-request-list">
+            {appointmentRequests.map((request) => (
+              <li
+                className="portal-appointment-request-card"
+                key={request.appointmentId}
+              >
+                <div className="portal-appointment-request-heading">
+                  <div>
+                    <h3>{request.title}</h3>
+                    <p>
+                      Requested {formatTimestamp(request.requestedAt)} · request{" "}
+                      <code>{request.appointmentId}</code> · version{" "}
+                      {request.version}
+                    </p>
+                  </div>
+                  <span
+                    className={`cl-badge ${requestStateClass(request.state)}`}
+                  >
+                    {request.stateLabel}
+                  </span>
+                </div>
+                <dl className="portal-appointment-request-facts">
+                  <div>
+                    <dt>Requested visit</dt>
+                    <dd>
+                      {formatApptDate(request.date).full} at{" "}
+                      {formatTime(request.startTime)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>{request.providerName ?? "Not recorded"}</dd>
+                  </div>
+                  <div>
+                    <dt>Facility</dt>
+                    <dd>{request.facilityName ?? "Not recorded"}</dd>
+                  </div>
+                  <div>
+                    <dt>Last changed</dt>
+                    <dd>{formatTimestamp(request.updatedAt)}</dd>
+                  </div>
+                </dl>
+                {request.reason && (
+                  <p className="portal-appointment-request-reason">
+                    <strong>Reason:</strong> {request.reason}
+                  </p>
+                )}
+                <p className="portal-appointment-request-next">
+                  <strong>Next action:</strong> {request.nextAction}
+                </p>
+                {request.state === "expired" && (
+                  <p className="portal-appointment-request-derived">
+                    Expiry is {request.stateSource}; no scheduler event is
+                    fabricated.
+                  </p>
+                )}
+                {request.evidenceSource === "migration-backfill" && (
+                  <p className="portal-appointment-request-derived">
+                    This pre-existing local request was discovered during the
+                    lifecycle migration; its earlier transition timing is not
+                    reconstructed.
+                  </p>
+                )}
+                <details className="portal-appointment-request-events">
+                  <summary>
+                    Lifecycle evidence ({request.events.length})
+                  </summary>
+                  <ol>
+                    {request.events.map((event) => (
+                      <li key={event.eventId}>
+                        <strong>{event.action}</strong> · {event.state} ·{" "}
+                        {formatTimestamp(event.occurredAt)}
+                        <span>
+                          Version {event.sequence} · source{" "}
+                          {event.evidenceSource} · diagnostic status{" "}
+                          <code>{event.rawStatus}</code>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              </li>
+            ))}
+          </ol>
         )}
       </section>
 

@@ -7,6 +7,7 @@ import {
   getPatientPortalAppointmentRequestOptions,
   requestPatientPortalAppointment,
 } from '../../api.ts'
+import { getPatientPortalAppointmentsWithRequestHistory } from '../../api/portalAppointments.ts'
 import type { PortalOutletContext } from './PortalShell.tsx'
 
 vi.mock('../../api.ts', async (importOriginal) => {
@@ -17,6 +18,10 @@ vi.mock('../../api.ts', async (importOriginal) => {
     requestPatientPortalAppointment: vi.fn(),
   }
 })
+
+vi.mock('../../api/portalAppointments.ts', () => ({
+  getPatientPortalAppointmentsWithRequestHistory: vi.fn(),
+}))
 
 const appointmentOptions = {
   authenticated: true,
@@ -37,6 +42,63 @@ const appointmentOptions = {
     date: '2026-08-12',
     startTime: '10:30:00',
   },
+}
+
+const appointmentsWithHistory = {
+  authenticated: true,
+  sessionId: 'portal-session',
+  username: 'patient',
+  portalUsername: 'patient',
+  canonicalId: 'MOD-PAT-0004',
+  legacyPid: 100004,
+  pubpid: 'MOD-PAT-0004',
+  displayName: 'Patient Example',
+  datasetId: 'gold',
+  datasetVersion: '2026-07-29',
+  asOfDate: '2026-07-29',
+  upcomingAppointmentCount: 0,
+  upcomingAppointments: [],
+  pastAppointmentCount: 0,
+  pastAppointments: [],
+  appointmentRequestCount: 1,
+  appointmentRequests: [
+    {
+      appointmentId: 'APPT-PORTAL-TEST',
+      state: 'pending' as const,
+      stateLabel: 'Pending practice review',
+      stateSource: 'stored lifecycle',
+      requestedAt: '2026-07-29T20:00:00Z',
+      updatedAt: '2026-07-29T20:00:00Z',
+      nextAction: 'The practice will review this request.',
+      version: 1,
+      date: '2026-08-12',
+      startTime: '10:30',
+      durationMinutes: 30,
+      categoryId: 4,
+      categoryName: 'Annual wellness',
+      providerId: 9,
+      providerName: 'Alex Kim',
+      facilityId: 3,
+      facilityName: 'North Clinic',
+      title: 'Annual wellness',
+      reason: 'Preventive visit',
+      rawStatus: '^',
+      evidenceSource: 'runtime' as const,
+      events: [
+        {
+          eventId: '40000000-0000-0000-0000-000000000001',
+          sequence: 1,
+          action: 'requested',
+          state: 'pending' as const,
+          rawStatus: '^',
+          occurredAt: '2026-07-29T20:00:00Z',
+          evidenceSource: 'runtime' as const,
+        },
+      ],
+    },
+  ],
+  failureReason: null,
+  sessionSource: 'test',
 }
 
 const context: PortalOutletContext = {
@@ -74,6 +136,9 @@ function renderAppointments(openRequest = false) {
 
 describe('PortalAppointments request flow', () => {
   beforeEach(() => {
+    vi.mocked(
+      getPatientPortalAppointmentsWithRequestHistory,
+    ).mockResolvedValue(appointmentsWithHistory)
     vi.mocked(getPatientPortalAppointmentRequestOptions).mockResolvedValue(
       appointmentOptions,
     )
@@ -116,5 +181,28 @@ describe('PortalAppointments request flow', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
     expect(document.body.style.overflow).toBe('')
+  })
+
+  it('renders durable request state, next action, and lifecycle evidence', async () => {
+    const user = userEvent.setup()
+    renderAppointments()
+
+    const history = await screen.findByRole('region', {
+      name: 'Appointment request history',
+    })
+    expect(within(history).getByText('Pending practice review')).toBeInTheDocument()
+    expect(
+      within(history).getByText('The practice will review this request.', {
+        exact: false,
+      }),
+    ).toBeInTheDocument()
+    expect(within(history).getByText('Alex Kim')).toBeInTheDocument()
+    expect(within(history).getByText('North Clinic')).toBeInTheDocument()
+
+    await user.click(
+      within(history).getByText('Lifecycle evidence (1)'),
+    )
+    expect(within(history).getByText('requested')).toBeInTheDocument()
+    expect(within(history).getByText(/diagnostic status/)).toBeInTheDocument()
   })
 })

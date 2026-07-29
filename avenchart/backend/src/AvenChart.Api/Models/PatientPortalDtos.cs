@@ -175,8 +175,43 @@ public sealed record PatientPortalAppointmentsResponse(
     IReadOnlyList<PatientPortalHomeAppointmentSummary> UpcomingAppointments,
     int PastAppointmentCount,
     IReadOnlyList<PatientPortalHomeAppointmentSummary> PastAppointments,
+    int AppointmentRequestCount,
+    IReadOnlyList<PatientPortalAppointmentRequestHistoryItem> AppointmentRequests,
     string? FailureReason,
     string SessionSource);
+
+public sealed record PatientPortalAppointmentRequestHistoryItem(
+    string AppointmentId,
+    string State,
+    string StateLabel,
+    string StateSource,
+    string RequestedAt,
+    string UpdatedAt,
+    string NextAction,
+    int Version,
+    string Date,
+    string StartTime,
+    int DurationMinutes,
+    int? CategoryId,
+    string? CategoryName,
+    int? ProviderId,
+    string? ProviderName,
+    int? FacilityId,
+    string? FacilityName,
+    string Title,
+    string? Reason,
+    string RawStatus,
+    string EvidenceSource,
+    IReadOnlyList<PatientPortalAppointmentRequestHistoryEvent> Events);
+
+public sealed record PatientPortalAppointmentRequestHistoryEvent(
+    Guid EventId,
+    int Sequence,
+    string Action,
+    string State,
+    string RawStatus,
+    string OccurredAt,
+    string EvidenceSource);
 
 public sealed record PatientPortalClinicalSummaryResponse(
     bool Authenticated,

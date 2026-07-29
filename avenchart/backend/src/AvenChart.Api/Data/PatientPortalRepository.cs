@@ -468,6 +468,11 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             metadata.BaseDate,
             PortalAppointmentWindow.Past,
             cancellationToken);
+        var appointmentRequests = await GetPortalAppointmentRequestsAsync(
+            connection,
+            session.CanonicalId,
+            metadata.BaseDate,
+            cancellationToken);
 
         return new PatientPortalAppointmentsResponse(
             Authenticated: true,
@@ -485,6 +490,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
             UpcomingAppointments: upcomingAppointments.Items,
             PastAppointmentCount: pastAppointments.TotalCount,
             PastAppointments: pastAppointments.Items,
+            AppointmentRequestCount: appointmentRequests.TotalCount,
+            AppointmentRequests: appointmentRequests.Items,
             FailureReason: null,
             SessionSource: session.SessionSource);
     }
@@ -2403,6 +2410,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
         PastAppointmentCount: 0,
         PastAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        AppointmentRequestCount: 0,
+        AppointmentRequests: Array.Empty<PatientPortalAppointmentRequestHistoryItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -2422,6 +2431,8 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         UpcomingAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
         PastAppointmentCount: 0,
         PastAppointments: Array.Empty<PatientPortalHomeAppointmentSummary>(),
+        AppointmentRequestCount: 0,
+        AppointmentRequests: Array.Empty<PatientPortalAppointmentRequestHistoryItem>(),
         FailureReason: reason,
         SessionSource: SessionSource);
 
@@ -6382,6 +6393,164 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
         return new AppointmentSummaryRows(totalCount, items);
     }
 
+    private static async Task<AppointmentRequestRows> GetPortalAppointmentRequestsAsync(
+        NpgsqlConnection connection,
+        string patientId,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        var storedRows = new List<PortalAppointmentRequestRow>();
+        var totalCount = 0;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select
+                    request.appointment_id,
+                    request.current_state,
+                    request.requested_at,
+                    request.updated_at,
+                    request.version,
+                    request.appointment_date,
+                    request.start_time,
+                    request.duration_minutes,
+                    request.category_id,
+                    request.provider_id,
+                    trim(concat(provider.first_name, ' ', provider.last_name)) as provider_name,
+                    request.facility_id,
+                    facility.name as facility_name,
+                    request.title,
+                    request.reason,
+                    request.raw_status,
+                    request.evidence_source,
+                    count(*) over ()::int as total_count
+                from patient_portal_appointment_requests request
+                left join staff provider on provider.id = request.provider_id
+                left join facilities facility on facility.id = request.facility_id
+                where request.patient_id = @patient_id
+                order by request.requested_at desc, request.appointment_id desc
+                limit 50;
+                """;
+            command.Parameters.AddWithValue("patient_id", patientId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                totalCount = reader.GetInt32(reader.GetOrdinal("total_count"));
+                storedRows.Add(new PortalAppointmentRequestRow(
+                    AppointmentId: reader.GetString(reader.GetOrdinal("appointment_id")),
+                    State: reader.GetString(reader.GetOrdinal("current_state")),
+                    RequestedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("requested_at")),
+                    UpdatedAt: reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("updated_at")),
+                    Version: reader.GetInt32(reader.GetOrdinal("version")),
+                    Date: reader.GetFieldValue<DateOnly>(reader.GetOrdinal("appointment_date")),
+                    StartTime: reader.GetFieldValue<TimeOnly>(reader.GetOrdinal("start_time")),
+                    DurationMinutes: reader.GetInt32(reader.GetOrdinal("duration_minutes")),
+                    CategoryId: ReadNullableInt(reader, "category_id"),
+                    ProviderId: ReadNullableInt(reader, "provider_id"),
+                    ProviderName: ReadNullableString(reader, "provider_name"),
+                    FacilityId: ReadNullableInt(reader, "facility_id"),
+                    FacilityName: ReadNullableString(reader, "facility_name"),
+                    Title: reader.GetString(reader.GetOrdinal("title")),
+                    Reason: ReadNullableString(reader, "reason"),
+                    RawStatus: reader.GetString(reader.GetOrdinal("raw_status")),
+                    EvidenceSource: reader.GetString(reader.GetOrdinal("evidence_source"))));
+            }
+        }
+
+        var eventsByAppointment = storedRows.ToDictionary(
+            row => row.AppointmentId,
+            _ => new List<PatientPortalAppointmentRequestHistoryEvent>(),
+            StringComparer.Ordinal);
+        if (storedRows.Count > 0)
+        {
+            await using var eventCommand = connection.CreateCommand();
+            eventCommand.CommandText = """
+                select
+                    event_id,
+                    appointment_id,
+                    sequence,
+                    action,
+                    state,
+                    raw_status,
+                    occurred_at,
+                    evidence_source
+                from patient_portal_appointment_request_events
+                where appointment_id = any(@appointment_ids)
+                order by appointment_id, sequence desc;
+                """;
+            eventCommand.Parameters.Add(
+                "appointment_ids",
+                NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+                storedRows.Select(row => row.AppointmentId).ToArray();
+            await using var eventReader = await eventCommand.ExecuteReaderAsync(cancellationToken);
+            while (await eventReader.ReadAsync(cancellationToken))
+            {
+                var appointmentId = eventReader.GetString(eventReader.GetOrdinal("appointment_id"));
+                eventsByAppointment[appointmentId].Add(
+                    new PatientPortalAppointmentRequestHistoryEvent(
+                        EventId: eventReader.GetGuid(eventReader.GetOrdinal("event_id")),
+                        Sequence: eventReader.GetInt32(eventReader.GetOrdinal("sequence")),
+                        Action: eventReader.GetString(eventReader.GetOrdinal("action")),
+                        State: eventReader.GetString(eventReader.GetOrdinal("state")),
+                        RawStatus: eventReader.GetString(eventReader.GetOrdinal("raw_status")),
+                        OccurredAt: eventReader
+                            .GetFieldValue<DateTimeOffset>(eventReader.GetOrdinal("occurred_at"))
+                            .ToString("O"),
+                        EvidenceSource: eventReader.GetString(eventReader.GetOrdinal("evidence_source"))));
+            }
+        }
+
+        var items = storedRows.Select(row =>
+        {
+            var expired = row.State == "pending" && row.Date < asOfDate;
+            var state = expired ? "expired" : row.State;
+            var stateLabel = state switch
+            {
+                "pending" => "Pending practice review",
+                "accepted" => "Accepted",
+                "declined" => "Declined",
+                "cancelled" => "Cancelled",
+                _ => "Expired"
+            };
+            var nextAction = state switch
+            {
+                "pending" => "The practice will review this request.",
+                "accepted" when row.Date >= asOfDate => "Prepare for the scheduled visit.",
+                "accepted" => "No further request action is required.",
+                "declined" => "Submit a new request or contact the practice if care is still needed.",
+                "cancelled" => "Submit a new request if care is still needed.",
+                _ => "The requested date passed before acceptance; submit a new request or contact the practice."
+            };
+
+            return new PatientPortalAppointmentRequestHistoryItem(
+                AppointmentId: row.AppointmentId,
+                State: state,
+                StateLabel: stateLabel,
+                StateSource: expired
+                    ? $"derived from request date against dataset as-of {asOfDate:yyyy-MM-dd}"
+                    : "stored lifecycle",
+                RequestedAt: row.RequestedAt.ToString("O"),
+                UpdatedAt: row.UpdatedAt.ToString("O"),
+                NextAction: nextAction,
+                Version: row.Version,
+                Date: row.Date.ToString("yyyy-MM-dd"),
+                StartTime: row.StartTime.ToString("HH:mm"),
+                DurationMinutes: row.DurationMinutes,
+                CategoryId: row.CategoryId,
+                CategoryName: GetAppointmentCategoryName(row.CategoryId),
+                ProviderId: row.ProviderId,
+                ProviderName: row.ProviderName,
+                FacilityId: row.FacilityId,
+                FacilityName: row.FacilityName,
+                Title: row.Title,
+                Reason: row.Reason,
+                RawStatus: row.RawStatus,
+                EvidenceSource: row.EvidenceSource,
+                Events: eventsByAppointment[row.AppointmentId]);
+        }).ToArray();
+
+        return new AppointmentRequestRows(totalCount, items);
+    }
+
     private static async Task<PatientPortalSessionRow> CreateSessionAsync(
         NpgsqlConnection connection,
         PatientPortalAccountRow account,
@@ -6686,6 +6855,29 @@ public sealed class PatientPortalRepository(NpgsqlDataSource dataSource)
     private sealed record AppointmentSummaryRows(
         int TotalCount,
         IReadOnlyList<PatientPortalHomeAppointmentSummary> Items);
+
+    private sealed record AppointmentRequestRows(
+        int TotalCount,
+        IReadOnlyList<PatientPortalAppointmentRequestHistoryItem> Items);
+
+    private sealed record PortalAppointmentRequestRow(
+        string AppointmentId,
+        string State,
+        DateTimeOffset RequestedAt,
+        DateTimeOffset UpdatedAt,
+        int Version,
+        DateOnly Date,
+        TimeOnly StartTime,
+        int DurationMinutes,
+        int? CategoryId,
+        int? ProviderId,
+        string? ProviderName,
+        int? FacilityId,
+        string? FacilityName,
+        string Title,
+        string? Reason,
+        string RawStatus,
+        string EvidenceSource);
 
     private sealed record PortalAttachmentUpload(string FileName, string ContentType, byte[] Content);
 
