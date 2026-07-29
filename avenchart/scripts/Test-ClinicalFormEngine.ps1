@@ -424,6 +424,36 @@ try {
             maxLength = $clinicalInstructionsFields[0].maxLength
         }
 
+    $soapDefinition = @(
+        $catalog.definitions |
+            Where-Object { $_.stableKey -eq "legacy.soap" }
+    ) | Select-Object -First 1
+    $soapDetail = if ($null -ne $soapDefinition) {
+        Invoke-Json `
+            -Uri "$ApiBaseUrl/api/form-engine/definitions/$($soapDefinition.definitionId)" `
+            -RequestHeaders $adminHeaders
+    }
+    else {
+        $null
+    }
+    $soapFields = @($soapDetail.currentRevision.definition.fields)
+    Add-Check `
+        "Legacy SOAP adoption maps its four encounter narratives without PHP execution" `
+        ($null -ne $soapDefinition `
+            -and $soapDefinition.contextScope -eq "encounter" `
+            -and $soapDefinition.signaturePolicy -eq "author-only" `
+            -and $soapDetail.currentRevision.status -eq "effective" `
+            -and $soapDetail.currentRevision.schemaHash -eq "dead7d95ea9efc8a9a4800aac321b53143a34f8d5663958935290184924a90a0" `
+            -and (($soapFields.key -join "|") -eq "subjective|objective|assessment|plan") `
+            -and @($soapFields | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0) `
+        @{
+            definitionId = $soapDefinition.definitionId
+            revision = $soapDetail.currentRevision.revision
+            schemaHash = $soapDetail.currentRevision.schemaHash
+            fields = $soapFields.key
+            maxLengths = $soapFields.maxLength
+        }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
