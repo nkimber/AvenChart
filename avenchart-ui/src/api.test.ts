@@ -30,6 +30,8 @@ import {
   createProcedureLabProviderOrganization,
   createProcedureOrderCatalogItem,
   createProcedureOrder,
+  createProcedureReport,
+  createProcedureResult,
   createProcedureSpecimen,
   createPrescription,
   deleteAllergy,
@@ -126,6 +128,7 @@ import {
   updatePatientDocumentMetadata,
   updatePatientProviderAssignment,
   updateProcedureOrderCatalogItem,
+  updateProcedureResult,
   updatePrescription,
   updateInventoryMedicationLink,
 } from './api.ts'
@@ -1932,6 +1935,21 @@ describe('authenticated API transport', () => {
     expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST'])
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify(order) })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ body: JSON.stringify(specimen) })
+  })
+
+  it('uses protected local lab report, result, and result-correction contracts', async () => {
+    const detail = { patientId: 'MOD-PAT-0004', patientDisplayName: 'Alex Morgan', counts: { orders: 1, reports: 1, results: 1, finalResults: 1 }, orders: [] }
+    const report = { orderId: 7001, dateCollected: '2026-07-29T12:00:00', dateReport: '2026-07-29T12:00:00', specimenNumber: 'SP-7001', reportStatus: 'received', reviewStatus: 'received', notes: '' }
+    const result = { reportId: 8001, resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', facility: '', units: 'mg/dL', result: '95', range: '70-99', abnormal: '', comments: '', status: 'final' }
+    const correction = { resultCode: 'GLU', resultText: 'Glucose', dateTime: '2026-07-29T12:00:00', units: 'mg/dL', result: '105', range: '70-99', abnormal: 'H', status: 'corrected' }
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 8001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail })).mockResolvedValueOnce(jsonResponse({ id: 9001, detail }))
+
+    await expect(createProcedureReport('staff-session', report)).resolves.toEqual(detail)
+    await expect(createProcedureResult('staff-session', result)).resolves.toEqual(detail)
+    await expect(updateProcedureResult('staff-session', 9001, correction)).resolves.toEqual(detail)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5001/api/procedures/reports', 'http://localhost:5001/api/procedures/results', 'http://localhost:5001/api/procedures/results/9001'])
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'POST', 'PUT'])
   })
 
   it('uses the protected assign, sign, reopen, and bulk-sign report contracts', async () => {

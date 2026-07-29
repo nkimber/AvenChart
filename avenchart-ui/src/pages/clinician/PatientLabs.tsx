@@ -16,6 +16,7 @@ import {
   labResultFlagClass,
 } from "../../components/LabResultFlag.tsx";
 import type { PatientOutletContext } from "./PatientShell.tsx";
+import LabReportAndResultCapture from "./LabReportAndResultCapture.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -224,6 +225,15 @@ export default function PatientLabs() {
             </form>
             {catalog.length === 0 && <p className="cl-empty-text">No active local catalog orders are available. Add one in Lab Order Catalog before creating an order.</p>}
           </section>
+
+          <LabReportAndResultCapture
+            sessionId={session.sessionId}
+            orders={state.data.orders}
+            onChange={(data) => {
+              setState({ status: "ready", data });
+              setLoadAttempt((attempt) => attempt + 1);
+            }}
+          />
 
           <section className="cl-card">
             <h2 className="cl-card-title">Record local specimen</h2>

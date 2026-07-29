@@ -6379,6 +6379,57 @@ export type ProcedureSpecimenCreateInput = {
   collectedDate: string
   volumeValue?: number | null
   volumeUnit: string
+export type ProcedureReportCreateInput = {
+  orderId: number
+  dateCollected: string
+  dateReport: string
+  specimenNumber: string
+  reportStatus: string
+  reviewStatus: string
+  notes: string
+}
+
+export async function createProcedureReport(sessionId: string, input: ProcedureReportCreateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/reports', input)
+  return result.detail
+}
+
+export type ProcedureResultCreateInput = {
+  reportId: number
+  resultCode: string
+  resultText: string
+  dateTime: string
+  facility: string
+  units: string
+  result: string
+  range: string
+  abnormal: string
+  comments: string
+  status: string
+}
+
+export type ProcedureResultUpdateInput = Omit<ProcedureResultCreateInput, 'reportId' | 'facility' | 'comments'>
+
+export async function createProcedureResult(sessionId: string, input: ProcedureResultCreateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPost<{ id: number; detail: ProcedureResultsResponse }>(sessionId, '/api/procedures/results', input)
+  return result.detail
+}
+
+export async function updateProcedureResult(sessionId: string, resultId: number, input: ProcedureResultUpdateInput): Promise<ProcedureResultsResponse> {
+  const result = await clinicianPut<{ id: number; detail: ProcedureResultsResponse }>(sessionId, `/api/procedures/results/${resultId}`, input)
+  return result.detail
+}
+
+export type ProcedureReportQueueItem = {
+  reportId: number
+  orderId: number
+  patientId: string
+  legacyPid: number
+  pubpid: string
+  patientDisplayName: string
+  orderDate: string
+  providerId?: number | null
+  providerName?: string | null
   conditionCode: string
   specimenCondition: string
   comments: string
