@@ -583,6 +583,15 @@ try {
         ($null -ne $dictationDefinition -and $dictationDefinition.contextScope -eq "encounter" -and $dictationDefinition.signaturePolicy -eq "author-only" -and $dictationDetail.currentRevision.status -eq "effective" -and (($dictationFields.key -join "|") -eq "dictation|additional_notes") -and @($dictationFields | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0 -and $dictationPreview.valid) `
         @{ definitionId=$dictationDefinition.definitionId; schemaHash=$dictationDetail.currentRevision.schemaHash; fields=$dictationFields.key; previewValid=$dictationPreview.valid }
 
+    $workSchoolNoteDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.workschoolnote" }) | Select-Object -First 1
+    $workSchoolNoteDetail = if ($null -ne $workSchoolNoteDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($workSchoolNoteDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $workSchoolNoteFields = @($workSchoolNoteDetail.currentRevision.definition.fields)
+    $workSchoolNotePreview = if ($null -ne $workSchoolNoteDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$workSchoolNoteDetail.currentRevision.definition; values=@{ note_type="work_note"; message="Synthetic work note message."; doctor="Example clinician"; date_of_signature="2026-07-29" } } } else { $null }
+    Add-Check `
+        "Legacy Work School Note adoption maps fixed encounter certificate fields without PHP execution" `
+        ($null -ne $workSchoolNoteDefinition -and $workSchoolNoteDefinition.contextScope -eq "encounter" -and $workSchoolNoteDefinition.signaturePolicy -eq "author-only" -and $workSchoolNoteDetail.currentRevision.status -eq "effective" -and (($workSchoolNoteFields.key -join "|") -eq "note_type|message|doctor|date_of_signature") -and (($workSchoolNoteFields | Where-Object { $_.key -eq "note_type" }).options.code -join "|") -eq "work_note|school_note" -and ($workSchoolNoteFields | Where-Object { $_.key -eq "message" }).type -eq "multiline" -and ($workSchoolNoteFields | Where-Object { $_.key -eq "message" }).maxLength -eq 4000 -and ($workSchoolNoteFields | Where-Object { $_.key -eq "doctor" }).maxLength -eq 255 -and ($workSchoolNoteFields | Where-Object { $_.key -eq "date_of_signature" }).type -eq "date" -and $workSchoolNotePreview.valid) `
+        @{ definitionId=$workSchoolNoteDefinition.definitionId; schemaHash=$workSchoolNoteDetail.currentRevision.schemaHash; fields=$workSchoolNoteFields.key; previewValid=$workSchoolNotePreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
