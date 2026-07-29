@@ -72,6 +72,7 @@ builder.Services.AddScoped<ProcedureRepository>();
 builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
+builder.Services.AddScoped<ReportDefinitionRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
 builder.Services.AddScoped<AuthorizationRepository>();
@@ -6733,21 +6734,206 @@ reports.MapGet("/families/{family}/export", async (ReportRepository repository, 
     catch (ArgumentException exception) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["report"] = [exception.Message] }); }
 }).WithName("ExportReportFamily");
 
-reports.MapGet("/definitions", async (ReportRepository repository, CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetSavedDefinitionsAsync(cancellationToken)))
-    .WithName("GetSavedReportDefinitions");
+reports.MapGet("/definition-policy", (ReportDefinitionRepository repository) =>
+        Results.Ok(repository.GetPolicy()))
+    .WithName("GetReportDefinitionGovernancePolicy");
 
-reports.MapPost("/definitions", async (
-        ReportRepository repository,
-        AuthRepository authRepository,
-        HttpContext httpContext,
-        SavedReportDefinitionRequest request,
+reports.MapGet("/catalog", async (
+        ReportDefinitionRepository repository,
+        string? search,
+        int? page,
+        int? pageSize,
         CancellationToken cancellationToken) =>
     {
-        try { var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken); return Results.Created("/api/reports/definitions", await repository.CreateSavedDefinitionAsync(request, session.Username, cancellationToken)); }
-        catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        try
+        {
+            return Results.Ok(await repository.ListAsync(
+                search,
+                status: "active",
+                page ?? 1,
+                pageSize ?? 20,
+                catalogOnly: true,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
-    .WithName("CreateSavedReportDefinition")
+    .WithName("GetGovernedReportCatalog");
+
+reports.MapGet("/definitions", async (
+        ReportDefinitionRepository repository,
+        string? search,
+        string? status,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await repository.ListAsync(
+                search,
+                status,
+                page ?? 1,
+                pageSize ?? 20,
+                catalogOnly: false,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetGovernedReportDefinitions");
+
+reports.MapPost("/definitions", async (
+        ReportDefinitionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        GovernedReportDefinitionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var result = await repository.CreateAsync(
+                request,
+                session.Username,
+                cancellationToken);
+            return Results.Created(
+                $"/api/reports/definitions/{result.DefinitionId}",
+                result);
+        }
+        catch (ReportDefinitionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                currentVersion = exception.CurrentVersion,
+                currentStatus = exception.CurrentStatus
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CreateGovernedReportDefinition")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+reports.MapGet("/definitions/{definitionId:guid}", async (
+        ReportDefinitionRepository repository,
+        Guid definitionId,
+        CancellationToken cancellationToken) =>
+    {
+        var result = await repository.GetDetailAsync(definitionId, cancellationToken);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    })
+    .WithName("GetGovernedReportDefinition");
+
+reports.MapPost("/definitions/{definitionId:guid}/revisions", async (
+        ReportDefinitionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid definitionId,
+        GovernedReportRevisionCreateRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Created(
+                $"/api/reports/definitions/{definitionId}",
+                await repository.CreateRevisionAsync(
+                    definitionId,
+                    request,
+                    session.Username,
+                    cancellationToken));
+        }
+        catch (ReportDefinitionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                currentVersion = exception.CurrentVersion,
+                currentStatus = exception.CurrentStatus
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("CreateGovernedReportDefinitionRevision")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+foreach (var action in new[] { "review", "approve", "activate", "suspend", "retire" })
+{
+    reports.MapPost($"/definitions/{{definitionId:guid}}/{action}", async (
+            ReportDefinitionRepository repository,
+            AuthRepository authRepository,
+            HttpContext httpContext,
+            Guid definitionId,
+            GovernedReportTransitionRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var session = await GetSessionFromHeaderAsync(
+                    authRepository,
+                    httpContext,
+                    cancellationToken);
+                return Results.Ok(await repository.TransitionAsync(
+                    definitionId,
+                    action,
+                    request,
+                    session.Username,
+                    cancellationToken));
+            }
+            catch (ReportDefinitionConflictException exception)
+            {
+                return Results.Conflict(new
+                {
+                    error = exception.Message,
+                    currentVersion = exception.CurrentVersion,
+                    currentStatus = exception.CurrentStatus
+                });
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+        })
+        .WithName($"TransitionGovernedReportDefinition{action}")
+        .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+}
+
+reports.MapDelete("/definitions/{definitionId:guid}/test-fixture", async (
+        ReportDefinitionRepository repository,
+        Guid definitionId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return await repository.DeleteTestFixtureAsync(
+                definitionId,
+                cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("DeleteGovernedReportDefinitionTestFixture")
     .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
 
 var therapyGroups = app.MapGroup("/api/therapy-groups").WithTags("Therapy Groups");

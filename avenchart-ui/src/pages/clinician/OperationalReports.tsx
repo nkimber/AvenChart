@@ -1,18 +1,15 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
-  createSavedReportDefinition,
   downloadReportFamilyCsv,
   getOperationalReports,
   getReportFamilies,
-  getSavedReportDefinitions,
-  runSavedReportDefinition,
   type OperationalReportsResponse,
   type ReportFamily,
-  type SavedReportDefinition,
 } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
+import GovernedReportDefinitions from "./GovernedReportDefinitions.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -52,9 +49,6 @@ export default function OperationalReports() {
   const [state, setState] = useState<AsyncState<OperationalReportsResponse>>({
     status: "loading",
   });
-  const [definitions, setDefinitions] = useState<SavedReportDefinition[]>([]);
-  const [definitionName, setDefinitionName] = useState("Operational snapshot");
-  const [schedule, setSchedule] = useState("manual");
   const [families, setFamilies] = useState<ReportFamily[]>([]);
   const [reportType, setReportType] = useState("operational");
   const [fromDate, setFromDate] = useState("");
@@ -70,36 +64,11 @@ export default function OperationalReports() {
         }),
       );
   }, [session.sessionId]);
-  function loadDefinitions() {
-    getSavedReportDefinitions(session.sessionId)
-      .then((data) => setDefinitions(data.definitions))
-      .catch(() =>
-        showToast("Could not load saved report definitions.", "error"),
-      );
-  }
-  const loadDefinitionsOnSessionChange = useEffectEvent(loadDefinitions);
-  useEffect(() => {
-    loadDefinitionsOnSessionChange();
-  }, [session.sessionId]);
   useEffect(() => {
     getReportFamilies(session.sessionId)
       .then(setFamilies)
       .catch(() => showToast("Could not load report families.", "error"));
   }, [session.sessionId]);
-  async function saveDefinition() {
-    try {
-      await createSavedReportDefinition(session.sessionId, {
-        name: definitionName,
-        schedule,
-        active: true,
-        reportType,
-      });
-      loadDefinitions();
-      showToast("Report definition saved.", "success");
-    } catch {
-      showToast("Could not save the report definition.", "error");
-    }
-  }
   async function exportFamily() {
     try {
       const blob = await downloadReportFamilyCsv(
@@ -131,6 +100,11 @@ export default function OperationalReports() {
         )}
       </div>
 
+      <GovernedReportDefinitions
+        sessionId={session.sessionId}
+        username={session.username}
+      />
+
       {state.status === "loading" && (
         <div className="cl-card">
           <div className="skeleton-list">
@@ -153,11 +127,12 @@ export default function OperationalReports() {
                 <div className="cl-card-header">
                   <div>
                     <h2 className="cl-card-title">
-                      Report families and saved reports
+                      Local family exports
                     </h2>
                     <p className="cl-empty-text">
-                      Exports are local CSV output; schedules record run
-                      evidence and never deliver externally.
+                      Curated family exports remain local CSV output. Their
+                      current download path does not yet enforce the declared
+                      REP-01 row policy; REP-02 will close that boundary.
                     </p>
                   </div>
                 </div>
@@ -204,76 +179,6 @@ export default function OperationalReports() {
                     </button>
                   </div>
                 </div>
-                <div className="cl-inline-form">
-                  <label className="cl-admin-field">
-                    <span>Name</span>
-                    <input
-                      className="ne-input"
-                      value={definitionName}
-                      onChange={(event) =>
-                        setDefinitionName(event.target.value)
-                      }
-                    />
-                  </label>
-                  <label className="cl-admin-field">
-                    <span>Schedule</span>
-                    <select
-                      className="ne-input"
-                      value={schedule}
-                      onChange={(event) => setSchedule(event.target.value)}
-                    >
-                      <option value="manual">Manual</option>
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                    </select>
-                  </label>
-                  <div className="cl-inline-form-actions">
-                    <button
-                      className="cl-btn-primary"
-                      type="button"
-                      onClick={saveDefinition}
-                    >
-                      Save definition
-                    </button>
-                  </div>
-                </div>
-                {definitions.length > 0 && (
-                  <table className="cl-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Family</th>
-                        <th>Schedule</th>
-                        <th>Runs</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {definitions.map((definition) => (
-                        <tr key={definition.id}>
-                          <td>{definition.name}</td>
-                          <td>{definition.reportType}</td>
-                          <td>{definition.schedule}</td>
-                          <td>{definition.runCount}</td>
-                          <td>
-                            <button
-                              className="cl-btn-secondary"
-                              type="button"
-                              onClick={() =>
-                                runSavedReportDefinition(
-                                  session.sessionId,
-                                  definition.id,
-                                ).then(loadDefinitions)
-                              }
-                            >
-                              Run now
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
               </section>
               {/* Patients & portal */}
               <section className="cl-card">

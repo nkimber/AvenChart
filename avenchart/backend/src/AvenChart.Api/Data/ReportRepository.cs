@@ -403,7 +403,6 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
 
     public async Task<SavedReportDefinitionsResponse> GetSavedDefinitionsAsync(CancellationToken cancellationToken)
     {
-        await EnsureSavedReportSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -426,7 +425,6 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         var schedule = request.Schedule?.Trim().ToLowerInvariant();
         if (schedule is not ("manual" or "daily" or "weekly")) throw new ArgumentException("Schedule must be manual, daily, or weekly.");
         var reportType = string.IsNullOrWhiteSpace(request.ReportType) ? "operational" : request.ReportType.Trim().ToLowerInvariant(); if (!Families.Any(f => f.Key == reportType)) throw new ArgumentException("Report type must be a supported operational report family.");
-        await EnsureSavedReportSchemaAsync(cancellationToken);
         var id = Guid.NewGuid(); var createdAt = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -441,7 +439,6 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
 
     public async Task<SavedReportRunResponse?> RunSavedDefinitionAsync(Guid definitionId, string username, CancellationToken cancellationToken)
     {
-        await EnsureSavedReportSchemaAsync(cancellationToken);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var definitionCommand = connection.CreateCommand(); definitionCommand.Transaction = transaction;
@@ -530,7 +527,7 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
     public async Task<string> GetFamilyCsvAsync(string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)
     {
         var key = family.Trim().ToLowerInvariant(); if (!Families.Any(item => item.Key == key)) throw new ArgumentException("Unsupported report family."); if (from is not null && to is not null && from > to) throw new ArgumentException("From date cannot be after to date."); if (key == "operational") return await GetOperationalReportsCsvAsync(cancellationToken);
-        await EnsureSavedReportSchemaAsync(cancellationToken); await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
         command.CommandText = key switch
         {
             "patients" => "select p.canonical_id, trim(concat(p.last_name, ', ', p.first_name)), p.date_of_birth::text, coalesce(p.phone_cell,p.phone_home,p.email,'') from patients p where p.merged_into_patient_id is null order by p.last_name,p.first_name limit 5000;",
@@ -543,16 +540,6 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         };
         command.Parameters.Add("from", NpgsqlDbType.Date).Value = (object?)from ?? DBNull.Value; command.Parameters.Add("to", NpgsqlDbType.Date).Value = (object?)to ?? DBNull.Value;
         var csv = new StringBuilder(); AppendCsvRow(csv, "Identifier", "Subject", "Date", "Detail"); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) AppendCsvRow(csv, reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)); return csv.ToString();
-    }
-
-    private async Task EnsureSavedReportSchemaAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken); await using var command = connection.CreateCommand();
-        command.CommandText = """
-            create table if not exists saved_report_definitions (id uuid primary key, name text not null, report_type text not null, schedule text not null, active boolean not null default true, created_by text not null, created_at timestamptz not null, last_run_at timestamptz, run_count integer not null default 0);
-            create table if not exists saved_report_runs (run_id text primary key, definition_id uuid not null references saved_report_definitions(id), ran_at timestamptz not null, ran_by text not null, output_format text not null, row_count integer not null);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<ReportHeader> GetReportHeaderAsync(
