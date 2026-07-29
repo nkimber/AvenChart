@@ -703,6 +703,15 @@ try {
         ($null -ne $bronchitisCompositeDefinition -and $bronchitisCompositeDefinition.contextScope -eq "encounter" -and $bronchitisCompositeDefinition.signaturePolicy -eq "author-only" -and $bronchitisCompositeDetail.currentRevision.status -eq "effective" -and $bronchitisCompositeFields.Count -eq 82 -and (($bronchitisCompositeFields.key -join "|") -eq ($bronchitisCompositeSourceFields.key -join "|")) -and ((@($bronchitisCompositeDetail.currentRevision.definition.sections).key -join "|") -eq "illness_history|pertinent_symptoms|history_review|ear_nose_exam|sinus_oropharynx_exam|cardiac_exam|lung_exam|diagnostic_plan") -and $bronchitisCompositePreview.valid) `
         @{ definitionId=$bronchitisCompositeDefinition.definitionId; schemaHash=$bronchitisCompositeDetail.currentRevision.schemaHash; fieldCount=$bronchitisCompositeFields.Count; sectionKeys=@($bronchitisCompositeDetail.currentRevision.definition.sections).key; previewValid=$bronchitisCompositePreview.valid }
 
+    $rosGeneralDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemsgeneral" }) | Select-Object -First 1
+    $rosGeneralDetail = if ($null -ne $rosGeneralDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosGeneralDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosGeneralFields = @($rosGeneralDetail.currentRevision.definition.fields)
+    $rosGeneralPreview = if ($null -ne $rosGeneralDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosGeneralDetail.currentRevision.definition; values=@{ fever=$true; chills=$false; night_sweats=$true; weight_loss=$false; poor_appetite=$true; insomnia=$false; fatigued=$true; depressed=$false; hyperactive=$false; exposure_to_foreign_countries=$true } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems General adoption maps the complete checklist without PHP execution" `
+        ($null -ne $rosGeneralDefinition -and $rosGeneralDefinition.contextScope -eq "encounter" -and $rosGeneralDefinition.signaturePolicy -eq "author-only" -and $rosGeneralDetail.currentRevision.status -eq "effective" -and $rosGeneralFields.Count -eq 10 -and (($rosGeneralFields.key -join "|") -eq "fever|chills|night_sweats|weight_loss|poor_appetite|insomnia|fatigued|depressed|hyperactive|exposure_to_foreign_countries") -and @($rosGeneralFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $rosGeneralPreview.valid) `
+        @{ definitionId=$rosGeneralDefinition.definitionId; schemaHash=$rosGeneralDetail.currentRevision.schemaHash; fields=$rosGeneralFields.key; previewValid=$rosGeneralPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
