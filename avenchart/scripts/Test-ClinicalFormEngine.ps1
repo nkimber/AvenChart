@@ -793,6 +793,15 @@ try {
         ($null -ne $rosAdditionalNotesDefinition -and $rosAdditionalNotesDefinition.contextScope -eq "encounter" -and $rosAdditionalNotesDefinition.signaturePolicy -eq "author-only" -and $rosAdditionalNotesDetail.currentRevision.status -eq "effective" -and $rosAdditionalNotesFields.Count -eq 1 -and $rosAdditionalNotesFields[0].key -eq "additional_notes" -and $rosAdditionalNotesFields[0].type -eq "multiline" -and $null -eq $rosAdditionalNotesFields[0].maxLength -and $rosAdditionalNotesFields[0].helpText -match "longtext" -and $rosAdditionalNotesPreview.valid) `
         @{ definitionId=$rosAdditionalNotesDefinition.definitionId; schemaHash=$rosAdditionalNotesDetail.currentRevision.schemaHash; field=$rosAdditionalNotesFields[0].key; maxLength=$rosAdditionalNotesFields[0].maxLength; previewValid=$rosAdditionalNotesPreview.valid }
 
+    $rosCompositeDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystems" }) | Select-Object -First 1
+    $rosCompositeDetail = if ($null -ne $rosCompositeDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosCompositeDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosCompositeFields = @($rosCompositeDetail.currentRevision.definition.fields)
+    $rosCompositePreview = if ($null -ne $rosCompositeDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosCompositeDetail.currentRevision.definition; values=@{ fever=$true; rashes=$false; cataracts=$true; emphysema=$false; heart_attack=$true; stomach_pains=$false; kidney_failure=$true; osetoarthritis=$false; insulin_dependent_diabetes=$true; additional_notes="Composite ROS preview." } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems composition presents all mapped sections as one encounter form without PHP execution" `
+        ($null -ne $rosCompositeDefinition -and $rosCompositeDefinition.contextScope -eq "encounter" -and $rosCompositeDefinition.signaturePolicy -eq "author-only" -and $rosCompositeDetail.currentRevision.status -eq "effective" -and $rosCompositeFields.Count -eq 108 -and (($rosCompositeFields.key -join "|") -eq (($rosGeneralFields + $rosSkinFields + $rosHeentFields + $rosPulmonaryFields + $rosCardiovascularFields + $rosGastrointestinalFields + $rosGenitourinaryFields + $rosMusculoskeletalFields + $rosEndocrineFields + $rosAdditionalNotesFields).key -join "|")) -and ((@($rosCompositeDetail.currentRevision.definition.sections).key -join "|") -eq "general|skin|heent|pulmonary|cardiovascular|gastrointestinal|genitourinary|musculoskeletal|endocrine|additional_notes") -and $rosCompositePreview.valid) `
+        @{ definitionId=$rosCompositeDefinition.definitionId; schemaHash=$rosCompositeDetail.currentRevision.schemaHash; fieldCount=$rosCompositeFields.Count; sectionKeys=@($rosCompositeDetail.currentRevision.definition.sections).key; previewValid=$rosCompositePreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `

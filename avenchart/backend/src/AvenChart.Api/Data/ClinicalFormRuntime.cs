@@ -181,9 +181,9 @@ public static partial class ClinicalFormRuntime
             .Select(section => section.Key)
             .ToHashSet(StringComparer.Ordinal);
         var fieldSource = definition.Fields ?? [];
-        if (fieldSource.Count is < 1 or > 100)
+        if (fieldSource.Count is < 1 or > 250)
         {
-            throw new ArgumentException("A form must contain 1 to 100 fields.");
+            throw new ArgumentException("A form must contain 1 to 250 fields.");
         }
 
         var fields = fieldSource
