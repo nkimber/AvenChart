@@ -240,7 +240,12 @@ export default function PatientClinicalForms() {
       setCatalog(loadedCatalog.definitions);
       setInstances(loadedInstances.instances);
       setEncounters(loadedEncounters.encounters);
-      setEncounterId((current) => current || (loadedEncounters.encounters[0]?.id ? String(loadedEncounters.encounters[0].id) : ""));
+      setEncounterId((current) =>
+        current ||
+        (loadedEncounters.encounters[0]?.encounter
+          ? String(loadedEncounters.encounters[0].encounter)
+          : ""),
+      );
       const instanceId = selectId ?? selected?.instance.instanceId;
       if (instanceId) {
         const detail = await getClinicalFormInstance(session.sessionId, instanceId);
@@ -283,8 +288,6 @@ export default function PatientClinicalForms() {
         reason: reason.trim(),
         values: {},
       });
-      setSelected(created);
-      setValues(created.values);
       await refresh(created.instance.instanceId);
       showToast("Clinical form draft started.", "success");
     } catch (cause) {
@@ -319,8 +322,6 @@ export default function PatientClinicalForms() {
     setError("");
     try {
       const updated = await updateClinicalFormInstance(session.sessionId, selected.instance.instanceId, selected.instance.version, values, reason.trim());
-      setSelected(updated);
-      setValues(updated.values);
       await refresh(updated.instance.instanceId);
       showToast("Clinical form draft saved.", "success");
     } catch (cause) {
@@ -332,16 +333,24 @@ export default function PatientClinicalForms() {
 
   async function transition(action: "finalize" | "sign" | "cosign") {
     if (!selected) return;
-    if (actionReason.trim().length < 3) {
+    const transitionReason =
+      action === "finalize" && selected.instance.state === "draft"
+        ? reason.trim()
+        : actionReason.trim();
+    if (transitionReason.length < 3) {
       setError("Provide a reason of at least three characters for this clinical transition.");
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const updated = await transitionClinicalFormInstance(session.sessionId, selected.instance.instanceId, action, selected.instance.version, actionReason.trim());
-      setSelected(updated);
-      setValues(updated.values);
+      const updated = await transitionClinicalFormInstance(
+        session.sessionId,
+        selected.instance.instanceId,
+        action,
+        selected.instance.version,
+        transitionReason,
+      );
       setActionReason("");
       await refresh(updated.instance.instanceId);
       showToast(`Clinical form ${action === "cosign" ? "co-signed" : `${action}d`}.`, "success");
@@ -362,8 +371,6 @@ export default function PatientClinicalForms() {
     setError("");
     try {
       const amended = await amendClinicalFormInstance(session.sessionId, selected.instance.instanceId, selected.instance.version, actionReason.trim(), newIdempotencyKey("clinical-amendment"));
-      setSelected(amended);
-      setValues(amended.values);
       setActionReason("");
       await refresh(amended.instance.instanceId);
       showToast("Reasoned successor amendment started.", "success");
@@ -440,7 +447,7 @@ export default function PatientClinicalForms() {
           <label htmlFor="clinical-form-encounter">Encounter for encounter-scoped forms</label>
           <select id="clinical-form-encounter" value={encounterId} onChange={(event) => setEncounterId(event.target.value)} disabled={saving}>
             <option value="">Select an encounter</option>
-            {encounters.map((encounter) => <option key={encounter.id} value={encounter.id}>{encounter.date} â€” {encounter.reason || `Encounter ${encounter.encounter}`}</option>)}
+            {encounters.map((encounter) => <option key={encounter.id} value={encounter.encounter}>{encounter.date} — {encounter.reason || `Encounter ${encounter.encounter}`}</option>)}
           </select>
           <p className="cl-field-help">Patient-scoped forms ignore this selection. Encounter-scoped forms require it.</p>
         </div>
@@ -464,7 +471,7 @@ export default function PatientClinicalForms() {
 
       <section className="cl-card" aria-labelledby="clinical-form-history-heading">
         <h2 id="clinical-form-history-heading">Patient form history</h2>
-        {loading ? <p>Loading clinical formsâ€¦</p> : instances.length === 0 ? <p className="cl-empty-text">No clinical form instances have been started for this patient.</p> : (
+        {loading ? <p>Loading clinical forms…</p> : instances.length === 0 ? <p className="cl-empty-text">No clinical form instances have been started for this patient.</p> : (
           <div className="table-scroll"><table><thead><tr><th>Form</th><th>State</th><th>Revision</th><th>Author</th><th>Updated</th><th /></tr></thead><tbody>
             {instances.map((instance) => <tr key={instance.instanceId}><td>{instance.name}</td><td>{instance.state}</td><td>{instance.definitionRevision}</td><td>{instance.author}</td><td>{formatInstant(instance.updatedAt)}</td><td><button className="cl-btn-secondary" type="button" onClick={() => void refresh(instance.instanceId)} disabled={saving}>Open</button></td></tr>)}
           </tbody></table></div>
@@ -476,7 +483,7 @@ export default function PatientClinicalForms() {
           <div className="section-heading"><div><p className="eyebrow">{selected.instance.state}</p><h2 id="selected-clinical-form-heading">{selected.instance.name} <span className="muted">revision {selected.instance.definitionRevision}</span></h2></div><p>Author: {selected.instance.author}</p></div>
           <p>{selected.definition.purpose}</p>
           {selected.validation.issues.length > 0 ? <div className="hint-banner" role="status"><strong>Validation</strong><ul>{selected.validation.issues.map((issue) => <li key={`${issue.fieldKey}-${issue.message}`}>{issue.message}</li>)}</ul></div> : null}
-          {selected.definition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{selected.definition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
+          {selected.definition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{selected.definition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
           <div className="cl-form-field"><label htmlFor="clinical-form-mutation-reason">Draft save reason / transition reason</label><input id="clinical-form-mutation-reason" value={draft ? reason : actionReason} maxLength={500} disabled={saving} onChange={(event) => draft ? setReason(event.target.value) : setActionReason(event.target.value)} /></div>
           <div className="page-actions">
             <button className="cl-btn-secondary" type="button" onClick={() => void openPrintableRecord()} disabled={saving}>Open printable record</button>
@@ -487,7 +494,7 @@ export default function PatientClinicalForms() {
             {selected.instance.state === "signed" ? <button className="cl-btn-secondary" type="button" onClick={() => void amend()} disabled={saving}>Create amendment</button> : null}
           </div>
           <h3>Protected event history</h3>
-          <div className="table-scroll"><table><thead><tr><th>Action</th><th>State</th><th>Actor</th><th>Reason</th><th>When</th></tr></thead><tbody>{selected.events.map((event) => <tr key={event.eventId}><td>{event.action}</td><td>{event.fromState ?? "â€”"} â†’ {event.toState}</td><td>{event.actor}</td><td>{event.reason}</td><td>{formatInstant(event.occurredAt)}</td></tr>)}</tbody></table></div>
+          <div className="table-scroll"><table><thead><tr><th>Action</th><th>State</th><th>Actor</th><th>Reason</th><th>When</th></tr></thead><tbody>{selected.events.map((event) => <tr key={event.eventId}><td>{event.action}</td><td>{event.fromState ?? "—"} → {event.toState}</td><td>{event.actor}</td><td>{event.reason}</td><td>{formatInstant(event.occurredAt)}</td></tr>)}</tbody></table></div>
           {selected.signatures.length > 0 ? <><h3>Signatures</h3><ul className="history-list">{selected.signatures.map((signature) => <li key={signature.signatureId}><strong>{signature.role}</strong> by {signature.signer} at {formatInstant(signature.signedAt)}.</li>)}</ul></> : null}
         </section>
       ) : null}

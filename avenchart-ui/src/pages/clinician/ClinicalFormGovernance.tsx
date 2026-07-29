@@ -69,6 +69,27 @@ const emptySchema = (): ClinicalFormSchema => ({
   rules: [],
 });
 
+function parseConditionValue(
+  field: ClinicalFormField | undefined,
+  rawValue: string,
+): string | number | boolean {
+  if (field?.type === "boolean") {
+    const normalized = rawValue.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+    return rawValue;
+  }
+  if (
+    field &&
+    ["integer", "decimal", "measurement", "computed"].includes(field.type) &&
+    rawValue.trim() !== ""
+  ) {
+    const numericValue = Number(rawValue);
+    return Number.isFinite(numericValue) ? numericValue : rawValue;
+  }
+  return rawValue;
+}
+
 function normalizeFieldForType(
   field: ClinicalFormField,
   type: string,
@@ -1037,9 +1058,32 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                   <span>Condition value</span>
                   <input
                     className="ne-input"
+                    type={
+                      [
+                        "integer",
+                        "decimal",
+                        "measurement",
+                        "computed",
+                      ].includes(
+                        schema.fields.find(
+                          (field) =>
+                            field.key === rule.condition.fieldKey,
+                        )?.type ?? "",
+                      )
+                        ? "number"
+                        : "text"
+                    }
+                    placeholder={
+                      schema.fields.find(
+                        (field) => field.key === rule.condition.fieldKey,
+                      )?.type === "boolean"
+                        ? "true or false"
+                        : undefined
+                    }
                     value={
                       typeof rule.condition.value === "string" ||
-                      typeof rule.condition.value === "number"
+                      typeof rule.condition.value === "number" ||
+                      typeof rule.condition.value === "boolean"
                         ? String(rule.condition.value)
                         : ""
                     }
@@ -1047,7 +1091,13 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                       updateRule(index, {
                         condition: {
                           ...rule.condition,
-                          value: event.target.value,
+                          value: parseConditionValue(
+                            schema.fields.find(
+                              (field) =>
+                                field.key === rule.condition.fieldKey,
+                            ),
+                            event.target.value,
+                          ),
                         },
                       })
                     }
