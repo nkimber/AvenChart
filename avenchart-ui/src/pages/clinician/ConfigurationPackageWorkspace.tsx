@@ -3,6 +3,8 @@ import {
   createConfigurationPackageImportRequest,
   dryRunConfigurationPackage,
   exportConfigurationPackage,
+  getConfigurationPackageImportRequests,
+  getConfigurationPackageImportRequest,
   type ConfigurationPackageDryRun,
   type ConfigurationPackageImportRequestDetail,
   transitionConfigurationPackageImportRequest,
@@ -20,6 +22,7 @@ export default function ConfigurationPackageWorkspace({
   const [importRequest, setImportRequest] = useState<ConfigurationPackageImportRequestDetail | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<{ requests: Array<{ requestId: string; kind: string; status: string; updatedAt: string }>; total: number } | null>(null);
 
   async function exportPackage() {
     setBusy(true);
@@ -50,6 +53,19 @@ export default function ConfigurationPackageWorkspace({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function loadHistory() {
+    setBusy(true);
+    try { setHistory(await getConfigurationPackageImportRequests(sessionId, { limit: 8 })); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not load package request history."); }
+    finally { setBusy(false); }
+  }
+  async function openHistoryRequest(requestId: string) {
+    setBusy(true);
+    try { setImportRequest(await getConfigurationPackageImportRequest(sessionId, requestId)); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not load the package request."); }
+    finally { setBusy(false); }
   }
 
   async function createImportRequest() {
@@ -111,6 +127,7 @@ export default function ConfigurationPackageWorkspace({
         <button className="cl-btn-secondary" type="button" onClick={() => void dryRun()} disabled={busy || !packageJson.trim()}>
           Validate package
         </button>
+        <button className="cl-btn-secondary" type="button" onClick={() => void loadHistory()} disabled={busy}>Load request history</button>
         <button className="cl-btn-primary" type="button" onClick={() => void createImportRequest()} disabled={busy || !packageJson.trim() || !reason.trim() || Boolean(importRequest && ["draft", "submitted", "approved"].includes(importRequest.request.status))}>
           Create reviewed import
         </button>
@@ -146,6 +163,7 @@ export default function ConfigurationPackageWorkspace({
           <p className="cl-empty-text">{importRequest.events.map((event) => `${event.action} by ${event.username}`).join(" · ")}</p>
         </div>
       )}
+      {history && <div className="cl-access-panel"><p className="cl-admin-form-copy"><strong>Recent package requests:</strong> {history.total}</p><ul>{history.requests.map((request) => <li key={request.requestId}><button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void openHistoryRequest(request.requestId)}>Open</button> {request.kind} · {request.status} · {new Date(request.updatedAt).toLocaleString()}</li>)}</ul></div>}
     </section>
   );
 }

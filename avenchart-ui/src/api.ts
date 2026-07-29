@@ -9154,3 +9154,17 @@ export async function transitionConfigurationPackageImportRequest(
     expectedVersion,
   })
 }
+export async function getConfigurationPackageImportRequests(
+  sessionId: string,
+  input: { status?: string; kind?: string; offset?: number; limit?: number } = {},
+): Promise<{ requests: ConfigurationPackageImportRequest[]; total: number; offset: number; limit: number }> {
+  const query = new URLSearchParams()
+  if (input.status) query.set('status', input.status)
+  if (input.kind) query.set('kind', input.kind)
+  if (input.offset !== undefined) query.set('offset', String(input.offset))
+  if (input.limit !== undefined) query.set('limit', String(input.limit))
+  return clinicianGet(sessionId, `/api/administration/configuration-package-import-requests?${query}`)
+}
+export async function getConfigurationPackageImportRequest(sessionId: string, requestId: string): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianGet(sessionId, `/api/administration/configuration-package-import-requests/${requestId}`)
+}
