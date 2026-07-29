@@ -3290,6 +3290,28 @@ messages.MapPost("/{messageId}/forward", async (
     .WithName("ForwardPatientMessage")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
+messages.MapGet("/{messageId}/attachments", async (MessageRepository repository, string messageId, CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetAttachmentsAsync(messageId, cancellationToken)))
+    .WithName("GetStaffMessageAttachments")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
+messages.MapPost("/{messageId}/attachments", async (MessageRepository repository, AuthRepository authRepository, HttpContext httpContext, string messageId, StaffMessageAttachmentSubmission request, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var attachment = await repository.AddAttachmentAsync(messageId, request, session.Username, cancellationToken);
+        return attachment is null ? Results.NotFound() : Results.Created($"/api/messages/{messageId}/attachments/{attachment.Id}", attachment);
+    }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("AddStaffMessageAttachment").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
+messages.MapGet("/{messageId}/attachments/{attachmentId:guid}", async (MessageRepository repository, string messageId, Guid attachmentId, CancellationToken cancellationToken) =>
+{
+    var attachment = await repository.DownloadAttachmentAsync(messageId, attachmentId, cancellationToken);
+    return attachment.Downloadable ? Results.File(attachment.Content, attachment.ContentType, attachment.FileName) : Results.NotFound(new { error = attachment.FailureReason });
+}).WithName("DownloadStaffMessageAttachment").AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
+
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
         string messageId,

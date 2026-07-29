@@ -4246,6 +4246,16 @@ export type PatientMessageForwardRequest = {
   note?: string | null
 }
 
+export type StaffMessageAttachmentItem = {
+  id: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  uploadedBy: string
+  uploadedAt: string
+}
+
 export type StaffMessageInboxCounts = {
   total: number
   unread: number
@@ -4388,6 +4398,24 @@ export async function forwardPatientMessage(
     signal,
   )
   return result.detail
+}
+
+export async function getStaffMessageAttachments(sessionId: string, messageId: string): Promise<StaffMessageAttachmentItem[]> {
+  return clinicianGet(sessionId, `/api/messages/${messageId}/attachments`)
+}
+
+export async function uploadStaffMessageAttachment(
+  sessionId: string,
+  messageId: string,
+  input: { fileName: string; contentType: string; contentBase64: string },
+): Promise<StaffMessageAttachmentItem> {
+  return clinicianPost(sessionId, `/api/messages/${messageId}/attachments`, input)
+}
+
+export async function downloadStaffMessageAttachment(sessionId: string, messageId: string, attachmentId: string): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}/api/messages/${messageId}/attachments/${attachmentId}`, { headers: { 'X-Legacy EHR-Session': sessionId } })
+  await requireSuccessfulResponse(response, `GET /api/messages/${messageId}/attachments/${attachmentId}`, 'clinician')
+  return response.blob()
 }
 
 export type OfficeNoteItem = {
