@@ -33,6 +33,7 @@ import {
   createDefaultCalculation,
   retargetCalculation,
 } from "../../domain/clinicalFormCalculationAuthoring.ts";
+import { describeClinicalFormChangeImpact } from "../../domain/clinicalFormChangeImpact.ts";
 
 type Props = { sessionId: string };
 
@@ -521,6 +522,16 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
         policy?.supportedCalculationOperators ?? [],
       ),
     [policy?.supportedCalculationOperators, schema.fields, schema.rules],
+  );
+  const changeImpact = useMemo(
+    () =>
+      successorMode && detail
+        ? describeClinicalFormChangeImpact(
+            detail.currentRevision.definition,
+            schema,
+          )
+        : null,
+    [detail, schema, successorMode],
   );
 
   return (
@@ -1521,6 +1532,59 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                 {issue.message}
               </p>
             ))}
+          {successorMode && changeImpact && (
+            <section
+              className="clinical-form-change-impact"
+              aria-labelledby="clinical-form-change-impact-title"
+              aria-live="polite"
+            >
+              <div className="cl-card-header-row">
+                <div>
+                  <h4 id="clinical-form-change-impact-title">
+                    Successor change impact
+                  </h4>
+                  <p>
+                    Compare every changed contract with revision{" "}
+                    {detail?.currentRevision.revision}. Historical instances
+                    remain pinned to their original revision.
+                  </p>
+                </div>
+                <div
+                  className="clinical-form-impact-counts"
+                  aria-label="Change impact counts"
+                >
+                  <span className="is-high">
+                    {changeImpact.highCount} high review
+                  </span>
+                  <span className="is-review">
+                    {changeImpact.reviewCount} review
+                  </span>
+                  <span className="is-low">
+                    {changeImpact.lowCount} low
+                  </span>
+                </div>
+              </div>
+              {changeImpact.items.length === 0 ? (
+                <p className="clinical-form-impact-empty">
+                  No schema changes yet. Change at least one governed contract
+                  before creating a successor.
+                </p>
+              ) : (
+                <ul className="clinical-form-impact-list">
+                  {changeImpact.items.map((item) => (
+                    <li className={`is-${item.severity}`} key={item.key}>
+                      <strong>{item.title}</strong>
+                      <span>{item.description}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="clinical-form-impact-boundary">
+                Deterministic authoring guidance only. Server validation and
+                clinical review remain authoritative.
+              </p>
+            </section>
+          )}
 
           <label className="cl-admin-field clinical-form-action-reason">
             <span>Governance reason</span>
@@ -1544,7 +1608,10 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
               className="cl-btn-primary"
               type="button"
               disabled={
-                busy || !reason.trim() || calculationIssues.length > 0
+                busy ||
+                !reason.trim() ||
+                calculationIssues.length > 0 ||
+                (successorMode && changeImpact?.items.length === 0)
               }
               onClick={() => void saveDefinition()}
             >

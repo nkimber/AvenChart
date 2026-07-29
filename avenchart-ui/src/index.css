@@ -9996,6 +9996,99 @@ h4 {
   font-weight: 700;
 }
 
+.clinical-form-change-impact {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid #bfd6cf;
+  border-left: 4px solid #247663;
+  border-radius: 0.7rem;
+  background: #f7fbfa;
+}
+
+.clinical-form-change-impact h4,
+.clinical-form-change-impact p {
+  margin: 0;
+}
+
+.clinical-form-change-impact .cl-card-header-row {
+  align-items: start;
+}
+
+.clinical-form-change-impact .cl-card-header-row p,
+.clinical-form-impact-boundary {
+  margin-top: 0.3rem;
+  color: #4b625d;
+  font-size: 0.86rem;
+}
+
+.clinical-form-impact-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.clinical-form-impact-counts span {
+  padding: 0.28rem 0.48rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.clinical-form-impact-counts .is-high,
+.clinical-form-impact-list .is-high {
+  color: #9a3412;
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.clinical-form-impact-counts .is-review,
+.clinical-form-impact-list .is-review {
+  color: #854d0e;
+  border-color: #fde68a;
+  background: #fefce8;
+}
+
+.clinical-form-impact-counts .is-low,
+.clinical-form-impact-list .is-low {
+  color: #166534;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.clinical-form-impact-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clinical-form-impact-list li {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.65rem;
+  border: 1px solid;
+  border-radius: 0.55rem;
+}
+
+.clinical-form-impact-list li span {
+  color: #344e48;
+  font-size: 0.86rem;
+}
+
+.clinical-form-impact-empty {
+  padding: 0.65rem;
+  border: 1px dashed #a8c8bf;
+  border-radius: 0.55rem;
+  color: #3f5f57;
+}
+
 .clinical-form-field-editors {
   display: grid;
   gap: 0.75rem;
@@ -10062,6 +10155,15 @@ h4 {
     grid-column: auto;
   }
 
+  .clinical-form-change-impact .cl-card-header-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clinical-form-impact-counts {
+    justify-content: flex-start;
+  }
+
   .clinical-form-actions {
     align-items: stretch;
     flex-direction: column;
@@ -10090,7 +10192,9 @@ h4 {
   .clinical-form-section-editor,
   .clinical-form-rule-editor,
   .clinical-form-field-editor,
-  .clinical-form-calculation-editor {
+  .clinical-form-calculation-editor,
+  .clinical-form-change-impact,
+  .clinical-form-impact-list li {
     border: 1px solid CanvasText;
   }
 

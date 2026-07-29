@@ -203,6 +203,49 @@ test.describe("FORM-02 calculation authoring", () => {
         precision: 2,
       });
 
+      await governance
+        .getByRole("button", { name: "Prepare successor" })
+        .click();
+      await expect(
+        governance.getByRole("heading", {
+          name: "Prepare successor revision",
+        }),
+      ).toBeVisible();
+      await expect(
+        governance.getByText(
+          "No schema changes yet. Change at least one governed contract before creating a successor.",
+        ),
+      ).toBeVisible();
+
+      const successorButton = governance.getByRole("button", {
+        name: "Create successor draft",
+      });
+      await governance
+        .getByLabel("Governance reason")
+        .fill("Explain restrictive successor changes.");
+      await expect(successorButton).toBeDisabled();
+
+      const successorAmount = governance
+        .locator(".clinical-form-field-editor")
+        .nth(0);
+      await successorAmount
+        .getByRole("spinbutton", { name: "Minimum", exact: true })
+        .fill("1");
+      await successorAmount
+        .getByLabel("Label", { exact: true })
+        .fill("Revised amount");
+
+      const impact = governance.locator(".clinical-form-change-impact");
+      await expect(
+        impact.getByRole("heading", { name: "Successor change impact" }),
+      ).toBeVisible();
+      await expect(impact.getByText("1 high review")).toBeVisible();
+      await expect(impact.getByText("Field amount changed")).toBeVisible();
+      await expect(
+        impact.getByText(/minimum tightens from 0 to 1/),
+      ).toBeVisible();
+      await expect(successorButton).toBeEnabled();
+
       const accessibility = await new AxeBuilder({ page })
         .include(".clinical-form-governance")
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -212,6 +255,39 @@ test.describe("FORM-02 calculation authoring", () => {
           ["serious", "critical"].includes(violation.impact ?? ""),
         ),
       ).toEqual([]);
+
+      const successorResponsePromise = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(
+            `/api/form-engine/definitions/${definitionId}/revisions`,
+          ) && response.request().method() === "POST",
+      );
+      await successorButton.click();
+      const successorResponse = await successorResponsePromise;
+      expect(successorResponse.status()).toBe(201);
+      const successor = (await successorResponse.json()) as {
+        currentRevision: {
+          revision: number;
+          definition: {
+            fields: Array<{
+              key: string;
+              label: string;
+              minimum: number | null;
+            }>;
+          };
+        };
+      };
+      expect(successor.currentRevision.revision).toBe(2);
+      expect(
+        successor.currentRevision.definition.fields.find(
+          (field) => field.key === "amount",
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          label: "Revised amount",
+          minimum: 1,
+        }),
+      );
     } finally {
       if (definitionId) {
         const cleanup = await page.request.delete(
