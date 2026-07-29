@@ -344,7 +344,7 @@ try {
     Add-Check "Constrained form runtime policy" $policyPassed $policy
 
     $catalog = Invoke-Json `
-        -Uri "$ApiBaseUrl/api/form-engine/catalog?page=1&pageSize=20" `
+        -Uri "$ApiBaseUrl/api/form-engine/catalog?page=1&pageSize=100" `
         -RequestHeaders $adminHeaders
     $seededDefinition = @(
         $catalog.definitions |
@@ -656,6 +656,15 @@ try {
         "Legacy Bronchitis ear and nares exam adoption maps bilateral checklist fields without PHP execution" `
         ($null -ne $bronchitisEarNoseDefinition -and $bronchitisEarNoseDefinition.contextScope -eq "encounter" -and $bronchitisEarNoseDefinition.signaturePolicy -eq "author-only" -and $bronchitisEarNoseDetail.currentRevision.status -eq "effective" -and $bronchitisEarNoseFields.Count -eq 19 -and (($bronchitisEarNoseFields.key -join "|") -eq "bronchitis_tms_normal_right|bronchitis_tms_normal_left|bronchitis_nares_normal_right|bronchitis_nares_normal_left|bronchitis_tms_thickened_right|bronchitis_tms_thickened_left|bronchitis_nares_swelling_right|bronchitis_nares_swelling_left|bronchitis_tms_af_level_right|bronchitis_tms_af_level_left|bronchitis_nares_discharge_right|bronchitis_nares_discharge_left|bronchitis_tms_retracted_right|bronchitis_tms_retracted_left|bronchitis_tms_bulging_right|bronchitis_tms_bulging_left|bronchitis_tms_perforated_right|bronchitis_tms_perforated_left|bronchitis_tms_nares_not_examined") -and @($bronchitisEarNoseFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $bronchitisEarNosePreview.valid) `
         @{ definitionId=$bronchitisEarNoseDefinition.definitionId; schemaHash=$bronchitisEarNoseDetail.currentRevision.schemaHash; fields=$bronchitisEarNoseFields.key; previewValid=$bronchitisEarNosePreview.valid }
+
+    $bronchitisSinusDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.bronchitissinusoropharynx" }) | Select-Object -First 1
+    $bronchitisSinusDetail = if ($null -ne $bronchitisSinusDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($bronchitisSinusDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $bronchitisSinusFields = @($bronchitisSinusDetail.currentRevision.definition.fields)
+    $bronchitisSinusPreview = if ($null -ne $bronchitisSinusDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$bronchitisSinusDetail.currentRevision.definition; values=@{ bronchitis_no_sinus_tenderness=$false; bronchitis_oropharynx_normal=$false; bronchitis_sinus_tenderness_frontal_right=$true; bronchitis_sinus_tenderness_frontal_left=$false; bronchitis_oropharynx_erythema=$true; bronchitis_oropharynx_exudate=$true; bronchitis_oropharynx_abcess=$false; bronchitis_oropharynx_ulcers=$false; bronchitis_sinus_tenderness_maxillary_right=$true; bronchitis_sinus_tenderness_maxillary_left=$false; bronchitis_oropharynx_appearance="erythematous"; bronchitis_sinus_tenderness_not_examined=$false; bronchitis_oropharynx_not_examined=$false } } } else { $null }
+    Add-Check `
+        "Legacy Bronchitis sinus and oropharynx adoption maps bilateral examination fields without PHP execution" `
+        ($null -ne $bronchitisSinusDefinition -and $bronchitisSinusDefinition.contextScope -eq "encounter" -and $bronchitisSinusDefinition.signaturePolicy -eq "author-only" -and $bronchitisSinusDetail.currentRevision.status -eq "effective" -and $bronchitisSinusFields.Count -eq 13 -and (($bronchitisSinusFields.key -join "|") -eq "bronchitis_no_sinus_tenderness|bronchitis_oropharynx_normal|bronchitis_sinus_tenderness_frontal_right|bronchitis_sinus_tenderness_frontal_left|bronchitis_oropharynx_erythema|bronchitis_oropharynx_exudate|bronchitis_oropharynx_abcess|bronchitis_oropharynx_ulcers|bronchitis_sinus_tenderness_maxillary_right|bronchitis_sinus_tenderness_maxillary_left|bronchitis_oropharynx_appearance|bronchitis_sinus_tenderness_not_examined|bronchitis_oropharynx_not_examined") -and @($bronchitisSinusFields | Where-Object { $_.type -eq "boolean" }).Count -eq 12 -and ($bronchitisSinusFields | Where-Object { $_.key -eq "bronchitis_oropharynx_appearance" }).maxLength -eq 255 -and $bronchitisSinusPreview.valid) `
+        @{ definitionId=$bronchitisSinusDefinition.definitionId; schemaHash=$bronchitisSinusDetail.currentRevision.schemaHash; fields=$bronchitisSinusFields.key; previewValid=$bronchitisSinusPreview.valid }
 
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
