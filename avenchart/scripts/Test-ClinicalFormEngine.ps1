@@ -574,6 +574,15 @@ try {
         ($null -ne $transferSummaryDefinition -and $transferSummaryDefinition.contextScope -eq "encounter" -and $transferSummaryDefinition.signaturePolicy -eq "author-only" -and $transferSummaryDetail.currentRevision.status -eq "effective" -and (($transferSummaryFields.key -join "|") -eq "transfer_to|transfer_date|status_of_admission|diagnosis|intervention_provided|overall_status_of_discharge") -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_to" }).type -eq "text" -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_to" }).maxLength -eq 255 -and ($transferSummaryFields | Where-Object { $_.key -eq "transfer_date" }).type -eq "date" -and $transferSummaryNarratives.Count -eq 4 -and @($transferSummaryNarratives | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0 -and $transferSummaryPreview.valid) `
         @{ definitionId=$transferSummaryDefinition.definitionId; schemaHash=$transferSummaryDetail.currentRevision.schemaHash; fields=$transferSummaryFields.key; previewValid=$transferSummaryPreview.valid }
 
+    $dictationDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.dictation" }) | Select-Object -First 1
+    $dictationDetail = if ($null -ne $dictationDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($dictationDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $dictationFields = @($dictationDetail.currentRevision.definition.fields)
+    $dictationPreview = if ($null -ne $dictationDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$dictationDetail.currentRevision.definition; values=@{ dictation="Synthetic dictation transcript."; additional_notes="Synthetic additional notes." } } } else { $null }
+    Add-Check `
+        "Legacy Speech Dictation adoption maps fixed encounter narratives without PHP execution" `
+        ($null -ne $dictationDefinition -and $dictationDefinition.contextScope -eq "encounter" -and $dictationDefinition.signaturePolicy -eq "author-only" -and $dictationDetail.currentRevision.status -eq "effective" -and (($dictationFields.key -join "|") -eq "dictation|additional_notes") -and @($dictationFields | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0 -and $dictationPreview.valid) `
+        @{ definitionId=$dictationDefinition.definitionId; schemaHash=$dictationDetail.currentRevision.schemaHash; fields=$dictationFields.key; previewValid=$dictationPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
