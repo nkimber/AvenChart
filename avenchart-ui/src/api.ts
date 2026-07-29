@@ -4251,6 +4251,11 @@ export type PatientMessageCorrectionHistoryResponse = {
   events: Array<{ eventId: number; correction: string; reason: string; actor: string; occurredAt: string }>
 }
 
+export type PatientMessageRetentionHistoryResponse = {
+  messageId: string
+  events: Array<{ eventId: number; action: 'archived' | 'restored'; reason: string; actor: string; occurredAt: string }>
+}
+
 export type StaffMessageAttachmentItem = {
   id: string
   fileName: string
@@ -4433,6 +4438,15 @@ export async function correctStaffMessage(
   input: { correction: string; reason: string },
 ): Promise<PatientMessagesResponse> {
   const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/correct`, input)
+  return result.detail
+}
+
+export async function getStaffMessageRetentionHistory(sessionId: string, messageId: string): Promise<PatientMessageRetentionHistoryResponse> {
+  return clinicianGet(sessionId, `/api/messages/${messageId}/retention-history`)
+}
+
+export async function archiveStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/archive`, { reason })
   return result.detail
 }
 

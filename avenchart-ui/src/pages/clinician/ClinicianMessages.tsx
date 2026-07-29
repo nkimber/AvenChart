@@ -3,12 +3,14 @@ import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Download, Forward, Mail, Paperclip, RefreshCw, Send } from 'lucide-react'
 import {
   createPatientMessage,
+  archiveStaffMessage,
   correctStaffMessage,
   downloadStaffMessageAttachment,
   forwardPatientMessage,
   getPatientMessageAssignmentHistory,
   getPatientMessageAssignees,
   getPatientMessages,
+  getStaffMessageRetentionHistory,
   getStaffMessageCorrectionHistory,
   getStaffMessageAttachments,
   getStaffMessageInbox,
@@ -19,6 +21,7 @@ import {
   type ClinicalWorkflowAssignee,
   type PatientMessageAssignmentHistoryResponse,
   type PatientMessageCorrectionHistoryResponse,
+  type PatientMessageRetentionHistoryResponse,
   type PatientMessageItem,
   type StaffMessageAttachmentItem,
   type StaffMessageInboxQuery,
@@ -134,6 +137,10 @@ export default function ClinicianMessages() {
   const [correctionError, setCorrectionError] = useState<{ id: string; message: string } | null>(null)
   const [correctionDrafts, setCorrectionDrafts] = useState<Record<string, { correction: string; reason: string }>>({})
   const [correctionHistory, setCorrectionHistory] = useState<Record<string, PatientMessageCorrectionHistoryResponse>>({})
+  const [archiveOpenId, setArchiveOpenId] = useState<string | null>(null)
+  const [archiveReason, setArchiveReason] = useState<Record<string, string>>({})
+  const [archiveBusyId, setArchiveBusyId] = useState<string | null>(null)
+  const [retentionHistory, setRetentionHistory] = useState<Record<string, PatientMessageRetentionHistoryResponse>>({})
 
   useEffect(() => {
     const controller = new AbortController()
@@ -270,6 +277,26 @@ export default function ClinicianMessages() {
     if (correctionHistory[messageId]) { setCorrectionHistory((current) => { const next = { ...current }; delete next[messageId]; return next }); return }
     try { setCorrectionHistory((current) => current); const history = await getStaffMessageCorrectionHistory(session.sessionId, messageId); setCorrectionHistory((current) => ({ ...current, [messageId]: history })) }
     catch (error) { showToast(error instanceof Error ? error.message : 'Could not load correction history.', 'error') }
+  }
+
+  async function archiveMessage(message: PatientMessageItem) {
+    const reason = archiveReason[message.id]?.trim()
+    if (!reason) return
+    setArchiveBusyId(message.id)
+    try {
+      const updated = await archiveStaffMessage(session.sessionId, message.id, reason)
+      setThreadState((previous) => previous.status === 'ready' ? { ...previous, thread: { ...previous.thread, messages: updated.messages.filter((item) => !item.deleted) } } : previous)
+      setArchiveOpenId(null)
+      setArchiveReason((current) => { const next = { ...current }; delete next[message.id]; return next })
+      setReload((value) => value + 1)
+      showToast('Message archived. It can be restored through the protected retention API.', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Could not archive the message.', 'error') } finally { setArchiveBusyId(null) }
+  }
+
+  async function toggleRetentionHistory(messageId: string) {
+    if (retentionHistory[messageId]) { setRetentionHistory((current) => { const next = { ...current }; delete next[messageId]; return next }); return }
+    try { const history = await getStaffMessageRetentionHistory(session.sessionId, messageId); setRetentionHistory((current) => ({ ...current, [messageId]: history })) }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not load archive history.', 'error') }
   }
 
   async function handleReply(messageId: string) {
@@ -792,6 +819,9 @@ export default function ClinicianMessages() {
                         <button className="cl-btn-secondary" type="button" disabled={correctionBusyId !== null} onClick={() => setCorrectionOpenId((current) => current === message.id ? null : message.id)}>
                           Append correction
                         </button>
+                        <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => setArchiveOpenId((current) => current === message.id ? null : message.id)}>
+                          Archive
+                        </button>
                       </div>
                       {forwardingOpenId === message.id && (
                         <div className="msg-reply-form">
@@ -858,6 +888,18 @@ export default function ClinicianMessages() {
                               {correctionHistory[message.id].events.length === 0 ? <li>No corrections have been recorded.</li> : correctionHistory[message.id].events.map((event) => <li key={event.eventId}><strong>{event.actor}</strong>{' · '}{new Date(event.occurredAt).toLocaleString()}{' · '}{event.correction}{' · Reason: '}{event.reason}</li>)}
                             </ul>
                           )}
+                        </div>
+                      )}
+                      {archiveOpenId === message.id && (
+                        <div className="msg-reply-form">
+                          <p className="msg-item-meta">Archive removes this message from active staff threads without deleting it. A reason is retained, and an authorized restore remains possible through the protected API.</p>
+                          <label className="ne-field"><span className="ne-label">Archive reason</span><input className="ne-input" maxLength={500} value={archiveReason[message.id] ?? ''} disabled={archiveBusyId !== null} onChange={(event) => setArchiveReason((current) => ({ ...current, [message.id]: event.target.value }))} /></label>
+                          <div className="ne-actions">
+                            <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => setArchiveOpenId(null)}>Cancel</button>
+                            <button className="cl-btn-primary" type="button" disabled={archiveBusyId !== null || !archiveReason[message.id]?.trim()} onClick={() => void archiveMessage(message)}>{archiveBusyId === message.id ? 'Archiving…' : 'Archive message'}</button>
+                            <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => void toggleRetentionHistory(message.id)}>{retentionHistory[message.id] ? 'Hide archive history' : 'Archive history'}</button>
+                          </div>
+                          {retentionHistory[message.id] && <ul className="message-inbox-list" aria-label="Archive history">{retentionHistory[message.id].events.map((event) => <li key={event.eventId}><strong>{event.action}</strong>{' · '}{event.actor}{' · '}{new Date(event.occurredAt).toLocaleString()}{' · '}{event.reason}</li>)}</ul>}
                         </div>
                       )}
                       <div className="msg-reply-form">
