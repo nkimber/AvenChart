@@ -141,14 +141,22 @@ try {
         -TimeoutSec 20
     $mappedSummary = @($list.snapshots | Where-Object sourceRowId -eq "880001")[0]
     $unmappedSummary = @($list.snapshots | Where-Object sourceRowId -eq "880002")[0]
+    $instructionSummaries = @(
+        $list.snapshots |
+            Where-Object stableKey -eq "legacy.clinicalinstructions"
+    )
     Add-Check "Bounded patient snapshot list" (
-        $list.total -eq 2 `
-        -and $list.returned -eq 2 `
+        $list.total -eq 4 `
+        -and $list.returned -eq 4 `
         -and $list.limit -eq 100 `
         -and $mappedSummary.readOnly `
         -and -not $mappedSummary.converted `
         -and $mappedSummary.unmappedCount -eq 0 `
-        -and $unmappedSummary.unmappedCount -eq 1
+        -and $unmappedSummary.unmappedCount -eq 1 `
+        -and $instructionSummaries.Count -eq 2 `
+        -and (@($instructionSummaries | Where-Object {
+            -not $_.readOnly -or $_.converted -or $_.unmappedCount -ne 0
+        }).Count -eq 0)
     ) $list
 
     $emptyList = Invoke-RestMethod `
@@ -383,6 +391,29 @@ try {
         -and -not $mapped.migrationApproved `
         -and $null -eq $mapped.governedInstanceId
     ) $mapped
+
+    $instructions = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000003" `
+        -Headers $headers `
+        -TimeoutSec 20
+    $instruction = @(
+        $instructions.fields | Where-Object sourceField -eq "instruction"
+    )[0]
+    Add-Check "Mapped Clinical Instructions display evidence" (
+        $instructions.snapshot.stableKey -eq "legacy.clinicalinstructions" `
+        -and $instructions.snapshot.sourceTable -eq "form_clinical_instructions" `
+        -and $instructions.snapshot.adapterRevision -eq "local-legacy-clinical-instructions-display-v1" `
+        -and $instructions.snapshot.targetDefinitionRevision -eq 1 `
+        -and $instructions.snapshot.targetSchemaHash -match "^[0-9a-f]{64}$" `
+        -and $instructions.snapshot.rawSha256 -match "^[0-9a-f]{64}$" `
+        -and @($instructions.fields).Count -eq 1 `
+        -and $instruction.targetField -eq "instruction" `
+        -and $instruction.mappingState -eq "exact" `
+        -and $instruction.displayValue -match "^Continue the current regimen" `
+        -and @($instructions.unmappedFacts).Count -eq 0 `
+        -and -not $instructions.migrationApproved `
+        -and $null -eq $instructions.governedInstanceId
+    ) $instructions
 
     $unmapped = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000002" `

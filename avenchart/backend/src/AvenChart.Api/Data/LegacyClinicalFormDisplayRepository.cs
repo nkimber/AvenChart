@@ -690,19 +690,6 @@ public sealed class LegacyClinicalFormDisplayRepository(NpgsqlDataSource dataSou
                 $"Legacy clinical form snapshot {row.SnapshotId} failed its stored SHA-256 check.");
         }
 
-        if (!string.Equals(
-                row.StableKey,
-                "legacy.clinicnote",
-                StringComparison.Ordinal)
-            || !string.Equals(
-                row.AdapterRevision,
-                "local-legacy-clinic-note-display-v1",
-                StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Legacy clinical form snapshot {row.SnapshotId} has no supported display adapter.");
-        }
-
         var schema = ClinicalFormRuntime.DeserializeSchema(row.SchemaJson);
         var targetFields = schema.Fields.ToDictionary(
             field => field.Key,
@@ -710,16 +697,51 @@ public sealed class LegacyClinicalFormDisplayRepository(NpgsqlDataSource dataSou
         var values = ClinicalFormRuntime.DeserializeValues(row.RawValuesJson);
         var fields = new List<LegacyClinicalFormDisplayField>();
         var unmapped = new List<LegacyClinicalFormUnmappedFact>();
+        HashSet<string> expectedSourceFields;
+        if (string.Equals(
+                row.StableKey,
+                "legacy.clinicnote",
+                StringComparison.Ordinal)
+            && string.Equals(
+                row.AdapterRevision,
+                "local-legacy-clinic-note-display-v1",
+                StringComparison.Ordinal))
+        {
+            AddTextField("history", "history");
+            AddTextField("examination", "examination");
+            AddTextField("plan", "plan");
+            AddFollowUpField();
+            AddTextField("followup_timing", "follow_up_timing");
+            expectedSourceFields = new(
+                [
+                    "history",
+                    "examination",
+                    "plan",
+                    "followup_required",
+                    "followup_timing"
+                ],
+                StringComparer.Ordinal);
+        }
+        else if (string.Equals(
+                     row.StableKey,
+                     "legacy.clinicalinstructions",
+                     StringComparison.Ordinal)
+                 && string.Equals(
+                     row.AdapterRevision,
+                     "local-legacy-clinical-instructions-display-v1",
+                     StringComparison.Ordinal))
+        {
+            AddTextField("instruction", "instruction");
+            expectedSourceFields = new(
+                ["instruction"],
+                StringComparer.Ordinal);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Legacy clinical form snapshot {row.SnapshotId} has no supported display adapter.");
+        }
 
-        AddTextField("history", "history");
-        AddTextField("examination", "examination");
-        AddTextField("plan", "plan");
-        AddFollowUpField();
-        AddTextField("followup_timing", "follow_up_timing");
-
-        var expectedSourceFields = new HashSet<string>(
-            ["history", "examination", "plan", "followup_required", "followup_timing"],
-            StringComparer.Ordinal);
         foreach (var extra in values
                      .Where(pair => !expectedSourceFields.Contains(pair.Key))
                      .OrderBy(pair => pair.Key, StringComparer.Ordinal))

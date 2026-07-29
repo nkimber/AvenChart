@@ -83,12 +83,40 @@ test.describe("FORM-04 legacy clinical-form display adapter", () => {
       const snapshots = page.getByRole("region", {
         name: "Legacy form snapshots",
       });
-      await expect(snapshots.locator("tbody tr")).toHaveCount(2, {
+      await expect(snapshots.locator("tbody tr")).toHaveCount(4, {
         timeout: 20_000,
       });
       await expect(page.getByRole("status")).toContainText(
         "Encounter choices are unavailable for this session",
       );
+
+      const instructionRow = snapshots
+        .locator("tbody tr")
+        .filter({ hasText: "row 881001" });
+      await expect(instructionRow).toContainText("Clinical Instructions");
+      await expect(instructionRow).toContainText("All source fields mapped");
+      await instructionRow
+        .getByRole("button", { name: "Open snapshot" })
+        .click();
+      const instructionDetail = page.getByRole("region", {
+        name: /Clinical Instructions source row 881001/,
+      });
+      await expect(instructionDetail).toContainText(
+        "local-legacy-clinical-instructions-display-v1",
+        { timeout: 20_000 },
+      );
+      await expect(instructionDetail).toContainText(
+        "form_clinical_instructions",
+      );
+      await expect(instructionDetail).toContainText(
+        "Continue the current regimen.",
+      );
+      await expect(instructionDetail).toContainText(
+        "No unmapped source fields or values were found.",
+      );
+      await instructionDetail
+        .getByRole("button", { name: "Close snapshot" })
+        .click();
 
       const migrationManifest = page.getByRole("region", {
         name: "Clinic Note migration manifest",
