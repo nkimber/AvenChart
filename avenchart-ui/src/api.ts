@@ -7663,10 +7663,11 @@ export async function getClinicalAlertRules(
 export type ClinicalAlertRuleChangeRequest = {
   requestId: string; ruleKey: string; status: GovernanceStatus; version: number; reason: string
   proposedDefinition: ClinicalAlertRuleItem; baselineDefinition?: ClinicalAlertRuleItem | null
+  createdAt: string; createdBy: string; updatedAt: string; updatedBy: string
 }
 export type ClinicalAlertRuleChangeRequestDetail = { request: ClinicalAlertRuleChangeRequest; activeRule?: ClinicalAlertRuleItem | null; events: GovernanceEvent[] }
 export type ClinicalAlertRuleChangeRequestsResponse = { requests: ClinicalAlertRuleChangeRequest[]; total: number; returned: number; offset: number; limit: number; status: GovernanceStatus | 'all' | 'open' }
-export async function getClinicalAlertRuleChangeRequests(sessionId: string, status: GovernanceStatus | 'all' | 'open' = 'open'): Promise<ClinicalAlertRuleChangeRequestsResponse> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests?status=${encodeURIComponent(status)}`) }
+export async function getClinicalAlertRuleChangeRequests(sessionId: string, options: FormChangeRequestListOptions = {}): Promise<ClinicalAlertRuleChangeRequestsResponse> { const parameters = new URLSearchParams({ status: options.status ?? 'open', offset: String(options.offset ?? 0), limit: String(options.limit ?? 25) }); return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests?${parameters.toString()}`) }
 export async function createClinicalAlertRuleChangeRequest(sessionId: string, input: ClinicalAlertRuleItem & { reason: string }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, '/api/administration/clinical-alert-rule-change-requests', input) }
 export async function getClinicalAlertRuleChangeRequest(sessionId: string, requestId: string): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianGet(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}`) }
 export async function transitionClinicalAlertRuleChangeRequest(sessionId: string, requestId: string, action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel', input: { note?: string | null; expectedVersion: number }): Promise<ClinicalAlertRuleChangeRequestDetail> { return clinicianPost(sessionId, `/api/administration/clinical-alert-rule-change-requests/${encodeURIComponent(requestId)}/${action}`, input) }
