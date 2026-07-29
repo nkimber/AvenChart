@@ -45,6 +45,11 @@ public sealed record PatientMessageAssignmentUpdateRequest(
     int ExpectedVersion,
     string? Reason);
 
+public sealed record PatientMessageForwardRequest(
+    string AssignedTo,
+    int ExpectedVersion,
+    string? Note);
+
 public sealed record PatientMessageAssignmentEvent(
     long EventId,
     string Action,

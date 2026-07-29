@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useOutletContext, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Mail, RefreshCw, Send } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Forward, Mail, RefreshCw, Send } from 'lucide-react'
 import {
   createPatientMessage,
+  forwardPatientMessage,
   getPatientMessageAssignmentHistory,
   getPatientMessageAssignees,
   getPatientMessages,
@@ -114,6 +115,10 @@ export default function ClinicianMessages() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, { assignedTo: string; reason: string }>>({})
   const [assignmentHistory, setAssignmentHistory] = useState<Record<string, PatientMessageAssignmentHistoryResponse>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
+  const [forwardingId, setForwardingId] = useState<string | null>(null)
+  const [forwardError, setForwardError] = useState<{ id: string; message: string } | null>(null)
+  const [forwardDrafts, setForwardDrafts] = useState<Record<string, { assignedTo: string; note: string }>>({})
+  const [forwardingOpenId, setForwardingOpenId] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -179,6 +184,7 @@ export default function ClinicianMessages() {
     setReplyBody('')
     setActiveMessageId(null)
     setAssignmentError(null)
+    setForwardError(null)
     getPatientMessages(session.sessionId, patient.canonicalId)
       .then((data) => setThreadState({
         status: 'ready',
@@ -282,6 +288,54 @@ export default function ClinicianMessages() {
       showToast(errorMessage, 'error')
     } finally {
       setAssigningId(null)
+    }
+  }
+
+  function updateForwardDraft(messageId: string, field: 'assignedTo' | 'note', value: string) {
+    setForwardDrafts((current) => ({
+      ...current,
+      [messageId]: {
+        assignedTo: current[messageId]?.assignedTo ?? '',
+        note: current[messageId]?.note ?? '',
+        [field]: value,
+      },
+    }))
+  }
+
+  async function handleForward(message: PatientMessageItem) {
+    const draft = forwardDrafts[message.id]
+    const assignedTo = draft?.assignedTo ?? ''
+    if (!assignedTo) return
+    setForwardingId(message.id)
+    setForwardError(null)
+    try {
+      const updated = await forwardPatientMessage(session.sessionId, message.id, {
+        assignedTo,
+        expectedVersion: message.assignmentVersion,
+        note: draft?.note.trim() || null,
+      })
+      setThreadState((previous) => previous.status === 'ready'
+        ? { ...previous, thread: { ...previous.thread, messages: updated.messages.filter((item) => !item.deleted) } }
+        : previous)
+      setForwardDrafts((current) => {
+        const next = { ...current }
+        delete next[message.id]
+        return next
+      })
+      setAssignmentHistory((current) => {
+        const next = { ...current }
+        delete next[message.id]
+        return next
+      })
+      setForwardingOpenId(null)
+      setReload((value) => value + 1)
+      showToast(`Message forwarded to ${assignedTo}.`, 'success')
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : 'Could not forward the message.'
+      setForwardError({ id: message.id, message: messageText })
+      showToast(messageText, 'error')
+    } finally {
+      setForwardingId(null)
     }
   }
 
@@ -649,7 +703,60 @@ export default function ClinicianMessages() {
                                 : 'Claim'}
                           </button>
                         )}
+                        <button
+                          className="cl-btn-secondary"
+                          type="button"
+                          disabled={forwardingId !== null || assignees.length === 0}
+                          onClick={() => setForwardingOpenId((current) => current === message.id ? null : message.id)}
+                        >
+                          <Forward size={14} aria-hidden="true" />
+                          Forward
+                        </button>
                       </div>
+                      {forwardingOpenId === message.id && (
+                        <div className="msg-reply-form">
+                          <p className="msg-item-meta">Forward keeps this message in the patient thread, changes its active recipient, and records the actor, time, prior recipient, and optional note.</p>
+                          <label className="ne-field">
+                            <span className="ne-label">Forward to</span>
+                            <select
+                              className="ne-input"
+                              value={forwardDrafts[message.id]?.assignedTo ?? ''}
+                              disabled={forwardingId !== null || assignees.length === 0}
+                              onChange={(event) => updateForwardDraft(message.id, 'assignedTo', event.target.value)}
+                            >
+                              <option value="">Choose active staff</option>
+                              {assignees.filter((assignee) => assignee.username !== message.assignedTo).map((assignee) => (
+                                <option key={assignee.username} value={assignee.username}>
+                                  {assignee.displayName} ({assignee.username})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="ne-field">
+                            <span className="ne-label">Forwarding note (optional)</span>
+                            <textarea
+                              className="ne-soap-textarea"
+                              rows={2}
+                              maxLength={500}
+                              value={forwardDrafts[message.id]?.note ?? ''}
+                              disabled={forwardingId !== null}
+                              onChange={(event) => updateForwardDraft(message.id, 'note', event.target.value)}
+                            />
+                          </label>
+                          <div className="ne-actions">
+                            <button className="cl-btn-secondary" type="button" disabled={forwardingId !== null} onClick={() => setForwardingOpenId(null)}>Cancel</button>
+                            <button
+                              className="cl-btn-primary"
+                              type="button"
+                              disabled={forwardingId !== null || !(forwardDrafts[message.id]?.assignedTo ?? '')}
+                              onClick={() => void handleForward(message)}
+                            >
+                              <Forward size={14} aria-hidden="true" />
+                              {forwardingId === message.id ? 'Forwarding…' : 'Forward message'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="msg-reply-form">
                         <label className="ne-field">
                           <span className="ne-label">Assign to</span>
@@ -727,6 +834,9 @@ export default function ClinicianMessages() {
                       </div>
                       {assignmentError?.id === message.id && (
                         <p className="field-error" role="alert">{assignmentError.message}</p>
+                      )}
+                      {forwardError?.id === message.id && (
+                        <p className="field-error" role="alert">{forwardError.message}</p>
                       )}
                       {activeMessageId === message.id ? (
                         <div className="msg-reply-form">

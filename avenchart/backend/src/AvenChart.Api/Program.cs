@@ -3259,6 +3259,37 @@ messages.MapGet("/{messageId}/assignment-history", async (
     .WithName("GetPatientMessageAssignmentHistory")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "view"));
 
+messages.MapPost("/{messageId}/forward", async (
+        MessageRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string messageId,
+        PatientMessageForwardRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var mutation = await repository.ForwardAsync(messageId, request, session.Username, cancellationToken);
+            return mutation is null ? Results.NotFound() : Results.Ok(mutation);
+        }
+        catch (PatientMessageAssignmentVersionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                expectedVersion = exception.ExpectedVersion,
+                currentVersion = exception.CurrentVersion,
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("ForwardPatientMessage")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
+
 messages.MapPut("/{messageId}/reply", async (
         MessageRepository repository,
         string messageId,

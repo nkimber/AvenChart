@@ -4240,6 +4240,12 @@ export type PatientMessageAssignmentHistoryResponse = {
   events: PatientMessageAssignmentEvent[]
 }
 
+export type PatientMessageForwardRequest = {
+  assignedTo: string
+  expectedVersion: number
+  note?: string | null
+}
+
 export type StaffMessageInboxCounts = {
   total: number
   unread: number
@@ -4367,6 +4373,21 @@ export async function getPatientMessageAssignmentHistory(
   signal?: AbortSignal,
 ): Promise<PatientMessageAssignmentHistoryResponse> {
   return clinicianGet(sessionId, `/api/messages/${messageId}/assignment-history`, signal)
+}
+
+export async function forwardPatientMessage(
+  sessionId: string,
+  messageId: string,
+  input: PatientMessageForwardRequest,
+  signal?: AbortSignal,
+): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(
+    sessionId,
+    `/api/messages/${messageId}/forward`,
+    input,
+    signal,
+  )
+  return result.detail
 }
 
 export type OfficeNoteItem = {

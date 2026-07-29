@@ -39,6 +39,7 @@ import {
   downloadPatientDocumentVersion,
   endPatientPortalSession,
   findPatientDuplicateCandidates,
+  forwardPatientMessage,
   failPatientDocumentOcr,
   getCurrentSession,
   getAuthorizationPolicyCatalog,
@@ -1642,6 +1643,39 @@ describe('authenticated API transport', () => {
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({ assignedTo: 'admin', expectedVersion: 0, reason: 'Ownership verification' }),
+      }),
+    )
+  })
+
+  it('forwards a message through the version-safe forwarding contract', async () => {
+    const detail = {
+      patientId: 'MOD-PAT-0004',
+      patientDisplayName: 'Alex Morgan',
+      portalEnabled: true,
+      messages: [{
+        id: 'MSG-1',
+        title: 'Medication question',
+        body: 'Original\n2026-07-29 20:00 (admin to gold-frontdesk-01) Please follow up.',
+        status: 'new',
+        assignedTo: 'gold-frontdesk-01',
+        deleted: 0,
+        assignmentVersion: 1,
+      }],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'MSG-1', detail }))
+
+    const result = await forwardPatientMessage(
+      'staff-session',
+      'MSG-1',
+      { assignedTo: 'gold-frontdesk-01', expectedVersion: 0, note: 'Please follow up.' },
+    )
+
+    expect(result).toEqual(detail)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5001/api/messages/MSG-1/forward',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ assignedTo: 'gold-frontdesk-01', expectedVersion: 0, note: 'Please follow up.' }),
       }),
     )
   })
