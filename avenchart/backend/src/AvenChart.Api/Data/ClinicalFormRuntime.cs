@@ -428,12 +428,19 @@ public static partial class ClinicalFormRuntime
             200);
         var helpText = NormalizeOptionalText(field.HelpText, $"Help text for {key}", 500);
         var maxLength = field.MaxLength;
-        if (type is "text" or "multiline")
+        if (type == "text")
         {
-            maxLength ??= type == "text" ? 240 : 4000;
+            maxLength ??= 240;
             if (maxLength is < 1 or > 10000)
             {
                 throw new ArgumentException($"Field {key} max length must be 1 to 10000.");
+            }
+        }
+        else if (type == "multiline")
+        {
+            if (maxLength is < 1 or > 10000)
+            {
+                throw new ArgumentException($"Field {key} max length must be 1 to 10000 when specified.");
             }
         }
         else if (maxLength is not null)

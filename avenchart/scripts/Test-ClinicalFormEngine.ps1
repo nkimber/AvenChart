@@ -784,6 +784,15 @@ try {
         ($null -ne $rosEndocrineDefinition -and $rosEndocrineDefinition.contextScope -eq "encounter" -and $rosEndocrineDefinition.signaturePolicy -eq "author-only" -and $rosEndocrineDetail.currentRevision.status -eq "effective" -and (($rosEndocrineFields.key -join "|") -eq "insulin_dependent_diabetes|noninsulin_dependent_diabetes|hypothyroidism|hyperthyroidism|cushing_syndrom|addison_syndrom") -and @($rosEndocrineFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and @($rosEndocrineFields | Where-Object { $_.key -in @('cushing_syndrom','addison_syndrom') -and $_.helpText -notmatch 'persisted field spelling' }).Count -eq 0 -and $rosEndocrinePreview.valid) `
         @{ definitionId=$rosEndocrineDefinition.definitionId; schemaHash=$rosEndocrineDetail.currentRevision.schemaHash; fields=$rosEndocrineFields.key; previewValid=$rosEndocrinePreview.valid }
 
+    $rosAdditionalNotesDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemsadditionalnotes" }) | Select-Object -First 1
+    $rosAdditionalNotesDetail = if ($null -ne $rosAdditionalNotesDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosAdditionalNotesDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosAdditionalNotesFields = @($rosAdditionalNotesDetail.currentRevision.definition.fields)
+    $rosAdditionalNotesPreview = if ($null -ne $rosAdditionalNotesDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosAdditionalNotesDetail.currentRevision.definition; values=@{ additional_notes="Legacy-compatible review of systems narrative." } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems Additional Notes adoption retains an unbounded longtext narrative without PHP execution" `
+        ($null -ne $rosAdditionalNotesDefinition -and $rosAdditionalNotesDefinition.contextScope -eq "encounter" -and $rosAdditionalNotesDefinition.signaturePolicy -eq "author-only" -and $rosAdditionalNotesDetail.currentRevision.status -eq "effective" -and $rosAdditionalNotesFields.Count -eq 1 -and $rosAdditionalNotesFields[0].key -eq "additional_notes" -and $rosAdditionalNotesFields[0].type -eq "multiline" -and $null -eq $rosAdditionalNotesFields[0].maxLength -and $rosAdditionalNotesFields[0].helpText -match "longtext" -and $rosAdditionalNotesPreview.valid) `
+        @{ definitionId=$rosAdditionalNotesDefinition.definitionId; schemaHash=$rosAdditionalNotesDetail.currentRevision.schemaHash; field=$rosAdditionalNotesFields[0].key; maxLength=$rosAdditionalNotesFields[0].maxLength; previewValid=$rosAdditionalNotesPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
