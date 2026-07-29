@@ -9,6 +9,11 @@ using AvenChart.Api.Models;
 
 namespace AvenChart.Api.Data;
 
+public sealed record GovernedReportDataScope(
+    string RowPolicy,
+    int? FacilityId,
+    IReadOnlyList<string> PatientIds);
+
 public sealed class ReportRepository(NpgsqlDataSource dataSource)
 {
     private static readonly IReadOnlyList<ReportFamilyItem> Families = [new("operational", "Operational snapshot", "Practice counts and activity summary.", false), new("patients", "Patient list", "Registered patient demographics.", false), new("appointments", "Appointments", "Scheduled appointment activity.", true), new("encounters", "Encounters", "Clinical encounter activity.", true), new("referrals", "Referrals", "Local referral lifecycle activity.", true), new("chart-tracker", "Chart tracker", "Recorded chart-location handoffs.", true), new("inventory", "Inventory transactions", "Immutable inventory transaction activity.", true)];
@@ -522,6 +527,263 @@ public sealed class ReportRepository(NpgsqlDataSource dataSource)
         }
 
         return builder.ToString();
+    }
+
+    public async Task<string> GetGovernedFamilyCsvAsync(
+        string family,
+        DateOnly? from,
+        DateOnly? to,
+        GovernedReportDataScope scope,
+        CancellationToken cancellationToken)
+    {
+        var key = family.Trim().ToLowerInvariant();
+        if (!Families.Any(item => item.Key == key))
+        {
+            throw new ArgumentException("Unsupported report family.");
+        }
+        if (from is not null && to is not null && from > to)
+        {
+            throw new ArgumentException("From date cannot be after to date.");
+        }
+        if (scope.RowPolicy == "practice-wide")
+        {
+            return await GetFamilyCsvAsync(key, from, to, cancellationToken);
+        }
+        if (scope.RowPolicy is not ("facility-scoped" or "patient-assigned"))
+        {
+            throw new ArgumentException("Unsupported governed report row policy.");
+        }
+        if (scope.RowPolicy == "facility-scoped" && scope.FacilityId is null)
+        {
+            throw new ArgumentException("Facility-scoped execution requires a pinned facility.");
+        }
+        if (scope.RowPolicy == "patient-assigned" && key == "inventory")
+        {
+            throw new ArgumentException(
+                "Inventory transactions do not have an approved patient-assignment relationship.");
+        }
+        if (key == "operational")
+        {
+            return await GetScopedOperationalReportsCsvAsync(
+                from,
+                to,
+                scope,
+                cancellationToken);
+        }
+
+        var scopePredicate = scope.RowPolicy == "facility-scoped"
+            ? key switch
+            {
+                "patients" => "p.facility_id = @facility",
+                "appointments" => "a.facility_id = @facility",
+                "encounters" => "e.facility_id = @facility",
+                "referrals" => "p.facility_id = @facility",
+                "chart-tracker" => "p.facility_id = @facility",
+                "inventory" => "l.facility_id = @facility",
+                _ => throw new ArgumentException("Unsupported report family.")
+            }
+            : "p.canonical_id = any(@patientIds)";
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = key switch
+        {
+            "patients" => $"""
+                select p.canonical_id,
+                       trim(concat(p.last_name, ', ', p.first_name)),
+                       p.date_of_birth::text,
+                       coalesce(p.phone_cell,p.phone_home,p.email,'')
+                from patients p
+                where p.merged_into_patient_id is null
+                  and {scopePredicate}
+                order by p.last_name,p.first_name
+                limit 5000;
+                """,
+            "appointments" => $"""
+                select a.id::text,
+                       p.pubpid,
+                       a.appointment_date::text,
+                       concat(coalesce(a.title,''),' | ',coalesce(a.status,''))
+                from appointments a
+                join patients p on p.legacy_pid=a.pid
+                where (@from is null or a.appointment_date>=@from)
+                  and (@to is null or a.appointment_date<=@to)
+                  and {scopePredicate}
+                order by a.appointment_date,a.start_time
+                limit 5000;
+                """,
+            "encounters" => $"""
+                select e.encounter::text,
+                       p.pubpid,
+                       e.encounter_date::text,
+                       coalesce(e.reason,'')
+                from encounters e
+                join patients p on p.legacy_pid=e.pid
+                where (@from is null or e.encounter_date>=@from)
+                  and (@to is null or e.encounter_date<=@to)
+                  and {scopePredicate}
+                order by e.encounter_date desc,e.encounter desc
+                limit 5000;
+                """,
+            "referrals" => $"""
+                select r.id::text,
+                       p.pubpid,
+                       r.requested_at::date::text,
+                       concat(r.destination,' | ',r.status)
+                from referrals r
+                join patients p on p.canonical_id=r.patient_id
+                where (@from is null or r.requested_at::date>=@from)
+                  and (@to is null or r.requested_at::date<=@to)
+                  and {scopePredicate}
+                order by r.requested_at desc
+                limit 5000;
+                """,
+            "chart-tracker" => $"""
+                select event.id::text,
+                       p.pubpid,
+                       event.recorded_at::date::text,
+                       coalesce(event.location, trim(concat(staff.first_name,' ',staff.last_name)),'')
+                from chart_tracker_events event
+                join patients p on p.canonical_id=event.patient_id
+                left join staff on staff.id=event.user_id
+                where (@from is null or event.recorded_at::date>=@from)
+                  and (@to is null or event.recorded_at::date<=@to)
+                  and {scopePredicate}
+                order by event.recorded_at desc
+                limit 5000;
+                """,
+            "inventory" => $"""
+                select tx.transaction_id::text,
+                       item.item_code,
+                       tx.occurred_at::date::text,
+                       concat(tx.transaction_type,' | ',tx.quantity_delta::text,' | ',coalesce(tx.reason,''))
+                from inventory_transactions tx
+                join inventory_lots l on l.lot_id=tx.lot_id
+                join inventory_items item on item.item_id=l.item_id
+                where (@from is null or tx.occurred_at::date>=@from)
+                  and (@to is null or tx.occurred_at::date<=@to)
+                  and {scopePredicate}
+                order by tx.occurred_at desc
+                limit 5000;
+                """,
+            _ => throw new ArgumentException("Unsupported report family.")
+        };
+        AddGovernedScopeParameters(command, from, to, scope);
+        var csv = new StringBuilder();
+        AppendCsvRow(csv, "Identifier", "Subject", "Date", "Detail");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            AppendCsvRow(
+                csv,
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3));
+        }
+        return csv.ToString();
+    }
+
+    private async Task<string> GetScopedOperationalReportsCsvAsync(
+        DateOnly? from,
+        DateOnly? to,
+        GovernedReportDataScope scope,
+        CancellationToken cancellationToken)
+    {
+        var patientPredicate = scope.RowPolicy == "facility-scoped"
+            ? "patient.facility_id = @facility"
+            : "patient.canonical_id = any(@patientIds)";
+        var appointmentPredicate = scope.RowPolicy == "facility-scoped"
+            ? "appointment.facility_id = @facility"
+            : "patient.canonical_id = any(@patientIds)";
+        var encounterPredicate = scope.RowPolicy == "facility-scoped"
+            ? "encounter.facility_id = @facility"
+            : "patient.canonical_id = any(@patientIds)";
+        var inventoryRow = scope.RowPolicy == "facility-scoped"
+            ? """
+              union all
+              select 'Scoped activity','Inventory transactions','Rows',count(*)::text
+              from inventory_transactions tx
+              join inventory_lots lot on lot.lot_id=tx.lot_id
+              where (@from is null or tx.occurred_at::date>=@from)
+                and (@to is null or tx.occurred_at::date<=@to)
+                and lot.facility_id=@facility
+              """
+            : string.Empty;
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            select 'Scoped activity','Patients','Rows',count(*)::text
+            from patients patient
+            where patient.merged_into_patient_id is null
+              and {patientPredicate}
+            union all
+            select 'Scoped activity','Appointments','Rows',count(*)::text
+            from appointments appointment
+            join patients patient on patient.legacy_pid=appointment.pid
+            where (@from is null or appointment.appointment_date>=@from)
+              and (@to is null or appointment.appointment_date<=@to)
+              and {appointmentPredicate}
+            union all
+            select 'Scoped activity','Encounters','Rows',count(*)::text
+            from encounters encounter
+            join patients patient on patient.legacy_pid=encounter.pid
+            where (@from is null or encounter.encounter_date>=@from)
+              and (@to is null or encounter.encounter_date<=@to)
+              and {encounterPredicate}
+            union all
+            select 'Scoped activity','Referrals','Rows',count(*)::text
+            from referrals referral
+            join patients patient on patient.canonical_id=referral.patient_id
+            where (@from is null or referral.requested_at::date>=@from)
+              and (@to is null or referral.requested_at::date<=@to)
+              and {patientPredicate}
+            union all
+            select 'Scoped activity','Chart tracker','Rows',count(*)::text
+            from chart_tracker_events event
+            join patients patient on patient.canonical_id=event.patient_id
+            where (@from is null or event.recorded_at::date>=@from)
+              and (@to is null or event.recorded_at::date<=@to)
+              and {patientPredicate}
+            {inventoryRow}
+            order by 2;
+            """;
+        AddGovernedScopeParameters(command, from, to, scope);
+        var csv = new StringBuilder();
+        AppendCsvRow(csv, "Section", "Name", "Metric", "Value");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            AppendCsvRow(
+                csv,
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3));
+        }
+        return csv.ToString();
+    }
+
+    private static void AddGovernedScopeParameters(
+        NpgsqlCommand command,
+        DateOnly? from,
+        DateOnly? to,
+        GovernedReportDataScope scope)
+    {
+        command.Parameters.Add("from", NpgsqlDbType.Date).Value =
+            (object?)from ?? DBNull.Value;
+        command.Parameters.Add("to", NpgsqlDbType.Date).Value =
+            (object?)to ?? DBNull.Value;
+        if (scope.RowPolicy == "facility-scoped")
+        {
+            command.Parameters.AddWithValue("facility", scope.FacilityId!.Value);
+        }
+        else
+        {
+            command.Parameters.Add("patientIds", NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+                scope.PatientIds.ToArray();
+        }
     }
 
     public async Task<string> GetFamilyCsvAsync(string family, DateOnly? from, DateOnly? to, CancellationToken cancellationToken)

@@ -96,7 +96,7 @@ public sealed class ReportDefinitionRepository(NpgsqlDataSource dataSource)
             RawSqlAccepted: false,
             ExecutableTemplatesAccepted: false,
             ExternalDeliveryEnabled: false,
-            RowPolicyExecutionEnforced: false,
+            RowPolicyExecutionEnforced: true,
             States,
             Sensitivities,
             RowPolicies,
@@ -108,8 +108,8 @@ public sealed class ReportDefinitionRepository(NpgsqlDataSource dataSource)
             ProductionBlockers:
             [
                 "Report owners must approve metric terminology, permitted purpose, sensitivity, row policy, and retention.",
-                "REP-02 must enforce facility, patient-relationship, purpose, recipient, and bounded-parameter policy at run, preview, and download time.",
-                "REP-02 must retain reproducible source revision, normalized parameters, as-of semantics, checksum, row count, result, and failure evidence.",
+                "REP-02 local execution enforces practice, facility, and supported patient relationships; accountable production scope, delegation, revocation, and minimum-necessary policy remain unapproved.",
+                "The direct family CSV path is compatibility-only and does not produce governed definition, scope, artifact, or download evidence.",
                 "Production artifact storage, encryption, key management, retention deletion, legal hold, backup, and recovery are not approved.",
                 "Schedules, recipient groups, retries, escalation, and external delivery remain disabled pending REP-03 and REP-05.",
                 "Metric validation fixtures require accountable data-owner review against accepted synthetic scenarios.",

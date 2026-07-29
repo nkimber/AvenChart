@@ -30,8 +30,19 @@ describe("governed report execution transport", () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          revision: "local-report-execution-v1",
-          executableRowPolicies: ["practice-wide"],
+          revision: "local-report-execution-v2",
+          scopeRevision: "local-report-scope-v1",
+          executableRowPolicies: [
+            "practice-wide",
+            "facility-scoped",
+            "patient-assigned",
+          ],
+          currentActorScope: {
+            activeStaffLinked: true,
+            staffId: 101,
+            facilityId: 10,
+            assignedPatientCount: 83,
+          },
         }),
       )
       .mockResolvedValueOnce(

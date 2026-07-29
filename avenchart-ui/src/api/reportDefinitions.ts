@@ -169,11 +169,22 @@ export type GovernedReportDefinitionDetail = {
 export type GovernedReportExecutionPolicy = {
   revision: string;
   definitionRevision: string;
+  scopeRevision: string;
   datasetId: string;
   datasetVersion: string;
   requiredAsOfDate: string;
   runStates: string[];
   executableRowPolicies: string[];
+  rowPolicyFamilySupport: Record<string, string[]>;
+  scopeSources: string[];
+  currentActorScope: {
+    username: string;
+    activeStaffLinked: boolean;
+    staffId: number | null;
+    facilityId: number | null;
+    facilityCode: string | null;
+    assignedPatientCount: number;
+  };
   deliveryModes: string[];
   maximumDateSpanDays: number;
   maximumRows: number;
@@ -204,6 +215,10 @@ export type GovernedReportPreview = {
   datasetId: string;
   datasetVersion: string;
   executionRevision: string;
+  scopeRevision: string;
+  scopeSnapshotChecksum: string;
+  scopeFacilityId: number | null;
+  scopeSubjectCount: number | null;
   totalRows: number;
   previewRowLimit: number;
   columns: string[];
@@ -229,6 +244,10 @@ export type GovernedReportRun = {
   datasetId: string;
   datasetVersion: string;
   executionRevision: string;
+  scopeRevision: string;
+  scopeSnapshotChecksum: string;
+  scopeFacilityId: number | null;
+  scopeSubjectCount: number | null;
   definitionSnapshotChecksum: string;
   requestedAt: string;
   startedAt: string | null;

@@ -7280,8 +7280,18 @@ reports.MapGet("/definition-policy", (ReportDefinitionRepository repository) =>
 
 reports.MapGet("/execution-policy", async (
         ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         CancellationToken cancellationToken) =>
-    Results.Ok(await repository.GetPolicyAsync(cancellationToken)))
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.GetPolicyAsync(
+            session.Username,
+            cancellationToken));
+    })
     .WithName("GetGovernedReportExecutionPolicy");
 
 reports.MapGet("/catalog", async (
@@ -7544,7 +7554,7 @@ reports.MapPost("/definitions/{definitionId:guid}/preview", async (
         }
     })
     .WithName("PreviewGovernedReportDefinition")
-    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 reports.MapPost("/definitions/{definitionId:guid}/run", async (
         ReportExecutionRepository repository,
@@ -7583,7 +7593,7 @@ reports.MapPost("/definitions/{definitionId:guid}/run", async (
         }
     })
     .WithName("RunGovernedReportDefinition")
-    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 reports.MapGet("/definitions/{definitionId:guid}/runs", async (
         ReportExecutionRepository repository,
@@ -7605,7 +7615,8 @@ reports.MapGet("/definitions/{definitionId:guid}/runs", async (
             pageSize ?? 20,
             cancellationToken));
     })
-    .WithName("GetGovernedReportRuns");
+    .WithName("GetGovernedReportRuns")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 reports.MapGet("/runs/{runId}", async (
         ReportExecutionRepository repository,
@@ -7631,7 +7642,8 @@ reports.MapGet("/runs/{runId}", async (
             return Results.BadRequest(new { error = exception.Message });
         }
     })
-    .WithName("GetGovernedReportRun");
+    .WithName("GetGovernedReportRun")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 reports.MapGet("/runs/{runId}/download", async (
         ReportExecutionRepository repository,
@@ -7662,7 +7674,8 @@ reports.MapGet("/runs/{runId}/download", async (
             return Results.BadRequest(new { error = exception.Message });
         }
     })
-    .WithName("DownloadGovernedReportRun");
+    .WithName("DownloadGovernedReportRun")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "view"));
 
 app.Run();
 

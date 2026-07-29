@@ -13,8 +13,9 @@ public sealed class ReportExecutionRepository(
     NpgsqlDataSource dataSource,
     ReportRepository reportRepository)
 {
-    private const string ExecutionRevision = "local-report-execution-v1";
+    private const string ExecutionRevision = "local-report-execution-v2";
     private const string DefinitionRevision = "local-report-definition-v1";
+    private const string ScopeRevision = "local-report-scope-v1";
     private const int MaximumDateSpanDays = 366;
     private const int MaximumRows = 5000;
     private const int PreviewRows = 10;
@@ -24,21 +25,45 @@ public sealed class ReportExecutionRepository(
         RegexOptions.CultureInvariant);
     private static readonly string[] RunStates =
         ["queued", "running", "completed", "failed", "cancelled", "expired"];
-    private static readonly string[] ExecutableRowPolicies = ["practice-wide"];
+    private static readonly string[] ExecutableRowPolicies =
+        ["practice-wide", "facility-scoped", "patient-assigned"];
     private static readonly string[] DeliveryModes = ["local-download"];
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>>
+        RowPolicyFamilySupport =
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["practice-wide"] =
+                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"],
+                ["facility-scoped"] =
+                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"],
+                ["patient-assigned"] =
+                    ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker"]
+            };
 
     public async Task<GovernedReportExecutionPolicy> GetPolicyAsync(
+        string actor,
         CancellationToken cancellationToken)
     {
         var watermark = await GetWatermarkAsync(cancellationToken);
+        var actorScope = await GetActorScopeAsync(actor, cancellationToken);
         return new(
             ExecutionRevision,
             DefinitionRevision,
+            ScopeRevision,
             watermark.DatasetId,
             watermark.DatasetVersion,
             watermark.BaseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             RunStates,
             ExecutableRowPolicies,
+            RowPolicyFamilySupport,
+            [
+                "auth_accounts.staff_id",
+                "staff.active and staff.facility_id",
+                "facilities.inactive",
+                "patients.provider_id",
+                "active patient_care_teams and patient_care_team_members"
+            ],
+            actorScope,
             DeliveryModes,
             MaximumDateSpanDays,
             MaximumRows,
@@ -47,13 +72,70 @@ public sealed class ReportExecutionRepository(
             ArtifactStorageProductionApproved: false,
             ProductionBlockers:
             [
-                "Facility-scoped and patient-assigned definitions fail closed until authoritative staff scope and coverage policy are approved.",
+                "The executable staff/facility/provider/care-team mapping is a local development contract and still requires accountable production policy approval.",
+                "Patient-assigned inventory execution remains denied because inventory transactions have no approved patient relationship.",
                 "Only the exact synthetic dataset as-of date is executable; historical snapshots and source-version time travel are not available.",
                 "The local database artifact is not approved encrypted production object storage and has no legal-hold or retention-disposition service.",
                 "Only requesting-user or report-owner recipients and local download are supported; schedules and external delivery remain disabled.",
                 "Metric owners have not approved the curated family semantics, validation fixtures, or cross-revision equivalence.",
                 "Production identity, purpose-of-use claims, disclosure authority, monitoring, recovery, performance, and accountable acceptance remain open."
             ]);
+    }
+
+    private async Task<GovernedReportActorScope> GetActorScopeAsync(
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var normalizedActor = NormalizeUsername(actor, "Authenticated actor");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select staff.id,
+                   staff.facility_id,
+                   facility.code,
+                   (
+                     select count(*)
+                     from patients patient
+                     where patient.merged_into_patient_id is null
+                       and (
+                         patient.provider_id=staff.id
+                         or exists (
+                           select 1
+                           from patient_care_teams team
+                           join patient_care_team_members member
+                             on member.patient_id=team.patient_id
+                           where team.patient_id=patient.canonical_id
+                             and team.team_status='active'
+                             and member.user_id=staff.id
+                             and member.status='active'
+                         )
+                       )
+                   )::integer
+            from auth_accounts account
+            join staff
+              on staff.id=account.staff_id
+             and staff.active=true
+            left join facilities facility
+              on facility.id=staff.facility_id
+             and facility.inactive=false
+            where lower(account.username)=lower(@actor)
+              and account.active=true;
+            """;
+        command.Parameters.AddWithValue("actor", normalizedActor);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new(normalizedActor, false, null, null, null, 0);
+        }
+        int? facilityId = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+        var facilityCode = reader.IsDBNull(2) ? null : reader.GetString(2);
+        return new(
+            normalizedActor,
+            true,
+            reader.GetInt32(0),
+            facilityCode is null ? null : facilityId,
+            facilityCode,
+            reader.GetInt32(3));
     }
 
     public async Task<GovernedReportPreviewResponse?> PreviewAsync(
@@ -77,11 +159,12 @@ public sealed class ReportExecutionRepository(
             return null;
         }
 
-        EnsureExecutableRowPolicy(context.Definition.RowPolicy);
-        var csv = await reportRepository.GetFamilyCsvAsync(
+        EnsureScopeExecutable(context.Scope);
+        var csv = await reportRepository.GetGovernedFamilyCsvAsync(
             context.Definition.ReportFamily,
             context.From,
             context.To,
+            context.Scope.DataScope,
             cancellationToken);
         var parsed = ParseCsv(csv);
         var checksum = Sha256(csv);
@@ -102,6 +185,10 @@ public sealed class ReportExecutionRepository(
             context.Watermark.DatasetId,
             context.Watermark.DatasetVersion,
             ExecutionRevision,
+            ScopeRevision,
+            context.Scope.SnapshotChecksum,
+            context.Scope.FacilityId,
+            context.Scope.SubjectCount,
             Math.Max(0, parsed.Count - 1),
             PreviewRows,
             parsed.Count == 0 ? [] : parsed[0],
@@ -163,15 +250,13 @@ public sealed class ReportExecutionRepository(
             fingerprint,
             cancellationToken);
 
-        if (!ExecutableRowPolicies.Contains(
-                context.Definition.RowPolicy,
-                StringComparer.Ordinal))
+        if (!context.Scope.Executable)
         {
             await FailRunAsync(
                 runId,
                 actor,
-                "scope-policy-unavailable",
-                $"Row policy '{context.Definition.RowPolicy}' is not executable until authoritative staff scope is approved.",
+                context.Scope.FailureCode!,
+                context.Scope.FailureMessage!,
                 cancellationToken);
             return await GetRunAsync(runId, actor, cancellationToken);
         }
@@ -180,10 +265,11 @@ public sealed class ReportExecutionRepository(
         try
         {
             var started = DateTimeOffset.UtcNow;
-            var csv = await reportRepository.GetFamilyCsvAsync(
+            var csv = await reportRepository.GetGovernedFamilyCsvAsync(
                 context.Definition.ReportFamily,
                 context.From,
                 context.To,
+                context.Scope.DataScope,
                 cancellationToken);
             var rowCount = Math.Max(0, ParseCsv(csv).Count - 1);
             if (rowCount > MaximumRows)
@@ -457,6 +543,12 @@ public sealed class ReportExecutionRepository(
             parsedAsOf,
             out var from,
             out var to);
+        var scope = await ResolveScopeAsync(
+            connection,
+            definition.RowPolicy,
+            definition.ReportFamily,
+            normalizedActor,
+            cancellationToken);
 
         return new(
             definition,
@@ -467,7 +559,8 @@ public sealed class ReportExecutionRepository(
             normalizedDelivery,
             normalizedParameters,
             from,
-            to);
+            to,
+            scope);
     }
 
     private static IReadOnlyDictionary<string, string?> NormalizeParameters(
@@ -600,13 +693,17 @@ public sealed class ReportExecutionRepository(
               row_policy, normalized_parameters, as_of_date, dataset_id,
               dataset_version, execution_revision, source_watermark,
               definition_snapshot_checksum, request_fingerprint, idempotency_key,
-              result_summary, artifact_content_type, artifact_file_name)
+              result_summary, artifact_content_type, artifact_file_name,
+              scope_revision, scope_snapshot, scope_snapshot_checksum,
+              scope_facility_id, scope_subject_count)
             values (
               @run, @definition, @revision, @revisionNumber, @at, @actor,
               'csv', 0, 'queued', @purpose, @recipient, @rowPolicy,
               @parameters, @asOf, @dataset, @datasetVersion, @executionRevision,
               @watermark, @definitionChecksum, @fingerprint, @idempotency,
-              '{}'::jsonb, 'text/csv; charset=utf-8', @fileName);
+              '{}'::jsonb, 'text/csv; charset=utf-8', @fileName,
+              @scopeRevision, @scopeSnapshot, @scopeChecksum,
+              @scopeFacility, @scopeSubjects);
             """;
         command.Parameters.AddWithValue("run", runId);
         command.Parameters.AddWithValue("definition", context.Definition.DefinitionId);
@@ -629,6 +726,14 @@ public sealed class ReportExecutionRepository(
         command.Parameters.AddWithValue("fingerprint", fingerprint);
         command.Parameters.AddWithValue("idempotency", idempotencyKey);
         command.Parameters.AddWithValue("fileName", fileName);
+        command.Parameters.AddWithValue("scopeRevision", ScopeRevision);
+        command.Parameters.Add("scopeSnapshot", NpgsqlDbType.Jsonb).Value =
+            context.Scope.SnapshotJson;
+        command.Parameters.AddWithValue("scopeChecksum", context.Scope.SnapshotChecksum);
+        command.Parameters.Add("scopeFacility", NpgsqlDbType.Integer).Value =
+            (object?)context.Scope.FacilityId ?? DBNull.Value;
+        command.Parameters.Add("scopeSubjects", NpgsqlDbType.Integer).Value =
+            (object?)context.Scope.SubjectCount ?? DBNull.Value;
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         await InsertEventAsync(
@@ -644,6 +749,10 @@ public sealed class ReportExecutionRepository(
             {
                 ["revision"] = context.Definition.RevisionNumber,
                 ["rowPolicy"] = context.Definition.RowPolicy,
+                ["scopeRevision"] = ScopeRevision,
+                ["scopeChecksum"] = context.Scope.SnapshotChecksum,
+                ["scopeFacilityId"] = context.Scope.FacilityId,
+                ["scopeSubjectCount"] = context.Scope.SubjectCount,
                 ["recipient"] = context.RecipientUsername,
                 ["asOfDate"] = context.Watermark.BaseDate.ToString("yyyy-MM-dd")
             },
@@ -907,6 +1016,16 @@ public sealed class ReportExecutionRepository(
             reader.GetString(reader.GetOrdinal("dataset_id")),
             reader.GetString(reader.GetOrdinal("dataset_version")),
             reader.GetString(reader.GetOrdinal("execution_revision")),
+            reader.GetString(reader.GetOrdinal("scope_revision")),
+            reader.IsDBNull(reader.GetOrdinal("scope_snapshot_checksum"))
+                ? string.Empty
+                : reader.GetString(reader.GetOrdinal("scope_snapshot_checksum")),
+            reader.IsDBNull(reader.GetOrdinal("scope_facility_id"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("scope_facility_id")),
+            reader.IsDBNull(reader.GetOrdinal("scope_subject_count"))
+                ? null
+                : reader.GetInt32(reader.GetOrdinal("scope_subject_count")),
             reader.GetString(reader.GetOrdinal("definition_snapshot_checksum")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("ran_at")).ToString("O"),
             reader.IsDBNull(reader.GetOrdinal("started_at"))
@@ -1044,6 +1163,272 @@ public sealed class ReportExecutionRepository(
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
+    private async Task<ScopeResolution> ResolveScopeAsync(
+        NpgsqlConnection connection,
+        string rowPolicy,
+        string reportFamily,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        if (!RowPolicyFamilySupport.TryGetValue(rowPolicy, out var supportedFamilies))
+        {
+            return BuildScopeResolution(
+                rowPolicy,
+                reportFamily,
+                actor,
+                null,
+                null,
+                null,
+                [],
+                executable: false,
+                "scope-policy-unavailable",
+                $"Row policy '{rowPolicy}' is not supported by {ScopeRevision}.");
+        }
+
+        if (!supportedFamilies.Contains(reportFamily, StringComparer.Ordinal))
+        {
+            return BuildScopeResolution(
+                rowPolicy,
+                reportFamily,
+                actor,
+                null,
+                null,
+                null,
+                [],
+                executable: false,
+                "scope-family-unavailable",
+                $"Report family '{reportFamily}' has no approved {rowPolicy} relationship.");
+        }
+
+        if (rowPolicy == "practice-wide")
+        {
+            var count = await CountScopePatientsAsync(
+                connection,
+                facilityId: null,
+                patientIds: null,
+                cancellationToken);
+            return BuildScopeResolution(
+                rowPolicy,
+                reportFamily,
+                actor,
+                null,
+                null,
+                count,
+                [],
+                executable: true,
+                null,
+                null);
+        }
+
+        int? staffId = null;
+        int? facilityId = null;
+        string? facilityCode = null;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select staff.id, staff.facility_id, facility.code
+                from auth_accounts account
+                join staff on staff.id=account.staff_id
+                left join facilities facility
+                  on facility.id=staff.facility_id
+                 and facility.inactive=false
+                where lower(account.username)=lower(@actor)
+                  and account.active=true
+                  and staff.active=true;
+                """;
+            command.Parameters.AddWithValue("actor", actor);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                staffId = reader.GetInt32(0);
+                facilityId = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+                facilityCode = reader.IsDBNull(2) ? null : reader.GetString(2);
+            }
+        }
+
+        if (staffId is null)
+        {
+            return BuildScopeResolution(
+                rowPolicy,
+                reportFamily,
+                actor,
+                null,
+                null,
+                null,
+                [],
+                executable: false,
+                "scope-identity-unavailable",
+                "The authenticated account is not linked to an active local staff identity.");
+        }
+
+        if (rowPolicy == "facility-scoped")
+        {
+            if (facilityId is null || facilityCode is null)
+            {
+                return BuildScopeResolution(
+                    rowPolicy,
+                    reportFamily,
+                    actor,
+                    staffId,
+                    facilityId,
+                    null,
+                    [],
+                    executable: false,
+                    "scope-facility-unavailable",
+                    "The active staff identity is not linked to an active facility.");
+            }
+            var count = await CountScopePatientsAsync(
+                connection,
+                facilityId,
+                patientIds: null,
+                cancellationToken);
+            return BuildScopeResolution(
+                rowPolicy,
+                reportFamily,
+                actor,
+                staffId,
+                facilityId,
+                count,
+                [],
+                executable: true,
+                null,
+                null,
+                facilityCode);
+        }
+
+        var assignedPatientIds = new List<string>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                select patient.canonical_id
+                from patients patient
+                where patient.merged_into_patient_id is null
+                  and (
+                    patient.provider_id=@staff
+                    or exists (
+                      select 1
+                      from patient_care_teams team
+                      join patient_care_team_members member
+                        on member.patient_id=team.patient_id
+                      where team.patient_id=patient.canonical_id
+                        and team.team_status='active'
+                        and member.user_id=@staff
+                        and member.status='active'
+                    )
+                  )
+                order by patient.canonical_id;
+                """;
+            command.Parameters.AddWithValue("staff", staffId.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                assignedPatientIds.Add(reader.GetString(0));
+            }
+        }
+
+        return BuildScopeResolution(
+            rowPolicy,
+            reportFamily,
+            actor,
+            staffId,
+            facilityId,
+            assignedPatientIds.Count,
+            assignedPatientIds,
+            executable: true,
+            null,
+            null,
+            facilityCode);
+    }
+
+    private static async Task<int> CountScopePatientsAsync(
+        NpgsqlConnection connection,
+        int? facilityId,
+        IReadOnlyList<string>? patientIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = patientIds is not null
+            ? """
+              select count(*)
+              from patients
+              where merged_into_patient_id is null
+                and canonical_id=any(@patients);
+              """
+            : facilityId is not null
+                ? """
+                  select count(*)
+                  from patients
+                  where merged_into_patient_id is null
+                    and facility_id=@facility;
+                  """
+                : """
+                  select count(*)
+                  from patients
+                  where merged_into_patient_id is null;
+                  """;
+        if (patientIds is not null)
+        {
+            command.Parameters.Add("patients", NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+                patientIds.ToArray();
+        }
+        if (facilityId is not null)
+        {
+            command.Parameters.AddWithValue("facility", facilityId.Value);
+        }
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
+    }
+
+    private static ScopeResolution BuildScopeResolution(
+        string rowPolicy,
+        string reportFamily,
+        string actor,
+        int? staffId,
+        int? facilityId,
+        int? subjectCount,
+        IReadOnlyList<string> patientIds,
+        bool executable,
+        string? failureCode,
+        string? failureMessage,
+        string? facilityCode = null)
+    {
+        var snapshot = JsonSerializer.Serialize(
+            new
+            {
+                revision = ScopeRevision,
+                rowPolicy,
+                reportFamily,
+                actor,
+                staffId,
+                facilityId,
+                facilityCode,
+                subjectCount,
+                assignedPatientIds = patientIds,
+                sources = new[]
+                {
+                    "auth_accounts.staff_id",
+                    "staff.facility_id",
+                    "patients.provider_id",
+                    "patient_care_team_members.user_id"
+                },
+                executable,
+                failureCode
+            },
+            JsonOptions);
+        return new(
+            executable,
+            failureCode,
+            failureMessage,
+            staffId,
+            facilityId,
+            subjectCount,
+            patientIds,
+            snapshot,
+            Sha256(snapshot),
+            new(rowPolicy, facilityId, patientIds));
+    }
+
     private static async Task InsertEventAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -1099,15 +1484,15 @@ public sealed class ReportExecutionRepository(
                 context.RecipientUsername.ToLowerInvariant(),
                 context.DeliveryMode,
                 context.Watermark.BaseDate.ToString("yyyy-MM-dd"),
+                context.Scope.SnapshotChecksum,
                 canonicalParameters));
     }
 
-    private static void EnsureExecutableRowPolicy(string rowPolicy)
+    private static void EnsureScopeExecutable(ScopeResolution scope)
     {
-        if (!ExecutableRowPolicies.Contains(rowPolicy, StringComparer.Ordinal))
+        if (!scope.Executable)
         {
-            throw new ArgumentException(
-                $"Row policy '{rowPolicy}' fails closed because authoritative staff scope is not available.");
+            throw new ArgumentException(scope.FailureMessage);
         }
     }
 
@@ -1288,6 +1673,10 @@ public sealed class ReportExecutionRepository(
           coalesce(run.dataset_id, 'unknown') as dataset_id,
           coalesce(run.dataset_version, 'unknown') as dataset_version,
           run.execution_revision,
+          run.scope_revision,
+          run.scope_snapshot_checksum,
+          run.scope_facility_id,
+          run.scope_subject_count,
           coalesce(run.definition_snapshot_checksum, '') as definition_snapshot_checksum,
           run.ran_at,
           run.started_at,
@@ -1338,5 +1727,18 @@ public sealed class ReportExecutionRepository(
         string DeliveryMode,
         IReadOnlyDictionary<string, string?> Parameters,
         DateOnly? From,
-        DateOnly? To);
+        DateOnly? To,
+        ScopeResolution Scope);
+
+    private sealed record ScopeResolution(
+        bool Executable,
+        string? FailureCode,
+        string? FailureMessage,
+        int? StaffId,
+        int? FacilityId,
+        int? SubjectCount,
+        IReadOnlyList<string> PatientIds,
+        string SnapshotJson,
+        string SnapshotChecksum,
+        GovernedReportDataScope DataScope);
 }

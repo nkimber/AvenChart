@@ -6,11 +6,15 @@ namespace AvenChart.Api.Models;
 public sealed record GovernedReportExecutionPolicy(
     string Revision,
     string DefinitionRevision,
+    string ScopeRevision,
     string DatasetId,
     string DatasetVersion,
     string RequiredAsOfDate,
     IReadOnlyList<string> RunStates,
     IReadOnlyList<string> ExecutableRowPolicies,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> RowPolicyFamilySupport,
+    IReadOnlyList<string> ScopeSources,
+    GovernedReportActorScope CurrentActorScope,
     IReadOnlyList<string> DeliveryModes,
     int MaximumDateSpanDays,
     int MaximumRows,
@@ -18,6 +22,14 @@ public sealed record GovernedReportExecutionPolicy(
     bool ExternalDeliveryEnabled,
     bool ArtifactStorageProductionApproved,
     IReadOnlyList<string> ProductionBlockers);
+
+public sealed record GovernedReportActorScope(
+    string Username,
+    bool ActiveStaffLinked,
+    int? StaffId,
+    int? FacilityId,
+    string? FacilityCode,
+    int AssignedPatientCount);
 
 public sealed record GovernedReportRunRequest(
     string Purpose,
@@ -55,6 +67,10 @@ public sealed record GovernedReportPreviewResponse(
     string DatasetId,
     string DatasetVersion,
     string ExecutionRevision,
+    string ScopeRevision,
+    string ScopeSnapshotChecksum,
+    int? ScopeFacilityId,
+    int? ScopeSubjectCount,
     int TotalRows,
     int PreviewRowLimit,
     IReadOnlyList<string> Columns,
@@ -79,6 +95,10 @@ public sealed record GovernedReportRunItem(
     string DatasetId,
     string DatasetVersion,
     string ExecutionRevision,
+    string ScopeRevision,
+    string ScopeSnapshotChecksum,
+    int? ScopeFacilityId,
+    int? ScopeSubjectCount,
     string DefinitionSnapshotChecksum,
     string RequestedAt,
     string? StartedAt,

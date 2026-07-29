@@ -78,10 +78,22 @@ export default function GovernedReportExecution({
       ) ?? null,
     [detail],
   );
-  const executable =
+  const policySupported =
     policy !== null &&
     activeRevision !== null &&
-    policy.executableRowPolicies.includes(activeRevision.rowPolicy);
+    policy.executableRowPolicies.includes(activeRevision.rowPolicy) &&
+    (
+      policy.rowPolicyFamilySupport[activeRevision.rowPolicy] ?? []
+    ).includes(activeRevision.reportFamily);
+  const executable =
+    policySupported &&
+    activeRevision !== null &&
+    policy !== null &&
+    (activeRevision.rowPolicy === "practice-wide" ||
+      (activeRevision.rowPolicy === "facility-scoped" &&
+        policy.currentActorScope.facilityId !== null) ||
+      (activeRevision.rowPolicy === "patient-assigned" &&
+        policy.currentActorScope.activeStaffLinked));
   const hasDateParameters =
     activeRevision?.parameterSchema.some(
       (parameter) => parameter.key === "from" || parameter.key === "to",
@@ -289,8 +301,8 @@ export default function GovernedReportExecution({
           <h2 className="cl-card-title">Governed report execution</h2>
           <p className="cl-empty-text">
             Revision-pinned local preview, run, history, and download evidence.
-            Scope-aware definitions fail closed until authoritative staff scope
-            is approved.
+            Facility and assigned-patient filters use the authenticated local
+            staff relationship and retain their scope snapshot.
           </p>
         </div>
         {policy && (
@@ -309,10 +321,11 @@ export default function GovernedReportExecution({
       {!loading && policy && (
         <>
           <div className="warning-banner">
-            <strong>Local boundary:</strong> only practice-wide definitions are
-            executable. Facility-scoped and patient-assigned requests retain a
-            failed run with no artifact. External delivery and production
-            artifact storage are disabled.
+            <strong>Local boundary:</strong> practice, active staff facility,
+            and provider/care-team patient policies are executable development
+            mappings. Missing staff/facility links and unsupported
+            patient-linked families fail with evidence and no artifact.
+            External delivery and production artifact storage are disabled.
           </div>
           <dl className="report-definition-facts">
             <div>
@@ -332,6 +345,22 @@ export default function GovernedReportExecution({
             <div>
               <dt>Delivery</dt>
               <dd>Local download only</dd>
+            </div>
+            <div>
+              <dt>Scope mapping</dt>
+              <dd>{policy.scopeRevision}</dd>
+            </div>
+            <div>
+              <dt>Current staff scope</dt>
+              <dd>
+                {policy.currentActorScope.activeStaffLinked
+                  ? `staff ${policy.currentActorScope.staffId}${
+                      policy.currentActorScope.facilityCode
+                        ? ` / ${policy.currentActorScope.facilityCode}`
+                        : ""
+                    } / ${policy.currentActorScope.assignedPatientCount} assigned patients`
+                  : "No active staff link"}
+              </dd>
             </div>
           </dl>
 
@@ -428,9 +457,11 @@ export default function GovernedReportExecution({
                   </p>
                   {!executable && (
                     <p className="warning-banner">
-                      This row policy is not executable locally. Running it
-                      records a visible <strong>failed</strong> attempt without
-                      creating an artifact.
+                      {!policySupported
+                        ? "This report family has no approved relationship for the selected row policy."
+                        : "The current account lacks the active staff or facility relationship required by this row policy."}{" "}
+                      Running it records a visible <strong>failed</strong>{" "}
+                      attempt without creating an artifact.
                     </p>
                   )}
                 </div>
@@ -466,7 +497,9 @@ export default function GovernedReportExecution({
               <h3>Non-persistent preview</h3>
               <p className="cl-empty-text">
                 {preview.totalRows.toLocaleString()} total rows / revision{" "}
-                {preview.revisionNumber} / checksum{" "}
+                {preview.revisionNumber} / {preview.scopeRevision} /{" "}
+                {preview.scopeSubjectCount?.toLocaleString() ?? "practice"}{" "}
+                scoped patients / checksum{" "}
                 <code>{preview.resultChecksum}</code>
               </p>
               <div
@@ -633,6 +666,25 @@ export default function GovernedReportExecution({
                   <dt>Checksum</dt>
                   <dd>
                     <code>{selectedRun.run.resultChecksum ?? "-"}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Scope</dt>
+                  <dd>
+                    {selectedRun.run.scopeRevision} /{" "}
+                    {selectedRun.run.scopeFacilityId === null
+                      ? "no facility pin"
+                      : `facility ${selectedRun.run.scopeFacilityId}`}{" "}
+                    /{" "}
+                    {selectedRun.run.scopeSubjectCount?.toLocaleString() ??
+                      "unknown"}{" "}
+                    patients
+                  </dd>
+                </div>
+                <div>
+                  <dt>Scope checksum</dt>
+                  <dd>
+                    <code>{selectedRun.run.scopeSnapshotChecksum || "-"}</code>
                   </dd>
                 </div>
               </dl>

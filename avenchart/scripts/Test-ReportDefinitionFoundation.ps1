@@ -127,7 +127,7 @@ try {
             -and -not $policy.rawSqlAccepted `
             -and -not $policy.executableTemplatesAccepted `
             -and -not $policy.externalDeliveryEnabled `
-            -and -not $policy.rowPolicyExecutionEnforced `
+            -and $policy.rowPolicyExecutionEnforced `
             -and $policy.families.Count -eq 7 `
             -and $policy.productionBlockers.Count -eq 8
     ) @{
@@ -137,6 +137,10 @@ try {
         rawSqlAccepted = $policy.rawSqlAccepted
         rowPolicyExecutionEnforced = $policy.rowPolicyExecutionEnforced
     }
+    $executionPolicy = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/reports/execution-policy" `
+        -Headers $headers `
+        -TimeoutSec 20
 
     $legacy = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/reports/definitions?search=legacy.&status=draft&page=1&pageSize=50" `
@@ -346,7 +350,14 @@ try {
         -Uri "$ApiBaseUrl/api/reports/definitions/$definitionId/run" `
         -Method Post `
         -RequestHeaders $headers `
-        -Body @{}
+        -Body @{
+            purpose = $successorBody.purpose
+            recipientUsername = "admin"
+            deliveryMode = "local-download"
+            asOfDate = $executionPolicy.requiredAsOfDate
+            parameters = @{}
+            idempotencyKey = "report-run-$([Guid]::NewGuid().ToString('N'))"
+        }
     Add-Check "Retirement blocks catalog and new run" (
         $retired.revisions[0].status -eq "retired" `
             -and $retired.events.Count -eq 10 `
