@@ -6903,6 +6903,48 @@ export async function getPracticeSettingRegistry(
 ): Promise<{ registryRevision: string; items: PracticeSettingRegistryItem[] }> {
   return clinicianGet(sessionId, '/api/administration/practice-settings/registry')
 }
+export type ConfigurationPackagePracticeSetting = {
+  key: string
+  value: string
+  valueType: string
+}
+export type ConfigurationPackageDocument = {
+  schema: string
+  version: string
+  practiceSettings: ConfigurationPackagePracticeSetting[]
+}
+export type ConfigurationPackageExport = {
+  package: ConfigurationPackageDocument
+  sha256: string
+  exportedAt: string
+  boundary: string
+}
+export type ConfigurationPackageDryRun = {
+  sha256: string | null
+  valid: boolean
+  applyAvailable: boolean
+  issues: Array<{ code: string; message: string }>
+  conflicts: Array<{
+    key: string
+    currentValue: string
+    proposedValue: string
+    state: 'unchanged' | 'would-change'
+  }>
+  boundary: string
+}
+export async function exportConfigurationPackage(
+  sessionId: string,
+): Promise<ConfigurationPackageExport> {
+  return clinicianPost(sessionId, '/api/administration/configuration-packages/export', {})
+}
+export async function dryRunConfigurationPackage(
+  sessionId: string,
+  packageDocument: ConfigurationPackageDocument,
+): Promise<ConfigurationPackageDryRun> {
+  return clinicianPost(sessionId, '/api/administration/configuration-packages/dry-run', {
+    package: packageDocument,
+  })
+}
 export type PracticeSettingDelegation = {
   delegationId: string
   username: string

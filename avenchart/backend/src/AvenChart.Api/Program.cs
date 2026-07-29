@@ -6048,6 +6048,16 @@ administration.MapGet("/practice-settings", async (AdministrationRepository repo
     Results.Ok(await repository.GetPracticeSettingsAsync(cancellationToken))).WithName("GetPracticeSettings");
 administration.MapGet("/practice-settings/registry", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingRegistryAsync(cancellationToken))).WithName("GetPracticeSettingRegistry");
+administration.MapPost("/configuration-packages/export", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    return Results.Ok(await repository.ExportConfigurationPackageAsync(session.Username, cancellationToken));
+}).WithName("ExportConfigurationPackage");
+administration.MapPost("/configuration-packages/dry-run", async (ConfigurationPackageDryRunRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+    return Results.Ok(await repository.DryRunConfigurationPackageAsync(request, session.Username, cancellationToken));
+}).WithName("DryRunConfigurationPackage");
 administration.MapGet("/practice-setting-delegations", async (AdministrationRepository repository, CancellationToken cancellationToken) =>
     Results.Ok(await repository.GetPracticeSettingDelegationsAsync(cancellationToken))).WithName("GetPracticeSettingDelegations");
 administration.MapPost("/practice-setting-delegations", async (AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, PracticeSettingDelegationCreateRequest request, CancellationToken cancellationToken) =>

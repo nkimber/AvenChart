@@ -203,6 +203,43 @@ public sealed record PracticeSettingRegistryResponse(
     string RegistryRevision,
     IReadOnlyList<PracticeSettingRegistryItem> Items);
 
+public sealed record ConfigurationPackagePracticeSetting(
+    string Key,
+    string Value,
+    string ValueType);
+
+public sealed record ConfigurationPackageDocument(
+    string Schema,
+    string Version,
+    IReadOnlyList<ConfigurationPackagePracticeSetting> PracticeSettings);
+
+public sealed record ConfigurationPackageExportResponse(
+    ConfigurationPackageDocument Package,
+    string Sha256,
+    string ExportedAt,
+    string Boundary);
+
+public sealed record ConfigurationPackageDryRunRequest(
+    ConfigurationPackageDocument? Package);
+
+public sealed record ConfigurationPackageIssue(
+    string Code,
+    string Message);
+
+public sealed record ConfigurationPackageConflict(
+    string Key,
+    string CurrentValue,
+    string ProposedValue,
+    string State);
+
+public sealed record ConfigurationPackageDryRunResponse(
+    string? Sha256,
+    bool Valid,
+    bool ApplyAvailable,
+    IReadOnlyList<ConfigurationPackageIssue> Issues,
+    IReadOnlyList<ConfigurationPackageConflict> Conflicts,
+    string Boundary);
+
 public sealed record PracticeSettingDelegationCreateRequest(
     string Username,
     string SettingKey,

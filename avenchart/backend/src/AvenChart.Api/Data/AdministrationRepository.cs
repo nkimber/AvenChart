@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
@@ -77,6 +79,104 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
                     false,
                     "partial: exact facility/staff and future appointment-view reach; no direct forms/rules/modules/client binding")
             ]));
+
+    public async Task<ConfigurationPackageExportResponse> ExportConfigurationPackageAsync(
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select setting_key,setting_value,value_type from practice_settings order by setting_key;";
+        var settings = new List<ConfigurationPackagePracticeSetting>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                settings.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            }
+        }
+
+        var package = new ConfigurationPackageDocument(
+            "legacy-ehr-modernized-configuration-package",
+            "1",
+            settings);
+        var digest = GetConfigurationPackageDigest(package);
+        await WriteConfigurationPackageEventAsync(
+            connection,
+            "exported",
+            digest,
+            settings.Count,
+            username,
+            cancellationToken);
+        return new(
+            package,
+            digest,
+            DateTimeOffset.UtcNow.ToString("O"),
+            "This package contains only adopted non-secret practice settings. It is an export artifact, not a signed or importable production configuration package.");
+    }
+
+    public async Task<ConfigurationPackageDryRunResponse> DryRunConfigurationPackageAsync(
+        ConfigurationPackageDryRunRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var issues = ValidateConfigurationPackage(request.Package);
+        var package = request.Package;
+        var digest = package is null ? null : GetConfigurationPackageDigest(package);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        if (issues.Count > 0 || package is null)
+        {
+            await WriteConfigurationPackageEventAsync(
+                connection,
+                "dry-run-rejected",
+                digest,
+                package?.PracticeSettings?.Count ?? 0,
+                username,
+                cancellationToken);
+            return new(
+                digest,
+                false,
+                false,
+                issues,
+                [],
+                "The package was not applied. Correct the reported schema or adopted-setting validation failures and run the dry run again.");
+        }
+
+        var activeValues = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "select setting_key,setting_value from practice_settings order by setting_key;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                activeValues.Add(reader.GetString(0), reader.GetString(1));
+            }
+        }
+
+        var conflicts = package.PracticeSettings
+            .OrderBy(item => item.Key, StringComparer.Ordinal)
+            .Select(item => new ConfigurationPackageConflict(
+                item.Key,
+                activeValues[item.Key],
+                item.Value.Trim(),
+                string.Equals(activeValues[item.Key], item.Value.Trim(), StringComparison.Ordinal) ? "unchanged" : "would-change"))
+            .ToArray();
+        await WriteConfigurationPackageEventAsync(
+            connection,
+            "dry-run-validated",
+            digest,
+            package.PracticeSettings.Count,
+            username,
+            cancellationToken);
+        return new(
+            digest,
+            true,
+            false,
+            [],
+            conflicts,
+            "The package passed local schema validation but was not applied. Import, review/approval, and compensating rollback are separate ADM-03 slices.");
+    }
 
     public async Task<IReadOnlyList<PracticeSettingDelegationItem>> GetPracticeSettingDelegationsAsync(CancellationToken cancellationToken)
     {
@@ -1674,6 +1774,76 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
 
     private static void ValidatePracticeSettingValue(string key, string value)
     { ValidatePracticeSettingKey(key); var normalized = value.Trim(); if (string.IsNullOrWhiteSpace(normalized)) throw new ArgumentException("A setting value is required."); if (key == "practice.default-facility-id" && (!int.TryParse(normalized, out var facilityId) || facilityId <= 0)) throw new ArgumentException("Default facility must be a valid facility identifier."); if (key == "practice.time-zone" && !TimeZoneInfo.GetSystemTimeZones().Any(zone => zone.Id == normalized)) throw new ArgumentException("Time zone must be a supported IANA or Windows time-zone identifier."); }
+
+    private static List<ConfigurationPackageIssue> ValidateConfigurationPackage(ConfigurationPackageDocument? package)
+    {
+        var issues = new List<ConfigurationPackageIssue>();
+        if (package is null)
+        {
+            issues.Add(new("package-required", "A configuration package is required."));
+            return issues;
+        }
+
+        if (!string.Equals(package.Schema, "legacy-ehr-modernized-configuration-package", StringComparison.Ordinal))
+        {
+            issues.Add(new("unsupported-schema", "The package schema is not supported."));
+        }
+        if (!string.Equals(package.Version, "1", StringComparison.Ordinal))
+        {
+            issues.Add(new("unsupported-version", "The package version is not supported."));
+        }
+
+        var settings = package.PracticeSettings ?? [];
+        var expectedKeys = new HashSet<string>(
+            ["practice.default-facility-id", "practice.name", "practice.time-zone"],
+            StringComparer.Ordinal);
+        if (settings.Count != expectedKeys.Count)
+        {
+            issues.Add(new("incomplete-settings", "A valid package must include exactly the three adopted non-secret practice settings."));
+        }
+        if (settings.GroupBy(item => item.Key, StringComparer.Ordinal).Any(group => group.Count() > 1))
+        {
+            issues.Add(new("duplicate-setting", "A package cannot include a setting more than once."));
+        }
+
+        foreach (var setting in settings)
+        {
+            if (!expectedKeys.Contains(setting.Key))
+            {
+                issues.Add(new("unsupported-setting", $"Setting '{setting.Key}' is not exportable through this package."));
+                continue;
+            }
+            try
+            {
+                ValidatePracticeSettingValue(setting.Key, setting.Value);
+            }
+            catch (ArgumentException exception)
+            {
+                issues.Add(new("invalid-value", $"Setting '{setting.Key}': {exception.Message}"));
+            }
+        }
+        return issues;
+    }
+
+    private static string GetConfigurationPackageDigest(ConfigurationPackageDocument package) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(package, PortalProfileChangeJsonOptions)))).ToLowerInvariant();
+
+    private static async Task WriteConfigurationPackageEventAsync(
+        NpgsqlConnection connection,
+        string eventType,
+        string? digest,
+        int settingCount,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "insert into configuration_package_events(event_type,package_sha256,practice_setting_count,occurred_at,username) values(@eventType,@digest,@settingCount,now(),@username);";
+        command.Parameters.AddWithValue("eventType", eventType);
+        command.Parameters.AddWithValue("digest", (object?)digest ?? DBNull.Value);
+        command.Parameters.AddWithValue("settingCount", settingCount);
+        command.Parameters.AddWithValue("username", username);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     public async Task<AdministrationDirectoryResponse> GetDirectoryAsync(CancellationToken cancellationToken)
     {

@@ -92,6 +92,7 @@ import AlertRuleGovernance from "./AlertRuleGovernance.tsx";
 import ApiClientGovernance from "./ApiClientGovernance.tsx";
 import ModuleGovernance from "./ModuleGovernance.tsx";
 import PracticeSettingGovernance from "./PracticeSettingGovernance.tsx";
+import ConfigurationPackageWorkspace from "./ConfigurationPackageWorkspace.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -2326,6 +2327,7 @@ export default function AdminDirectory() {
                       void openPracticeSettingHistory(key)
                     }
                   />
+                  <ConfigurationPackageWorkspace sessionId={session.sessionId} />
                   {practiceSettingHistory ? (
                     <div className="cl-card" style={{ marginTop: 12 }}>
                       <h3 className="cl-card-title">
