@@ -304,6 +304,7 @@ export default function PatientClinicalForms() {
     try {
       const evaluation = await previewClinicalForm(session.sessionId, selected.definition, values);
       setSelected((current) => current ? { ...current, validation: evaluation } : current);
+      setValues(evaluation.values);
       showToast(evaluation.valid ? "The form is valid." : "Review the form validation messages.", evaluation.valid ? "success" : "error");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not validate the clinical form.");

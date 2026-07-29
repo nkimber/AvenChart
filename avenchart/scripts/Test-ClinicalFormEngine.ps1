@@ -542,6 +542,19 @@ try {
         ($null -ne $afterCareDefinition -and $afterCareDefinition.contextScope -eq "encounter" -and $afterCareDefinition.signaturePolicy -eq "author-only" -and $afterCareDetail.currentRevision.schemaHash -eq "3e8e5d6d3b865136d321e250653a31aa628957b1ad57ed820f2dc65ad1015bb5" -and (($afterCareFields.key -join "|") -eq "admit_date|discharged_date|goal_a_1|goal_a_2|goal_a_3|goal_b_1|goal_b_2|goal_c_1|goal_c_2") -and @($afterCareFields | Where-Object { $_.type -eq "date" }).Count -eq 2 -and $afterCareGoalFields.Count -eq 7 -and @($afterCareGoalFields | Where-Object { $_.type -ne "multiline" -or $_.maxLength -ne 4000 }).Count -eq 0) `
         @{ definitionId=$afterCareDefinition.definitionId; schemaHash=$afterCareDetail.currentRevision.schemaHash; fields=$afterCareFields.key }
 
+    $phqDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.phq9" }) | Select-Object -First 1
+    $phqDetail = if ($null -ne $phqDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($phqDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $phqScoreFields = @($phqDetail.currentRevision.definition.fields | Where-Object { $_.key -match "_score$" -and $_.key -ne "total_score" })
+    $phqValues = [ordered]@{
+        interest_score = "0"; hopeless_score = "1"; sleep_score = "2"; fatigue_score = "3"; appetite_score = "0"; failure_score = "1"; focus_score = "2"; psychomotor_score = "3"; suicide_score = "0"; difficulty = "1"
+    }
+    $phqPreview = if ($null -ne $phqDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition = $phqDetail.currentRevision.definition; values = $phqValues } } else { $null }
+    $phqPositivePreview = if ($null -ne $phqDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition = $phqDetail.currentRevision.definition; values = @{ interest_score="0"; hopeless_score="0"; sleep_score="0"; fatigue_score="0"; appetite_score="0"; failure_score="0"; focus_score="0"; psychomotor_score="0"; suicide_score="1"; difficulty="1" } } } else { $null }
+    Add-Check `
+        "Legacy PHQ-9 adoption calculates the bounded total and conditional impact question without PHP execution" `
+        ($null -ne $phqDefinition -and $phqDefinition.contextScope -eq "encounter" -and $phqDefinition.signaturePolicy -eq "author-only" -and $phqDetail.currentRevision.schemaHash -eq "554327a15216462cf1b2e5edfbbc444f51c9e79da984a4408153ce3621b2c900" -and $phqScoreFields.Count -eq 9 -and @($phqScoreFields | Where-Object { $_.type -ne "select" -or $_.required -ne $true -or $_.options.Count -ne 4 }).Count -eq 0 -and $phqPreview.valid -and $phqPreview.values.total_score -eq 12 -and $phqPreview.visibleFields.difficulty -and $phqPreview.requiredFields.difficulty -and $phqPositivePreview.valid -and $phqPositivePreview.values.total_score -eq 1 -and @($phqPositivePreview.issues | Where-Object { $_.ruleKey -eq "warn_positive_self_harm_response" -and $_.severity -eq "warning" }).Count -eq 1) `
+        @{ definitionId=$phqDefinition.definitionId; schemaHash=$phqDetail.currentRevision.schemaHash; calculatedTotal=$phqPreview.values.total_score; selfHarmWarningCount=@($phqPositivePreview.issues | Where-Object { $_.ruleKey -eq "warn_positive_self_harm_response" }).Count }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `

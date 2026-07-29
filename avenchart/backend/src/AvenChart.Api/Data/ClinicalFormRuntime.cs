@@ -51,7 +51,7 @@ public static partial class ClinicalFormRuntime
     ];
 
     private static readonly HashSet<string> SupportedCalculationOperators =
-        new(["add", "subtract", "multiply", "divide"], StringComparer.Ordinal);
+        new(["add", "subtract", "multiply", "divide", "sum"], StringComparer.Ordinal);
 
     private static readonly string[] UnsafeTextFragments =
     [
@@ -480,7 +480,7 @@ public static partial class ClinicalFormRuntime
         var optionSource = field.Options ?? [];
         var options = optionSource
             .Select(option => new ClinicalFormOptionDefinition(
-                NormalizeKey(option.Code, $"Option code for {key}", dotted: false),
+                NormalizeOptionCode(option.Code, $"Option code for {key}"),
                 NormalizeText(option.Display, $"Option display for {key}", 160)))
             .ToArray();
         EnsureUnique(options.Select(option => option.Code), $"Option codes for {key} must be unique.");
@@ -645,10 +645,15 @@ public static partial class ClinicalFormRuntime
             }
 
             var operands = rule.Calculation.Operands ?? [];
-            if (operands.Count != 2)
+            var validOperandCount = calculationOperator == "sum"
+                ? operands.Count is >= 1 and <= 20
+                : operands.Count == 2;
+            if (!validOperandCount)
             {
                 throw new ArgumentException(
-                    $"Calculation rule {key} requires exactly two operands.");
+                    calculationOperator == "sum"
+                        ? $"Calculation rule {key} requires one to twenty operands."
+                        : $"Calculation rule {key} requires exactly two operands.");
             }
 
             var normalizedOperands = operands
@@ -668,8 +673,7 @@ public static partial class ClinicalFormRuntime
 
                     if (fieldKey is not null
                         && (!fields.TryGetValue(fieldKey, out var operandField)
-                            || operandField.Type is not (
-                                "integer" or "decimal" or "measurement" or "computed")))
+                            || !IsNumericCalculationField(operandField)))
                     {
                         throw new ArgumentException(
                             $"Calculation rule {key} references a non-numeric field.");
@@ -824,14 +828,13 @@ public static partial class ClinicalFormRuntime
             return null;
         }
 
-        var left = operands[0]!.Value;
-        var right = operands[1]!.Value;
         var value = calculation.Operator switch
         {
-            "add" => left + right,
-            "subtract" => left - right,
-            "multiply" => left * right,
-            "divide" when right != 0 => left / right,
+            "sum" => operands.Sum(operand => operand!.Value),
+            "add" => operands[0]!.Value + operands[1]!.Value,
+            "subtract" => operands[0]!.Value - operands[1]!.Value,
+            "multiply" => operands[0]!.Value * operands[1]!.Value,
+            "divide" when operands[1]!.Value != 0 => operands[0]!.Value / operands[1]!.Value,
             _ => (decimal?)null
         };
         return value is null
@@ -1119,6 +1122,16 @@ public static partial class ClinicalFormRuntime
         return actualNumber.CompareTo(expectedNumber);
     }
 
+    private static bool IsNumericCalculationField(ClinicalFormFieldDefinition field) =>
+        field.Type is "integer" or "decimal" or "measurement" or "computed"
+        || field.Type is "select" or "coded"
+        && field.Options.Count > 0
+        && field.Options.All(option => decimal.TryParse(
+            option.Code,
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture,
+            out _));
+
     private static bool TryGetDecimal(JsonElement value, out decimal number)
     {
         if (value.ValueKind == JsonValueKind.Number
@@ -1131,6 +1144,16 @@ public static partial class ClinicalFormRuntime
             && value.TryGetProperty("value", out var nested)
             && nested.ValueKind == JsonValueKind.Number
             && nested.TryGetDecimal(out number))
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.String
+            && decimal.TryParse(
+                value.GetString(),
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out number))
         {
             return true;
         }
@@ -1191,6 +1214,23 @@ public static partial class ClinicalFormRuntime
         return key;
     }
 
+    private static string NormalizeOptionCode(string value, string label)
+    {
+        var code = value?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(code) || code.Length > 80)
+        {
+            throw new ArgumentException($"{label} must be 80 characters or fewer.");
+        }
+
+        if (KeyPattern().IsMatch(code) || NumericOptionCodePattern().IsMatch(code))
+        {
+            return code;
+        }
+
+        throw new ArgumentException(
+            $"{label} must use lowercase identifier syntax or a bounded nonnegative integer score.");
+    }
+
     private static string NormalizeText(string value, string label, int maximum)
     {
         var text = value?.Trim();
@@ -1244,6 +1284,9 @@ public static partial class ClinicalFormRuntime
 
     [GeneratedRegex("^[a-z][a-z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex KeyPattern();
+
+    [GeneratedRegex("^[0-9]{1,8}$", RegexOptions.CultureInvariant)]
+    private static partial Regex NumericOptionCodePattern();
 
     [GeneratedRegex(
         "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$",
