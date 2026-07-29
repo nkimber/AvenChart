@@ -176,7 +176,8 @@ function New-TestSchema {
     param(
         [string]$Key,
         [string]$Name,
-        [bool]$IncludeFollowUp = $false
+        [bool]$IncludeFollowUp = $false,
+        [switch]$IncludeLocalization
     )
 
     $fields = [System.Collections.Generic.List[object]]::new()
@@ -214,7 +215,21 @@ function New-TestSchema {
             -Sequence 40))
     }
 
-    return [ordered]@{
+    $rules = @(
+        [ordered]@{
+            key = "warn_high_pain"
+            condition = [ordered]@{
+                fieldKey = "pain_score"
+                operator = "greater-than-or-equal"
+                value = 8
+            }
+            action = "warning"
+            targetFieldKey = "disposition"
+            message = "High pain score requires clinical attention."
+            calculation = $null
+        }
+    )
+    $schema = [ordered]@{
         stableKey = $Key
         name = $Name
         purpose = "Verify the governed typed clinical form lifecycle."
@@ -231,21 +246,62 @@ function New-TestSchema {
             }
         )
         fields = $fields.ToArray()
-        rules = @(
+        rules = $rules
+    }
+    if ($IncludeLocalization) {
+        $spanishLabels = @{
+            chief_concern = "Motivo principal"
+            pain_score = "Puntuación de dolor"
+            disposition = "Disposición"
+            follow_up = "Seguimiento"
+        }
+        $localizedFields = @($fields | ForEach-Object {
+            $field = $_
             [ordered]@{
-                key = "warn_high_pain"
-                condition = [ordered]@{
-                    fieldKey = "pain_score"
-                    operator = "greater-than-or-equal"
-                    value = 8
-                }
-                action = "warning"
-                targetFieldKey = "disposition"
-                message = "High pain score requires clinical attention."
-                calculation = $null
+                fieldKey = $field.key
+                label = $spanishLabels[$field.key]
+                accessibilityLabel = $spanishLabels[$field.key]
+                helpText = $null
+                options = @($field.options | ForEach-Object {
+                    [ordered]@{
+                        code = $_.code
+                        display = if ($_.code -eq "routine") {
+                            "Seguimiento de rutina"
+                        }
+                        elseif ($_.code -eq "urgent") {
+                            "Seguimiento urgente"
+                        }
+                        else {
+                            $_.display
+                        }
+                    }
+                })
+            }
+        })
+        $schema["localizations"] = @(
+            [ordered]@{
+                locale = "es-US"
+                name = "Formulario focalizado $Name"
+                purpose = "Verificar el ciclo de vida del formulario clínico gobernado."
+                sections = @(
+                    [ordered]@{
+                        sectionKey = "main"
+                        title = "Principal"
+                        description = "Verificación sintética focalizada."
+                    }
+                )
+                fields = $localizedFields
+                rules = @(
+                    [ordered]@{
+                        ruleKey = "warn_high_pain"
+                        message = "Una puntuación alta de dolor requiere atención clínica."
+                    }
+                )
             }
         )
     }
+
+    return $schema
 }
 
 function Move-Definition {
@@ -330,7 +386,7 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v5" `
+        $policy.revision -eq "local-clinical-form-v6" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
@@ -344,6 +400,17 @@ try {
         -and -not $policy.previewPersistsClinicalData `
         -and -not $policy.productionSignatureStandardApproved
     Add-Check "Constrained form runtime policy" $policyPassed $policy
+
+    $locales = @($policy.supportedLocales)
+    Add-Check `
+        "Policy publishes bounded base and translation locales" `
+        ($locales.Count -eq 3 `
+            -and (($locales.code -join "|") -eq "en-US|es-US|fr-CA") `
+            -and @($locales | Where-Object { $_.isBase }).Count -eq 1 `
+            -and @($locales | Where-Object {
+                $_.code -eq "en-US" -and $_.isBase
+            }).Count -eq 1) `
+        $locales
 
     $calculationTemplates = @($policy.supportedCalculationTemplates)
     Add-Check `
@@ -847,7 +914,8 @@ try {
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
         -Key $stableKey `
-        -Name "Focused form $marker"
+        -Name "Focused form $marker" `
+        -IncludeLocalization
 
     $preview = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/preview" `
@@ -1003,6 +1071,23 @@ try {
         -RequestHeaders $adminHeaders `
         -Body @{ definition = $unsupportedSchema; values = @{} }
 
+    $incompleteLocalizationSchema = (
+        ConvertTo-RequestJson $schema |
+            ConvertFrom-Json
+    )
+    $incompleteLocalizationSchema.localizations[0].fields = @(
+        $incompleteLocalizationSchema.localizations[0].fields |
+            Select-Object -First 2
+    )
+    $incompleteLocalizationPreview = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/form-engine/preview" `
+        -Method "POST" `
+        -RequestHeaders $adminHeaders `
+        -Body @{
+            definition = $incompleteLocalizationSchema
+            values = @{}
+        }
+
     $unknownTopLevel = Invoke-Api `
         -Uri "$ApiBaseUrl/api/form-engine/preview" `
         -Method "POST" `
@@ -1023,6 +1108,14 @@ try {
             cyclic = $cyclicPreview.Status
             unsupported = $unsupportedPreview.Status
             unknownTopLevel = $unknownTopLevel.Status
+        }
+    Add-Check `
+        "Incomplete localized clinical content is rejected" `
+        ($incompleteLocalizationPreview.Status -eq 400 `
+            -and $incompleteLocalizationPreview.Content -match "translate every field") `
+        @{
+            status = $incompleteLocalizationPreview.Status
+            body = $incompleteLocalizationPreview.Json
         }
 
     $providerGovernance = Invoke-Api `
@@ -1049,6 +1142,11 @@ try {
             -and $created.currentRevision.status -eq "draft" `
             -and $created.currentRevision.version -eq 0 `
             -and $created.currentRevision.schemaHash.Length -eq 64 `
+            -and @($created.currentRevision.definition.localizations).Count -eq 1 `
+            -and $created.currentRevision.definition.localizations[0].locale -eq "es-US" `
+            -and @($created.currentRevision.definition.localizations[0].fields).Count -eq 3 `
+            -and $created.currentRevision.definition.localizations[0].rules[0].message `
+                -eq "Una puntuación alta de dolor requiere atención clínica." `
             -and @($created.events).Count -eq 1) `
         $created.currentRevision
 
@@ -1386,7 +1484,8 @@ try {
     $revisionTwoSchema = New-TestSchema `
         -Key $stableKey `
         -Name "Focused form $marker revision two" `
-        -IncludeFollowUp $true
+        -IncludeFollowUp $true `
+        -IncludeLocalization
     $revisionTwo = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/definitions/$definitionId/revisions" `
         -Method "POST" `
@@ -1450,6 +1549,9 @@ try {
     $historicExport = Invoke-Api `
         -Uri "$ApiBaseUrl/api/form-engine/instances/$($instance.instance.instanceId)/export" `
         -RequestHeaders $adminHeaders
+    $historicLocalizedExport = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/form-engine/instances/$($instance.instance.instanceId)/export?locale=es-US" `
+        -RequestHeaders $adminHeaders
     $historicStructuredExport = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/instances/$($instance.instance.instanceId)/structured-export" `
         -RequestHeaders $adminHeaders
@@ -1467,6 +1569,10 @@ try {
             -and $historicExport.ContentType -eq "text/html" `
             -and $historicExport.Content -notmatch "<script>alert" `
             -and $historicExport.Content -match "&lt;script&gt;" `
+            -and $historicLocalizedExport.Status -eq 200 `
+            -and $historicLocalizedExport.Content -match '<html lang="es-US">' `
+            -and $historicLocalizedExport.Content -match "Formulario focalizado" `
+            -and $historicLocalizedExport.Content -match "Motivo principal" `
             -and $historicStructuredExport.exportFormat -eq "application/vnd.legacy-ehr.clinical-form+json;version=1" `
             -and $historicStructuredExport.instance.definitionRevision -eq 1 `
             -and $historicStructuredExport.schemaHash.Length -eq 64 `
@@ -1487,6 +1593,7 @@ try {
             renderer = $historicRender.rendererVersion
             exportStatus = $historicExport.Status
             exportContentType = $historicExport.ContentType
+            localizedExportStatus = $historicLocalizedExport.Status
             structuredExportFormat = $historicStructuredExport.exportFormat
             fieldCount = $historicStructuredExport.fieldDictionary.fields.Count
             schemaHash = $historicStructuredExport.schemaHash

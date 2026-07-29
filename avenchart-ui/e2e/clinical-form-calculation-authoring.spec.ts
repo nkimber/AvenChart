@@ -60,6 +60,7 @@ test.describe("FORM-02 calculation authoring", () => {
         .click();
       await expect(governance.getByText("5 calculation operators")).toBeVisible();
       await expect(governance.getByText("4 reusable starters")).toBeVisible();
+      await expect(governance.getByText("2 translation locales")).toBeVisible();
       await governance.getByLabel("Search", { exact: true }).fill(stableKey);
       await governance
         .getByRole("button", { name: "Apply", exact: true })
@@ -244,6 +245,34 @@ test.describe("FORM-02 calculation authoring", () => {
       await rule.getByLabel("Operand 2 constant").fill("2");
       await rule.getByLabel("Result precision").fill("2");
 
+      await governance
+        .getByLabel("Translation locale")
+        .selectOption("es-US");
+      await governance
+        .getByRole("button", { name: "Add translation" })
+        .click();
+      const spanishTranslation = governance
+        .locator(".clinical-form-localization-editor")
+        .filter({ hasText: "Spanish (United States)" });
+      await spanishTranslation
+        .getByLabel("es-US form name")
+        .fill(`Cálculo gobernado ${marker}`);
+      await spanishTranslation
+        .getByLabel("es-US clinical purpose")
+        .fill("Verificar la autoría de cálculos acotados.");
+      await spanishTranslation
+        .getByLabel("es-US section clinical title")
+        .fill("Datos clínicos");
+      await spanishTranslation
+        .getByLabel("es-US field amount label")
+        .fill("Cantidad");
+      await spanishTranslation
+        .getByLabel("es-US field decision option yes")
+        .fill("Sí");
+      await spanishTranslation
+        .getByLabel("es-US field note label")
+        .fill("Nota de observación");
+
       const previewResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/form-engine/preview") &&
@@ -307,6 +336,16 @@ test.describe("FORM-02 calculation authoring", () => {
                 } | null;
               }>;
             }>;
+            localizations: Array<{
+              locale: string;
+              name: string;
+              sections: Array<{ sectionKey: string; title: string }>;
+              fields: Array<{
+                fieldKey: string;
+                label: string;
+                options: Array<{ code: string; display: string }>;
+              }>;
+            }>;
           };
         };
       };
@@ -319,6 +358,35 @@ test.describe("FORM-02 calculation authoring", () => {
         ],
         precision: 2,
       });
+      expect(created.currentRevision.definition.localizations).toEqual([
+        expect.objectContaining({
+          locale: "es-US",
+          name: `Cálculo gobernado ${marker}`,
+          sections: [
+            expect.objectContaining({
+              sectionKey: "clinical",
+              title: "Datos clínicos",
+            }),
+          ],
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              fieldKey: "amount",
+              label: "Cantidad",
+            }),
+            expect.objectContaining({
+              fieldKey: "decision",
+              options: [
+                { code: "yes", display: "Sí" },
+                { code: "no", display: "No" },
+              ],
+            }),
+            expect.objectContaining({
+              fieldKey: "note",
+              label: "Nota de observación",
+            }),
+          ]),
+        }),
+      ]);
       expect(
         created.currentRevision.definition.fields.find(
           (field) => field.key === "decision",

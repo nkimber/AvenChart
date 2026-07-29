@@ -171,6 +171,64 @@ function compareSections(
   });
 }
 
+function compareLocalizations(
+  previous: ClinicalFormSchema,
+  candidate: ClinicalFormSchema,
+): ClinicalFormImpactItem[] {
+  const before = new Map(
+    (previous.localizations ?? []).map((localization) => [
+      localization.locale,
+      localization,
+    ]),
+  );
+  const after = new Map(
+    (candidate.localizations ?? []).map((localization) => [
+      localization.locale,
+      localization,
+    ]),
+  );
+  const locales = [...new Set([...before.keys(), ...after.keys()])].sort();
+  return locales.flatMap<ClinicalFormImpactItem>((locale) => {
+    const oldLocalization = before.get(locale);
+    const newLocalization = after.get(locale);
+    if (!oldLocalization && newLocalization) {
+      return [
+        {
+          key: `localization:${locale}:added`,
+          severity: "review",
+          title: `${locale} localization added`,
+          description:
+            "Adds a complete localized form, section, field, accessibility, help, and option presentation that requires language review.",
+        },
+      ];
+    }
+    if (oldLocalization && !newLocalization) {
+      return [
+        {
+          key: `localization:${locale}:removed`,
+          severity: "high",
+          title: `${locale} localization removed`,
+          description:
+            "Removes a previously revision-pinned localized clinical presentation; historical revisions remain unchanged.",
+        },
+      ];
+    }
+    return oldLocalization &&
+      newLocalization &&
+      canonicalJson(oldLocalization) !== canonicalJson(newLocalization)
+      ? [
+          {
+            key: `localization:${locale}:changed`,
+            severity: "review" as const,
+            title: `${locale} localization changed`,
+            description:
+              "Changes revision-pinned localized clinical presentation and requires language, accessibility, and clinical review.",
+          },
+        ]
+      : [];
+  });
+}
+
 function compareField(
   path: string,
   previous: ClinicalFormField,
@@ -453,6 +511,7 @@ export function describeClinicalFormChangeImpact(
   const items = [
     ...compareMetadata(previous, candidate),
     ...compareSections(previous.sections, candidate.sections),
+    ...compareLocalizations(previous, candidate),
     ...compareFields(previous.fields, candidate.fields),
     ...compareRules(previous.rules, candidate.rules),
   ];

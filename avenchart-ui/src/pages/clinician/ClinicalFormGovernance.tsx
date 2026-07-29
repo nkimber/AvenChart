@@ -19,6 +19,7 @@ import {
   type ClinicalFormDefinitionSummary,
   type ClinicalFormEvaluation,
   type ClinicalFormField,
+  type ClinicalFormLocalization,
   type ClinicalFormOptionListCatalogItem,
   type ClinicalFormPolicy,
   type ClinicalFormRule,
@@ -37,6 +38,10 @@ import {
   retargetCalculation,
 } from "../../domain/clinicalFormCalculationAuthoring.ts";
 import { describeClinicalFormChangeImpact } from "../../domain/clinicalFormChangeImpact.ts";
+import {
+  createClinicalFormLocalization,
+  synchronizeClinicalFormLocalizations,
+} from "../../domain/clinicalFormLocalization.ts";
 import {
   appendClinicalFormRepeatChild,
   clinicalFormRepeatChildLimit,
@@ -67,6 +72,7 @@ const emptySchema = (): ClinicalFormSchema => ({
   ],
   fields: [createSafeClinicalFormField()],
   rules: [],
+  localizations: null,
 });
 
 function parseConditionValue(
@@ -128,6 +134,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successorMode, setSuccessorMode] = useState(false);
+  const [localizationLocale, setLocalizationLocale] = useState("");
 
   async function refresh(
     selectedId?: string,
@@ -433,10 +440,162 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
     setSuccessorMode(true);
   }
 
+  function addLocalization() {
+    if (!localizationLocale) return;
+    setSchema((current) =>
+      createClinicalFormLocalization(current, localizationLocale),
+    );
+    setLocalizationLocale("");
+  }
+
+  function updateLocalization(
+    locale: string,
+    patch: Partial<ClinicalFormLocalization>,
+  ) {
+    setSchema((current) => {
+      const synchronized = synchronizeClinicalFormLocalizations(current);
+      return {
+        ...synchronized,
+        localizations: (synchronized.localizations ?? []).map(
+          (localization) =>
+            localization.locale === locale
+              ? { ...localization, ...patch, locale }
+              : localization,
+        ),
+      };
+    });
+  }
+
+  function updateLocalizedSection(
+    locale: string,
+    sectionKey: string,
+    patch: Partial<ClinicalFormLocalization["sections"][number]>,
+  ) {
+    setSchema((current) => {
+      const synchronized = synchronizeClinicalFormLocalizations(current);
+      return {
+        ...synchronized,
+        localizations: (synchronized.localizations ?? []).map(
+          (localization) =>
+            localization.locale === locale
+              ? {
+                  ...localization,
+                  sections: localization.sections.map((section) =>
+                    section.sectionKey === sectionKey
+                      ? { ...section, ...patch, sectionKey }
+                      : section,
+                  ),
+                }
+              : localization,
+        ),
+      };
+    });
+  }
+
+  function updateLocalizedField(
+    locale: string,
+    fieldKey: string,
+    patch: Partial<ClinicalFormLocalization["fields"][number]>,
+  ) {
+    setSchema((current) => {
+      const synchronized = synchronizeClinicalFormLocalizations(current);
+      return {
+        ...synchronized,
+        localizations: (synchronized.localizations ?? []).map(
+          (localization) =>
+            localization.locale === locale
+              ? {
+                  ...localization,
+                  fields: localization.fields.map((field) =>
+                    field.fieldKey === fieldKey
+                      ? { ...field, ...patch, fieldKey }
+                      : field,
+                  ),
+                }
+              : localization,
+        ),
+      };
+    });
+  }
+
+  function updateLocalizedOption(
+    locale: string,
+    fieldKey: string,
+    code: string,
+    display: string,
+  ) {
+    setSchema((current) => {
+      const synchronized = synchronizeClinicalFormLocalizations(current);
+      return {
+        ...synchronized,
+        localizations: (synchronized.localizations ?? []).map(
+          (localization) =>
+            localization.locale === locale
+              ? {
+                  ...localization,
+                  fields: localization.fields.map((field) =>
+                    field.fieldKey === fieldKey
+                      ? {
+                          ...field,
+                          options: field.options.map((option) =>
+                            option.code === code
+                              ? { ...option, display }
+                              : option,
+                          ),
+                        }
+                      : field,
+                  ),
+                }
+              : localization,
+        ),
+      };
+    });
+  }
+
+  function updateLocalizedRule(
+    locale: string,
+    ruleKey: string,
+    message: string,
+  ) {
+    setSchema((current) => {
+      const synchronized = synchronizeClinicalFormLocalizations(current);
+      return {
+        ...synchronized,
+        localizations: (synchronized.localizations ?? []).map(
+          (localization) =>
+            localization.locale === locale
+              ? {
+                  ...localization,
+                  rules: localization.rules.map((rule) =>
+                    rule.ruleKey === ruleKey
+                      ? { ...rule, message: message || null }
+                      : rule,
+                  ),
+                }
+              : localization,
+        ),
+      };
+    });
+  }
+
+  function removeLocalization(locale: string) {
+    setSchema((current) => ({
+      ...current,
+      localizations:
+        current.localizations?.filter(
+          (localization) => localization.locale !== locale,
+        ) ?? null,
+    }));
+  }
+
   async function runPreview() {
     setBusy(true);
     try {
-      const result = await previewClinicalForm(sessionId, schema, {});
+      const result = await previewClinicalForm(
+        sessionId,
+        synchronizeClinicalFormLocalizations(schema),
+        {},
+      );
       setPreview(result);
       showToast(
         result.valid
@@ -460,18 +619,19 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
     if (!reason.trim()) return;
     setBusy(true);
     try {
+      const candidate = synchronizeClinicalFormLocalizations(schema);
       const saved =
         successorMode && detail
           ? await createClinicalFormRevision(
               sessionId,
               detail.definition.definitionId,
-              schema,
+              candidate,
               detail.definition.latestRevision,
               reason.trim(),
             )
           : await createClinicalFormDefinition(
               sessionId,
-              schema,
+              candidate,
               reason.trim(),
             );
       setDetail(saved);
@@ -546,15 +706,30 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
       ),
     [policy?.supportedCalculationOperators, schema.fields, schema.rules],
   );
+  const synchronizedSchema = useMemo(
+    () => synchronizeClinicalFormLocalizations(schema),
+    [schema],
+  );
   const changeImpact = useMemo(
     () =>
       successorMode && detail
         ? describeClinicalFormChangeImpact(
             detail.currentRevision.definition,
-            schema,
+            synchronizedSchema,
           )
         : null,
-    [detail, schema, successorMode],
+    [detail, successorMode, synchronizedSchema],
+  );
+  const availableLocalizationLocales = useMemo(
+    () =>
+      (policy?.supportedLocales ?? []).filter(
+        (locale) =>
+          !locale.isBase &&
+          !(synchronizedSchema.localizations ?? []).some(
+            (localization) => localization.locale === locale.code,
+          ),
+      ),
+    [policy?.supportedLocales, synchronizedSchema.localizations],
   );
 
   return (
@@ -615,6 +790,10 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
             </span>
             <span>
               {policy.supportedCalculationTemplates.length} reusable starters
+            </span>
+            <span>
+              {policy.supportedLocales.filter((locale) => !locale.isBase).length}{" "}
+              translation locales
             </span>
           </div>
           <p>
@@ -741,6 +920,280 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
               />
             </label>
           </div>
+
+          <section
+            className="clinical-form-localization-authoring"
+            aria-labelledby="clinical-form-localization-heading"
+          >
+            <div className="clinical-form-author-heading">
+              <div>
+                <h4 id="clinical-form-localization-heading">
+                  Localized clinical content
+                </h4>
+                <p className="cl-empty-text">
+                  Each translation is revision-pinned and must cover the form,
+                  every section, field, repeat child, option, accessibility
+                  label, help text, and warning message. English (United
+                  States) remains the immutable base.
+                </p>
+              </div>
+              <div className="clinical-form-localization-add">
+                <label className="cl-admin-field">
+                  <span>Translation locale</span>
+                  <select
+                    className="ne-input"
+                    value={localizationLocale}
+                    onChange={(event) =>
+                      setLocalizationLocale(event.target.value)
+                    }
+                  >
+                    <option value="">Choose a supported locale</option>
+                    {availableLocalizationLocales.map((locale) => (
+                      <option key={locale.code} value={locale.code}>
+                        {locale.display}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="cl-btn-secondary"
+                  type="button"
+                  disabled={!localizationLocale}
+                  onClick={addLocalization}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Add translation
+                </button>
+              </div>
+            </div>
+
+            {(synchronizedSchema.localizations ?? []).map((localization) => {
+              const localeName =
+                policy?.supportedLocales.find(
+                  (locale) => locale.code === localization.locale,
+                )?.display ?? localization.locale;
+              return (
+                <details
+                  className="clinical-form-localization-editor"
+                  key={localization.locale}
+                  open
+                >
+                  <summary>{localeName}</summary>
+                  <div className="clinical-form-localization-actions">
+                    <span>
+                      Complete, revision-pinned clinical presentation for{" "}
+                      <code>{localization.locale}</code>.
+                    </span>
+                    <button
+                      className="cl-btn-secondary"
+                      type="button"
+                      onClick={() =>
+                        removeLocalization(localization.locale)
+                      }
+                    >
+                      Remove translation
+                    </button>
+                  </div>
+                  <div className="clinical-form-author-grid">
+                    <label className="cl-admin-field">
+                      <span>Localized form name</span>
+                      <input
+                        aria-label={`${localization.locale} form name`}
+                        className="ne-input"
+                        value={localization.name}
+                        onChange={(event) =>
+                          updateLocalization(localization.locale, {
+                            name: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="cl-admin-field clinical-form-author-wide">
+                      <span>Localized clinical purpose</span>
+                      <textarea
+                        aria-label={`${localization.locale} clinical purpose`}
+                        className="ne-input"
+                        value={localization.purpose}
+                        onChange={(event) =>
+                          updateLocalization(localization.locale, {
+                            purpose: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <h5>Sections</h5>
+                  <div className="clinical-form-localization-list">
+                    {localization.sections.map((section) => (
+                      <div
+                        className="clinical-form-localization-row"
+                        key={section.sectionKey}
+                      >
+                        <code>{section.sectionKey}</code>
+                        <label className="cl-admin-field">
+                          <span>Localized title</span>
+                          <input
+                            aria-label={`${localization.locale} section ${section.sectionKey} title`}
+                            className="ne-input"
+                            value={section.title}
+                            onChange={(event) =>
+                              updateLocalizedSection(
+                                localization.locale,
+                                section.sectionKey,
+                                { title: event.target.value },
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="cl-admin-field">
+                          <span>Localized description</span>
+                          <input
+                            aria-label={`${localization.locale} section ${section.sectionKey} description`}
+                            className="ne-input"
+                            value={section.description ?? ""}
+                            onChange={(event) =>
+                              updateLocalizedSection(
+                                localization.locale,
+                                section.sectionKey,
+                                {
+                                  description: event.target.value || null,
+                                },
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+
+                  <h5>Fields and repeat children</h5>
+                  <div className="clinical-form-localization-list">
+                    {localization.fields.map((field) => (
+                      <div
+                        className="clinical-form-localization-row clinical-form-localization-field"
+                        key={field.fieldKey}
+                      >
+                        <code>{field.fieldKey}</code>
+                        <label className="cl-admin-field">
+                          <span>Localized label</span>
+                          <input
+                            aria-label={`${localization.locale} field ${field.fieldKey} label`}
+                            className="ne-input"
+                            value={field.label}
+                            onChange={(event) =>
+                              updateLocalizedField(
+                                localization.locale,
+                                field.fieldKey,
+                                { label: event.target.value },
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="cl-admin-field">
+                          <span>Localized accessibility label</span>
+                          <input
+                            aria-label={`${localization.locale} field ${field.fieldKey} accessibility label`}
+                            className="ne-input"
+                            value={field.accessibilityLabel}
+                            onChange={(event) =>
+                              updateLocalizedField(
+                                localization.locale,
+                                field.fieldKey,
+                                { accessibilityLabel: event.target.value },
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="cl-admin-field">
+                          <span>Localized help text</span>
+                          <input
+                            aria-label={`${localization.locale} field ${field.fieldKey} help text`}
+                            className="ne-input"
+                            value={field.helpText ?? ""}
+                            onChange={(event) =>
+                              updateLocalizedField(
+                                localization.locale,
+                                field.fieldKey,
+                                { helpText: event.target.value || null },
+                              )
+                            }
+                          />
+                        </label>
+                        {field.options.map((option) => (
+                          <label
+                            className="cl-admin-field"
+                            key={option.code}
+                          >
+                            <span>
+                              Option <code>{option.code}</code>
+                            </span>
+                            <input
+                              aria-label={`${localization.locale} field ${field.fieldKey} option ${option.code}`}
+                              className="ne-input"
+                              value={option.display}
+                              onChange={(event) =>
+                                updateLocalizedOption(
+                                  localization.locale,
+                                  field.fieldKey,
+                                  option.code,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+
+                  {localization.rules.some((rule) =>
+                    synchronizedSchema.rules.some(
+                      (candidate) =>
+                        candidate.key === rule.ruleKey &&
+                        candidate.action === "warning",
+                    ),
+                  ) ? (
+                    <>
+                      <h5>Warning messages</h5>
+                      <div className="clinical-form-localization-list">
+                        {localization.rules
+                          .filter((rule) =>
+                            synchronizedSchema.rules.some(
+                              (candidate) =>
+                                candidate.key === rule.ruleKey &&
+                                candidate.action === "warning",
+                            ),
+                          )
+                          .map((rule) => (
+                            <label
+                              className="cl-admin-field"
+                              key={rule.ruleKey}
+                            >
+                              <span>
+                                Rule <code>{rule.ruleKey}</code>
+                              </span>
+                              <input
+                                aria-label={`${localization.locale} rule ${rule.ruleKey} message`}
+                                className="ne-input"
+                                value={rule.message ?? ""}
+                                onChange={(event) =>
+                                  updateLocalizedRule(
+                                    localization.locale,
+                                    rule.ruleKey,
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </label>
+                          ))}
+                      </div>
+                    </>
+                  ) : null}
+                </details>
+              );
+            })}
+          </section>
 
           <div className="clinical-form-author-heading">
             <h4>Sections</h4>

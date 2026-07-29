@@ -1,6 +1,7 @@
 import {
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -13,6 +14,7 @@ import {
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstance,
+  getClinicalFormPolicy,
   getLegacyClinicalFormSnapshot,
   getPatientClinicalFormInstances,
   getPatientLegacyClinicalFormMigrationManifest,
@@ -25,6 +27,7 @@ import {
   type ClinicalFormField,
   type ClinicalFormInstanceDetail,
   type ClinicalFormInstanceSummary,
+  type ClinicalFormPolicy,
   type LegacyClinicalFormMigrationManifestResponse,
   type LegacyClinicalFormSnapshotDetail,
   type LegacyClinicalFormSnapshotSummary,
@@ -32,6 +35,10 @@ import {
 import { isRequestCancellation } from "../../api/transport.ts";
 import { searchEncounters, type EncounterListItem } from "../../api.ts";
 import { showToast } from "../../components/Toast.tsx";
+import {
+  localizeClinicalFormSchema,
+  localizeClinicalFormSummary,
+} from "../../domain/clinicalFormLocalization.ts";
 import type { PatientOutletContext } from "./PatientShell.tsx";
 
 type RecordValue = Record<string, unknown>;
@@ -63,6 +70,15 @@ function objectValue(value: unknown): RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as RecordValue)
     : {};
+}
+
+function clinicalFormFieldEntries(
+  fields: ClinicalFormField[],
+): Array<readonly [string, ClinicalFormField]> {
+  return fields.flatMap((field) => [
+    [field.key, field] as const,
+    ...clinicalFormFieldEntries(field.children),
+  ]);
 }
 
 function downloadJson(filename: string, value: unknown) {
@@ -248,6 +264,8 @@ export function FieldInput({
 export default function PatientClinicalForms() {
   const { patient, patientId, session } = useOutletContext<PatientOutletContext>();
   const [catalog, setCatalog] = useState<ClinicalFormDefinitionSummary[]>([]);
+  const [policy, setPolicy] = useState<ClinicalFormPolicy | null>(null);
+  const [contentLocale, setContentLocale] = useState("en-US");
   const [encounters, setEncounters] = useState<EncounterListItem[]>([]);
   const [encounterId, setEncounterId] = useState("");
   const [instances, setInstances] = useState<ClinicalFormInstanceSummary[]>([]);
@@ -280,12 +298,14 @@ export default function PatientClinicalForms() {
     setEncounterLookupUnavailable(false);
     try {
       const [
+        loadedPolicy,
         loadedCatalog,
         loadedInstances,
         loadedLegacySnapshots,
         loadedMigrationManifest,
         loadedEncounters,
       ] = await Promise.all([
+        getClinicalFormPolicy(session.sessionId),
         getClinicalFormCatalog(session.sessionId),
         getPatientClinicalFormInstances(session.sessionId, patientId),
         getPatientLegacyClinicalFormSnapshots(session.sessionId, patientId),
@@ -302,6 +322,13 @@ export default function PatientClinicalForms() {
           },
         ),
       ]);
+      setPolicy(loadedPolicy);
+      setContentLocale((current) =>
+        loadedPolicy.supportedLocales.some((locale) => locale.code === current)
+          ? current
+          : (loadedPolicy.supportedLocales.find((locale) => locale.isBase)
+              ?.code ?? "en-US"),
+      );
       setCatalog(loadedCatalog.definitions);
       setInstances(loadedInstances.instances);
       setLegacySnapshots(loadedLegacySnapshots.snapshots);
@@ -624,6 +651,7 @@ export default function PatientClinicalForms() {
       const html = await exportClinicalFormInstanceHtml(
         session.sessionId,
         selected.instance.instanceId,
+        contentLocale,
       );
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       window.open(url, "_blank", "noopener,noreferrer");
@@ -635,9 +663,65 @@ export default function PatientClinicalForms() {
     }
   }
 
-  const issueByField = new Map((selected?.validation.issues ?? []).map((issue) => [issue.fieldKey, issue.message]));
+  const localizedCatalog = useMemo(
+    () =>
+      catalog.map((definition) =>
+        localizeClinicalFormSummary(definition, contentLocale),
+      ),
+    [catalog, contentLocale],
+  );
+  const localizedCatalogById = useMemo(
+    () =>
+      new Map(
+        localizedCatalog.map((definition) => [
+          definition.definitionId,
+          definition,
+        ]),
+      ),
+    [localizedCatalog],
+  );
+  const localizedDefinition = useMemo(
+    () =>
+      selected
+        ? localizeClinicalFormSchema(selected.definition, contentLocale)
+        : null,
+    [contentLocale, selected],
+  );
+  const localizedIssues = useMemo(() => {
+    if (!selected || !localizedDefinition) return [];
+    const baseFields = new Map(
+      clinicalFormFieldEntries(selected.definition.fields),
+    );
+    const displayedFields = new Map(
+      clinicalFormFieldEntries(localizedDefinition.fields),
+    );
+    const displayedRules = new Map(
+      localizedDefinition.rules.map((rule) => [rule.key, rule]),
+    );
+    return selected.validation.issues.map((issue) => {
+      const localizedRuleMessage = issue.ruleKey
+        ? displayedRules.get(issue.ruleKey)?.message
+        : null;
+      if (localizedRuleMessage) {
+        return { ...issue, message: localizedRuleMessage };
+      }
+
+      const baseField = baseFields.get(issue.fieldKey);
+      const displayedField = displayedFields.get(issue.fieldKey);
+      return baseField && displayedField && baseField.label !== displayedField.label
+        ? {
+            ...issue,
+            message: issue.message.replace(
+              baseField.label,
+              displayedField.label,
+            ),
+          }
+        : issue;
+    });
+  }, [localizedDefinition, selected]);
+  const issueByField = new Map(localizedIssues.map((issue) => [issue.fieldKey, issue.message]));
   const issueByRule = new Map(
-    (selected?.validation.issues ?? [])
+    localizedIssues
       .filter((issue) => issue.ruleKey)
       .map((issue) => [issue.ruleKey, issue.message]),
   );
@@ -659,6 +743,38 @@ export default function PatientClinicalForms() {
 
       {error ? <div className="error-banner" role="alert">{error}</div> : null}
 
+      {policy ? (
+        <section
+          className="cl-card clinical-form-locale-selector"
+          aria-labelledby="clinical-form-locale-heading"
+        >
+          <div>
+            <h2 id="clinical-form-locale-heading">Clinical content language</h2>
+            <p className="cl-empty-text">
+              Applies only complete, revision-pinned form translations.
+              Definitions without the selected locale safely fall back to
+              English (United States).
+            </p>
+          </div>
+          <label className="cl-form-field">
+            <span>Clinical content language</span>
+            <select
+              aria-label="Clinical content language"
+              value={contentLocale}
+              onChange={(event) => setContentLocale(event.target.value)}
+              disabled={saving}
+            >
+              {policy.supportedLocales.map((locale) => (
+                <option key={locale.code} value={locale.code}>
+                  {locale.display}
+                  {locale.isBase ? " (base)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      ) : null}
+
       <section className="cl-card" aria-labelledby="start-clinical-form-heading">
         <h2 id="start-clinical-form-heading">Start an effective form</h2>
         <div className="cl-form-field">
@@ -679,9 +795,9 @@ export default function PatientClinicalForms() {
             </p>
           ) : null}
         </div>
-        {catalog.length === 0 ? <p className="cl-empty-text">No effective clinical forms are currently available.</p> : (
+        {localizedCatalog.length === 0 ? <p className="cl-empty-text">No effective clinical forms are currently available.</p> : (
           <div className="card-grid">
-            {catalog.map((definition) => (
+            {localizedCatalog.map((definition) => (
               <article className="cl-card" key={definition.definitionId}>
                 <h3>{definition.name}</h3>
                 <p>{definition.purpose}</p>
@@ -701,7 +817,7 @@ export default function PatientClinicalForms() {
         <h2 id="clinical-form-history-heading">Patient form history</h2>
         {loading ? <p>Loading clinical forms…</p> : instances.length === 0 ? <p className="cl-empty-text">No clinical form instances have been started for this patient.</p> : (
           <div className="table-scroll"><table><thead><tr><th>Form</th><th>State</th><th>Revision</th><th>Author</th><th>Updated</th><th /></tr></thead><tbody>
-            {instances.map((instance) => <tr key={instance.instanceId}><td>{instance.name}</td><td>{instance.state}</td><td>{instance.definitionRevision}</td><td>{instance.author}</td><td>{formatInstant(instance.updatedAt)}</td><td><button className="cl-btn-secondary" type="button" onClick={() => void refresh(instance.instanceId)} disabled={saving}>Open</button></td></tr>)}
+            {instances.map((instance) => <tr key={instance.instanceId}><td>{localizedCatalogById.get(instance.definitionId)?.name ?? instance.name}</td><td>{instance.state}</td><td>{instance.definitionRevision}</td><td>{instance.author}</td><td>{formatInstant(instance.updatedAt)}</td><td><button className="cl-btn-secondary" type="button" onClick={() => void refresh(instance.instanceId)} disabled={saving}>Open</button></td></tr>)}
           </tbody></table></div>
         )}
       </section>
@@ -1258,11 +1374,11 @@ export default function PatientClinicalForms() {
         </section>
       ) : null}
 
-      {selected ? (
+      {selected && localizedDefinition ? (
         <section className="cl-card" aria-labelledby="selected-clinical-form-heading">
-          <div className="section-heading"><div><p className="eyebrow">{selected.instance.state}</p><h2 id="selected-clinical-form-heading">{selected.instance.name} <span className="muted">revision {selected.instance.definitionRevision}</span></h2></div><p>Author: {selected.instance.author}</p></div>
-          <p>{selected.definition.purpose}</p>
-          {selected.validation.issues.length > 0 ? <div className="hint-banner" role="status"><strong>Validation</strong><ul>{selected.validation.issues.map((issue) => <li key={`${issue.fieldKey}-${issue.message}`}>{issue.message}</li>)}</ul></div> : null}
+          <div className="section-heading"><div><p className="eyebrow">{selected.instance.state}</p><h2 id="selected-clinical-form-heading">{localizedDefinition.name} <span className="muted">revision {selected.instance.definitionRevision}</span></h2></div><p>Author: {selected.instance.author}</p></div>
+          <p>{localizedDefinition.purpose}</p>
+          {localizedIssues.length > 0 ? <div className="hint-banner" role="status"><strong>Validation</strong><ul>{localizedIssues.map((issue) => <li key={`${issue.fieldKey}-${issue.message}`}>{issue.message}</li>)}</ul></div> : null}
           {draft ? (
             <section
               className="hint-banner"
@@ -1306,7 +1422,7 @@ export default function PatientClinicalForms() {
               ) : null}
             </section>
           ) : null}
-          {selected.definition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{selected.definition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
+          {localizedDefinition.sections.map((section) => <fieldset className="cl-fieldset" key={section.key}><legend>{section.title}</legend>{section.description ? <p className="cl-field-help">{section.description}</p> : null}{localizedDefinition.fields.filter((field) => field.sectionKey === section.key && selected.validation.visibleFields[field.key] !== false).map((field) => <div className="cl-form-field" key={field.key}><FieldInput field={field} value={values[field.key]} required={selected.validation.requiredFields[field.key] ?? field.required} disabled={!draft || saving} issue={issueByField.get(field.key)} onChange={(value) => setFieldValue(field.key, value)} /></div>)}</fieldset>)}
           <div className="cl-form-field"><label htmlFor="clinical-form-mutation-reason">Draft save reason / transition reason</label><input id="clinical-form-mutation-reason" value={draft ? reason : actionReason} maxLength={500} disabled={saving} onChange={(event) => draft ? setReason(event.target.value) : setActionReason(event.target.value)} /></div>
           <div className="page-actions">
             <button className="cl-btn-secondary" type="button" onClick={() => void openPrintableRecord()} disabled={saving}>Open printable record</button>

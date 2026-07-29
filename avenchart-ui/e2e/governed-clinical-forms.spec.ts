@@ -212,6 +212,64 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
           calculation: null,
         },
       ],
+      localizations: [
+        {
+          locale: "es-US",
+          name: `Formulario clínico del navegador ${marker}`,
+          purpose:
+            "Verificar captura tipada accesible, firma, exportación y enmienda sucesora.",
+          sections: [
+            {
+              sectionKey: "observation",
+              title: "Observación",
+              description: "Verificación acotada del navegador.",
+            },
+          ],
+          fields: [
+            {
+              fieldKey: "chief_concern",
+              label: "Motivo principal",
+              accessibilityLabel: "Motivo principal",
+              helpText: "Describa el motivo principal.",
+              options: [],
+            },
+            {
+              fieldKey: "pain_score",
+              label: "Puntuación de dolor",
+              accessibilityLabel: "Puntuación de dolor",
+              helpText: "Puntuación opcional de cero a diez.",
+              options: [],
+            },
+            {
+              fieldKey: "disposition",
+              label: "Disposición",
+              accessibilityLabel: "Disposición",
+              helpText: null,
+              options: [
+                { code: "routine", display: "Seguimiento de rutina" },
+                { code: "urgent", display: "Seguimiento urgente" },
+              ],
+            },
+            {
+              fieldKey: "escalation_note",
+              label: "Nota de escalamiento",
+              accessibilityLabel: "Nota de escalamiento",
+              helpText: "Explique el plan de seguimiento urgente.",
+              options: [],
+            },
+          ],
+          rules: [
+            {
+              ruleKey: "warn_high_pain",
+              message:
+                "Una puntuación alta de dolor requiere atención clínica.",
+            },
+            { ruleKey: "hide_escalation_note", message: null },
+            { ruleKey: "show_escalation_note", message: null },
+            { ruleKey: "require_escalation_note", message: null },
+          ],
+        },
+      ],
     };
 
     try {
@@ -259,6 +317,19 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
       const startSection = page.getByRole("region", {
         name: "Start an effective form",
       });
+      const localeSelector = page.getByRole("combobox", {
+        name: "Clinical content language",
+      });
+      await expect(localeSelector).toContainText("Spanish (United States)");
+      await localeSelector.selectOption("es-US");
+      const spanishFormName = `Formulario clínico del navegador ${marker}`;
+      const spanishFormCard = startSection
+        .locator("article")
+        .filter({ hasText: spanishFormName });
+      await expect(spanishFormCard).toContainText(
+        "Verificar captura tipada accesible",
+      );
+      await localeSelector.selectOption("en-US");
       await startSection
         .getByLabel("Encounter for encounter-scoped forms")
         .selectOption({ index: 1 });
@@ -294,6 +365,23 @@ test.describe("FORM-01 through FORM-04a governed clinical forms", () => {
       );
       await expect(liveGuidance).toContainText("Rule warn_high_pain");
       await expect(selected.getByLabel("Escalation note")).toHaveCount(0);
+      await localeSelector.selectOption("es-US");
+      await expect(
+        selected.getByRole("heading", {
+          name: new RegExp(`Formulario clínico del navegador ${marker}`),
+        }),
+      ).toBeVisible();
+      await expect(selected.getByLabel("Motivo principal")).toHaveValue(
+        "Focused browser observation",
+      );
+      await expect(liveGuidance).toContainText(
+        "Una puntuación alta de dolor requiere atención clínica.",
+      );
+      await expect(selected.getByLabel("Nota de escalamiento")).toHaveCount(0);
+      await localeSelector.selectOption("en-US");
+      await expect(selected.getByLabel("Chief concern")).toHaveValue(
+        "Focused browser observation",
+      );
 
       await selected.getByLabel("Disposition").selectOption("urgent");
       await expect(selected.getByLabel("Escalation note")).toBeVisible({

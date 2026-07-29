@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v5";
+    public const string PolicyRevision = "local-clinical-form-v6";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -86,6 +86,13 @@ public static partial class ClinicalFormRuntime
                 2)
         ];
 
+    public static readonly IReadOnlyList<ClinicalFormLocaleDefinition> SupportedLocales =
+    [
+        new("en-US", "English (United States)", IsBase: true),
+        new("es-US", "Spanish (United States)", IsBase: false),
+        new("fr-CA", "French (Canada)", IsBase: false)
+    ];
+
     private static readonly string[] UnsafeTextFragments =
     [
         "<script",
@@ -119,6 +126,7 @@ public static partial class ClinicalFormRuntime
         SupportedRuleActions,
         SupportedCalculationOperators,
         SupportedCalculationTemplates,
+        SupportedLocales,
         SupportedConditionOperators,
         [
             "draft",
@@ -252,6 +260,11 @@ public static partial class ClinicalFormRuntime
             .ToArray();
         EnsureUnique(rules.Select(rule => rule.Key), "Rule keys must be unique.");
         EnsureAcyclicRules(rules);
+        var localizations = NormalizeLocalizations(
+            definition.Localizations,
+            sections,
+            fields,
+            rules);
 
         return new ClinicalFormSchemaDefinition(
             stableKey,
@@ -263,7 +276,71 @@ public static partial class ClinicalFormRuntime
             signaturePolicy,
             sections,
             fields,
-            rules);
+            rules,
+            localizations);
+    }
+
+    public static (
+        ClinicalFormSchemaDefinition Definition,
+        string Locale) LocalizeForDisplay(
+            ClinicalFormSchemaDefinition rawDefinition,
+            string? requestedLocale)
+    {
+        var definition = Normalize(rawDefinition);
+        var locale = CanonicalLocale(requestedLocale);
+        if (locale.IsBase)
+        {
+            return (definition, locale.Code);
+        }
+
+        var localization = definition.Localizations?.SingleOrDefault(
+            candidate => string.Equals(
+                candidate.Locale,
+                locale.Code,
+                StringComparison.Ordinal));
+        if (localization is null)
+        {
+            return (
+                definition,
+                SupportedLocales.Single(candidate => candidate.IsBase).Code);
+        }
+
+        var sections = localization.Sections.ToDictionary(
+            section => section.SectionKey,
+            StringComparer.Ordinal);
+        var fields = localization.Fields.ToDictionary(
+            field => field.FieldKey,
+            StringComparer.Ordinal);
+        var rules = localization.Rules.ToDictionary(
+            rule => rule.RuleKey,
+            StringComparer.Ordinal);
+        return (
+            definition with
+            {
+                Name = localization.Name,
+                Purpose = localization.Purpose,
+                Sections = definition.Sections
+                    .Select(section =>
+                    {
+                        var translated = sections[section.Key];
+                        return section with
+                        {
+                            Title = translated.Title,
+                            Description = translated.Description
+                        };
+                    })
+                    .ToArray(),
+                Fields = definition.Fields
+                    .Select(field => LocalizeField(field, fields))
+                    .ToArray(),
+                Rules = definition.Rules
+                    .Select(rule => rule with
+                    {
+                        Message = rules[rule.Key].Message
+                    })
+                    .ToArray()
+            },
+            locale.Code);
     }
 
     public static ClinicalFormEvaluationResponse Evaluate(
@@ -641,6 +718,266 @@ public static partial class ClinicalFormRuntime
             repeatMaximum,
             children,
             field.ReadOnly);
+    }
+
+    private static IReadOnlyList<ClinicalFormLocalizationDefinition>? NormalizeLocalizations(
+        IReadOnlyList<ClinicalFormLocalizationDefinition>? source,
+        IReadOnlyList<ClinicalFormSectionDefinition> sections,
+        IReadOnlyList<ClinicalFormFieldDefinition> fields,
+        IReadOnlyList<ClinicalFormRuleDefinition> rules)
+    {
+        if (source is null || source.Count == 0)
+        {
+            return null;
+        }
+
+        if (source.Count > SupportedLocales.Count(locale => !locale.IsBase))
+        {
+            throw new ArgumentException(
+                "A form cannot contain more translations than the policy supports.");
+        }
+
+        var sectionMap = sections.ToDictionary(
+            section => section.Key,
+            StringComparer.Ordinal);
+        var flattenedFields = FlattenFields(fields).ToArray();
+        var fieldMap = flattenedFields.ToDictionary(
+            field => field.Key,
+            StringComparer.Ordinal);
+        var ruleMap = rules.ToDictionary(
+            rule => rule.Key,
+            StringComparer.Ordinal);
+        var normalized = source
+            .Select(localization =>
+            {
+                ArgumentNullException.ThrowIfNull(localization);
+                var locale = CanonicalLocale(localization.Locale);
+                if (locale.IsBase)
+                {
+                    throw new ArgumentException(
+                        $"Locale {locale.Code} is the base schema and cannot be duplicated.");
+                }
+
+                var localizedSections = (localization.Sections ?? [])
+                    .Select(section =>
+                    {
+                        var key = NormalizeKey(
+                            section.SectionKey,
+                            $"Localized section key for {locale.Code}",
+                            dotted: false);
+                        if (!sectionMap.ContainsKey(key))
+                        {
+                            throw new ArgumentException(
+                                $"Localization {locale.Code} references unknown section {key}.");
+                        }
+
+                        return new ClinicalFormSectionLocalizationDefinition(
+                            key,
+                            NormalizeText(
+                                section.Title,
+                                $"Localized section title for {key} ({locale.Code})",
+                                120),
+                            NormalizeOptionalText(
+                                section.Description,
+                                $"Localized section description for {key} ({locale.Code})",
+                                500));
+                    })
+                    .ToArray();
+                EnsureUnique(
+                    localizedSections.Select(section => section.SectionKey),
+                    $"Localized section keys for {locale.Code} must be unique.");
+                if (localizedSections.Length != sections.Count
+                    || localizedSections.Any(section =>
+                        !sectionMap.ContainsKey(section.SectionKey)))
+                {
+                    throw new ArgumentException(
+                        $"Localization {locale.Code} must translate every section exactly once.");
+                }
+
+                var localizedFields = (localization.Fields ?? [])
+                    .Select(field =>
+                    {
+                        var key = NormalizeKey(
+                            field.FieldKey,
+                            $"Localized field key for {locale.Code}",
+                            dotted: false);
+                        if (!fieldMap.TryGetValue(key, out var baseField))
+                        {
+                            throw new ArgumentException(
+                                $"Localization {locale.Code} references unknown field {key}.");
+                        }
+
+                        var options = (field.Options ?? [])
+                            .Select(option => new ClinicalFormOptionLocalizationDefinition(
+                                NormalizeOptionCode(
+                                    option.Code,
+                                    $"Localized option code for {key} ({locale.Code})"),
+                                NormalizeText(
+                                    option.Display,
+                                    $"Localized option display for {key} ({locale.Code})",
+                                    160)))
+                            .ToArray();
+                        EnsureUnique(
+                            options.Select(option => option.Code),
+                            $"Localized option codes for {key} ({locale.Code}) must be unique.");
+                        var baseOptionCodes = baseField.Options
+                            .Select(option => option.Code)
+                            .ToHashSet(StringComparer.Ordinal);
+                        if (options.Length != baseField.Options.Count
+                            || options.Any(option => !baseOptionCodes.Contains(option.Code)))
+                        {
+                            throw new ArgumentException(
+                                $"Localization {locale.Code} must translate every option for field {key} exactly once.");
+                        }
+
+                        return new ClinicalFormFieldLocalizationDefinition(
+                            key,
+                            NormalizeText(
+                                field.Label,
+                                $"Localized label for {key} ({locale.Code})",
+                                160),
+                            NormalizeText(
+                                field.AccessibilityLabel,
+                                $"Localized accessibility label for {key} ({locale.Code})",
+                                200),
+                            NormalizeOptionalText(
+                                field.HelpText,
+                                $"Localized help text for {key} ({locale.Code})",
+                                500),
+                            options);
+                    })
+                    .ToArray();
+                EnsureUnique(
+                    localizedFields.Select(field => field.FieldKey),
+                    $"Localized field keys for {locale.Code} must be unique.");
+                if (localizedFields.Length != flattenedFields.Length
+                    || localizedFields.Any(field => !fieldMap.ContainsKey(field.FieldKey)))
+                {
+                    throw new ArgumentException(
+                        $"Localization {locale.Code} must translate every field and repeat child exactly once.");
+                }
+
+                var localizedSectionMap = localizedSections.ToDictionary(
+                    section => section.SectionKey,
+                    StringComparer.Ordinal);
+                var localizedFieldMap = localizedFields.ToDictionary(
+                    field => field.FieldKey,
+                    StringComparer.Ordinal);
+                var localizedRules = (localization.Rules ?? [])
+                    .Select(rule =>
+                    {
+                        var key = NormalizeKey(
+                            rule.RuleKey,
+                            $"Localized rule key for {locale.Code}",
+                            dotted: false);
+                        if (!ruleMap.TryGetValue(key, out var baseRule))
+                        {
+                            throw new ArgumentException(
+                                $"Localization {locale.Code} references unknown rule {key}.");
+                        }
+
+                        var message = NormalizeOptionalText(
+                            rule.Message,
+                            $"Localized rule message for {key} ({locale.Code})",
+                            500);
+                        if (baseRule.Action == "warning" && message is null)
+                        {
+                            throw new ArgumentException(
+                                $"Localization {locale.Code} must translate warning rule {key}.");
+                        }
+
+                        if (baseRule.Action != "warning" && message is not null)
+                        {
+                            throw new ArgumentException(
+                                $"Only warning rule {key} may declare a localized message.");
+                        }
+
+                        return new ClinicalFormRuleLocalizationDefinition(key, message);
+                    })
+                    .ToArray();
+                EnsureUnique(
+                    localizedRules.Select(rule => rule.RuleKey),
+                    $"Localized rule keys for {locale.Code} must be unique.");
+                if (localizedRules.Length != rules.Count
+                    || localizedRules.Any(rule => !ruleMap.ContainsKey(rule.RuleKey)))
+                {
+                    throw new ArgumentException(
+                        $"Localization {locale.Code} must translate every rule exactly once.");
+                }
+
+                var localizedRuleMap = localizedRules.ToDictionary(
+                    rule => rule.RuleKey,
+                    StringComparer.Ordinal);
+                return new ClinicalFormLocalizationDefinition(
+                    locale.Code,
+                    NormalizeText(
+                        localization.Name,
+                        $"Localized form name ({locale.Code})",
+                        120),
+                    NormalizeText(
+                        localization.Purpose,
+                        $"Localized clinical purpose ({locale.Code})",
+                        1000),
+                    sections
+                        .Select(section => localizedSectionMap[section.Key])
+                        .ToArray(),
+                    flattenedFields
+                        .Select(field => localizedFieldMap[field.Key])
+                        .ToArray(),
+                    rules
+                        .Select(rule => localizedRuleMap[rule.Key])
+                        .ToArray());
+            })
+            .ToArray();
+        EnsureUnique(
+            normalized.Select(localization => localization.Locale),
+            "Form localization locales must be unique.");
+        var localeOrder = SupportedLocales
+            .Select((locale, index) => (locale.Code, index))
+            .ToDictionary(item => item.Code, item => item.index, StringComparer.Ordinal);
+        return normalized
+            .OrderBy(localization => localeOrder[localization.Locale])
+            .ToArray();
+    }
+
+    private static ClinicalFormLocaleDefinition CanonicalLocale(string? requestedLocale)
+    {
+        if (string.IsNullOrWhiteSpace(requestedLocale))
+        {
+            return SupportedLocales.Single(locale => locale.IsBase);
+        }
+
+        return SupportedLocales.SingleOrDefault(locale => string.Equals(
+                   locale.Code,
+                   requestedLocale.Trim(),
+                   StringComparison.OrdinalIgnoreCase))
+               ?? throw new ArgumentException(
+                   $"Locale {requestedLocale.Trim()} is not supported by the clinical-form policy.");
+    }
+
+    private static ClinicalFormFieldDefinition LocalizeField(
+        ClinicalFormFieldDefinition field,
+        IReadOnlyDictionary<string, ClinicalFormFieldLocalizationDefinition> localizations)
+    {
+        var localization = localizations[field.Key];
+        var options = localization.Options.ToDictionary(
+            option => option.Code,
+            StringComparer.Ordinal);
+        return field with
+        {
+            Label = localization.Label,
+            AccessibilityLabel = localization.AccessibilityLabel,
+            HelpText = localization.HelpText,
+            Options = field.Options
+                .Select(option => option with
+                {
+                    Display = options[option.Code].Display
+                })
+                .ToArray(),
+            Children = field.Children
+                .Select(child => LocalizeField(child, localizations))
+                .ToArray()
+        };
     }
 
     private static ClinicalFormRuleDefinition NormalizeRule(

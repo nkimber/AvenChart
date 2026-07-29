@@ -11,6 +11,7 @@ public sealed record ClinicalFormPolicyResponse(
     IReadOnlyList<string> SupportedRuleActions,
     IReadOnlyList<string> SupportedCalculationOperators,
     IReadOnlyList<ClinicalFormCalculationTemplateDefinition> SupportedCalculationTemplates,
+    IReadOnlyList<ClinicalFormLocaleDefinition> SupportedLocales,
     IReadOnlyList<string> SupportedConditionOperators,
     IReadOnlyList<string> DefinitionStates,
     IReadOnlyList<string> InstanceStates,
@@ -29,6 +30,11 @@ public sealed record ClinicalFormCalculationTemplateDefinition(
     string Operator,
     int OperandCount,
     int DefaultPrecision);
+
+public sealed record ClinicalFormLocaleDefinition(
+    string Code,
+    string Display,
+    bool IsBase);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClinicalFormSectionDefinition(
@@ -110,6 +116,39 @@ public sealed record ClinicalFormRuleDefinition(
     ClinicalFormCalculation? Calculation);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormSectionLocalizationDefinition(
+    string SectionKey,
+    string Title,
+    string? Description);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormOptionLocalizationDefinition(
+    string Code,
+    string Display);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormFieldLocalizationDefinition(
+    string FieldKey,
+    string Label,
+    string AccessibilityLabel,
+    string? HelpText,
+    IReadOnlyList<ClinicalFormOptionLocalizationDefinition> Options);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormRuleLocalizationDefinition(
+    string RuleKey,
+    string? Message);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormLocalizationDefinition(
+    string Locale,
+    string Name,
+    string Purpose,
+    IReadOnlyList<ClinicalFormSectionLocalizationDefinition> Sections,
+    IReadOnlyList<ClinicalFormFieldLocalizationDefinition> Fields,
+    IReadOnlyList<ClinicalFormRuleLocalizationDefinition> Rules);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClinicalFormSchemaDefinition(
     string StableKey,
     string Name,
@@ -120,7 +159,9 @@ public sealed record ClinicalFormSchemaDefinition(
     string SignaturePolicy,
     IReadOnlyList<ClinicalFormSectionDefinition> Sections,
     IReadOnlyList<ClinicalFormFieldDefinition> Fields,
-    IReadOnlyList<ClinicalFormRuleDefinition> Rules);
+    IReadOnlyList<ClinicalFormRuleDefinition> Rules,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ClinicalFormLocalizationDefinition>? Localizations = null);
 
 public sealed record ClinicalFormDefinitionCreateRequest(
     ClinicalFormSchemaDefinition Definition,
@@ -162,7 +203,9 @@ public sealed record ClinicalFormDefinitionSummary(
     int LatestVersion,
     string SignaturePolicy,
     string UpdatedAt,
-    string UpdatedBy);
+    string UpdatedBy,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ClinicalFormLocalizationDefinition>? Localizations = null);
 
 public sealed record ClinicalFormDefinitionListResponse(
     IReadOnlyList<ClinicalFormDefinitionSummary> Definitions,

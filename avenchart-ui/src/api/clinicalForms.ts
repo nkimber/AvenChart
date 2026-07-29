@@ -75,6 +75,34 @@ export type ClinicalFormRule = {
   calculation: ClinicalFormCalculation | null;
 };
 
+export type ClinicalFormSectionLocalization = {
+  sectionKey: string;
+  title: string;
+  description: string | null;
+};
+
+export type ClinicalFormFieldLocalization = {
+  fieldKey: string;
+  label: string;
+  accessibilityLabel: string;
+  helpText: string | null;
+  options: ClinicalFormOption[];
+};
+
+export type ClinicalFormRuleLocalization = {
+  ruleKey: string;
+  message: string | null;
+};
+
+export type ClinicalFormLocalization = {
+  locale: string;
+  name: string;
+  purpose: string;
+  sections: ClinicalFormSectionLocalization[];
+  fields: ClinicalFormFieldLocalization[];
+  rules: ClinicalFormRuleLocalization[];
+};
+
 export type ClinicalFormSchema = {
   stableKey: string;
   name: string;
@@ -86,6 +114,7 @@ export type ClinicalFormSchema = {
   sections: ClinicalFormSection[];
   fields: ClinicalFormField[];
   rules: ClinicalFormRule[];
+  localizations?: ClinicalFormLocalization[] | null;
 };
 
 export type ClinicalFormPolicy = {
@@ -96,6 +125,7 @@ export type ClinicalFormPolicy = {
   supportedRuleActions: string[];
   supportedCalculationOperators: string[];
   supportedCalculationTemplates: ClinicalFormCalculationTemplate[];
+  supportedLocales: ClinicalFormLocale[];
   supportedConditionOperators: string[];
   definitionStates: string[];
   instanceStates: string[];
@@ -117,6 +147,12 @@ export type ClinicalFormCalculationTemplate = {
   defaultPrecision: number;
 };
 
+export type ClinicalFormLocale = {
+  code: string;
+  display: string;
+  isBase: boolean;
+};
+
 export type ClinicalFormDefinitionSummary = {
   definitionId: string;
   stableKey: string;
@@ -130,6 +166,7 @@ export type ClinicalFormDefinitionSummary = {
   signaturePolicy: string;
   updatedAt: string;
   updatedBy: string;
+  localizations?: ClinicalFormLocalization[] | null;
 };
 
 export type ClinicalFormDefinitionList = {
@@ -819,9 +856,13 @@ export async function exportClinicalFormInstanceStructured(
 export async function exportClinicalFormInstanceHtml(
   sessionId: string,
   instanceId: string,
+  locale?: string,
 ): Promise<string> {
+  const query = new URLSearchParams();
+  if (locale) query.set("locale", locale);
+  const suffix = query.size > 0 ? `?${query}` : "";
   const response = await apiFetch(
-    `${apiBaseUrl}/api/form-engine/instances/${encodeURIComponent(instanceId)}/export`,
+    `${apiBaseUrl}/api/form-engine/instances/${encodeURIComponent(instanceId)}/export${suffix}`,
     { headers: headers(sessionId) },
   );
   return await response.text();

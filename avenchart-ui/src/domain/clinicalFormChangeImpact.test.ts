@@ -173,4 +173,63 @@ describe("clinical form successor change impact", () => {
       ]),
     );
   });
+
+  it("explains added, changed, and removed localized presentations", () => {
+    const current = schema();
+    const candidate = structuredClone(current);
+    candidate.localizations = [
+      {
+        locale: "es-US",
+        name: "Formulario",
+        purpose: "Propósito.",
+        sections: [
+          {
+            sectionKey: "main",
+            title: "Principal",
+            description: null,
+          },
+        ],
+        fields: [
+          {
+            fieldKey: "amount",
+            label: "Cantidad",
+            accessibilityLabel: "Cantidad",
+            helpText: null,
+            options: [],
+          },
+        ],
+        rules: [],
+      },
+    ];
+
+    expect(
+      describeClinicalFormChangeImpact(current, candidate).items,
+    ).toContainEqual(
+      expect.objectContaining({
+        key: "localization:es-US:added",
+        severity: "review",
+      }),
+    );
+
+    current.localizations = structuredClone(candidate.localizations);
+    candidate.localizations[0]!.fields[0]!.label = "Cantidad revisada";
+    expect(
+      describeClinicalFormChangeImpact(current, candidate).items,
+    ).toContainEqual(
+      expect.objectContaining({
+        key: "localization:es-US:changed",
+        severity: "review",
+      }),
+    );
+
+    candidate.localizations = null;
+    expect(
+      describeClinicalFormChangeImpact(current, candidate).items,
+    ).toContainEqual(
+      expect.objectContaining({
+        key: "localization:es-US:removed",
+        severity: "high",
+      }),
+    );
+  });
 });

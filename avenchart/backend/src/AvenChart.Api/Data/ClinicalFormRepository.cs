@@ -155,7 +155,8 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
                 reader.GetInt32(6),
                 schema.SignaturePolicy,
                 Iso(reader.GetFieldValue<DateTimeOffset>(8)),
-                reader.GetString(9)));
+                reader.GetString(9),
+                schema.Localizations));
         }
 
         return new(definitions, total, page, pageSize);
@@ -1144,25 +1145,31 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
 
     public async Task<string> ExportInstanceHtmlAsync(
         Guid instanceId,
+        string? locale,
         CancellationToken cancellationToken)
     {
         var render = await RenderInstanceAsync(instanceId, cancellationToken);
+        var localized = ClinicalFormRuntime.LocalizeForDisplay(
+            render.Definition,
+            locale);
         var builder = new StringBuilder();
-        builder.Append("<!doctype html><html><head><meta charset=\"utf-8\"><title>")
-            .Append(WebUtility.HtmlEncode(render.Definition.Name))
+        builder.Append("<!doctype html><html lang=\"")
+            .Append(WebUtility.HtmlEncode(localized.Locale))
+            .Append("\"><head><meta charset=\"utf-8\"><title>")
+            .Append(WebUtility.HtmlEncode(localized.Definition.Name))
             .Append("</title><style>body{font:14px Arial,sans-serif;margin:32px;color:#17211f}h1{font-size:24px}h2{font-size:18px;margin-top:24px}dl{display:grid;grid-template-columns:180px 1fr;gap:8px}dt{font-weight:700}dd{margin:0;white-space:pre-wrap}.evidence{border-top:1px solid #aaa;margin-top:28px;padding-top:12px;font-size:12px}@media print{body{margin:10mm}}</style></head><body>")
             .Append("<h1>")
-            .Append(WebUtility.HtmlEncode(render.Definition.Name))
+            .Append(WebUtility.HtmlEncode(localized.Definition.Name))
             .Append("</h1><p>")
-            .Append(WebUtility.HtmlEncode(render.Definition.Purpose))
+            .Append(WebUtility.HtmlEncode(localized.Definition.Purpose))
             .Append("</p>");
 
-        foreach (var section in render.Definition.Sections.OrderBy(section => section.Sequence))
+        foreach (var section in localized.Definition.Sections.OrderBy(section => section.Sequence))
         {
             builder.Append("<section><h2>")
                 .Append(WebUtility.HtmlEncode(section.Title))
                 .Append("</h2><dl>");
-            foreach (var field in render.Definition.Fields
+            foreach (var field in localized.Definition.Fields
                          .Where(field => field.SectionKey == section.Key)
                          .OrderBy(field => field.Sequence))
             {
@@ -1677,7 +1684,8 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
             current.Version,
             current.Definition.SignaturePolicy,
             current.UpdatedAt,
-            current.UpdatedBy);
+            current.UpdatedBy,
+            current.Definition.Localizations);
         return new(summary, current, revisions, events);
     }
 

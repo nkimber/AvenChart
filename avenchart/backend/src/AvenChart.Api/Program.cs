@@ -7340,6 +7340,7 @@ formEngine.MapGet("/instances/{instanceId:guid}/structured-export", async (
 formEngine.MapGet("/instances/{instanceId:guid}/export", async (
         ClinicalFormRepository repository,
         Guid instanceId,
+        string? locale,
         CancellationToken cancellationToken) =>
     {
         try
@@ -7347,6 +7348,7 @@ formEngine.MapGet("/instances/{instanceId:guid}/export", async (
             return Results.Content(
                 await repository.ExportInstanceHtmlAsync(
                     instanceId,
+                    locale,
                     cancellationToken),
                 "text/html",
                 Encoding.UTF8);

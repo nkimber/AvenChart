@@ -3,6 +3,7 @@ import {
   amendClinicalFormInstance,
   createClinicalFormDefinition,
   createPatientClinicalFormInstance,
+  exportClinicalFormInstanceHtml,
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstanceFieldDictionary,
@@ -449,6 +450,11 @@ describe("governed clinical-form transport", () => {
           values: {},
           signatures: [],
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response("<!doctype html><html lang=\"es-US\"></html>", {
+          headers: { "content-type": "text/html" },
+        }),
       );
 
     await getClinicalFormInstanceFieldDictionary(
@@ -459,12 +465,20 @@ describe("governed clinical-form transport", () => {
       "staff-session",
       "instance/with spaces",
     );
+    await exportClinicalFormInstanceHtml(
+      "staff-session",
+      "instance/with spaces",
+      "es-US",
+    );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/instances/instance%2Fwith%20spaces/field-dictionary",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "http://localhost:5001/api/form-engine/instances/instance%2Fwith%20spaces/structured-export",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/instances/instance%2Fwith%20spaces/export?locale=es-US",
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
       expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
