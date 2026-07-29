@@ -178,7 +178,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             Items: items);
     }
 
-    public async Task<PatientMessagesResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken)
+    public async Task<PatientMessagesResponse?> GetForPatientAsync(string patientId, CancellationToken cancellationToken, bool includeArchived = false)
     {
         var metadata = await GetMetadataAsync(cancellationToken);
 
@@ -189,7 +189,7 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
             return null;
         }
 
-        var messages = await GetMessagesAsync(connection, patient.LegacyPid, cancellationToken);
+        var messages = await GetMessagesAsync(connection, patient.LegacyPid, cancellationToken, includeArchived);
 
         return new PatientMessagesResponse(
             DatasetId: metadata.DatasetId,
@@ -981,17 +981,19 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
     private static async Task<IReadOnlyList<PatientMessageItem>> GetMessagesAsync(
         NpgsqlConnection connection,
         int legacyPid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeArchived = false)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
             select id, message_date, title, body, status, assigned_to, portal_relation, is_encrypted,
                 updated_by, updated_at, deleted, assignment_version
             from messages
-            where pid = @pid and deleted = 0
+            where pid = @pid and (@includeArchived or deleted = 0)
             order by message_date desc, id desc;
             """;
         command.Parameters.AddWithValue("pid", legacyPid);
+        command.Parameters.AddWithValue("includeArchived", includeArchived);
 
         var items = new List<PatientMessageItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

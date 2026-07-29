@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Download, Forward, Mail, Paperclip, RefreshC
 import {
   createPatientMessage,
   archiveStaffMessage,
+  restoreStaffMessage,
   correctStaffMessage,
   downloadStaffMessageAttachment,
   forwardPatientMessage,
@@ -140,6 +141,7 @@ export default function ClinicianMessages() {
   const [archiveOpenId, setArchiveOpenId] = useState<string | null>(null)
   const [archiveReason, setArchiveReason] = useState<Record<string, string>>({})
   const [archiveBusyId, setArchiveBusyId] = useState<string | null>(null)
+  const [includeArchived, setIncludeArchived] = useState(false)
   const [retentionHistory, setRetentionHistory] = useState<Record<string, PatientMessageRetentionHistoryResponse>>({})
 
   useEffect(() => {
@@ -201,18 +203,18 @@ export default function ClinicianMessages() {
     setSearchParams(params)
   }
 
-  function openThread(patient: ThreadPatient) {
+  function openThread(patient: ThreadPatient, showArchived = includeArchived) {
     setThreadState({ status: 'loading', patient })
     setReplyBody('')
     setActiveMessageId(null)
     setAssignmentError(null)
     setForwardError(null)
-    getPatientMessages(session.sessionId, patient.canonicalId)
+    getPatientMessages(session.sessionId, patient.canonicalId, undefined, showArchived)
       .then((data) => setThreadState({
         status: 'ready',
         thread: {
           patient: { ...patient, displayName: data.patientDisplayName },
-          messages: data.messages.filter((message) => !message.deleted),
+          messages: data.messages.filter((message) => showArchived || !message.deleted),
         },
       }))
       .catch((error: unknown) => setThreadState({
@@ -291,6 +293,18 @@ export default function ClinicianMessages() {
       setReload((value) => value + 1)
       showToast('Message archived. It can be restored through the protected retention API.', 'success')
     } catch (error) { showToast(error instanceof Error ? error.message : 'Could not archive the message.', 'error') } finally { setArchiveBusyId(null) }
+  }
+
+  async function restoreMessage(message: PatientMessageItem) {
+    const reason = archiveReason[message.id]?.trim()
+    if (!reason) return
+    setArchiveBusyId(message.id)
+    try {
+      const updated = await restoreStaffMessage(session.sessionId, message.id, reason)
+      setThreadState((previous) => previous.status === 'ready' ? { ...previous, thread: { ...previous.thread, messages: updated.messages.filter((item) => includeArchived || !item.deleted) } } : previous)
+      setArchiveOpenId(null); setArchiveReason((current) => { const next = { ...current }; delete next[message.id]; return next }); setReload((value) => value + 1)
+      showToast('Message restored to active threads.', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Could not restore the message.', 'error') } finally { setArchiveBusyId(null) }
   }
 
   async function toggleRetentionHistory(messageId: string) {
@@ -766,6 +780,7 @@ export default function ClinicianMessages() {
                     </p>
                   </div>
                 </div>
+                <button className="cl-btn-secondary" type="button" onClick={() => { const next = !includeArchived; setIncludeArchived(next); if (threadState.status === 'ready') openThread(threadState.thread.patient, next) }}>{includeArchived ? 'Hide archived' : 'Show archived'}</button>
               </div>
               {threadState.thread.messages.length === 0 ? (
                 <p className="cl-empty-text">No active messages for this patient.</p>
@@ -783,6 +798,7 @@ export default function ClinicianMessages() {
                         <span className={`cl-badge ${messageStatusClass(message.status)}`}>
                           {message.status ?? 'Unknown'}
                         </span>
+                        {message.deleted !== 0 && <span className="cl-badge cl-badge-coral">Archived</span>}
                       </div>
                       {message.body && <p className="msg-item-body">{message.body}</p>}
                       <div className="msg-reply-form">
@@ -896,7 +912,7 @@ export default function ClinicianMessages() {
                           <label className="ne-field"><span className="ne-label">Archive reason</span><input className="ne-input" maxLength={500} value={archiveReason[message.id] ?? ''} disabled={archiveBusyId !== null} onChange={(event) => setArchiveReason((current) => ({ ...current, [message.id]: event.target.value }))} /></label>
                           <div className="ne-actions">
                             <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => setArchiveOpenId(null)}>Cancel</button>
-                            <button className="cl-btn-primary" type="button" disabled={archiveBusyId !== null || !archiveReason[message.id]?.trim()} onClick={() => void archiveMessage(message)}>{archiveBusyId === message.id ? 'Archiving…' : 'Archive message'}</button>
+                          <button className="cl-btn-primary" type="button" disabled={archiveBusyId !== null || !archiveReason[message.id]?.trim()} onClick={() => void (message.deleted !== 0 ? restoreMessage(message) : archiveMessage(message))}>{archiveBusyId === message.id ? (message.deleted !== 0 ? 'Restoring…' : 'Archiving…') : (message.deleted !== 0 ? 'Restore message' : 'Archive message')}</button>
                             <button className="cl-btn-secondary" type="button" disabled={archiveBusyId !== null} onClick={() => void toggleRetentionHistory(message.id)}>{retentionHistory[message.id] ? 'Hide archive history' : 'Archive history'}</button>
                           </div>
                           {retentionHistory[message.id] && <ul className="message-inbox-list" aria-label="Archive history">{retentionHistory[message.id].events.map((event) => <li key={event.eventId}><strong>{event.action}</strong>{' · '}{event.actor}{' · '}{new Date(event.occurredAt).toLocaleString()}{' · '}{event.reason}</li>)}</ul>}

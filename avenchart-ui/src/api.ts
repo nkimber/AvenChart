@@ -4338,8 +4338,9 @@ export async function getPatientMessages(
   sessionId: string,
   patientId: string,
   signal?: AbortSignal,
+  includeArchived = false,
 ): Promise<PatientMessagesResponse> {
-  return clinicianGet(sessionId, `/api/messages/${patientId}`, signal)
+  return clinicianGet(sessionId, `/api/messages/${patientId}${includeArchived ? '?includeArchived=true' : ''}`, signal)
 }
 
 export async function replyToPatientMessage(
@@ -4447,6 +4448,11 @@ export async function getStaffMessageRetentionHistory(sessionId: string, message
 
 export async function archiveStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {
   const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/archive`, { reason })
+  return result.detail
+}
+
+export async function restoreStaffMessage(sessionId: string, messageId: string, reason: string): Promise<PatientMessagesResponse> {
+  const result = await clinicianPost<PatientMessageMutationResponse>(sessionId, `/api/messages/${messageId}/restore`, { reason })
   return result.detail
 }
 
