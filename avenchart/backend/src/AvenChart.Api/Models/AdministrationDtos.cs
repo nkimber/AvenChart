@@ -184,6 +184,25 @@ public sealed record PracticeSettingItem(
 public sealed record PracticeSettingsResponse(
     IReadOnlyList<PracticeSettingItem> Settings);
 
+public sealed record PracticeSettingRegistryItem(
+    string Key,
+    string Label,
+    string SourceOfTruth,
+    string Sensitivity,
+    IReadOnlyList<string> AllowedScopes,
+    string Owner,
+    string RequiredApprover,
+    string RollbackPath,
+    string ImpactClass,
+    bool DualControlRequired,
+    bool ChangeWindowRequired,
+    bool BreakGlassPermitted,
+    string ImpactPreviewAvailability);
+
+public sealed record PracticeSettingRegistryResponse(
+    string RegistryRevision,
+    IReadOnlyList<PracticeSettingRegistryItem> Items);
+
 public sealed record EffectivePracticeSettingItem(
     string Key,
     string Label,

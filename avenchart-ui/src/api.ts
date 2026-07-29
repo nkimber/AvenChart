@@ -6883,6 +6883,26 @@ export async function getPracticeSettings(
 ): Promise<{ settings: PracticeSettingItem[] }> {
   return clinicianGet(sessionId, '/api/administration/practice-settings')
 }
+export type PracticeSettingRegistryItem = {
+  key: string
+  label: string
+  sourceOfTruth: string
+  sensitivity: string
+  allowedScopes: string[]
+  owner: string
+  requiredApprover: string
+  rollbackPath: string
+  impactClass: string
+  dualControlRequired: boolean
+  changeWindowRequired: boolean
+  breakGlassPermitted: boolean
+  impactPreviewAvailability: string
+}
+export async function getPracticeSettingRegistry(
+  sessionId: string,
+): Promise<{ registryRevision: string; items: PracticeSettingRegistryItem[] }> {
+  return clinicianGet(sessionId, '/api/administration/practice-settings/registry')
+}
 export type EffectivePracticeSettingItem = PracticeSettingItem & {
   sourceScope: 'system' | 'facility'
   sourceFacilityId: number | null

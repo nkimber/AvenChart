@@ -11,6 +11,7 @@ import {
   getPracticeSettingChangeRequest,
   getPracticeSettingChangeRequestImpactPreview,
   getPracticeSettingChangeRequests,
+  getPracticeSettingRegistry,
   transitionPracticeSettingChangeRequest,
   type EffectivePracticeSettingItem,
   type PracticeSettingImpactPreview,
@@ -19,6 +20,7 @@ import {
   type PracticeSettingChangeRequestsResponse,
   type PracticeSettingChangeRequestStatus,
   type PracticeSettingItem,
+  type PracticeSettingRegistryItem,
 } from "../../api.ts";
 
 type AsyncState<T> =
@@ -97,6 +99,9 @@ export default function PracticeSettingGovernance({
   const [effectiveSettings, setEffectiveSettings] = useState<
     Map<string, EffectivePracticeSettingItem>
   >(new Map());
+  const [registryState, setRegistryState] = useState<
+    AsyncState<Map<string, PracticeSettingRegistryItem>>
+  >({ status: "loading" });
 
   const settingByKey = useMemo(
     () => new Map(settings.map((setting) => [setting.key, setting])),
@@ -161,6 +166,30 @@ export default function PracticeSettingGovernance({
       active = false;
     };
   }, [defaultFacilityId, sessionId, settings]);
+
+  useEffect(() => {
+    let active = true;
+    void getPracticeSettingRegistry(sessionId)
+      .then((result) => {
+        if (active) {
+          setRegistryState({
+            status: "ready",
+            data: new Map(result.items.map((item) => [item.key, item])),
+          });
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setRegistryState({
+            status: "error",
+            message: errorMessage(error, "Could not load the configuration registry."),
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     if (proposal.settingKey || settings.length === 0) return;
@@ -385,9 +414,23 @@ export default function PracticeSettingGovernance({
         this screen.
       </div>
 
+      <div className="practice-governance-boundary" role="note">
+        <strong>Local configuration registry:</strong>{" "}
+        {registryState.status === "loading" && "loading metadata…"}
+        {registryState.status === "error" && registryState.message}
+        {registryState.status === "ready" &&
+          "every adopted setting is non-secret, permits system/facility scope, and explicitly prohibits break-glass activation."}
+      </div>
+
       <div className="practice-setting-grid" aria-label="Active practice settings">
         {settings.map((setting) => (
           <article className="practice-setting-card" key={setting.key}>
+            {registryState.status === "ready" && registryState.data.get(setting.key) && (
+              <p className="cl-empty-text">
+                Registry: {registryState.data.get(setting.key)?.impactClass} ·{" "}
+                {registryState.data.get(setting.key)?.allowedScopes.join(" / ")} · no break-glass
+              </p>
+            )}
             {effectiveSettings.get(setting.key) && (
               <p className="cl-empty-text">
                 Effective source: {effectiveSettings.get(setting.key)?.sourceScope}

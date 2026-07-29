@@ -30,6 +30,54 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return new PracticeSettingsResponse(settings);
     }
 
+    public Task<PracticeSettingRegistryResponse> GetPracticeSettingRegistryAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(new PracticeSettingRegistryResponse(
+            "local-practice-setting-registry-v1",
+            [
+                new(
+                    "practice.name",
+                    "Practice name",
+                    "modernized practice_settings",
+                    "non-secret",
+                    ["system", "facility"],
+                    "single product owner",
+                    "local administrator; independent approver policy pending",
+                    "System revisions support rollback; facility scope requires a new governed corrective request.",
+                    "operational identity",
+                    false,
+                    false,
+                    false,
+                    "partial: exact facility/staff reach; no direct forms/rules/modules/client binding"),
+                new(
+                    "practice.default-facility-id",
+                    "Default facility",
+                    "modernized practice_settings",
+                    "non-secret",
+                    ["system", "facility"],
+                    "single product owner",
+                    "local administrator; independent approver policy pending",
+                    "System revisions support rollback; facility scope requires a new governed corrective request.",
+                    "operational routing",
+                    false,
+                    false,
+                    false,
+                    "partial: exact facility/staff reach; no direct forms/rules/modules/client binding"),
+                new(
+                    "practice.time-zone",
+                    "Time zone",
+                    "modernized practice_settings",
+                    "non-secret",
+                    ["system", "facility"],
+                    "single product owner",
+                    "local administrator; independent approver policy pending",
+                    "System revisions support rollback; facility scope requires a new governed corrective request.",
+                    "schedule display",
+                    false,
+                    false,
+                    false,
+                    "partial: exact facility/staff and future appointment-view reach; no direct forms/rules/modules/client binding")
+            ]));
+
     public async Task<EffectivePracticeSettingsResponse> GetEffectivePracticeSettingsAsync(int? facilityId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
