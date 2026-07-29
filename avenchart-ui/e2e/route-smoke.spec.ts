@@ -68,15 +68,48 @@ test.describe("route smoke", () => {
           await expect(trigger).toBeVisible();
           await trigger.click();
           const drawer = page.getByRole("dialog", { name: "Main navigation" });
+          const navigation = drawer.getByRole("navigation", {
+            name: "Mobile navigation",
+          });
+          const destinations = await navigation
+            .getByRole("link")
+            .evaluateAll((links) =>
+              links.map((link) => new URL((link as HTMLAnchorElement).href).pathname),
+            );
+          expect(destinations).toEqual(
+            clinicianRoutes.filter((path) => path !== "/clinician/encounters/new"),
+          );
           await expect(
             drawer.getByRole("link", { name: "Patients" }),
           ).toBeVisible();
           await expect(
             drawer.getByRole("button", { name: "Sign out" }),
           ).toBeVisible();
+          await expect(
+            drawer.getByRole("button", { name: "Notifications" }),
+          ).toBeVisible();
+          await expect(drawer.locator(".sidebar-user-name")).not.toHaveText("");
+          await expect(drawer.locator(".sidebar-user-role")).not.toHaveText("");
+          await expect(
+            drawer.getByRole("button", { name: "Close navigation" }),
+          ).toBeFocused();
+          await expect
+            .poll(() => page.evaluate(() => document.body.style.overflow))
+            .toBe("hidden");
+          await page.keyboard.press("Shift+Tab");
+          await expect(
+            drawer.getByRole("button", { name: "Sign out" }),
+          ).toBeFocused();
+          await page.keyboard.press("Tab");
+          await expect(
+            drawer.getByRole("button", { name: "Close navigation" }),
+          ).toBeFocused();
           await page.keyboard.press("Escape");
           await expect(drawer).toBeHidden();
           await expect(trigger).toBeFocused();
+          await expect
+            .poll(() => page.evaluate(() => document.body.style.overflow))
+            .toBe("");
         } else {
           await expect(
             page.getByRole("navigation", { name: "Main navigation" }),
@@ -88,6 +121,105 @@ test.describe("route smoke", () => {
       });
     }
 
+    await signOutClinician(page);
+  });
+
+  test("clinician navigation remains operable at 200 and 400 percent reflow equivalents", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop-chromium");
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/clinician\/dashboard$/, {
+      timeout: 15_000,
+    });
+
+    for (const reflow of [
+      { label: "200%", width: 640, height: 450 },
+      { label: "400%", width: 320, height: 225 },
+    ]) {
+      await test.step(reflow.label, async () => {
+        await page.setViewportSize({
+          width: reflow.width,
+          height: reflow.height,
+        });
+        const trigger = page.getByRole("button", { name: "Open navigation" });
+        await expect(trigger).toBeVisible();
+        await trigger.click();
+        const drawer = page.getByRole("dialog", { name: "Main navigation" });
+        await expect(drawer).toBeVisible();
+        await expect(drawer.getByRole("link", { name: "Inventory" })).toBeVisible();
+        await expect(
+          drawer.getByRole("button", { name: "Notifications" }),
+        ).toBeVisible();
+        await expect(
+          drawer.getByRole("button", { name: "Sign out" }),
+        ).toBeVisible();
+        const drawerBox = await drawer.boundingBox();
+        expect(drawerBox).not.toBeNull();
+        expect(drawerBox!.x).toBeGreaterThanOrEqual(0);
+        expect(drawerBox!.x + drawerBox!.width).toBeLessThanOrEqual(reflow.width);
+
+        await drawer.getByRole("link", { name: "Inventory" }).click();
+        await expect(page).toHaveURL(/\/clinician\/inventory$/);
+        await expect(drawer).toBeHidden();
+        await expect(trigger).toBeVisible();
+      });
+    }
+
+    await signOutClinician(page);
+  });
+
+  test("clinician navigation respects reduced-motion preference", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop-chromium");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/clinician\/dashboard$/, {
+      timeout: 15_000,
+    });
+
+    const trigger = page.getByRole("button", { name: "Open navigation" });
+    await trigger.click();
+    await expect(
+      page.getByRole("dialog", { name: "Main navigation" }),
+    ).toBeVisible();
+
+    const motion = await page.evaluate(() => {
+      const durationMs = (value: string) =>
+        value.split(",").map((part) => {
+          const duration = part.trim();
+          return duration.endsWith("ms")
+            ? Number.parseFloat(duration)
+            : Number.parseFloat(duration) * 1_000;
+        });
+      const styles = [...document.querySelectorAll<HTMLElement>("*")].map(
+        (element) => getComputedStyle(element),
+      );
+      return {
+        matches: matchMedia("(prefers-reduced-motion: reduce)").matches,
+        scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+        maximumAnimationMs: Math.max(
+          0,
+          ...styles.flatMap((style) => durationMs(style.animationDuration)),
+        ),
+        maximumTransitionMs: Math.max(
+          0,
+          ...styles.flatMap((style) => durationMs(style.transitionDuration)),
+        ),
+      };
+    });
+
+    expect(motion.matches).toBe(true);
+    expect(motion.scrollBehavior).toBe("auto");
+    expect(motion.maximumAnimationMs).toBeLessThanOrEqual(0.01);
+    expect(motion.maximumTransitionMs).toBeLessThanOrEqual(0.01);
+
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
     await signOutClinician(page);
   });
 
