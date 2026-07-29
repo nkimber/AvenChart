@@ -233,6 +233,18 @@ public sealed record PracticeSettingChangeRequestDetailResponse(
     PracticeSettingChangeRequestItem Request,
     PracticeSettingItem Setting,
     IReadOnlyList<PracticeSettingChangeRequestEvent> Events);
+public sealed record PracticeSettingImpactPreviewItem(
+    string ResourceType,
+    bool PreviewAvailable,
+    int? AffectedCount,
+    string Detail);
+public sealed record PracticeSettingImpactPreviewResponse(
+    Guid RequestId,
+    string SettingKey,
+    string Scope,
+    int? FacilityId,
+    string GeneratedAt,
+    IReadOnlyList<PracticeSettingImpactPreviewItem> Impacts);
 public sealed class PracticeSettingChangeRequestConflictException(string message) : Exception(message);
 
 public sealed record CodingCatalogItem(string Key, string DisplayName, int Sequence, bool Active, bool ClaimEnabled, bool FeeEnabled, int ModifierLength, string UpdatedAt, string UpdatedBy);

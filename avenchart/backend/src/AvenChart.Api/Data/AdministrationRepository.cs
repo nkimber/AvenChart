@@ -954,6 +954,84 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             events);
     }
 
+    public async Task<PracticeSettingImpactPreviewResponse> GetPracticeSettingChangeRequestImpactPreviewAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var request = await GetPracticeSettingChangeRequestAsync(connection, requestId, cancellationToken)
+            ?? throw new ArgumentException("The requested practice-setting change request was not found.");
+        var facilityId = request.FacilityId;
+        var activeFacilities = await GetPracticeSettingImpactCountAsync(
+            connection,
+            "select count(*)::integer from facilities where inactive = false and (@facilityId is null or id = @facilityId);",
+            facilityId,
+            cancellationToken);
+        var activeStaff = await GetPracticeSettingImpactCountAsync(
+            connection,
+            "select count(*)::integer from staff where active = true and (@facilityId is null or facility_id = @facilityId);",
+            facilityId,
+            cancellationToken);
+        var futureAppointments = await GetPracticeSettingImpactCountAsync(
+            connection,
+            "select count(*)::integer from appointments where appointment_date >= current_date and (@facilityId is null or facility_id = @facilityId);",
+            facilityId,
+            cancellationToken);
+        var scope = facilityId is null ? "system" : "facility";
+        var appointmentsAvailable = request.SettingKey == "practice.time-zone";
+        var impacts = new List<PracticeSettingImpactPreviewItem>
+        {
+            new(
+                "Active facilities",
+                true,
+                activeFacilities,
+                facilityId is null
+                    ? "All active facilities inherit a system-scope change unless a more-specific override wins."
+                    : "Only the requested active facility is in this local override scope."),
+            new(
+                "Active staff",
+                true,
+                activeStaff,
+                facilityId is null
+                    ? "Current active staff are within the system setting's operational reach."
+                    : "Only active staff assigned to the requested facility are counted."),
+            new(
+                "Future appointment views",
+                appointmentsAvailable,
+                appointmentsAvailable ? futureAppointments : null,
+                appointmentsAvailable
+                    ? "Scheduled appointments in scope can display a different local time-zone value; no appointment row is changed."
+                    : "This setting has no modeled direct binding to existing appointment rows, so no appointment impact count is claimed."),
+            new(
+                "Active form layouts",
+                false,
+                null,
+                "No local binding maps this practice setting to form layouts; the preview deliberately does not infer an affected-form count."),
+            new(
+                "Active clinical alert rules",
+                false,
+                null,
+                "No local binding maps this practice setting to alert rules; the preview deliberately does not infer an affected-rule count."),
+            new(
+                "Active modules",
+                false,
+                null,
+                "No local binding maps this practice setting to module activation; the preview deliberately does not infer an affected-module count."),
+            new(
+                "Active API clients",
+                false,
+                null,
+                "No local binding maps this non-secret practice setting to API-client registration; the preview deliberately does not infer an affected-client count.")
+        };
+        return new PracticeSettingImpactPreviewResponse(
+            request.RequestId,
+            request.SettingKey,
+            scope,
+            facilityId,
+            DateTimeOffset.UtcNow.ToString("O"),
+            impacts);
+    }
+
     public Task<PracticeSettingChangeRequestDetailResponse> SubmitPracticeSettingChangeRequestAsync(
         Guid requestId,
         string? note,
@@ -1353,6 +1431,18 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         return await reader.ReadAsync(cancellationToken)
             ? ReadPracticeSettingChangeRequest(reader)
             : null;
+    }
+
+    private static async Task<int> GetPracticeSettingImpactCountAsync(
+        NpgsqlConnection connection,
+        string sql,
+        int? facilityId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.Add("facilityId", NpgsqlDbType.Integer).Value = (object?)facilityId ?? DBNull.Value;
+        return (int)(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
     private static async Task<PracticeSettingChangeRequestCounts> GetPracticeSettingChangeRequestCountsAsync(

@@ -9,9 +9,11 @@ import {
   createPracticeSettingChangeRequest,
   getEffectivePracticeSettings,
   getPracticeSettingChangeRequest,
+  getPracticeSettingChangeRequestImpactPreview,
   getPracticeSettingChangeRequests,
   transitionPracticeSettingChangeRequest,
   type EffectivePracticeSettingItem,
+  type PracticeSettingImpactPreview,
   type PracticeSettingChangeRequestAction,
   type PracticeSettingChangeRequestDetail,
   type PracticeSettingChangeRequestsResponse,
@@ -86,6 +88,8 @@ export default function PracticeSettingGovernance({
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [detailState, setDetailState] =
     useState<AsyncState<PracticeSettingChangeRequestDetail> | null>(null);
+  const [impactState, setImpactState] =
+    useState<AsyncState<PracticeSettingImpactPreview> | null>(null);
   const [transitionNote, setTransitionNote] = useState("");
   const [transitioning, setTransitioning] =
     useState<PracticeSettingChangeRequestAction | null>(null);
@@ -226,6 +230,21 @@ export default function PracticeSettingGovernance({
         },
       );
       setDetailState({ status: "ready", data: detail });
+      setImpactState({ status: "loading" });
+      try {
+        setImpactState({
+          status: "ready",
+          data: await getPracticeSettingChangeRequestImpactPreview(
+            sessionId,
+            detail.request.requestId,
+          ),
+        });
+      } catch (error) {
+        setImpactState({
+          status: "error",
+          message: errorMessage(error, "Could not calculate the local impact preview."),
+        });
+      }
       setTransitionNote("");
       setTransitionError(null);
       setShowProposal(false);
@@ -242,18 +261,22 @@ export default function PracticeSettingGovernance({
 
   async function openRequest(requestId: string) {
     setDetailState({ status: "loading" });
+    setImpactState({ status: "loading" });
     setTransitionError(null);
     setTransitionNote("");
     try {
-      setDetailState({
-        status: "ready",
-        data: await getPracticeSettingChangeRequest(sessionId, requestId),
-      });
+      const [detail, impact] = await Promise.all([
+        getPracticeSettingChangeRequest(sessionId, requestId),
+        getPracticeSettingChangeRequestImpactPreview(sessionId, requestId),
+      ]);
+      setDetailState({ status: "ready", data: detail });
+      setImpactState({ status: "ready", data: impact });
     } catch (error) {
       setDetailState({
         status: "error",
         message: errorMessage(error, "Could not load the change request."),
       });
+      setImpactState(null);
     }
   }
 
@@ -282,6 +305,13 @@ export default function PracticeSettingGovernance({
         },
       );
       setDetailState({ status: "ready", data: next });
+      setImpactState({
+        status: "ready",
+        data: await getPracticeSettingChangeRequestImpactPreview(
+          sessionId,
+          next.request.requestId,
+        ),
+      });
       setTransitionNote("");
       setRefreshVersion((version) => version + 1);
       if (action === "activate") {
@@ -756,6 +786,31 @@ export default function PracticeSettingGovernance({
           <p className="practice-request-reason">
             <strong>Reason:</strong> {detailState.data.request.reason}
           </p>
+
+          <section className="practice-governance-boundary" aria-label="Configuration impact preview">
+            <strong>Impact preview</strong>
+            {impactState?.status === "loading" && <p>Calculating local impact…</p>}
+            {impactState?.status === "error" && <p>{impactState.message}</p>}
+            {impactState?.status === "ready" && (
+              <>
+                <p>
+                  Generated {formatDateTime(impactState.data.generatedAt)} for {impactState.data.scope}
+                  {impactState.data.facilityId ? ` facility ${impactState.data.facilityId}` : " scope"}.
+                </p>
+                <ul className="practice-request-events">
+                  {impactState.data.impacts.map((impact) => (
+                    <li key={impact.resourceType}>
+                      <strong>{impact.resourceType}:</strong>{" "}
+                      {impact.previewAvailable
+                        ? `${impact.affectedCount ?? 0} locally countable`
+                        : "No local preview available"}
+                      <small>{impact.detail}</small>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
 
           {canCancel && (
             <div className="practice-transition-panel">

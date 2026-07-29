@@ -6060,6 +6060,8 @@ administration.MapGet("/practice-setting-change-requests", async (
     .WithName("GetPracticeSettingChangeRequests");
 administration.MapGet("/practice-setting-change-requests/{requestId:guid}", async (AdministrationRepository repository, Guid requestId, CancellationToken cancellationToken) =>
 { try { return Results.Ok(await repository.GetPracticeSettingChangeRequestAsync(requestId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } }).WithName("GetPracticeSettingChangeRequest");
+administration.MapGet("/practice-setting-change-requests/{requestId:guid}/impact-preview", async (AdministrationRepository repository, Guid requestId, CancellationToken cancellationToken) =>
+{ try { return Results.Ok(await repository.GetPracticeSettingChangeRequestImpactPreviewAsync(requestId, cancellationToken)); } catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); } }).WithName("GetPracticeSettingChangeRequestImpactPreview");
 administration.MapPost("/practice-settings/{key}/change-requests", async (
         AdministrationRepository repository,
         AuthRepository authRepository,

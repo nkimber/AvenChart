@@ -6989,6 +6989,20 @@ export type PracticeSettingChangeRequestDetail = {
   setting: PracticeSettingItem
   events: PracticeSettingChangeRequestEvent[]
 }
+export type PracticeSettingImpactPreviewItem = {
+  resourceType: string
+  previewAvailable: boolean
+  affectedCount: number | null
+  detail: string
+}
+export type PracticeSettingImpactPreview = {
+  requestId: string
+  settingKey: string
+  scope: 'system' | 'facility'
+  facilityId: number | null
+  generatedAt: string
+  impacts: PracticeSettingImpactPreviewItem[]
+}
 export type PracticeSettingChangeRequestAction =
   | 'submit'
   | 'approve'
@@ -7026,6 +7040,18 @@ export async function getPracticeSettingChangeRequest(
   return clinicianGet(
     sessionId,
     `/api/administration/practice-setting-change-requests/${encodeURIComponent(requestId)}`,
+    signal,
+  )
+}
+
+export async function getPracticeSettingChangeRequestImpactPreview(
+  sessionId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<PracticeSettingImpactPreview> {
+  return clinicianGet(
+    sessionId,
+    `/api/administration/practice-setting-change-requests/${encodeURIComponent(requestId)}/impact-preview`,
     signal,
   )
 }
