@@ -186,6 +186,7 @@ export type GovernedReportExecutionPolicy = {
     facilityCode: string | null;
     assignedPatientCount: number;
   };
+  operatorAccess: boolean;
   deliveryModes: string[];
   maximumDateSpanDays: number;
   maximumRows: number;
@@ -315,6 +316,62 @@ export type GovernedReportRunList = {
   page: number;
   pageSize: number;
   total: number;
+};
+
+export type GovernedReportOperationsSummary = {
+  totalRuns: number;
+  statusCounts: Record<string, number>;
+  queuedReady: number;
+  queuedDelayed: number;
+  runningWithLease: number;
+  overdueLeases: number;
+  pendingCancellations: number;
+  retryableFailures: number;
+  permanentFailures: number;
+  queueExpired: number;
+  artifactExpired: number;
+  completedLast24Hours: number;
+  failedLast24Hours: number;
+  p95CompletedDurationMs: number | null;
+  oldestQueuedAt: string | null;
+};
+
+export type GovernedReportOperationsAlert = {
+  code: string;
+  severity: string;
+  count: number;
+  message: string;
+  oldestAt: string | null;
+};
+
+export type GovernedReportOperationsResponse = {
+  revision: string;
+  generatedAt: string;
+  health: string;
+  pollIntervalSeconds: number;
+  productionApproved: boolean;
+  statuses: string[];
+  families: string[];
+  attentionConditions: string[];
+  summary: GovernedReportOperationsSummary;
+  alerts: GovernedReportOperationsAlert[];
+  runs: GovernedReportRun[];
+  page: number;
+  pageSize: number;
+  total: number;
+  productionBlockers: string[];
+};
+
+export type GovernedReportOperationsFilters = {
+  search?: string;
+  status?: string;
+  family?: string;
+  requestedBy?: string;
+  attentionOnly?: boolean;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 function headers(sessionId: string, json = false) {
@@ -508,6 +565,41 @@ export async function getGovernedReportRun(
 ): Promise<GovernedReportRunDetail> {
   const response = await apiFetch(
     `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as GovernedReportRunDetail;
+}
+
+export async function getGovernedReportOperations(
+  sessionId: string,
+  filters: GovernedReportOperationsFilters = {},
+  signal?: AbortSignal,
+): Promise<GovernedReportOperationsResponse> {
+  const query = new URLSearchParams({
+    page: String(filters.page ?? 1),
+    pageSize: String(filters.pageSize ?? 20),
+  });
+  if (filters.search) query.set("search", filters.search);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.family) query.set("family", filters.family);
+  if (filters.requestedBy) query.set("requestedBy", filters.requestedBy);
+  if (filters.attentionOnly) query.set("attentionOnly", "true");
+  if (filters.from) query.set("from", filters.from);
+  if (filters.to) query.set("to", filters.to);
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/operations/runs?${query}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as GovernedReportOperationsResponse;
+}
+
+export async function getGovernedReportOperationsRun(
+  sessionId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<GovernedReportRunDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/operations/runs/${encodeURIComponent(runId)}`,
     { headers: headers(sessionId), signal },
   );
   return (await response.json()) as GovernedReportRunDetail;

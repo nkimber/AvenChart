@@ -20,6 +20,8 @@ public sealed class ReportExecutionRepository(
     private const string DefinitionRevision = "local-report-definition-v1";
     private const string ScopeRevision = "local-report-scope-v1";
     private const string QueueRevision = "local-report-queue-v1";
+    private const string OperationsRevision = "local-report-operations-v1";
+    private const int OperationsPollIntervalSeconds = 5;
     private const int MaximumDateSpanDays = 366;
     private const int MaximumRows = 5000;
     private const int PreviewRows = 10;
@@ -32,6 +34,8 @@ public sealed class ReportExecutionRepository(
     private static readonly string[] ExecutableRowPolicies =
         ["practice-wide", "facility-scoped", "patient-assigned"];
     private static readonly string[] DeliveryModes = ["local-download"];
+    private static readonly string[] ReportFamilies =
+        ["operational", "patients", "appointments", "encounters", "referrals", "chart-tracker", "inventory"];
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>>
         RowPolicyFamilySupport =
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
@@ -46,6 +50,7 @@ public sealed class ReportExecutionRepository(
 
     public async Task<GovernedReportExecutionPolicy> GetPolicyAsync(
         string actor,
+        bool operatorAccess,
         CancellationToken cancellationToken)
     {
         var watermark = await GetWatermarkAsync(cancellationToken);
@@ -69,6 +74,7 @@ public sealed class ReportExecutionRepository(
                 "active patient_care_teams and patient_care_team_members"
             ],
             actorScope,
+            operatorAccess,
             DeliveryModes,
             MaximumDateSpanDays,
             MaximumRows,
@@ -349,6 +355,171 @@ public sealed class ReportExecutionRepository(
         return new(runs, page, pageSize, total);
     }
 
+    public async Task<GovernedReportOperationsResponse> GetOperationsAsync(
+        string actor,
+        string? search,
+        string? status,
+        string? family,
+        string? requestedBy,
+        bool attentionOnly,
+        DateOnly? from,
+        DateOnly? to,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var normalizedActor = NormalizeUsername(actor, "Authenticated actor");
+        var normalizedSearch = NormalizeOperationsFilter(search, "Search", 100);
+        var normalizedStatus = NormalizeOperationsFilter(status, "Status", 20)
+            .ToLowerInvariant();
+        var normalizedFamily = NormalizeOperationsFilter(family, "Family", 30)
+            .ToLowerInvariant();
+        var normalizedRequester =
+            NormalizeOperationsFilter(requestedBy, "Requester", 100);
+        if (normalizedStatus.Length > 0 &&
+            !RunStates.Contains(normalizedStatus, StringComparer.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Status must be one of: {string.Join(", ", RunStates)}.");
+        }
+        if (normalizedFamily.Length > 0 &&
+            !ReportFamilies.Contains(normalizedFamily, StringComparer.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Family must be one of: {string.Join(", ", ReportFamilies)}.");
+        }
+        if (from.HasValue && to.HasValue)
+        {
+            if (from.Value > to.Value)
+            {
+                throw new ArgumentException(
+                    "Operations from date must be on or before the to date.");
+            }
+            if (to.Value.DayNumber - from.Value.DayNumber > MaximumDateSpanDays)
+            {
+                throw new ArgumentException(
+                    $"Operations date range cannot exceed {MaximumDateSpanDays} days.");
+            }
+        }
+
+        page = Math.Clamp(page, 1, 100_000);
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var generatedAt = DateTimeOffset.UtcNow;
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        var summary = await ReadOperationsSummaryAsync(
+            connection,
+            generatedAt,
+            cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {RunSelect}
+            where (
+                @search = ''
+                or lower(run.run_id) like @search_like
+                or lower(definition.stable_key) like @search_like
+                or lower(coalesce(revision.title, definition.name)) like @search_like
+                or lower(coalesce(run.failure_code, '')) like @search_like
+              )
+              and (@status = '' or run.status = @status)
+              and (
+                @family = ''
+                or coalesce(revision.report_family, definition.report_type) = @family
+              )
+              and (
+                @requester = ''
+                or lower(run.ran_by) = lower(@requester)
+              )
+              and (@from_date is null or run.ran_at >= @from_date)
+              and (
+                @to_date is null
+                or run.ran_at < (@to_date::date + interval '1 day')
+              )
+              and (
+                not @attention_only
+                or run.status = 'failed'
+                or (
+                  run.status = 'expired'
+                  and run.failure_code = 'queue-expired'
+                )
+                or (
+                  run.status = 'running'
+                  and (
+                    run.cancel_requested_at is not null
+                    or run.lease_expires_at is null
+                    or run.lease_expires_at <= @generated_at
+                  )
+                )
+                or (
+                  run.status = 'queued'
+                  and run.queue_expires_at <= @generated_at
+                )
+              )
+            order by run.ran_at desc, run.run_id desc
+            offset @offset limit @limit;
+            """;
+        command.Parameters.AddWithValue("search", normalizedSearch);
+        command.Parameters.AddWithValue(
+            "search_like",
+            $"%{normalizedSearch.ToLowerInvariant()}%");
+        command.Parameters.AddWithValue("status", normalizedStatus);
+        command.Parameters.AddWithValue("family", normalizedFamily);
+        command.Parameters.AddWithValue("requester", normalizedRequester);
+        command.Parameters.Add("from_date", NpgsqlDbType.Date).Value =
+            from.HasValue ? from.Value : DBNull.Value;
+        command.Parameters.Add("to_date", NpgsqlDbType.Date).Value =
+            to.HasValue ? to.Value : DBNull.Value;
+        command.Parameters.AddWithValue("attention_only", attentionOnly);
+        command.Parameters.AddWithValue("generated_at", generatedAt);
+        command.Parameters.AddWithValue("offset", (page - 1) * pageSize);
+        command.Parameters.AddWithValue("limit", pageSize);
+
+        var runs = new List<GovernedReportRunItem>();
+        var total = 0;
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            runs.Add(ReadRun(reader, replay: false, normalizedActor));
+            total = reader.GetInt32(reader.GetOrdinal("total_count"));
+        }
+
+        var alerts = BuildOperationsAlerts(summary);
+        var health = summary.OverdueLeases > 0
+            ? "critical"
+            : alerts.Count > 0
+                ? "attention"
+                : "healthy";
+        return new(
+            OperationsRevision,
+            generatedAt.ToString("O"),
+            health,
+            OperationsPollIntervalSeconds,
+            ProductionApproved: false,
+            RunStates,
+            ReportFamilies,
+            [
+                "failed runs",
+                "queue-expired requests",
+                "running requests with overdue or missing leases",
+                "running requests with pending cancellation",
+                "queued requests past their queue deadline"
+            ],
+            summary,
+            alerts,
+            runs,
+            page,
+            pageSize,
+            total,
+            [
+                "This is a local read-only operations projection, not an approved production monitoring or alert service.",
+                "Alert thresholds, notification channels, on-call ownership, escalation, and incident severity policy are not approved.",
+                "Operators cannot cancel, retry, or download another requester's artifact through this surface.",
+                "Production telemetry retention, protected-data minimization, export, legal hold, and audit integration remain open."
+            ]);
+    }
+
     public async Task<GovernedReportRunDetail?> GetRunAsync(
         string runId,
         string actor,
@@ -366,32 +537,39 @@ public sealed class ReportExecutionRepository(
             return null;
         }
 
-        var events = new List<GovernedReportRunEvent>();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            select event_id, run_id, action, from_status, to_status,
-                   actor_username, reason, occurred_at, details
-            from saved_report_run_events
-            where run_id = @run
-            order by occurred_at, event_id;
-            """;
-        command.Parameters.AddWithValue("run", normalizedRunId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        return new(
+            run,
+            await ReadRunEventsAsync(
+                connection,
+                normalizedRunId,
+                cancellationToken));
+    }
+
+    public async Task<GovernedReportRunDetail?> GetOperatorRunAsync(
+        string runId,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        var normalizedRunId = NormalizeRunId(runId);
+        var normalizedActor = NormalizeUsername(actor, "Authenticated actor");
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        var run = await ReadRunByIdAsync(
+            connection,
+            normalizedRunId,
+            normalizedActor,
+            cancellationToken);
+        if (run is null)
         {
-            events.Add(new(
-                reader.GetGuid(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.GetString(4),
-                reader.GetString(5),
-                reader.GetString(6),
-                reader.GetFieldValue<DateTimeOffset>(7).ToString("O"),
-                DeserializeJsonElements(reader.GetString(8))));
+            return null;
         }
 
-        return new(run, events);
+        return new(
+            run,
+            await ReadRunEventsAsync(
+                connection,
+                normalizedRunId,
+                cancellationToken));
     }
 
     public async Task<GovernedReportRunDetail?> CancelAsync(
@@ -1121,6 +1299,243 @@ public sealed class ReportExecutionRepository(
         var detail = await GetRunAsync(runId, actor, cancellationToken)
             ?? throw new InvalidOperationException("Idempotent report run could not be reloaded.");
         return (fingerprint, detail);
+    }
+
+    private static string NormalizeOperationsFilter(
+        string? value,
+        string field,
+        int maximumLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (normalized.Length > maximumLength)
+        {
+            throw new ArgumentException(
+                $"{field} cannot exceed {maximumLength} characters.");
+        }
+        if (normalized.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                $"{field} cannot contain control characters.");
+        }
+        return normalized;
+    }
+
+    private static async Task<GovernedReportOperationsSummary>
+        ReadOperationsSummaryAsync(
+            NpgsqlConnection connection,
+            DateTimeOffset generatedAt,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              count(*)::integer as total_runs,
+              jsonb_build_object(
+                'queued', count(*) filter (where status='queued'),
+                'running', count(*) filter (where status='running'),
+                'completed', count(*) filter (where status='completed'),
+                'failed', count(*) filter (where status='failed'),
+                'cancelled', count(*) filter (where status='cancelled'),
+                'expired', count(*) filter (where status='expired')
+              )::text as status_counts,
+              count(*) filter (
+                where status='queued'
+                  and coalesce(next_attempt_at, ran_at) <= @generated_at
+              )::integer as queued_ready,
+              count(*) filter (
+                where status='queued'
+                  and coalesce(next_attempt_at, ran_at) > @generated_at
+              )::integer as queued_delayed,
+              count(*) filter (
+                where status='running'
+                  and lease_expires_at > @generated_at
+              )::integer as running_with_lease,
+              count(*) filter (
+                where status='running'
+                  and (
+                    lease_expires_at is null
+                    or lease_expires_at <= @generated_at
+                  )
+              )::integer as overdue_leases,
+              count(*) filter (
+                where status='running'
+                  and cancel_requested_at is not null
+              )::integer as pending_cancellations,
+              count(*) filter (
+                where status='failed'
+                  and failure_retryable=true
+              )::integer as retryable_failures,
+              count(*) filter (
+                where status='failed'
+                  and coalesce(failure_retryable, false)=false
+              )::integer as permanent_failures,
+              count(*) filter (
+                where status='expired'
+                  and failure_code='queue-expired'
+              )::integer as queue_expired,
+              count(*) filter (
+                where artifact_expired_at is not null
+              )::integer as artifact_expired,
+              count(*) filter (
+                where result_checksum is not null
+                  and finished_at >= @generated_at-interval '24 hours'
+              )::integer as completed_last_24_hours,
+              count(*) filter (
+                where (
+                    status='failed'
+                    or (
+                      status='expired'
+                      and failure_code='queue-expired'
+                    )
+                  )
+                  and finished_at >= @generated_at-interval '24 hours'
+              )::integer as failed_last_24_hours,
+              (
+                percentile_cont(0.95) within group (order by duration_ms)
+                filter (
+                  where result_checksum is not null
+                    and duration_ms is not null
+                )
+              )::integer as p95_completed_duration_ms,
+              min(ran_at) filter (where status='queued') as oldest_queued_at
+            from saved_report_runs;
+            """;
+        command.Parameters.AddWithValue("generated_at", generatedAt);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "The report operations summary could not be read.");
+        }
+
+        var statusCounts =
+            JsonSerializer.Deserialize<Dictionary<string, int>>(
+                reader.GetString(1),
+                JsonOptions) ?? [];
+        return new(
+            reader.GetInt32(0),
+            statusCounts,
+            reader.GetInt32(2),
+            reader.GetInt32(3),
+            reader.GetInt32(4),
+            reader.GetInt32(5),
+            reader.GetInt32(6),
+            reader.GetInt32(7),
+            reader.GetInt32(8),
+            reader.GetInt32(9),
+            reader.GetInt32(10),
+            reader.GetInt32(11),
+            reader.GetInt32(12),
+            reader.IsDBNull(13) ? null : reader.GetInt32(13),
+            reader.IsDBNull(14)
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(14).ToString("O"));
+    }
+
+    private static IReadOnlyList<GovernedReportOperationsAlert>
+        BuildOperationsAlerts(GovernedReportOperationsSummary summary)
+    {
+        var alerts = new List<GovernedReportOperationsAlert>();
+        if (summary.OverdueLeases > 0)
+        {
+            alerts.Add(new(
+                "overdue-worker-lease",
+                "critical",
+                summary.OverdueLeases,
+                "Running reports have a missing or expired worker lease.",
+                null));
+        }
+        if (summary.PendingCancellations > 0)
+        {
+            alerts.Add(new(
+                "pending-cancellation",
+                "warning",
+                summary.PendingCancellations,
+                "Running reports are waiting for cancellation to settle.",
+                null));
+        }
+        if (summary.RetryableFailures > 0)
+        {
+            alerts.Add(new(
+                "retryable-failure",
+                "warning",
+                summary.RetryableFailures,
+                "Requester-actionable retryable failures need review.",
+                null));
+        }
+        if (summary.PermanentFailures > 0)
+        {
+            alerts.Add(new(
+                "permanent-failure",
+                "warning",
+                summary.PermanentFailures,
+                "Permanent report failures need policy or data review.",
+                null));
+        }
+        if (summary.QueueExpired > 0)
+        {
+            alerts.Add(new(
+                "queue-expired",
+                "warning",
+                summary.QueueExpired,
+                "Report requests expired before a worker could start them.",
+                null));
+        }
+        return alerts;
+    }
+
+    private async Task<GovernedReportRunItem?> ReadRunByIdAsync(
+        NpgsqlConnection connection,
+        string runId,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {RunSelect}
+            where run.run_id = @run;
+            """;
+        command.Parameters.AddWithValue("run", runId);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? ReadRun(reader, replay: false, actor)
+            : null;
+    }
+
+    private static async Task<IReadOnlyList<GovernedReportRunEvent>>
+        ReadRunEventsAsync(
+            NpgsqlConnection connection,
+            string runId,
+            CancellationToken cancellationToken)
+    {
+        var events = new List<GovernedReportRunEvent>();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select event_id, run_id, action, from_status, to_status,
+                   actor_username, reason, occurred_at, details
+            from saved_report_run_events
+            where run_id = @run
+            order by occurred_at, event_id;
+            """;
+        command.Parameters.AddWithValue("run", runId);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetFieldValue<DateTimeOffset>(7).ToString("O"),
+                DeserializeJsonElements(reader.GetString(8))));
+        }
+        return events;
     }
 
     private async Task<GovernedReportRunItem?> ReadAuthorizedRunAsync(

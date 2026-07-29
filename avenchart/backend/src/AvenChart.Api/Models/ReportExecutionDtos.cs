@@ -16,6 +16,7 @@ public sealed record GovernedReportExecutionPolicy(
     IReadOnlyDictionary<string, IReadOnlyList<string>> RowPolicyFamilySupport,
     IReadOnlyList<string> ScopeSources,
     GovernedReportActorScope CurrentActorScope,
+    bool OperatorAccess,
     IReadOnlyList<string> DeliveryModes,
     int MaximumDateSpanDays,
     int MaximumRows,
@@ -162,6 +163,47 @@ public sealed record GovernedReportRunListResponse(
     int Page,
     int PageSize,
     int Total);
+
+public sealed record GovernedReportOperationsSummary(
+    int TotalRuns,
+    IReadOnlyDictionary<string, int> StatusCounts,
+    int QueuedReady,
+    int QueuedDelayed,
+    int RunningWithLease,
+    int OverdueLeases,
+    int PendingCancellations,
+    int RetryableFailures,
+    int PermanentFailures,
+    int QueueExpired,
+    int ArtifactExpired,
+    int CompletedLast24Hours,
+    int FailedLast24Hours,
+    int? P95CompletedDurationMs,
+    string? OldestQueuedAt);
+
+public sealed record GovernedReportOperationsAlert(
+    string Code,
+    string Severity,
+    int Count,
+    string Message,
+    string? OldestAt);
+
+public sealed record GovernedReportOperationsResponse(
+    string Revision,
+    string GeneratedAt,
+    string Health,
+    int PollIntervalSeconds,
+    bool ProductionApproved,
+    IReadOnlyList<string> Statuses,
+    IReadOnlyList<string> Families,
+    IReadOnlyList<string> AttentionConditions,
+    GovernedReportOperationsSummary Summary,
+    IReadOnlyList<GovernedReportOperationsAlert> Alerts,
+    IReadOnlyList<GovernedReportRunItem> Runs,
+    int Page,
+    int PageSize,
+    int Total,
+    IReadOnlyList<string> ProductionBlockers);
 
 public sealed record GovernedReportArtifact(
     string FileName,

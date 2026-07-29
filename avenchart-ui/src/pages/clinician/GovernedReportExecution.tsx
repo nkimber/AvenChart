@@ -18,6 +18,7 @@ import {
   type GovernedReportRunList,
 } from "../../api/reportDefinitions.ts";
 import { showToast } from "../../components/Toast.tsx";
+import GovernedReportOperations from "./GovernedReportOperations.tsx";
 
 type Props = {
   sessionId: string;
@@ -987,6 +988,12 @@ export default function GovernedReportExecution({
                 </table>
               </div>
             </section>
+          )}
+          {policy.operatorAccess && (
+            <GovernedReportOperations
+              sessionId={sessionId}
+              username={username}
+            />
           )}
         </>
       )}

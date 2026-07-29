@@ -7323,11 +7323,87 @@ reports.MapGet("/execution-policy", async (
             authRepository,
             httpContext,
             cancellationToken);
+        var operatorAccess = await authRepository.HasAccessPermissionAsync(
+            session.Username,
+            "patients",
+            "pat_rep",
+            "write",
+            cancellationToken);
         return Results.Ok(await repository.GetPolicyAsync(
             session.Username,
+            operatorAccess,
             cancellationToken));
     })
     .WithName("GetGovernedReportExecutionPolicy");
+
+reports.MapGet("/operations/runs", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string? search,
+        string? status,
+        string? family,
+        string? requestedBy,
+        bool? attentionOnly,
+        DateOnly? from,
+        DateOnly? to,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            return Results.Ok(await repository.GetOperationsAsync(
+                session.Username,
+                search,
+                status,
+                family,
+                requestedBy,
+                attentionOnly ?? false,
+                from,
+                to,
+                page ?? 1,
+                pageSize ?? 20,
+                cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetGovernedReportOperations")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+reports.MapGet("/operations/runs/{runId}", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string runId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var run = await repository.GetOperatorRunAsync(
+                runId,
+                session.Username,
+                cancellationToken);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetGovernedReportOperationsRun")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
 
 reports.MapGet("/catalog", async (
         ReportDefinitionRepository repository,

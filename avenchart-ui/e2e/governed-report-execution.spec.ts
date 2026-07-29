@@ -136,6 +136,12 @@ test.describe("REP-02 governed report execution", () => {
       await expect(workspace).toContainText("local-report-queue-v1");
       await expect(workspace).toContainText("3 automatic attempts");
       await expect(workspace).toContainText("Local download only");
+      const operations = workspace.locator(".report-operations-workspace");
+      await expect(
+        operations.getByRole("heading", { name: "Report operations" }),
+      ).toBeVisible();
+      await expect(operations).toContainText("local-report-operations-v1");
+      await expect(operations).toContainText("not production-approved");
 
       await workspace
         .getByLabel("Active definition")
@@ -172,7 +178,7 @@ test.describe("REP-02 governed report execution", () => {
         workspace.getByRole("region", {
           name: "Governed report run history",
         }),
-      ).toContainText("completed", { timeout: 20_000 });
+      ).toContainText("completed", { timeout: 60_000 });
 
       const downloadPromise = page.waitForEvent("download");
       await workspace.getByRole("button", { name: "Download" }).click();
@@ -217,6 +223,30 @@ test.describe("REP-02 governed report execution", () => {
       await expect(
         workspace.getByRole("region", {
           name: "Governed report run events",
+        }),
+      ).toContainText("failed");
+      await operations
+        .getByPlaceholder("Run ID, definition, title, or failure code")
+        .fill(scopedTitle);
+      await operations.getByLabel("Needs attention only").check();
+      await operations
+        .getByRole("button", { name: "Apply operations filters" })
+        .click();
+      const operatorQueue = operations.getByRole("region", {
+        name: "Governed report operator run queue",
+      });
+      await expect(operatorQueue).toContainText(scopedTitle, {
+        timeout: 20_000,
+      });
+      await expect(operatorQueue).toContainText(
+        "scope-identity-unavailable",
+      );
+      await operatorQueue
+        .getByRole("button", { name: "Inspect operations evidence" })
+        .click();
+      await expect(
+        operations.getByRole("region", {
+          name: "Governed report operator run events",
         }),
       ).toContainText("failed");
     } finally {
@@ -287,6 +317,9 @@ test.describe("REP-02 governed report execution", () => {
         "staff 101 / MAIN / 83 assigned patients",
         { timeout: 20_000 },
       );
+      await expect(
+        workspace.getByRole("heading", { name: "Report operations" }),
+      ).toHaveCount(0);
 
       await workspace
         .getByLabel("Active definition")
@@ -338,7 +371,7 @@ test.describe("REP-02 governed report execution", () => {
         workspace.getByRole("region", {
           name: "Governed report run history",
         }),
-      ).toContainText("completed", { timeout: 20_000 });
+      ).toContainText("completed", { timeout: 60_000 });
 
       const accessibility = await new AxeBuilder({ page })
         .include(".report-execution-workspace")

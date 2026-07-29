@@ -283,6 +283,8 @@ try {
             -and $providerPolicy.currentActorScope.facilityId -eq 10 `
             -and $providerPolicy.currentActorScope.facilityCode -eq "MAIN" `
             -and $providerPolicy.currentActorScope.assignedPatientCount -eq 83 `
+            -and $policy.operatorAccess `
+            -and -not $providerPolicy.operatorAccess `
             -and $providerPolicy.rowPolicyFamilySupport."facility-scoped".Count -eq 7 `
             -and $providerPolicy.rowPolicyFamilySupport."patient-assigned".Count -eq 6 `
             -and $policy.deliveryModes.Count -eq 1 `
@@ -299,6 +301,8 @@ try {
         executableRowPolicies = $policy.executableRowPolicies
         adminScope = $policy.currentActorScope
         providerScope = $providerPolicy.currentActorScope
+        adminOperatorAccess = $policy.operatorAccess
+        providerOperatorAccess = $providerPolicy.operatorAccess
     }
 
     $purpose = "Verify revision-pinned patient report execution."
@@ -1200,6 +1204,91 @@ where run_id='$($first.run.runId)'
         artifactExpiredAt = $artifactExpired.run.artifactExpiredAt
         actions = $artifactExpired.events.action
         downloadStatus = $expiredDownload.Status
+    }
+
+    $providerOperations = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs" `
+        -RequestHeaders $providerHeaders
+    $operations = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs?attentionOnly=true&page=1&pageSize=50" `
+        -RequestHeaders $headers
+    $operationsAlertCodes = @($operations.alerts | ForEach-Object { $_.code })
+    Add-Check "Write-authorized operators receive bounded local attention evidence" (
+        $providerOperations.Status -eq 403 `
+            -and $providerOperations.Json.requiredSection -eq "patients" `
+            -and $providerOperations.Json.requiredPermission -eq "pat_rep" `
+            -and $providerOperations.Json.requiredReturnValue -eq "write" `
+            -and $operations.revision -eq "local-report-operations-v1" `
+            -and -not $operations.productionApproved `
+            -and $operations.pollIntervalSeconds -eq 5 `
+            -and $operations.statuses.Count -eq 6 `
+            -and $operations.families.Count -eq 7 `
+            -and $operations.attentionConditions.Count -eq 5 `
+            -and $operations.summary.totalRuns -gt 0 `
+            -and $operations.total -gt 0 `
+            -and $operationsAlertCodes -contains "permanent-failure" `
+            -and $operationsAlertCodes -contains "queue-expired" `
+            -and $operations.productionBlockers.Count -eq 4
+    ) @{
+        providerStatus = $providerOperations.Status
+        revision = $operations.revision
+        health = $operations.health
+        summary = $operations.summary
+        alertCodes = $operationsAlertCodes
+        attentionRows = $operations.total
+    }
+
+    $assignedRunDate = ([DateTimeOffset]::Parse(
+        [string]$assignedRun.run.requestedAt
+    )).ToString("yyyy-MM-dd")
+    $encodedAssignedRunId = [Uri]::EscapeDataString(
+        [string]$assignedRun.run.runId
+    )
+    $filteredOperations = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs?search=$encodedAssignedRunId&status=completed&family=patients&requestedBy=gold-provider-01&from=$assignedRunDate&to=$assignedRunDate&page=1&pageSize=10" `
+        -RequestHeaders $headers
+    $invalidStatus = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs?status=unknown" `
+        -RequestHeaders $headers
+    $invalidRange = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs?from=2024-01-01&to=2026-07-29" `
+        -RequestHeaders $headers
+    Add-Check "Operator discovery filters are exact, paged, and server bounded" (
+        $filteredOperations.total -eq 1 `
+            -and $filteredOperations.page -eq 1 `
+            -and $filteredOperations.pageSize -eq 10 `
+            -and $filteredOperations.runs.Count -eq 1 `
+            -and $filteredOperations.runs[0].runId -eq $assignedRun.run.runId `
+            -and $filteredOperations.runs[0].requestedBy -eq "gold-provider-01" `
+            -and $invalidStatus.Status -eq 400 `
+            -and $invalidRange.Status -eq 400
+    ) @{
+        filteredTotal = $filteredOperations.total
+        filteredRunId = $filteredOperations.runs[0].runId
+        invalidStatus = $invalidStatus.Status
+        invalidRange = $invalidRange.Status
+    }
+
+    $operatorDetail = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/operations/runs/$($inventoryRun.run.runId)" `
+        -RequestHeaders $headers
+    $crossOwnerDownload = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/reports/runs/$($assignedRun.run.runId)/download" `
+        -RequestHeaders $headers
+    Add-Check "Operator evidence does not delegate requester lifecycle or artifact rights" (
+        $operatorDetail.Status -eq 200 `
+            -and $operatorDetail.Json.run.requestedBy -eq "gold-provider-01" `
+            -and -not $operatorDetail.Json.run.canCancel `
+            -and -not $operatorDetail.Json.run.canRetry `
+            -and $operatorDetail.Json.events.Count -ge 2 `
+            -and $crossOwnerDownload.Status -eq 404
+    ) @{
+        operatorStatus = $operatorDetail.Status
+        requestedBy = $operatorDetail.Json.run.requestedBy
+        canCancel = $operatorDetail.Json.run.canCancel
+        canRetry = $operatorDetail.Json.run.canRetry
+        eventActions = $operatorDetail.Json.events.action
+        crossOwnerDownloadStatus = $crossOwnerDownload.Status
     }
 }
 catch {

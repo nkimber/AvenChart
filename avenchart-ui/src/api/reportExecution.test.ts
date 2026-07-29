@@ -3,6 +3,8 @@ import {
   cancelGovernedReportRun,
   downloadGovernedReportRun,
   getGovernedReportExecutionPolicy,
+  getGovernedReportOperations,
+  getGovernedReportOperationsRun,
   getGovernedReportRuns,
   previewGovernedReport,
   retryGovernedReportRun,
@@ -47,6 +49,7 @@ describe("governed report execution transport", () => {
             facilityId: 10,
             assignedPatientCount: 83,
           },
+          operatorAccess: true,
         }),
       )
       .mockResolvedValueOnce(
@@ -69,6 +72,71 @@ describe("governed report execution transport", () => {
     );
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
       expect.objectContaining({ "X-Legacy EHR-Session": "staff-session" }),
+    );
+  });
+
+  it("encodes bounded operator filters and read-only evidence routes", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          revision: "local-report-operations-v1",
+          generatedAt: "2026-07-29T12:00:00Z",
+          health: "attention",
+          pollIntervalSeconds: 5,
+          productionApproved: false,
+          statuses: ["queued", "running", "completed", "failed"],
+          families: ["patients"],
+          attentionConditions: ["failed runs"],
+          summary: { totalRuns: 1 },
+          alerts: [],
+          runs: [],
+          page: 3,
+          pageSize: 10,
+          total: 0,
+          productionBlockers: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          run: { runId: "RPT-operator/unsafe", status: "failed" },
+          events: [],
+        }),
+      );
+
+    await getGovernedReportOperations("operator-session", {
+      search: "scope identity",
+      status: "failed",
+      family: "patients",
+      requestedBy: "gold-provider-01",
+      attentionOnly: true,
+      from: "2026-07-01",
+      to: "2026-07-29",
+      page: 3,
+      pageSize: 10,
+    });
+    await getGovernedReportOperationsRun(
+      "operator-session",
+      "RPT-operator/unsafe",
+    );
+
+    const operationsUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(operationsUrl.pathname).toBe("/api/reports/operations/runs");
+    expect(Object.fromEntries(operationsUrl.searchParams)).toEqual({
+      page: "3",
+      pageSize: "10",
+      search: "scope identity",
+      status: "failed",
+      family: "patients",
+      requestedBy: "gold-provider-01",
+      attentionOnly: "true",
+      from: "2026-07-01",
+      to: "2026-07-29",
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      "/api/reports/operations/runs/RPT-operator%2Funsafe",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(
+      expect.objectContaining({ "X-Legacy EHR-Session": "operator-session" }),
     );
   });
 
