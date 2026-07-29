@@ -736,6 +736,23 @@ public sealed class LegacyClinicalFormDisplayRepository(NpgsqlDataSource dataSou
                 ["instruction"],
                 StringComparer.Ordinal);
         }
+        else if (string.Equals(
+                     row.StableKey,
+                     "legacy.soap",
+                     StringComparison.Ordinal)
+                 && string.Equals(
+                     row.AdapterRevision,
+                     "local-legacy-soap-display-v1",
+                     StringComparison.Ordinal))
+        {
+            AddTextField("subjective", "subjective");
+            AddTextField("objective", "objective");
+            AddTextField("assessment", "assessment");
+            AddTextField("plan", "plan");
+            expectedSourceFields = new(
+                ["subjective", "objective", "assessment", "plan"],
+                StringComparer.Ordinal);
+        }
         else
         {
             throw new InvalidOperationException(

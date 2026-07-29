@@ -83,12 +83,39 @@ test.describe("FORM-04 legacy clinical-form display adapter", () => {
       const snapshots = page.getByRole("region", {
         name: "Legacy form snapshots",
       });
-      await expect(snapshots.locator("tbody tr")).toHaveCount(4, {
+      await expect(snapshots.locator("tbody tr")).toHaveCount(6, {
         timeout: 20_000,
       });
       await expect(page.getByRole("status")).toContainText(
         "Encounter choices are unavailable for this session",
       );
+
+      const soapRow = snapshots
+        .locator("tbody tr")
+        .filter({ hasText: "row 882001" });
+      await expect(soapRow).toContainText("SOAP");
+      await expect(soapRow).toContainText("All source fields mapped");
+      await soapRow.getByRole("button", { name: "Open snapshot" }).click();
+      const soapDetail = page.getByRole("region", {
+        name: /SOAP source row 882001/,
+      });
+      await expect(soapDetail).toContainText(
+        "local-legacy-soap-display-v1",
+        { timeout: 20_000 },
+      );
+      await expect(soapDetail).toContainText("form_soap");
+      await expect(soapDetail).toContainText("subjective");
+      await expect(soapDetail).toContainText("objective");
+      await expect(soapDetail).toContainText("assessment");
+      await expect(soapDetail).toContainText(
+        "Continue medications and return in two weeks.",
+      );
+      await expect(soapDetail).toContainText(
+        "No unmapped source fields or values were found.",
+      );
+      await soapDetail
+        .getByRole("button", { name: "Close snapshot" })
+        .click();
 
       const instructionRow = snapshots
         .locator("tbody tr")

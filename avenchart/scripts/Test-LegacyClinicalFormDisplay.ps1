@@ -145,9 +145,13 @@ try {
         $list.snapshots |
             Where-Object stableKey -eq "legacy.clinicalinstructions"
     )
+    $soapSummaries = @(
+        $list.snapshots |
+            Where-Object stableKey -eq "legacy.soap"
+    )
     Add-Check "Bounded patient snapshot list" (
-        $list.total -eq 4 `
-        -and $list.returned -eq 4 `
+        $list.total -eq 6 `
+        -and $list.returned -eq 6 `
         -and $list.limit -eq 100 `
         -and $mappedSummary.readOnly `
         -and -not $mappedSummary.converted `
@@ -155,6 +159,10 @@ try {
         -and $unmappedSummary.unmappedCount -eq 1 `
         -and $instructionSummaries.Count -eq 2 `
         -and (@($instructionSummaries | Where-Object {
+            -not $_.readOnly -or $_.converted -or $_.unmappedCount -ne 0
+        }).Count -eq 0) `
+        -and $soapSummaries.Count -eq 2 `
+        -and (@($soapSummaries | Where-Object {
             -not $_.readOnly -or $_.converted -or $_.unmappedCount -ne 0
         }).Count -eq 0)
     ) $list
@@ -414,6 +422,32 @@ try {
         -and -not $instructions.migrationApproved `
         -and $null -eq $instructions.governedInstanceId
     ) $instructions
+
+    $soap = Invoke-RestMethod `
+        -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000005" `
+        -Headers $headers `
+        -TimeoutSec 20
+    $soapFields = @($soap.fields)
+    Add-Check "Mapped SOAP display evidence" (
+        $soap.snapshot.stableKey -eq "legacy.soap" `
+        -and $soap.snapshot.sourceTable -eq "form_soap" `
+        -and $soap.snapshot.adapterRevision -eq "local-legacy-soap-display-v1" `
+        -and $soap.snapshot.targetDefinitionRevision -eq 1 `
+        -and $soap.snapshot.targetSchemaHash -match "^[0-9a-f]{64}$" `
+        -and $soap.snapshot.rawSha256 -match "^[0-9a-f]{64}$" `
+        -and $soapFields.Count -eq 4 `
+        -and (@($soapFields | Where-Object mappingState -ne "exact").Count -eq 0) `
+        -and (@($soapFields | Where-Object {
+            $_.sourceField -ne $_.targetField
+        }).Count -eq 0) `
+        -and (@($soapFields.sourceField | Sort-Object) -join ",") -eq "assessment,objective,plan,subjective" `
+        -and (@($soap.fields | Where-Object {
+            $_.sourceField -eq "plan"
+        })[0].displayValue -eq "Continue medications and return in two weeks.") `
+        -and @($soap.unmappedFacts).Count -eq 0 `
+        -and -not $soap.migrationApproved `
+        -and $null -eq $soap.governedInstanceId
+    ) $soap
 
     $unmapped = Invoke-RestMethod `
         -Uri "$ApiBaseUrl/api/form-engine/legacy-snapshots/90f00000-0000-4000-9000-000000000002" `
