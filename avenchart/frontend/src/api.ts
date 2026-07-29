@@ -1683,6 +1683,10 @@ export type PatientMessageReplyInput = {
   assignedTo: string
 }
 
+export type PatientMessageArchiveInput = {
+  reason: string
+}
+
 export type PatientMessageMutationResponse = {
   id: string
   detail: PatientMessagesResponse
@@ -6961,14 +6965,16 @@ export async function replyToPatientMessage(
   return response.json()
 }
 
-export async function softDeletePatientMessage(
+export async function archivePatientMessage(
   messageId: string,
+  input: PatientMessageArchiveInput,
   sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<PatientMessageMutationResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/soft-delete`, {
-    method: 'PUT',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
+  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}/archive`, {
+    method: 'POST',
+    headers: buildLegacyEhrSessionHeaders(sessionId, 'application/json'),
+    body: JSON.stringify(input),
     signal,
   })
   if (!response.ok) {
@@ -6977,22 +6983,6 @@ export async function softDeletePatientMessage(
 
   return response.json()
 }
-
-export async function deletePatientMessage(
-  messageId: string,
-  sessionId?: string | null,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetch(`${apiBaseUrl}/api/messages/${encodeURIComponent(messageId)}`, {
-    method: 'DELETE',
-    headers: buildLegacyEhrSessionHeaders(sessionId),
-    signal,
-  })
-  if (!response.ok) {
-    throw new Error(messageApiError('Patient message delete', response.status))
-  }
-}
-
 export async function getProcedureResults(
   patientId: string,
   sessionId?: string | null,

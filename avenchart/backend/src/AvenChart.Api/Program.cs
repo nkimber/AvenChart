@@ -3364,28 +3364,6 @@ messages.MapPut("/{messageId}/reply", async (
     .WithName("ReplyToPatientMessage")
     .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
 
-messages.MapPut("/{messageId}/soft-delete", async (
-        MessageRepository repository,
-        string messageId,
-        CancellationToken cancellationToken) =>
-    {
-        var mutation = await repository.SoftDeleteAsync(messageId, cancellationToken);
-        return mutation is null ? Results.NotFound() : Results.Ok(mutation);
-    })
-    .WithName("SoftDeletePatientMessage")
-    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
-
-messages.MapDelete("/{messageId}", async (
-        MessageRepository repository,
-        string messageId,
-        CancellationToken cancellationToken) =>
-    {
-        var deleted = await repository.DeleteAsync(messageId, cancellationToken);
-        return deleted ? Results.NoContent() : Results.NotFound();
-    })
-    .WithName("DeletePatientMessage")
-    .AddEndpointFilter(AccessPermissionFilter("patients", "notes", "write"));
-
 var officeNotes = app.MapGroup("/api/office-notes").WithTags("Office Notes");
 RequireAccessPermission(officeNotes, "encounters", "notes", "view");
 

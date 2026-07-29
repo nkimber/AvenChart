@@ -829,39 +829,6 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         return await reader.ReadAsync(cancellationToken) ? new(true, reader.GetString(0), reader.GetString(1), reader.GetFieldValue<byte[]>(2), null) : new(false, "", "application/octet-stream", [], "Attachment was not found for this message.");
     }
 
-    public async Task<PatientMessageMutationResponse?> SoftDeleteAsync(string messageId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(messageId))
-        {
-            return null;
-        }
-
-        string? patientId = null;
-        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                update messages
-                set deleted = 1,
-                    activity = 0,
-                    updated_by = 1,
-                    updated_at = now()
-                where id = @id
-                returning patient_id;
-                """;
-            command.Parameters.AddWithValue("id", messageId);
-            patientId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        }
-
-        if (patientId is null)
-        {
-            return null;
-        }
-
-        var detail = await GetForPatientAsync(patientId, cancellationToken);
-        return detail is null ? null : new PatientMessageMutationResponse(messageId, detail);
-    }
-
     public async Task<PatientMessageMutationResponse?> SetArchiveAsync(string messageId, bool archived, PatientMessageArchiveRequest request, string actor, CancellationToken cancellationToken)
     {
         var reason = NormalizeOptionalText(request.Reason);
@@ -898,23 +865,6 @@ public sealed class MessageRepository(NpgsqlDataSource dataSource)
         var events = new List<PatientMessageRetentionEvent>();
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken)) while (await reader.ReadAsync(cancellationToken)) events.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4).ToString("O")));
         return events.Count == 0 && !await MessageExistsAsync(connection, messageId, cancellationToken) ? null : new PatientMessageRetentionHistoryResponse(messageId, events);
-    }
-
-    public async Task<bool> DeleteAsync(string messageId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(messageId))
-        {
-            return false;
-        }
-
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            delete from messages
-            where id = @id;
-            """;
-        command.Parameters.AddWithValue("id", messageId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private async Task<DatasetMetadata> GetMetadataAsync(CancellationToken cancellationToken)

@@ -208,7 +208,6 @@ import {
   denyEncounterDocument,
   deletePatientInsurance,
   deletePatientDocument,
-  deletePatientMessage,
   deleteProcedureOrder,
   deleteProcedureLabProvider,
   deleteProcedureOrderCatalogItem,
@@ -239,7 +238,7 @@ import {
   resubmitBillingClaimStatus,
   scrubBillingClaimStatus,
   softDeletePatientDocument,
-  softDeletePatientMessage,
+  archivePatientMessage,
   transmitProcedureOrder,
   rescheduleAppointmentOccurrence,
   restoreEncounterDocument,
@@ -4879,12 +4878,18 @@ function App() {
   }
 
   async function handlePatientMessageArchive(message: PatientMessageItem) {
+    const reason = window.prompt('Enter an archive reason (1 to 500 characters).')?.trim()
+    if (!reason) {
+      setMessageError('An archive reason is required.')
+      return
+    }
+
     setMessageStatus('loading')
     setMessageError(null)
 
     try {
       const sessionId = getActiveMessageSessionId()
-      const response = await softDeletePatientMessage(message.id, sessionId)
+      const response = await archivePatientMessage(message.id, { reason }, sessionId)
       setPatientMessages(response.detail)
       setMessageStatus('ready')
       setMessageRefreshKey((current) => current + 1)
@@ -4894,25 +4899,6 @@ function App() {
       const messageText = archiveError instanceof Error ? archiveError.message : 'Patient message archive failed'
       setMessageError(messageText)
       throw archiveError
-    }
-  }
-
-  async function handlePatientMessageDelete(message: PatientMessageItem) {
-    setMessageStatus('loading')
-    setMessageError(null)
-
-    try {
-      const sessionId = getActiveMessageSessionId()
-      await deletePatientMessage(message.id, sessionId)
-      const refreshed = await getPatientMessages(patientMessages?.patientId ?? messagePatientId, sessionId)
-      setPatientMessages(refreshed)
-      setMessageStatus('ready')
-      setMessageRefreshKey((current) => current + 1)
-    } catch (deleteError) {
-      setMessageStatus('error')
-      const messageText = deleteError instanceof Error ? deleteError.message : 'Patient message delete failed'
-      setMessageError(messageText)
-      throw deleteError
     }
   }
 
@@ -6418,7 +6404,6 @@ function App() {
             onAssignMessage={handlePatientMessageAssignment}
             onReplyMessage={handlePatientMessageReply}
             onArchiveMessage={handlePatientMessageArchive}
-            onDeleteMessage={handlePatientMessageDelete}
           />
         )}
         {activeModule === 'documents' && (
@@ -19083,7 +19068,6 @@ function MessagesWorkspace({
   onAssignMessage,
   onReplyMessage,
   onArchiveMessage,
-  onDeleteMessage,
 }: {
   patientId: string
   patientMessages: PatientMessagesResponse | null
@@ -19098,7 +19082,6 @@ function MessagesWorkspace({
   onAssignMessage: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
   onReplyMessage: (message: PatientMessageItem, reply: PatientMessageReplyInput) => Promise<unknown>
   onArchiveMessage: (message: PatientMessageItem) => Promise<unknown>
-  onDeleteMessage: (message: PatientMessageItem) => Promise<void>
 }) {
   const [messageTitle, setMessageTitle] = useState('Parity Message')
   const [messageBody, setMessageBody] = useState('Created from the modernized Messages workspace.')
@@ -19306,7 +19289,6 @@ function MessagesWorkspace({
                       onAssign={onAssignMessage}
                       onReply={onReplyMessage}
                       onArchive={onArchiveMessage}
-                      onDelete={onDeleteMessage}
                     />
                   ))}
                   {patientMessages.messages.length === 0 && (
@@ -23683,7 +23665,6 @@ function DocumentItem({
   onSign,
   onDeny,
   onDownload,
-  onDelete,
 }: {
   document: PatientDocumentItem
   disabled: boolean
@@ -24136,15 +24117,6 @@ function DocumentItem({
           <X size={14} />
           Deny
         </button>
-        <button
-          className="icon-text-button"
-          type="button"
-          disabled={disabled}
-          onClick={() => void onDelete(document)}
-        >
-          <Trash2 size={14} />
-          Delete
-        </button>
       </div>
     </article>
   )
@@ -24508,7 +24480,6 @@ function MessageItem({
   onAssign,
   onReply,
   onArchive,
-  onDelete,
 }: {
   message: PatientMessageItem
   disabled: boolean
@@ -24517,7 +24488,6 @@ function MessageItem({
   onAssign: (message: PatientMessageItem, update: PatientMessageAssignmentUpdateInput) => Promise<unknown>
   onReply: (message: PatientMessageItem, reply: PatientMessageReplyInput) => Promise<unknown>
   onArchive: (message: PatientMessageItem) => Promise<unknown>
-  onDelete: (message: PatientMessageItem) => Promise<void>
 }) {
   const [titleDraft, setTitleDraft] = useState(message.title || '')
   const [bodyDraft, setBodyDraft] = useState(message.body || '')
@@ -24651,15 +24621,6 @@ function MessageItem({
         >
           <Ban size={14} />
           Archive
-        </button>
-        <button
-          className="icon-text-button"
-          type="button"
-          disabled={disabled}
-          onClick={() => void onDelete(message)}
-        >
-          <Trash2 size={14} />
-          Delete
         </button>
       </div>
     </article>
