@@ -730,6 +730,15 @@ try {
         ($null -ne $rosHeentDefinition -and $rosHeentDefinition.contextScope -eq "encounter" -and $rosHeentDefinition.signaturePolicy -eq "author-only" -and $rosHeentDetail.currentRevision.status -eq "effective" -and $rosHeentFields.Count -eq 17 -and (($rosHeentFields.key -join "|") -eq "cataracts|cataract_surgery|glaucoma|double_vision|blurred_vision|poor_hearing|headaches|ringing_in_ears|bloody_nose|sinusitis|sinus_surgery|dry_mouth|strep_throat|tonsillectomy|swollen_lymph_nodes|throat_cancer|throat_cancer_surgery") -and @($rosHeentFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and $rosHeentPreview.valid) `
         @{ definitionId=$rosHeentDefinition.definitionId; schemaHash=$rosHeentDetail.currentRevision.schemaHash; fields=$rosHeentFields.key; previewValid=$rosHeentPreview.valid }
 
+    $rosPulmonaryDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.reviewofsystemspulmonary" }) | Select-Object -First 1
+    $rosPulmonaryDetail = if ($null -ne $rosPulmonaryDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($rosPulmonaryDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $rosPulmonaryFields = @($rosPulmonaryDetail.currentRevision.definition.fields)
+    $rosPulmonaryPreview = if ($null -ne $rosPulmonaryDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$rosPulmonaryDetail.currentRevision.definition; values=@{ emphysema=$true; chronic_bronchitis=$false; interstitial_lung_disease=$true; shortness_of_breath_2=$false; lung_cancer=$true; lung_cancer_surgery=$false; pheumothorax=$true } } } else { $null }
+    Add-Check `
+        "Legacy Review of Systems Pulmonary adoption preserves the persisted pheumothorax key without PHP execution" `
+        ($null -ne $rosPulmonaryDefinition -and $rosPulmonaryDefinition.contextScope -eq "encounter" -and $rosPulmonaryDefinition.signaturePolicy -eq "author-only" -and $rosPulmonaryDetail.currentRevision.status -eq "effective" -and (($rosPulmonaryFields.key -join "|") -eq "emphysema|chronic_bronchitis|interstitial_lung_disease|shortness_of_breath_2|lung_cancer|lung_cancer_surgery|pheumothorax") -and @($rosPulmonaryFields | Where-Object { $_.type -ne "boolean" }).Count -eq 0 -and ($rosPulmonaryFields | Where-Object { $_.key -eq "pheumothorax" }).helpText -match "persisted field spelling" -and $rosPulmonaryPreview.valid) `
+        @{ definitionId=$rosPulmonaryDefinition.definitionId; schemaHash=$rosPulmonaryDetail.currentRevision.schemaHash; fields=$rosPulmonaryFields.key; previewValid=$rosPulmonaryPreview.valid }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
