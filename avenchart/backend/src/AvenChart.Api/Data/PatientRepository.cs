@@ -164,6 +164,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 p.registration_date,
                 p.deceased_date,
                 p.deceased_reason,
+                p.lifecycle_status,
+                p.retired_at,
+                p.retired_by,
+                p.retirement_reason,
                 p.provider_id,
                 p.facility_id,
                 f.name as facility_name,
@@ -298,6 +302,10 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 RegistrationDate: ReadDate(reader, "registration_date"),
                 DeceasedDate: ReadNullableDate(reader, "deceased_date"),
                 DeceasedReason: ReadNullableString(reader, "deceased_reason"),
+                LifecycleStatus: ReadNullableString(reader, "lifecycle_status") ?? "active",
+                RetiredAt: ReadNullableTimestamp(reader, "retired_at"),
+                RetiredBy: ReadNullableString(reader, "retired_by"),
+                RetirementReason: ReadNullableString(reader, "retirement_reason"),
                 ProviderId: ReadNullableInt(reader, "provider_id"),
                 FacilityId: ReadNullableInt(reader, "facility_id"),
                 FacilityName: ReadNullableString(reader, "facility_name"),
@@ -1019,6 +1027,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 where patient_id = @canonicalId
                    or pid = (select legacy_pid from patients where canonical_id = @canonicalId);
 
+                delete from patient_lifecycle_events
+                where patient_id = @canonicalId;
+
                 delete from patients where canonical_id = @canonicalId;
                 """;
             cleanup.Parameters.AddWithValue("canonicalId", canonicalId);
@@ -1196,6 +1207,187 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
 
         var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientLifecycleHistoryResponse?> GetLifecycleHistoryAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var patientCommand = connection.CreateCommand();
+        patientCommand.CommandText = """
+            select canonical_id, legacy_pid, lifecycle_status, retired_at, retired_by, retirement_reason
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1;
+            """;
+        patientCommand.Parameters.AddWithValue("patientId", patientId);
+
+        string canonicalId;
+        int legacyPid;
+        string currentStatus;
+        string? retiredAt;
+        string? retiredBy;
+        string? retirementReason;
+        await using (var reader = await patientCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            canonicalId = reader.GetString(reader.GetOrdinal("canonical_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("legacy_pid"));
+            currentStatus = ReadNullableString(reader, "lifecycle_status") ?? "active";
+            retiredAt = ReadNullableTimestamp(reader, "retired_at");
+            retiredBy = ReadNullableString(reader, "retired_by");
+            retirementReason = ReadNullableString(reader, "retirement_reason");
+        }
+
+        await using var eventCommand = connection.CreateCommand();
+        eventCommand.CommandText = """
+            select event_id, action, prior_status, resulting_status, reason, actor, occurred_at
+            from patient_lifecycle_events
+            where patient_id = @patientId
+            order by occurred_at desc, event_id desc;
+            """;
+        eventCommand.Parameters.AddWithValue("patientId", canonicalId);
+        var events = new List<PatientLifecycleHistoryItem>();
+        await using var eventReader = await eventCommand.ExecuteReaderAsync(cancellationToken);
+        while (await eventReader.ReadAsync(cancellationToken))
+        {
+            events.Add(new PatientLifecycleHistoryItem(
+                EventId: eventReader.GetGuid(eventReader.GetOrdinal("event_id")),
+                Action: eventReader.GetString(eventReader.GetOrdinal("action")),
+                PriorStatus: eventReader.GetString(eventReader.GetOrdinal("prior_status")),
+                ResultingStatus: eventReader.GetString(eventReader.GetOrdinal("resulting_status")),
+                Reason: eventReader.GetString(eventReader.GetOrdinal("reason")),
+                Actor: eventReader.GetString(eventReader.GetOrdinal("actor")),
+                OccurredAt: eventReader.GetFieldValue<DateTimeOffset>(eventReader.GetOrdinal("occurred_at")).ToString("O")));
+        }
+
+        return new PatientLifecycleHistoryResponse(
+            metadata.DatasetId,
+            metadata.DatasetVersion,
+            canonicalId,
+            legacyPid,
+            currentStatus,
+            retiredAt,
+            retiredBy,
+            retirementReason,
+            events.Count,
+            events);
+    }
+
+    public async Task<PatientChartSummary?> TransitionLifecycleAsync(
+        string patientId,
+        string action,
+        PatientLifecycleTransitionRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var normalizedAction = NormalizeString(action)?.ToLowerInvariant();
+        if (normalizedAction is not ("retire" or "reactivate"))
+        {
+            throw new ArgumentException("The patient lifecycle action must be retire or reactivate.");
+        }
+
+        var reason = NormalizeString(request.Reason);
+        if (reason is null || reason.Length > 500)
+        {
+            throw new ArgumentException("A patient lifecycle reason of 1 to 500 characters is required.");
+        }
+
+        var actor = NormalizeString(username) ?? "unknown";
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var patientCommand = connection.CreateCommand();
+        patientCommand.Transaction = transaction;
+        patientCommand.CommandText = """
+            select canonical_id, legacy_pid, lifecycle_status, deceased_date, merged_into_patient_id
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1
+            for update;
+            """;
+        patientCommand.Parameters.AddWithValue("patientId", patientId);
+
+        string canonicalId;
+        int legacyPid;
+        string priorStatus;
+        DateOnly? deceasedDate;
+        string? mergedIntoPatientId;
+        await using (var reader = await patientCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            canonicalId = reader.GetString(reader.GetOrdinal("canonical_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("legacy_pid"));
+            priorStatus = ReadNullableString(reader, "lifecycle_status") ?? "active";
+            deceasedDate = reader.IsDBNull(reader.GetOrdinal("deceased_date"))
+                ? null
+                : reader.GetFieldValue<DateOnly>(reader.GetOrdinal("deceased_date"));
+            mergedIntoPatientId = ReadNullableString(reader, "merged_into_patient_id");
+        }
+
+        if (mergedIntoPatientId is not null)
+        {
+            throw new ArgumentException("A merged patient cannot receive an independent lifecycle transition.");
+        }
+
+        var resultingStatus = normalizedAction == "retire" ? "retired" : "active";
+        if (!string.Equals(priorStatus, normalizedAction == "retire" ? "active" : "retired", StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"The patient is already {priorStatus} and cannot be {normalizedAction}d.");
+        }
+
+        if (normalizedAction == "reactivate" && deceasedDate is not null)
+        {
+            throw new ArgumentException("A deceased patient cannot be reactivated until the deceased status is corrected.");
+        }
+
+        await using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText = """
+            update patients
+            set lifecycle_status = @resultingStatus,
+                retired_at = case when @resultingStatus = 'retired' then now() else null end,
+                retired_by = case when @resultingStatus = 'retired' then @actor else null end,
+                retirement_reason = case when @resultingStatus = 'retired' then @reason else null end
+            where canonical_id = @patientId;
+            """;
+        updateCommand.Parameters.AddWithValue("resultingStatus", resultingStatus);
+        updateCommand.Parameters.AddWithValue("actor", actor);
+        updateCommand.Parameters.AddWithValue("reason", reason);
+        updateCommand.Parameters.AddWithValue("patientId", canonicalId);
+        await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var eventCommand = connection.CreateCommand();
+        eventCommand.Transaction = transaction;
+        eventCommand.CommandText = """
+            insert into patient_lifecycle_events (
+                event_id, patient_id, legacy_pid, action, prior_status, resulting_status, reason, actor, occurred_at)
+            values (@eventId, @patientId, @legacyPid, @action, @priorStatus, @resultingStatus, @reason, @actor, now());
+            """;
+        eventCommand.Parameters.AddWithValue("eventId", Guid.NewGuid());
+        eventCommand.Parameters.AddWithValue("patientId", canonicalId);
+        eventCommand.Parameters.AddWithValue("legacyPid", legacyPid);
+        eventCommand.Parameters.AddWithValue("action", normalizedAction == "retire" ? "retired" : "reactivated");
+        eventCommand.Parameters.AddWithValue("priorStatus", priorStatus);
+        eventCommand.Parameters.AddWithValue("resultingStatus", resultingStatus);
+        eventCommand.Parameters.AddWithValue("reason", reason);
+        eventCommand.Parameters.AddWithValue("actor", actor);
+        await eventCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(canonicalId, cancellationToken);
     }
 
     public async Task<PatientChartSummary?> UpdatePortalAccountResetAsync(
@@ -3588,6 +3780,14 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
         return reader.IsDBNull(ordinal)
             ? null
             : reader.GetFieldValue<DateOnly>(ordinal).ToString("yyyy-MM-dd");
+    }
+
+    private static string? ReadNullableTimestamp(DbDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : reader.GetFieldValue<DateTimeOffset>(ordinal).ToString("O");
     }
 
     private static string? ReadNullableString(DbDataReader reader, string columnName)

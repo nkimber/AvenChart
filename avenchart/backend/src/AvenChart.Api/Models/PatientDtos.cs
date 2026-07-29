@@ -88,6 +88,10 @@ public sealed record PatientChartSummary(
     string RegistrationDate,
     string? DeceasedDate,
     string? DeceasedReason,
+    string LifecycleStatus,
+    string? RetiredAt,
+    string? RetiredBy,
+    string? RetirementReason,
     int? ProviderId,
     int? FacilityId,
     string? FacilityName,
@@ -348,6 +352,29 @@ public sealed record PatientDemographicsUpdateRequest(
 public sealed record PatientDeceasedStatusUpdateRequest(
     string? DeceasedDate,
     string? DeceasedReason);
+
+public sealed record PatientLifecycleTransitionRequest(string? Reason);
+
+public sealed record PatientLifecycleHistoryItem(
+    Guid EventId,
+    string Action,
+    string PriorStatus,
+    string ResultingStatus,
+    string Reason,
+    string Actor,
+    string OccurredAt);
+
+public sealed record PatientLifecycleHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string PatientId,
+    int LegacyPid,
+    string CurrentStatus,
+    string? RetiredAt,
+    string? RetiredBy,
+    string? RetirementReason,
+    int EventCount,
+    IReadOnlyList<PatientLifecycleHistoryItem> Events);
 
 public sealed record PatientGuardianContactUpdateRequest(
     string? MotherName,

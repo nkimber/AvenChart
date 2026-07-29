@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import {
   Building2,
+  ArchiveRestore,
   CalendarClock,
   FileText,
   Phone,
@@ -20,11 +21,13 @@ import {
   executePatientMerge,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
+  getPatientLifecycleHistory,
   getPatientMergePreview,
   getPatientProviderAssignmentHistory,
   getPatientProviderAssignmentOptions,
   getPatientRecordRequests,
   rollbackPatientMerge,
+  transitionPatientLifecycle,
   updatePatientCareTeam,
   updatePatientContact,
   updatePatientDemographics,
@@ -45,6 +48,7 @@ import {
   type PatientInsuranceMutationInput,
   type PatientAdministrationHistoryItem,
   type PatientAdministrationHistoryResponse,
+  type PatientLifecycleHistoryResponse,
   type PatientMergePreview,
   type PatientProviderAssignmentHistoryResponse,
   type PatientProviderAssignmentOptionsResponse,
@@ -93,6 +97,10 @@ type ProviderAssignmentHistoryState =
 type PatientAdministrationHistoryState =
   | { status: "loading" }
   | { status: "ready"; data: PatientAdministrationHistoryResponse }
+  | { status: "error" };
+type PatientLifecycleHistoryState =
+  | { status: "loading" }
+  | { status: "ready"; data: PatientLifecycleHistoryResponse }
   | { status: "error" };
 type PatientAdministrationArea =
   | "all"
@@ -327,6 +335,13 @@ export default function PatientSummary() {
     useState(0);
   const [administrationArea, setAdministrationArea] =
     useState<PatientAdministrationArea>("all");
+  const [lifecycleHistoryState, setLifecycleHistoryState] =
+    useState<PatientLifecycleHistoryState>({ status: "loading" });
+  const [lifecycleHistoryRetry, setLifecycleHistoryRetry] = useState(0);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [lifecycleAction, setLifecycleAction] = useState<
+    "retire" | "reactivate" | null
+  >(null);
   const [careTeamForm, setCareTeamForm] = useState<CareTeamDraft>(() =>
     buildCareTeamDraft(patient),
   );
@@ -458,6 +473,18 @@ export default function PatientSummary() {
       });
     return () => controller.abort();
   }, [administrationHistoryRetry, patientId, session.sessionId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLifecycleHistoryState({ status: "loading" });
+    getPatientLifecycleHistory(session.sessionId, patientId, controller.signal)
+      .then((data) => setLifecycleHistoryState({ status: "ready", data }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setLifecycleHistoryState({ status: "error" });
+      });
+    return () => controller.abort();
+  }, [lifecycleHistoryRetry, patientId, session.sessionId]);
 
   async function loadRecordRequests() {
     setRecordRequestLoading(true);
@@ -940,6 +967,40 @@ export default function PatientSummary() {
     }
   }
 
+  async function changePatientLifecycle(action: "retire" | "reactivate") {
+    const reason = lifecycleReason.trim();
+    if (!reason) {
+      showToast("A lifecycle reason is required.", "error");
+      return;
+    }
+    if (!window.confirm(`Do you want to ${action} this patient record?`)) {
+      return;
+    }
+
+    setLifecycleAction(action);
+    try {
+      await transitionPatientLifecycle(
+        session.sessionId,
+        patientId,
+        action,
+        reason,
+      );
+      setLifecycleReason("");
+      showToast(
+        action === "retire"
+          ? "Patient record retired. New scheduling is blocked."
+          : "Patient record reactivated.",
+        "success",
+      );
+      setLifecycleHistoryRetry((current) => current + 1);
+      reload();
+    } catch {
+      showToast("The patient lifecycle change could not be saved.", "error");
+    } finally {
+      setLifecycleAction(null);
+    }
+  }
+
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) =>
     setInsForm((f) => ({ ...f, ...patch }));
 
@@ -976,6 +1037,98 @@ export default function PatientSummary() {
           <Printer size={14} /> Print summary
         </button>
       </div>
+
+      {patient.lifecycleStatus === "retired" ? (
+        <div className="error-banner" role="status">
+          This patient record is retired. Existing chart history remains available,
+          but new and rescheduled appointments are blocked until reactivation.
+        </div>
+      ) : null}
+
+      <section className="cl-card" aria-labelledby="patient-lifecycle-heading">
+        <div className="cl-card-header">
+          <h2 className="cl-card-title" id="patient-lifecycle-heading">
+            <ArchiveRestore size={15} /> Patient lifecycle
+          </h2>
+          <span className="status-badge">{patient.lifecycleStatus}</span>
+        </div>
+        <p className="muted-text">
+          Retirement preserves the chart and its audit history while blocking new
+          or rescheduled appointments. It does not delete clinical records.
+        </p>
+        {patient.lifecycleStatus === "retired" ? (
+          <ul className="fact-list">
+            {fact("Retired at", patient.retiredAt)}
+            {fact("Retired by", patient.retiredBy)}
+            {fact("Retirement reason", patient.retirementReason)}
+          </ul>
+        ) : null}
+        <div className="field" style={{ marginTop: 12 }}>
+          <label className="label" htmlFor="patient-lifecycle-reason">
+            {patient.lifecycleStatus === "retired"
+              ? "Reactivation reason"
+              : "Retirement reason"}
+          </label>
+          <input
+            id="patient-lifecycle-reason"
+            className="input"
+            value={lifecycleReason}
+            maxLength={500}
+            onChange={(event) => setLifecycleReason(event.target.value)}
+            placeholder="Required, retained in the lifecycle history"
+          />
+        </div>
+        <div className="cl-inline-form-actions" style={{ marginTop: 12 }}>
+          <button
+            className={
+              patient.lifecycleStatus === "retired"
+                ? "cl-btn-primary"
+                : "cl-btn-secondary"
+            }
+            type="button"
+            disabled={lifecycleAction !== null}
+            onClick={() =>
+              void changePatientLifecycle(
+                patient.lifecycleStatus === "retired" ? "reactivate" : "retire",
+              )
+            }
+          >
+            {lifecycleAction !== null
+              ? "Saving…"
+              : patient.lifecycleStatus === "retired"
+                ? "Reactivate patient"
+                : "Retire patient"}
+          </button>
+        </div>
+        {lifecycleHistoryState.status === "loading" ? (
+          <p className="muted-text">Loading lifecycle history…</p>
+        ) : lifecycleHistoryState.status === "error" ? (
+          <button
+            className="cl-link"
+            type="button"
+            onClick={() => setLifecycleHistoryRetry((current) => current + 1)}
+          >
+            Retry lifecycle history
+          </button>
+        ) : lifecycleHistoryState.data.events.length === 0 ? (
+          <p className="muted-text">No lifecycle changes have been recorded.</p>
+        ) : (
+          <ol className="administration-history-list">
+            {lifecycleHistoryState.data.events.slice(0, 10).map((event) => (
+              <li key={event.eventId}>
+                <div className="administration-history-event-heading">
+                  <strong>{event.action}</strong>
+                  <span>{new Date(event.occurredAt).toLocaleString()}</span>
+                </div>
+                <p className="administration-history-actor">
+                  {event.priorStatus} → {event.resultingStatus} by {event.actor}
+                </p>
+                <p>{event.reason}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       {/* Insurance modal */}
       {insMode.kind !== "none" && (

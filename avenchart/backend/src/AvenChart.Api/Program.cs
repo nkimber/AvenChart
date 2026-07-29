@@ -1560,6 +1560,44 @@ patients.MapPut("/{patientId}/deceased-status", async (
     .WithName("UpdatePatientDeceasedStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
 
+patients.MapGet("/{patientId}/lifecycle-history", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetLifecycleHistoryAsync(patientId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientLifecycleHistory");
+
+patients.MapPost("/{patientId}/lifecycle/{action}", async (
+        PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string patientId,
+        string action,
+        PatientLifecycleTransitionRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var patient = await repository.TransitionLifecycleAsync(
+                patientId,
+                action,
+                request,
+                session.Username,
+                cancellationToken);
+            return patient is null ? Results.NotFound() : Results.Ok(patient);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("TransitionPatientLifecycle")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
 patients.MapPut("/{patientId}/portal-account/reset", async (
         PatientRepository repository,
         string patientId,

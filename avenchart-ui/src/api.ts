@@ -1387,6 +1387,11 @@ export type PatientChartSummary = {
   portalAccount?: PatientPortalAccountSummary | null
   registrationDate: string
   deceasedDate?: string | null
+  deceasedReason?: string | null
+  lifecycleStatus: 'active' | 'retired' | string
+  retiredAt?: string | null
+  retiredBy?: string | null
+  retirementReason?: string | null
   providerId?: number | null
   facilityId?: number | null
   primaryProviderName?: string | null
@@ -1421,6 +1426,54 @@ export async function getPatientChartSummary(
   signal?: AbortSignal,
 ): Promise<PatientChartSummary> {
   return clinicianGet(sessionId, `/api/patients/${canonicalId}`, signal)
+}
+
+export type PatientLifecycleHistoryItem = {
+  eventId: string
+  action: 'retired' | 'reactivated' | string
+  priorStatus: 'active' | 'retired' | string
+  resultingStatus: 'active' | 'retired' | string
+  reason: string
+  actor: string
+  occurredAt: string
+}
+
+export type PatientLifecycleHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  currentStatus: 'active' | 'retired' | string
+  retiredAt?: string | null
+  retiredBy?: string | null
+  retirementReason?: string | null
+  eventCount: number
+  events: PatientLifecycleHistoryItem[]
+}
+
+export async function getPatientLifecycleHistory(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientLifecycleHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/lifecycle-history`,
+    signal,
+  )
+}
+
+export async function transitionPatientLifecycle(
+  sessionId: string,
+  patientId: string,
+  action: 'retire' | 'reactivate',
+  reason: string,
+): Promise<PatientChartSummary> {
+  return clinicianPost(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/lifecycle/${action}`,
+    { reason },
+  )
 }
 
 export async function findPatientDuplicateCandidates(

@@ -399,6 +399,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await EnsurePatientActiveForSchedulingAsync(connection, null, request.PatientId, cancellationToken);
         await ValidateActiveSchedulingReferencesAsync(
             connection,
             request.ProviderId,
@@ -1388,6 +1389,8 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
                 RecurrenceEndDate: recurrenceEndDate,
                 RecurrenceExdates: recurrenceExdates);
         }
+
+        await EnsurePatientActiveForSchedulingAsync(connection, transaction, source.PatientId, cancellationToken);
 
         var updatedExdates = source.RecurrenceExdates
             .Concat(new[] { occurrenceDate.ToString("yyyy-MM-dd") })
@@ -2445,6 +2448,35 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             "facilities",
             "inactive = false",
             cancellationToken);
+    }
+
+    private static async Task EnsurePatientActiveForSchedulingAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select lifecycle_status
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1;
+            """;
+        command.Parameters.AddWithValue("patientId", patientId);
+        var status = (string?)await command.ExecuteScalarAsync(cancellationToken);
+        if (status is null)
+        {
+            throw new ArgumentException("The patient was not found.");
+        }
+
+        if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("A retired patient cannot receive a new or rescheduled appointment until reactivated.");
+        }
     }
 
     private static async Task ValidateActiveSchedulingReferenceAsync(
