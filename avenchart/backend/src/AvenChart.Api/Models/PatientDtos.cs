@@ -351,7 +351,29 @@ public sealed record PatientDemographicsUpdateRequest(
 
 public sealed record PatientDeceasedStatusUpdateRequest(
     string? DeceasedDate,
-    string? DeceasedReason);
+    string? DeceasedReason,
+    string? CorrectionReason);
+
+public sealed record PatientDeceasedStatusHistoryItem(
+    Guid EventId,
+    string Action,
+    string? PriorDeceasedDate,
+    string? PriorDeceasedReason,
+    string? ResultingDeceasedDate,
+    string? ResultingDeceasedReason,
+    string CorrectionReason,
+    string Actor,
+    string OccurredAt);
+
+public sealed record PatientDeceasedStatusHistoryResponse(
+    string DatasetId,
+    string DatasetVersion,
+    string PatientId,
+    int LegacyPid,
+    string? CurrentDeceasedDate,
+    string? CurrentDeceasedReason,
+    int EventCount,
+    IReadOnlyList<PatientDeceasedStatusHistoryItem> Events);
 
 public sealed record PatientLifecycleTransitionRequest(string? Reason);
 

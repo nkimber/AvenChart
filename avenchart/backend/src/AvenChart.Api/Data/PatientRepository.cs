@@ -1030,6 +1030,9 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 delete from patient_lifecycle_events
                 where patient_id = @canonicalId;
 
+                delete from patient_deceased_status_events
+                where patient_id = @canonicalId;
+
                 delete from patients where canonical_id = @canonicalId;
                 """;
             cleanup.Parameters.AddWithValue("canonicalId", canonicalId);
@@ -1178,35 +1181,176 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
     public async Task<PatientChartSummary?> UpdateDeceasedStatusAsync(
         string patientId,
         PatientDeceasedStatusUpdateRequest request,
+        string username,
         CancellationToken cancellationToken)
     {
         if (!TryNormalizeDeceasedStatus(request, out var deceasedDate, out var deceasedReason))
         {
-            return null;
+            throw new ArgumentException("The deceased date must use YYYY-MM-DD and cannot be in the future.");
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var patientCommand = connection.CreateCommand();
+        patientCommand.Transaction = transaction;
+        patientCommand.CommandText = """
+            select canonical_id, legacy_pid, deceased_date, deceased_reason
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1
+            for update;
+            """;
+        patientCommand.Parameters.AddWithValue("patientId", patientId);
+
+        string canonicalId;
+        int legacyPid;
+        DateOnly? priorDate;
+        string? priorReason;
+        await using (var reader = await patientCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            canonicalId = reader.GetString(reader.GetOrdinal("canonical_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("legacy_pid"));
+            priorDate = reader.IsDBNull(reader.GetOrdinal("deceased_date"))
+                ? null
+                : reader.GetFieldValue<DateOnly>(reader.GetOrdinal("deceased_date"));
+            priorReason = ReadNullableString(reader, "deceased_reason");
+        }
+
+        if (priorDate == deceasedDate && string.Equals(priorReason, deceasedReason, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The deceased status does not change the current patient record.");
+        }
+
+        var correctionReason = NormalizeString(request.CorrectionReason);
+        if (correctionReason is null || correctionReason.Length > 500)
+        {
+            throw new ArgumentException("A deceased-status correction reason of 1 to 500 characters is required.");
+        }
+
+        var action = priorDate is null
+            ? "recorded"
+            : deceasedDate is null
+                ? "cleared"
+                : "corrected";
+        var actor = NormalizeString(username) ?? "unknown";
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             update patients
             set
                 deceased_date = @deceasedDate,
                 deceased_reason = @deceasedReason
-            where lower(canonical_id) = lower(@patientId)
-               or lower(pubpid) = lower(@patientId)
-               or legacy_pid::text = @patientId
-            returning canonical_id;
+            where canonical_id = @patientId;
             """;
-        command.Parameters.AddWithValue("patientId", patientId);
+        command.Parameters.AddWithValue("patientId", canonicalId);
         command.Parameters.Add("deceasedDate", NpgsqlDbType.Date).Value = deceasedDate is null
             ? DBNull.Value
             : deceasedDate.Value;
         command.Parameters.Add("deceasedReason", NpgsqlDbType.Text).Value = deceasedReason is null
             ? DBNull.Value
             : deceasedReason;
+        await command.ExecuteNonQueryAsync(cancellationToken);
 
-        var canonicalId = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        return canonicalId is null ? null : await GetChartSummaryAsync(canonicalId, cancellationToken);
+        await using var eventCommand = connection.CreateCommand();
+        eventCommand.Transaction = transaction;
+        eventCommand.CommandText = """
+            insert into patient_deceased_status_events (
+                event_id, patient_id, legacy_pid, action,
+                prior_deceased_date, prior_deceased_reason,
+                resulting_deceased_date, resulting_deceased_reason,
+                correction_reason, actor, occurred_at)
+            values (
+                @eventId, @patientId, @legacyPid, @action,
+                @priorDate, @priorReason,
+                @resultingDate, @resultingReason,
+                @correctionReason, @actor, now());
+            """;
+        eventCommand.Parameters.AddWithValue("eventId", Guid.NewGuid());
+        eventCommand.Parameters.AddWithValue("patientId", canonicalId);
+        eventCommand.Parameters.AddWithValue("legacyPid", legacyPid);
+        eventCommand.Parameters.AddWithValue("action", action);
+        eventCommand.Parameters.Add("priorDate", NpgsqlDbType.Date).Value = priorDate is null ? DBNull.Value : priorDate.Value;
+        eventCommand.Parameters.Add("priorReason", NpgsqlDbType.Text).Value = priorReason is null ? DBNull.Value : priorReason;
+        eventCommand.Parameters.Add("resultingDate", NpgsqlDbType.Date).Value = deceasedDate is null ? DBNull.Value : deceasedDate.Value;
+        eventCommand.Parameters.Add("resultingReason", NpgsqlDbType.Text).Value = deceasedReason is null ? DBNull.Value : deceasedReason;
+        eventCommand.Parameters.AddWithValue("correctionReason", correctionReason);
+        eventCommand.Parameters.AddWithValue("actor", actor);
+        await eventCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetChartSummaryAsync(canonicalId, cancellationToken);
+    }
+
+    public async Task<PatientDeceasedStatusHistoryResponse?> GetDeceasedStatusHistoryAsync(
+        string patientId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await GetMetadataAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var patientCommand = connection.CreateCommand();
+        patientCommand.CommandText = """
+            select canonical_id, legacy_pid, deceased_date, deceased_reason
+            from patients
+            where lower(canonical_id) = lower(@patientId)
+               or lower(pubpid) = lower(@patientId)
+               or legacy_pid::text = @patientId
+            limit 1;
+            """;
+        patientCommand.Parameters.AddWithValue("patientId", patientId);
+
+        string canonicalId;
+        int legacyPid;
+        string? currentDate;
+        string? currentReason;
+        await using (var reader = await patientCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            canonicalId = reader.GetString(reader.GetOrdinal("canonical_id"));
+            legacyPid = reader.GetInt32(reader.GetOrdinal("legacy_pid"));
+            currentDate = ReadNullableDate(reader, "deceased_date");
+            currentReason = ReadNullableString(reader, "deceased_reason");
+        }
+
+        await using var eventCommand = connection.CreateCommand();
+        eventCommand.CommandText = """
+            select event_id, action,
+                prior_deceased_date, prior_deceased_reason,
+                resulting_deceased_date, resulting_deceased_reason,
+                correction_reason, actor, occurred_at
+            from patient_deceased_status_events
+            where patient_id = @patientId
+            order by occurred_at desc, event_id desc;
+            """;
+        eventCommand.Parameters.AddWithValue("patientId", canonicalId);
+        var events = new List<PatientDeceasedStatusHistoryItem>();
+        await using var eventReader = await eventCommand.ExecuteReaderAsync(cancellationToken);
+        while (await eventReader.ReadAsync(cancellationToken))
+        {
+            events.Add(new PatientDeceasedStatusHistoryItem(
+                eventReader.GetGuid(eventReader.GetOrdinal("event_id")),
+                eventReader.GetString(eventReader.GetOrdinal("action")),
+                ReadNullableDate(eventReader, "prior_deceased_date"),
+                ReadNullableString(eventReader, "prior_deceased_reason"),
+                ReadNullableDate(eventReader, "resulting_deceased_date"),
+                ReadNullableString(eventReader, "resulting_deceased_reason"),
+                eventReader.GetString(eventReader.GetOrdinal("correction_reason")),
+                eventReader.GetString(eventReader.GetOrdinal("actor")),
+                eventReader.GetFieldValue<DateTimeOffset>(eventReader.GetOrdinal("occurred_at")).ToString("O")));
+        }
+
+        return new PatientDeceasedStatusHistoryResponse(
+            metadata.DatasetId, metadata.DatasetVersion, canonicalId, legacyPid,
+            currentDate, currentReason, events.Count, events);
     }
 
     public async Task<PatientLifecycleHistoryResponse?> GetLifecycleHistoryAsync(
@@ -3342,6 +3486,13 @@ public sealed class PatientRepository(NpgsqlDataSource dataSource)
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out var parsedDate))
+        {
+            deceasedDate = null;
+            deceasedReason = null;
+            return false;
+        }
+
+        if (parsedDate > DateOnly.FromDateTime(DateTime.UtcNow))
         {
             deceasedDate = null;
             deceasedReason = null;

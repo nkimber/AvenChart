@@ -21,6 +21,7 @@ import {
   executePatientMerge,
   getPatientCareTeamOptions,
   getPatientAdministrationHistory,
+  getPatientDeceasedStatusHistory,
   getPatientLifecycleHistory,
   getPatientMergePreview,
   getPatientProviderAssignmentHistory,
@@ -28,6 +29,7 @@ import {
   getPatientRecordRequests,
   rollbackPatientMerge,
   transitionPatientLifecycle,
+  updatePatientDeceasedStatus,
   updatePatientCareTeam,
   updatePatientContact,
   updatePatientDemographics,
@@ -49,6 +51,7 @@ import {
   type PatientAdministrationHistoryItem,
   type PatientAdministrationHistoryResponse,
   type PatientLifecycleHistoryResponse,
+  type PatientDeceasedStatusHistoryResponse,
   type PatientMergePreview,
   type PatientProviderAssignmentHistoryResponse,
   type PatientProviderAssignmentOptionsResponse,
@@ -101,6 +104,10 @@ type PatientAdministrationHistoryState =
 type PatientLifecycleHistoryState =
   | { status: "loading" }
   | { status: "ready"; data: PatientLifecycleHistoryResponse }
+  | { status: "error" };
+type PatientDeceasedStatusHistoryState =
+  | { status: "loading" }
+  | { status: "ready"; data: PatientDeceasedStatusHistoryResponse }
   | { status: "error" };
 type PatientAdministrationArea =
   | "all"
@@ -342,6 +349,15 @@ export default function PatientSummary() {
   const [lifecycleAction, setLifecycleAction] = useState<
     "retire" | "reactivate" | null
   >(null);
+  const [deceasedHistoryState, setDeceasedHistoryState] =
+    useState<PatientDeceasedStatusHistoryState>({ status: "loading" });
+  const [deceasedHistoryRetry, setDeceasedHistoryRetry] = useState(0);
+  const [deceasedSaving, setDeceasedSaving] = useState(false);
+  const [deceasedForm, setDeceasedForm] = useState({
+    deceasedDate: patient.deceasedDate ?? "",
+    deceasedReason: patient.deceasedReason ?? "",
+    correctionReason: "",
+  });
   const [careTeamForm, setCareTeamForm] = useState<CareTeamDraft>(() =>
     buildCareTeamDraft(patient),
   );
@@ -485,6 +501,30 @@ export default function PatientSummary() {
       });
     return () => controller.abort();
   }, [lifecycleHistoryRetry, patientId, session.sessionId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setDeceasedHistoryState({ status: "loading" });
+    getPatientDeceasedStatusHistory(
+      session.sessionId,
+      patientId,
+      controller.signal,
+    )
+      .then((data) => setDeceasedHistoryState({ status: "ready", data }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setDeceasedHistoryState({ status: "error" });
+      });
+    return () => controller.abort();
+  }, [deceasedHistoryRetry, patientId, session.sessionId]);
+
+  useEffect(() => {
+    setDeceasedForm({
+      deceasedDate: patient.deceasedDate ?? "",
+      deceasedReason: patient.deceasedReason ?? "",
+      correctionReason: "",
+    });
+  }, [patient.canonicalId, patient.deceasedDate, patient.deceasedReason]);
 
   async function loadRecordRequests() {
     setRecordRequestLoading(true);
@@ -1001,6 +1041,42 @@ export default function PatientSummary() {
     }
   }
 
+  async function saveDeceasedStatus(clearStatus = false) {
+    const correctionReason = deceasedForm.correctionReason.trim();
+    if (!correctionReason) {
+      showToast("A deceased-status correction reason is required.", "error");
+      return;
+    }
+    if (!clearStatus && !deceasedForm.deceasedDate) {
+      showToast("Enter a deceased date or clear the status explicitly.", "error");
+      return;
+    }
+    const action = clearStatus ? "clear" : patient.deceasedDate ? "correct" : "record";
+    if (!window.confirm(`Do you want to ${action} this deceased status?`)) {
+      return;
+    }
+
+    setDeceasedSaving(true);
+    try {
+      await updatePatientDeceasedStatus(session.sessionId, patientId, {
+        deceasedDate: clearStatus ? null : deceasedForm.deceasedDate,
+        deceasedReason: clearStatus ? null : deceasedForm.deceasedReason,
+        correctionReason,
+      });
+      setDeceasedForm((current) => ({ ...current, correctionReason: "" }));
+      showToast(
+        clearStatus ? "Deceased status cleared." : "Deceased status saved.",
+        "success",
+      );
+      setDeceasedHistoryRetry((current) => current + 1);
+      reload();
+    } catch {
+      showToast("The deceased status could not be saved.", "error");
+    } finally {
+      setDeceasedSaving(false);
+    }
+  }
+
   const setIns = (patch: Partial<PatientInsuranceMutationInput>) =>
     setInsForm((f) => ({ ...f, ...patch }));
 
@@ -1124,6 +1200,128 @@ export default function PatientSummary() {
                   {event.priorStatus} → {event.resultingStatus} by {event.actor}
                 </p>
                 <p>{event.reason}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className="cl-card" aria-labelledby="deceased-status-heading">
+        <div className="cl-card-header">
+          <h2 className="cl-card-title" id="deceased-status-heading">
+            <ArchiveRestore size={15} /> Deceased status
+          </h2>
+          <span className="status-badge">
+            {patient.deceasedDate ? "recorded" : "not recorded"}
+          </span>
+        </div>
+        <p className="muted-text">
+          Legacy behavior rejects future deceased dates. Every record, correction,
+          or clearance here retains the authenticated actor, time, and reason.
+          A recorded deceased status blocks new and rescheduled appointments.
+        </p>
+        <div className="form-row">
+          <div className="field">
+            <label className="label" htmlFor="patient-deceased-date">
+              Deceased date
+            </label>
+            <input
+              id="patient-deceased-date"
+              type="date"
+              className="input"
+              max={new Date().toISOString().slice(0, 10)}
+              value={deceasedForm.deceasedDate}
+              onChange={(event) =>
+                setDeceasedForm((current) => ({
+                  ...current,
+                  deceasedDate: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="patient-deceased-reason">
+              Clinical or administrative note
+            </label>
+            <input
+              id="patient-deceased-reason"
+              className="input"
+              value={deceasedForm.deceasedReason}
+              onChange={(event) =>
+                setDeceasedForm((current) => ({
+                  ...current,
+                  deceasedReason: event.target.value,
+                }))
+              }
+            />
+          </div>
+        </div>
+        <div className="field" style={{ marginTop: 12 }}>
+          <label className="label" htmlFor="patient-deceased-correction-reason">
+            Record or correction reason
+          </label>
+          <input
+            id="patient-deceased-correction-reason"
+            className="input"
+            maxLength={500}
+            value={deceasedForm.correctionReason}
+            onChange={(event) =>
+              setDeceasedForm((current) => ({
+                ...current,
+                correctionReason: event.target.value,
+              }))
+            }
+            placeholder="Required, retained in the correction history"
+          />
+        </div>
+        <div className="cl-inline-form-actions" style={{ marginTop: 12 }}>
+          <button
+            className="cl-btn-primary"
+            type="button"
+            disabled={deceasedSaving}
+            onClick={() => void saveDeceasedStatus()}
+          >
+            {deceasedSaving
+              ? "Saving…"
+              : patient.deceasedDate
+                ? "Save correction"
+                : "Record deceased status"}
+          </button>
+          {patient.deceasedDate ? (
+            <button
+              className="cl-btn-secondary"
+              type="button"
+              disabled={deceasedSaving}
+              onClick={() => void saveDeceasedStatus(true)}
+            >
+              Clear deceased status
+            </button>
+          ) : null}
+        </div>
+        {deceasedHistoryState.status === "loading" ? (
+          <p className="muted-text">Loading deceased-status history…</p>
+        ) : deceasedHistoryState.status === "error" ? (
+          <button
+            className="cl-link"
+            type="button"
+            onClick={() => setDeceasedHistoryRetry((current) => current + 1)}
+          >
+            Retry deceased-status history
+          </button>
+        ) : deceasedHistoryState.data.events.length === 0 ? (
+          <p className="muted-text">No deceased-status changes have been recorded.</p>
+        ) : (
+          <ol className="administration-history-list">
+            {deceasedHistoryState.data.events.slice(0, 10).map((event) => (
+              <li key={event.eventId}>
+                <div className="administration-history-event-heading">
+                  <strong>{event.action}</strong>
+                  <span>{new Date(event.occurredAt).toLocaleString()}</span>
+                </div>
+                <p className="administration-history-actor">
+                  {event.priorDeceasedDate ?? "not recorded"} → {event.resultingDeceasedDate ?? "cleared"} by {event.actor}
+                </p>
+                <p>{event.correctionReason}</p>
               </li>
             ))}
           </ol>

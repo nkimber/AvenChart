@@ -1549,17 +1549,36 @@ patients.MapPut("/{patientId}/demographics", async (
 
 patients.MapPut("/{patientId}/deceased-status", async (
         PatientRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
         string patientId,
         PatientDeceasedStatusUpdateRequest request,
         CancellationToken cancellationToken) =>
     {
-        var patient = await repository.UpdateDeceasedStatusAsync(patientId, request, cancellationToken);
-        return patient is null
-            ? Results.BadRequest("Patient deceased status could not be updated from the supplied patient and status details.")
-            : Results.Ok(patient);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+            var patient = await repository.UpdateDeceasedStatusAsync(
+                patientId, request, session.Username, cancellationToken);
+            return patient is null ? Results.NotFound() : Results.Ok(patient);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
     .WithName("UpdatePatientDeceasedStatus")
     .AddEndpointFilter(AccessPermissionFilter("patients", "demo", "write"));
+
+patients.MapGet("/{patientId}/deceased-status-history", async (
+        PatientRepository repository,
+        string patientId,
+        CancellationToken cancellationToken) =>
+    {
+        var history = await repository.GetDeceasedStatusHistoryAsync(patientId, cancellationToken);
+        return history is null ? Results.NotFound() : Results.Ok(history);
+    })
+    .WithName("GetPatientDeceasedStatusHistory");
 
 patients.MapGet("/{patientId}/lifecycle-history", async (
         PatientRepository repository,

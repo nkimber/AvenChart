@@ -2459,7 +2459,7 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            select lifecycle_status
+            select lifecycle_status, deceased_date
             from patients
             where lower(canonical_id) = lower(@patientId)
                or lower(pubpid) = lower(@patientId)
@@ -2467,15 +2467,22 @@ public sealed class AppointmentRepository(NpgsqlDataSource dataSource)
             limit 1;
             """;
         command.Parameters.AddWithValue("patientId", patientId);
-        var status = (string?)await command.ExecuteScalarAsync(cancellationToken);
-        if (status is null)
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
         {
             throw new ArgumentException("The patient was not found.");
         }
 
+        var status = reader.GetString(reader.GetOrdinal("lifecycle_status"));
+
         if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("A retired patient cannot receive a new or rescheduled appointment until reactivated.");
+        }
+
+        if (!reader.IsDBNull(reader.GetOrdinal("deceased_date")))
+        {
+            throw new ArgumentException("A deceased patient cannot receive a new or rescheduled appointment.");
         }
     }
 

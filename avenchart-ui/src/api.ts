@@ -1476,6 +1476,59 @@ export async function transitionPatientLifecycle(
   )
 }
 
+export type PatientDeceasedStatusUpdate = {
+  deceasedDate?: string | null
+  deceasedReason?: string | null
+  correctionReason: string
+}
+
+export type PatientDeceasedStatusHistoryItem = {
+  eventId: string
+  action: 'recorded' | 'corrected' | 'cleared' | string
+  priorDeceasedDate?: string | null
+  priorDeceasedReason?: string | null
+  resultingDeceasedDate?: string | null
+  resultingDeceasedReason?: string | null
+  correctionReason: string
+  actor: string
+  occurredAt: string
+}
+
+export type PatientDeceasedStatusHistoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  patientId: string
+  legacyPid: number
+  currentDeceasedDate?: string | null
+  currentDeceasedReason?: string | null
+  eventCount: number
+  events: PatientDeceasedStatusHistoryItem[]
+}
+
+export async function updatePatientDeceasedStatus(
+  sessionId: string,
+  patientId: string,
+  input: PatientDeceasedStatusUpdate,
+): Promise<PatientChartSummary> {
+  return clinicianPut(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/deceased-status`,
+    input,
+  )
+}
+
+export async function getPatientDeceasedStatusHistory(
+  sessionId: string,
+  patientId: string,
+  signal?: AbortSignal,
+): Promise<PatientDeceasedStatusHistoryResponse> {
+  return clinicianGet(
+    sessionId,
+    `/api/patients/${encodeURIComponent(patientId)}/deceased-status-history`,
+    signal,
+  )
+}
+
 export async function findPatientDuplicateCandidates(
   sessionId: string,
   input: {
