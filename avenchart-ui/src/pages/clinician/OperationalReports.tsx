@@ -10,6 +10,7 @@ import {
 import { showToast } from "../../components/Toast.tsx";
 import type { ClinicianOutletContext } from "./ClinicianShell.tsx";
 import GovernedReportDefinitions from "./GovernedReportDefinitions.tsx";
+import GovernedReportExecution from "./GovernedReportExecution.tsx";
 
 type AsyncState<T> =
   | { status: "loading" }
@@ -104,6 +105,10 @@ export default function OperationalReports() {
         sessionId={session.sessionId}
         username={session.username}
       />
+      <GovernedReportExecution
+        sessionId={session.sessionId}
+        username={session.username}
+      />
 
       {state.status === "loading" && (
         <div className="cl-card">
@@ -130,9 +135,11 @@ export default function OperationalReports() {
                       Local family exports
                     </h2>
                     <p className="cl-empty-text">
-                      Curated family exports remain local CSV output. Their
-                      current download path does not yet enforce the declared
-                      REP-01 row policy; REP-02 will close that boundary.
+                      This compatibility path predates governed run evidence.
+                      Use Governed report execution for revision-pinned,
+                      policy-checked preview, history, checksum, and protected
+                      download. This direct export remains local-only legacy
+                      behavior.
                     </p>
                   </div>
                 </div>

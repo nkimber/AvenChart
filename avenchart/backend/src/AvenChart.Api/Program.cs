@@ -73,6 +73,7 @@ builder.Services.AddScoped<BillingRepository>();
 builder.Services.AddScoped<AdministrationRepository>();
 builder.Services.AddScoped<ReportRepository>();
 builder.Services.AddScoped<ReportDefinitionRepository>();
+builder.Services.AddScoped<ReportExecutionRepository>();
 builder.Services.AddScoped<ClinicalFormRepository>();
 builder.Services.AddScoped<TherapyGroupRepository>();
 builder.Services.AddScoped<ReferralRepository>();
@@ -7277,6 +7278,12 @@ reports.MapGet("/definition-policy", (ReportDefinitionRepository repository) =>
         Results.Ok(repository.GetPolicy()))
     .WithName("GetReportDefinitionGovernancePolicy");
 
+reports.MapGet("/execution-policy", async (
+        ReportExecutionRepository repository,
+        CancellationToken cancellationToken) =>
+    Results.Ok(await repository.GetPolicyAsync(cancellationToken)))
+    .WithName("GetGovernedReportExecutionPolicy");
+
 reports.MapGet("/catalog", async (
         ReportDefinitionRepository repository,
         string? search,
@@ -7510,19 +7517,152 @@ therapyGroups.MapPost("/{groupId:guid}/sessions/{sessionId:guid}/encounters", as
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).WithName("CreateTherapyGroupSessionEncounters").AddEndpointFilter(AccessPermissionFilter("groups", "gadd", "write")).AddEndpointFilter(AccessPermissionFilter("encounters", "auth_a", "write"));
 
-reports.MapPost("/definitions/{definitionId:guid}/run", async (
-        ReportRepository repository,
+reports.MapPost("/definitions/{definitionId:guid}/preview", async (
+        ReportExecutionRepository repository,
         AuthRepository authRepository,
         HttpContext httpContext,
         Guid definitionId,
+        GovernedReportPreviewRequest request,
         CancellationToken cancellationToken) =>
     {
-        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
-        var run = await repository.RunSavedDefinitionAsync(definitionId, session.Username, cancellationToken);
-        return run is null ? Results.NotFound() : Results.Ok(run);
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var preview = await repository.PreviewAsync(
+                definitionId,
+                request,
+                session.Username,
+                cancellationToken);
+            return preview is null ? Results.NotFound() : Results.Ok(preview);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
     })
-    .WithName("RunSavedReportDefinition")
+    .WithName("PreviewGovernedReportDefinition")
     .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+reports.MapPost("/definitions/{definitionId:guid}/run", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid definitionId,
+        GovernedReportRunRequest request,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var run = await repository.RunAsync(
+                definitionId,
+                request,
+                session.Username,
+                cancellationToken);
+            return run is null
+                ? Results.NotFound()
+                : Results.Created($"/api/reports/runs/{run.Run.RunId}", run);
+        }
+        catch (ReportExecutionConflictException exception)
+        {
+            return Results.Conflict(new
+            {
+                error = exception.Message,
+                existingRun = exception.ExistingRun
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("RunGovernedReportDefinition")
+    .AddEndpointFilter(AccessPermissionFilter("patients", "pat_rep", "write"));
+
+reports.MapGet("/definitions/{definitionId:guid}/runs", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        Guid definitionId,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken) =>
+    {
+        var session = await GetSessionFromHeaderAsync(
+            authRepository,
+            httpContext,
+            cancellationToken);
+        return Results.Ok(await repository.ListRunsAsync(
+            definitionId,
+            session.Username,
+            page ?? 1,
+            pageSize ?? 20,
+            cancellationToken));
+    })
+    .WithName("GetGovernedReportRuns");
+
+reports.MapGet("/runs/{runId}", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string runId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var run = await repository.GetRunAsync(
+                runId,
+                session.Username,
+                cancellationToken);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("GetGovernedReportRun");
+
+reports.MapGet("/runs/{runId}/download", async (
+        ReportExecutionRepository repository,
+        AuthRepository authRepository,
+        HttpContext httpContext,
+        string runId,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var session = await GetSessionFromHeaderAsync(
+                authRepository,
+                httpContext,
+                cancellationToken);
+            var artifact = await repository.DownloadAsync(
+                runId,
+                session.Username,
+                cancellationToken);
+            return artifact is null
+                ? Results.NotFound()
+                : Results.File(
+                    artifact.Content,
+                    artifact.ContentType,
+                    artifact.FileName);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(new { error = exception.Message });
+        }
+    })
+    .WithName("DownloadGovernedReportRun");
 
 app.Run();
 

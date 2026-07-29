@@ -293,6 +293,7 @@ drop sequence if exists inventory_lot_id_seq;
 drop table if exists inventory_items;
 drop table if exists allergies;
 drop table if exists problems;
+drop table if exists saved_report_run_events;
 drop table if exists saved_report_runs;
 drop table if exists saved_report_definition_events;
 drop table if exists saved_report_definition_revisions;

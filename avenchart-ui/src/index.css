@@ -9540,6 +9540,64 @@ h4 {
   }
 }
 
+.report-execution-workspace {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.report-execution-controls {
+  display: grid;
+  grid-template-columns: minmax(16rem, 2fr) repeat(2, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.report-execution-wide {
+  min-width: 0;
+}
+
+.report-execution-contract,
+.report-execution-result {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.report-execution-contract p,
+.report-execution-result p {
+  margin: 0;
+}
+
+.report-execution-result code {
+  overflow-wrap: anywhere;
+}
+
+.report-execution-result .cl-field-help {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 900px) {
+  .report-execution-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .report-execution-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .report-execution-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .report-execution-wide {
+    grid-column: auto;
+  }
+}
+
 /* Governed clinical form engine (FORM-01/02/03 and CLIN-02) */
 .clinical-form-workspace,
 .clinical-form-governance {

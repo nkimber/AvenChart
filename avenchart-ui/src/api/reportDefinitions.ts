@@ -166,6 +166,109 @@ export type GovernedReportDefinitionDetail = {
   events: GovernedReportDefinitionEvent[];
 };
 
+export type GovernedReportExecutionPolicy = {
+  revision: string;
+  definitionRevision: string;
+  datasetId: string;
+  datasetVersion: string;
+  requiredAsOfDate: string;
+  runStates: string[];
+  executableRowPolicies: string[];
+  deliveryModes: string[];
+  maximumDateSpanDays: number;
+  maximumRows: number;
+  previewRows: number;
+  externalDeliveryEnabled: boolean;
+  artifactStorageProductionApproved: boolean;
+  productionBlockers: string[];
+};
+
+export type GovernedReportExecutionInput = {
+  purpose: string;
+  recipientUsername: string;
+  deliveryMode: string;
+  asOfDate: string;
+  parameters: Record<string, string | null>;
+};
+
+export type GovernedReportPreview = {
+  definitionId: string;
+  revisionId: string;
+  revisionNumber: number;
+  reportFamily: string;
+  rowPolicy: string;
+  purpose: string;
+  recipientUsername: string;
+  asOfDate: string;
+  normalizedParameters: Record<string, string | null>;
+  datasetId: string;
+  datasetVersion: string;
+  executionRevision: string;
+  totalRows: number;
+  previewRowLimit: number;
+  columns: string[];
+  rows: string[][];
+  resultChecksum: string;
+};
+
+export type GovernedReportRun = {
+  runId: string;
+  definitionId: string;
+  revisionId: string | null;
+  revisionNumber: number | null;
+  definitionStableKey: string;
+  definitionTitle: string;
+  reportFamily: string;
+  status: string;
+  requestedBy: string;
+  recipientUsername: string;
+  purpose: string;
+  rowPolicy: string;
+  asOfDate: string;
+  normalizedParameters: Record<string, string | null>;
+  datasetId: string;
+  datasetVersion: string;
+  executionRevision: string;
+  definitionSnapshotChecksum: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  rowCount: number;
+  resultChecksum: string | null;
+  artifactBytes: number;
+  artifactContentType: string | null;
+  artifactFileName: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  downloadAvailable: boolean;
+  replay: boolean;
+};
+
+export type GovernedReportRunEvent = {
+  eventId: string;
+  runId: string;
+  action: string;
+  fromStatus: string | null;
+  toStatus: string;
+  actorUsername: string;
+  reason: string;
+  occurredAt: string;
+  details: Record<string, unknown>;
+};
+
+export type GovernedReportRunDetail = {
+  run: GovernedReportRun;
+  events: GovernedReportRunEvent[];
+};
+
+export type GovernedReportRunList = {
+  runs: GovernedReportRun[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 function headers(sessionId: string, json = false) {
   return {
     "X-Legacy EHR-Session": sessionId,
@@ -287,4 +390,88 @@ export async function deleteGovernedReportDefinitionTestFixture(
     `${apiBaseUrl}/api/reports/definitions/${encodeURIComponent(definitionId)}/test-fixture`,
     { method: "DELETE", headers: headers(sessionId) },
   );
+}
+
+export async function getGovernedReportExecutionPolicy(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<GovernedReportExecutionPolicy> {
+  const response = await apiFetch(`${apiBaseUrl}/api/reports/execution-policy`, {
+    headers: headers(sessionId),
+    signal,
+  });
+  return (await response.json()) as GovernedReportExecutionPolicy;
+}
+
+export async function previewGovernedReport(
+  sessionId: string,
+  definitionId: string,
+  input: GovernedReportExecutionInput,
+): Promise<GovernedReportPreview> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/definitions/${encodeURIComponent(definitionId)}/preview`,
+    {
+      method: "POST",
+      headers: headers(sessionId, true),
+      body: JSON.stringify(input),
+    },
+  );
+  return (await response.json()) as GovernedReportPreview;
+}
+
+export async function runGovernedReport(
+  sessionId: string,
+  definitionId: string,
+  input: GovernedReportExecutionInput & { idempotencyKey: string },
+): Promise<GovernedReportRunDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/definitions/${encodeURIComponent(definitionId)}/run`,
+    {
+      method: "POST",
+      headers: headers(sessionId, true),
+      body: JSON.stringify(input),
+    },
+  );
+  return (await response.json()) as GovernedReportRunDetail;
+}
+
+export async function getGovernedReportRuns(
+  sessionId: string,
+  definitionId: string,
+  page = 1,
+  pageSize = 10,
+  signal?: AbortSignal,
+): Promise<GovernedReportRunList> {
+  const query = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/definitions/${encodeURIComponent(definitionId)}/runs?${query}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as GovernedReportRunList;
+}
+
+export async function getGovernedReportRun(
+  sessionId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<GovernedReportRunDetail> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}`,
+    { headers: headers(sessionId), signal },
+  );
+  return (await response.json()) as GovernedReportRunDetail;
+}
+
+export async function downloadGovernedReportRun(
+  sessionId: string,
+  runId: string,
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/reports/runs/${encodeURIComponent(runId)}/download`,
+    { headers: headers(sessionId) },
+  );
+  return response.blob();
 }
