@@ -1865,6 +1865,30 @@ describe('authenticated API transport', () => {
     const detail = {
       patientId: 'MOD-PAT-0004',
       patientDisplayName: 'Alex Morgan',
+  it('uses the protected local lab directory and ordering-organization contracts', async () => {
+    const providers = { datasetId: 'test', datasetVersion: 'v1', includeInactive: true, totalProviders: 1, activeProviders: 1, inactiveProviders: 0, providers: [{ id: 501, name: 'Northstar Lab', active: true, orderCount: 2, reportCount: 3, futureOrderCount: 1 }] }
+    const addressBook = { datasetId: 'test', datasetVersion: 'v1', organizations: [{ id: 61, organization: 'Northstar Ordering', type: 'ord_lab', active: true }] }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(providers))
+      .mockResolvedValueOnce(jsonResponse(addressBook))
+      .mockResolvedValueOnce(jsonResponse({ id: 62, addressBook }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(getProcedureLabProviders('staff-session')).resolves.toEqual(providers)
+    await expect(getProcedureLabProviderAddressBook('staff-session')).resolves.toEqual(addressBook)
+    await expect(createProcedureLabProviderOrganization('staff-session', { organization: 'Northstar Ordering', type: 'ord_lab', active: true })).resolves.toEqual(addressBook)
+    await expect(deleteProcedureLabProviderOrganization('staff-session', 61)).resolves.toBeUndefined()
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:5001/api/procedures/lab-providers?includeInactive=true',
+      'http://localhost:5001/api/procedures/lab-provider-address-book',
+      'http://localhost:5001/api/procedures/lab-provider-address-book',
+      'http://localhost:5001/api/procedures/lab-provider-address-book/61',
+    ])
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ organization: 'Northstar Ordering', type: 'ord_lab', active: true }) })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'DELETE' })
+  })
+
       counts: { orders: 1, reports: 1, results: 0, finalResults: 0 },
       orders: [],
     }

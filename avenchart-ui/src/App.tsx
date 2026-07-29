@@ -36,6 +36,7 @@ const PatientPrintOutputs = lazy(() => import('./pages/clinician/PatientPrintOut
 const ClinicianCalendar = lazy(() => import('./pages/clinician/ClinicianCalendar.tsx'))
 const FlowBoard = lazy(() => import('./pages/clinician/FlowBoard.tsx'))
 const LabQueue = lazy(() => import('./pages/clinician/LabQueue.tsx'))
+const LabDirectory = lazy(() => import('./pages/clinician/LabDirectory.tsx'))
 const OperationalReports = lazy(() => import('./pages/clinician/OperationalReports.tsx'))
 const TherapyGroups = lazy(() => import('./pages/clinician/TherapyGroups.tsx'))
 const BillingWorkspace = lazy(() => import('./pages/clinician/BillingWorkspace.tsx'))
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="flow" element={<FlowBoard />} />
           <Route path="scheduling" element={<SchedulingOperations />} />
           <Route path="labs" element={<LabQueue />} />
+          <Route path="lab-directory" element={<LabDirectory />} />
           <Route path="messages" element={<ClinicianMessages />} />
           <Route path="office-notes" element={<OfficeNotes />} />
           <Route path="address-book" element={<AddressBook />} />

@@ -6151,6 +6151,53 @@ export async function downloadPatientDocumentVersion(
 
 // ── Procedures / Lab Queue ────────────────────────────────────────────────────
 
+export type ProcedureLabProviderDirectoryResponse = {
+  datasetId: string
+  datasetVersion: string
+  includeInactive: boolean
+  totalProviders: number
+  activeProviders: number
+  inactiveProviders: number
+  providers: Array<{
+    id: number
+    name: string
+    labDirectorName?: string | null
+    labDirectorType?: string | null
+    npi?: string | null
+    protocol?: string | null
+    usage?: string | null
+    direction?: string | null
+    notes?: string | null
+    active: boolean
+    orderCount: number
+    reportCount: number
+    futureOrderCount: number
+  }>
+}
+
+export type ProcedureLabProviderAddressBookResponse = {
+  datasetId: string
+  datasetVersion: string
+  organizations: Array<{ id: number; organization: string; type: string; active: boolean }>
+}
+
+export function getProcedureLabProviders(sessionId: string, includeInactive = true, signal?: AbortSignal): Promise<ProcedureLabProviderDirectoryResponse> {
+  return clinicianGet(sessionId, `/api/procedures/lab-providers?includeInactive=${includeInactive}`, signal)
+}
+
+export function getProcedureLabProviderAddressBook(sessionId: string, signal?: AbortSignal): Promise<ProcedureLabProviderAddressBookResponse> {
+  return clinicianGet(sessionId, '/api/procedures/lab-provider-address-book', signal)
+}
+
+export async function createProcedureLabProviderOrganization(sessionId: string, input: { organization: string; type?: string; active: boolean }): Promise<ProcedureLabProviderAddressBookResponse> {
+  const result = await clinicianPost<{ id: number; addressBook: ProcedureLabProviderAddressBookResponse }>(sessionId, '/api/procedures/lab-provider-address-book', input)
+  return result.addressBook
+}
+
+export function deleteProcedureLabProviderOrganization(sessionId: string, organizationId: number): Promise<void> {
+  return clinicianDelete(sessionId, `/api/procedures/lab-provider-address-book/${organizationId}`)
+}
+
 export type ProcedureResultItem = {
   id: number
   code?: string | null
