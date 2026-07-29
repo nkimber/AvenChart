@@ -555,6 +555,15 @@ try {
         ($null -ne $phqDefinition -and $phqDefinition.contextScope -eq "encounter" -and $phqDefinition.signaturePolicy -eq "author-only" -and $phqDetail.currentRevision.schemaHash -eq "554327a15216462cf1b2e5edfbbc444f51c9e79da984a4408153ce3621b2c900" -and $phqScoreFields.Count -eq 9 -and @($phqScoreFields | Where-Object { $_.type -ne "select" -or $_.required -ne $true -or $_.options.Count -ne 4 }).Count -eq 0 -and $phqPreview.valid -and $phqPreview.values.total_score -eq 12 -and $phqPreview.visibleFields.difficulty -and $phqPreview.requiredFields.difficulty -and $phqPositivePreview.valid -and $phqPositivePreview.values.total_score -eq 1 -and @($phqPositivePreview.issues | Where-Object { $_.ruleKey -eq "warn_positive_self_harm_response" -and $_.severity -eq "warning" }).Count -eq 1) `
         @{ definitionId=$phqDefinition.definitionId; schemaHash=$phqDetail.currentRevision.schemaHash; calculatedTotal=$phqPreview.values.total_score; selfHarmWarningCount=@($phqPositivePreview.issues | Where-Object { $_.ruleKey -eq "warn_positive_self_harm_response" }).Count }
 
+    $gadDefinition = @($catalog.definitions | Where-Object { $_.stableKey -eq "legacy.gad7" }) | Select-Object -First 1
+    $gadDetail = if ($null -ne $gadDefinition) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/definitions/$($gadDefinition.definitionId)" -RequestHeaders $adminHeaders } else { $null }
+    $gadScores = @($gadDetail.currentRevision.definition.fields | Where-Object { $_.key -match "_score$" -and $_.key -ne "total_score" })
+    $gadPreview = if ($null -ne $gadDetail) { Invoke-Json -Uri "$ApiBaseUrl/api/form-engine/preview" -Method "POST" -RequestHeaders $adminHeaders -Body @{ definition=$gadDetail.currentRevision.definition; values=@{ nervous_score="0"; control_worry_score="1"; worry_score="2"; relax_score="3"; restless_score="0"; irritable_score="1"; fear_score="2"; difficulty="1" } } } else { $null }
+    Add-Check `
+        "Legacy GAD-7 adoption calculates its bounded total and conditional impact question without PHP execution" `
+        ($null -ne $gadDefinition -and $gadDefinition.contextScope -eq "encounter" -and $gadDefinition.signaturePolicy -eq "author-only" -and $gadScores.Count -eq 7 -and (($gadDetail.currentRevision.definition.fields.key -join "|") -eq "nervous_score|control_worry_score|worry_score|relax_score|restless_score|irritable_score|fear_score|difficulty|total_score") -and $gadPreview.valid -and $gadPreview.values.total_score -eq 9 -and $gadPreview.visibleFields.difficulty -and $gadPreview.requiredFields.difficulty) `
+        @{ definitionId=$gadDefinition.definitionId; schemaHash=$gadDetail.currentRevision.schemaHash; calculatedTotal=$gadPreview.values.total_score }
+
     $marker = [Guid]::NewGuid().ToString("N").Substring(0, 12)
     $stableKey = "tmp.form.$marker"
     $schema = New-TestSchema `
