@@ -178,6 +178,64 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
             "The package passed local schema validation but was not applied. Import, review/approval, and compensating rollback are separate ADM-03 slices.");
     }
 
+    public async Task<ConfigurationPackageImportRequestDetailResponse> CreateConfigurationPackageImportRequestAsync(
+        ConfigurationPackageImportRequestCreateRequest request,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var issues = ValidateConfigurationPackage(request.Package);
+        if (issues.Count > 0 || request.Package is null)
+        {
+            throw new ArgumentException(string.Join(" ", issues.Select(issue => issue.Message)));
+        }
+        var reason = ValidateChangeRequestReason(request.Reason, required: true)!;
+        var package = request.Package;
+        var digest = GetConfigurationPackageDigest(package);
+        var requestId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var baseline = await GetCurrentConfigurationPackageAsync(connection, transaction, cancellationToken);
+        await using (var duplicate = connection.CreateCommand())
+        {
+            duplicate.Transaction = transaction;
+            duplicate.CommandText = "select exists(select 1 from configuration_package_import_requests where status in ('draft','submitted','approved'));";
+            if ((bool)(await duplicate.ExecuteScalarAsync(cancellationToken) ?? false))
+            {
+                throw new ConfigurationPackageImportRequestConflictException("An open configuration-package import request already exists.");
+            }
+        }
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = "insert into configuration_package_import_requests(request_id,package_sha256,package_document,baseline_document,reason,status,version,created_at,created_by,updated_at,updated_by) values(@id,@digest,@package,@baseline,@reason,'draft',0,now(),@user,now(),@user);";
+            insert.Parameters.AddWithValue("id", requestId);
+            insert.Parameters.AddWithValue("digest", digest);
+            insert.Parameters.Add("package", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(package, PortalProfileChangeJsonOptions);
+            insert.Parameters.Add("baseline", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(baseline, PortalProfileChangeJsonOptions);
+            insert.Parameters.AddWithValue("reason", reason);
+            insert.Parameters.AddWithValue("user", username);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await WriteConfigurationPackageImportEventAsync(connection, transaction, requestId, "created", reason, username, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetConfigurationPackageImportRequestAsync(requestId, cancellationToken);
+    }
+
+    public Task<ConfigurationPackageImportRequestDetailResponse> SubmitConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
+        TransitionConfigurationPackageImportRequestAsync(requestId, ["draft"], "submitted", note, false, version, username, cancellationToken);
+
+    public Task<ConfigurationPackageImportRequestDetailResponse> ApproveConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
+        TransitionConfigurationPackageImportRequestAsync(requestId, ["submitted"], "approved", note, false, version, username, cancellationToken);
+
+    public Task<ConfigurationPackageImportRequestDetailResponse> RejectConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
+        TransitionConfigurationPackageImportRequestAsync(requestId, ["submitted"], "rejected", note, true, version, username, cancellationToken);
+
+    public Task<ConfigurationPackageImportRequestDetailResponse> CancelConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
+        TransitionConfigurationPackageImportRequestAsync(requestId, ["draft", "submitted", "approved"], "cancelled", note, true, version, username, cancellationToken);
+
+    public Task<ConfigurationPackageImportRequestDetailResponse> ActivateConfigurationPackageImportRequestAsync(Guid requestId, string? note, int? version, string username, CancellationToken cancellationToken) =>
+        TransitionConfigurationPackageImportRequestAsync(requestId, ["approved"], "activated", note, false, version, username, cancellationToken);
+
     public async Task<IReadOnlyList<PracticeSettingDelegationItem>> GetPracticeSettingDelegationsAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -1842,6 +1900,141 @@ public sealed class AdministrationRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue("digest", (object?)digest ?? DBNull.Value);
         command.Parameters.AddWithValue("settingCount", settingCount);
         command.Parameters.AddWithValue("username", username);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<ConfigurationPackageImportRequestDetailResponse> GetConfigurationPackageImportRequestAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var request = await ReadConfigurationPackageImportRequestAsync(connection, requestId, cancellationToken)
+            ?? throw new ArgumentException("The requested configuration-package import request was not found.");
+        var current = await GetCurrentConfigurationPackageAsync(connection, null, cancellationToken);
+        var currentValues = current.PracticeSettings.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+        var conflicts = request.Package.PracticeSettings.OrderBy(item => item.Key, StringComparer.Ordinal)
+            .Select(item => new ConfigurationPackageConflict(item.Key, currentValues[item.Key], item.Value, string.Equals(currentValues[item.Key], item.Value, StringComparison.Ordinal) ? "unchanged" : "would-change"))
+            .ToArray();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select event_id,action,note,occurred_at,username from configuration_package_import_request_events where request_id=@id order by occurred_at desc,event_id desc;";
+        command.Parameters.AddWithValue("id", requestId);
+        var events = new List<ConfigurationPackageImportRequestEvent>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            events.Add(new(reader.GetInt64(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3).ToString("O"), reader.GetString(4)));
+        }
+        return new(request.Item, conflicts, events);
+    }
+
+    private async Task<ConfigurationPackageImportRequestDetailResponse> TransitionConfigurationPackageImportRequestAsync(
+        Guid requestId,
+        string[] expectedStatuses,
+        string nextStatus,
+        string? note,
+        bool noteRequired,
+        int? expectedVersion,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        var normalizedNote = ValidateChangeRequestReason(note, noteRequired);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var request = await ReadConfigurationPackageImportRequestAsync(connection, requestId, cancellationToken, transaction, true)
+            ?? throw new ArgumentException("The requested configuration-package import request was not found.");
+        if (!expectedStatuses.Contains(request.Item.Status, StringComparer.Ordinal))
+        {
+            throw new ConfigurationPackageImportRequestConflictException($"The import request is {request.Item.Status}; it cannot move to {nextStatus}.");
+        }
+        if (expectedVersion is not null && expectedVersion != request.Item.Version)
+        {
+            throw new ConfigurationPackageImportRequestConflictException($"The import request changed after it was loaded. Current version is {request.Item.Version}.");
+        }
+
+        if (nextStatus == "activated")
+        {
+            var current = await GetCurrentConfigurationPackageAsync(connection, transaction, cancellationToken);
+            if (!string.Equals(JsonSerializer.Serialize(current, PortalProfileChangeJsonOptions), JsonSerializer.Serialize(request.Baseline, PortalProfileChangeJsonOptions), StringComparison.Ordinal))
+            {
+                throw new ConfigurationPackageImportRequestConflictException("The active settings changed after this import request was created. Create a new package request.");
+            }
+            foreach (var setting in request.Package.PracticeSettings)
+            {
+                var prior = request.Baseline.PracticeSettings.Single(item => item.Key == setting.Key).Value;
+                if (!string.Equals(prior, setting.Value, StringComparison.Ordinal))
+                {
+                    await WritePracticeSettingRevisionAsync(connection, transaction, setting.Key, prior, setting.Value, username, "package-imported", null, cancellationToken);
+                }
+            }
+        }
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = "update configuration_package_import_requests set status=@status,version=version+1,updated_at=now(),updated_by=@user where request_id=@id;";
+            update.Parameters.AddWithValue("id", requestId);
+            update.Parameters.AddWithValue("status", nextStatus);
+            update.Parameters.AddWithValue("user", username);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await WriteConfigurationPackageImportEventAsync(connection, transaction, requestId, nextStatus, normalizedNote, username, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetConfigurationPackageImportRequestAsync(requestId, cancellationToken);
+    }
+
+    private static async Task<ConfigurationPackageDocument> GetCurrentConfigurationPackageAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"select setting_key,setting_value,value_type from practice_settings order by setting_key{(transaction is null ? string.Empty : " for update")};";
+        var settings = new List<ConfigurationPackagePracticeSetting>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) settings.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        return new("legacy-ehr-modernized-configuration-package", "1", settings);
+    }
+
+    private sealed record ConfigurationPackageImportRequestData(
+        ConfigurationPackageImportRequestItem Item,
+        ConfigurationPackageDocument Package,
+        ConfigurationPackageDocument Baseline);
+
+    private static async Task<ConfigurationPackageImportRequestData?> ReadConfigurationPackageImportRequestAsync(
+        NpgsqlConnection connection,
+        Guid requestId,
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null,
+        bool forUpdate = false)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"select request_id,package_sha256,package_document,baseline_document,reason,status,version,created_at,created_by,updated_at,updated_by from configuration_package_import_requests where request_id=@id{(forUpdate ? " for update" : string.Empty)};";
+        command.Parameters.AddWithValue("id", requestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var package = JsonSerializer.Deserialize<ConfigurationPackageDocument>(reader.GetString(2), PortalProfileChangeJsonOptions) ?? throw new InvalidOperationException("The stored package document is invalid.");
+        var baseline = JsonSerializer.Deserialize<ConfigurationPackageDocument>(reader.GetString(3), PortalProfileChangeJsonOptions) ?? throw new InvalidOperationException("The stored package baseline is invalid.");
+        return new(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7).ToString("O"), reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9).ToString("O"), reader.GetString(10)), package, baseline);
+    }
+
+    private static async Task WriteConfigurationPackageImportEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid requestId,
+        string action,
+        string? note,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "insert into configuration_package_import_request_events(request_id,action,note,occurred_at,username) values(@id,@action,@note,now(),@user);";
+        command.Parameters.AddWithValue("id", requestId);
+        command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("note", (object?)note ?? DBNull.Value);
+        command.Parameters.AddWithValue("user", username);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

@@ -9116,3 +9116,41 @@ export async function submitPatientPortalProfileChange(
     )
   return response.json()
 }
+export type ConfigurationPackageImportRequest = {
+  requestId: string
+  sha256: string
+  reason: string
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'activated' | 'cancelled'
+  version: number
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+}
+export type ConfigurationPackageImportRequestDetail = {
+  request: ConfigurationPackageImportRequest
+  currentConflicts: ConfigurationPackageDryRun['conflicts']
+  events: Array<{ eventId: number; action: string; note: string | null; occurredAt: string; username: string }>
+}
+export async function createConfigurationPackageImportRequest(
+  sessionId: string,
+  packageDocument: ConfigurationPackageDocument,
+  reason: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(sessionId, '/api/administration/configuration-package-import-requests', {
+    package: packageDocument,
+    reason,
+  })
+}
+export async function transitionConfigurationPackageImportRequest(
+  sessionId: string,
+  requestId: string,
+  action: 'submit' | 'approve' | 'reject' | 'activate' | 'cancel',
+  expectedVersion: number,
+  note?: string,
+): Promise<ConfigurationPackageImportRequestDetail> {
+  return clinicianPost(sessionId, `/api/administration/configuration-package-import-requests/${requestId}/${action}`, {
+    note: note ?? null,
+    expectedVersion,
+  })
+}

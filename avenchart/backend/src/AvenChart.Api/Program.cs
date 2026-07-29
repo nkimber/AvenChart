@@ -8032,3 +8032,38 @@ static async Task<AuthSessionResponse> GetSessionFromHeaderAsync(
     var adapter = httpContext.RequestServices.GetRequiredService<IStaffIdentityAdapter>();
     return await adapter.ResolveAsync(httpContext, cancellationToken);
 }
+administration.MapGet("/configuration-package-import-requests/{requestId:guid}", async (Guid requestId, AdministrationRepository repository, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await repository.GetConfigurationPackageImportRequestAsync(requestId, cancellationToken)); }
+    catch (ArgumentException exception) { return Results.NotFound(new { error = exception.Message }); }
+}).WithName("GetConfigurationPackageImportRequest");
+administration.MapPost("/configuration-package-import-requests", async (ConfigurationPackageImportRequestCreateRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = await repository.CreateConfigurationPackageImportRequestAsync(request, session.Username, cancellationToken);
+        return Results.Created($"/api/administration/configuration-package-import-requests/{response.Request.RequestId}", response);
+    }
+    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("CreateConfigurationPackageImportRequest");
+administration.MapPost("/configuration-package-import-requests/{requestId:guid}/{action}", async (Guid requestId, string action, ConfigurationPackageImportRequestDecisionRequest request, AdministrationRepository repository, AuthRepository authRepository, HttpContext httpContext, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await GetSessionFromHeaderAsync(authRepository, httpContext, cancellationToken);
+        var response = action switch
+        {
+            "submit" => await repository.SubmitConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "approve" => await repository.ApproveConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "reject" => await repository.RejectConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "activate" => await repository.ActivateConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            "cancel" => await repository.CancelConfigurationPackageImportRequestAsync(requestId, request.Note, request.ExpectedVersion, session.Username, cancellationToken),
+            _ => throw new ArgumentException("The requested import-request action is not supported."),
+        };
+        return Results.Ok(response);
+    }
+    catch (ConfigurationPackageImportRequestConflictException exception) { return Results.Conflict(new { error = exception.Message }); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+}).WithName("TransitionConfigurationPackageImportRequest");

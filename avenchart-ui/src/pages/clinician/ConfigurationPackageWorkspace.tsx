@@ -1,8 +1,11 @@
 import { useState } from "react";
 import {
+  createConfigurationPackageImportRequest,
   dryRunConfigurationPackage,
   exportConfigurationPackage,
   type ConfigurationPackageDryRun,
+  type ConfigurationPackageImportRequestDetail,
+  transitionConfigurationPackageImportRequest,
 } from "../../api.ts";
 
 export default function ConfigurationPackageWorkspace({
@@ -12,6 +15,9 @@ export default function ConfigurationPackageWorkspace({
 }) {
   const [packageJson, setPackageJson] = useState("");
   const [result, setResult] = useState<ConfigurationPackageDryRun | null>(null);
+  const [reason, setReason] = useState("");
+  const [decisionNote, setDecisionNote] = useState("");
+  const [importRequest, setImportRequest] = useState<ConfigurationPackageImportRequestDetail | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -46,18 +52,56 @@ export default function ConfigurationPackageWorkspace({
     }
   }
 
+  async function createImportRequest() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const packageDocument = JSON.parse(packageJson);
+      const response = await createConfigurationPackageImportRequest(sessionId, packageDocument, reason);
+      setImportRequest(response);
+      setMessage("Reviewed import request created. Submit it when it is ready for approval.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create the import request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function transitionImportRequest(action: "submit" | "approve" | "reject" | "activate" | "cancel") {
+    if (!importRequest) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await transitionConfigurationPackageImportRequest(
+        sessionId,
+        importRequest.request.requestId,
+        action,
+        importRequest.request.version,
+        decisionNote,
+      );
+      setImportRequest(response);
+      setDecisionNote("");
+      setMessage(`Import request ${action === "approve" ? "approved" : action === "activate" ? "activated" : action === "submit" ? "submitted" : `${action}ed`}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update the import request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="cl-card" aria-label="Configuration package workspace">
       <h2 className="cl-card-title">Configuration package</h2>
       <p className="clinician-page-subtitle">
-        Export the three adopted non-secret practice settings, or validate a
-        package before a future reviewed import. This workspace cannot apply a
-        package.
+        Export or validate the three adopted non-secret practice settings, then
+        open a reviewed import request. Activation rechecks the complete
+        captured baseline before it changes any setting.
       </p>
       <div className="practice-governance-boundary" role="note">
         Package export excludes secrets, access tokens, and private keys. A
-        successful dry run reports differences only; review, import, and
-        compensating rollback are separate ADM-03 work.
+        successful dry run reports differences only. A request has an
+        immutable event trail; activation writes normal setting revisions.
+        Compensating rollback remains a separate ADM-03 slice.
       </div>
       <div className="practice-setting-actions">
         <button className="cl-btn-secondary" type="button" onClick={() => void exportPackage()} disabled={busy}>
@@ -66,10 +110,17 @@ export default function ConfigurationPackageWorkspace({
         <button className="cl-btn-secondary" type="button" onClick={() => void dryRun()} disabled={busy || !packageJson.trim()}>
           Validate package
         </button>
+        <button className="cl-btn-primary" type="button" onClick={() => void createImportRequest()} disabled={busy || !packageJson.trim() || !reason.trim() || Boolean(importRequest && ["draft", "submitted", "approved"].includes(importRequest.request.status))}>
+          Create reviewed import
+        </button>
       </div>
       <label className="cl-admin-field">
         <span>Configuration package JSON</span>
         <textarea className="ne-input" rows={12} value={packageJson} onChange={(event) => setPackageJson(event.target.value)} spellCheck={false} />
+      </label>
+      <label className="cl-admin-field">
+        <span>Reason for reviewed import</span>
+        <input className="ne-input" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} />
       </label>
       {message && <p className="cl-empty-text" role="status">{message}</p>}
       {result && (
@@ -78,6 +129,20 @@ export default function ConfigurationPackageWorkspace({
           {result.issues.length > 0 && <ul>{result.issues.map((issue) => <li key={`${issue.code}-${issue.message}`}>{issue.message}</li>)}</ul>}
           {result.conflicts.length > 0 && <ul>{result.conflicts.map((conflict) => <li key={conflict.key}>{conflict.key}: {conflict.state === "would-change" ? `${conflict.currentValue} → ${conflict.proposedValue}` : "unchanged"}</li>)}</ul>}
           <p className="cl-empty-text">{result.boundary}</p>
+        </div>
+      )}
+      {importRequest && (
+        <div className="cl-access-panel">
+          <p className="cl-admin-form-copy"><strong>Import request:</strong> {importRequest.request.status} (version {importRequest.request.version})</p>
+          {["submitted", "approved", "draft"].includes(importRequest.request.status) && <label className="cl-admin-field"><span>Decision note (required for reject or cancel)</span><input className="ne-input" value={decisionNote} onChange={(event) => setDecisionNote(event.target.value)} maxLength={1000} /></label>}
+          <div className="practice-setting-actions">
+            {importRequest.request.status === "draft" && <button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void transitionImportRequest("submit")}>Submit</button>}
+            {importRequest.request.status === "submitted" && <><button className="cl-btn-primary" type="button" disabled={busy} onClick={() => void transitionImportRequest("approve")}>Approve</button><button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void transitionImportRequest("reject")}>Reject</button></>}
+            {importRequest.request.status === "approved" && <button className="cl-btn-primary" type="button" disabled={busy} onClick={() => void transitionImportRequest("activate")}>Activate after baseline check</button>}
+            {["draft", "submitted", "approved"].includes(importRequest.request.status) && <button className="cl-btn-secondary" type="button" disabled={busy} onClick={() => void transitionImportRequest("cancel")}>Cancel</button>}
+          </div>
+          <ul>{importRequest.currentConflicts.map((conflict) => <li key={conflict.key}>{conflict.key}: {conflict.state === "would-change" ? `${conflict.currentValue} → ${conflict.proposedValue}` : "unchanged"}</li>)}</ul>
+          <p className="cl-empty-text">{importRequest.events.map((event) => `${event.action} by ${event.username}`).join(" · ")}</p>
         </div>
       )}
     </section>

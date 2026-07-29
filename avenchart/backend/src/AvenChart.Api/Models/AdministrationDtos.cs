@@ -240,6 +240,39 @@ public sealed record ConfigurationPackageDryRunResponse(
     IReadOnlyList<ConfigurationPackageConflict> Conflicts,
     string Boundary);
 
+public sealed record ConfigurationPackageImportRequestCreateRequest(
+    ConfigurationPackageDocument? Package,
+    string Reason);
+
+public sealed record ConfigurationPackageImportRequestDecisionRequest(
+    string? Note,
+    int? ExpectedVersion = null);
+
+public sealed record ConfigurationPackageImportRequestItem(
+    Guid RequestId,
+    string Sha256,
+    string Reason,
+    string Status,
+    int Version,
+    string CreatedAt,
+    string CreatedBy,
+    string UpdatedAt,
+    string UpdatedBy);
+
+public sealed record ConfigurationPackageImportRequestEvent(
+    long EventId,
+    string Action,
+    string? Note,
+    string OccurredAt,
+    string Username);
+
+public sealed record ConfigurationPackageImportRequestDetailResponse(
+    ConfigurationPackageImportRequestItem Request,
+    IReadOnlyList<ConfigurationPackageConflict> CurrentConflicts,
+    IReadOnlyList<ConfigurationPackageImportRequestEvent> Events);
+
+public sealed class ConfigurationPackageImportRequestConflictException(string message) : Exception(message);
+
 public sealed record PracticeSettingDelegationCreateRequest(
     string Username,
     string SettingKey,
