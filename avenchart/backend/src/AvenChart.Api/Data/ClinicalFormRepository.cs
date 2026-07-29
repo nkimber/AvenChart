@@ -12,6 +12,46 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
 {
     public ClinicalFormPolicyResponse GetPolicy() => ClinicalFormRuntime.BuildPolicy();
 
+    public async Task<ClinicalFormOptionListCatalogResponse> ListOptionListsAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+              l.list_key,
+              r.title,
+              r.revision_id,
+              r.occurred_at,
+              r.options::text
+            from form_option_lists l
+            join lateral (
+              select revision_id, title, active, occurred_at, options
+              from form_option_list_revisions
+              where list_key = l.list_key
+              order by revision_id desc
+              limit 1
+            ) r on true
+            where l.active = true
+              and r.active = true
+            order by lower(r.title), l.list_key;
+            """;
+
+        var optionLists = new List<ClinicalFormOptionListCatalogItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            optionLists.Add(BuildOptionListCatalogItem(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetInt64(2),
+                reader.GetFieldValue<DateTimeOffset>(3),
+                reader.GetString(4)));
+        }
+
+        return new(optionLists);
+    }
+
     public ClinicalFormEvaluationResponse Preview(ClinicalFormPreviewRequest request)
     {
         RejectUnknownFields(request.ExtraFields);
@@ -159,6 +199,12 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            await ValidateOptionListReferencesAsync(
+                connection,
+                transaction,
+                definition,
+                cancellationToken);
+
             await using (var definitionCommand = connection.CreateCommand())
             {
                 definitionCommand.Transaction = transaction;
@@ -229,6 +275,12 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await ValidateOptionListReferencesAsync(
+            connection,
+            transaction,
+            definition,
+            cancellationToken);
+
         await using (var lockCommand = connection.CreateCommand())
         {
             lockCommand.Transaction = transaction;
@@ -2289,6 +2341,150 @@ public sealed class ClinicalFormRepository(NpgsqlDataSource dataSource)
         }
 
         return value;
+    }
+
+    private static ClinicalFormOptionListCatalogItem BuildOptionListCatalogItem(
+        string listKey,
+        string title,
+        long revisionId,
+        DateTimeOffset occurredAt,
+        string optionsJson)
+    {
+        try
+        {
+            var sourceOptions =
+                JsonSerializer.Deserialize<List<FormOptionListDefinitionOption>>(
+                    optionsJson,
+                    ClinicalFormRuntime.JsonOptions)
+                ?? [];
+            var options = sourceOptions
+                .Where(option => option.Active)
+                .OrderBy(option => option.Sequence)
+                .ThenBy(option => option.Key, StringComparer.Ordinal)
+                .Select(option => new ClinicalFormOptionDefinition(
+                    ClinicalFormRuntime.NormalizeOptionCode(
+                        string.IsNullOrWhiteSpace(option.Value)
+                            ? option.Key
+                            : option.Value,
+                        $"Option code in {listKey} revision {revisionId}"),
+                    ClinicalFormRuntime.NormalizeOptionDisplay(
+                        option.Title,
+                        $"Option display in {listKey} revision {revisionId}")))
+                .ToArray();
+            if (options.Length is < 1 or > 100)
+            {
+                throw new ArgumentException(
+                    "A clinical option source must contain 1 to 100 active options.");
+            }
+
+            if (options
+                .GroupBy(option => option.Code, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1))
+            {
+                throw new ArgumentException(
+                    "Active option values become duplicate clinical codes after normalization.");
+            }
+
+            return new(
+                listKey,
+                title,
+                revisionId,
+                Iso(occurredAt),
+                Eligible: true,
+                Blocker: null,
+                options);
+        }
+        catch (ArgumentException exception)
+        {
+            return new(
+                listKey,
+                title,
+                revisionId,
+                Iso(occurredAt),
+                Eligible: false,
+                Blocker: exception.Message,
+                Options: []);
+        }
+    }
+
+    private static async Task ValidateOptionListReferencesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ClinicalFormSchemaDefinition definition,
+        CancellationToken cancellationToken)
+    {
+        foreach (var field in FlattenFields(definition.Fields))
+        {
+            if (field.OptionListReference is null)
+            {
+                continue;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                select
+                  r.title,
+                  r.active,
+                  r.occurred_at,
+                  r.options::text,
+                  l.active
+                from form_option_list_revisions r
+                join form_option_lists l on l.list_key = r.list_key
+                where r.list_key = @listKey
+                  and r.revision_id = @revisionId
+                for share of l;
+                """;
+            command.Parameters.AddWithValue(
+                "listKey",
+                field.OptionListReference.ListKey);
+            command.Parameters.AddWithValue(
+                "revisionId",
+                field.OptionListReference.RevisionId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new ArgumentException(
+                    $"Field {field.Key} references an unknown option-list revision.");
+            }
+
+            if (!reader.GetBoolean(1) || !reader.GetBoolean(4))
+            {
+                throw new ArgumentException(
+                    $"Field {field.Key} must reference an active option list and active source revision.");
+            }
+
+            var source = BuildOptionListCatalogItem(
+                field.OptionListReference.ListKey,
+                reader.GetString(0),
+                field.OptionListReference.RevisionId,
+                reader.GetFieldValue<DateTimeOffset>(2),
+                reader.GetString(3));
+            if (!source.Eligible)
+            {
+                throw new ArgumentException(
+                    $"Field {field.Key} option-list revision is not compatible: {source.Blocker}");
+            }
+
+            if (!field.Options.SequenceEqual(source.Options))
+            {
+                throw new ArgumentException(
+                    $"Field {field.Key} options do not match pinned option list {source.ListKey} revision {source.RevisionId}.");
+            }
+        }
+    }
+
+    private static IEnumerable<ClinicalFormFieldDefinition> FlattenFields(
+        IEnumerable<ClinicalFormFieldDefinition> fields)
+    {
+        foreach (var field in fields)
+        {
+            yield return field;
+            foreach (var child in FlattenFields(field.Children))
+            {
+                yield return child;
+            }
+        }
     }
 
     private static string CanonicalizeValues(

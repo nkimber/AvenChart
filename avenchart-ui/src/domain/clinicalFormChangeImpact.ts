@@ -314,6 +314,18 @@ function compareField(
       `changes displays for option codes ${renamedOptions.sort().join(", ")}`,
     );
   }
+  if (
+    canonicalJson(previous.optionListReference ?? null) !==
+    canonicalJson(candidate.optionListReference ?? null)
+  ) {
+    const before = previous.optionListReference
+      ? `${previous.optionListReference.listKey} revision ${previous.optionListReference.revisionId}`
+      : "custom inline options";
+    const after = candidate.optionListReference
+      ? `${candidate.optionListReference.listKey} revision ${candidate.optionListReference.revisionId}`
+      : "custom inline options";
+    add("high", `option source changes from ${before} to ${after}`);
+  }
 
   if (changes.length === 0) return [];
   return [

@@ -114,6 +114,7 @@ describe("clinical form successor change impact", () => {
     const current = schema();
     current.fields[0] = {
       ...field("severity", "select"),
+      optionListReference: { listKey: "yesno", revisionId: 2 },
       options: [
         { code: "low", display: "Low" },
         { code: "high", display: "High" },
@@ -139,6 +140,10 @@ describe("clinical form successor change impact", () => {
       { code: "low", display: "Low severity" },
       { code: "medium", display: "Medium" },
     ];
+    candidate.fields[0]!.optionListReference = {
+      listKey: "state",
+      revisionId: 60,
+    };
     candidate.rules[0]!.action = "require";
 
     const impact = describeClinicalFormChangeImpact(current, candidate);
@@ -152,6 +157,12 @@ describe("clinical form successor change impact", () => {
         expect.objectContaining({
           key: "field:severity:changed",
           description: expect.stringContaining("removes option codes high"),
+        }),
+        expect.objectContaining({
+          key: "field:severity:changed",
+          description: expect.stringContaining(
+            "option source changes from yesno revision 2 to state revision 60",
+          ),
         }),
         expect.objectContaining({
           key: "rule:show_details:changed",

@@ -34,6 +34,11 @@ public sealed record ClinicalFormOptionDefinition(
     string Display);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClinicalFormOptionListReference(
+    string ListKey,
+    long RevisionId);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClinicalFormFieldDefinition(
     string Key,
     string SectionKey,
@@ -50,10 +55,24 @@ public sealed record ClinicalFormFieldDefinition(
     string? Unit,
     string? CodeSystem,
     IReadOnlyList<ClinicalFormOptionDefinition> Options,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    ClinicalFormOptionListReference? OptionListReference,
     int? RepeatMinimum,
     int? RepeatMaximum,
     IReadOnlyList<ClinicalFormFieldDefinition> Children,
     bool ReadOnly);
+
+public sealed record ClinicalFormOptionListCatalogItem(
+    string ListKey,
+    string Title,
+    long RevisionId,
+    string OccurredAt,
+    bool Eligible,
+    string? Blocker,
+    IReadOnlyList<ClinicalFormOptionDefinition> Options);
+
+public sealed record ClinicalFormOptionListCatalogResponse(
+    IReadOnlyList<ClinicalFormOptionListCatalogItem> OptionLists);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ClinicalFormRuleCondition(

@@ -10,7 +10,7 @@ namespace AvenChart.Api.Data;
 public static partial class ClinicalFormRuntime
 {
     public const string RendererVersion = "local-clinical-form-renderer-v1";
-    public const string PolicyRevision = "local-clinical-form-v2";
+    public const string PolicyRevision = "local-clinical-form-v3";
     public const string SignaturePolicyRevision = "local-clinical-signature-v1";
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -491,6 +491,22 @@ public static partial class ClinicalFormRuntime
                 NormalizeOptionCode(option.Code, $"Option code for {key}"),
                 NormalizeText(option.Display, $"Option display for {key}", 160)))
             .ToArray();
+        ClinicalFormOptionListReference? optionListReference = null;
+        if (field.OptionListReference is not null)
+        {
+            if (type is not ("select" or "multiselect" or "coded"))
+            {
+                throw new ArgumentException(
+                    $"Only option fields may declare an option-list reference ({key}).");
+            }
+
+            optionListReference = new(
+                NormalizeOptionListKey(field.OptionListReference.ListKey),
+                field.OptionListReference.RevisionId > 0
+                    ? field.OptionListReference.RevisionId
+                    : throw new ArgumentException(
+                        $"Option-list revision for {key} must be positive."));
+        }
         EnsureUnique(options.Select(option => option.Code), $"Option codes for {key} must be unique.");
         if (type is "select" or "multiselect" or "coded")
         {
@@ -576,6 +592,7 @@ public static partial class ClinicalFormRuntime
             unit,
             codeSystem,
             options,
+            optionListReference,
             repeatMinimum,
             repeatMaximum,
             children,
@@ -1224,7 +1241,7 @@ public static partial class ClinicalFormRuntime
         return key;
     }
 
-    private static string NormalizeOptionCode(string value, string label)
+    internal static string NormalizeOptionCode(string value, string label)
     {
         var code = value?.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(code) || code.Length > 80)
@@ -1239,6 +1256,25 @@ public static partial class ClinicalFormRuntime
 
         throw new ArgumentException(
             $"{label} must use lowercase identifier syntax or a bounded nonnegative integer score.");
+    }
+
+    internal static string NormalizeOptionDisplay(string value, string label) =>
+        NormalizeText(value, label, 160);
+
+    internal static string NormalizeOptionListKey(string value)
+    {
+        var key = value?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(key)
+            || key.Length is < 2 or > 64
+            || key.Any(character =>
+                !char.IsAsciiLetterOrDigit(character)
+                && character is not ('_' or '-')))
+        {
+            throw new ArgumentException(
+                "Option-list key must be 2-64 lowercase letters, numbers, underscores, or hyphens.");
+        }
+
+        return key;
     }
 
     private static string NormalizeText(string value, string label, int maximum)

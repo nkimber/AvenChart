@@ -330,7 +330,7 @@ try {
     )
     $actualFieldTypes = @($policy.supportedFieldTypes | Sort-Object)
     $policyPassed = `
-        $policy.revision -eq "local-clinical-form-v2" `
+        $policy.revision -eq "local-clinical-form-v3" `
         -and $policy.rendererVersion -eq "local-clinical-form-renderer-v1" `
         -and $policy.signaturePolicyRevision -eq "local-clinical-signature-v1" `
         -and (($actualFieldTypes -join "|") -eq ($expectedFieldTypes -join "|")) `
@@ -344,6 +344,30 @@ try {
         -and -not $policy.previewPersistsClinicalData `
         -and -not $policy.productionSignatureStandardApproved
     Add-Check "Constrained form runtime policy" $policyPassed $policy
+
+    $optionListCatalog = Invoke-Json `
+        -Uri "$ApiBaseUrl/api/form-engine/option-lists" `
+        -RequestHeaders $adminHeaders
+    $yesNoOptionList = @(
+        $optionListCatalog.optionLists |
+            Where-Object { $_.listKey -eq "yesno" }
+    ) | Select-Object -First 1
+    Add-Check `
+        "Clinical authoring publishes exact compatible option-list revisions" `
+        ($null -ne $yesNoOptionList `
+            -and $yesNoOptionList.revisionId -eq 2 `
+            -and $yesNoOptionList.eligible `
+            -and (($yesNoOptionList.options.code -join "|") -eq "yes|no") `
+            -and (($yesNoOptionList.options.display -join "|") -eq "Yes|No")) `
+        $yesNoOptionList
+
+    $providerOptionListCatalog = Invoke-Api `
+        -Uri "$ApiBaseUrl/api/form-engine/option-lists" `
+        -RequestHeaders $providerHeaders
+    Add-Check `
+        "Clinical option-list authoring remains administrator restricted" `
+        ($providerOptionListCatalog.Status -eq 403) `
+        @{ status = $providerOptionListCatalog.Status }
 
     $catalog = Invoke-Json `
         -Uri "$ApiBaseUrl/api/form-engine/catalog?page=1&pageSize=100" `

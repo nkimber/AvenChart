@@ -11,6 +11,7 @@ import {
   createClinicalFormRevision,
   getClinicalFormDefinition,
   getClinicalFormDefinitions,
+  getClinicalFormOptionLists,
   getClinicalFormPolicy,
   previewClinicalForm,
   transitionClinicalFormDefinition,
@@ -18,6 +19,7 @@ import {
   type ClinicalFormDefinitionSummary,
   type ClinicalFormEvaluation,
   type ClinicalFormField,
+  type ClinicalFormOptionListCatalogItem,
   type ClinicalFormPolicy,
   type ClinicalFormRule,
   type ClinicalFormSchema,
@@ -53,6 +55,7 @@ const safeField = (index = 1, sectionKey = "clinical"): ClinicalFormField => ({
   unit: null,
   codeSystem: null,
   options: [],
+  optionListReference: null,
   repeatMinimum: null,
   repeatMaximum: null,
   children: [],
@@ -133,6 +136,9 @@ function normalizeFieldForType(
             { code: "option_b", display: "Option B" },
           ]
       : [],
+    optionListReference: option
+      ? (field.optionListReference ?? null)
+      : null,
     repeatMinimum: repeat ? 0 : null,
     repeatMaximum: repeat ? 5 : null,
     children: repeat
@@ -173,6 +179,9 @@ function actionsFor(status: string) {
 
 export default function ClinicalFormGovernance({ sessionId }: Props) {
   const [policy, setPolicy] = useState<ClinicalFormPolicy | null>(null);
+  const [optionLists, setOptionLists] = useState<
+    ClinicalFormOptionListCatalogItem[]
+  >([]);
   const [definitions, setDefinitions] = useState<
     ClinicalFormDefinitionSummary[]
   >([]);
@@ -195,7 +204,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
   ) {
     setError(null);
     try {
-      const [nextPolicy, list] = await Promise.all([
+      const [nextPolicy, list, optionListCatalog] = await Promise.all([
         getClinicalFormPolicy(sessionId),
         getClinicalFormDefinitions(sessionId, {
           status: nextStatus || undefined,
@@ -203,8 +212,10 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
           page: 1,
           pageSize: 100,
         }),
+        getClinicalFormOptionLists(sessionId),
       ]);
       setPolicy(nextPolicy);
+      setOptionLists(optionListCatalog.optionLists);
       setDefinitions(list.definitions);
       const targetId =
         selectedId ??
@@ -251,6 +262,24 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
         fieldIndex === index ? { ...field, ...patch } : field,
       ),
     }));
+  }
+
+  function setOptionSource(
+    index: number,
+    source: ClinicalFormOptionListCatalogItem | null,
+  ) {
+    updateField(
+      index,
+      source
+        ? {
+            options: source.options.map((option) => ({ ...option })),
+            optionListReference: {
+              listKey: source.listKey,
+              revisionId: source.revisionId,
+            },
+          }
+        : { optionListReference: null },
+    );
   }
 
   function updateRule(index: number, patch: Partial<ClinicalFormRule>) {
@@ -1023,9 +1052,76 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                         </label>
                       )}
                       <label className="cl-admin-field clinical-form-author-wide">
+                        <span>Option source</span>
+                        <select
+                          className="ne-input"
+                          value={
+                            field.optionListReference
+                              ? `${field.optionListReference.listKey}:${field.optionListReference.revisionId}`
+                              : "custom"
+                          }
+                          onChange={(event) => {
+                            const source =
+                              event.target.value === "custom"
+                                ? null
+                                : (optionLists.find(
+                                    (optionList) =>
+                                      `${optionList.listKey}:${optionList.revisionId}` ===
+                                      event.target.value,
+                                  ) ?? null);
+                            setOptionSource(index, source);
+                          }}
+                        >
+                          <option value="custom">Custom inline options</option>
+                          {field.optionListReference &&
+                            !optionLists.some(
+                              (optionList) =>
+                                optionList.listKey ===
+                                  field.optionListReference?.listKey &&
+                                optionList.revisionId ===
+                                  field.optionListReference.revisionId,
+                            ) && (
+                              <option
+                                value={`${field.optionListReference.listKey}:${field.optionListReference.revisionId}`}
+                              >
+                                {field.optionListReference.listKey} · revision{" "}
+                                {field.optionListReference.revisionId}{" "}
+                                (historical pin)
+                              </option>
+                            )}
+                          {optionLists.map((optionList) => (
+                            <option
+                              disabled={!optionList.eligible}
+                              key={`${optionList.listKey}:${optionList.revisionId}`}
+                              value={`${optionList.listKey}:${optionList.revisionId}`}
+                            >
+                              {optionList.title} · revision{" "}
+                              {optionList.revisionId} ·{" "}
+                              {optionList.eligible
+                                ? `${optionList.options.length} options`
+                                : optionList.blocker}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {field.optionListReference && (
+                        <p className="clinical-form-option-source clinical-form-author-wide">
+                          Pinned to governed list{" "}
+                          <strong>{field.optionListReference.listKey}</strong>{" "}
+                          revision{" "}
+                          <strong>
+                            {field.optionListReference.revisionId}
+                          </strong>
+                          . Active values are copied into this immutable form
+                          revision. Choose custom options to detach the copy for
+                          editing.
+                        </p>
+                      )}
+                      <label className="cl-admin-field clinical-form-author-wide">
                         <span>Options (one code|display per line)</span>
                         <textarea
                           className="ne-input"
+                          readOnly={Boolean(field.optionListReference)}
                           value={field.options
                             .map(
                               (option) =>
@@ -1034,6 +1130,7 @@ export default function ClinicalFormGovernance({ sessionId }: Props) {
                             .join("\n")}
                           onChange={(event) =>
                             updateField(index, {
+                              optionListReference: null,
                               options: event.target.value
                                 .split("\n")
                                 .map((line) => line.trim())

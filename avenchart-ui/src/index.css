@@ -9967,6 +9967,10 @@ h4 {
   background: #f2faf7;
 }
 
+.clinical-form-calculation-editor .cl-admin-field > span {
+  color: #526760;
+}
+
 .clinical-form-calculation-grid,
 .clinical-form-calculation-operand {
   display: grid;
@@ -10089,6 +10093,20 @@ h4 {
   color: #3f5f57;
 }
 
+.clinical-form-option-source {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #b9d8d0;
+  border-radius: 0.55rem;
+  background: #f2faf8;
+  color: #31564d;
+  font-size: 0.86rem;
+}
+
+.clinical-form-option-source strong {
+  color: #17483d;
+}
+
 .clinical-form-field-editors {
   display: grid;
   gap: 0.75rem;
@@ -10195,6 +10213,10 @@ h4 {
   .clinical-form-calculation-editor,
   .clinical-form-change-impact,
   .clinical-form-impact-list li {
+    border: 1px solid CanvasText;
+  }
+
+  .clinical-form-option-source {
     border: 1px solid CanvasText;
   }
 

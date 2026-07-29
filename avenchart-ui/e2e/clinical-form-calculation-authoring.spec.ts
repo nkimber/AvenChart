@@ -36,6 +36,7 @@ test.describe("FORM-02 calculation authoring", () => {
     const apiBaseUrl =
       process.env.MODERN_UI_API_BASE_URL ?? "http://localhost:5001";
     let definitionId: string | null = null;
+    let forgedDefinitionId: string | null = null;
 
     await signIn(page);
     const headers = {
@@ -58,6 +59,15 @@ test.describe("FORM-02 calculation authoring", () => {
         .getByText("Safe runtime and production blockers")
         .click();
       await expect(governance.getByText("5 calculation operators")).toBeVisible();
+      await governance.getByLabel("Search", { exact: true }).fill(stableKey);
+      await governance
+        .getByRole("button", { name: "Apply", exact: true })
+        .click();
+      await expect(
+        governance.locator(
+          ".clinical-form-instance-list .clinical-form-instance-link",
+        ),
+      ).toHaveCount(0);
 
       await governance.getByLabel("Stable key").fill(stableKey);
       await governance.getByLabel("Name").fill(formName);
@@ -90,6 +100,27 @@ test.describe("FORM-02 calculation authoring", () => {
       await computedField
         .getByRole("combobox", { name: "Type", exact: true })
         .selectOption("computed");
+
+      await governance.getByRole("button", { name: "Add field" }).click();
+      const sourcedField = fields.nth(3);
+      await sourcedField.getByLabel("Key", { exact: true }).fill("decision");
+      await sourcedField
+        .getByLabel("Label", { exact: true })
+        .fill("Governed decision");
+      await sourcedField
+        .getByRole("combobox", { name: "Type", exact: true })
+        .selectOption("select");
+      await sourcedField
+        .getByRole("combobox", { name: "Option source", exact: true })
+        .selectOption("yesno:2");
+      await expect(
+        sourcedField.getByText(/Pinned to governed list yesno revision 2/),
+      ).toBeVisible();
+      const sourcedOptions = sourcedField.getByLabel(
+        "Options (one code|display per line)",
+      );
+      await expect(sourcedOptions).toHaveValue("yes|Yes\nno|No");
+      await expect(sourcedOptions).toHaveAttribute("readonly", "");
 
       await governance.getByRole("button", { name: "Add rule" }).click();
       const rule = governance.locator(".clinical-form-rule-editor").last();
@@ -190,6 +221,14 @@ test.describe("FORM-02 calculation authoring", () => {
                 precision: number | null;
               };
             }>;
+            fields: Array<{
+              key: string;
+              options: Array<{ code: string; display: string }>;
+              optionListReference?: {
+                listKey: string;
+                revisionId: number;
+              } | null;
+            }>;
           };
         };
       };
@@ -202,6 +241,91 @@ test.describe("FORM-02 calculation authoring", () => {
         ],
         precision: 2,
       });
+      expect(
+        created.currentRevision.definition.fields.find(
+          (field) => field.key === "decision",
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          options: [
+            { code: "yes", display: "Yes" },
+            { code: "no", display: "No" },
+          ],
+          optionListReference: {
+            listKey: "yesno",
+            revisionId: 2,
+          },
+        }),
+      );
+
+      const forgedResponse = await page.request.post(
+        `${apiBaseUrl}/api/form-engine/definitions`,
+        {
+          headers,
+          data: {
+            definition: {
+              stableKey: `${stableKey}.forged`,
+              name: `Forged option source ${marker}`,
+              purpose: "Prove copied option values must match their source.",
+              contextScope: "encounter",
+              owningService: "clinical_operations",
+              capability: "encounters.auth_a",
+              signaturePolicy: "author-only",
+              sections: [
+                {
+                  key: "main",
+                  title: "Main",
+                  sequence: 10,
+                  description: null,
+                },
+              ],
+              fields: [
+                {
+                  key: "decision",
+                  sectionKey: "main",
+                  label: "Decision",
+                  type: "select",
+                  sequence: 10,
+                  required: false,
+                  accessibilityLabel: "Decision",
+                  helpText: null,
+                  maxLength: null,
+                  minimum: null,
+                  maximum: null,
+                  precision: null,
+                  unit: null,
+                  codeSystem: null,
+                  options: [
+                    { code: "yes", display: "Forged display" },
+                    { code: "no", display: "No" },
+                  ],
+                  optionListReference: {
+                    listKey: "yesno",
+                    revisionId: 2,
+                  },
+                  repeatMinimum: null,
+                  repeatMaximum: null,
+                  children: [],
+                  readOnly: false,
+                },
+              ],
+              rules: [],
+            },
+            reason: "Reject false option-list provenance.",
+          },
+        },
+      );
+      if (forgedResponse.status() === 201) {
+        forgedDefinitionId = (
+          (await forgedResponse.json()) as {
+            definition: { definitionId: string };
+          }
+        ).definition.definitionId;
+      }
+      expect(forgedResponse.status()).toBe(400);
+      expect((await forgedResponse.json()).error).toContain(
+        "do not match pinned option list yesno revision 2",
+      );
 
       await governance
         .getByRole("button", { name: "Prepare successor" })
@@ -289,6 +413,13 @@ test.describe("FORM-02 calculation authoring", () => {
         }),
       );
     } finally {
+      if (forgedDefinitionId) {
+        const forgedCleanup = await page.request.delete(
+          `${apiBaseUrl}/api/form-engine/definitions/${forgedDefinitionId}/test-fixture`,
+          { headers },
+        );
+        expect(forgedCleanup.status()).toBe(204);
+      }
       if (definitionId) {
         const cleanup = await page.request.delete(
           `${apiBaseUrl}/api/form-engine/definitions/${definitionId}/test-fixture`,

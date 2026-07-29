@@ -5,6 +5,25 @@ export type ClinicalFormOption = {
   display: string;
 };
 
+export type ClinicalFormOptionListReference = {
+  listKey: string;
+  revisionId: number;
+};
+
+export type ClinicalFormOptionListCatalogItem = {
+  listKey: string;
+  title: string;
+  revisionId: number;
+  occurredAt: string;
+  eligible: boolean;
+  blocker: string | null;
+  options: ClinicalFormOption[];
+};
+
+export type ClinicalFormOptionListCatalog = {
+  optionLists: ClinicalFormOptionListCatalogItem[];
+};
+
 export type ClinicalFormSection = {
   key: string;
   title: string;
@@ -28,6 +47,7 @@ export type ClinicalFormField = {
   unit: string | null;
   codeSystem: string | null;
   options: ClinicalFormOption[];
+  optionListReference?: ClinicalFormOptionListReference | null;
   repeatMinimum: number | null;
   repeatMaximum: number | null;
   children: ClinicalFormField[];
@@ -448,6 +468,20 @@ export async function getClinicalFormPolicy(
     signal,
   });
   return (await response.json()) as ClinicalFormPolicy;
+}
+
+export async function getClinicalFormOptionLists(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ClinicalFormOptionListCatalog> {
+  const response = await apiFetch(
+    `${apiBaseUrl}/api/form-engine/option-lists`,
+    {
+      headers: headers(sessionId),
+      signal,
+    },
+  );
+  return (await response.json()) as ClinicalFormOptionListCatalog;
 }
 
 export async function previewClinicalForm(

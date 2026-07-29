@@ -6809,6 +6809,7 @@ administration.MapDelete("/access-control/user-memberships/{userValue}/{groupVal
 var formEngine = app.MapGroup("/api/form-engine").WithTags("Clinical Form Engine");
 RequireAccessPermission(formEngine, "patients", "demo", "view");
 formEngine.MapLegacyClinicalFormDisplayEndpoints();
+formEngine.MapClinicalFormOptionListEndpoints();
 
 formEngine.MapGet("/policy", (ClinicalFormRepository repository) =>
         Results.Ok(repository.GetPolicy()))

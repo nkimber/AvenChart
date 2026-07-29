@@ -6,6 +6,7 @@ import {
   exportClinicalFormInstanceStructured,
   getClinicalFormCatalog,
   getClinicalFormInstanceFieldDictionary,
+  getClinicalFormOptionLists,
   getLegacyClinicalFormSnapshot,
   getPatientLegacyClinicalFormMigrationManifest,
   getPatientLegacyClinicalFormSnapshots,
@@ -147,6 +148,42 @@ describe("governed clinical-form transport", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       definition: schema,
       values: { chief_concern: "Live draft" },
+    });
+  });
+
+  it("loads the protected versioned option-list catalog", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        optionLists: [
+          {
+            listKey: "yesno",
+            title: "Yes or no",
+            revisionId: 2,
+            occurredAt: "2026-07-29T00:00:00Z",
+            eligible: true,
+            blocker: null,
+            options: [
+              { code: "yes", display: "Yes" },
+              { code: "no", display: "No" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const result = await getClinicalFormOptionLists("staff-session");
+
+    expect(result.optionLists[0]).toEqual(
+      expect.objectContaining({
+        listKey: "yesno",
+        revisionId: 2,
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:5001/api/form-engine/option-lists",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      "X-Legacy EHR-Session": "staff-session",
     });
   });
 
